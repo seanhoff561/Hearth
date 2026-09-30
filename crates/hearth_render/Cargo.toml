@@ -1,0 +1,21 @@
+[package]
+name = "hearth_render"
+description = "wgpu renderer: terrain, LOD, entities, sky, water, clouds, weather and post-processing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_core.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+glam.workspace = true
+bytemuck.workspace = true
+log.workspace = true
+thiserror.workspace = true
+pollster.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+/saves
+/screenshots
+/logs
+/options.toml
+/crash-reports
+*.profraw
+*.pdb
+/tools/**/out
+/bench-out

@@ -1,0 +1,92 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.90"
+publish = false
+
+[workspace.dependencies]
+# --- internal crates ---
+hearth_core = { path = "crates/hearth_core" }
+hearth_math = { path = "crates/hearth_math" }
+hearth_input = { path = "crates/hearth_input" }
+
+# --- external crates (versions checked with `cargo search` on 2026-09-30) ---
+anyhow = "1.0.104"
+thiserror = "2.0.21"
+log = "0.4.34"
+env_logger = "0.11.11"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml = "1.1.6"
+ron = "0.12.2"
+glam = { version = "0.33.11", features = ["bytemuck", "serde"] }
+bytemuck = { version = "1.25.2", features = ["derive"] }
+rayon = "1.12.0"
+crossbeam-channel = "0.5.17"
+crossbeam-deque = "0.8.8"
+parking_lot = "0.12.5"
+rustc-hash = "2.1.3"
+smallvec = { version = "1.16.2", features = ["union", "const_generics"] }
+wgpu = "30.0.1"
+winit = "0.30.13"
+gilrs = "0.11.2"
+pollster = "1.0.1"
+png = "0.18.1"
+zstd = "0.14.0"
+lz4_flex = "0.14.0"
+directories = "6.0.0"
+tracy-client = { version = "0.19.0", default-features = false }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+# Defaults (all, correctness, style, complexity, perf, suspicious) plus a few extras that
+# catch real bugs in engine code.
+dbg_macro = "warn"
+todo = "deny"
+unimplemented = "deny"
+large_stack_arrays = "warn"
+mem_forget = "warn"
+# Numeric-heavy engine code: these fire constantly on intentional casts.
+too_many_arguments = "allow"
+type_complexity = "allow"
+new_without_default = "allow"
+
+# Games need optimized dependencies even in debug builds; our own crates get a light touch so
+# tests and the debug binary stay usable.
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
+debug = false
+
+[profile.test]
+opt-level = 1
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = false
+
+# Fast-to-build optimized profile used for local benchmarking/screenshots during development.
+[profile.dev-opt]
+inherits = "release"
+lto = "off"
+codegen-units = 16
+incremental = true
+debug = "line-tables-only"
+
+# Distribution builds: release + stripped symbols.
+[profile.dist]
+inherits = "release"
+strip = true

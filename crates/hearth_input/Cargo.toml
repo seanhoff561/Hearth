@@ -1,0 +1,20 @@
+[package]
+name = "hearth_input"
+description = "Input actions, key bindings with rebinding and conflict detection, input contexts and controller support."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_core.workspace = true
+serde.workspace = true
+rustc-hash.workspace = true
+thiserror.workspace = true
+log.workspace = true
+winit.workspace = true
+
+
+[lints]
+workspace = true

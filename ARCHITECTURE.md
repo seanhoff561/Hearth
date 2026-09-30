@@ -1,0 +1,155 @@
+# Hearth — Architecture
+
+This document is the design contract for the engine. It describes how the crates fit together,
+which thread owns what, and the data flow of the major systems. Decisions and their rationale
+live in `DECISIONS.md`; status lives in `PROGRESS.md`.
+
+## 1. Crate graph
+
+```
+hearth_math ─┐
+hearth_core ─┼─> hearth_world ─> hearth_worldgen ─> hearth_lod
+             │        │                 │
+             │        └──> hearth_entity (hecs ECS, physics, AI, pathfinding)
+             │                 │
+             │   hearth_protocol (client<->server messages; serializable)
+             │                 │
+             │   hearth_modapi (stable API traits + WIT; wasmtime host)
+             │                 │
+             │   hearth_content (all base-game content registered through hearth_modapi)
+             │                 │
+             │   hearth_save (regions, metadata, player data, migrations)
+             │                 │
+             │   hearth_server (authoritative 20 TPS simulation thread)
+             │
+hearth_input, hearth_audio, hearth_ui (toolkit + screens, no GPU), hearth_texgen
+             │
+hearth_render (wgpu; consumes world meshes, LOD tiles, UI draw lists)
+             │
+hearth_client (client world mirror, interpolation, prediction, meshing jobs, HUD state)
+             │
+hearth (binary: launcher, main loop, window, options wiring)
+tools/bench (headless benchmarks, worldmap PNGs, screenshot suite driver)
+```
+
+Rules:
+* Lower crates never depend on higher ones. `hearth_math` and `hearth_core` depend on nothing
+  engine-specific.
+* Only `hearth_render` (and the binary) touch wgpu; only `hearth_input`/binary touch winit
+  event types; only `hearth_audio` touches the audio backend.
+* "Vanilla is a mod": `hearth_content` registers every block, item, entity, recipe, biome and
+  command through `hearth_modapi`, exactly like a third-party mod would.
+
+## 2. Threads
+
+| Thread | Owns | Talks to |
+|---|---|---|
+| Main (winit event loop) | window, input, client state, renderer, UI, audio control | server via channels; workers via job queues |
+| Server | authoritative world, entities, 20 TPS tick, saving triggers | client via `hearth_protocol` channels; workers |
+| Worker pool (rayon + priority job system) | cube generation, lighting batches, meshing, LOD building, region IO compression | results returned through lock-free channels |
+| IO thread | region file reads/writes, LOD cache writes | server/client via channels |
+| Audio thread (kira backend) | mixing | control handles from main |
+
+The main thread never blocks on workers: it polls completed-result channels with a per-frame
+integration budget (bytes uploaded, meshes integrated).
+
+## 3. Coordinates and the wrapping planet
+
+* Block positions are `i32` on all axes; Y is unbounded in practice (soft limit ±2²⁴).
+* The planet has circumference `C` (a multiple of 4096). X wraps modulo `C`; Z spans `[-C/2, C/2]`
+  (Mercator latitude ±85°). `hearth_math::Planet` owns `C` and every wrap-aware operation:
+  canonicalising X, shortest signed X delta, cube-neighbour lookup across the seam,
+  wrap-aware distances. Nothing else implements wrapping.
+* Cube coordinates `(cx, cy, cz) = floor(pos / 16)`. Canonical cube keys always have
+  `0 <= cx < C/16`.
+* Latitude φ(z) = atan(sinh(z / R)), R = C / 2π; longitude λ = 2π x / C.
+* Rendering is camera-relative: the camera sits at the origin of render space; world positions
+  are converted with f64 math and the shortest wrapped X offset before becoming f32.
+* Crossing a pole edge (|z| > C/2) re-enters at `x + C/2` with mirrored z and reversed heading.
+  The last degrees before each pole are a flat ice plateau in permanent whiteout so the
+  transition is invisible.
+
+## 4. World data (hearth_world)
+
+* **Cube** = 16³ blocks. Block states are palette-compressed (`Uniform(state)` or bit-packed
+  indices with 1/2/4/8/16 bits); uniform cubes (air, stone fill) allocate nothing.
+* **Light**: sky and block light as nibble arrays, allocated lazily. Sky light is seeded from a
+  per-column "highest light-blocking block" heightmap initialised from `surface_height` before
+  real cubes exist, then corrected as cubes load. Cubes entirely above the heightmap are
+  implicitly fully sky-lit.
+* **Block states** are registered from data; each state has precomputed flags (opaque, full
+  cube, light emission, light opacity, render layer, collision shape, occlusion faces).
+* **Storage**: `FxHashMap<CubePos, CubeSlot>`; per-column records hold heightmaps and the loaded
+  Y range.
+
+## 5. World generation (hearth_worldgen)
+
+Pipeline, from coarse to fine; every stage is a pure deterministic function of the seed and
+position, so any cube can be generated alone in any order on any thread:
+
+1. **Planet grid** (world creation, saved in the world folder): an `N×N` grid over the Mercator
+   world square (default N = 2048) with sphere-correct metrics (cells are weighted by cos φ).
+   Holds tectonic plates, crust type, boundary classes, macro elevation, global stream-power
+   erosion, drainage (priority-flood, flow directions, discharge, lakes, rivers), ocean
+   currents and the climate fields. Built in parallel with a progress callback.
+2. **Regional sampling**: `surface_height(x,z)`, `water_level`, `biome`, `river`,
+   `surface_material`, `tree_canopy`, `snow_line`, `tree_line` combine bicubic grid samples
+   with block-space detail noise (analytic erosion-style ridges, hills) and river channel
+   geometry refined from the grid's river network.
+3. **Column cache**: per 16×16 column, the 2D sample set (heights, biome, materials, river
+   info) is computed once and LRU-cached; cube generation and LOD share it.
+4. **Cube generation**: cheap classification first (all air / all solid fill / needs full
+   evaluation) using the column's min/max surface, the 3D-noise amplitude bound and cave
+   bounding volumes. Full evaluation fills terrain, water, surface layers, caves (worm networks,
+   rare giant caverns, ravines — all with explicit bounding volumes), aquifers and ores.
+5. **Features** (trees, boulders, logs, cacti, plants): each feature is a pure function of its
+   origin; a cube collects every feature whose bounds intersect it, sorts them
+   deterministically, and writes only its own blocks. No neighbour dependency.
+
+## 6. LOD (hearth_lod)
+
+Quadtree over the wrapped XZ plane; level n = 2ⁿ blocks per column; tiles of 64×64 columns.
+Columns store 1–4 vertical segments (bottom, top, material/colour, light). Far tiles are
+sampled directly from the regional functions (never by generating cubes); real cubes replace
+level-0 data when generated or edited and propagate upward. Tiles are meshed to column meshes
+with skirts, culled on the GPU with the terrain path, crossfaded (dithered) at the near/far
+handoff, and cached on disk (lz4).
+
+## 7. Rendering (hearth_render)
+
+Frame graph (HDR RGBA16F, reverse-Z infinite projection, camera-relative):
+1. GPU culling (compute): frustum + Hi-Z occlusion (previous frame's depth pyramid) +
+   per-face-direction culling → indirect draw commands (`multi_draw_indexed_indirect[_count]`).
+2. Opaque terrain + LOD + entities.
+3. Sky (atmosphere LUTs: transmittance, multi-scattering, sky-view), sun, moon, stars.
+4. Translucent: water (waves, SSR, refraction, absorption, foam), glass, ice; clouds.
+5. Volumetrics (fog/light shafts), weather particles.
+6. TAA (optional) → bloom → auto-exposure (histogram) → tonemap → grade → UI.
+
+Terrain geometry lives in a few large buffers managed by a sub-allocator; quads are packed into
+8 bytes and expanded in the vertex shader (vertex pulling); one shared quad index buffer.
+
+## 8. Client/server
+
+The integrated server runs on its own thread at 20 TPS and talks to the client exclusively
+through `hearth_protocol` message enums over crossbeam channels (the same types a network layer
+would serialize). The client mirrors cubes it is sent, meshes them, predicts the local player's
+movement with the shared physics code, and interpolates everything else between ticks.
+
+## 9. Modding
+
+* Data packs (`data/<ns>/…` JSON/RON) define blocks, items, recipes, loot, tags, biomes,
+  features, spawn rules; loaded in pack order with overrides.
+* Resource packs follow the standard vanilla folder layout; a mapping table converts vanilla
+  names to `hearth:` ids. Packs stack; F3+T hot-reloads.
+* WASM components (`mods/*.wasm`, wasmtime component model, WIT API) register content, hook
+  events and query/modify the world through capability-checked host functions. Traps are
+  contained per mod.
+* Saves store the id→name palette so adding/removing mods never corrupts a world.
+
+## 10. Saves
+
+`saves/<world>/` holds `level.ron` (metadata, seed, planet settings, game rules, time),
+`planet.bin.zst` (the planet grid), `region/r.X.Y.Z.hrg` (16³ cubes per region file, zstd with a
+trained dictionary), `players/<uuid>.ron`, `lod/` (lz4 LOD cache) and `ids.ron` (registry
+palettes).

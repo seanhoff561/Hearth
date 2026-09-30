@@ -1,0 +1,25 @@
+[package]
+name = "hearth"
+description = "The Hearth game binary: launcher, main loop and settings."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "hearth"
+path = "src/main.rs"
+
+[dependencies]
+hearth_core.workspace = true
+hearth_input.workspace = true
+hearth_render = { path = "../hearth_render" }
+anyhow.workspace = true
+log.workspace = true
+env_logger.workspace = true
+winit.workspace = true
+directories.workspace = true
+
+[lints]
+workspace = true
