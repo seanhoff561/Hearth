@@ -368,3 +368,37 @@ filled every eligible cell; they now use the full hash. Underwater plants were n
 the feature writer ranks water above every feature, so seagrass and kelp could not take its
 place; water plants (and mangrove wood) now may, and nothing else, so canopies still cannot
 dip into lakes.
+
+## D52 — Distant terrain pulled forward from V2-6, and it reaches the horizon
+Screenshots showed the terrain fading out at a fixed distance. Diagnosis: (a) the terrain
+shader blended everything to the sky between 60 % and 95 % of the loaded radius (a
+render-distance fog set by the preview and the screenshot tool), and (b) — the root cause —
+there was no LOD terrain at all: v1 M8 had been scheduled with V2-6 (MIGRATION.md) and the
+`lod_distance` option was read by nothing. The harness could not have waited for LOD (c), and
+the projection was already reverse-Z with an infinite far plane (d). The fix builds the core
+of v1 M8 now (`hearth_lod`: quadtree, fast surface sampling, meshing; `hearth_render::lod`;
+streaming in the preview; screenshots wait for every tile and fail after `lod_timeout`) and
+removes the render-distance fog. The LOD distance setting is a minimum: tiles always reach the
+geometric horizon (√(2Rh), R = Earth's radius × vertical scale), because a fixed LOD edge
+closer than the horizon would be the same hard cutoff one step farther out; distant tiles are
+coarse, so this costs a few hundred tiles. Vegetation state in the LOD, the disk cache, edits,
+occlusion culling, the VRAM budget and TAA stay with V2-6.
+
+## D53 — Aerial perspective is physical, not tied to any distance setting
+The single grey extinction coefficient and the render-edge fade are gone. Aerial perspective
+integrates the atmosphere model's own coefficients along each view ray — Rayleigh per colour
+(scale height 8 km) and aerosol (1.2 km; its amount follows the weather's haze, which grows with
+humidity and precipitation) at the real altitudes of the two ends — plus the extinction of
+falling rain or snow, and fills in the sky's colour in that direction (or the cloud deck's
+grey). Clear days show distant land hazy blue tens of kilometres away; muggy and wet days
+close it in. Planet curvature (d²/2R) is applied to the full-detail and LOD terrain alike.
+
+## D54 — The LOD handoff: cubes dither out over a band, the LOD shows through from behind
+A symmetric dithered crossfade (each side keeping complementary pixels by its own surface's
+position) leaves holes where the two surfaces at a pixel lie at different places, as with
+individual trees against a forest canopy block. Instead the full-detail terrain dithers out
+across an 8-block band while the LOD draws everywhere outside the area's interior, pushed a
+hair farther in depth so the cubes win wherever they are drawn: rays leave the camera outward,
+so any gap in the cubes is backed by LOD terrain. Forest LOD columns are a canopy roof over a
+shaded forest floor rather than solid blocks, so rays passing under the roof's edge where the
+real trees end meet ground, not sky.

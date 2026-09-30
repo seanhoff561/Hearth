@@ -16,10 +16,13 @@ use hearth_render::scene::SceneRenderer;
 use hearth_render::{FrameTargets, GpuContext};
 
 use crate::environment::{EnvOverrides, EnvSampler};
+use crate::lod_stream::LodStream;
 use crate::streamer::{StreamEvent, StreamTarget, StreamWorld, Streamer};
 
 /// Meshes uploaded per frame at most (keeps frame times smooth while streaming).
 const UPLOADS_PER_FRAME: usize = 256;
+/// LOD tiles uploaded per frame at most.
+const LOD_UPLOADS_PER_FRAME: usize = 24;
 
 pub struct Preview {
     streamer: Streamer,
@@ -33,6 +36,10 @@ pub struct Preview {
     speed: f64,
     radius: i32,
     vertical: i32,
+    /// Distant terrain, once the world is ready; LOD distance in chunks (0 = off).
+    lod: Option<LodStream>,
+    lod_distance: u32,
+    vertical_scale: f32,
     /// World clock (20 ticks per second of play) and calendar.
     pub ticks: u64,
     pub calendar: Calendar,
@@ -86,6 +93,9 @@ impl Preview {
             speed: 12.0,
             radius,
             vertical,
+            lod: None,
+            lod_distance: options.video.lod_distance,
+            vertical_scale: 1.0,
             ticks: 0,
             calendar,
             time_warp: 0.0,
@@ -179,7 +189,17 @@ impl Preview {
                     planet,
                     spawn,
                     grid,
+                    generator,
+                    lod,
+                    vertical_scale,
                 } => {
+                    self.lod = Some(LodStream::new(
+                        generator,
+                        lod,
+                        self.lod_distance,
+                        vertical_scale as f64,
+                    ));
+                    self.vertical_scale = vertical_scale;
                     self.planet = Some(planet);
                     self.camera.pos = spawn;
                     // Start the world in the morning, local time, at the spawn.
@@ -225,6 +245,26 @@ impl Preview {
             vertical: self.vertical,
             year_frac: self.calendar.at(self.ticks).year_frac,
         });
+        let near = self.near_area();
+        if let (Some(lod), Some(scene), Some(planet)) =
+            (&mut self.lod, &mut self.scene, &self.planet)
+        {
+            lod.update(planet, self.camera.pos, near, &mut scene.lod);
+            lod.pump(ctx, &mut scene.lod, LOD_UPLOADS_PER_FRAME);
+        }
+    }
+
+    /// The full-detail area around the camera (world blocks), one cube inside the streamed
+    /// radius so the LOD covers cubes still on their way.
+    fn near_area(&self) -> [f64; 4] {
+        let c = hearth_math::CubePos::containing(self.camera.pos);
+        let r = (self.radius - 1).max(1);
+        [
+            ((c.x - r + 1) * 16) as f64,
+            ((c.z - r + 1) * 16) as f64,
+            ((c.x + r) * 16) as f64,
+            ((c.z + r) * 16) as f64,
+        ]
     }
 
     /// Records the frame.
@@ -235,6 +275,7 @@ impl Preview {
         targets: FrameTargets<'_>,
         dt: f32,
     ) {
+        let near = self.near_area();
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -262,10 +303,16 @@ impl Preview {
         };
         env.calendar = self.calendar;
         let moment = self.calendar.at(self.ticks);
-        let (mut e, _) = env.sample(&moment, self.camera.pos, 0.0, EnvOverrides::default());
-        let radius = (self.radius * 16) as f32;
-        e.fog_start = radius * 0.6;
-        e.fog_end = radius * 0.95;
+        let (e, _) = env.sample(&moment, self.camera.pos, 0.0, EnvOverrides::default());
+        scene.vertical_scale = self.vertical_scale;
+        match &self.lod {
+            Some(lod) if self.lod_distance > 0 => {
+                scene.near_area = Some(near);
+                scene.lod_show.clear();
+                scene.lod_show.extend_from_slice(lod.show());
+            }
+            _ => scene.near_area = None,
+        }
         scene.prepare(ctx, &self.camera, targets.size, &e, dt);
         scene.render(ctx, enc, targets.color, targets.depth, targets.size);
     }
@@ -281,8 +328,9 @@ impl Preview {
                 let southern = planet.latitude(p.z) < 0.0;
                 let day_of_season =
                     (m.season_progress() * self.calendar.days_per_season as f64) as u32 + 1;
+                let (wanted, pending) = self.lod.as_ref().map_or((0, 0), |l| l.progress(&s.lod));
                 format!(
-                    "{fps:.0} fps | {:.0} {:.0} {:.0} (lat {:.1}°) | {:?} day {} {:02}:{:02} | {} cubes, {} visible{} | {:.0} b/s",
+                    "{fps:.0} fps | {:.0} {:.0} {:.0} (lat {:.1}°) | {:?} day {} {:02}:{:02} | {} cubes, {} visible{} | LOD {}/{} drawn, {} queued | {:.0} b/s",
                     p.x,
                     p.y,
                     p.z,
@@ -294,6 +342,9 @@ impl Preview {
                     st.meshes,
                     st.visible_cubes,
                     if st.gpu_culling { ", GPU culled" } else { "" },
+                    s.lod.stats.drawn,
+                    wanted,
+                    pending,
                     self.speed
                 )
             }

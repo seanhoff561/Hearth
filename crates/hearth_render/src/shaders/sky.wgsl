@@ -153,7 +153,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Below the horizon lies land and sea beyond the loaded area: it dissolves into the same
     // horizon haze as the terrain's edge fog (until distant terrain is drawn).
     if dir.y < 0.0 {
-        col *= mix(1.0, 0.8, smoothstep(0.0, -0.4, dir.y));
+        col *= mix(1.0, 0.8, 1.0 - smoothstep(-0.4, 0.0, dir.y));
     }
     // Under a thick cloud deck, in rain or snow, the whole sky down to the horizon is grey.
     let overcast = P.overcast.w;

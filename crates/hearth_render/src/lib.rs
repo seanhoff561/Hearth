@@ -7,6 +7,7 @@ pub mod atlas;
 pub mod camera;
 mod cull;
 pub mod gpu;
+pub mod lod;
 pub mod mesh;
 pub mod models;
 pub mod offscreen;

@@ -36,7 +36,9 @@ impl DepthTarget {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -73,6 +75,62 @@ impl OffscreenTarget {
             color_view,
             depth: DepthTarget::new(ctx, width, height),
         }
+    }
+
+    /// Reads the depth buffer back (reverse-Z: 1 at the near plane, 0 at infinity), row by row.
+    pub fn read_depth(&self, ctx: &GpuContext) -> Vec<f32> {
+        let bpr_unpadded = self.width * 4;
+        let bpr = bpr_unpadded.div_ceil(256) * 256;
+        let buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("depth readback"),
+            size: (bpr * self.height) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("depth readback"),
+            });
+        enc.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.depth.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::DepthOnly,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bpr),
+                    rows_per_image: Some(self.height),
+                },
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        ctx.queue.submit(Some(enc.finish()));
+        let slice = buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        let _ = ctx.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+        let data = slice.get_mapped_range().expect("mapped depth buffer");
+        let mut out = Vec::with_capacity((self.width * self.height) as usize);
+        for row in 0..self.height {
+            let start = (row * bpr) as usize;
+            out.extend_from_slice(bytemuck::cast_slice::<u8, f32>(
+                &data[start..start + bpr_unpadded as usize],
+            ));
+        }
+        drop(data);
+        buffer.unmap();
+        out
     }
 
     /// Reads the colour target back as tightly packed RGBA8 rows.

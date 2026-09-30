@@ -21,6 +21,7 @@ hearth_content = { path = "crates/hearth_content" }
 hearth_save = { path = "crates/hearth_save" }
 hearth_env = { path = "crates/hearth_env" }
 hearth_render = { path = "crates/hearth_render" }
+hearth_lod = { path = "crates/hearth_lod" }
 
 # --- external crates (versions checked with `cargo search` on 2026-09-30) ---
 anyhow = "1.0.104"
@@ -79,6 +80,9 @@ debug = false
 
 # World generation is compute-heavy; keep it fast in debug builds and tests too.
 [profile.dev.package.hearth_worldgen]
+opt-level = 3
+
+[profile.dev.package.hearth_lod]
 opt-level = 3
 
 [profile.test]

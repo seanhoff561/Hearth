@@ -115,8 +115,9 @@ that needs it (marked **Engine**), keeping v1's acceptance criteria for it.
   branches as sub-block models, root flares); wood properties; passable foliage (slows, hides,
   partial shade); climbing; felling as a physical event, limbing, bucking; understory; edible/
   medicinal/toxic plants; succession; vegetation cell state; wildfire.
-- **Engine (v1 M8):** LOD quadtree, fast surface generator, cache, meshing, seamless handoff,
-  TAA option — LOD tiles show vegetation state and season.
+- **Engine (v1 M8, rest):** the quadtree, surface sampling, meshing, streaming and handoff exist
+  (built in V2-2, D52); add the on-disk LOD cache, edits reaching the LOD, occlusion culling and
+  a VRAM budget for LOD tiles, and a TAA option — LOD tiles show vegetation state and season.
 - *Accept:* species silhouettes at 3 ages (screenshots); a cleared area goes through succession
   over simulated years; wildfire spreads and burns out plausibly in a dry-season test; v1 M8's
   horizon screenshot from a peak and fly-through benchmark.

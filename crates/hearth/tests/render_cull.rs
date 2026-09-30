@@ -31,11 +31,7 @@ fn gpu_culling_matches_cpu_culling() {
     }
     let (w, h) = (320, 180);
     let target = OffscreenTarget::new(&ctx, w, h);
-    let env = Environment {
-        fog_start: 50.0,
-        fog_end: 76.0,
-        ..Environment::default()
-    };
+    let env = Environment::default();
     // Several views: low in the terrain (lots of occlusion), and looking down from above.
     for (above, yaw, pitch) in [(1.7, 40.0, 5.0), (1.7, 220.0, -10.0), (40.0, 100.0, 45.0)] {
         let camera = Camera {

@@ -215,11 +215,17 @@ pub struct FrameParams {
     pub ambient_floor: f32,
     /// Firelight at block-light level 15.
     pub block_light: Vec3,
-    /// Aerial extinction per metre (haze and fog).
-    pub aerial: f32,
-    /// Render-distance fog range (blends into the sky at the loaded area's edge).
-    pub fog_start: f32,
-    pub fog_end: f32,
+    /// Aerosol extinction of the air at sea level (per metre): grows with haze and humidity.
+    pub haze_extinction: f32,
+    /// Grey extinction of falling rain or snow (per metre).
+    pub precip_extinction: f32,
+    /// Blocks per real metre of height (the world's vertical scale).
+    pub vertical_scale: f32,
+    /// Aerial perspective on (off only for tests and comparisons).
+    pub aerial_perspective: bool,
+    /// Full-detail terrain area in world blocks (min x, min z, max x, max z); the LOD draws
+    /// beyond it. `None`: full-detail terrain everywhere.
+    pub near_area: Option<[f64; 4]>,
     pub seconds: f32,
     pub anim_ticks: f32,
     pub wind: f32,
@@ -238,9 +244,11 @@ impl Default for FrameParams {
             sky_light: Vec3::new(0.35, 0.45, 0.6),
             ambient_floor: 0.0,
             block_light: Vec3::new(1.0, 0.82, 0.6),
-            aerial: 5.8e-5,
-            fog_start: 120.0,
-            fog_end: 200.0,
+            haze_extinction: 4.44e-5,
+            precip_extinction: 0.0,
+            vertical_scale: 1.0,
+            aerial_perspective: true,
+            near_area: None,
             seconds: 0.0,
             anim_ticks: 0.0,
             wind: 1.0,
@@ -262,7 +270,11 @@ struct Globals {
     sun: [f32; 4],
     camera: [f32; 4],
     overcast: [f32; 4],
+    near: [f32; 4],
 }
+
+/// Earth's mean radius (m): with the vertical scale, the radius of the planet's curvature.
+pub const EARTH_RADIUS_M: f64 = 6_371_000.0;
 
 /// Statistics for the debug overlay.
 #[derive(Debug, Clone, Copy, Default)]
@@ -321,6 +333,7 @@ impl Pass {
 /// The terrain renderer.
 pub struct TerrainRenderer {
     globals: wgpu::Buffer,
+    layout0: wgpu::BindGroupLayout,
     bind0: wgpu::BindGroup,
     layout1: wgpu::BindGroupLayout,
     bind1: wgpu::BindGroup,
@@ -529,6 +542,7 @@ impl TerrainRenderer {
         ];
         Self {
             globals,
+            layout0,
             bind0,
             layout1,
             bind1,
@@ -562,6 +576,12 @@ impl TerrainRenderer {
             cave_culling: true,
             gpu_culling: true,
         }
+    }
+
+    /// The per-frame globals, block textures and sky-view table (bind group 0), shared with
+    /// the LOD renderer so both light and fade the same way.
+    pub fn globals_bind(&self) -> (&wgpu::BindGroupLayout, &wgpu::BindGroup) {
+        (&self.layout0, &self.bind0)
     }
 
     /// True when this frame's opaque geometry is culled and drawn by the GPU.
@@ -867,17 +887,33 @@ impl TerrainRenderer {
         }
         let cam = camera.pos;
         let v4 = |v: Vec3, w: f32| [v.x, v.y, v.z, w];
+        let v = params.vertical_scale.max(1e-3);
+        let near = match params.near_area {
+            Some([x0, z0, x1, z1]) => [
+                self.planet.delta_x(cam.x, x0) as f32,
+                (z0 - cam.z) as f32,
+                (self.planet.delta_x(cam.x, x0) + (x1 - x0)) as f32,
+                (z1 - cam.z) as f32,
+            ],
+            // No LOD: the full-detail terrain covers everything.
+            None => [-1e9, -1e9, 1e9, 1e9],
+        };
         let globals = Globals {
             view_proj: vp.to_cols_array_2d(),
             sun_light: v4(params.direct_light, 0.0),
             sky_light: v4(params.sky_light, params.ambient_floor),
             block_light: v4(params.block_light, 0.0),
-            fog: [params.aerial, 0.0, 0.0, 0.0],
+            fog: [
+                params.haze_extinction,
+                params.precip_extinction,
+                1.0 / v,
+                (cam.y as f32).max(0.0) / v,
+            ],
             params: [
                 params.seconds,
                 params.anim_ticks,
-                params.fog_start,
-                params.fog_end,
+                (0.5 / (EARTH_RADIUS_M * v as f64)) as f32,
+                if params.aerial_perspective { 1.0 } else { 0.0 },
             ],
             sun: v4(params.light_dir, params.wind),
             camera: [
@@ -887,6 +923,7 @@ impl TerrainRenderer {
                 params.year_frac,
             ],
             overcast: params.overcast.to_array(),
+            near,
         };
         ctx.queue
             .write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
@@ -1168,7 +1205,13 @@ fn make_pipelines(
 ) -> Pipelines {
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("terrain.wgsl"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shaders/terrain.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(
+            concat!(
+                include_str!("shaders/common.wgsl"),
+                include_str!("shaders/terrain.wgsl")
+            )
+            .into(),
+        ),
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("terrain pipeline layout"),

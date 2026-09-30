@@ -1,5 +1,5 @@
-//! The frame: atmosphere lookup tables, opaque terrain (GPU-culled), the sky, translucent
-//! terrain, then tonemapping to the display. Lighting comes in physical units (lux) from the
+//! The frame: atmosphere lookup tables, opaque terrain (GPU-culled), distant LOD terrain, the
+//! sky, translucent terrain, then tonemapping to the display. Lighting comes in physical units (lux) from the
 //! caller (`hearth_env::sky`) and is pre-exposed here with an adapting eye.
 
 use glam::{Mat3, Vec2, Vec3};
@@ -8,6 +8,7 @@ use hearth_math::Planet;
 use crate::atlas::TextureArray;
 use crate::camera::Camera;
 use crate::gpu::GpuContext;
+use crate::lod::LodRenderer;
 use crate::post::PostProcess;
 use crate::precip::{PrecipRenderer, Precipitation, SkyHeights};
 use crate::sky::{SkyParams, SkyRenderer};
@@ -47,8 +48,8 @@ pub struct Environment {
     pub haze: f32,
     /// Block-light level at the camera (0..1), for adaptation to firelight.
     pub block_light_at_camera: f32,
-    pub fog_start: f32,
-    pub fog_end: f32,
+    /// Aerial perspective on (off only for tests and comparisons).
+    pub aerial_perspective: bool,
     /// Exposure compensation (1 = none).
     pub exposure_bias: f32,
     /// Rain or snow falling at the camera.
@@ -73,8 +74,7 @@ impl Default for Environment {
             cloud_offset: Vec2::ZERO,
             haze: 1.0,
             block_light_at_camera: 0.0,
-            fog_start: 150.0,
-            fog_end: 200.0,
+            aerial_perspective: true,
             exposure_bias: 1.0,
             precipitation: Precipitation::default(),
         }
@@ -93,6 +93,16 @@ impl Environment {
 pub struct SceneRenderer {
     pub sky: SkyRenderer,
     pub terrain: TerrainRenderer,
+    /// Distant terrain beyond the full-detail area.
+    pub lod: LodRenderer,
+    /// LOD tiles to draw this frame (ids of the current selection).
+    pub lod_show: Vec<u64>,
+    /// Full-detail terrain area in world blocks (min x, min z, max x, max z): the LOD draws
+    /// beyond it. `None` without LOD.
+    pub near_area: Option<[f64; 4]>,
+    /// Blocks per real metre of height (the world's vertical scale): the atmosphere's density
+    /// by altitude and the planet's curvature follow it.
+    pub vertical_scale: f32,
     pub precip: PrecipRenderer,
     pub post: PostProcess,
     /// Adapted illuminance (natural log of lux).
@@ -115,11 +125,16 @@ impl SceneRenderer {
     ) -> Self {
         let sky = SkyRenderer::new(ctx);
         let terrain = TerrainRenderer::new(ctx, atlas, &sky, planet, mip_levels, anisotropy);
+        let lod = LodRenderer::new(ctx, &terrain, planet, crate::post::HDR_FORMAT);
         Self {
             post: PostProcess::new(ctx, output_format),
             precip: PrecipRenderer::new(ctx),
             sky,
             terrain,
+            lod,
+            lod_show: Vec::new(),
+            near_area: None,
+            vertical_scale: 1.0,
             adapted: None,
             exposure: 1.0,
             night: 0.0,
@@ -192,13 +207,13 @@ impl SceneRenderer {
             sky_light: env.sky_lux * e,
             ambient_floor: NIGHT_FLOOR_LUX * e,
             block_light: FIRE_COLOR * FIRE_LUX * e,
-            // Extinction of the air near the ground (green): Rayleigh plus aerosol, as in
-            // `atmosphere.wgsl` (about 70 km visibility in clear air).
-            aerial: 1.36e-5
-                + 4.44e-5 * env.haze.max(0.1)
-                + precipitation_extinction(&env.precipitation),
-            fog_start: env.fog_start,
-            fog_end: env.fog_end,
+            // Aerosol at sea level as in `atmosphere.wgsl` (with Rayleigh, about 70 km of
+            // visibility in clear air), thickened by haze and humidity; rain and snow on top.
+            haze_extinction: 4.44e-5 * env.haze.max(0.1),
+            precip_extinction: precipitation_extinction(&env.precipitation),
+            vertical_scale: self.vertical_scale,
+            aerial_perspective: env.aerial_perspective,
+            near_area: self.near_area,
             seconds: env.seconds,
             anim_ticks: env.seconds * 20.0,
             wind: env.wind,
@@ -207,6 +222,8 @@ impl SceneRenderer {
         };
         self.terrain.prepare(ctx, camera, size, &params);
         let aspect = size.0.max(1) as f32 / size.1.max(1) as f32;
+        self.lod
+            .prepare(ctx, camera, aspect, self.vertical_scale, &self.lod_show);
         let star_visibility = 1.0 - smoothstep(0.05, 3.0, env.sky_lux.y);
         let moon_trans = (env.moon_dir.y * 6.0).clamp(0.0, 1.0);
         let sky = SkyParams {
@@ -258,6 +275,11 @@ impl SceneRenderer {
         let hdr = self.post.hdr_view(ctx, size).clone();
         self.terrain
             .render_opaque(ctx, enc, &hdr, depth, Some(wgpu::Color::BLACK));
+        {
+            let (_, bind0) = self.terrain.globals_bind();
+            let mut pass = begin_pass(enc, &hdr, depth, None);
+            self.lod.draw(&mut pass, bind0);
+        }
         {
             let mut pass = begin_pass(enc, &hdr, depth, None);
             self.sky.draw(&mut pass);

@@ -1,0 +1,24 @@
+[package]
+name = "hearth_lod"
+description = "Distant terrain: a quadtree of LOD tiles sampled straight from the world generator's surface model, and their meshes."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_math.workspace = true
+hearth_world.workspace = true
+hearth_worldgen.workspace = true
+hearth_env.workspace = true
+hearth_texgen.workspace = true
+bytemuck.workspace = true
+rustc-hash.workspace = true
+
+[dev-dependencies]
+hearth_content.workspace = true
+rayon.workspace = true
+
+[lints]
+workspace = true

@@ -41,6 +41,10 @@ pub enum StreamEvent {
         planet: Planet,
         spawn: DVec3,
         grid: Arc<hearth_worldgen::PlanetGrid>,
+        /// The world's generator and the LOD tile builder, for distant terrain.
+        generator: Arc<hearth_worldgen::WorldGenerator>,
+        lod: Arc<hearth_lod::LodGen>,
+        vertical_scale: f32,
     },
     Mesh(Box<CubeMesh>),
     Unload(CubePos),
@@ -126,11 +130,18 @@ fn run(
         lw.surface_y(sx as f64, sz as f64) + 12.0,
         sz as f64 + 0.5,
     );
+    let lod = Arc::new(hearth_lod::LodGen::new(
+        &lw.reg,
+        &hearth_texgen::textures_for(Some(&lw.content)),
+    ));
     if tx
         .send(StreamEvent::Ready {
             planet,
             spawn,
             grid: lw.grid(),
+            generator: lw.generator.clone(),
+            lod,
+            vertical_scale: lw.terrain().vertical_scale(),
         })
         .is_err()
     {

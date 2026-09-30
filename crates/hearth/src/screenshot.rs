@@ -1,8 +1,11 @@
 //! Headless screenshot mode: `hearth --screenshot "seed=1,season=autumn,hour=16,out=shot.png"`
 //! renders fixed camera shots to PNG without a window (a software adapter is used if no GPU
 //! exists). Shots can pick a latitude, date and time, so seasonal suites are one list file.
+//! Every shot waits for its distant (LOD) terrain to be built before rendering, and fails if
+//! that takes longer than `lod_timeout` seconds.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use glam::DVec3;
@@ -21,6 +24,7 @@ use hearth_render::scene::SceneRenderer;
 
 use crate::environment::{EnvOverrides, EnvSampler};
 use crate::scene::LocalWorld;
+use rayon::prelude::*;
 
 /// One screenshot request.
 #[derive(Debug, Clone, PartialEq)]
@@ -59,6 +63,12 @@ pub struct ShotSpec {
     pub software: bool,
     /// Also render with CPU culling and fail if GPU occlusion culling changes any pixel.
     pub verify_cull: bool,
+    /// Distant (LOD) terrain radius in chunks; 0 = none.
+    pub lod: u32,
+    /// Aerial perspective (haze and the blue of distance); off only for comparisons.
+    pub fog: bool,
+    /// Seconds the LOD terrain may take to build before the shot fails.
+    pub lod_timeout: f64,
 }
 
 impl Default for ShotSpec {
@@ -87,6 +97,9 @@ impl Default for ShotSpec {
             out: None,
             software: false,
             verify_cull: false,
+            lod: 256,
+            fog: true,
+            lod_timeout: 180.0,
         }
     }
 }
@@ -141,6 +154,9 @@ impl ShotSpec {
                 "out" => spec.out = Some(PathBuf::from(v)),
                 "software" => spec.software = v.parse()?,
                 "verify_cull" => spec.verify_cull = v.parse()?,
+                "lod" => spec.lod = v.parse()?,
+                "fog" => spec.fog = v.parse()?,
+                "lod_timeout" => spec.lod_timeout = v.parse()?,
                 other => anyhow::bail!("unknown screenshot key {other:?}"),
             }
         }
@@ -182,7 +198,7 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
     })?;
     log::info!("rendering on {} ({:?})", ctx.info.name, ctx.info.backend);
     let mut world: Option<(u64, PlanetSize, usize, LocalWorld)> = None;
-    let mut atlas: Option<TextureArray> = None;
+    let mut atlas: Option<(TextureArray, hearth_lod::LodGen)> = None;
     for (i, spec) in specs.iter().enumerate() {
         let out = spec
             .out
@@ -194,13 +210,17 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
             world = Some((spec.seed, spec.planet, spec.resolution, lw));
         }
         let lw = &mut world.as_mut().expect("created above").3;
-        let atlas = atlas.get_or_insert_with(|| {
-            TextureArray::from_entries(&hearth_texgen::textures_for(Some(&lw.content)))
+        let (atlas, lod) = atlas.get_or_insert_with(|| {
+            let entries = hearth_texgen::textures_for(Some(&lw.content));
+            (
+                TextureArray::from_entries(&entries),
+                hearth_lod::LodGen::new(&lw.reg, &entries),
+            )
         });
         let time = lw.content.time.clone();
         // Each shot starts from a clean map so dates don't mix (snow from an earlier shot).
         lw.map = hearth_world::CubeMap::new(*lw.map.planet());
-        shoot(&ctx, atlas, lw, spec, &out, Some(&time))?;
+        shoot(&ctx, atlas, lod, lw, spec, &out, Some(&time))?;
     }
     log::info!(
         "{} screenshot(s) in {:.2}s",
@@ -233,14 +253,30 @@ fn land_at_latitude(lw: &LocalWorld, lat: f64) -> Option<(f64, f64)> {
     best.map(|(_, p)| p)
 }
 
-fn shoot(
+/// A rendered shot: colour (RGBA8 rows), depth (reverse-Z) and the view it was taken from.
+pub struct Shot {
+    pub pixels: Vec<u8>,
+    pub depth: Vec<f32>,
+    pub camera: Camera,
+    /// Half-width of the full-detail area around the camera (blocks).
+    pub near_radius: f64,
+    /// LOD tiles drawn.
+    pub lod_tiles: usize,
+    pub terrain: hearth_render::terrain::TerrainStats,
+    pub lod: hearth_render::lod::LodStats,
+}
+
+/// Loads the full-detail terrain around the shot's camera, builds its LOD terrain, and renders
+/// it (three frames, so GPU culling settles; with `verify_cull`, checked against CPU culling).
+pub fn render_shot(
     ctx: &GpuContext,
     atlas: &TextureArray,
+    lod: &hearth_lod::LodGen,
     lw: &mut LocalWorld,
     spec: &ShotSpec,
     out: &Path,
     time: Option<&TimeConfig>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Shot> {
     let (sx, sz) = match (spec.x, spec.z, spec.lat) {
         (Some(x), Some(z), _) => (x, z),
         (_, _, Some(lat)) => land_at_latitude(lw, lat)
@@ -300,9 +336,7 @@ fn shoot(
             precipitation: spec.precipitation,
         },
     );
-    let radius = (spec.distance * 16) as f32;
-    env.fog_start = radius * 0.6;
-    env.fog_end = radius * 0.95;
+    env.aerial_perspective = spec.fog;
     log::info!(
         "  sun elevation {:.1}°, {:.0} lux, clouds {:.0}%, {:.1} °C, {:?}",
         env.sun_dir.y.asin().to_degrees(),
@@ -325,6 +359,58 @@ fn shoot(
         hearth_env::tint::DryType::of(&n, false),
         cover.snow_depth_m(year_frac),
         cover.snow_depth_m(cover.peak_snow()),
+    );
+    // Distant terrain: every LOD tile out to the LOD distance, built before the shot (the queue
+    // must be empty), beyond the full-detail cubes meshed above.
+    let c = hearth_math::CubePos::containing(camera.pos);
+    let r = spec.distance;
+    let near = [
+        ((c.x - r + 1) * 16) as f64,
+        ((c.z - r + 1) * 16) as f64,
+        ((c.x + r) * 16) as f64,
+        ((c.z + r) * 16) as f64,
+    ];
+    let t_lod = Instant::now();
+    let v = lw.terrain().vertical_scale() as f64;
+    let reach = hearth_lod::draw_distance(spec.lod, camera.pos.y, v);
+    let keys = if spec.lod > 0 {
+        hearth_lod::select(&planet, camera.pos.x, camera.pos.z, reach, Some(near))
+    } else {
+        Vec::new()
+    };
+    let late = AtomicBool::new(false);
+    let tiles: Vec<hearth_lod::TileMesh> = keys
+        .par_iter()
+        .filter_map(|k| {
+            if t_lod.elapsed().as_secs_f64() > spec.lod_timeout {
+                late.store(true, Ordering::Relaxed);
+                return None;
+            }
+            Some(lod.build(&lw.generator, *k))
+        })
+        .collect();
+    if late.load(Ordering::Relaxed) {
+        anyhow::bail!(
+            "LOD terrain was not ready after {:.0} s ({} of {} tiles built)",
+            spec.lod_timeout,
+            tiles.len(),
+            keys.len()
+        );
+    }
+    let mut quads = 0u64;
+    for t in &tiles {
+        crate::lod_stream::upload(ctx, &mut scene.lod, t);
+        quads += t.quads() as u64;
+    }
+    scene.lod_show = keys.iter().map(|k| k.id()).collect();
+    scene.near_area = (spec.lod > 0).then_some(near);
+    scene.vertical_scale = lw.terrain().vertical_scale();
+    log::info!(
+        "  LOD: {} tiles, {} quads to {:.0} blocks in {:.2}s",
+        tiles.len(),
+        quads,
+        reach,
+        t_lod.elapsed().as_secs_f64()
     );
     let target = OffscreenTarget::new(ctx, spec.width, spec.height);
     let size = (spec.width, spec.height);
@@ -377,15 +463,40 @@ fn shoot(
             );
         }
     }
-    write_png(out, spec.width, spec.height, &pixels)?;
-    let s = scene.terrain.stats;
+    let depth = target.read_depth(ctx);
+    Ok(Shot {
+        pixels,
+        depth,
+        camera,
+        near_radius: (spec.distance * 16) as f64,
+        lod_tiles: scene.lod.stats.drawn,
+        terrain: scene.terrain.stats,
+        lod: scene.lod.stats,
+    })
+}
+
+fn shoot(
+    ctx: &GpuContext,
+    atlas: &TextureArray,
+    lod: &hearth_lod::LodGen,
+    lw: &mut LocalWorld,
+    spec: &ShotSpec,
+    out: &Path,
+    time: Option<&TimeConfig>,
+) -> anyhow::Result<()> {
+    let shot = render_shot(ctx, atlas, lod, lw, spec, out, time)?;
+    write_png(out, spec.width, spec.height, &shot.pixels)?;
+    let s = shot.terrain;
     log::info!(
-        "wrote {} ({} visible cubes, {} draws, {} quads, {:.1} MiB mesh memory)",
+        "wrote {} ({} visible cubes, {} draws, {} quads, {:.1} MiB mesh memory; {} LOD tiles drawn, {} quads, {:.1} MiB)",
         out.display(),
         s.visible_cubes,
         s.draws,
         s.quads_drawn,
-        (s.packed_bytes + s.general_bytes) as f64 / (1 << 20) as f64
+        (s.packed_bytes + s.general_bytes) as f64 / (1 << 20) as f64,
+        shot.lod.drawn,
+        shot.lod.quads,
+        shot.lod.bytes as f64 / (1 << 20) as f64
     );
     Ok(())
 }

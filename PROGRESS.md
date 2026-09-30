@@ -212,6 +212,18 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
   copper stains, gossan, placer gravel, river cobbles, fumarole sulfur).
   Fixed a v1 bug: tree and debris placement drew their chance from 8 and 4 hash bits, so any
   biome with a non-zero tree density (steppe, savanna, plains, scrub) grew a closed forest.
+- **Interjection — distant terrain (done):** screenshots faded the terrain out at a fixed
+  distance. Cause: a render-distance fog in the terrain shader and, at the root, no LOD
+  terrain at all (v1 M8 had been left for V2-6). Fixed by building the core of v1 M8 now
+  (`hearth_lod` quadtree, fast surface sampling, meshes with skirts, `hearth_render::lod`,
+  preview streaming on its own thread pool, screenshots waiting for every tile with a loud
+  timeout; the LOD always reaches the horizon), replacing the fog with physical aerial
+  perspective (Rayleigh per colour and humidity-driven aerosol through an exponential
+  atmosphere, precipitation extinction), planet curvature, and a dithered handoff with the LOD
+  just behind the cubes and forest floors under LOD canopies. Regression test `lod_horizon`
+  (depth readback from a peak at LOD 512, fog on and off: 43 % of the ground below the horizon
+  beyond the full-detail area, 0.01 % empty); `tools/shots/lod_horizon.shots`. Also fixed:
+  reversed-edge `smoothstep` in the sky shader (undefined on Vulkan). D52–D54.
 - (d, part 1) Groundwater and coasts: water table from the drainage base, the smoothed land,
   rock permeability (new rock data) and climate; cave voids below it flooded (replacing v1's
   random aquifers); springs where the table meets slopes, desert oases and mineral springs
@@ -229,11 +241,6 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
   Generation cost of the new passes ≈ 5 % of surface cubes.
 
 ## Next steps
-0. **Interjected (in progress):** terrain fades out at a fixed distance in screenshots instead
-   of continuing to the horizon via LOD — diagnose (fog tied to render distance, LOD tiles
-   missing, harness not waiting for LOD, far-plane clipping), fix the root cause (physically
-   based aerial perspective by weather and humidity), add a depth-readback regression shot,
-   then resume V2-2.
 1. (d, part 2) Seasonal river levels and floodplain floods; finite conserved player-moved
    water with levelling and flow (v1 M5 fluids) and per-block quality; coastal salt pans.
 2. (e) Water rendering (v1 M7) and ice.

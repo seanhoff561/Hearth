@@ -124,8 +124,7 @@ impl EnvSampler {
             cloud_offset,
             haze: haze as f32,
             block_light_at_camera,
-            fog_start: 150.0,
-            fog_end: 200.0,
+            aerial_perspective: true,
             exposure_bias: 1.0,
             precipitation: precipitation(&w),
         };
