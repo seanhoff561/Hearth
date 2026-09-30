@@ -117,7 +117,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 ### Found by measuring
 | Optimization | Status | Evidence / impact |
 |---|---|---|
-| Environment sampling | **missing** | 0.23–0.37 ms per frame, mostly the sky's irradiance integrated on the CPU; its inputs hardly change from frame to frame. |
+| Environment sampling | done (result 1) | Was 0.23–0.37 ms per frame, the sky's irradiance integrated on the CPU; now interpolated between cached nodes (< 0.01 ms). |
 | Fewer queue writes per frame | **missing** | ~15 separate `write_buffer` calls a frame; submission costs 0.24–0.35 ms with spikes. |
 
 ## Plan
@@ -137,3 +137,10 @@ Missing and worth doing, one commit each with before/after numbers and an SSIM c
 Results are recorded below as they land.
 
 ## Results
+1. **Sky light cache** — the sky's irradiance (an integral over the sky, 0.13 ms per light,
+   plus 0.07 ms re-blending the atmosphere's tables) is computed at nodes of light elevation,
+   altitude and haze level and interpolated in log space (`SkyLightCache`; within 2.5 % of the
+   exact integral, twilight included). Environment sampling 0.23–0.37 → 0.005–0.009 ms; CPU per
+   frame 0.56–0.98 → 0.34–0.68 ms; average FPS coast 1015 → 1452, underwater 1034 → 1492, storm
+   781 → 839, cave 1228 → 1273, forest 873 → 858 (GPU-bound at 1.14 ms); SSIM ≥ 0.9995 in
+   every scene.

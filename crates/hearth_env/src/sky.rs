@@ -5,6 +5,7 @@
 //! irradiance, in lux per RGB channel; used for lighting uniforms and exposure, and later for
 //! the sun's warmth on the body.
 
+use std::borrow::Cow;
 use std::f64::consts::PI;
 use std::sync::OnceLock;
 
@@ -270,25 +271,39 @@ fn level_tables(i: usize) -> &'static Tables {
     LEVELS[i].get_or_init(|| Tables::build(HAZE_LEVELS[i]))
 }
 
+/// The haze level at or below `haze` and the weight of the next one.
+fn haze_bracket(haze: f64) -> (usize, f64) {
+    let h = haze.clamp(HAZE_LEVELS[0], HAZE_LEVELS[HAZE_LEVELS.len() - 1]);
+    let i = HAZE_LEVELS
+        .windows(2)
+        .position(|w| h <= w[1])
+        .unwrap_or(HAZE_LEVELS.len() - 2);
+    let (a, b) = (HAZE_LEVELS[i], HAZE_LEVELS[i + 1]);
+    (i, (h - a) / (b - a))
+}
+
 /// The atmosphere for one aerosol density (`haze` 1 = clear air).
 pub struct Atmosphere {
     haze: f64,
-    tables: Tables,
+    tables: Cow<'static, Tables>,
 }
 
 impl Atmosphere {
+    /// The atmosphere at one of the precomputed haze levels (no tables to blend).
+    fn level(i: usize) -> Self {
+        Self {
+            haze: HAZE_LEVELS[i],
+            tables: Cow::Borrowed(level_tables(i)),
+        }
+    }
+
     pub fn new(haze: f64) -> Self {
         let h = haze.clamp(HAZE_LEVELS[0], HAZE_LEVELS[HAZE_LEVELS.len() - 1]);
-        let i = HAZE_LEVELS
-            .windows(2)
-            .position(|w| h <= w[1])
-            .unwrap_or(HAZE_LEVELS.len() - 2);
-        let (a, b) = (HAZE_LEVELS[i], HAZE_LEVELS[i + 1]);
-        let w = (h - a) / (b - a);
+        let (i, w) = haze_bracket(h);
         let tables = if w < 1e-6 {
-            level_tables(i).clone()
+            Cow::Borrowed(level_tables(i))
         } else if w > 1.0 - 1e-6 {
-            level_tables(i + 1).clone()
+            Cow::Borrowed(level_tables(i + 1))
         } else {
             // Optical depth is linear in the aerosol density: blend transmittance in log space.
             let (ta, tb) = (level_tables(i), level_tables(i + 1));
@@ -297,7 +312,7 @@ impl Atmosphere {
                     .map(|k| (x[k].max(1e-30).ln() * (1.0 - w) + y[k].max(1e-30).ln() * w).exp())
             };
             let blend = |x: &Rgb, y: &Rgb| [0, 1, 2].map(|k| x[k] * (1.0 - w) + y[k] * w);
-            Tables {
+            Cow::Owned(Tables {
                 trans: ta
                     .trans
                     .iter()
@@ -310,7 +325,7 @@ impl Atmosphere {
                     .zip(&tb.ms_log)
                     .map(|(x, y)| blend(x, y))
                     .collect(),
-            }
+            })
         };
         Self { haze: h, tables }
     }
@@ -411,6 +426,83 @@ impl Atmosphere {
     }
 }
 
+/// Steps of the sky-irradiance nodes: light elevation (cosine) and altitude.
+const NODE_MU: f64 = 0.01;
+const NODE_ALT: f64 = 50.0;
+/// The whole sky is in the planet's shadow once a light is ~20 degrees below the horizon.
+const SKY_DARK_MU: f64 = -0.35;
+
+/// `SkyLight` for a frame loop. The sky's irradiance — an integral over the whole sky and the
+/// costly part (about 0.13 ms per light) — depends only on the light's elevation, the altitude
+/// and the haze, so it is computed at nodes (steps of 0.01 in the elevation's cosine and of 50
+/// in altitude, at the atmosphere's haze levels) and interpolated between them: a frame
+/// integrates only when a light or the camera reaches a new node. The atmosphere for the
+/// direct light is kept while the haze stays within half a percent.
+#[derive(Default)]
+pub struct SkyLightCache {
+    nodes: rustc_hash::FxHashMap<(i32, i32, u8), Rgb>,
+    atmosphere: Option<Atmosphere>,
+}
+
+impl SkyLightCache {
+    fn node(&mut self, mu_i: i32, alt_i: i32, level: usize) -> Rgb {
+        if self.nodes.len() > 1 << 16 {
+            self.nodes.clear();
+        }
+        *self
+            .nodes
+            .entry((mu_i, alt_i, level as u8))
+            .or_insert_with(|| {
+                let mu = (mu_i as f64 * NODE_MU).clamp(-1.0, 1.0);
+                if mu < SKY_DARK_MU {
+                    return [0.0; 3];
+                }
+                let light = DVec3::new((1.0 - mu * mu).max(0.0).sqrt(), mu, 0.0);
+                Atmosphere::level(level).sky_irradiance(alt_i as f64 * NODE_ALT, light)
+            })
+    }
+
+    /// Diffuse irradiance on a horizontal surface from the sky lit by a light whose elevation
+    /// has cosine `mu` (per unit illuminance of the light), as `sky_irradiance`.
+    pub fn sky_irradiance(&mut self, alt: f64, mu: f64, haze: f64) -> Rgb {
+        let (level, lw) = haze_bracket(haze);
+        let fm = mu.clamp(-1.0, 1.0) / NODE_MU;
+        let fa = alt.max(0.0) / NODE_ALT;
+        let (m0, a0) = (fm.floor(), fa.floor());
+        let (tm, ta) = (fm - m0, fa - a0);
+        // In log space: through twilight the sky's light falls off exponentially with the
+        // light's elevation, and linear interpolation would overestimate it.
+        let mut log = [0.0; 3];
+        for (dl, wl) in [(0, 1.0 - lw), (1, lw)] {
+            for (dm, wm) in [(0, 1.0 - tm), (1, tm)] {
+                for (da, wa) in [(0, 1.0 - ta), (1, ta)] {
+                    let w = wl * wm * wa;
+                    if w <= 0.0 {
+                        continue;
+                    }
+                    let v = self.node(m0 as i32 + dm, a0 as i32 + da, level + dl);
+                    for k in 0..3 {
+                        log[k] += v[k].max(1e-12).ln() * w;
+                    }
+                }
+            }
+        }
+        log.map(|l| if l < -25.0 { 0.0 } else { l.exp() })
+    }
+
+    /// The atmosphere for `haze`, rebuilt only when the haze has moved by half a percent.
+    fn atmosphere(&mut self, haze: f64) -> &Atmosphere {
+        let stale = self
+            .atmosphere
+            .as_ref()
+            .is_none_or(|a| (a.haze - haze).abs() > 0.005 * haze);
+        if stale {
+            self.atmosphere = Some(Atmosphere::new(haze));
+        }
+        self.atmosphere.as_ref().expect("set above")
+    }
+}
+
 /// Transmittance from radius `r` toward a direction with cosine `mu` to space (0 if the
 /// planet is in the way).
 pub fn transmittance(r: f64, mu: f64, haze: f64) -> Rgb {
@@ -454,26 +546,71 @@ impl SkyLight {
         haze: f64,
     ) -> Self {
         let atmosphere = Atmosphere::new(haze);
-        let r = R_GROUND + alt.max(1.0);
-        let st = atmosphere.transmittance(r, sun_dir.y);
-        let sun = st.map(|t| t * SUN_ILLUMINANCE);
-        let m_illum = moon_illuminance(moon_phase);
-        let mt = atmosphere.transmittance(r, moon_dir.y);
-        let moon = mt.map(|t| t * m_illum);
-        // The whole sky is in the planet's shadow once a light is ~20 degrees below the horizon.
         let irradiance = |dir: DVec3| {
-            if dir.y < -0.35 {
+            if dir.y < SKY_DARK_MU {
                 [0.0; 3]
             } else {
                 atmosphere.sky_irradiance(alt, dir)
             }
         };
         let s_irr = irradiance(sun_dir);
-        let m_irr = if m_illum > 0.0 {
+        let m_irr = if moon_illuminance(moon_phase) > 0.0 {
             irradiance(moon_dir)
         } else {
             [0.0; 3]
         };
+        Self::assemble(
+            &atmosphere,
+            alt,
+            (sun_dir, s_irr),
+            (moon_dir, m_irr),
+            moon_phase,
+            cloud_cover,
+        )
+    }
+
+    /// As `compute`, with the sky's irradiance interpolated from `cache` (for a frame loop).
+    pub fn compute_cached(
+        cache: &mut SkyLightCache,
+        alt: f64,
+        sun_dir: DVec3,
+        moon_dir: DVec3,
+        moon_phase: f64,
+        cloud_cover: f64,
+        haze: f64,
+    ) -> Self {
+        let s_irr = cache.sky_irradiance(alt, sun_dir.y, haze);
+        let m_irr = if moon_illuminance(moon_phase) > 0.0 {
+            cache.sky_irradiance(alt, moon_dir.y, haze)
+        } else {
+            [0.0; 3]
+        };
+        let atmosphere = cache.atmosphere(haze);
+        Self::assemble(
+            atmosphere,
+            alt,
+            (sun_dir, s_irr),
+            (moon_dir, m_irr),
+            moon_phase,
+            cloud_cover,
+        )
+    }
+
+    /// Direct light through the atmosphere, the sky's irradiance by each light, and clouds.
+    fn assemble(
+        atmosphere: &Atmosphere,
+        alt: f64,
+        (sun_dir, s_irr): (DVec3, Rgb),
+        (moon_dir, m_irr): (DVec3, Rgb),
+        moon_phase: f64,
+        cloud_cover: f64,
+    ) -> Self {
+        let r = R_GROUND + alt.max(1.0);
+        let st = atmosphere.transmittance(r, sun_dir.y);
+        let sun = st.map(|t| t * SUN_ILLUMINANCE);
+        let m_illum = moon_illuminance(moon_phase);
+        let mt = atmosphere.transmittance(r, moon_dir.y);
+        let moon = mt.map(|t| t * m_illum);
         let mut sky = [0.0; 3];
         for k in 0..3 {
             sky[k] = s_irr[k] * SUN_ILLUMINANCE + m_irr[k] * m_illum + NIGHT_SKY_ILLUMINANCE;
@@ -505,6 +642,29 @@ impl SkyLight {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_sky_light_matches_the_exact_integral() {
+        let mut cache = SkyLightCache::default();
+        let mut worst: f64 = 0.0;
+        for &haze in &[1.0, 1.37, 2.6] {
+            for &alt in &[0.0, 23.0, 180.0, 420.0] {
+                for k in 0..24 {
+                    let mu = -0.3 + k as f64 * 0.055;
+                    let sun = DVec3::new((1.0 - mu * mu).sqrt(), mu, 0.0);
+                    let moon = -sun;
+                    let exact = SkyLight::compute(alt, sun, moon, 0.5, 0.3, haze);
+                    let cached =
+                        SkyLight::compute_cached(&mut cache, alt, sun, moon, 0.5, 0.3, haze);
+                    let e = exact.sky[1].max(1e-3);
+                    worst = worst.max(((cached.sky[1] - exact.sky[1]) / e).abs());
+                    assert_eq!(cached.sun, exact.sun, "direct light is not interpolated");
+                }
+            }
+        }
+        // Within a couple of percent of the sky light, twilight included.
+        assert!(worst < 0.025, "sky light off by {:.2} %", worst * 100.0);
+    }
 
     fn up_at(elev_deg: f64) -> DVec3 {
         let e = elev_deg.to_radians();

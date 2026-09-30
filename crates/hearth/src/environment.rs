@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use glam::{DVec3, Mat3, Vec2, Vec3};
 use hearth_env::climate::Normals;
-use hearth_env::sky::SkyLight;
+use hearth_env::sky::{SkyLight, SkyLightCache};
 use hearth_env::weather::Precip;
 use hearth_env::{Calendar, Moment, WeatherModel, WeatherState, astro};
 use hearth_math::Planet;
@@ -19,6 +19,8 @@ pub struct EnvSampler {
     pub grid: Arc<PlanetGrid>,
     pub weather: WeatherModel,
     pub calendar: Calendar,
+    /// The sky's irradiance, integrated at nodes and interpolated from frame to frame.
+    sky: std::cell::RefCell<SkyLightCache>,
 }
 
 /// Optional overrides for tests and screenshots.
@@ -54,6 +56,7 @@ impl EnvSampler {
             planet,
             grid,
             calendar,
+            sky: Default::default(),
         }
     }
 
@@ -90,7 +93,8 @@ impl EnvSampler {
             };
         }
         let haze = 1.0 + 1.5 * (w.humidity - 0.5).max(0.0) + (w.precip_mm_h / 4.0).min(1.5);
-        let light = SkyLight::compute(
+        let light = SkyLight::compute_cached(
+            &mut self.sky.borrow_mut(),
             cam.y.max(0.0),
             sun.dir,
             moon.dir,
