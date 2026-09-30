@@ -181,13 +181,8 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
         GpuContext::headless(true)
     })?;
     log::info!("rendering on {} ({:?})", ctx.info.name, ctx.info.backend);
-    let atlas = TextureArray::from_entries(&hearth_texgen::default_textures());
-    let (time, report) =
-        hearth_content::content::load_time_config(&[crate::scene::data_pack_dir()]);
-    for d in report.sorted() {
-        log::warn!("{d}");
-    }
     let mut world: Option<(u64, PlanetSize, usize, LocalWorld)> = None;
+    let mut atlas: Option<TextureArray> = None;
     for (i, spec) in specs.iter().enumerate() {
         let out = spec
             .out
@@ -199,9 +194,13 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
             world = Some((spec.seed, spec.planet, spec.resolution, lw));
         }
         let lw = &mut world.as_mut().expect("created above").3;
+        let atlas = atlas.get_or_insert_with(|| {
+            TextureArray::from_entries(&hearth_texgen::textures_for(Some(&lw.content)))
+        });
+        let time = lw.content.time.clone();
         // Each shot starts from a clean map so dates don't mix (snow from an earlier shot).
         lw.map = hearth_world::CubeMap::new(*lw.map.planet());
-        shoot(&ctx, &atlas, lw, spec, &out, time.as_ref())?;
+        shoot(&ctx, atlas, lw, spec, &out, Some(&time))?;
     }
     log::info!(
         "{} screenshot(s) in {:.2}s",

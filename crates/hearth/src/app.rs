@@ -334,7 +334,7 @@ impl ApplicationHandler for App {
             Preview::default_world(self.seed, Some(self.dirs.cache())),
             &self.options,
             renderer.color_format(),
-            self.content.content.as_ref().map(|c| &c.time),
+            self.content.content.as_deref(),
         );
         self.running = Some(Running {
             window,

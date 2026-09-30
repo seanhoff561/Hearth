@@ -74,7 +74,14 @@ fn v2_0_world_loads_after_the_format_change() {
         hearth_world::datapack::load_block_defs(&[hearth_world::datapack::builtin_pack_dir()])
             .unwrap();
     let (reg, remap) = registry_for_save(defs.clone(), &meta.block_states).unwrap();
-    assert_eq!(remap.placeholders, vec!["hearth:coal_ore".to_string()]);
+    // Both blocks were removed from the base content since (coal ore in V2-0, the generic
+    // stone when real rock types replaced it in V2-2): they come back as named placeholders.
+    let mut placeholders = remap.placeholders.clone();
+    placeholders.sort();
+    assert_eq!(
+        placeholders,
+        vec!["hearth:coal_ore".to_string(), "hearth:stone".to_string()]
+    );
     let mut store = dir.regions();
     let cube = store
         .read_cube(CubePos::new(0, 0, 0), &|i| remap.map(i))

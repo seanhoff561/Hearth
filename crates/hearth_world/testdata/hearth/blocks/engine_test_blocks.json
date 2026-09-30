@@ -1,4 +1,5 @@
 {
+  "stone": {"template": "rock", "map_color": "#707070"},
   "torch": {"hardness": 0.0, "resistance": 0.0, "shape": {"boxes": [[6, 0, 6, 10, 10, 10]]}, "collision": false, "opaque": false, "render": "model", "layer": "cutout", "emission": 14, "sound": "wood", "map_color": "#ffd000"},
   "wall_torch": {"properties": ["facing:north,south,west,east"], "hardness": 0.0, "resistance": 0.0, "shape": {"boxes": [[5.5, 3, 11, 10.5, 13, 16]]}, "collision": false, "opaque": false, "render": "model", "layer": "cutout", "emission": 14, "sound": "wood", "item": false, "map_color": "#ffd000"},
   "glass": {"hardness": 0.3, "resistance": 0.3, "opaque": false, "layer": "cutout", "sound": "glass", "map_color": "#c0e0ff"},

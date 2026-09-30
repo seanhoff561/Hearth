@@ -24,15 +24,7 @@ fn stone_pal() -> Palette {
         [143, 143, 143],
     ])
 }
-fn deepslate_pal() -> Palette {
-    Palette(vec![
-        [52, 52, 58],
-        [62, 62, 68],
-        [72, 72, 78],
-        [82, 82, 88],
-        [92, 92, 97],
-    ])
-}
+
 fn dirt_pal() -> Palette {
     Palette(vec![
         [94, 64, 42],
@@ -457,18 +449,6 @@ pub fn textures() -> Vec<TexEntry> {
     // Stone family.
     let stone = rocky(h("stone"), &stone_pal(), 5);
     add("stone", stone.clone());
-    let deepslate = {
-        let seed = h("deepslate");
-        paint(S, S, |x, y| {
-            let layer = value_noise(seed, x as f32 * 0.4, y as f32 * 2.2, 2.0, 16.0);
-            deepslate_pal().pick(layer * 0.6 + rand01(seed, x, y) * 0.4)
-        })
-    };
-    add("deepslate", deepslate.clone());
-    add(
-        "deepslate_top",
-        noisy(h("deepslate_top"), &deepslate_pal(), 0.5),
-    );
     add(
         "cobblestone",
         cobble(h("cobble"), &stone_pal(), [76, 76, 76]),
@@ -481,96 +461,7 @@ pub fn textures() -> Vec<TexEntry> {
             0.38,
         ),
     );
-    let granite_pal = Palette(vec![
-        [138, 92, 74],
-        [152, 104, 84],
-        [164, 114, 92],
-        [176, 124, 100],
-    ]);
-    add(
-        "granite",
-        speckled(
-            h("granite"),
-            &granite_pal,
-            &[[190, 150, 130], [110, 70, 60]],
-            0.14,
-        ),
-    );
-    let diorite_pal = Palette(vec![
-        [170, 170, 170],
-        [188, 188, 188],
-        [204, 204, 204],
-        [220, 220, 220],
-    ]);
-    add(
-        "diorite",
-        speckled(
-            h("diorite"),
-            &diorite_pal,
-            &[[110, 110, 110], [240, 240, 240]],
-            0.18,
-        ),
-    );
-    let andesite_pal = Palette(vec![
-        [112, 112, 112],
-        [124, 124, 124],
-        [134, 134, 134],
-        [146, 146, 146],
-    ]);
-    add(
-        "andesite",
-        speckled(
-            h("andesite"),
-            &andesite_pal,
-            &[[160, 160, 160], [96, 96, 96]],
-            0.1,
-        ),
-    );
-    let tuff_pal = Palette(vec![
-        [92, 94, 86],
-        [104, 106, 98],
-        [114, 116, 108],
-        [124, 126, 116],
-    ]);
-    add(
-        "tuff",
-        speckled(h("tuff"), &tuff_pal, &[[74, 76, 70], [140, 140, 128]], 0.12),
-    );
-    let calcite_pal = Palette(vec![
-        [206, 206, 200],
-        [216, 216, 212],
-        [226, 226, 222],
-        [236, 236, 232],
-    ]);
-    add(
-        "calcite",
-        speckled(h("calcite"), &calcite_pal, &[[190, 192, 186]], 0.08),
-    );
-    // Sandstone.
-    for (prefix, pal) in [("", sand_pal()), ("red_", red_sand_pal())] {
-        let seed = h(&format!("{prefix}sandstone"));
-        add(
-            &format!("{prefix}sandstone"),
-            paint(S, S, |x, y| {
-                let band = if y < 3 {
-                    0.75
-                } else if y > 12 {
-                    0.3
-                } else {
-                    0.5 + value_noise(seed, x as f32, y as f32 * 3.0, 4.0, 16.0) * 0.3
-                };
-                pal.pick(band + rand01(seed, x, y) * 0.12)
-            }),
-        );
-        add(
-            &format!("{prefix}sandstone_top"),
-            noisy(seed ^ 1, &pal, 0.3),
-        );
-        add(
-            &format!("{prefix}sandstone_bottom"),
-            rocky(seed ^ 2, &pal, 2),
-        );
-    }
+    // Rock types are drawn from their materials' appearance (`material.rs`).
 
     // Soils.
     let dirt = noisy(h("dirt"), &dirt_pal(), 0.6);

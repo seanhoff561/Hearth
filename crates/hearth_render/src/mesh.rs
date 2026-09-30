@@ -956,7 +956,9 @@ mod tests {
 
     fn setup() -> (BlockRegistry, BlockModels) {
         let reg = hearth_world::datapack::load_test_registry().unwrap();
-        let atlas = TextureArray::from_entries(&hearth_texgen::default_textures());
+        let atlas = TextureArray::from_entries(&hearth_texgen::textures_for(Some(
+            &hearth_content::Content::load_base(),
+        )));
         let models = BlockModels::build(&reg, &atlas);
         (reg, models)
     }

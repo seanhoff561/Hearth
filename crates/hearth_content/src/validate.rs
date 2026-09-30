@@ -123,8 +123,34 @@ pub fn validate(content: &Content, report: &mut Report) {
                 c.range("presence", l.presence, 0.0, 1.0);
             }
             c.pair("dip_deg", p.dip_deg, 0.0, 90.0);
+            c.range("weight", p.weight, 0.0, 100.0);
+            for word in &p.conditions {
+                if !crate::schema::geology::PROVINCE_CONDITIONS.contains(&word.as_str()) {
+                    c.report.error(
+                        "unknown-condition",
+                        Some(c.file.clone()),
+                        c.line,
+                        format!(
+                            "`{}`: condition {word:?} is not one the generator understands ({})",
+                            c.id,
+                            crate::schema::geology::PROVINCE_CONDITIONS.join(", ")
+                        ),
+                    );
+                }
+            }
         },
     );
+    // Every tectonic setting needs a province, or its regions borrow another's rocks.
+    for setting in crate::schema::geology::TectonicSetting::ALL {
+        if !content.provinces.iter().any(|p| p.setting == setting) {
+            report.warning(
+                "province-coverage",
+                None,
+                None,
+                format!("no geological province for the {setting:?} setting"),
+            );
+        }
+    }
     each(
         &content.deposits,
         report,

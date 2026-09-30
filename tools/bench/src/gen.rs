@@ -57,7 +57,8 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     let t0 = Instant::now();
     let grid = Arc::new(PlanetGrid::build(&settings, &|_, _| {}));
     let terrain = Arc::new(Terrain::new(grid));
-    let generator = WorldGenerator::new(terrain.clone(), &reg)?;
+    let content = hearth_content::Content::load_base();
+    let generator = WorldGenerator::new(terrain.clone(), &reg, &content)?;
     println!("world ready in {:.2}s", t0.elapsed().as_secs_f64());
     let (sx, sz) = at.unwrap_or_else(|| terrain.find_spawn(false));
     let surface = terrain.sample(sx, sz).height_i();

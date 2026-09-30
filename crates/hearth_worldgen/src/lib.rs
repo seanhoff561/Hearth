@@ -7,6 +7,7 @@
 //! 3. Cube generation — terrain, caves, ores, water and features for one 16³ cube.
 
 pub mod cubegen;
+pub mod geology;
 pub mod noise;
 pub mod planet;
 pub mod region;

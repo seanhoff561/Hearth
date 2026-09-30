@@ -4,6 +4,7 @@
 //! third-party assets. The generator is deterministic: every build produces identical images.
 
 pub mod blocks;
+pub mod material;
 pub mod paint;
 
 pub use paint::Tex;
@@ -30,9 +31,21 @@ impl TexEntry {
     }
 }
 
-/// The whole default texture pack.
+/// The hand-drawn part of the default texture pack.
 pub fn default_textures() -> Vec<TexEntry> {
     blocks::textures()
+}
+
+/// The default pack plus textures for the blocks the content generates (which replace any
+/// hand-drawn texture of the same name).
+pub fn textures_for(content: Option<&hearth_content::Content>) -> Vec<TexEntry> {
+    let generated = content.map(material::natural_textures).unwrap_or_default();
+    let mut out: Vec<TexEntry> = default_textures()
+        .into_iter()
+        .filter(|t| !generated.iter().any(|g| g.name == t.name))
+        .collect();
+    out.extend(generated);
+    out
 }
 
 /// Writes the pack to `<dir>/assets/hearth/textures/<name>.png` (plus `.mcmeta` animation
@@ -61,8 +74,9 @@ mod tests {
 
     #[test]
     fn pack_is_deterministic_and_well_formed() {
-        let a = default_textures();
-        let b = default_textures();
+        let content = hearth_content::Content::load_base();
+        let a = textures_for(Some(&content));
+        let b = textures_for(Some(&content));
         assert_eq!(a.len(), b.len());
         let mut names = std::collections::BTreeSet::new();
         for (x, y) in a.iter().zip(&b) {
@@ -73,5 +87,10 @@ mod tests {
             assert!(names.insert(x.name.clone()), "duplicate {}", x.name);
         }
         assert!(a.len() > 80, "{} textures", a.len());
+        // Every rock type has its texture, drawn from its material.
+        for rock in content.rocks.iter() {
+            let path = rock.id.split_once(':').map_or(rock.id.as_str(), |(_, p)| p);
+            assert!(names.contains(&format!("block/{path}")), "{path}");
+        }
     }
 }

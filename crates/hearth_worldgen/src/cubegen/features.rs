@@ -94,7 +94,7 @@ impl Priorities<'_> {
                 return 40 - d as u32; // distance 1 → 40, distance 7 → 34
             }
         }
-        if s == b.mossy_cobblestone || s == b.cobblestone || s == b.andesite || s == b.cactus {
+        if s == b.mossy_cobblestone || s == b.cobblestone || s == b.cactus {
             return 50;
         }
         if is_plant(b, s) {
@@ -1004,10 +1004,11 @@ impl FeatureGen {
             | Biome::Krummholz
                 if u < 0.08 =>
             {
+                // Boulders of the local bedrock, mossy in wet climates.
                 let rock = if s.precipitation > 900.0 {
                     b.mossy_cobblestone
-                } else if rng.chance(0.5) {
-                    b.andesite
+                } else if rng.chance(0.6) {
+                    wg.rock_at(ox, y - 8, oz)
                 } else {
                     b.cobblestone
                 };

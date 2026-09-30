@@ -89,12 +89,47 @@ fn json_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// Block objects for the natural blocks the packs' content defines (one per rock type, see
+/// `hearth_content::generate::natural_blocks`), in the same form as a pack's JSON so templates
+/// apply and a pack can override any of them by name.
+fn generated_blocks(packs: &[PathBuf]) -> Vec<(ResourceLocation, Map<String, Value>)> {
+    let (Some(content), _) = hearth_content::Content::load(packs) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for b in hearth_content::generate::natural_blocks(&content) {
+        let Ok(id) = ResourceLocation::parse(&b.id) else {
+            continue;
+        };
+        let template = match b.kind {
+            hearth_content::generate::NaturalKind::Rock => "hearth:rock",
+        };
+        let [r, g, bl] = b.map_color;
+        let mut obj = Map::new();
+        obj.insert("template".into(), template.into());
+        obj.insert("hardness".into(), Value::from(b.hardness as f64));
+        obj.insert("resistance".into(), Value::from(b.hardness as f64 * 4.0));
+        obj.insert(
+            "map_color".into(),
+            format!("#{r:02x}{g:02x}{bl:02x}").into(),
+        );
+        obj.insert("material".into(), b.material.into());
+        out.push((id, obj));
+    }
+    out
+}
+
 /// Loads all block definitions from the given pack roots, in priority order (later packs
-/// override earlier ones). Returns definitions sorted by id for deterministic registration.
+/// override earlier ones), plus the natural blocks generated from the packs' content (which
+/// any pack's JSON overrides). Returns definitions sorted by id for deterministic
+/// registration.
 pub fn load_block_defs(packs: &[PathBuf]) -> Result<Vec<(ResourceLocation, BlockDef)>, DataError> {
     // Templates are global across packs: "ns:name" → object.
     let mut templates: BTreeMap<String, Map<String, Value>> = BTreeMap::new();
     let mut raw: BTreeMap<ResourceLocation, (PathBuf, Map<String, Value>)> = BTreeMap::new();
+    for (id, obj) in generated_blocks(packs) {
+        raw.insert(id, (PathBuf::from("<generated from content>"), obj));
+    }
     for pack in packs {
         for (ns, dir) in namespaces(pack) {
             let blocks_dir = dir.join("blocks");
@@ -280,7 +315,9 @@ mod builtin_tests {
         assert!(reg.block_count() > 50, "{} blocks", reg.block_count());
         assert!(reg.state_count() < 16_000, "{} states", reg.state_count());
         for name in [
-            "stone",
+            "granite",
+            "chalk",
+            "bituminous_coal",
             "grass_block[snowy=false]",
             "oak_leaves[distance=3,persistent=false,waterlogged=false]",
             "water[level=0]",
@@ -295,6 +332,8 @@ mod builtin_tests {
             "coal_ore",
             "crafting_table",
             "oak_planks",
+            "stone",
+            "deepslate",
         ] {
             assert!(
                 reg.parse_state(dropped).is_err(),
@@ -305,7 +344,18 @@ mod builtin_tests {
         assert!(reg.has(seagrass, StateFlags::WATER));
         let ice = reg.default_state("ice");
         assert!(!reg.is_opaque(ice));
-        assert!(reg.is_opaque(reg.default_state("stone")));
+        // Rock blocks are generated from the content's rock types, with their materials.
+        let granite = reg.default_state("granite");
+        assert!(reg.is_opaque(granite));
+        assert_eq!(
+            reg.block_of(granite).def.material.as_deref(),
+            Some("hearth:granite")
+        );
+        let chalk = reg.block_of(reg.default_state("chalk"));
+        assert!(
+            chalk.def.hardness < reg.block_of(granite).def.hardness,
+            "chalk is soft"
+        );
     }
 
     #[test]

@@ -166,6 +166,9 @@ pub struct BlockDef {
     pub model: Option<String>,
     /// Burn/ignite values (no fire in the base game, kept for mods).
     pub flammable: bool,
+    /// The physical material the block is made of (`materials/`), if any: its properties
+    /// (density, strength, heat) apply to the block.
+    pub material: Option<String>,
 }
 
 impl Default for BlockDef {
@@ -199,6 +202,7 @@ impl Default for BlockDef {
             behavior: None,
             model: None,
             flammable: false,
+            material: None,
         }
     }
 }

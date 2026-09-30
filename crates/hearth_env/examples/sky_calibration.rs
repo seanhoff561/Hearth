@@ -11,7 +11,9 @@ fn main() {
     for haze in [1.0, 3.0] {
         let atm = Atmosphere::new(haze);
         println!("haze {haze}");
-        for elev in [60.0f64, 30.0, 10.0, 0.0, -2.0, -4.0, -6.0, -8.0, -10.0, -12.0] {
+        for elev in [
+            60.0f64, 30.0, 10.0, 0.0, -2.0, -4.0, -6.0, -8.0, -10.0, -12.0,
+        ] {
             let e = elev.to_radians();
             let sun = DVec3::new(e.cos(), e.sin(), 0.0);
             let diffuse = atm.sky_irradiance_with(80.0, sun, 32, 16, 64);

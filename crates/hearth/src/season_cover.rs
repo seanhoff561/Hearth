@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn still_water_freezes_and_thaws() {
         let mut f = fixture();
-        put(&mut f, 3, 3, 3, "stone");
+        put(&mut f, 3, 3, 3, "granite");
         f.map
             .set_block(BlockPos::new(3, 4, 3), f.states.water, &f.reg);
         let mut t = target(3, 3, 0);

@@ -183,3 +183,78 @@ mod tests {
         );
     }
 }
+
+/// What a generated natural block is (its template and behaviour).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NaturalKind {
+    /// Bedrock and outcrops of a rock type.
+    Rock,
+}
+
+/// A block generated from the content tables: one per rock type, so a new rock in data gets
+/// its block (and texture, from the material's appearance) without code.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NaturalBlock {
+    /// Namespaced block id (the rock's id).
+    pub id: String,
+    pub name: String,
+    /// Namespaced material id.
+    pub material: String,
+    pub kind: NaturalKind,
+    /// Break-time factor (≈1.5 for ordinary stone), from the material's strength.
+    pub hardness: f32,
+    pub map_color: [u8; 3],
+}
+
+/// Break-time factor of a material: compressive strength where known, else Mohs hardness.
+fn hardness_of(m: &Material) -> f32 {
+    let h = match (m.strength.compressive_mpa, m.hardness_mohs) {
+        (Some(ucs), _) => 0.4 + ucs / 75.0,
+        (None, Some(mohs)) => 0.3 + 0.3 * mohs,
+        _ => 1.5,
+    };
+    h.clamp(0.3, 4.0)
+}
+
+/// The natural blocks the content defines (every rock type).
+pub fn natural_blocks(c: &crate::Content) -> Vec<NaturalBlock> {
+    let mut out = Vec::new();
+    for rock in c.rocks.iter() {
+        let Some(m) = c.materials.get(rock.material.as_str()) else {
+            continue;
+        };
+        out.push(NaturalBlock {
+            id: rock.id().to_owned(),
+            name: rock.name.clone(),
+            material: rock.material.as_str().to_owned(),
+            kind: NaturalKind::Rock,
+            hardness: hardness_of(m),
+            map_color: m.appearance.color.0,
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod natural_tests {
+    use super::*;
+
+    #[test]
+    fn every_rock_gets_a_block() {
+        let c = crate::Content::load_base();
+        let blocks = natural_blocks(&c);
+        assert_eq!(blocks.len(), c.rocks.len());
+        let chalk = blocks
+            .iter()
+            .find(|b| b.id == "hearth:chalk")
+            .expect("chalk");
+        let granite = blocks
+            .iter()
+            .find(|b| b.id == "hearth:granite")
+            .expect("granite");
+        assert!(
+            chalk.hardness < 1.0 && granite.hardness > 2.0,
+            "{chalk:?} {granite:?}"
+        );
+    }
+}

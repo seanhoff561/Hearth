@@ -355,16 +355,6 @@ fn cube_model(
         let log = name.replace("_wood", "_log");
         let axis = prop(reg, s, "axis").unwrap_or("y");
         axis_faces(ctx.tex(&log), ctx.tex(&log), axis)
-    } else if name == "sandstone" || name == "red_sandstone" {
-        let mut f = all(ctx.tex(name));
-        f[up] = ctx.tex(&format!("{name}_top"));
-        f[down] = ctx.tex(&format!("{name}_bottom"));
-        f
-    } else if name == "deepslate" {
-        let mut f = all(ctx.tex("deepslate"));
-        f[up] = ctx.tex("deepslate_top");
-        f[down] = ctx.tex("deepslate_top");
-        f
     } else if name == "snow_block" {
         all(ctx.tex("snow"))
     } else {
@@ -645,7 +635,9 @@ mod tests {
 
     fn setup() -> (BlockRegistry, TextureArray, BlockModels) {
         let reg = hearth_world::datapack::load_test_registry().unwrap();
-        let atlas = TextureArray::from_entries(&hearth_texgen::default_textures());
+        let atlas = TextureArray::from_entries(&hearth_texgen::textures_for(Some(
+            &hearth_content::Content::load_base(),
+        )));
         let models = BlockModels::build(&reg, &atlas);
         (reg, atlas, models)
     }
@@ -654,7 +646,9 @@ mod tests {
     fn every_state_has_a_model_with_known_textures() {
         // Game content only: the engine test pack's blocks have no textures on purpose.
         let reg = hearth_world::datapack::load_builtin_registry().unwrap();
-        let atlas = TextureArray::from_entries(&hearth_texgen::default_textures());
+        let atlas = TextureArray::from_entries(&hearth_texgen::textures_for(Some(
+            &hearth_content::Content::load_base(),
+        )));
         let models = BlockModels::build(&reg, &atlas);
         assert_eq!(models.len(), reg.state_count());
         let missing = atlas.get("block/missing").layer;

@@ -24,5 +24,8 @@ log.workspace = true
 thiserror.workspace = true
 pollster.workspace = true
 
+[dev-dependencies]
+hearth_content.workspace = true
+
 [lints]
 workspace = true

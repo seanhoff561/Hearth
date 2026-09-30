@@ -3,24 +3,22 @@
 //!
 //! Each cube is first classified cheaply:
 //! * **Empty** — entirely above terrain, water and any feature: air, no noise evaluated.
-//! * **Deep** — entirely below the surface band: base rock by depth, then ore/rock blobs and
-//!   any caves whose bounding volumes intersect it. No surface noise.
+//! * **Deep** — entirely below the surface band: the geology's rock columns, then any caves
+//!   whose bounding volumes intersect it. No surface noise.
 //! * **Surface** — everything else: full per-column evaluation.
 
 pub mod blocks;
 pub mod cache;
 pub mod caves;
 pub mod features;
-pub mod veins;
 
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use hearth_math::hash::hash_3d;
 use hearth_math::{CUBE_SIZE, CUBE_VOLUME, ColumnPos, CubePos, Planet};
 use hearth_world::{BlockRegistry, BlockStateId, Cube};
 
-use crate::region::biome::Biome;
+use crate::geology::{Geology, RockColumn};
 use crate::region::{ColumnSample, Terrain};
 use blocks::{GenBlocks, MissingBlock};
 use cache::Cache;
@@ -31,8 +29,6 @@ pub const MAX_FEATURE_HEIGHT: i32 = 48;
 pub const CLIFF_AMPLITUDE: i32 = 8;
 /// Maximum soil/filler depth under the surface (dune seas are the thickest).
 pub const MAX_SOIL_DEPTH: i32 = 12;
-/// Below this Y deepslate dominates regardless of the surface.
-pub const DEEPSLATE_FLOOR: i32 = -512;
 
 /// Per-16×16-column cached surface data.
 #[derive(Debug, Clone)]
@@ -113,9 +109,11 @@ thread_local! {
 pub struct WorldGenerator {
     pub terrain: Arc<Terrain>,
     pub blocks: GenBlocks,
+    pub geology: Geology,
     columns: Cache<ColumnPos, ColumnData>,
+    /// Rock columns of 16×16 block columns (index `z * 16 + x`).
+    rocks: Cache<ColumnPos, Vec<RockColumn>>,
     caves: caves::CaveGen,
-    veins: veins::VeinGen,
     features: features::FeatureGen,
     planet: Planet,
     seed: u64,
@@ -123,18 +121,23 @@ pub struct WorldGenerator {
 }
 
 impl WorldGenerator {
-    pub fn new(terrain: Arc<Terrain>, reg: &BlockRegistry) -> Result<Self, MissingBlock> {
+    /// A generator for the planet in `terrain`, with rocks and provinces from `content`.
+    pub fn new(
+        terrain: Arc<Terrain>,
+        reg: &BlockRegistry,
+        content: &hearth_content::Content,
+    ) -> Result<Self, MissingBlock> {
         let blocks = GenBlocks::resolve(reg)?;
+        let geology = Geology::new(&terrain.grid, content, reg)?;
         let seed = terrain.seed();
         let v = terrain.vertical_scale();
-        let rarity = terrain.grid.layout.plates.len() as u64; // mixed into cavern seeds only
-        let _ = rarity;
         Ok(Self {
             caves: caves::CaveGen::new(seed, v),
-            veins: veins::VeinGen::new(seed, v),
             features: features::FeatureGen::new(seed),
             planet: *terrain.planet(),
             columns: Cache::new(8192),
+            rocks: Cache::new(1024),
+            geology,
             blocks,
             seed,
             terrain,
@@ -156,6 +159,27 @@ impl WorldGenerator {
         let pos = self.planet.wrap_column(pos);
         self.columns
             .get_or_insert_with(pos, || self.compute_column(pos))
+    }
+
+    /// Rock columns of a 16×16 column (index `z * 16 + x`).
+    pub fn rock_columns(&self, pos: ColumnPos) -> Arc<Vec<RockColumn>> {
+        let pos = self.planet.wrap_column(pos);
+        self.rocks.get_or_insert_with(pos, || {
+            let (x0, z0) = pos.min_block_xz();
+            let mut v = Vec::with_capacity(256);
+            for lz in 0..16 {
+                for lx in 0..16 {
+                    v.push(self.geology.column(x0 + lx, z0 + lz));
+                }
+            }
+            v
+        })
+    }
+
+    /// The bedrock (ignoring soil, caves and features) at a block.
+    pub fn rock_at(&self, x: i32, y: i32, z: i32) -> BlockStateId {
+        let col = self.rock_columns(ColumnPos::new(x >> 4, z >> 4));
+        col[((z & 15) * 16 + (x & 15)) as usize].rock_at(y)
     }
 
     fn compute_column(&self, pos: ColumnPos) -> ColumnData {
@@ -245,11 +269,11 @@ impl WorldGenerator {
             let mut buf = cell.borrow_mut();
             buf.origin = pos.min_block();
             let col = self.column(pos.column());
+            let rocks = self.rock_columns(pos.column());
             match class {
-                CubeClass::Deep => self.fill_deep(&mut buf, &col),
-                _ => self.fill_surface(&mut buf, &col),
+                CubeClass::Deep => self.fill_deep(&mut buf, &rocks),
+                _ => self.fill_surface(&mut buf, &col, &rocks),
             }
-            self.veins.apply(&mut buf, pos, &self.terrain, &self.blocks);
             self.caves
                 .carve(&mut buf, pos, &col, &self.terrain, &self.blocks);
             if class == CubeClass::Surface {
@@ -259,51 +283,26 @@ impl WorldGenerator {
         })
     }
 
-    /// Rock at a block given the local terrain top (first non-ground Y).
-    #[inline]
-    fn rock(&self, x: i32, y: i32, z: i32, top: i32) -> BlockStateId {
-        if y < DEEPSLATE_FLOOR {
-            return self.blocks.deepslate;
-        }
-        let depth = top - 1 - y;
-        let jitter = (hash_3d(self.seed, x, y, z) & 15) as i32;
-        if depth > 44 + jitter {
-            self.blocks.deepslate
-        } else {
-            self.blocks.stone
-        }
-    }
-
-    fn fill_deep(&self, buf: &mut CubeBuf, col: &ColumnData) {
+    fn fill_deep(&self, buf: &mut CubeBuf, rocks: &[RockColumn]) {
         let o = buf.origin;
-        let y1 = o.y + 15;
-        // Uniform fast paths.
-        if y1 < DEEPSLATE_FLOOR || y1 < col.h_min - 61 {
-            buf.states.fill(self.blocks.deepslate);
-            return;
-        }
-        if o.y > DEEPSLATE_FLOOR && o.y >= col.h_max - 44 {
-            buf.states.fill(self.blocks.stone);
-            return;
-        }
         for lz in 0..16 {
             for lx in 0..16 {
-                let top = col.at(lx as usize, lz as usize).height_i();
+                let rc = &rocks[(lz * 16 + lx) as usize];
                 for ly in 0..16 {
-                    let (x, y, z) = (o.x + lx, o.y + ly, o.z + lz);
                     let i = ((ly as usize) << 8) | ((lz as usize) << 4) | lx as usize;
-                    buf.states[i] = self.rock(x, y, z, top);
+                    buf.states[i] = rc.rock_at(o.y + ly);
                 }
             }
         }
     }
 
-    fn fill_surface(&self, buf: &mut CubeBuf, col: &ColumnData) {
+    fn fill_surface(&self, buf: &mut CubeBuf, col: &ColumnData, rocks: &[RockColumn]) {
         let o = buf.origin;
         let b = &self.blocks;
         for lz in 0..16i32 {
             for lx in 0..16i32 {
                 let s = col.at(lx as usize, lz as usize);
+                let rc = &rocks[(lz * 16 + lx) as usize];
                 let (x, z) = (o.x + lx, o.z + lz);
                 let top = s.height_i();
                 let water_top = s.water_i();
@@ -312,9 +311,6 @@ impl WorldGenerator {
                 let surface_state = b.surface(s.surface, false);
                 let filler = b.filler(s.filler);
                 let soil = s.soil_depth as i32;
-                let desert_rock =
-                    matches!(s.biome, Biome::HotDesert | Biome::DuneSea | Biome::Oasis);
-                let mesa = s.biome == Biome::Mesa;
                 for ly in 0..16i32 {
                     let y = o.y + ly;
                     let i = ((ly as usize) << 8) | ((lz as usize) << 4) | lx as usize;
@@ -329,22 +325,11 @@ impl WorldGenerator {
                     buf.states[i] = if ground {
                         let depth = top - 1 - y;
                         if depth <= 0 && (s.cliffiness == 0.0 || self.is_exposed(x, y, z, top, s)) {
-                            surface_state
+                            surface_state.unwrap_or_else(|| rc.rock_at(y))
                         } else if depth < soil {
-                            filler
-                        } else if mesa && depth < 48 {
-                            // Banded red/yellow sandstone in mesas.
-                            if (y.rem_euclid(7)) < 3 {
-                                b.red_sandstone
-                            } else if y.rem_euclid(11) < 2 {
-                                b.sandstone
-                            } else {
-                                b.red_sandstone
-                            }
-                        } else if desert_rock && depth < soil + 9 {
-                            b.sandstone
+                            filler.unwrap_or_else(|| rc.rock_at(y))
                         } else {
-                            self.rock(x, y, z, top)
+                            rc.rock_at(y)
                         }
                     } else if y < water_top {
                         // Multi-year ice where the water never thaws.

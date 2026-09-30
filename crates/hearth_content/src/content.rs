@@ -224,14 +224,6 @@ fn load_file<T: Entry>(file: &SourceFile, table: &mut Table<T>, report: &mut Rep
     }
 }
 
-/// Just the calendar configuration (`time.ron`, the last pack wins), for tools that don't
-/// need the rest of the content.
-pub fn load_time_config(packs: &[PathBuf]) -> (Option<TimeConfig>, Report) {
-    let mut report = Report::default();
-    let time = load_singleton::<TimeConfig>(packs, "time", &mut report);
-    (time, report)
-}
-
 fn load_singleton<T: DeserializeOwned>(
     packs: &[PathBuf],
     name: &str,

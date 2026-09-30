@@ -25,6 +25,8 @@ pub struct LocalWorld {
     pub cover: crate::season_cover::CoverStates,
     /// Plants under seasonal snow, restored when it melts.
     pub buried: crate::season_cover::Buried,
+    /// The game data the world was built from.
+    pub content: Arc<hearth_content::Content>,
 }
 
 impl LocalWorld {
@@ -35,6 +37,18 @@ impl LocalWorld {
         resolution: usize,
         cache_dir: Option<&Path>,
     ) -> anyhow::Result<Self> {
+        let (content, report) = hearth_content::Content::load(&[data_pack_dir()]);
+        let content = Arc::new(content.ok_or_else(|| {
+            let msgs: Vec<String> = report.sorted().iter().map(|d| d.to_string()).collect();
+            anyhow::anyhow!(
+                "game data failed to load:
+{}",
+                msgs.join(
+                    "
+"
+                )
+            )
+        })?);
         let defs = hearth_world::datapack::load_block_defs(&[data_pack_dir()])?;
         let reg = Arc::new(BlockRegistry::build(defs)?);
         let settings = WorldGenSettings {
@@ -77,11 +91,12 @@ impl LocalWorld {
         };
         log::info!("planet ready in {:.2}s", t0.elapsed().as_secs_f64());
         let terrain = Arc::new(Terrain::new(Arc::new(grid)));
-        let generator = Arc::new(WorldGenerator::new(terrain.clone(), &reg)?);
+        let generator = Arc::new(WorldGenerator::new(terrain.clone(), &reg, &content)?);
         Ok(Self {
             map: CubeMap::new(*terrain.planet()),
             cover: crate::season_cover::CoverStates::resolve(&reg)?,
             buried: Default::default(),
+            content,
             reg,
             generator,
             light: LightEngine::new(),

@@ -187,6 +187,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
+ "hearth_content",
  "hearth_core",
  "hearth_math",
  "hearth_texgen",
@@ -884,6 +885,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "glam",
+ "hearth_content",
  "hearth_core",
  "hearth_math",
  "hearth_texgen",
@@ -920,6 +922,7 @@ dependencies = [
 name = "hearth_texgen"
 version = "0.1.0"
 dependencies = [
+ "hearth_content",
  "hearth_math",
  "png",
 ]
@@ -930,6 +933,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "glam",
+ "hearth_content",
  "hearth_core",
  "hearth_math",
  "log",
@@ -946,6 +950,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "glam",
+ "hearth_content",
  "hearth_core",
  "hearth_math",
  "hearth_world",

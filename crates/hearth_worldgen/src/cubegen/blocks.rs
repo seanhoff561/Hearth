@@ -22,21 +22,15 @@ pub struct WoodStates {
     pub leaves: [BlockStateId; 7],
 }
 
-/// All states the generator places.
+/// All states the generator places. Rock comes from the geology (`crate::geology`).
 #[derive(Debug, Clone)]
 pub struct GenBlocks {
     pub air: BlockStateId,
-    pub stone: BlockStateId,
-    pub deepslate: BlockStateId,
+    /// Per state: rock made of a material (bedrock and outcrops), and anything caves may cut.
+    rock: Vec<bool>,
+    carvable: Vec<bool>,
     pub cobblestone: BlockStateId,
     pub mossy_cobblestone: BlockStateId,
-    pub granite: BlockStateId,
-    pub diorite: BlockStateId,
-    pub andesite: BlockStateId,
-    pub tuff: BlockStateId,
-    pub calcite: BlockStateId,
-    pub sandstone: BlockStateId,
-    pub red_sandstone: BlockStateId,
     pub grass: BlockStateId,
     pub grass_snowy: BlockStateId,
     pub dirt: BlockStateId,
@@ -119,19 +113,33 @@ impl GenBlocks {
         for (i, l) in snow_layers.iter_mut().enumerate() {
             *l = s(&format!("snow[layers={}]", i + 1))?;
         }
+        let rock: Vec<bool> = (0..reg.state_count())
+            .map(|i| {
+                let st = BlockStateId(i as u16);
+                reg.block_of(st).def.material.is_some() && reg.is_opaque(st)
+            })
+            .collect();
+        let mut carvable = rock.clone();
+        for name in [
+            "dirt",
+            "coarse_dirt",
+            "gravel",
+            "clay",
+            "sand",
+            "red_sand",
+            "grass_block[snowy=false]",
+            "grass_block[snowy=true]",
+            "podzol[snowy=false]",
+            "podzol[snowy=true]",
+        ] {
+            carvable[s(name)?.0 as usize] = true;
+        }
         Ok(Self {
             air: BlockStateId::AIR,
-            stone: s("stone")?,
-            deepslate: s("deepslate")?,
+            rock,
+            carvable,
             cobblestone: s("cobblestone")?,
             mossy_cobblestone: s("mossy_cobblestone")?,
-            granite: s("granite")?,
-            diorite: s("diorite")?,
-            andesite: s("andesite")?,
-            tuff: s("tuff")?,
-            calcite: s("calcite")?,
-            sandstone: s("sandstone")?,
-            red_sandstone: s("red_sandstone")?,
             grass: s("grass_block[snowy=false]")?,
             grass_snowy: s("grass_block[snowy=true]")?,
             dirt: s("dirt")?,
@@ -196,18 +204,10 @@ impl GenBlocks {
         }
     }
 
-    /// Top-block state for a surface kind.
-    pub fn surface(&self, s: Surface, snowy: bool) -> BlockStateId {
-        match s {
-            Surface::Grass => {
-                if snowy {
-                    self.grass_snowy
-                } else {
-                    self.grass
-                }
-            }
-            // Snow on it is seasonal and applied by the environment.
-            Surface::SnowGrass => {
+    /// Top-block state for a surface kind; `None` for bare rock (the geology's).
+    pub fn surface(&self, s: Surface, snowy: bool) -> Option<BlockStateId> {
+        Some(match s {
+            Surface::Grass | Surface::SnowGrass => {
                 if snowy {
                     self.grass_snowy
                 } else {
@@ -226,53 +226,40 @@ impl GenBlocks {
             Surface::Sand => self.sand,
             Surface::RedSand => self.red_sand,
             Surface::Gravel => self.gravel,
-            Surface::Stone => self.stone,
             Surface::Snow => self.snow_block,
             Surface::Ice => self.packed_ice,
             Surface::Mud => self.mud,
             Surface::Clay => self.clay,
-            Surface::Calcite => self.calcite,
             Surface::Moss => self.moss_block,
-            Surface::Sandstone => self.sandstone,
-            Surface::RedSandstone => self.red_sandstone,
-            Surface::Tuff => self.tuff,
-        }
+            Surface::Stone
+            | Surface::Calcite
+            | Surface::Sandstone
+            | Surface::RedSandstone
+            | Surface::Tuff => {
+                return None;
+            }
+        })
     }
 
-    /// Filler state under the top block.
-    pub fn filler(&self, s: Surface) -> BlockStateId {
+    /// Filler state under the top block; `None` for bare rock.
+    pub fn filler(&self, s: Surface) -> Option<BlockStateId> {
         match s {
-            Surface::Grass | Surface::SnowGrass | Surface::Podzol | Surface::Moss => self.dirt,
+            Surface::Grass | Surface::SnowGrass | Surface::Podzol | Surface::Moss => {
+                Some(self.dirt)
+            }
             other => self.surface(other, false),
         }
     }
 
-    /// True for stone-like base rock that ores and caves may replace.
+    /// True for rock that deposits may replace.
     #[inline]
     pub fn is_base_rock(&self, s: BlockStateId) -> bool {
-        s == self.stone
-            || s == self.deepslate
-            || s == self.granite
-            || s == self.diorite
-            || s == self.andesite
-            || s == self.tuff
+        self.rock.get(s.0 as usize).copied().unwrap_or(false)
     }
 
     /// True for terrain that caves may carve.
     #[inline]
     pub fn is_carvable(&self, s: BlockStateId) -> bool {
-        self.is_base_rock(s)
-            || s == self.dirt
-            || s == self.gravel
-            || s == self.sandstone
-            || s == self.red_sandstone
-            || s == self.coarse_dirt
-            || s == self.clay
-            || s == self.calcite
-            || s == self.grass
-            || s == self.grass_snowy
-            || s == self.podzol
-            || s == self.sand
-            || s == self.red_sand
+        self.carvable.get(s.0 as usize).copied().unwrap_or(false)
     }
 }

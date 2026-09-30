@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use hearth_content::schema::Season;
-use hearth_content::schema::config::TimeConfig;
 use hearth_core::options::Options;
 use hearth_env::Calendar;
 use hearth_input::{InputState, builtin};
@@ -45,16 +44,18 @@ pub struct Preview {
 }
 
 impl Preview {
-    /// `time` is the calendar configuration (`time.ron`); the built-in defaults when `None`.
+    /// `content` provides the calendar (`time.ron`) and the generated blocks' textures; the
+    /// built-in defaults when `None`.
     pub fn new(
         world: StreamWorld,
         options: &Options,
         color_format: wgpu::TextureFormat,
-        time: Option<&TimeConfig>,
+        content: Option<&hearth_content::Content>,
     ) -> Self {
-        let atlas = Arc::new(TextureArray::from_entries(
-            &hearth_texgen::default_textures(),
-        ));
+        let atlas = Arc::new(TextureArray::from_entries(&hearth_texgen::textures_for(
+            content,
+        )));
+        let time = content.map(|c| &c.time);
         let radius = options.video.render_distance as i32;
         let vertical = options.video.vertical_render_distance as i32;
         let (calendar, starting_season) = match time {

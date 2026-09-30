@@ -14,7 +14,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Rendering (terrain, sky, lighting, weather) | [rendering.md](rendering.md) | implemented (v1 M3, V2-1) |
 | Light | [light.md](light.md) | implemented (v1) |
 | Calendar, seasons and weather | [seasons.md](seasons.md) | implemented (V2-1) |
-| Geology, soils, hydrology, resources | [geology.md](geology.md) | planned (V2-2; seed data in V2-0) |
+| Geology, soils, hydrology, resources | [geology.md](geology.md) | partial (rocks and provinces V2-2; rest in progress) |
 | Body and physiology | [physiology.md](physiology.md) | planned (V2-3) |
 | Inventory, carrying, clothing | [inventory.md](inventory.md) | planned (V2-4) |
 | Processes and the knowledge graph | [knowledge-and-processes.md](knowledge-and-processes.md) | partial (data V2-0; engine V2-5) |

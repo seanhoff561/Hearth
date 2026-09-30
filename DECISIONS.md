@@ -232,3 +232,28 @@ is compared with the leaf cover from the same phenology formula the CPU uses, an
 fallen texels stay as grey-brown twigs. No remeshing, no extra geometry. Snow follows the
 canopy: bare deciduous crowns pass it through to the ground (three quarters of the open-ground
 depth), conifer crowns hold two layers and shelter the ground beneath.
+
+## D38 — Natural blocks are generated from content
+Every rock type in `geology/rocks.ron` is a block of the same name, generated when the block
+registry loads (`hearth_content::generate::natural_blocks` → `hearth_world::datapack`), with the
+`rock` template, a hardness from the material's compressive strength and the material's map
+colour, and a texture drawn from the material's appearance (`hearth_texgen::material`). A new
+rock in data is a new block in the world with no code. The block loader reads the packs'
+content itself, so every registry built from packs (game, tools, tests) has the same blocks;
+pack JSON overrides a generated block of the same name. Blocks gained an optional `material`
+field for the same purpose.
+
+## D39 — Geology: provinces from the tectonic history, strata cut by today's terrain
+Provinces are data (setting, sequence, basement, intrusions, folding, conditions, weight). A
+cell's setting comes from the planet's tectonic codes; conditions and a weighted hash of a
+warped region choose among the provinces of that setting. The sequence's top is the smoothed
+regional surface plus the exhumation (0.6 of the uplift): erosion is what exposes old rock in
+mountain cores, so modelling it keeps basins young at the surface and ranges old. Structures
+are at the block scale (a block is a metre) while thicknesses scale like relief, because the
+planet's 610× horizontal compression would otherwise turn every dip vertical.
+
+## D40 — Generic stone and deepslate are gone
+`stone`, `deepslate` and `calcite` were removed from the base pack (and the rock-variety veins
+from the generator): every underground block is now a real rock type. Engine tests that need a
+plain opaque block use `stone` from the engine test pack (`hearth_world/testdata`); saves that
+contain the old blocks keep them as named placeholders (D25), as the format-2 fixture checks.

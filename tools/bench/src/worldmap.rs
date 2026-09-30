@@ -1,5 +1,6 @@
 //! `bench worldmap`: renders whole-planet maps (Mercator and equirectangular) of the planet
-//! model, plus side-profile slices, and prints summary statistics.
+//! model — relief, climate, biomes, geological provinces and the rock at the surface — plus
+//! side-profile slices, block-scale geological cross-sections, and summary statistics.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -18,6 +19,9 @@ pub struct Args {
     pub out: PathBuf,
     pub width: usize,
     pub slices: Vec<Slice>,
+    /// Block-scale geology of an area: (x, z, size in blocks) — a top-down map of the rock at
+    /// the surface and an east–west cross-section through its middle.
+    pub geo_areas: Vec<(i32, i32, i32)>,
     pub rarity: FeatureRarity,
 }
 
@@ -35,6 +39,7 @@ pub fn parse(args: &[String]) -> anyhow::Result<Args> {
         out: PathBuf::from("bench-out/worldmap"),
         width: 2048,
         slices: Vec::new(),
+        geo_areas: Vec::new(),
         rarity: FeatureRarity::Rare,
     };
     let mut it = args.iter();
@@ -73,6 +78,18 @@ pub fn parse(args: &[String]) -> anyhow::Result<Args> {
                     "lon" => Slice::Longitude(num),
                     _ => anyhow::bail!("--slice lat=.. or lon=.."),
                 });
+            }
+            "--geo-area" => {
+                let v = val()?;
+                let nums: Vec<i32> = v
+                    .split(',')
+                    .map(|p| p.trim().parse::<i32>())
+                    .collect::<Result<_, _>>()?;
+                match nums.as_slice() {
+                    [x, z] => a.geo_areas.push((*x, *z, 1024)),
+                    [x, z, size] => a.geo_areas.push((*x, *z, *size)),
+                    _ => anyhow::bail!("--geo-area x,z[,size]"),
+                }
             }
             other => anyhow::bail!("unknown argument {other}"),
         }
@@ -346,6 +363,44 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
             .collect()
     };
     colors.push(("biome", biome_px));
+    // Geology: the province and the rock under the soil at every cell centre.
+    let content = hearth_content::Content::load_base();
+    let reg = hearth_world::datapack::load_builtin_registry().map_err(|e| anyhow::anyhow!(e))?;
+    let geology = hearth_worldgen::geology::Geology::new(&g, &content, &reg)?;
+    let (province_px, rock_px): (Vec<[u8; 3]>, Vec<[u8; 3]>) = {
+        use rayon::prelude::*;
+        (0..n * n)
+            .into_par_iter()
+            .map(|idx| {
+                let (i, j) = g.geom.ij(idx);
+                let (x, z) = g.geom.world_xz(i, j);
+                let s = terrain.sample(x as i32, z as i32);
+                let col = geology.column(x as i32, z as i32);
+                let p = hearth_math::hash::hash2(0x9e0, col.province as u64);
+                let pc = [
+                    (p & 0xff) as u8 | 0x30,
+                    ((p >> 8) & 0xff) as u8 | 0x30,
+                    ((p >> 16) & 0xff) as u8 | 0x30,
+                ];
+                let rock = col.rock_at(s.height_i() - 1 - s.soil_depth as i32);
+                let rc = reg.block_of(rock).map_color;
+                let hs = 0.7 + 0.3 * hillshade(&g, idx);
+                if s.is_underwater() {
+                    (shade(pc, 0.6), shade(rc, 0.6))
+                } else {
+                    (shade(pc, hs), shade(rc, hs))
+                }
+            })
+            .unzip()
+    };
+    colors.push(("province", province_px));
+    colors.push(("rock", rock_px));
+    for p in geology.provinces() {
+        println!("  province {:<22} {:?}", p.id, p.setting);
+    }
+    for &(x, z, size) in &a.geo_areas {
+        geo_area(&terrain, &geology, &reg, x, z, size, &a.out)?;
+    }
     let g = &*g;
     let merc_size = a.width.min(n).max(64);
     for (name, px) in &colors {
@@ -381,6 +436,93 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     }
     stats(g);
     println!("maps written to {}", a.out.display());
+    Ok(())
+}
+
+/// Block-scale geology of a square area centred on (x, z): a top-down map of the rock under
+/// the soil (hillshaded, water tinted) and an east–west cross-section through the middle, from
+/// 300 blocks under the lowest surface to 60 above the highest.
+fn geo_area(
+    terrain: &hearth_worldgen::Terrain,
+    geology: &hearth_worldgen::geology::Geology,
+    reg: &hearth_world::BlockRegistry,
+    x: i32,
+    z: i32,
+    size: i32,
+    out: &std::path::Path,
+) -> anyhow::Result<()> {
+    use rayon::prelude::*;
+    let n = size.max(16) as usize;
+    let (x0, z0) = (x - size / 2, z - size / 2);
+    let rows: Vec<Vec<([u8; 3], i32)>> = (0..n)
+        .into_par_iter()
+        .map(|j| {
+            (0..n)
+                .map(|i| {
+                    let (bx, bz) = (x0 + i as i32, z0 + j as i32);
+                    let s = terrain.sample(bx, bz);
+                    let rock = geology
+                        .column(bx, bz)
+                        .rock_at(s.height_i() - 1 - s.soil_depth as i32);
+                    let mut c = reg.block_of(rock).map_color;
+                    if s.is_underwater() {
+                        c = [c[0] / 2, c[1] / 2, c[2] / 2 + 60];
+                    }
+                    (c, s.height_i())
+                })
+                .collect()
+        })
+        .collect();
+    let mut map = Image::new(n, n);
+    for j in 0..n {
+        for i in 0..n {
+            let (c, h) = rows[j][i];
+            let (hl, hu) = (
+                rows[j][i.saturating_sub(1)].1,
+                rows[j.saturating_sub(1)][i].1,
+            );
+            let slope = ((h - hl) + (h - hu)) as f64;
+            map.set(i, j, shade(c, (1.0 + slope * 0.08).clamp(0.6, 1.4)));
+        }
+    }
+    let name = format!("geoarea_{x}_{z}");
+    map.save(&out.join(format!("{name}_map.png")))?;
+    // Cross-section along the middle row.
+    let zc = z;
+    let samples: Vec<_> = (0..n).map(|i| terrain.sample(x0 + i as i32, zc)).collect();
+    let top = samples
+        .iter()
+        .map(|s| s.height_i().max(s.water_i()))
+        .max()
+        .unwrap_or(0)
+        + 60;
+    let bottom = samples.iter().map(|s| s.height_i()).min().unwrap_or(0) - 300;
+    let h = (top - bottom).max(1) as usize;
+    let mut img = Image::new(n, h);
+    for (i, s) in samples.iter().enumerate() {
+        let col = geology.column(x0 + i as i32, zc);
+        let ground = s.height_i();
+        let soil_top = ground - s.soil_depth as i32;
+        for row in 0..h {
+            let y = top - row as i32;
+            let c = if y < soil_top {
+                reg.block_of(col.rock_at(y)).map_color
+            } else if y < ground {
+                [110, 80, 50]
+            } else if y < s.water_i() {
+                [40, 90, 200]
+            } else {
+                [200, 225, 250]
+            };
+            img.set(i, row, c);
+        }
+    }
+    img.save(&out.join(format!("{name}_section.png")))?;
+    let p = geology.province(geology.column(x, z).province);
+    println!(
+        "wrote {name} ({} blocks, province {}, y {bottom}..{top})",
+        n, p.id
+    );
     Ok(())
 }
 

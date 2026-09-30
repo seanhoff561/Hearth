@@ -61,8 +61,13 @@ pub struct Yield {
     pub fraction: f32,
 }
 
+/// The words `Province::conditions` may use (the world generator evaluates them per region).
+pub const PROVINCE_CONDITIONS: [&str; 8] = [
+    "arid", "humid", "warm", "cold", "coastal", "inland", "old", "young",
+];
+
 /// Tectonic setting a province comes from (matches the planet model's history).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum TectonicSetting {
     Craton,
     FoldBelt,
@@ -72,6 +77,19 @@ pub enum TectonicSetting {
     SedimentaryBasin,
     PassiveMargin,
     OceanFloor,
+}
+
+impl TectonicSetting {
+    pub const ALL: [TectonicSetting; 8] = [
+        TectonicSetting::Craton,
+        TectonicSetting::FoldBelt,
+        TectonicSetting::VolcanicArc,
+        TectonicSetting::Hotspot,
+        TectonicSetting::Rift,
+        TectonicSetting::SedimentaryBasin,
+        TectonicSetting::PassiveMargin,
+        TectonicSetting::OceanFloor,
+    ];
 }
 
 /// One layer of a stratigraphic sequence (listed top to bottom).
@@ -103,6 +121,17 @@ entry! {
         /// Intrusive bodies (granite plutons, dykes).
         #[serde(default)]
         pub intrusions: Vec<IdRef>,
+        /// Layers folded into anticlines and synclines (collision belts); otherwise they lie
+        /// flat or dip gently.
+        #[serde(default)]
+        pub folded: bool,
+        /// Where among the regions of its setting this province is chosen: all must hold.
+        /// Understood: "arid", "humid", "warm", "cold", "coastal", "inland", "old", "young".
+        #[serde(default)]
+        pub conditions: Vec<String>,
+        /// Relative share among the provinces eligible for a region.
+        #[serde(default = "one")]
+        pub weight: f32,
     }
 }
 

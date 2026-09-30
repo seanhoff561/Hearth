@@ -19,8 +19,8 @@ fn gpu_culling_matches_cpu_culling() {
         eprintln!("skipped: no GPU adapter");
         return;
     };
-    let atlas = TextureArray::from_entries(&hearth_texgen::default_textures());
     let mut world = LocalWorld::create(11, PlanetSize::Tiny, 256, None).expect("world");
+    let atlas = TextureArray::from_entries(&hearth_texgen::textures_for(Some(&world.content)));
     let (sx, sz) = world.terrain().find_spawn(false);
     let (x, z) = (sx as f64 + 0.5, sz as f64 + 0.5);
     let models = BlockModels::build(&world.reg, &atlas);

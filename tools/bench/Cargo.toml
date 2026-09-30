@@ -12,6 +12,7 @@ name = "bench"
 path = "src/main.rs"
 
 [dependencies]
+hearth_content.workspace = true
 hearth_core.workspace = true
 hearth_math.workspace = true
 hearth_world.workspace = true

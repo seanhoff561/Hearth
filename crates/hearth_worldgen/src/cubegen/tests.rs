@@ -31,8 +31,13 @@ fn terrain() -> Arc<Terrain> {
     .clone()
 }
 
+fn content() -> &'static hearth_content::Content {
+    static C: OnceLock<hearth_content::Content> = OnceLock::new();
+    C.get_or_init(hearth_content::Content::load_base)
+}
+
 fn generator() -> WorldGenerator {
-    WorldGenerator::new(terrain(), registry()).expect("all generator blocks exist")
+    WorldGenerator::new(terrain(), registry(), content()).expect("all generator blocks exist")
 }
 
 /// Cubes around the spawn surface.
@@ -132,7 +137,6 @@ fn is_feature(b: &super::blocks::GenBlocks, s: BlockStateId) -> bool {
         .any(|w| s == w.log_y || s == w.log_x || s == w.log_z || w.leaves.contains(&s))
         || s == b.mossy_cobblestone
         || s == b.cobblestone
-        || s == b.andesite
         || s == b.cactus
 }
 
