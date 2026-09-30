@@ -50,7 +50,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Packed vertex data, vertex pulling | done | 16-byte `PackedQuad` per full-face quad, four vertices generated in the vertex shader from a storage buffer; 64-byte general quads for models, fluids and translucent faces. |
 | One shared index buffer | done | One 16,384-quad index buffer for all terrain draws (the LOD has its own). |
 | Per-face-direction buckets | done | Quads grouped by layer × 6 directions; groups facing away are skipped (CPU path, and `facing` in `cull.wgsl`). |
-| Pooled mesh buffers, sub-allocator | done | Two storage arenas growing by doubling, first-fit free list with coalescing (`RangeAllocator`). LOD tiles are not pooled (one buffer per tile): see LOD. |
+| Pooled mesh buffers, sub-allocator | done | Two storage arenas growing by doubling, first-fit free list with coalescing (`RangeAllocator`); LOD quads in a third (result 3). |
 | Upload budget per frame | done | 256 cube meshes and 24 LOD tiles per frame while streaming; steady state 9–74 KiB uploaded per frame (max 319 KiB). A byte budget instead of a count is **not worth it** at these volumes. |
 | Cave / visibility-graph culling | done | Face-connectivity bitset per cube, breadth-first search from the camera's cube: 10 cubes visible in the cave out of 17 k loaded. |
 
@@ -59,9 +59,9 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 |---|---|---|
 | Frustum culling | done (CPU) | Candidates are frustum-tested during the visibility search, which must run on the CPU anyway; moving the test to a compute pass is **not worth it**. |
 | Two-phase Hi-Z occlusion culling | done for terrain; **missing for LOD** | Phase 0 draws last frame's visible cubes, the Hi-Z pyramid is built, phase 1 re-tests everything (no popping; `verify_cull` checks it is pixel-identical to CPU culling). The LOD is not culled at all (0.40 ms in the cave). |
-| Indirect multi-draw with count | done for terrain; **missing for LOD** | Eight `multi_draw_indexed_indirect_count` calls on Vulkan (CPU multi-draw elsewhere). The LOD issues one draw per tile: 380–450 per frame. |
+| Indirect multi-draw with count | done | Terrain: eight `multi_draw_indexed_indirect_count` calls on Vulkan (CPU multi-draw elsewhere). LOD: one `multi_draw_indexed_indirect` for all tiles (result 3); the count variant comes with GPU culling of the LOD. |
 | Bindless-style texture arrays | done | All block textures in one mipmapped 2D texture array. |
-| Few pipeline / bind-group switches | done for terrain; LOD: see pooling | Terrain: five pipelines, two bind groups. LOD: one pipeline, but a vertex buffer bound per tile. |
+| Few pipeline / bind-group switches | done | Terrain: five pipelines, two bind groups; LOD: one pipeline, two bind groups, one draw call (result 3). |
 | Render bundles | not worth it | Command encoding costs 0.04 ms per frame; the draws are GPU-generated. |
 | No per-frame bind groups or buffers | done (result 2) | The Hi-Z level-0 bind group was created every frame; now kept until the depth target changes. Everything else is created at startup or when a buffer grows. |
 
@@ -69,7 +69,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Optimization | Status | Evidence / impact |
 |---|---|---|
 | Level choice by screen-space error, with hysteresis | **missing** | Tiles split within four tile sizes of the camera (columns up to ~7 px wide at 1080p) and are re-selected every 16 blocks without per-tile hysteresis; flat and rough land get the same detail. |
-| Quantized tile-relative vertex data | **missing (partly)** | X and Z are tile-relative u16, but Y is an absolute i32 and every quad has four 16-byte vertices (64 B/quad): 115–154 MiB of LOD. One 16-byte record per quad with vertex pulling would take a quarter. |
+| Quantized tile-relative vertex data | done (result 3) | One 16-byte record per quad (was four 16-byte vertices), expanded by the vertex shader: 73–91 MiB less video memory in LOD-heavy scenes. |
 | LOD in the GPU culling path, occluded by near terrain | **missing** | See culling. |
 | Batched SIMD surface sampling | not worth it (now) | Tiles build at ~1.8 k tiles/s on all threads (a whole view from scratch in ~0.8 s; streaming needs tens per re-selection); it is off the frame path. Revisit with the disk cache. |
 | Stale jobs cancelled | done | Queued builds are dropped at every re-selection; the ≤ 48 in flight finish and are discarded. |
@@ -118,7 +118,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Optimization | Status | Evidence / impact |
 |---|---|---|
 | Environment sampling | done (result 1) | Was 0.23–0.37 ms per frame, the sky's irradiance integrated on the CPU; now interpolated between cached nodes (< 0.01 ms). |
-| Fewer queue writes per frame | **missing** | ~15 separate `write_buffer` calls a frame; submission costs 0.24–0.35 ms with spikes. |
+| Fewer queue writes per frame | not worth it | Tried a staging belt for the per-frame uploads: no change in average FPS in alternating A/B runs, 1 % lows slightly lower; reverted. |
 
 ## Plan
 Missing and worth doing, one commit each with before/after numbers and an SSIM check:
@@ -151,3 +151,17 @@ Results are recorded below as they land.
    330–356 (terrain preparation 70 → 43, the rest being wgpu's staging for each queue write;
    environment 2 → 0; encoding 91 → 77); the only per-frame bind group is gone. Frame times
    unchanged within run-to-run noise (±5 %); rendering identical (same SSIM).
+   *Tried and reverted:* routing the per-frame uploads through a staging belt instead of
+   `queue.write_buffer` (which makes a staging buffer per call). Alternating A/B runs (three
+   rounds, two scenes) showed no change in average FPS (862 vs 863, 1386 vs 1392) and 1 % lows
+   lower in five of six pairs (708 → 664 on average), so the change was not kept (queue writes
+   per frame: not worth it).
+3. **LOD quads pooled as 16-byte records, one indirect multi-draw** — every tile's quads
+   live in one sub-allocated storage buffer as packed records (tile-relative corner, extents,
+   face, colour, tint, climate) that the vertex shader expands (vertex pulling); the visible
+   tiles go out in a single `multi_draw_indexed_indirect` (one draw per tile without
+   first-instance support). Video memory: forest 236 → 163 MiB, summit 253 → 162 MiB, cave
+   235 → 163 MiB; render-thread CPU 0.40–0.68 → 0.24–0.49 ms per frame; draw calls for the
+   LOD ~380–450 → 1. Average FPS summit 911 → 963, underwater 1478 → 1558, cave 1213 → 1309,
+   forest and storm unchanged (GPU-bound). SSIM ≥ 0.9985 (the lowest, underwater: grazing
+   fragments of distant water seen from below, which the water shading of V2-2e replaces).

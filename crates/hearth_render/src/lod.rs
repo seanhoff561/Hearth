@@ -1,24 +1,40 @@
 //! Distant terrain (v1 §8): LOD tile meshes (built by `hearth_lod`) drawn after the full-detail
 //! terrain, with the same globals — lighting, aerial perspective, planet curvature, seasonal
 //! tints — and a dithered handoff at the edge of the full-detail area.
+//!
+//! Every tile's quads live in one pooled storage buffer as 16-byte records (`hearth_lod::
+//! LodQuad`) that the vertex shader expands into their four corners, and the frame's tiles are
+//! drawn with one indirect multi-draw (one draw per tile where the adapter can't).
 
+use bytemuck::{Pod, Zeroable};
 use glam::{DVec3, Vec3};
 use hearth_math::Planet;
 use rustc_hash::FxHashMap;
 
 use crate::camera::{Camera, Frustum};
 use crate::gpu::GpuContext;
-use crate::terrain::{DEPTH_FORMAT, EARTH_RADIUS_M, TerrainRenderer};
+use crate::terrain::{Arena, DEPTH_FORMAT, EARTH_RADIUS_M, TerrainRenderer};
 
-/// Bytes per LOD vertex (`hearth_lod::LodVertex`).
-pub const VERTEX_BYTES: u64 = 16;
+/// Bytes per LOD quad record (`hearth_lod::LodQuad`).
+pub const QUAD_BYTES: u64 = 16;
 
 struct GpuTile {
-    buffer: wgpu::Buffer,
+    /// First quad in the pool, and how many.
+    off: u32,
     quads: u32,
     origin: [i32; 2],
     size: i32,
     y: (i32, i32),
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct DrawArgs {
+    index_count: u32,
+    instance_count: u32,
+    first_index: u32,
+    base_vertex: i32,
+    first_instance: u32,
 }
 
 /// What the LOD pass holds and drew.
@@ -35,15 +51,21 @@ pub struct LodRenderer {
     pipeline: wgpu::RenderPipeline,
     layout1: wgpu::BindGroupLayout,
     bind1: wgpu::BindGroup,
+    /// All tiles' quad records.
+    pool: Arena,
     origins: wgpu::Buffer,
     origins_capacity: usize,
+    draw_buffer: wgpu::Buffer,
+    draw_capacity: usize,
     index_buffer: wgpu::Buffer,
     index_quads: u32,
     tiles: FxHashMap<u64, GpuTile>,
-    /// This frame's draws: tile and instance.
-    draws: Vec<(u64, u32)>,
-    /// This frame's tile origins (kept so frames allocate nothing).
+    /// This frame's draws and tile origins (kept so frames allocate nothing).
+    draws: Vec<DrawArgs>,
     origins_scratch: Vec<[f32; 4]>,
+    /// Indirect multi-draws with a first instance are available.
+    multi_draw: bool,
+    bind_dirty: bool,
     planet: Planet,
     pub stats: LodStats,
 }
@@ -66,22 +88,26 @@ impl LodRenderer {
     ) -> Self {
         let device = &ctx.device;
         let (layout0, _) = terrain.globals_bind();
+        let storage = |binding: u32| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
         let layout1 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("lod layout 1"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
+            entries: &[storage(0), storage(1)],
         });
         let origins_capacity = 1024;
         let origins = Self::origins_buffer(device, origins_capacity);
-        let bind1 = Self::bind(device, &layout1, &origins);
+        let pool = Arena::new(device, "lod quads", QUAD_BYTES, 1 << 20);
+        let bind1 = Self::bind(device, &layout1, &origins, &pool.buffer);
+        let draw_capacity = 1024;
+        let draw_buffer = Self::draw_buffer(device, draw_capacity);
         let index_quads = 4096;
         let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("lod quad indices"),
@@ -116,11 +142,7 @@ impl LodRenderer {
                 module: &module,
                 entry_point: Some("vs_lod"),
                 compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: VERTEX_BYTES,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Uint32, 1 => Sint32, 2 => Uint32, 3 => Uint32],
-                })],
+                buffers: &[],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -153,13 +175,18 @@ impl LodRenderer {
             pipeline,
             layout1,
             bind1,
+            pool,
             origins,
             origins_capacity,
+            draw_buffer,
+            draw_capacity,
             index_buffer,
             index_quads,
             tiles: FxHashMap::default(),
             draws: Vec::new(),
             origins_scratch: Vec::new(),
+            multi_draw: ctx.caps.indirect_first_instance,
+            bind_dirty: false,
             planet,
             stats: LodStats::default(),
         }
@@ -174,23 +201,39 @@ impl LodRenderer {
         })
     }
 
+    fn draw_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("lod draws"),
+            size: (capacity * std::mem::size_of::<DrawArgs>()) as u64,
+            usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
     fn bind(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         origins: &wgpu::Buffer,
+        quads: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lod bind 1"),
             layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: origins.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: origins.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: quads.as_entire_binding(),
+                },
+            ],
         })
     }
 
     /// Uploads (or replaces) a tile: its id, minimum corner in world blocks (X canonical), side,
-    /// height range and vertices (16 bytes each, four per quad).
+    /// height range and quad records (`QUAD_BYTES` each).
     pub fn upload(
         &mut self,
         ctx: &GpuContext,
@@ -198,15 +241,15 @@ impl LodRenderer {
         origin: [i32; 2],
         size: i32,
         y: (i32, i32),
-        vertices: &[u8],
+        quads: &[u8],
     ) {
-        let quads = (vertices.len() as u64 / VERTEX_BYTES / 4) as u32;
-        if quads == 0 {
-            self.tiles.remove(&id);
+        self.remove(id);
+        let n = (quads.len() as u64 / QUAD_BYTES) as u32;
+        if n == 0 {
             return;
         }
-        if quads > self.index_quads {
-            self.index_quads = quads.next_power_of_two();
+        if n > self.index_quads {
+            self.index_quads = n.next_power_of_two();
             self.index_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("lod quad indices"),
                 size: self.index_quads as u64 * 24,
@@ -219,18 +262,17 @@ impl LodRenderer {
                 bytemuck::cast_slice(&quad_indices(self.index_quads)),
             );
         }
-        let buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("lod tile"),
-            size: vertices.len() as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        ctx.write_buffer(&buffer, 0, vertices);
+        let (off, grew) = self.pool.alloc(ctx, n);
+        if off == u32::MAX {
+            return;
+        }
+        self.bind_dirty |= grew;
+        ctx.write_buffer(&self.pool.buffer, off as u64 * QUAD_BYTES, quads);
         self.tiles.insert(
             id,
             GpuTile {
-                buffer,
-                quads,
+                off,
+                quads: n,
                 origin,
                 size,
                 y,
@@ -243,12 +285,21 @@ impl LodRenderer {
     }
 
     pub fn remove(&mut self, id: u64) {
-        self.tiles.remove(&id);
+        if let Some(t) = self.tiles.remove(&id) {
+            self.pool.alloc.free(t.off, t.quads);
+        }
     }
 
     /// Keeps only the tiles `keep` accepts.
     pub fn retain(&mut self, keep: impl Fn(u64) -> bool) {
-        self.tiles.retain(|id, _| keep(*id));
+        let pool = &mut self.pool;
+        self.tiles.retain(|id, t| {
+            let k = keep(*id);
+            if !k {
+                pool.alloc.free(t.off, t.quads);
+            }
+            k
+        });
     }
 
     pub fn tile_count(&self) -> usize {
@@ -271,10 +322,7 @@ impl LodRenderer {
         let mut origins = std::mem::take(&mut self.origins_scratch);
         origins.clear();
         self.draws.clear();
-        let (mut quads, mut bytes) = (0u64, 0u64);
-        for t in self.tiles.values() {
-            bytes += t.quads as u64 * 4 * VERTEX_BYTES;
-        }
+        let mut quads = 0u64;
         for &id in show {
             let Some(t) = self.tiles.get(&id) else {
                 continue;
@@ -289,24 +337,41 @@ impl LodRenderer {
             if !frustum.intersects_aabb(min, max) {
                 continue;
             }
-            self.draws.push((id, origins.len() as u32));
+            self.draws.push(DrawArgs {
+                index_count: t.quads * 6,
+                instance_count: 1,
+                first_index: 0,
+                base_vertex: (t.off * 4) as i32,
+                first_instance: origins.len() as u32,
+            });
             origins.push([ox, -(cam.y as f32), oz, 0.0]);
             quads += t.quads as u64;
         }
         if origins.len() > self.origins_capacity {
             self.origins_capacity = origins.len().next_power_of_two();
             self.origins = Self::origins_buffer(&ctx.device, self.origins_capacity);
-            self.bind1 = Self::bind(&ctx.device, &self.layout1, &self.origins);
+            self.bind_dirty = true;
+        }
+        if self.draws.len() > self.draw_capacity {
+            self.draw_capacity = self.draws.len().next_power_of_two();
+            self.draw_buffer = Self::draw_buffer(&ctx.device, self.draw_capacity);
+        }
+        if self.bind_dirty {
+            self.bind1 = Self::bind(&ctx.device, &self.layout1, &self.origins, &self.pool.buffer);
+            self.bind_dirty = false;
         }
         if !origins.is_empty() {
             ctx.write_buffer(&self.origins, 0, bytemuck::cast_slice(&origins));
+            if self.multi_draw {
+                ctx.write_buffer(&self.draw_buffer, 0, bytemuck::cast_slice(&self.draws));
+            }
         }
         self.origins_scratch = origins;
         self.stats = LodStats {
             tiles: self.tiles.len(),
             drawn: self.draws.len(),
             quads,
-            bytes,
+            bytes: self.pool.alloc.used() as u64 * QUAD_BYTES,
         };
     }
 
@@ -319,10 +384,16 @@ impl LodRenderer {
         pass.set_bind_group(0, bind0, &[]);
         pass.set_bind_group(1, &self.bind1, &[]);
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        for &(id, inst) in &self.draws {
-            let t = &self.tiles[&id];
-            pass.set_vertex_buffer(0, t.buffer.slice(..));
-            pass.draw_indexed(0..t.quads * 6, 0, inst..inst + 1);
+        if self.multi_draw {
+            pass.multi_draw_indexed_indirect(&self.draw_buffer, 0, self.draws.len() as u32);
+        } else {
+            for d in &self.draws {
+                pass.draw_indexed(
+                    0..d.index_count,
+                    d.base_vertex,
+                    d.first_instance..d.first_instance + 1,
+                );
+            }
         }
     }
 }

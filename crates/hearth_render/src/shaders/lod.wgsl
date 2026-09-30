@@ -2,18 +2,11 @@
 // like the full-detail terrain, drawn where it ends.
 
 struct Tile { origin: vec4<f32> };
+// A quad record (`hearth_lod::LodQuad`): see there for the packing.
+struct Quad { a: u32, b: u32, c: u32, d: u32 };
 
 @group(1) @binding(0) var<storage, read> tiles: array<Tile>;
-
-struct LodIn {
-    // Tile-local X and Z in blocks (u16 each), absolute Y.
-    @location(0) xz: u32,
-    @location(1) y: i32,
-    // sRGB colour of the block's texture, face (3 bits), tint kind (4 bits), water flag.
-    @location(2) color: u32,
-    // Climate code of the column (seasonal tints, snow, sea ice).
-    @location(3) climate: u32,
-};
+@group(1) @binding(1) var<storage, read> quads: array<Quad>;
 
 struct LodOut {
     @builtin(position) pos: vec4<f32>,
@@ -41,20 +34,38 @@ const SEA_ICE: vec3<f32> = vec3<f32>(0.72, 0.78, 0.84);
 const BARE: vec3<f32> = vec3<f32>(0.10, 0.08, 0.06);
 
 @vertex
-fn vs_lod(v: LodIn, @builtin(instance_index) ii: u32) -> LodOut {
-    let local = vec3<f32>(f32(v.xz & 0xffffu), f32(v.y), f32(v.xz >> 16u));
+fn vs_lod(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> LodOut {
+    // Four vertices per quad record (the index buffer makes two triangles of them).
+    let q = quads[vi >> 2u];
+    let corner = vi & 3u;
+    let u = select(0.0, 1.0, corner == 1u || corner == 2u);
+    let v = select(0.0, 1.0, corner >= 2u);
+    let x0 = f32(q.a & 0x1fffu);
+    let z0 = f32((q.a >> 13u) & 0x1fffu);
+    let face = (q.a >> 26u) & 7u;
+    let water = ((q.a >> 29u) & 1u) == 1u;
+    let kind = ((q.a >> 30u) & 3u) | (((q.c >> 13u) & 3u) << 2u);
+    let y0 = f32((i32(q.b) << 16u) >> 16u);
+    let h = f32(q.b >> 16u);
+    let w = f32(q.c & 0x1fffu);
+    let climate = (q.c >> 15u) | ((q.d >> 24u) << 17u);
+    // Width along X (Z for west and east faces), height along Z for tops and bottoms, along Y
+    // for sides.
+    var local: vec3<f32>;
+    switch face {
+        case 0u, 1u: { local = vec3<f32>(x0 + u * w, y0, z0 + v * h); }
+        case 2u, 3u: { local = vec3<f32>(x0 + u * w, y0 + v * h, z0); }
+        default: { local = vec3<f32>(x0, y0 + v * h, z0 + u * w); }
+    }
     let world = curve(tiles[ii].origin.xyz + local);
-    let face = (v.color >> 24u) & 7u;
-    let kind = (v.color >> 27u) & 15u;
-    let water = (v.color >> 31u) == 1u;
-    var albedo = unpack_rgb(v.color & 0xffffffu);
+    var albedo = unpack_rgb(q.d & 0xffffffu);
     if (kind & 3u) != 0u {
-        albedo = albedo * resolve_tint(kind, v.climate);
+        albedo = albedo * resolve_tint(kind, climate);
     }
     // Deciduous canopies stand bare in winter and in the dry season.
-    albedo = mix(BARE, albedo, tint_leaf(kind, v.climate));
+    albedo = mix(BARE, albedo, tint_leaf(kind, climate));
     // Snow lies on tops through the cold months, and the sea freezes in hard winters.
-    let c = decode_climate(v.climate);
+    let c = decode_climate(climate);
     let t = season_temp(c, g.camera.w);
     if face == 1u {
         if water {

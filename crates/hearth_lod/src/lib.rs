@@ -196,16 +196,106 @@ pub fn select(
     out
 }
 
-/// A vertex of a tile mesh (16 bytes): position in blocks relative to the tile's minimum corner
-/// (X and Z packed as u16, Y absolute), colour word (sRGB texture colour, face, tint kind, water
-/// flag) and climate code.
+/// One quad of a tile mesh in 16 bytes; the vertex shader makes its four corners. Packed:
+/// * `a`: minimum corner X (13 bits) and Z (13) in blocks relative to the tile, face (3),
+///   water flag (1), tint kind (low 2 bits);
+/// * `b`: absolute Y of the minimum corner (i16) and height (u16) in the face's plane;
+/// * `c`: width (13 bits) in the face's plane, tint kind (high 2 bits), climate (low 17);
+/// * `d`: sRGB colour of the block's texture (24), climate (high 7).
+///
+/// In the face's plane, width runs along X (Z for west and east faces) and height along Z for
+/// tops and bottoms, along Y for sides.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
-pub struct LodVertex {
-    pub xz: u32,
-    pub y: i32,
-    pub color: u32,
-    pub climate: u32,
+pub struct LodQuad {
+    pub a: u32,
+    pub b: u32,
+    pub c: u32,
+    pub d: u32,
+}
+
+impl LodQuad {
+    /// A quad from its minimum corner and extents (see the type).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        face: u32,
+        (x, y, z): (i32, i32, i32),
+        (w, h): (i32, i32),
+        rgb: u32,
+        kind: u8,
+        water: bool,
+        climate: u32,
+    ) -> Self {
+        debug_assert!((0..8192).contains(&x) && (0..8192).contains(&z), "{x} {z}");
+        debug_assert!((0..8192).contains(&w) && (0..65536).contains(&h), "{w} {h}");
+        debug_assert!(i16::try_from(y).is_ok(), "{y}");
+        let kind = kind as u32 & 15;
+        Self {
+            a: (x as u32 & 0x1fff)
+                | (z as u32 & 0x1fff) << 13
+                | (face & 7) << 26
+                | u32::from(water) << 29
+                | (kind & 3) << 30,
+            b: (y as i16 as u16 as u32) | (h as u32 & 0xffff) << 16,
+            c: (w as u32 & 0x1fff) | (kind >> 2) << 13 | (climate & 0x1ffff) << 15,
+            d: (rgb & 0xff_ffff) | (climate >> 17 & 0x7f) << 24,
+        }
+    }
+
+    /// The quad through four corners of an axis-aligned rectangle facing `face`.
+    fn from_corners(
+        face: u32,
+        p: [(i32, i32, i32); 4],
+        rgb: u32,
+        kind: u8,
+        water: bool,
+        climate: u32,
+    ) -> Self {
+        let lo = |f: fn(&(i32, i32, i32)) -> i32| p.iter().map(f).min().unwrap_or(0);
+        let hi = |f: fn(&(i32, i32, i32)) -> i32| p.iter().map(f).max().unwrap_or(0);
+        let (x0, y0, z0) = (lo(|q| q.0), lo(|q| q.1), lo(|q| q.2));
+        let (x1, y1, z1) = (hi(|q| q.0), hi(|q| q.1), hi(|q| q.2));
+        let size = match face {
+            DOWN | UP => (x1 - x0, z1 - z0),
+            NORTH | SOUTH => (x1 - x0, y1 - y0),
+            _ => (z1 - z0, y1 - y0),
+        };
+        Self::new(face, (x0, y0, z0), size, rgb, kind, water, climate)
+    }
+
+    pub fn face(&self) -> u32 {
+        (self.a >> 26) & 7
+    }
+
+    /// Minimum corner: X and Z relative to the tile, absolute Y.
+    pub fn corner(&self) -> (i32, i32, i32) {
+        (
+            (self.a & 0x1fff) as i32,
+            self.b as u16 as i16 as i32,
+            ((self.a >> 13) & 0x1fff) as i32,
+        )
+    }
+
+    /// Width and height in the face's plane.
+    pub fn size(&self) -> (i32, i32) {
+        ((self.c & 0x1fff) as i32, (self.b >> 16) as i32)
+    }
+
+    pub fn rgb(&self) -> u32 {
+        self.d & 0xff_ffff
+    }
+
+    pub fn kind(&self) -> u8 {
+        (((self.a >> 30) & 3) | ((self.c >> 13) & 3) << 2) as u8
+    }
+
+    pub fn water(&self) -> bool {
+        (self.a >> 29) & 1 == 1
+    }
+
+    pub fn climate(&self) -> u32 {
+        (self.c >> 15) | (self.d >> 24) << 17
+    }
 }
 
 /// The mesh of one tile.
@@ -214,15 +304,14 @@ pub struct TileMesh {
     pub key: TileKey,
     /// World block of the minimum corner (X canonical).
     pub origin: [i32; 2],
-    /// Four vertices per quad.
-    pub vertices: Vec<LodVertex>,
+    pub quads: Vec<LodQuad>,
     pub min_y: i32,
     pub max_y: i32,
 }
 
 impl TileMesh {
     pub fn quads(&self) -> u32 {
-        (self.vertices.len() / 4) as u32
+        self.quads.len() as u32
     }
 }
 
@@ -729,24 +818,6 @@ const SOUTH: u32 = 3;
 const WEST: u32 = 4;
 const EAST: u32 = 5;
 
-fn vertex(
-    x: i32,
-    y: i32,
-    z: i32,
-    rgb: u32,
-    kind: u8,
-    water: bool,
-    climate: u32,
-    face: u32,
-) -> LodVertex {
-    LodVertex {
-        xz: (x as u32 & 0xffff) | ((z as u32 & 0xffff) << 16),
-        y,
-        color: rgb | (face << 24) | ((kind as u32 & 15) << 27) | (u32::from(water) << 31),
-        climate,
-    }
-}
-
 /// The four corners of a side face of the box `x0..x1 × z0..z1` from `lo` to `hi`, wound to
 /// face outward.
 fn side(face: u32, x0: i32, x1: i32, z0: i32, z1: i32, lo: i32, hi: i32) -> [(i32, i32, i32); 4] {
@@ -767,18 +838,18 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
     let at = |i: i32, j: i32| &cols[((j + 1) * n + (i + 1)) as usize];
     let mut v = Vec::new();
     let (mut min_y, mut max_y) = (i32::MAX, i32::MIN);
-    let mut quad = |v: &mut Vec<LodVertex>,
+    let mut quad = |v: &mut Vec<LodQuad>,
                     p: [(i32, i32, i32); 4],
                     rgb: u32,
                     kind: u8,
                     water: bool,
                     climate: u32,
                     face: u32| {
-        for (x, y, z) in p {
+        for (_, y, _) in p {
             min_y = min_y.min(y);
             max_y = max_y.max(y);
-            v.push(vertex(x, y, z, rgb, kind, water, climate, face));
         }
+        v.push(LodQuad::from_corners(face, p, rgb, kind, water, climate));
     };
     // Ground under a crown is in its shade: lit as from below.
     let ground_face = |c: &Col| if c.crown.is_some() { DOWN } else { UP };
@@ -901,7 +972,7 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
     TileMesh {
         key,
         origin: [mx, mz],
-        vertices: v,
+        quads: v,
         min_y: if min_y == i32::MAX { 0 } else { min_y },
         max_y: if max_y == i32::MIN { 0 } else { max_y },
     }
@@ -980,10 +1051,30 @@ mod tests {
     }
 
     fn faces(m: &TileMesh, face: u32) -> usize {
-        m.vertices
-            .chunks(4)
-            .filter(|q| (q[0].color >> 24) & 7 == face)
-            .count()
+        m.quads.iter().filter(|q| q.face() == face).count()
+    }
+
+    #[test]
+    fn quads_pack_and_unpack() {
+        let q = LodQuad::new(
+            WEST,
+            (4096, -1234, 17),
+            (4096, 60_000),
+            0x12_3456,
+            TINT_DECIDUOUS | VARIANT_BIRCH,
+            true,
+            0xab_cdef,
+        );
+        assert_eq!(q.face(), WEST);
+        assert_eq!(q.corner(), (4096, -1234, 17));
+        assert_eq!(q.size(), (4096, 60_000));
+        assert_eq!(q.rgb(), 0x12_3456);
+        assert_eq!(q.kind(), TINT_DECIDUOUS | VARIANT_BIRCH);
+        assert!(q.water());
+        assert_eq!(q.climate(), 0xab_cdef);
+        // Corners of a side face give its minimum corner and extents.
+        let s = LodQuad::from_corners(NORTH, side(NORTH, 2, 6, 3, 9, 10, 15), 1, 0, false, 0);
+        assert_eq!((s.corner(), s.size()), ((2, 10, 3), (4, 5)));
     }
 
     #[test]
@@ -1001,14 +1092,18 @@ mod tests {
         // Flat rows merge into one top each (the raised column splits its row into three).
         assert_eq!(faces(&m, UP), TILE as usize + 2);
         // Four sides of the raised column, and skirts along all four tile edges.
-        assert_eq!(m.vertices.len() / 4 - faces(&m, UP), 4 + 4 * TILE as usize);
+        assert_eq!(m.quads.len() - faces(&m, UP), 4 + 4 * TILE as usize);
         assert_eq!(m.max_y, 14);
         assert_eq!(m.min_y, 10 - 2 * key.column());
-        assert!(
-            m.vertices
-                .iter()
-                .all(|v| (v.xz & 0xffff) as i32 <= key.size() && (v.xz >> 16) as i32 <= key.size())
-        );
+        assert!(m.quads.iter().all(|q| {
+            let ((x, _, z), (w, h)) = (q.corner(), q.size());
+            let (x1, z1) = match q.face() {
+                DOWN | UP => (x + w, z + h),
+                NORTH | SOUTH => (x + w, z),
+                _ => (x, z + w),
+            };
+            x1 <= key.size() && z1 <= key.size()
+        }));
     }
 
     fn tiny_world() -> (WorldGenerator, BlockRegistry, Vec<TexEntry>) {
@@ -1100,9 +1195,9 @@ mod tests {
         for level in [2, 5] {
             let m = lod.build(&wg, key(level));
             let crowns = m
-                .vertices
-                .chunks(4)
-                .filter(|q| (q[0].color >> 24) & 7 == UP && ((q[0].color >> 27) & 3) >= 2)
+                .quads
+                .iter()
+                .filter(|q| q.face() == UP && (q.kind() & 3) >= 2)
                 .count();
             assert!(crowns > 0, "level {level}: crowns over the forest");
         }
@@ -1135,9 +1230,9 @@ mod tests {
         };
         let m = mesh(key, &cols, &[trunk]);
         let crown_quads = |face: u32| {
-            m.vertices
-                .chunks(4)
-                .filter(|q| (q[0].color & 0xff_ffff) == 0x205020 && (q[0].color >> 24) & 7 == face)
+            m.quads
+                .iter()
+                .filter(|q| q.rgb() == 0x205020 && q.face() == face)
                 .count()
         };
         // One merged top and one merged bottom; north, south and one side each way.
@@ -1148,20 +1243,16 @@ mod tests {
             6
         );
         // The crown hangs above the ground: its bottom at 14, over ground at 10.
-        assert!(m.vertices.iter().any(|v| v.y == 14) && m.max_y == 19);
+        assert!(m.quads.iter().any(|q| q.corner().1 == 14) && m.max_y == 19);
         // The ground under the crowns is shaded (drawn as seen from below), in one piece.
         let shaded_ground = m
-            .vertices
-            .chunks(4)
-            .filter(|q| (q[0].color & 0xff_ffff) == 0x406080 && (q[0].color >> 24) & 7 == DOWN)
+            .quads
+            .iter()
+            .filter(|q| q.rgb() == 0x406080 && q.face() == DOWN)
             .count();
         assert_eq!(shaded_ground, 1);
         // The trunk: four sides of a one-block box.
-        let bark = m
-            .vertices
-            .chunks(4)
-            .filter(|q| (q[0].color & 0xff_ffff) == 0x403020)
-            .count();
+        let bark = m.quads.iter().filter(|q| q.rgb() == 0x403020).count();
         assert_eq!(bark, 4);
     }
 }

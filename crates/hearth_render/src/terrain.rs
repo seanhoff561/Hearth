@@ -95,15 +95,20 @@ impl RangeAllocator {
 }
 
 /// A storage buffer of fixed-size elements with a range allocator; grows by doubling.
-struct Arena {
-    buffer: wgpu::Buffer,
-    alloc: RangeAllocator,
+pub(crate) struct Arena {
+    pub(crate) buffer: wgpu::Buffer,
+    pub(crate) alloc: RangeAllocator,
     stride: u64,
     label: &'static str,
 }
 
 impl Arena {
-    fn new(device: &wgpu::Device, label: &'static str, stride: u64, capacity: u32) -> Self {
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        label: &'static str,
+        stride: u64,
+        capacity: u32,
+    ) -> Self {
         Self {
             buffer: Self::make(device, label, stride, capacity),
             alloc: RangeAllocator::new(capacity),
@@ -124,7 +129,7 @@ impl Arena {
     }
 
     /// Allocates `len` elements, growing the buffer if needed. Returns (offset, grew).
-    fn alloc(&mut self, ctx: &GpuContext, len: u32) -> (u32, bool) {
+    pub(crate) fn alloc(&mut self, ctx: &GpuContext, len: u32) -> (u32, bool) {
         if let Some(off) = self.alloc.alloc(len) {
             return (off, false);
         }

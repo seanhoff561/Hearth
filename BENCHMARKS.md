@@ -214,3 +214,62 @@ Results of `hearth bench` (newest last). Frame times come from an offscreen fram
 | cave_torches | 10 | 449 | 86758 | 1799 | 3.4 | 1.0000 | 3.80 ms, submit 3.62 | through the longest cave under a hill, lit by torches, at night |
 | thunderstorm | 1048 | 384 | 92771 | 1565 | 4.8 | 0.9999 | 1.38 ms, wait for gpu 0.60 | the forest flight under a heavy thunderstorm (16 mm/h, overcast) |
 
+## 3. LOD quads pooled as 16-byte records, one indirect multi-draw — commit 564e0bc, NVIDIA GeForce RTX 4060 Laptop GPU (Vulkan), 1920x1080, preset Fancy
+
+| Scene | Avg FPS | 1% low FPS | p99 ms | GPU ms | CPU ms | Draws | Triangles | VRAM MiB | Upload KiB/frame (max) | Allocs/frame (max) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| lowland_forest | 838.9 | 526.2 | 1.80 | 1.16 | 0.44 | 2165 | 1.56 M | 163 | 47.5 (219) | 363.0 (436) |
+| peak_lod512 | 962.5 | 637.4 | 1.29 | 1.01 | 0.49 | 894 | 1.67 M | 162 | 62.5 (67) | 344.6 (354) |
+| peak_lod1024 | 976.4 | 651.6 | 1.27 | 1.00 | 0.48 | 894 | 1.67 M | 162 | 62.5 (67) | 344.6 (354) |
+| coast_sunset | 1367.9 | 811.4 | 1.05 | 0.70 | 0.46 | 1153 | 0.52 M | 133 | 60.9 (195) | 361.9 (416) |
+| underwater | 1558.3 | 870.2 | 0.79 | 0.62 | 0.46 | 1005 | 0.36 M | 117 | 79.3 (325) | 368.8 (441) |
+| cave_torches | 1309.2 | 761.3 | 1.03 | 0.74 | 0.24 | 489 | 1.33 M | 163 | 17.5 (84) | 347.5 (378) |
+| thunderstorm | 862.7 | 565.1 | 1.72 | 1.14 | 0.38 | 2165 | 1.56 M | 163 | 47.7 (219) | 368.0 (441) |
+
+| GPU ms per pass | lowland_forest | peak_lod512 | peak_lod1024 | coast_sunset | underwater | cave_torches | thunderstorm |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| sky tables | 0.046 | 0.043 | 0.043 | 0.045 | 0.043 | 0.044 | 0.043 |
+| cull 0 | 0.018 | 0.015 | 0.015 | 0.015 | 0.014 | 0.016 | 0.017 |
+| terrain 0 | 0.401 | 0.075 | 0.074 | 0.149 | 0.178 | 0.148 | 0.384 |
+| hi-z | 0.057 | 0.053 | 0.053 | 0.051 | 0.048 | 0.053 | 0.054 |
+| cull 1 | 0.009 | 0.010 | 0.010 | 0.010 | 0.009 | 0.009 | 0.010 |
+| terrain 1 | 0.009 | 0.009 | 0.009 | 0.009 | 0.009 | 0.009 | 0.009 |
+| lod terrain | 0.424 | 0.622 | 0.613 | 0.153 | 0.088 | 0.403 | 0.405 |
+| sky, translucent, rain | 0.143 | 0.140 | 0.138 | 0.225 | 0.184 | 0.013 | 0.162 |
+| metering | 0.021 | 0.018 | 0.018 | 0.019 | 0.017 | 0.018 | 0.020 |
+| tonemap | 0.034 | 0.027 | 0.027 | 0.028 | 0.025 | 0.028 | 0.033 |
+
+| CPU ms per system | lowland_forest | peak_lod512 | peak_lod1024 | coast_sunset | underwater | cave_torches | thunderstorm |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| environment | 0.006 | 0.006 | 0.006 | 0.010 | 0.009 | 0.008 | 0.005 |
+| lod selection | 0.001 | 0.000 | 0.000 | 0.002 | 0.001 | 0.002 | 0.002 |
+| rain cover map | 0.001 | 0.000 | 0.000 | 0.001 | 0.001 | 0.001 | 0.001 |
+| prepare: terrain | 0.173 | 0.274 | 0.272 | 0.227 | 0.235 | 0.018 | 0.149 |
+| prepare: lod | 0.035 | 0.031 | 0.030 | 0.027 | 0.021 | 0.030 | 0.029 |
+| prepare: sky, rain | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.002 |
+| encode | 0.017 | 0.014 | 0.015 | 0.016 | 0.015 | 0.014 | 0.015 |
+| submit | 0.205 | 0.163 | 0.159 | 0.177 | 0.175 | 0.166 | 0.178 |
+| wait for gpu | 0.751 | 0.547 | 0.538 | 0.267 | 0.184 | 0.522 | 0.775 |
+
+| Allocations per frame | lowland_forest | peak_lod512 | peak_lod1024 | coast_sunset | underwater | cave_torches | thunderstorm |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| environment | 0.000 | 0.000 | 0.000 | 0.015 | 0.060 | 0.030 | 0.000 |
+| lod selection | 0.440 | 0.000 | 0.000 | 0.332 | 0.210 | 0.335 | 0.440 |
+| rain cover map | 0.080 | 0.000 | 0.000 | 0.053 | 0.040 | 0.053 | 0.080 |
+| prepare: terrain | 42.227 | 33.658 | 33.658 | 40.418 | 46.688 | 35.587 | 47.033 |
+| prepare: lod | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| prepare: sky, rain | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| encode | 69.840 | 70.668 | 70.668 | 69.898 | 69.803 | 70.393 | 70.042 |
+| submit | 247.392 | 237.253 | 237.255 | 248.213 | 249.110 | 238.158 | 247.392 |
+| wait for gpu | 1.002 | 0.993 | 0.993 | 0.925 | 0.898 | 0.995 | 1.000 |
+
+| Scene | Visible cubes | LOD tiles drawn | Meshing cubes/s | LOD tiles/s | Setup s | SSIM vs golden | Slowest frame | What |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| lowland_forest | 1048 | 384 | 102565 | 1559 | 5.0 | 0.9997 | 2.01 ms, wait for gpu 1.46 | flight over broadleaf forest and a river at 46° N, summer noon |
+| peak_lod512 | 2350 | 454 | 93657 | 1656 | 3.1 | 0.9998 | 2.90 ms, submit 2.59 | a full turn on a volcano's summit (420), LOD distance 512 |
+| peak_lod1024 | 2350 | 454 | 96557 | 1713 | 3.0 | 0.9998 | 2.77 ms, submit 2.47 | the same turn, LOD distance 1024 |
+| coast_sunset | 1601 | 393 | 70454 | 1796 | 5.1 | 0.9995 | 1.94 ms, environment 1.30 | along a rocky shore at 24° N looking out to sea at sunset |
+| underwater | 1650 | 289 | 70874 | 1853 | 4.2 | 0.9985 | 2.82 ms, submit 2.56 | six blocks under the sea off the same shore, afternoon |
+| cave_torches | 10 | 449 | 86378 | 1842 | 3.3 | 1.0000 | 2.65 ms, submit 2.59 | through the longest cave under a hill, lit by torches, at night |
+| thunderstorm | 1048 | 384 | 103926 | 1759 | 4.4 | 0.9999 | 1.82 ms, wait for gpu 1.19 | the forest flight under a heavy thunderstorm (16 mm/h, overcast) |
+
