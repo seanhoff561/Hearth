@@ -426,3 +426,22 @@ flood level is only known within the river's banks zone, so where it would stand
 land around the river, it thins toward the zone's edge (0.5 blocks per block) to meet that
 land: water spreading over a plain as a film too thin to show, rather than a wall at the edge
 of the zone.
+
+## D56 — Distant trees are the generator's trees (as in Distant Horizons)
+The first LOD drew forests as a flat roof of leaf colour wherever the tree density passed a
+quarter, and nothing elsewhere: scattered trees (parkland, savanna, open woodland) vanished at
+the edge of the full-detail area and forests became green slabs. Following Distant Horizons,
+whose distant terrain is built from what the world generator actually places, the finer LOD
+levels now grow each tile's real trees with the generator's own tree code: the tree writer
+became generic over a `TreeSink` (the cube writer with its priority lattice, or the LOD's
+canopy map), with the cubes' output unchanged byte for byte (checked on 634 forest cubes).
+Tree positions, species, shapes and heights match the full-detail trees exactly, so trees keep
+their place across the handoff; a test checks that the distant canopy and the generated
+cubes' leaves agree on at least 95 % of columns. Two liberties: a column shows a crown when
+its leaf cover beats a per-column threshold between 0.1 and 0.9, which preserves the canopy's
+cover on average instead of blowing every lone tree up to a whole column (max-sampling made a
+parkland look three times denser at 512 blocks); and levels coarser than 8-block columns
+(beyond about a kilometre, where a crown is under a column) do not grow trees, which would cost
+seconds per tile, but estimate the cover from the tree density and the biome's usual trees.
+The cost is geometry: about +50 % LOD quads and +0.2–0.3 ms of GPU time in a forest at
+1080p, recovered by the performance audit's LOD work.

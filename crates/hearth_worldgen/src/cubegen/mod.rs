@@ -180,6 +180,11 @@ impl WorldGenerator {
         self.caves.set_cavern_frequency(f);
     }
 
+    /// Surface features (trees for the distant terrain).
+    pub fn features(&self) -> &features::FeatureGen {
+        &self.features
+    }
+
     pub fn planet(&self) -> &Planet {
         &self.planet
     }
@@ -316,7 +321,7 @@ impl WorldGenerator {
             }
             self.caves.carve(&mut buf, pos, &col, self, &self.blocks);
             if class == CubeClass::Surface {
-                self.features.place(&mut buf, pos, self, &col);
+                self.features.place(&mut buf, self, &col);
             }
             Cube::from_states(&buf.states)
         })

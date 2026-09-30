@@ -6,8 +6,8 @@
 //! (terrain > logs > boulders > leaves by distance > plants > air, ties broken by state id), so
 //! the result is identical in any order.
 
+use hearth_math::ColumnPos;
 use hearth_math::hash::{Rng, derive_seed, hash_2d, hash_3d, unit_f32};
-use hearth_math::{ColumnPos, CubePos};
 use hearth_world::BlockStateId;
 
 use super::blocks::{GenBlocks, Wood};
@@ -170,13 +170,34 @@ fn is_aquatic(b: &GenBlocks, s: BlockStateId) -> bool {
         || s == b.mangrove.log_y
 }
 
+/// Where a tree's blocks go: a cube being generated, or the distant terrain's map of the
+/// canopy. Trees are grown by the same code for both, so the trees of the distant terrain are
+/// the ones the cubes will have.
+pub trait TreeSink {
+    /// Inclusive bounds (min, max) of the blocks the sink takes; trees and their parts wholly
+    /// outside are skipped.
+    fn bounds(&self) -> ([i32; 3], [i32; 3]);
+    /// The block already at a position, where the sink knows it (vines hang only into air).
+    fn get(&self, x: i32, y: i32, z: i32) -> Option<BlockStateId>;
+    fn put(&mut self, x: i32, y: i32, z: i32, s: BlockStateId);
+}
+
 /// Writes blocks into the cube using the priority lattice.
 struct Writer<'a> {
     buf: &'a mut CubeBuf,
     prio: Priorities<'a>,
 }
 
-impl Writer<'_> {
+impl TreeSink for Writer<'_> {
+    fn bounds(&self) -> ([i32; 3], [i32; 3]) {
+        let o = self.buf.origin;
+        ([o.x, o.y, o.z], [o.x + 15, o.y + 15, o.z + 15])
+    }
+
+    fn get(&self, x: i32, y: i32, z: i32) -> Option<BlockStateId> {
+        self.buf.get(x, y, z)
+    }
+
     #[inline]
     fn put(&mut self, x: i32, y: i32, z: i32, s: BlockStateId) {
         let Some(i) = self.buf.idx(x, y, z) else {
@@ -228,7 +249,7 @@ impl FeatureGen {
     }
 
     /// Places all features intersecting the cube.
-    pub fn place(&self, buf: &mut CubeBuf, pos: CubePos, wg: &WorldGenerator, col: &ColumnData) {
+    pub fn place(&self, buf: &mut CubeBuf, wg: &WorldGenerator, col: &ColumnData) {
         let b = &wg.blocks;
         let o = buf.origin;
         let mut w = Writer {
@@ -245,9 +266,10 @@ impl FeatureGen {
         // Trees whose origin cell is near the cube.
         let (x0, x1) = (o.x - TREE_REACH, o.x + 15 + TREE_REACH);
         let (z0, z1) = (o.z - TREE_REACH, o.z + 15 + TREE_REACH);
+        let sample = |x: i32, z: i32| Self::sample_at(wg, x, z);
         for fz in z0.div_euclid(TREE_CELL)..=z1.div_euclid(TREE_CELL) {
             for fx in x0.div_euclid(TREE_CELL)..=x1.div_euclid(TREE_CELL) {
-                self.tree_cell(&mut w, wg, pos, fx, fz);
+                self.tree_cell(&mut w, wg, fx, fz, &sample);
             }
         }
         for fz in (o.z - 8).div_euclid(DEBRIS_CELL)..=(o.z + 23).div_euclid(DEBRIS_CELL) {
@@ -536,13 +558,35 @@ impl FeatureGen {
         }
     }
 
-    fn tree_cell(&self, w: &mut Writer<'_>, wg: &WorldGenerator, pos: CubePos, fx: i32, fz: i32) {
+    /// Grows every tree that reaches into the sink's bounds, as the cubes grow them (distant
+    /// terrain: the sink maps the canopy).
+    pub fn grow_trees<S: TreeSink>(&self, sink: &mut S, wg: &WorldGenerator) {
+        let (lo, hi) = sink.bounds();
+        let (x0, x1) = (lo[0] - TREE_REACH, hi[0] + TREE_REACH);
+        let (z0, z1) = (lo[2] - TREE_REACH, hi[2] + TREE_REACH);
+        let planet = wg.planet();
+        let sample = |x: i32, z: i32| wg.terrain.sample(planet.wrap_x(x), z);
+        for fz in z0.div_euclid(TREE_CELL)..=z1.div_euclid(TREE_CELL) {
+            for fx in x0.div_euclid(TREE_CELL)..=x1.div_euclid(TREE_CELL) {
+                self.tree_cell(sink, wg, fx, fz, &sample);
+            }
+        }
+    }
+
+    fn tree_cell<S: TreeSink>(
+        &self,
+        w: &mut S,
+        wg: &WorldGenerator,
+        fx: i32,
+        fz: i32,
+        sample: &impl Fn(i32, i32) -> ColumnSample,
+    ) {
         let h = hash_2d(self.seed ^ 0x7ee5, fx, fz);
         let ox = fx * TREE_CELL + (h % TREE_CELL as u64) as i32;
         let oz = fz * TREE_CELL + ((h >> 8) % TREE_CELL as u64) as i32;
         // The upper hash bits (the lower ones placed the tree in its cell).
         let u = unit_f32(h.rotate_left(24));
-        let s = Self::sample_at(wg, ox, oz);
+        let s = sample(ox, oz);
         // Trees are denser than one per cell only where density is ~1. Mangroves stand in up
         // to two blocks of water.
         let wet =
@@ -553,12 +597,11 @@ impl FeatureGen {
         let kind = self.choose_tree(&s, h);
         let (reach, height) = kind.extent();
         let base = s.height_i();
-        let y0 = pos.y * 16;
-        let o = w.buf.origin;
-        if base + height < y0 || base - 3 > y0 + 15 {
+        let (lo, hi) = w.bounds();
+        if base + height < lo[1] || base - 3 > hi[1] {
             return;
         }
-        if ox + reach < o.x || ox - reach > o.x + 15 || oz + reach < o.z || oz - reach > o.z + 15 {
+        if ox + reach < lo[0] || ox - reach > hi[0] || oz + reach < lo[2] || oz - reach > hi[2] {
             return;
         }
         let mut rng = Rng::new(hash_3d(self.seed, ox, base, oz));
@@ -662,9 +705,9 @@ impl FeatureGen {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn grow(
+    fn grow<S: TreeSink>(
         &self,
-        w: &mut Writer<'_>,
+        w: &mut S,
         b: &GenBlocks,
         kind: TreeKind,
         x: i32,
@@ -939,17 +982,17 @@ impl FeatureGen {
             }
         }
         // Leaves from blobs: distance = Manhattan distance to the nearest log (1..=6).
-        let o = w.buf.origin;
+        let (lo, hi) = w.bounds();
         for &(cx, cy, cz, r, ry) in &blobs {
             let (x0, x1) = ((cx - r).floor() as i32, (cx + r).ceil() as i32);
             let (y0, y1) = ((cy - ry).floor() as i32, (cy + ry).ceil() as i32);
             let (z0, z1) = ((cz - r).floor() as i32, (cz + r).ceil() as i32);
-            if x1 < o.x || x0 > o.x + 15 || y1 < o.y || y0 > o.y + 15 || z1 < o.z || z0 > o.z + 15 {
+            if x1 < lo[0] || x0 > hi[0] || y1 < lo[1] || y0 > hi[1] || z1 < lo[2] || z0 > hi[2] {
                 continue;
             }
-            for ly in y0.max(o.y)..=y1.min(o.y + 15) {
-                for lz in z0.max(o.z)..=z1.min(o.z + 15) {
-                    for lx in x0.max(o.x)..=x1.min(o.x + 15) {
+            for ly in y0.max(lo[1])..=y1.min(hi[1]) {
+                for lz in z0.max(lo[2])..=z1.min(hi[2]) {
+                    for lx in x0.max(lo[0])..=x1.min(hi[0]) {
                         let dx = (lx as f32 + 0.5 - cx) / r;
                         let dy = (ly as f32 + 0.5 - cy) / ry;
                         let dz = (lz as f32 + 0.5 - cz) / r;
@@ -974,7 +1017,7 @@ impl FeatureGen {
                         }
                         w.put(lx, ly, lz, wood.leaves[dist as usize - 1]);
                         if vines && d > 0.55 && ly <= cy as i32 {
-                            self.hang_vine(w, lx, ly, lz, cx, cz);
+                            self.hang_vine(w, b, lx, ly, lz, cx, cz);
                         }
                     }
                 }
@@ -987,9 +1030,9 @@ impl FeatureGen {
 
     /// Conical spruce crown: ragged layers shrinking toward a spike.
     #[allow(clippy::too_many_arguments)]
-    fn spruce_crown(
+    fn spruce_crown<S: TreeSink>(
         &self,
-        w: &mut Writer<'_>,
+        w: &mut S,
         leaves: [BlockStateId; 7],
         x: i32,
         y: i32,
@@ -1005,8 +1048,8 @@ impl FeatureGen {
         } else {
             (x as f32 + 0.5, z as f32 + 0.5)
         };
-        let o = w.buf.origin;
-        if top < o.y || start > o.y + 15 {
+        let (lo, hi) = w.bounds();
+        if top < lo[1] || start > hi[1] {
             return;
         }
         for ly in start..=top {
@@ -1037,7 +1080,17 @@ impl FeatureGen {
     }
 
     /// Vines hanging from the outer face of a crown leaf.
-    fn hang_vine(&self, w: &mut Writer<'_>, lx: i32, ly: i32, lz: i32, cx: f32, cz: f32) {
+    #[allow(clippy::too_many_arguments)]
+    fn hang_vine<S: TreeSink>(
+        &self,
+        w: &mut S,
+        b: &GenBlocks,
+        lx: i32,
+        ly: i32,
+        lz: i32,
+        cx: f32,
+        cz: f32,
+    ) {
         let hv = hash_3d(self.seed ^ 0x517e, lx, ly, lz);
         if unit_f32(hv) > 0.22 {
             return;
@@ -1059,8 +1112,8 @@ impl FeatureGen {
         let len = 2 + (hv >> 20) as i32 % 7;
         for k in 0..len {
             let yy = ly - k;
-            match w.buf.get(vx, yy, vz) {
-                Some(s) if s.is_air() => w.put(vx, yy, vz, w.prio.b.vines[attach]),
+            match w.get(vx, yy, vz) {
+                Some(s) if s.is_air() => w.put(vx, yy, vz, b.vines[attach]),
                 Some(_) => break,
                 None => {}
             }

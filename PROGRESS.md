@@ -258,8 +258,10 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
    flight; average FPS, 1 % lows, p99, GPU time per pass from timestamps, CPU time per
    system, draws, triangles, VRAM, uploads and allocations per frame; golden images and SSIM
    comparison; JSON for a regression gate), baseline in `BENCHMARKS.md`. Queue, in the user's
-   order: (a) **interjected in turn — distant trees in the LOD** like Distant Horizons (trees
-   visible as trees at a distance, merging into canopy far away); then (b) `docs/perf-audit.md`;
+   order: (a) **interjected in turn — distant trees in the LOD** like Distant Horizons: done
+   (D56; the finer LOD levels grow each tile's real trees with the generator's own tree code,
+   crowns by leaf cover, trunks near; coarser levels estimate the canopy); then (b)
+   `docs/perf-audit.md`;
    (c) the missing optimizations worth doing, one per commit with before/after numbers and an
    SSIM check against the goldens; (d) a performance gate (`scripts/perf-gate.sh`) for the end
    of every milestone; then resume V2-2 (d, part 2b).

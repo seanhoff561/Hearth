@@ -70,11 +70,22 @@ horizon when that is farther (so the land never stops short of the skyline):
   0.3–0.7 s on 16 threads.
 - **Columns** are sampled straight from the surface sampler (never by generating cubes): the
   top block from the soil and rock models, water with its tint and the bed showing through
-  the shallows, forests as a canopy roof in leaf colour over a shaded forest floor. Vertices
-  carry the texture's average colour, the tint kind and the climate code, so the LOD shader
-  colours grass and leaves by season with the same functions as the full-detail terrain, and
-  lays seasonal snow and sea ice.
-- **Meshes**: row-merged tops, the sides that show, skirts along tile edges.
+  the shallows. Vertices carry the texture's average colour, the tint kind and the climate
+  code, so the LOD shader colours grass and leaves by season with the same functions as the
+  full-detail terrain, and lays seasonal snow and sea ice.
+- **Trees** (D56), as in Distant Horizons: on the finer levels (columns of up to 8 blocks,
+  out to about a kilometre) each tile's real trees are grown by the world generator's own tree
+  code (`FeatureGen::grow_trees` into a `TreeSink`) into a block-resolution map of the canopy,
+  so the trees in the distance are the trees the cubes will have and the handoff hides them
+  nowhere. A column shows a crown — a box of leaf colour floating from the lowest to the top
+  leaves — when its leaf cover beats a threshold drawn per column between 0.1 and 0.9, so on
+  average crowns cover as much ground as the leaves (a lone tree does not fill a whole
+  column); the ground under a crown is lit as shade; within 512 blocks each trunk stands at its
+  own block in bark colour. Coarser levels, whose columns are wider than a crown, raise a
+  crown at the usual height of the place's trees where they are expected to cover half the
+  ground or more, and darken the ground under sparser ones.
+- **Meshes**: row-merged tops, the sides that show, skirts along tile edges; crowns as boxes
+  with the faces no neighbour crown hides; trunks as one-block boxes.
 - **Handoff**: across an 8-block band at the edge of the full-detail area the cubes thin out by
   an ordered dither while the LOD, drawn a hair behind them in depth, shows through their
   gaps; inside the area the LOD gives way entirely. The LOD shares the terrain's globals

@@ -6,20 +6,28 @@
 //!   on screen at any distance.
 //! * **Columns** are sampled straight from the world generator's surface model at the tile's
 //!   resolution, never by generating cubes: the ground and its top block (from the soil and the
-//!   rock), water, and forest canopy as a raised roof in the colour of the leaves over a shaded
-//!   forest floor (what shows under the roof's edge where the full-detail trees end).
+//!   rock) or water, and the crown of the trees over it. On the finer levels (columns of up to
+//!   8 blocks, out to about a kilometre) the tile's real trees are grown by the generator's own
+//!   tree code into a map of the canopy, so every tree of the cubes stands in the distance too:
+//!   crowns float over the ground where leaves cover a quarter of a column or more, and trunks
+//!   stand at their own blocks. Coarser levels, whose columns are wider than a crown, raise a
+//!   crown where the place's trees are expected to close over the ground and darken the ground
+//!   under sparser ones.
 //! * **Meshes** are flat-topped columns with the sides that show and skirts along the tile
-//!   edges, which hide cracks against neighbours of another level. Every vertex carries the
+//!   edges, which hide cracks against neighbours of another level; crowns are boxes with the
+//!   faces no neighbour crown hides, and the ground under a crown is lit as shade. Every vertex carries the
 //!   colour of its block's texture, the block's tint kind and the column's climate code, so the
 //!   shader colours grass and leaves by season exactly as it does the full-detail terrain.
 
 use bytemuck::{Pod, Zeroable};
 use hearth_math::Planet;
+use hearth_math::hash::hash_2d;
 use hearth_texgen::TexEntry;
 use hearth_world::{BlockRegistry, BlockStateId, TintKind};
+use hearth_worldgen::cubegen::features::TreeSink;
 use hearth_worldgen::region::biome::{Biome, water_color};
 use hearth_worldgen::{ColumnSample, WorldGenerator};
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Columns along a tile side.
 pub const TILE: i32 = 32;
@@ -229,6 +237,8 @@ const VARIANT_BIRCH: u8 = 1 << 2;
 /// texture, which the shader tints like the full-detail face.
 pub struct BlockColors {
     per_state: Vec<(u32, u8)>,
+    /// Colour of each state's side (a log's bark).
+    sides: Vec<u32>,
 }
 
 fn pack(c: [u8; 3]) -> u32 {
@@ -274,6 +284,7 @@ impl BlockColors {
         let by_name: rustc_hash::FxHashMap<&str, &hearth_texgen::Tex> =
             textures.iter().map(|e| (e.name.as_str(), &e.tex)).collect();
         let mut per_state = vec![(0u32, TINT_RGB); reg.state_count()];
+        let mut sides = vec![0u32; reg.state_count()];
         for block in reg.blocks() {
             let path = block.name.path();
             let candidates = [
@@ -285,6 +296,12 @@ impl BlockColors {
                 .iter()
                 .find_map(|n| by_name.get(n.as_str()))
                 .map_or(block.map_color, |t| average(t));
+            let side = [format!("block/{path}"), format!("block/{path}_side")]
+                .iter()
+                .find_map(|n| by_name.get(n.as_str()))
+                .map_or(color, |t| average(t));
+            let first = block.first_state.0 as usize;
+            sides[first..first + block.state_count as usize].fill(pack(side));
             let kind = match block.def.tint {
                 TintKind::Grass | TintKind::DryGrass => TINT_GRASS,
                 TintKind::Foliage => TINT_DECIDUOUS,
@@ -292,12 +309,16 @@ impl BlockColors {
                 TintKind::Spruce => TINT_EVERGREEN,
                 TintKind::None | TintKind::Water => TINT_RGB,
             };
-            let first = block.first_state.0 as usize;
             for entry in &mut per_state[first..first + block.state_count as usize] {
                 *entry = (pack(color), kind);
             }
         }
-        Self { per_state }
+        Self { per_state, sides }
+    }
+
+    /// The side colour of a state (sRGB, packed): a log's bark.
+    pub fn side(&self, s: BlockStateId) -> u32 {
+        self.sides.get(s.0 as usize).copied().unwrap_or(0x808080)
     }
 
     pub fn get(&self, s: BlockStateId) -> (u32, u8) {
@@ -308,23 +329,171 @@ impl BlockColors {
     }
 }
 
-/// One LOD column.
+/// A tree crown over an LOD column: the leaves' lowest and top (first above) blocks, colour and
+/// tint kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Crown {
+    bottom: i32,
+    top: i32,
+    rgb: u32,
+    kind: u8,
+}
+
+/// One LOD column: the ground or water surface, and the crown of the trees over it.
 #[derive(Debug, Clone, Copy)]
 struct Col {
-    /// First block above the surface (ground, canopy or water).
+    /// First block above the ground or water.
     top: i32,
     rgb: u32,
     kind: u8,
     water: bool,
     climate: u32,
-    /// Under a canopy: the forest floor's height, colour and tint kind.
-    floor: Option<(i32, u32, u8)>,
+    crown: Option<Crown>,
+}
+
+/// A trunk drawn at its own block (fine levels): column (x, z) in blocks relative to the tile,
+/// from `y0` up to `y1`, in the bark's colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Trunk {
+    x: i32,
+    z: i32,
+    y0: i32,
+    y1: i32,
+    rgb: u32,
+}
+
+/// Levels up to this one grow the tile's real trees (the ones the cubes will have); coarser
+/// levels, whose columns are wider than a crown, estimate the canopy from the tree density.
+pub const EXACT_TREES_MAX_LEVEL: u8 = 3;
+/// Levels up to this one draw each trunk at its own block.
+const TRUNK_MAX_LEVEL: u8 = 2;
+/// A column shows a crown when its share of leaf cover beats a threshold drawn for the column
+/// between these: on average crowns then cover as much ground as the leaves do, whatever the
+/// column size (a lone tree does not grow to fill a whole column).
+const CROWN_COVER_MIN: f32 = 0.1;
+const CROWN_COVER_MAX: f32 = 0.9;
+/// Coarse levels: a crown where the trees are expected to cover at least this share of the
+/// ground; sparser trees darken the ground instead.
+const FAR_CROWN_COVER: f32 = 0.5;
+
+/// What a block state is to the canopy map.
+const OTHER: u8 = 0;
+const LEAVES: u8 = 1;
+/// A vertical log (a trunk).
+const TRUNK: u8 = 2;
+
+/// The canopy of a tile at block resolution, filled by growing the tile's trees with the world
+/// generator's own code.
+struct CanopyMap<'a> {
+    x0: i32,
+    z0: i32,
+    w: i32,
+    d: i32,
+    /// First block above the highest leaf (`i32::MIN`: no leaves), lowest leaf, and the leaves
+    /// at the top, per block column.
+    top: Vec<i32>,
+    bottom: Vec<i32>,
+    leaf: Vec<BlockStateId>,
+    /// Trunks by block column: lowest and first-above log, and the log.
+    trunks: FxHashMap<(i32, i32), (i32, i32, BlockStateId)>,
+    class: &'a [u8],
+}
+
+impl<'a> CanopyMap<'a> {
+    fn new(x0: i32, z0: i32, w: i32, d: i32, class: &'a [u8]) -> Self {
+        let n = (w * d) as usize;
+        Self {
+            x0,
+            z0,
+            w,
+            d,
+            top: vec![i32::MIN; n],
+            bottom: vec![i32::MAX; n],
+            leaf: vec![BlockStateId::AIR; n],
+            trunks: FxHashMap::default(),
+            class,
+        }
+    }
+
+    /// The crown over a `cs`-block square column at (x, z) (its minimum corner), if leaves
+    /// cover enough of it; the ground's top keeps it above.
+    fn crown(&self, x: i32, z: i32, cs: i32, ground: i32, colors: &BlockColors) -> Option<Crown> {
+        let (mut covered, mut top, mut bottom, mut leaf) = (0, i32::MIN, i32::MAX, None);
+        for dz in 0..cs {
+            for dx in 0..cs {
+                let (lx, lz) = (x + dx - self.x0, z + dz - self.z0);
+                if lx < 0 || lz < 0 || lx >= self.w || lz >= self.d {
+                    continue;
+                }
+                let i = (lz * self.w + lx) as usize;
+                if self.top[i] == i32::MIN || self.top[i] <= ground {
+                    continue;
+                }
+                covered += 1;
+                if self.top[i] > top {
+                    top = self.top[i];
+                    leaf = Some(self.leaf[i]);
+                }
+                bottom = bottom.min(self.bottom[i]);
+            }
+        }
+        let draw = (hash_2d(0xc40e ^ cs as u64, x, z) & 0xffff) as f32 / 65535.0;
+        let need = CROWN_COVER_MIN + (CROWN_COVER_MAX - CROWN_COVER_MIN) * draw;
+        if covered == 0 || (covered as f32) < need * (cs * cs) as f32 {
+            return None;
+        }
+        let (rgb, kind) = colors.get(leaf?);
+        Some(Crown {
+            bottom: bottom.max(ground),
+            top,
+            rgb,
+            kind,
+        })
+    }
+}
+
+impl TreeSink for CanopyMap<'_> {
+    fn bounds(&self) -> ([i32; 3], [i32; 3]) {
+        (
+            [self.x0, -4096, self.z0],
+            [self.x0 + self.w - 1, 8192, self.z0 + self.d - 1],
+        )
+    }
+
+    fn get(&self, _x: i32, _y: i32, _z: i32) -> Option<BlockStateId> {
+        None
+    }
+
+    fn put(&mut self, x: i32, y: i32, z: i32, s: BlockStateId) {
+        let (lx, lz) = (x - self.x0, z - self.z0);
+        if lx < 0 || lz < 0 || lx >= self.w || lz >= self.d {
+            return;
+        }
+        match self.class.get(s.0 as usize).copied().unwrap_or(OTHER) {
+            LEAVES => {
+                let i = (lz * self.w + lx) as usize;
+                if y + 1 > self.top[i] {
+                    self.top[i] = y + 1;
+                    self.leaf[i] = s;
+                }
+                self.bottom[i] = self.bottom[i].min(y);
+            }
+            TRUNK => {
+                let e = self.trunks.entry((x, z)).or_insert((y, y + 1, s));
+                e.0 = e.0.min(y);
+                e.1 = e.1.max(y + 1);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Builds tile meshes from a world generator.
 pub struct LodGen {
     colors: BlockColors,
-    /// Leaves of the forest canopy: oak, birch, spruce, mangrove.
+    /// `OTHER`, `LEAVES` or `TRUNK` per block state.
+    class: Vec<u8>,
+    /// Leaves of the usual trees: oak, birch, spruce, mangrove.
     leaves: [BlockStateId; 4],
     /// Average colour of the water texture (linear).
     water_tex: [f32; 3],
@@ -342,8 +511,27 @@ impl LodGen {
             .iter()
             .find(|e| e.name == "block/water_still")
             .map_or([0.6; 3], |e| average(&e.tex).map(to_linear));
+        let mut class = vec![OTHER; reg.state_count()];
+        for block in reg.blocks() {
+            let path = block.name.path();
+            let first = block.first_state.0 as usize;
+            for (k, c) in class[first..first + block.state_count as usize]
+                .iter_mut()
+                .enumerate()
+            {
+                let s = BlockStateId((first + k) as u16);
+                *c = if path.ends_with("_leaves") {
+                    LEAVES
+                } else if path.ends_with("_log") && reg.get(s, "axis").is_none_or(|a| a == "y") {
+                    TRUNK
+                } else {
+                    OTHER
+                };
+            }
+        }
         Self {
             colors: BlockColors::new(reg, textures),
+            class,
             leaves: [leaf("oak"), leaf("birch"), leaf("spruce"), leaf("mangrove")],
             water_tex,
         }
@@ -361,18 +549,83 @@ impl LodGen {
             (mz + half) as f64,
         );
         let southern = planet.latitude((mz + half) as f64) < 0.0;
+        // Fine levels: the tile's real trees, grown into a map of the canopy (over the tile and
+        // its ring of neighbour columns).
+        let canopy = (key.level <= EXACT_TREES_MAX_LEVEL).then(|| {
+            let size = key.size();
+            let mut map =
+                CanopyMap::new(mx - cs, mz - cs, size + 2 * cs, size + 2 * cs, &self.class);
+            wg.features().grow_trees(&mut map, wg);
+            map
+        });
         // Columns with a ring of neighbours around the tile.
         let n = (TILE + 2) as usize;
         let mut cols = Vec::with_capacity(n * n);
         for j in -1..=TILE {
             for i in -1..=TILE {
-                let x = planet.wrap_x(mx + i * cs + cs / 2);
-                let z = mz + j * cs + cs / 2;
+                let (bx, bz) = (mx + i * cs, mz + j * cs);
+                let x = planet.wrap_x(bx + cs / 2);
+                let z = bz + cs / 2;
                 let s = wg.terrain.sample(x, z);
-                cols.push(self.column(wg, &s, x, z, &normals, southern));
+                let mut col = self.column(wg, &s, x, z, &normals, southern);
+                col.crown = match &canopy {
+                    Some(map) => map.crown(bx, bz, cs, col.top, &self.colors),
+                    None => self.expected_crown(&s, &mut col, x, z),
+                };
+                cols.push(col);
             }
         }
-        mesh(key, &cols)
+        // Trunks at their own blocks, up to their crown.
+        let mut trunks = Vec::new();
+        if let Some(map) = canopy.as_ref().filter(|_| key.level <= TRUNK_MAX_LEVEL) {
+            for (&(x, z), &(y0, y1, log)) in &map.trunks {
+                let (rx, rz) = (x - mx, z - mz);
+                if rx < 0 || rz < 0 || rx >= key.size() || rz >= key.size() {
+                    continue;
+                }
+                let c = &cols[((rz / cs + 1) as usize) * n + (rx / cs + 1) as usize];
+                // Up to the crown, and down to the column's ground wherever that lies lower.
+                let y1 = c.crown.map_or(y1, |cr| y1.min(cr.bottom));
+                let y0 = y0.min(c.top);
+                if y1 > y0 {
+                    trunks.push(Trunk {
+                        x: rx,
+                        z: rz,
+                        y0,
+                        y1,
+                        rgb: self.colors.side(log),
+                    });
+                }
+            }
+            trunks.sort_by_key(|t| (t.z, t.x));
+        }
+        mesh(key, &cols, &trunks)
+    }
+
+    /// Coarse levels: a crown where the trees are expected to close over the ground, at the
+    /// usual height of the place's trees; sparser trees darken the ground.
+    fn expected_crown(&self, s: &ColumnSample, col: &mut Col, x: i32, z: i32) -> Option<Crown> {
+        if s.tree_density <= 0.0 || (col.water && s.biome != Biome::Mangrove) {
+            return None;
+        }
+        let (leaves, height, area) = canopy(s.biome);
+        let cover = (s.tree_density * 0.95 * area / 25.0).min(1.0);
+        if cover < FAR_CROWN_COVER {
+            let dim = 1.0 - 0.35 * cover / FAR_CROWN_COVER;
+            let c = col.rgb;
+            let ch = |k: u32| ((((c >> k) & 255) as f32 * dim) as u32) << k;
+            col.rgb = ch(0) | ch(8) | ch(16);
+            return None;
+        }
+        let (rgb, kind) = self.colors.get(self.leaves[leaves]);
+        let jitter = 0.85 + 0.3 * (hash_2d(0x7ee5, x, z) & 1023) as f32 / 1023.0;
+        let h = (height as f32 * (0.7 + 0.3 * s.tree_density.min(1.0)) * jitter).round() as i32;
+        Some(Crown {
+            bottom: col.top,
+            top: col.top + h.max(2),
+            rgb,
+            kind,
+        })
     }
 
     fn column(
@@ -429,7 +682,7 @@ impl LodGen {
                 kind: TINT_RGB,
                 water: true,
                 climate,
-                floor: None,
+                crown: None,
             };
         }
         let ground = s.height_i();
@@ -441,119 +694,116 @@ impl LodGen {
             .copied()
             .unwrap_or_else(|| rock.rock_at(ground - 1));
         let (rgb, kind) = self.colors.get(block);
-        // Forest: a canopy of the region's usual trees over the forest floor.
-        if s.tree_density > 0.25 {
-            let (leaves, height) = canopy(s.biome);
-            let (leaf_rgb, leaf_kind) = self.colors.get(self.leaves[leaves]);
-            let h = (height as f32 * (0.6 + 0.4 * s.tree_density.min(1.0))).round() as i32;
-            return Col {
-                top: ground + h,
-                rgb: leaf_rgb,
-                kind: leaf_kind,
-                water: false,
-                climate,
-                floor: Some((ground, rgb, kind)),
-            };
-        }
         Col {
             top: ground,
             rgb,
             kind,
             water: false,
             climate,
-            floor: None,
+            crown: None,
         }
     }
 }
 
-/// The usual canopy of a forest biome: leaves (oak, birch, spruce, mangrove) and height.
-fn canopy(b: Biome) -> (usize, i32) {
+/// The usual trees of a biome for the coarse levels: leaves (oak, birch, spruce, mangrove),
+/// crown top above the ground, and crown area (blocks²).
+fn canopy(b: Biome) -> (usize, i32, f32) {
     match b {
-        Biome::TropicalRainforest => (0, 16),
-        Biome::TemperateRainforest => (2, 14),
-        Biome::BorealForest | Biome::SnowyTaiga | Biome::MontaneForest => (2, 11),
-        Biome::Krummholz => (2, 3),
-        Biome::BirchForest => (1, 8),
-        Biome::Mangrove => (3, 8),
-        Biome::Savanna => (0, 6),
-        _ => (0, 8),
+        Biome::TropicalRainforest => (0, 18, 60.0),
+        Biome::TemperateRainforest => (2, 16, 30.0),
+        Biome::BorealForest | Biome::SnowyTaiga | Biome::MontaneForest => (2, 11, 22.0),
+        Biome::Krummholz | Biome::AlpineMeadow | Biome::Tundra => (2, 3, 9.0),
+        Biome::BirchForest => (1, 8, 15.0),
+        Biome::Mangrove => (3, 8, 28.0),
+        Biome::Savanna => (0, 7, 55.0),
+        Biome::MediterraneanScrub => (0, 5, 16.0),
+        _ => (0, 8, 22.0),
     }
 }
 
 /// Face codes as in the terrain shader.
-const DOWN_UP: [u32; 2] = [0, 1];
+const DOWN: u32 = 0;
+const UP: u32 = 1;
 const NORTH: u32 = 2;
 const SOUTH: u32 = 3;
 const WEST: u32 = 4;
 const EAST: u32 = 5;
 
-fn meshed_vertex(x: i32, y: i32, z: i32, c: &Col, face: u32) -> LodVertex {
+fn vertex(
+    x: i32,
+    y: i32,
+    z: i32,
+    rgb: u32,
+    kind: u8,
+    water: bool,
+    climate: u32,
+    face: u32,
+) -> LodVertex {
     LodVertex {
         xz: (x as u32 & 0xffff) | ((z as u32 & 0xffff) << 16),
         y,
-        color: c.rgb | (face << 24) | ((c.kind as u32 & 15) << 27) | (u32::from(c.water) << 31),
-        climate: c.climate,
+        color: rgb | (face << 24) | ((kind as u32 & 15) << 27) | (u32::from(water) << 31),
+        climate,
     }
 }
 
-/// Meshes a tile's columns (with their ring of neighbours): row-merged tops, the sides that
-/// show, and skirts along the tile edges.
-fn mesh(key: TileKey, cols: &[Col]) -> TileMesh {
+/// The four corners of a side face of the box `x0..x1 × z0..z1` from `lo` to `hi`, wound to
+/// face outward.
+fn side(face: u32, x0: i32, x1: i32, z0: i32, z1: i32, lo: i32, hi: i32) -> [(i32, i32, i32); 4] {
+    match face {
+        NORTH => [(x1, lo, z0), (x0, lo, z0), (x0, hi, z0), (x1, hi, z0)],
+        SOUTH => [(x0, lo, z1), (x1, lo, z1), (x1, hi, z1), (x0, hi, z1)],
+        WEST => [(x0, lo, z0), (x0, lo, z1), (x0, hi, z1), (x0, hi, z0)],
+        _ => [(x1, lo, z1), (x1, lo, z0), (x1, hi, z0), (x1, hi, z1)],
+    }
+}
+
+/// Meshes a tile's columns (with their ring of neighbours) and trunks: row-merged ground tops,
+/// the sides that show and skirts along the tile edges; tree crowns as boxes floating over the
+/// ground (tops, bottoms and the sides no neighbour crown hides); trunks as thin boxes.
+fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
     let cs = key.column();
     let n = TILE + 2;
     let at = |i: i32, j: i32| &cols[((j + 1) * n + (i + 1)) as usize];
     let mut v = Vec::new();
     let (mut min_y, mut max_y) = (i32::MAX, i32::MIN);
-    let quad = |v: &mut Vec<LodVertex>, p: [(i32, i32, i32); 4], c: &Col, face: u32| {
+    let mut quad = |v: &mut Vec<LodVertex>,
+                    p: [(i32, i32, i32); 4],
+                    rgb: u32,
+                    kind: u8,
+                    water: bool,
+                    climate: u32,
+                    face: u32| {
         for (x, y, z) in p {
-            v.push(meshed_vertex(x, y, z, c, face));
+            min_y = min_y.min(y);
+            max_y = max_y.max(y);
+            v.push(vertex(x, y, z, rgb, kind, water, climate, face));
         }
     };
+    // Ground under a crown is in its shade: lit as from below.
+    let ground_face = |c: &Col| if c.crown.is_some() { DOWN } else { UP };
     let same = |a: &Col, b: &Col| {
-        a.top == b.top && a.rgb == b.rgb && a.kind == b.kind && a.water == b.water
+        a.top == b.top
+            && a.rgb == b.rgb
+            && a.kind == b.kind
+            && a.water == b.water
+            && ground_face(a) == ground_face(b)
     };
-    let same_floor = |a: &Col, b: &Col| match (a.floor, b.floor) {
-        (Some(fa), Some(fb)) => fa == fb,
+    let same_crown = |a: &Col, b: &Col, top: bool| match (a.crown, b.crown) {
+        (Some(x), Some(y)) => {
+            x.rgb == y.rgb
+                && x.kind == y.kind
+                && if top {
+                    x.top == y.top
+                } else {
+                    x.bottom == y.bottom && x.bottom > a.top && y.bottom > b.top
+                }
+        }
         _ => false,
     };
     for j in 0..TILE {
-        // Forest floors under the canopy, merged along the row; lit from below (face 0) so they
-        // take only the dim light of the shade.
-        let mut i = 0;
-        while i < TILE {
-            let c = at(i, j);
-            let Some((ground, rgb, kind)) = c.floor else {
-                i += 1;
-                continue;
-            };
-            let mut end = i;
-            while end + 1 < TILE && same_floor(at(end + 1, j), c) {
-                end += 1;
-            }
-            let floor = Col {
-                top: ground,
-                rgb,
-                kind,
-                water: false,
-                climate: c.climate,
-                floor: None,
-            };
-            let (x0, x1, z0, z1) = (i * cs, (end + 1) * cs, j * cs, (j + 1) * cs);
-            quad(
-                &mut v,
-                [
-                    (x0, ground, z1),
-                    (x1, ground, z1),
-                    (x1, ground, z0),
-                    (x0, ground, z0),
-                ],
-                &floor,
-                DOWN_UP[0],
-            );
-            min_y = min_y.min(ground);
-            i = end + 1;
-        }
-        // Tops, merged along the row.
+        let (z0, z1) = (j * cs, (j + 1) * cs);
+        // Ground tops, merged along the row.
         let mut i = 0;
         while i < TILE {
             let c = at(i, j);
@@ -561,7 +811,7 @@ fn mesh(key: TileKey, cols: &[Col]) -> TileMesh {
             while end + 1 < TILE && same(at(end + 1, j), c) {
                 end += 1;
             }
-            let (x0, x1, z0, z1) = (i * cs, (end + 1) * cs, j * cs, (j + 1) * cs);
+            let (x0, x1) = (i * cs, (end + 1) * cs);
             quad(
                 &mut v,
                 [
@@ -570,17 +820,44 @@ fn mesh(key: TileKey, cols: &[Col]) -> TileMesh {
                     (x1, c.top, z0),
                     (x0, c.top, z0),
                 ],
-                c,
-                DOWN_UP[1],
+                c.rgb,
+                c.kind,
+                c.water,
+                c.climate,
+                ground_face(c),
             );
-            max_y = max_y.max(c.top);
-            min_y = min_y.min(c.top);
             i = end + 1;
         }
-        // Sides toward lower neighbours; along the tile edge, skirts reaching below both.
+        // Crown tops and bottoms, merged along the row.
+        for top in [true, false] {
+            let mut i = 0;
+            while i < TILE {
+                let c = at(i, j);
+                let Some(cr) = c.crown.filter(|cr| top || cr.bottom > c.top) else {
+                    i += 1;
+                    continue;
+                };
+                let mut end = i;
+                while end + 1 < TILE && same_crown(at(end + 1, j), c, top) {
+                    end += 1;
+                }
+                let (x0, x1) = (i * cs, (end + 1) * cs);
+                let (face, p) = if top {
+                    let y = cr.top;
+                    (UP, [(x0, y, z1), (x1, y, z1), (x1, y, z0), (x0, y, z0)])
+                } else {
+                    let y = cr.bottom;
+                    (DOWN, [(x0, y, z0), (x1, y, z0), (x1, y, z1), (x0, y, z1)])
+                };
+                quad(&mut v, p, cr.rgb, cr.kind, false, c.climate, face);
+                i = end + 1;
+            }
+        }
+        // Sides toward lower neighbours; along the tile edge, skirts reaching below both. Crown
+        // sides where no neighbour crown hides them.
         for i in 0..TILE {
             let c = at(i, j);
-            let (x0, x1, z0, z1) = (i * cs, (i + 1) * cs, j * cs, (j + 1) * cs);
+            let (x0, x1) = (i * cs, (i + 1) * cs);
             for (di, dj, face) in [(0, -1, NORTH), (0, 1, SOUTH), (-1, 0, WEST), (1, 0, EAST)] {
                 let (ni, nj) = (i + di, j + dj);
                 let nb = at(ni, nj);
@@ -590,38 +867,34 @@ fn mesh(key: TileKey, cols: &[Col]) -> TileMesh {
                 } else {
                     nb.top
                 };
-                if low >= c.top {
-                    continue;
+                if low < c.top {
+                    let p = side(face, x0, x1, z0, z1, low, c.top);
+                    quad(&mut v, p, c.rgb, c.kind, c.water, c.climate, face);
                 }
-                min_y = min_y.min(low);
-                let p = match face {
-                    NORTH => [
-                        (x1, low, z0),
-                        (x0, low, z0),
-                        (x0, c.top, z0),
-                        (x1, c.top, z0),
-                    ],
-                    SOUTH => [
-                        (x0, low, z1),
-                        (x1, low, z1),
-                        (x1, c.top, z1),
-                        (x0, c.top, z1),
-                    ],
-                    WEST => [
-                        (x0, low, z0),
-                        (x0, low, z1),
-                        (x0, c.top, z1),
-                        (x0, c.top, z0),
-                    ],
-                    _ => [
-                        (x1, low, z1),
-                        (x1, low, z0),
-                        (x1, c.top, z0),
-                        (x1, c.top, z1),
-                    ],
+                let Some(cr) = c.crown else {
+                    continue;
                 };
-                quad(&mut v, p, c, face);
+                // The crown's side from its bottom (or the neighbour's ground) to its top, less
+                // what the neighbour's crown covers.
+                let lo = cr.bottom.max(nb.top);
+                let spans: [(i32, i32); 2] = match nb.crown {
+                    Some(o) => [(lo, cr.top.min(o.bottom)), (lo.max(o.top), cr.top)],
+                    None => [(lo, cr.top), (0, 0)],
+                };
+                for (a, b) in spans {
+                    if b > a {
+                        let p = side(face, x0, x1, z0, z1, a, b);
+                        quad(&mut v, p, cr.rgb, cr.kind, false, c.climate, face);
+                    }
+                }
             }
+        }
+    }
+    // Trunks: the four sides of a one-block box.
+    for t in trunks {
+        for face in [NORTH, SOUTH, WEST, EAST] {
+            let p = side(face, t.x, t.x + 1, t.z, t.z + 1, t.y0, t.y1);
+            quad(&mut v, p, t.rgb, TINT_RGB, false, 0, face);
         }
     }
     let (mx, mz) = key.min_block();
@@ -695,6 +968,24 @@ mod tests {
         );
     }
 
+    fn ground(top: i32) -> Col {
+        Col {
+            top,
+            rgb: 0x406080,
+            kind: TINT_RGB,
+            water: false,
+            climate: 0,
+            crown: None,
+        }
+    }
+
+    fn faces(m: &TileMesh, face: u32) -> usize {
+        m.vertices
+            .chunks(4)
+            .filter(|q| (q[0].color >> 24) & 7 == face)
+            .count()
+    }
+
     #[test]
     fn meshes_have_tops_sides_and_skirts() {
         let key = TileKey {
@@ -703,48 +994,14 @@ mod tests {
             z: -2,
         };
         let n = (TILE + 2) as usize;
-        let mut cols = vec![
-            Col {
-                top: 10,
-                rgb: 0x406080,
-                kind: TINT_RGB,
-                water: false,
-                climate: 0,
-                floor: None,
-            };
-            n * n
-        ];
+        let mut cols = vec![ground(10); n * n];
         // A single raised column in the middle of the tile.
         cols[(17 * n) + 17].top = 14;
-        let m = mesh(key, &cols);
+        let m = mesh(key, &cols, &[]);
         // Flat rows merge into one top each (the raised column splits its row into three).
-        let tops = m
-            .vertices
-            .chunks(4)
-            .filter(|q| (q[0].color >> 24) & 7 == 1)
-            .count();
-        assert_eq!(tops, TILE as usize + 2);
-        // A forest column keeps its floor under the canopy.
-        let mut forest = cols.clone();
-        forest[(5 * n) + 5] = Col {
-            top: 20,
-            floor: Some((10, 0x204020, TINT_RGB)),
-            ..forest[(5 * n) + 5]
-        };
-        let f = mesh(key, &forest);
-        let floors = f
-            .vertices
-            .chunks(4)
-            .filter(|q| (q[0].color >> 24) & 7 == 0)
-            .count();
-        assert_eq!(floors, 1);
+        assert_eq!(faces(&m, UP), TILE as usize + 2);
         // Four sides of the raised column, and skirts along all four tile edges.
-        let sides = m
-            .vertices
-            .chunks(4)
-            .filter(|q| (q[0].color >> 24) & 7 != 1)
-            .count();
-        assert_eq!(sides, 4 + 4 * TILE as usize);
+        assert_eq!(m.vertices.len() / 4 - faces(&m, UP), 4 + 4 * TILE as usize);
         assert_eq!(m.max_y, 14);
         assert_eq!(m.min_y, 10 - 2 * key.column());
         assert!(
@@ -752,5 +1009,159 @@ mod tests {
                 .iter()
                 .all(|v| (v.xz & 0xffff) as i32 <= key.size() && (v.xz >> 16) as i32 <= key.size())
         );
+    }
+
+    fn tiny_world() -> (WorldGenerator, BlockRegistry, Vec<TexEntry>) {
+        let settings = hearth_worldgen::WorldGenSettings {
+            seed: 7,
+            planet_size: hearth_math::PlanetSize::Tiny,
+            grid_resolution: 256,
+            ..Default::default()
+        }
+        .sanitized();
+        let grid = std::sync::Arc::new(hearth_worldgen::PlanetGrid::build(&settings, &|_, _| {}));
+        let terrain = std::sync::Arc::new(hearth_worldgen::Terrain::new(grid));
+        let content = hearth_content::Content::load_base();
+        let reg = hearth_world::datapack::load_builtin_registry().expect("registry");
+        let wg = WorldGenerator::new(terrain, &reg, &content).expect("generator");
+        let tex = hearth_texgen::textures_for(Some(&content));
+        (wg, reg, tex)
+    }
+
+    /// A patch of flat, dense forest.
+    fn forest(wg: &WorldGenerator) -> (i32, i32) {
+        let c = wg.planet().circumference();
+        for z in (-3000..3000).step_by(97) {
+            for x in (0..c).step_by(89) {
+                let s = wg.terrain.sample(x, z);
+                if s.tree_density > 0.7 && !s.is_underwater() && s.slope < 0.2 {
+                    return (x, z);
+                }
+            }
+        }
+        panic!("no forest");
+    }
+
+    #[test]
+    fn distant_trees_are_the_trees_the_cubes_grow() {
+        let (wg, reg, tex) = tiny_world();
+        let lod = LodGen::new(&reg, &tex);
+        let (x0, z0) = forest(&wg);
+        let size = 48;
+        let mut map = CanopyMap::new(x0, z0, size, size, &lod.class);
+        wg.features().grow_trees(&mut map, &wg);
+        // The highest leaves of each column in the generated cubes.
+        let mut cubes: FxHashMap<hearth_math::CubePos, hearth_world::Cube> = FxHashMap::default();
+        let (mut both, mut agree, mut only_one) = (0, 0, 0);
+        for dz in 0..size {
+            for dx in 0..size {
+                let (x, z) = (x0 + dx, z0 + dz);
+                let ground = wg.terrain.sample(x, z).height_i();
+                let mut cube_top = i32::MIN;
+                for y in (ground..ground + 40).rev() {
+                    let p = hearth_math::BlockPos::new(x, y, z);
+                    let cube = cubes
+                        .entry(p.cube())
+                        .or_insert_with(|| wg.generate_cube(p.cube()));
+                    if lod.class[cube.get(p.local()).0 as usize] == LEAVES {
+                        cube_top = y + 1;
+                        break;
+                    }
+                }
+                let map_top = map.top[(dz * size + dx) as usize];
+                match (cube_top > i32::MIN, map_top > i32::MIN) {
+                    (true, true) => {
+                        both += 1;
+                        agree += usize::from(cube_top == map_top);
+                    }
+                    (false, false) => {}
+                    _ => only_one += 1,
+                }
+            }
+        }
+        assert!(both > 300, "a forest canopy: {both} columns");
+        // Leaves the cubes lose to logs or the ground where trees meet are the only differences.
+        assert!(
+            agree as f64 >= 0.95 * both as f64 && only_one as f64 <= 0.03 * both as f64,
+            "{agree} of {both} columns agree on the canopy top, {only_one} disagree on leaves"
+        );
+    }
+
+    #[test]
+    fn coarse_levels_close_the_canopy_over_forests_only() {
+        let (wg, reg, tex) = tiny_world();
+        let lod = LodGen::new(&reg, &tex);
+        let (x, z) = forest(&wg);
+        let key = |level: u8| TileKey {
+            level,
+            x: x.div_euclid(TILE << level),
+            z: z.div_euclid(TILE << level),
+        };
+        for level in [2, 5] {
+            let m = lod.build(&wg, key(level));
+            let crowns = m
+                .vertices
+                .chunks(4)
+                .filter(|q| (q[0].color >> 24) & 7 == UP && ((q[0].color >> 27) & 3) >= 2)
+                .count();
+            assert!(crowns > 0, "level {level}: crowns over the forest");
+        }
+    }
+
+    #[test]
+    fn crowns_float_over_shaded_ground_on_their_trunks() {
+        let key = TileKey {
+            level: 1,
+            x: 0,
+            z: 0,
+        };
+        let n = (TILE + 2) as usize;
+        let mut cols = vec![ground(10); n * n];
+        let crown = Crown {
+            bottom: 14,
+            top: 19,
+            rgb: 0x205020,
+            kind: TINT_DECIDUOUS,
+        };
+        // Two crowns side by side: their facing sides hide each other.
+        cols[(6 * n) + 6].crown = Some(crown);
+        cols[(6 * n) + 7].crown = Some(crown);
+        let trunk = Trunk {
+            x: 10,
+            z: 10,
+            y0: 10,
+            y1: 14,
+            rgb: 0x403020,
+        };
+        let m = mesh(key, &cols, &[trunk]);
+        let crown_quads = |face: u32| {
+            m.vertices
+                .chunks(4)
+                .filter(|q| (q[0].color & 0xff_ffff) == 0x205020 && (q[0].color >> 24) & 7 == face)
+                .count()
+        };
+        // One merged top and one merged bottom; north, south and one side each way.
+        assert_eq!(crown_quads(UP), 1);
+        assert_eq!(crown_quads(DOWN), 1);
+        assert_eq!(
+            crown_quads(NORTH) + crown_quads(SOUTH) + crown_quads(WEST) + crown_quads(EAST),
+            6
+        );
+        // The crown hangs above the ground: its bottom at 14, over ground at 10.
+        assert!(m.vertices.iter().any(|v| v.y == 14) && m.max_y == 19);
+        // The ground under the crowns is shaded (drawn as seen from below), in one piece.
+        let shaded_ground = m
+            .vertices
+            .chunks(4)
+            .filter(|q| (q[0].color & 0xff_ffff) == 0x406080 && (q[0].color >> 24) & 7 == DOWN)
+            .count();
+        assert_eq!(shaded_ground, 1);
+        // The trunk: four sides of a one-block box.
+        let bark = m
+            .vertices
+            .chunks(4)
+            .filter(|q| (q[0].color & 0xff_ffff) == 0x403020)
+            .count();
+        assert_eq!(bark, 4);
     }
 }
