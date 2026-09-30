@@ -55,6 +55,8 @@ fn emit(pass_index: u32, off: u32, n: u32, inst: u32) {
         }
         let k = min(n - done, MAX_QUADS);
         let idx = atomicAdd(&counts[region], 1u);
+        // Quads per region, after the draw counts (statistics for the benchmark).
+        atomicAdd(&counts[8u + region], k);
         if idx < P.capacity {
             draws[region * P.capacity + idx] = DrawArgs(k * 6u, 1u, 0u, i32((off + done) * 4u), inst);
         }

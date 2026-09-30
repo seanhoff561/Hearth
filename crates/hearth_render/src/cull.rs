@@ -211,9 +211,10 @@ impl GpuCuller {
             cand_capacity,
             draws: draw_buffer(device, capacity),
             capacity,
+            // Draw counts per region, then quads per region.
             counts: device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("cull draw counts"),
-                size: 4 * REGIONS as u64,
+                size: 8 * REGIONS as u64,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::INDIRECT
                     | wgpu::BufferUsages::COPY_DST
@@ -260,13 +261,12 @@ impl GpuCuller {
             self.slot_capacity = cap;
             self.binds = None;
         }
-        ctx.queue.write_buffer(
+        ctx.write_buffer(
             &self.slots,
             slot as u64 * SLOT_SIZE,
             bytemuck::bytes_of(rec),
         );
-        ctx.queue
-            .write_buffer(&self.vis, slot as u64 * 4, bytemuck::bytes_of(&0u32));
+        ctx.write_buffer(&self.vis, slot as u64 * 4, bytemuck::bytes_of(&0u32));
     }
 
     /// Uploads this frame's candidates and parameters.
@@ -297,8 +297,7 @@ impl GpuCuller {
             self.binds = None;
         }
         if !cands.is_empty() {
-            ctx.queue
-                .write_buffer(&self.cands, 0, bytemuck::cast_slice(cands));
+            ctx.write_buffer(&self.cands, 0, bytemuck::cast_slice(cands));
         }
         self.ensure_hzb(ctx, depth_size);
         let hzb = self.hzb.as_ref().expect("created above");
@@ -313,8 +312,7 @@ impl GpuCuller {
                 occlusion: 1,
                 near,
             };
-            ctx.queue
-                .write_buffer(&self.params[phase as usize], 0, bytemuck::bytes_of(&p));
+            ctx.write_buffer(&self.params[phase as usize], 0, bytemuck::bytes_of(&p));
         }
     }
 

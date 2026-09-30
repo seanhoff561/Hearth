@@ -411,6 +411,27 @@ fn coral_block(seed: u64) -> Tex {
     })
 }
 
+/// A torch: a stick with a burning head of resin and fibre. The block's box is two pixels
+/// square and ten high in the middle of the block, so the texture is painted there: flame over
+/// charred wrapping over wood.
+fn torch(seed: u64) -> Tex {
+    let mut t = blank();
+    for y in 6..16 {
+        for x in 6..10 {
+            let n = rand01(seed, x, y);
+            let c = match y {
+                6 => [255, 236, 150],
+                7 => [255, 190, 70],
+                8 => [236, 120, 36],
+                9 => [70, 44, 28],
+                _ => scale([118, 84, 50], 0.85 + n * 0.3),
+            };
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
 /// Brown bladder wrack on rocks.
 fn seaweed(seed: u64) -> Tex {
     let mut t = blank();
@@ -696,6 +717,9 @@ pub fn textures() -> Vec<TexEntry> {
         t
     });
     add("mangrove_roots", mangrove_roots(h("mroots")));
+
+    // Light.
+    add("torch", torch(h("torch")));
 
     // Coasts.
     add("coral", coral(h("coral")));

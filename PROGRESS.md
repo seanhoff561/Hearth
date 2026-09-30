@@ -253,6 +253,16 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
   `tools/shots/v22_rivers.shots` (snowmelt flood, summer, winter low; savanna wet and dry).
 
 ## Next steps
+0. **Interjected — rendering performance audit (in progress).** Measurement done: `hearth
+   bench` (seven scenes on fixed camera paths, offscreen frame loop with two frames in
+   flight; average FPS, 1 % lows, p99, GPU time per pass from timestamps, CPU time per
+   system, draws, triangles, VRAM, uploads and allocations per frame; golden images and SSIM
+   comparison; JSON for a regression gate), baseline in `BENCHMARKS.md`. Queue, in the user's
+   order: (a) **interjected in turn — distant trees in the LOD** like Distant Horizons (trees
+   visible as trees at a distance, merging into canopy far away); then (b) `docs/perf-audit.md`;
+   (c) the missing optimizations worth doing, one per commit with before/after numbers and an
+   SSIM check against the goldens; (d) a performance gate (`scripts/perf-gate.sh`) for the end
+   of every milestone; then resume V2-2 (d, part 2b).
 1. (d, part 2b) Finite conserved player-moved water with levelling and flow (v1 M5 fluids)
    and per-block quality; coastal salt pans.
 2. (e) Water rendering (v1 M7) and ice.

@@ -87,7 +87,7 @@ impl LodRenderer {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ctx.queue.write_buffer(
+        ctx.write_buffer(
             &index_buffer,
             0,
             bytemuck::cast_slice(&quad_indices(index_quads)),
@@ -210,7 +210,7 @@ impl LodRenderer {
                 usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            ctx.queue.write_buffer(
+            ctx.write_buffer(
                 &self.index_buffer,
                 0,
                 bytemuck::cast_slice(&quad_indices(self.index_quads)),
@@ -222,7 +222,7 @@ impl LodRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ctx.queue.write_buffer(&buffer, 0, vertices);
+        ctx.write_buffer(&buffer, 0, vertices);
         self.tiles.insert(
             id,
             GpuTile {
@@ -295,8 +295,7 @@ impl LodRenderer {
             self.bind1 = Self::bind(&ctx.device, &self.layout1, &self.origins);
         }
         if !origins.is_empty() {
-            ctx.queue
-                .write_buffer(&self.origins, 0, bytemuck::cast_slice(&origins));
+            ctx.write_buffer(&self.origins, 0, bytemuck::cast_slice(&origins));
         }
         self.stats = LodStats {
             tiles: self.tiles.len(),

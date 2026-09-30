@@ -4,12 +4,17 @@ use hearth::LaunchConfig;
 use hearth::screenshot::ShotSpec;
 use hearth_core::paths::GameDirs;
 
+/// Heap allocations are counted per thread (the benchmark checks the frame path).
+#[global_allocator]
+static ALLOCATOR: hearth::alloc_count::CountingAllocator = hearth::alloc_count::CountingAllocator;
+
 const OPTIONS_HELP: &str = "\
 COMMANDS:
     content lint               Validate all game data (schemas, references, reachability)
     content graph [--out DIR]  Export knowledge/process/food-web graphs (default docs/generated)
     content uncertain          List data entries marked for realism review
     content status             Implemented/planned counts per content domain
+    bench [OPTIONS]            Rendering benchmark (see `hearth bench --help`)
 
 OPTIONS:
     --game-dir <PATH>          Use PATH as the game directory (options, saves, screenshots)
@@ -41,6 +46,10 @@ fn main() {
     let all: Vec<String> = std::env::args().skip(1).collect();
     if all.first().map(String::as_str) == Some("content") {
         std::process::exit(hearth::content_cli::run(&all[1..]));
+    }
+    if all.first().map(String::as_str) == Some("bench") {
+        let dirs = hearth::resolve_dirs(None);
+        std::process::exit(hearth::bench::run(&all[1..], Some(&dirs.cache())));
     }
 
     let mut config = LaunchConfig::default();

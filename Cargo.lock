@@ -819,8 +819,11 @@ dependencies = [
  "hearth_world",
  "hearth_worldgen",
  "log",
+ "png",
  "rayon",
  "rustc-hash 2.1.3",
+ "serde",
+ "serde_json",
  "wgpu",
  "winit",
 ]

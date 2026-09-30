@@ -13,6 +13,7 @@ pub mod models;
 pub mod offscreen;
 pub mod post;
 pub mod precip;
+pub mod profiler;
 pub mod scene;
 pub mod sky;
 pub mod terrain;

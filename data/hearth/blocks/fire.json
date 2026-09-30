@@ -1,0 +1,3 @@
+{
+  "torch": {"hardness": 0.0, "resistance": 0.0, "shape": {"boxes": [[7, 0, 7, 9, 10, 9]]}, "collision": false, "opaque": false, "render": "model", "layer": "cutout", "emission": 14, "flammable": true, "sound": "wood", "map_color": "#ffb030"}
+}

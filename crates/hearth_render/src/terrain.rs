@@ -15,6 +15,7 @@ use crate::camera::{Camera, Frustum};
 use crate::cull::{GpuCuller, SlotRecord};
 use crate::gpu::GpuContext;
 use crate::mesh::{CubeMesh, GeneralQuad, PackedQuad};
+use crate::profiler::GpuTimer;
 
 /// Translucent quads of cubes within this many cubes of the camera are re-sorted back to front
 /// whenever the camera enters another block.
@@ -290,6 +291,8 @@ pub struct TerrainStats {
     pub general_bytes: u64,
     pub gpu_culling: bool,
     pub resorted: usize,
+    /// Translucent quads drawn (always from CPU draw lists).
+    pub translucent_quads: u64,
 }
 
 struct Pass {
@@ -324,8 +327,7 @@ impl Pass {
             });
         }
         if !self.draws.is_empty() {
-            ctx.queue
-                .write_buffer(&self.buffer, 0, bytemuck::cast_slice(&self.draws));
+            ctx.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&self.draws));
         }
     }
 }
@@ -530,8 +532,7 @@ impl TerrainRenderer {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ctx.queue
-            .write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
+        ctx.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
         let pipes = make_pipelines(device, &layout0, &layout1, color_format);
         let passes = [
             Pass::new(device, "draws packed opaque"),
@@ -619,7 +620,7 @@ impl TerrainRenderer {
             }
             self.bind_dirty |= grew;
             g.packed_off = off;
-            ctx.queue.write_buffer(
+            ctx.write_buffer(
                 &self.packed.buffer,
                 off as u64 * 16,
                 bytemuck::cast_slice::<PackedQuad, u8>(&mesh.quads),
@@ -637,14 +638,14 @@ impl TerrainRenderer {
             g.general_off = off;
             g.trans_off = off + g.general_len;
             if g.general_len > 0 {
-                ctx.queue.write_buffer(
+                ctx.write_buffer(
                     &self.general.buffer,
                     off as u64 * 64,
                     bytemuck::cast_slice::<GeneralQuad, u8>(&mesh.models),
                 );
             }
             if g.trans_len > 0 {
-                ctx.queue.write_buffer(
+                ctx.write_buffer(
                     &self.general.buffer,
                     g.trans_off as u64 * 64,
                     bytemuck::cast_slice::<GeneralQuad, u8>(&mesh.translucent),
@@ -782,6 +783,7 @@ impl TerrainRenderer {
             p.draws.clear();
         }
         let mut quads_drawn = 0u64;
+        let mut translucent_quads = 0u64;
         for (inst, (pos, o)) in visible.iter().enumerate() {
             let m = &self.meshes[pos];
             let inst = inst as u32;
@@ -837,6 +839,7 @@ impl TerrainRenderer {
                     inst as u32,
                 );
                 quads_drawn += m.trans_len as u64;
+                translucent_quads += m.trans_len as u64;
             }
         }
         // Upload instances.
@@ -864,7 +867,7 @@ impl TerrainRenderer {
             self.bind_dirty = false;
         }
         if !self.instance_data.is_empty() {
-            ctx.queue.write_buffer(
+            ctx.write_buffer(
                 &self.instances,
                 0,
                 bytemuck::cast_slice(&self.instance_data),
@@ -925,8 +928,7 @@ impl TerrainRenderer {
             overcast: params.overcast.to_array(),
             near,
         };
-        ctx.queue
-            .write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
+        ctx.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
         self.stats = TerrainStats {
             meshes: self.meshes.len(),
             visible_cubes: visible.len(),
@@ -936,6 +938,7 @@ impl TerrainRenderer {
             general_bytes: self.general.alloc.used() as u64 * 64,
             gpu_culling: gpu,
             resorted,
+            translucent_quads,
         };
     }
 
@@ -982,7 +985,7 @@ impl TerrainRenderer {
             self.sort_scratch
                 .extend(self.sort_keys.iter().map(|(_, i)| m.trans[*i as usize]));
             std::mem::swap(&mut m.trans, &mut self.sort_scratch);
-            ctx.queue.write_buffer(
+            ctx.write_buffer(
                 &self.general.buffer,
                 m.trans_off as u64 * 64,
                 bytemuck::cast_slice::<GeneralQuad, u8>(&m.trans),
@@ -995,7 +998,7 @@ impl TerrainRenderer {
 
     /// Records the opaque and cutout geometry into `enc` (GPU- or CPU-culled). Clears the
     /// targets first when `clear` is given. Translucent geometry is drawn afterwards with
-    /// [`Self::draw_translucent`], after the sky.
+    /// [`Self::draw_translucent`], after the sky. `timer` marks the passes.
     pub fn render_opaque(
         &mut self,
         ctx: &GpuContext,
@@ -1003,26 +1006,52 @@ impl TerrainRenderer {
         color: &wgpu::TextureView,
         depth: &wgpu::TextureView,
         clear: Option<wgpu::Color>,
+        mut timer: Option<&mut GpuTimer>,
     ) {
+        let mut mark = |enc: &mut wgpu::CommandEncoder, label: &'static str| {
+            if let Some(t) = timer.as_deref_mut() {
+                t.mark(enc, label);
+            }
+        };
         if !self.uses_gpu_culling() {
-            let mut pass = begin_pass(enc, color, depth, clear);
-            self.draw_opaque(&mut pass);
+            {
+                let mut pass = begin_pass(enc, color, depth, clear);
+                self.draw_opaque(&mut pass);
+            }
+            mark(enc, "terrain");
             return;
         }
         let count = self.cand_slots.len() as u32;
         let culler = self.culler.as_mut().expect("checked by uses_gpu_culling");
         // Phase 0: what was visible last frame.
         culler.cull(ctx, enc, &self.instances, 0, count);
+        mark(enc, "cull 0");
         {
             let mut pass = begin_pass(enc, color, depth, clear);
             self.draw_gpu_phase(&mut pass, 0);
         }
+        mark(enc, "terrain 0");
         // Phase 1: test everything against the depth so far and draw what phase 0 missed.
         let culler = self.culler.as_mut().expect("checked by uses_gpu_culling");
         culler.build_hzb(ctx, enc, depth);
+        mark(enc, "hi-z");
+        let culler = self.culler.as_mut().expect("checked by uses_gpu_culling");
         culler.cull(ctx, enc, &self.instances, 1, count);
-        let mut pass = begin_pass(enc, color, depth, None);
-        self.draw_gpu_phase(&mut pass, 1);
+        mark(enc, "cull 1");
+        {
+            let mut pass = begin_pass(enc, color, depth, None);
+            self.draw_gpu_phase(&mut pass, 1);
+        }
+        mark(enc, "terrain 1");
+    }
+
+    /// The GPU culling counters (draws, then quads, per phase and pass), when GPU culling
+    /// runs; copied into the benchmark's statistics.
+    pub fn cull_counters(&self) -> Option<&wgpu::Buffer> {
+        if !self.uses_gpu_culling() {
+            return None;
+        }
+        self.culler.as_ref().map(|c| &c.counts)
     }
 
     /// Opaque then translucent terrain in one call (no sky in between).
@@ -1034,7 +1063,7 @@ impl TerrainRenderer {
         depth: &wgpu::TextureView,
         clear: Option<wgpu::Color>,
     ) {
-        self.render_opaque(ctx, enc, color, depth, clear);
+        self.render_opaque(ctx, enc, color, depth, clear, None);
         let mut pass = begin_pass(enc, color, depth, None);
         self.draw_translucent(&mut pass);
     }
@@ -1329,7 +1358,7 @@ fn upload_texture_array(ctx: &GpuContext, atlas: &TextureArray, mip_levels: u32)
         for (level, data) in mips.iter().enumerate() {
             let s = (size >> level).max(1);
             let bytes: Vec<u8> = data.iter().flatten().copied().collect();
-            ctx.queue.write_texture(
+            ctx.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &texture,
                     mip_level: level as u32,

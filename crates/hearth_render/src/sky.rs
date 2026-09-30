@@ -392,8 +392,7 @@ impl SkyRenderer {
             ambient: [p.ambient.x, p.ambient.y, p.ambient.z, 0.0],
             overcast: p.overcast.to_array(),
         };
-        ctx.queue
-            .write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
+        ctx.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
         let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("atmosphere"),
             timestamp_writes: None,

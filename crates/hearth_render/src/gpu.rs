@@ -1,6 +1,7 @@
 //! GPU device creation and presentation-surface management.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use winit::window::Window;
 
@@ -35,6 +36,8 @@ pub struct GpuCapabilities {
     pub multi_draw_indirect_count: bool,
     pub indirect_first_instance: bool,
     pub timestamp_queries: bool,
+    /// Timestamps can be written between passes (for the benchmark's pass timings).
+    pub timestamps_inside_encoders: bool,
     pub texture_compression_bc: bool,
     pub float32_filterable: bool,
     pub shader_f16: bool,
@@ -49,9 +52,36 @@ pub struct GpuContext {
     pub queue: wgpu::Queue,
     pub info: wgpu::AdapterInfo,
     pub caps: GpuCapabilities,
+    /// Bytes written through the queue (buffers and textures) since creation.
+    uploaded: AtomicU64,
 }
 
 impl GpuContext {
+    /// Writes `data` into `buffer` at `offset` through the queue, counting the bytes.
+    pub fn write_buffer(&self, buffer: &wgpu::Buffer, offset: u64, data: &[u8]) {
+        self.uploaded
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
+        self.queue.write_buffer(buffer, offset, data);
+    }
+
+    /// Writes texel data through the queue, counting the bytes.
+    pub fn write_texture(
+        &self,
+        texture: wgpu::TexelCopyTextureInfo<'_>,
+        data: &[u8],
+        layout: wgpu::TexelCopyBufferLayout,
+        size: wgpu::Extent3d,
+    ) {
+        self.uploaded
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
+        self.queue.write_texture(texture, data, layout, size);
+    }
+
+    /// Bytes written through the queue since the context was created.
+    pub fn uploaded_bytes(&self) -> u64 {
+        self.uploaded.load(Ordering::Relaxed)
+    }
+
     fn optional_features(adapter: &wgpu::Adapter) -> (wgpu::Features, GpuCapabilities) {
         let available = adapter.features();
         let wanted = wgpu::Features::MULTI_DRAW_INDIRECT_COUNT
@@ -66,6 +96,9 @@ impl GpuContext {
             multi_draw_indirect_count: features.contains(wgpu::Features::MULTI_DRAW_INDIRECT_COUNT),
             indirect_first_instance: features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE),
             timestamp_queries: features.contains(wgpu::Features::TIMESTAMP_QUERY),
+            timestamps_inside_encoders: features.contains(
+                wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS,
+            ),
             texture_compression_bc: features.contains(wgpu::Features::TEXTURE_COMPRESSION_BC),
             float32_filterable: features.contains(wgpu::Features::FLOAT32_FILTERABLE),
             shader_f16: features.contains(wgpu::Features::SHADER_F16),
@@ -118,6 +151,7 @@ impl GpuContext {
             queue,
             info,
             caps,
+            uploaded: AtomicU64::new(0),
         })
     }
 

@@ -11,6 +11,7 @@ use crate::gpu::GpuContext;
 use crate::lod::LodRenderer;
 use crate::post::PostProcess;
 use crate::precip::{PrecipRenderer, Precipitation, SkyHeights};
+use crate::profiler::GpuTimer;
 use crate::sky::{SkyParams, SkyRenderer};
 use crate::terrain::{FrameParams, TerrainRenderer, begin_pass};
 
@@ -90,6 +91,17 @@ impl Environment {
     }
 }
 
+/// CPU time of the last `prepare` by part (milliseconds).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PrepareTimes {
+    /// Visible cubes (cave culling, frustum), draw lists, translucent sorting, uploads.
+    pub terrain_ms: f64,
+    /// LOD tile frustum tests and origins.
+    pub lod_ms: f64,
+    /// Sky parameters and precipitation particles.
+    pub sky_ms: f64,
+}
+
 pub struct SceneRenderer {
     pub sky: SkyRenderer,
     pub terrain: TerrainRenderer,
@@ -112,6 +124,10 @@ pub struct SceneRenderer {
     sky_params: Option<(SkyParams, glam::Mat4)>,
     /// Seconds since the last frame for the highlight metering (not finite = adapt instantly).
     meter_dt: f32,
+    /// GPU pass timing (benchmark only).
+    pub timer: Option<GpuTimer>,
+    /// CPU time of the last `prepare`.
+    pub cpu: PrepareTimes,
 }
 
 impl SceneRenderer {
@@ -140,6 +156,8 @@ impl SceneRenderer {
             night: 0.0,
             sky_params: None,
             meter_dt: f32::INFINITY,
+            timer: None,
+            cpu: PrepareTimes::default(),
         }
     }
 
@@ -220,10 +238,13 @@ impl SceneRenderer {
             year_frac: env.year_frac,
             overcast,
         };
+        let t0 = std::time::Instant::now();
         self.terrain.prepare(ctx, camera, size, &params);
+        let t1 = std::time::Instant::now();
         let aspect = size.0.max(1) as f32 / size.1.max(1) as f32;
         self.lod
             .prepare(ctx, camera, aspect, self.vertical_scale, &self.lod_show);
+        let t2 = std::time::Instant::now();
         let star_visibility = 1.0 - smoothstep(0.05, 3.0, env.sky_lux.y);
         let moon_trans = (env.moon_dir.y * 6.0).clamp(0.0, 1.0);
         let sky = SkyParams {
@@ -258,6 +279,12 @@ impl SceneRenderer {
             env.sky_lux * e,
             env.sun_lux * env.sun_dir.y.max(0.0) * e + env.moon_lux * env.moon_dir.y.max(0.0) * e,
         );
+        let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
+        self.cpu = PrepareTimes {
+            terrain_ms: ms(t0, t1),
+            lod_ms: ms(t1, t2),
+            sky_ms: ms(t2, std::time::Instant::now()),
+        };
     }
 
     /// Records the frame into `enc` and tonemaps into `output`.
@@ -269,25 +296,57 @@ impl SceneRenderer {
         depth: &wgpu::TextureView,
         size: (u32, u32),
     ) {
+        let mut timer = self.timer.take();
+        let mark = |t: &mut Option<GpuTimer>, enc: &mut wgpu::CommandEncoder, l: &'static str| {
+            if let Some(t) = t {
+                t.mark(enc, l);
+            }
+        };
+        if let Some(t) = &mut timer {
+            t.begin_frame();
+        }
+        mark(&mut timer, enc, "start");
         if let Some((p, vp)) = self.sky_params {
             self.sky.update(ctx, enc, &p, vp);
         }
+        mark(&mut timer, enc, "sky tables");
         let hdr = self.post.hdr_view(ctx, size).clone();
-        self.terrain
-            .render_opaque(ctx, enc, &hdr, depth, Some(wgpu::Color::BLACK));
+        self.terrain.render_opaque(
+            ctx,
+            enc,
+            &hdr,
+            depth,
+            Some(wgpu::Color::BLACK),
+            timer.as_mut(),
+        );
         {
             let (_, bind0) = self.terrain.globals_bind();
             let mut pass = begin_pass(enc, &hdr, depth, None);
             self.lod.draw(&mut pass, bind0);
         }
+        mark(&mut timer, enc, "lod terrain");
         {
             let mut pass = begin_pass(enc, &hdr, depth, None);
             self.sky.draw(&mut pass);
             self.terrain.draw_translucent(&mut pass);
             self.precip.draw(&mut pass);
         }
+        mark(&mut timer, enc, "sky, translucent, rain");
         self.post.meter(ctx, enc, self.meter_dt);
+        mark(&mut timer, enc, "metering");
         self.post.render(ctx, enc, output, 1.0, self.night);
+        mark(&mut timer, enc, "tonemap");
+        if let Some(t) = &mut timer {
+            t.end_frame(enc, self.terrain.cull_counters());
+        }
+        self.timer = timer;
+    }
+
+    /// Call after the frame recorded by `render` was submitted (starts the timing readback).
+    pub fn submitted(&mut self) {
+        if let Some(t) = &mut self.timer {
+            t.submitted();
+        }
     }
 }
 

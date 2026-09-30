@@ -204,7 +204,7 @@ impl PrecipRenderer {
     }
 
     fn upload_heights(&self, ctx: &GpuContext, heights: &[i32]) {
-        ctx.queue.write_texture(
+        ctx.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.heights,
                 mip_level: 0,
@@ -277,8 +277,7 @@ impl PrecipRenderer {
             right: [right.x, right.y, right.z, 0.0],
             up: [up.x, up.y, up.z, 0.0],
         };
-        ctx.queue
-            .write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
+        ctx.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
     }
 
     /// Draws into a pass whose depth target holds the scene.

@@ -220,7 +220,7 @@ impl PostProcess {
             return;
         };
         let instant = !dt.is_finite();
-        ctx.queue.write_buffer(
+        ctx.write_buffer(
             &self.meter_params,
             0,
             bytemuck::bytes_of(&Params {
@@ -253,7 +253,7 @@ impl PostProcess {
         let Some(hdr) = &self.hdr else {
             return;
         };
-        ctx.queue.write_buffer(
+        ctx.write_buffer(
             &self.params,
             0,
             bytemuck::bytes_of(&Params {
