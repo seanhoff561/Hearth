@@ -106,3 +106,16 @@ draw-id or per-draw constants to indirect-count draws.
 River channels come from the grid network (jittered nodes, domain-warped query point for
 meanders, monotone levels). Sea and lake water fill low ground only where the smoothed local
 water fraction is high; low ground just outside gets a berm, so there are never water walls.
+
+## D20 — v2 plan folds unfinished v1 engine work into the first milestone that needs it
+v2 lists its milestones in order but they depend on engine parts v1 had not built yet (saves,
+sky, weather, fluids, water rendering, client/server, UI, audio, LOD, ECS). Each goes into the
+first v2 milestone that needs it (saves → V2-0, atmosphere → V2-1, water → V2-2, client/server
+and UI/audio → V2-3, LOD → V2-6, ECS/animation → V2-7, resource packs and WASM → V2-15,
+optimization/QA → V2-16), keeping v1's acceptance criteria for those parts.
+
+## D21 — Technology timeline source
+v2 §12.2 mentions a Britannica technology timeline supplied by the user; it was not in the
+direction-change document. The knowledge graph uses the milestones and approximate dates given
+in §12.2 and Appendix C, expanded into realistic intermediate steps from general
+history-of-technology knowledge. Dates are approximate and marked in data.

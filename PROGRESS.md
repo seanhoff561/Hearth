@@ -1,5 +1,7 @@
 # Progress
 
+Direction: **v2** (`docs/spec/v2-direction-change.md`) since 2026-09-30; see `MIGRATION.md`.
+
 ## Status
 - [x] **M0 — Foundation** (2026-09-30)
   - Workspace (edition 2024, resolver 3), lints, profiles, `scripts/check.sh`.
@@ -79,26 +81,48 @@
   - Tests: GPU vs CPU culling pixel equality (`render_cull`), shot spec parsing, allocator.
   - Fixed on the way: WGSL `vec3<u32>` struct padding (64-byte general quads), discrete scroll
     reporting a step every frame (`f64::signum(0.0) == 1.0`), water-depth overflow in tints.
-- [ ] M4 — Player & interaction
-- [ ] M5 — Light & fluids
-- [ ] M6 — Sky & atmosphere
-- [ ] M7 — Water rendering
-- [ ] M8 — LOD
-- [ ] M9 — Entities & AI
-- [ ] M10 — Weather & effects
-- [ ] M11 — UI & audio
-- [ ] M12 — Modding
-- [ ] M13 — Optimization
-- [ ] M14 — Final QA
+
+v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION.md`, `PLAN.md`).
+
+### v2 milestones
+- [ ] V2-0 — Migration & content platform (MIGRATION.md and PLAN.md done)
+- [ ] V2-1 — Time, calendar & seasons
+- [ ] V2-2 — Geology, soils, hydrology & resources
+- [ ] V2-3 — Player: character, body & physiology
+- [ ] V2-4 — Inventory, carrying & clothing
+- [ ] V2-5 — Interaction, process crafting & knowledge
+- [ ] V2-6 — Flora framework (temperate first)
+- [ ] V2-7 — Fauna framework (temperate forest first)
+- [ ] V2-8 — Structural building & shelter
+- [ ] V2-9 — Vertical slice review
+- [ ] V2-10 — Ecosystem expansion waves
+- [ ] V2-11 — Australopithecus & the agent framework
+- [ ] V2-12 — Neolithic
+- [ ] V2-13 — Metallurgy & mining
+- [ ] V2-14 — Late scope: Iron Age & Classical
+- [ ] V2-15 — World creation & menus
+- [ ] V2-16 — Long-run balance, performance & cohesion QA
+
+## Content Status
+| Domain | Implemented | Planned (data only) |
+|---|---|---|
+| Materials | 0 | 0 |
+| Rock & mineral types | 0 | 0 |
+| Plant species | 0 | 0 |
+| Animal species | 0 | 0 |
+| Knowledge nodes | 0 | 0 |
+| Processes | 0 | 0 |
 
 ## In progress
-Direction change to v2 (`docs/spec/v2-direction-change.md`): migration plan next.
+V2-0 — migration & content platform.
 
 ## Next steps
-1. Write `MIGRATION.md` (v1 milestones/subsystems: Keep / Modify / Replace / Drop) and rewrite
-   `PLAN.md` for the v2 milestones; commit.
-2. V2-0: content platform (schemas, lint, graph export, hot reload), units, balance presets,
-   save versioning + migrations, `docs/design/` skeleton.
+1. V2-0: `hearth_content` crate (domain schemas, loaders, registries), units, time scales,
+   balance presets; form × material generation.
+2. `hearth content lint` / `hearth content graph`; lint in `scripts/check.sh`.
+3. Saves: world directory, versioned metadata, registry mapping, cube region files, migration
+   framework and fixture tests; refuse format 1.
+4. Remove dropped v1 content; `docs/design/` skeleton; hot reload plumbing.
 
 ## Known issues
 - In this environment presents never block (FIFO on both Vulkan and DX12 ran at ~1.5–2k FPS
