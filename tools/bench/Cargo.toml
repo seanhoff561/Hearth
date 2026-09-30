@@ -16,6 +16,7 @@ hearth_core.workspace = true
 hearth_math.workspace = true
 hearth_world.workspace = true
 hearth_worldgen.workspace = true
+hearth_texgen.workspace = true
 png.workspace = true
 rayon.workspace = true
 rustc-hash.workspace = true

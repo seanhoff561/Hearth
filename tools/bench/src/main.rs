@@ -3,6 +3,7 @@
 mod r#gen;
 mod image;
 mod region;
+mod textures;
 mod worldmap;
 
 fn usage() {
@@ -24,6 +25,7 @@ fn main() -> anyhow::Result<()> {
         "worldmap" => worldmap::run(&args[1..]),
         "region" => region::run(&args[1..]),
         "gen" => r#gen::run(&args[1..]),
+        "textures" => textures::run(&args[1..]),
         "-h" | "--help" | "help" => {
             usage();
             Ok(())

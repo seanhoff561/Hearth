@@ -12,6 +12,7 @@ pub mod block;
 pub mod cube;
 pub mod datapack;
 pub mod light;
+pub mod lighting;
 pub mod palette;
 pub mod query;
 pub mod shape;
@@ -23,6 +24,7 @@ pub use block::{
 };
 pub use cube::{Cube, LightStatus};
 pub use light::{LightData, MAX_LIGHT};
+pub use lighting::{Channel, LightEngine};
 pub use palette::{PaletteError, PalettedBlocks};
 pub use query::{BlockHit, FluidMode, collides, collision_boxes, raycast_blocks};
 pub use shape::{Shape, ShapeId, ShapeKind};

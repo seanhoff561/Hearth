@@ -1,0 +1,15 @@
+[package]
+name = "hearth_texgen"
+description = "Procedurally generates Hearth's original default resource pack (16x16 pixel-art textures, sounds)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_math.workspace = true
+png.workspace = true
+
+[lints]
+workspace = true

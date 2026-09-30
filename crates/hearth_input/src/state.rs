@@ -237,7 +237,14 @@ impl InputState {
     /// smooth trackpads still produce discrete hotbar steps.
     pub fn take_scroll_steps(&mut self, sensitivity: f64, discrete: bool) -> i32 {
         if discrete {
-            let steps = self.scroll_delta.signum() as i32;
+            // Note: f64::signum(0.0) is 1.0, so zero needs its own case.
+            let steps = if self.scroll_delta > 0.0 {
+                1
+            } else if self.scroll_delta < 0.0 {
+                -1
+            } else {
+                0
+            };
             self.scroll_delta = 0.0;
             return steps;
         }
@@ -450,5 +457,6 @@ mod tests {
         assert_eq!(s.take_scroll_steps(1.0, false), 1);
         s.add_scroll(-0.2);
         assert_eq!(s.take_scroll_steps(1.0, true), -1);
+        assert_eq!(s.take_scroll_steps(1.0, true), 0, "no scroll, no step");
     }
 }

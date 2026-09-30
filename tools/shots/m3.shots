@@ -1,0 +1,6 @@
+# M3 near-field rendering suite: `hearth --screenshot-list tools/shots/m3.shots`
+defaults: seed=7, w=1280, h=720, dist=12, verify_cull=true
+above=2.5, yaw=30, pitch=0, out=bench-out/m3/ground.png
+above=80, yaw=210, pitch=35, out=bench-out/m3/aerial.png
+x=1946.5, z=-7727.5, above=30, yaw=90, pitch=20, out=bench-out/m3/coast.png
+above=2.5, yaw=120, pitch=-25, fov=90, out=bench-out/m3/canopy.png

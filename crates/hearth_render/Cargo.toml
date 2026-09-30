@@ -9,6 +9,13 @@ publish.workspace = true
 
 [dependencies]
 hearth_core.workspace = true
+hearth_math.workspace = true
+hearth_world.workspace = true
+hearth_texgen.workspace = true
+rustc-hash.workspace = true
+smallvec.workspace = true
+rayon.workspace = true
+png.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 glam.workspace = true

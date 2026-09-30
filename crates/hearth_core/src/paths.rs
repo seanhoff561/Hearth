@@ -61,6 +61,10 @@ impl GameDirs {
     pub fn crash_reports(&self) -> PathBuf {
         self.root.join("crash-reports")
     }
+    /// Regenerable data (planet analysis grids, shader caches); safe to delete.
+    pub fn cache(&self) -> PathBuf {
+        self.root.join("cache")
+    }
 
     /// Creates the root and the standard subfolders if they don't exist yet.
     pub fn ensure_created(&self) -> std::io::Result<()> {

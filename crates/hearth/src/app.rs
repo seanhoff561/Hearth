@@ -7,15 +7,16 @@ use std::time::{Duration, Instant};
 use hearth_core::options::{DisplayMode, Options, PresentModePref};
 use hearth_core::paths::GameDirs;
 use hearth_input::{InputKey, InputOptions, InputState, Key, KeyBindings, MouseButton, builtin};
-use hearth_render::{LinearColor, PresentPreference, Renderer};
+use hearth_render::{PresentPreference, Renderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{DeviceEvent, DeviceId, ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
-use winit::window::{Fullscreen, Window, WindowId};
+use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
 use crate::frame_limiter::FrameLimiter;
+use crate::preview::Preview;
 
 /// Command-line configuration of a run.
 #[derive(Debug, Clone, Default)]
@@ -23,11 +24,20 @@ pub struct LaunchConfig {
     pub dirs: Option<GameDirs>,
     /// Exit cleanly (saving options) after this long; used by automated smoke tests.
     pub quit_after: Option<Duration>,
+    /// Seed of the preview world.
+    pub seed: Option<u64>,
 }
 
 struct Running {
     window: Arc<Window>,
     renderer: Renderer,
+    preview: Preview,
+    /// Mouse captured for looking around.
+    captured: bool,
+    last_frame: Instant,
+    title_timer: Instant,
+    title_frames: u32,
+    log_timer: Instant,
 }
 
 /// Top-level application state.
@@ -45,10 +55,11 @@ pub struct App {
     fatal_error: Option<String>,
     quit_after: Option<Duration>,
     frames_rendered: u64,
+    seed: u64,
 }
 
 impl App {
-    pub fn new(dirs: GameDirs, quit_after: Option<Duration>) -> Self {
+    pub fn new(dirs: GameDirs, quit_after: Option<Duration>, seed: u64) -> Self {
         if let Err(e) = dirs.ensure_created() {
             log::warn!(
                 "could not create game directory {}: {e}",
@@ -82,6 +93,7 @@ impl App {
             fatal_error: None,
             quit_after,
             frames_rendered: 0,
+            seed,
         }
     }
 
@@ -190,27 +202,73 @@ impl App {
                 log::debug!("action {}", self.bindings.registry().def(action).id);
                 if action == builtin::FULLSCREEN {
                     self.toggle_fullscreen();
+                } else if action == builtin::PAUSE {
+                    self.set_captured(false);
                 }
+            }
+            if key == InputKey::Mouse(MouseButton::Left) {
+                self.set_captured(true);
             }
         } else {
             self.input.release(key, &self.bindings);
         }
     }
 
+    /// Captures (hides and locks) or releases the mouse cursor.
+    fn set_captured(&mut self, captured: bool) {
+        let Some(run) = &mut self.running else { return };
+        if run.captured == captured {
+            return;
+        }
+        if captured {
+            let grabbed = run
+                .window
+                .set_cursor_grab(CursorGrabMode::Locked)
+                .or_else(|_| run.window.set_cursor_grab(CursorGrabMode::Confined));
+            if let Err(e) = grabbed {
+                log::warn!("could not capture the mouse: {e}");
+                return;
+            }
+            run.window.set_cursor_visible(false);
+        } else {
+            let _ = run.window.set_cursor_grab(CursorGrabMode::None);
+            run.window.set_cursor_visible(true);
+        }
+        run.captured = captured;
+    }
+
     fn frame(&mut self) {
-        let t = self.start.elapsed().as_secs_f64();
-        // A slow sky-blue breathing clear color proves frames are being produced.
-        let pulse = 0.5 + 0.5 * (t * 0.5).sin();
-        let color = LinearColor {
-            r: 0.25 + 0.05 * pulse,
-            g: 0.45 + 0.05 * pulse,
-            b: 0.85,
-            a: 1.0,
-        };
-        if let Some(run) = &mut self.running
-            && run.renderer.render_clear(color)
-        {
-            self.frames_rendered += 1;
+        let sensitivity = self.options.controls.mouse_sensitivity;
+        if let Some(run) = &mut self.running {
+            let now = Instant::now();
+            let dt = (now - run.last_frame).as_secs_f64().min(0.25);
+            run.last_frame = now;
+            let look = run.captured.then(|| self.input.mouse_delta());
+            run.preview.pump(&run.renderer.ctx);
+            run.preview.update(dt, &mut self.input, look, sensitivity);
+            let preview = &mut run.preview;
+            if run
+                .renderer
+                .render_with(|ctx, enc, targets| preview.render(ctx, enc, targets))
+            {
+                self.frames_rendered += 1;
+                run.title_frames += 1;
+            }
+            let elapsed = run.title_timer.elapsed().as_secs_f64();
+            if elapsed >= 0.5 {
+                let fps = run.title_frames as f64 / elapsed;
+                run.window.set_title(&format!(
+                    "{} | {}",
+                    hearth_core::window_title(),
+                    run.preview.title_status(fps)
+                ));
+                if run.log_timer.elapsed().as_secs() >= 5 {
+                    log::info!("{}", run.preview.title_status(fps));
+                    run.log_timer = Instant::now();
+                }
+                run.title_timer = Instant::now();
+                run.title_frames = 0;
+            }
         }
         self.input.end_frame();
     }
@@ -251,7 +309,21 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        self.running = Some(Running { window, renderer });
+        let preview = Preview::new(
+            Preview::default_world(self.seed, Some(self.dirs.cache())),
+            &self.options,
+            renderer.color_format(),
+        );
+        self.running = Some(Running {
+            window,
+            renderer,
+            preview,
+            captured: false,
+            last_frame: Instant::now(),
+            title_timer: Instant::now(),
+            title_frames: 0,
+            log_timer: Instant::now(),
+        });
         self.apply_display_mode();
         event_loop.set_control_flow(ControlFlow::Poll);
     }
@@ -269,7 +341,10 @@ impl ApplicationHandler for App {
                 self.remember_window_placement();
             }
             WindowEvent::Moved(_) => self.remember_window_placement(),
-            WindowEvent::Focused(false) => self.input.release_all(),
+            WindowEvent::Focused(false) => {
+                self.input.release_all();
+                self.set_captured(false);
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key
                     && let Some(key) = Key::from_winit(code)
@@ -335,18 +410,23 @@ impl ApplicationHandler for App {
     }
 }
 
-/// Runs the game until the window is closed.
-pub fn run(config: LaunchConfig) -> anyhow::Result<()> {
-    let dirs = config.dirs.unwrap_or_else(|| {
+/// The game directory: the explicit one if given, else the standard resolution order.
+pub fn resolve_dirs(explicit: Option<GameDirs>) -> GameDirs {
+    explicit.unwrap_or_else(|| {
         GameDirs::resolve(
             None,
             directories::ProjectDirs::from("", "", hearth_core::GAME_NAME)
                 .map(|d| d.data_dir().to_path_buf()),
         )
-    });
+    })
+}
+
+/// Runs the game until the window is closed.
+pub fn run(config: LaunchConfig) -> anyhow::Result<()> {
+    let dirs = resolve_dirs(config.dirs);
     log::info!("game directory: {}", dirs.root.display());
     let event_loop = EventLoop::new()?;
-    let mut app = App::new(dirs, config.quit_after);
+    let mut app = App::new(dirs, config.quit_after, config.seed.unwrap_or(1));
     event_loop.run_app(&mut app)?;
     if let Some(err) = app.fatal_error() {
         anyhow::bail!("{err}");

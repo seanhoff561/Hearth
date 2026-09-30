@@ -3,5 +3,9 @@
 
 pub mod app;
 pub mod frame_limiter;
+pub mod preview;
+pub mod scene;
+pub mod screenshot;
+pub mod streamer;
 
-pub use app::{LaunchConfig, run};
+pub use app::{LaunchConfig, resolve_dirs, run};

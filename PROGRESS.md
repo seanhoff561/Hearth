@@ -58,7 +58,27 @@
     fast paths, seam twins, rivers never uphill, temperate spawn, climate zone statistics over
     6 seeds, west/east continental patterns, windward vs leeward rain, hypsometry, cavern
     rarity, planet save/load.
-- [ ] M3 — Near-field rendering
+- [x] **M3 — Near-field rendering** (2026-09-30)
+  - `hearth_texgen`: procedural 16×16 texture pack for all base blocks (animated water strips,
+    destroy stages, missing texture); `bench textures` contact sheet.
+  - Texture array with coverage-preserving alpha mips; block model baking (cubes with
+    overlays/rotation/tint, crosses, stairs/slabs/fences/doors/torches and other box models,
+    fluids).
+  - Mesher: greedy merging of uniform faces into 16-byte packed quads, 64-byte general quads
+    for models/fluids/translucent, smooth lighting + AO, climate tints, cube face
+    connectivity for cave culling.
+  - Terrain renderer: sub-allocated storage buffers, vertex pulling, reverse-Z infinite
+    projection, camera-relative origins, CPU cave-culling BFS + frustum, two-phase Hi-Z GPU
+    occlusion culling with compute-emitted indirect-count draws (Vulkan; CPU draw lists
+    elsewhere, D19), translucent back-to-front order plus re-sorting of nearby cubes.
+  - `hearth --screenshot <spec>` / `--screenshot-list <file>` headless rendering with software
+    adapter fallback and `verify_cull` pixel check; `tools/shots/m3.shots` suite.
+  - Windowed free-fly preview (`hearth [--seed N]`): background streamer generates, lights and
+    meshes cubes around the camera nearest-first and unloads far ones; mouse capture, WASD +
+    jump/sneak flying, sprint boost, scroll for speed; status in the title bar.
+  - Tests: GPU vs CPU culling pixel equality (`render_cull`), shot spec parsing, allocator.
+  - Fixed on the way: WGSL `vec3<u32>` struct padding (64-byte general quads), discrete scroll
+    reporting a step every frame (`f64::signum(0.0) == 1.0`), water-depth overflow in tints.
 - [ ] M4 — Player & interaction
 - [ ] M5 — Light & fluids
 - [ ] M6 — Sky & atmosphere
@@ -72,19 +92,18 @@
 - [ ] M14 — Final QA
 
 ## In progress
-M3 — near-field rendering.
+Direction change to v2 (`docs/spec/v2-direction-change.md`): migration plan next.
 
 ## Next steps
-1. `hearth_texgen`: procedural 16×16 texture pack (blocks, items later) + block model table.
-2. Texture array with alpha-aware mips; block model baking (cube/cross/model shapes).
-3. Mesher (binary greedy for full cubes, AO, smooth light, tint), packed quads.
-4. Renderer: camera, terrain pass with vertex pulling, buffer sub-allocator, culling.
-5. `hearth --screenshot` headless mode.
+1. Write `MIGRATION.md` (v1 milestones/subsystems: Keep / Modify / Replace / Drop) and rewrite
+   `PLAN.md` for the v2 milestones; commit.
+2. V2-0: content platform (schemas, lint, graph export, hot reload), units, balance presets,
+   save versioning + migrations, `docs/design/` skeleton.
 
 ## Known issues
-- With Vulkan FIFO on this Optimus laptop the clear-only loop reported ~2.8k FPS during the
-  4 s smoke run (window possibly occluded). Re-check present pacing once real frames exist;
-  consider DX12 as the default backend on Windows if Vulkan presentation misbehaves.
+- In this environment presents never block (FIFO on both Vulkan and DX12 ran at ~1.5–2k FPS
+  with terrain), most likely because the window is occluded. Re-check pacing on a visible
+  window; the frame limiter covers the vsync-off case.
 
 ## Deferred
 - Walking/boating across the seam and over a pole is verified in M4 when physics exists

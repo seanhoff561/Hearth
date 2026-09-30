@@ -118,16 +118,28 @@ handoff, and cached on disk (lz4).
 ## 7. Rendering (hearth_render)
 
 Frame graph (HDR RGBA16F, reverse-Z infinite projection, camera-relative):
-1. GPU culling (compute): frustum + Hi-Z occlusion (previous frame's depth pyramid) +
-   per-face-direction culling → indirect draw commands (`multi_draw_indexed_indirect[_count]`).
-2. Opaque terrain + LOD + entities.
+1. CPU: cave-culling visibility BFS over the cubes' face-connectivity bits + frustum test →
+   candidate cubes (camera-relative origins uploaded as instances), front to back.
+2. Opaque terrain, two-phase GPU culling (Vulkan): a compute pass emits indirect draws for the
+   candidates that were visible last frame (per-face-direction culled) and they are drawn; a
+   Hi-Z pyramid (reverse-Z: min depth per texel) is built from that depth; a second compute
+   pass tests every candidate against it, draws the newly visible ones and updates each cube's
+   visibility bit. Draws go through `multi_draw_indexed_indirect_count`. Other backends build
+   the same draws on the CPU (`multi_draw_indexed_indirect`), because DX12 indirect-count
+   draws don't apply the base vertex / first instance to the shader builtins (see D19).
+   Then LOD and entities.
 3. Sky (atmosphere LUTs: transmittance, multi-scattering, sky-view), sun, moon, stars.
 4. Translucent: water (waves, SSR, refraction, absorption, foam), glass, ice; clouds.
 5. Volumetrics (fog/light shafts), weather particles.
 6. TAA (optional) → bloom → auto-exposure (histogram) → tonemap → grade → UI.
 
-Terrain geometry lives in a few large buffers managed by a sub-allocator; quads are packed into
-8 bytes and expanded in the vertex shader (vertex pulling); one shared quad index buffer.
+Terrain geometry lives in two large storage buffers managed by a first-fit sub-allocator:
+16-byte packed quads for full-cube faces (greedy-merged where light, AO and tint are uniform)
+and 64-byte general quads for models, fluids and translucent surfaces. The vertex shader
+expands quads from the buffers (vertex pulling) with one shared quad index buffer. Translucent
+quads of cubes near the camera are re-sorted back to front when the camera changes block.
+`hearth --screenshot` renders the same frame graph offscreen (software adapter fallback) and
+can verify that GPU culling never changes a pixel.
 
 ## 8. Client/server
 

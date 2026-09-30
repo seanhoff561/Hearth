@@ -14,8 +14,16 @@ path = "src/main.rs"
 [dependencies]
 hearth_core.workspace = true
 hearth_input.workspace = true
-hearth_render = { path = "../hearth_render" }
+hearth_math.workspace = true
+hearth_world.workspace = true
+hearth_worldgen.workspace = true
+hearth_texgen.workspace = true
+hearth_render.workspace = true
 anyhow.workspace = true
+glam.workspace = true
+rayon.workspace = true
+rustc-hash.workspace = true
+wgpu.workspace = true
 log.workspace = true
 env_logger.workspace = true
 winit.workspace = true

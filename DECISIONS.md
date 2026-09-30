@@ -89,6 +89,19 @@ vertical scale (clamped to 0.5–2×) so geology stays proportional. The deepsla
 Block files may reference templates (`"template": "rock"`) defined in `_*.json` files; keeps the
 ~190 base blocks compact and gives modders the same mechanism.
 
+## D18 — Screenshot mode renders three frames
+Headless shots render the frame three times so GPU culling reaches its steady state (frame 1
+draws everything in phase 1, frame 2 learns occlusion, frame 3 draws the survivors in phase 0);
+`verify_cull=true` also renders with CPU culling and fails on any pixel difference. The same
+check runs as the `render_cull` integration test whenever a capable adapter exists.
+
+## D19 — GPU occlusion culling is Vulkan-only (for now)
+On DX12, `multi_draw_indexed_indirect_count` doesn't add the base vertex / first instance to
+`vertex_index` / `instance_index` (wgpu only patches these for plain multi-draws), which broke
+vertex pulling (verified on WARP and on the RTX 4060 with DX12). Metal has no indirect-count
+draws. Those backends use the CPU-built draw lists with identical output. Revisit if wgpu adds
+draw-id or per-draw constants to indirect-count draws.
+
 ## D17 — Rivers and lakes at block level
 River channels come from the grid network (jittered nodes, domain-warped query point for
 meanders, monotone levels). Sea and lake water fill low ground only where the smoothed local

@@ -3,9 +3,44 @@
 //! The renderer is organised as a set of passes sharing one [`GpuContext`]; see
 //! `ARCHITECTURE.md` for the frame graph.
 
+pub mod atlas;
+pub mod camera;
+mod cull;
 pub mod gpu;
+pub mod mesh;
+pub mod models;
+pub mod offscreen;
+pub mod terrain;
 
 pub use gpu::{GpuCapabilities, GpuContext, GpuError, PresentPreference, SurfaceState};
+
+/// Renders the terrain into `color`/`depth` (cleared to `clear`) and submits the frame.
+pub fn render_terrain(
+    ctx: &GpuContext,
+    terrain: &mut terrain::TerrainRenderer,
+    color: &wgpu::TextureView,
+    depth: &wgpu::TextureView,
+    clear: LinearColor,
+) {
+    let mut enc = ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("terrain frame"),
+        });
+    terrain.render(
+        ctx,
+        &mut enc,
+        color,
+        depth,
+        Some(wgpu::Color {
+            r: clear.r,
+            g: clear.g,
+            b: clear.b,
+            a: clear.a,
+        }),
+    );
+    ctx.queue.submit(Some(enc.finish()));
+}
 
 /// Linear RGBA color.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -16,10 +51,19 @@ pub struct LinearColor {
     pub a: f64,
 }
 
-/// The window renderer. Owns the device and swapchain and draws each frame.
+/// The window renderer. Owns the device, the swapchain and the main depth buffer.
 pub struct Renderer {
     pub ctx: GpuContext,
     pub surface: SurfaceState,
+    pub depth: offscreen::DepthTarget,
+}
+
+/// What a frame callback draws into.
+pub struct FrameTargets<'a> {
+    pub color: &'a wgpu::TextureView,
+    pub depth: &'a wgpu::TextureView,
+    pub size: (u32, u32),
+    pub format: wgpu::TextureFormat,
 }
 
 impl Renderer {
@@ -28,11 +72,58 @@ impl Renderer {
         present: PresentPreference,
     ) -> Result<Self, GpuError> {
         let (ctx, surface) = GpuContext::for_window(window, present)?;
-        Ok(Self { ctx, surface })
+        let depth = offscreen::DepthTarget::new(&ctx, surface.config.width, surface.config.height);
+        Ok(Self {
+            ctx,
+            surface,
+            depth,
+        })
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.surface.resize(&self.ctx, width, height);
+        let (w, h) = (self.surface.config.width, self.surface.config.height);
+        if (w, h) != (self.depth.width, self.depth.height) {
+            self.depth = offscreen::DepthTarget::new(&self.ctx, w, h);
+        }
+    }
+
+    /// Colour format of the swapchain (pipelines drawing to the window must use it).
+    pub fn color_format(&self) -> wgpu::TextureFormat {
+        self.surface.config.format
+    }
+
+    /// Acquires the next swapchain image, lets `draw` record into `enc`, then submits and
+    /// presents. Returns false if no frame was drawn (minimised or surface lost).
+    pub fn render_with(
+        &mut self,
+        draw: impl FnOnce(&GpuContext, &mut wgpu::CommandEncoder, FrameTargets<'_>),
+    ) -> bool {
+        let Some(frame) = self.surface.acquire(&self.ctx) else {
+            return false;
+        };
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame"),
+            });
+        draw(
+            &self.ctx,
+            &mut encoder,
+            FrameTargets {
+                color: &view,
+                depth: &self.depth.view,
+                size: (self.surface.config.width, self.surface.config.height),
+                format: self.surface.config.format,
+            },
+        );
+        self.ctx.queue.submit(Some(encoder.finish()));
+        self.ctx.queue.present(frame);
+        true
     }
 
     pub fn set_present(&mut self, pref: PresentPreference) {
