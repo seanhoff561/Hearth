@@ -260,15 +260,19 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
    light cache (bae343b), no per-frame allocations in our frame code + cached Hi-Z bind group
    (564e0bc), LOD quads as pooled 16-byte records drawn with one multi-draw (5556f36), LOD
    occlusion-culled on the GPU against the near terrain's Hi-Z (37014f2), LOD streaming without
-   holes and in-view first (f0b9339), dithering in the final pass (4ce9fa8). A staging belt
-   for per-frame uploads was tried and reverted (no gain). Remaining, in order:
-   - (7) Screen-space-error LOD selection with hysteresis (keep the column-width criterion so
-     flat land stays as detailed as now; add a vertical-error criterion from neighbour height
-     differences, split above ~1–2 px, merge below 0.7× with the previous selection).
-   - (8) Render scale with a spatial upscaler (FSR 1 EASU + RCAS, MIT) as an option, off by
+   holes and in-view first (f0b9339), dithering in the final pass (4ce9fa8), and (7)
+   screen-space-error LOD selection (D57; `lod_detail`: Fancy 2 px, Fabulous 1 px, Fast 4 px;
+   `hearth bench --lod-error PX` overrides it, 0 = the old distance rule). A staging belt for
+   per-frame uploads was tried and reverted (no gain). Remaining, in order:
+   - (8) LOD quads grouped by face direction (sort each tile's quads by face; per-face counts
+     in `GpuTile`; `lod_cull.wgsl` emits one draw per front-facing, non-empty group — for a
+     tile wholly on one side of the camera the two side groups facing away are skipped, and
+     the tops when the camera is below the tile). Pixel-identical; wins back part of (7)'s
+     cost (the LOD pass is vertex-bound: ~0.33 ms per million triangles).
+   - (9) Render scale with a spatial upscaler (FSR 1 EASU + RCAS, MIT) as an option, off by
      default; the `render_scale` option exists but is not applied. Temporal upscaling waits
      for TAA/motion vectors (V2-6).
-   - (9) Performance gate `scripts/perf-gate.sh`, run at the end of every milestone: `hearth
+   - (10) Performance gate `scripts/perf-gate.sh`, run at the end of every milestone: `hearth
      bench --scenes quick` against a stored baseline, failing on >5 % lower average FPS or
      1 % lows, recorded or justified in DECISIONS.md. Measured noise: about ±3–10 % between
      identical runs of one build (laptop clocks), so the gate needs repeated runs (median of
@@ -278,9 +282,10 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
      --release -p hearth`, run alternately with `bench --report none --json none`).
    - Then update `docs/perf-audit.md` (final table), DECISIONS (the gate rule), PROGRESS, and
      resume V2-2 at (d, part 2b) below.
-   Golden images for SSIM checks: `bench-out/golden` (after distant trees; regenerate with
-   `hearth bench --golden bench-out/golden` at 4ce9fa8's parent if lost; dithering changes
-   pixels by design, so re-capture them after result 6 before comparing new work).
+   Golden images for SSIM checks: `bench-out/p7/golden0` (at result 7's commit with
+   `--lod-error 0`, i.e. result 6's look); capture the current look with `hearth bench
+   --golden DIR` before comparing new work. Submission hitches of 40–50 ms (driver) make
+   single-run 1 % lows unreliable, underwater especially.
    Known issues found on the way: underwater views are dark with an empty region beyond the
    full-detail area (no underwater light/fog, no LOD sea floor — V2-2e); the preview passes
    no firelight to the eye's adaptation (the render thread lacks the map; torch-lit caves at

@@ -2,18 +2,20 @@
 //! moves, builds missing tiles nearest first — those in view before those behind — on a small
 //! thread pool of its own (so it never starves the full-detail cube generation), and uploads
 //! finished tiles a few per frame. Until a new tile is ready, the tiles it replaces stay drawn
-//! (`hearth_lod::cover`), so moving never opens holes in the distant land.
+//! (`hearth_lod::cover`), so moving never opens holes in the distant land. Rough tiles are
+//! refined by their error on screen (`hearth_lod::select_refined`): a tile that arrives with
+//! steps standing out by more than the error allowed calls for a new selection.
 
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use glam::DVec3;
-use hearth_lod::{LodGen, TileKey, TileMesh};
+use hearth_lod::{LodGen, Refine, TileKey, TileMesh};
 use hearth_math::Planet;
 use hearth_render::GpuContext;
 use hearth_render::lod::LodRenderer;
 use hearth_worldgen::WorldGenerator;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Tiles being built at once (more wait in the queue, so a moving camera reprioritises).
 const IN_FLIGHT: usize = 48;
@@ -21,6 +23,8 @@ const IN_FLIGHT: usize = 48;
 const RESELECT: f64 = 16.0;
 /// Tiles behind the camera wait as if this many times farther away.
 const BEHIND_WEIGHT: f64 = 4.0;
+/// Frames between selections called for by rough tiles arriving (a selection costs a little).
+const REFINE_EVERY: u32 = 15;
 
 pub struct LodStream {
     generator: Arc<WorldGenerator>,
@@ -39,14 +43,27 @@ pub struct LodStream {
     last: Option<(DVec3, [f64; 4])>,
     /// The tiles drawn: the selection where built, stand-ins elsewhere.
     ids: Vec<u64>,
+    /// Vertical error and top of the built tiles the selection keeps or splits.
+    errors: FxHashMap<TileKey, (f32, i32)>,
+    /// The tiles the selection split (for hysteresis).
+    split: FxHashSet<TileKey>,
+    /// Tiles uploaded since the last selection, and frames since it.
+    arrived: Vec<TileKey>,
+    since_select: u32,
+    /// Pixels per radian of the view, and the vertical error allowed on screen (pixels; 0 keeps
+    /// the distance rule alone).
+    px_per_rad: f64,
+    max_error_px: f64,
 }
 
 impl LodStream {
+    /// `max_error_px`: the vertical error allowed on screen (0: no refinement).
     pub fn new(
         generator: Arc<WorldGenerator>,
         lod: Arc<LodGen>,
         distance_chunks: u32,
         vertical_scale: f64,
+        max_error_px: f64,
     ) -> Self {
         let threads = (std::thread::available_parallelism().map_or(4, |n| n.get()) / 4).max(2);
         let pool = rayon::ThreadPoolBuilder::new()
@@ -69,6 +86,22 @@ impl LodStream {
             done_rx,
             last: None,
             ids: Vec::new(),
+            errors: FxHashMap::default(),
+            split: FxHashSet::default(),
+            arrived: Vec::new(),
+            since_select: 0,
+            px_per_rad: hearth_lod::px_per_rad(1080, 70.0),
+            max_error_px,
+        }
+    }
+
+    /// The view the tiles are seen in: its height in pixels and vertical field of view (degrees).
+    pub fn set_view(&mut self, height_px: u32, fov_y_deg: f32) {
+        let ppr = hearth_lod::px_per_rad(height_px.max(1), fov_y_deg);
+        // Small changes (a sprint's widening view) keep the selection.
+        if (ppr / self.px_per_rad - 1.0).abs() > 0.1 {
+            self.px_per_rad = ppr;
+            self.last = None;
         }
     }
 
@@ -82,17 +115,62 @@ impl LodStream {
         near: [f64; 4],
         renderer: &mut LodRenderer,
     ) {
-        let moved = self.last.is_none_or(|(c, n)| {
-            planet.delta_x(c.x, camera.x).abs() > RESELECT
-                || (c.z - camera.z).abs() > RESELECT
-                || (c.y - camera.y).abs() > RESELECT * 4.0
-                || n != near
-        });
+        self.since_select = self.since_select.saturating_add(1);
+        let refining = self.max_error_px > 0.0;
+        // Tiles that arrived rough enough to split call for finer ones.
+        let rough = refining && self.since_select >= REFINE_EVERY && !self.arrived.is_empty() && {
+            let errors = &self.errors;
+            let built = |k: TileKey| errors.get(&k).copied();
+            let refine = Refine {
+                px_per_rad: self.px_per_rad,
+                max_error_px: self.max_error_px,
+                camera_y: camera.y,
+                built: &built,
+                split_before: &self.split,
+            };
+            let rough = self
+                .arrived
+                .iter()
+                .any(|&k| hearth_lod::refines(planet, camera.x, camera.z, k, &refine));
+            self.arrived.clear();
+            rough
+        };
+        let moved = rough
+            || self.last.is_none_or(|(c, n)| {
+                planet.delta_x(c.x, camera.x).abs() > RESELECT
+                    || (c.z - camera.z).abs() > RESELECT
+                    || (c.y - camera.y).abs() > RESELECT * 4.0
+                    || n != near
+            });
         if moved && self.chunks > 0 {
             self.last = Some((camera, near));
+            self.since_select = 0;
+            self.arrived.clear();
             let reach = hearth_lod::draw_distance(self.chunks, camera.y, self.vertical_scale);
-            self.wanted = hearth_lod::select(planet, camera.x, camera.z, reach, Some(near));
+            let errors = &self.errors;
+            let built = |k: TileKey| errors.get(&k).copied();
+            let refine = refining.then_some(Refine {
+                px_per_rad: self.px_per_rad,
+                max_error_px: self.max_error_px,
+                camera_y: camera.y,
+                built: &built,
+                split_before: &self.split,
+            });
+            self.wanted = hearth_lod::select_refined(
+                planet,
+                camera.x,
+                camera.z,
+                reach,
+                Some(near),
+                refine.as_ref(),
+            );
             self.wanted_ids = self.wanted.iter().map(|k| k.id()).collect();
+            if refining {
+                self.split = hearth_lod::split_nodes(&self.wanted);
+                let (split, wanted) = (&self.split, &self.wanted_ids);
+                self.errors
+                    .retain(|k, _| split.contains(k) || wanted.contains(&k.id()));
+            }
             self.refresh(renderer);
             // Build order: nearest (and finest) first, what is in view before what is behind.
             let (fx, fz) = {
@@ -151,6 +229,10 @@ impl LodStream {
             if self.wanted_ids.contains(&id) {
                 upload(ctx, renderer, &mesh);
                 uploaded = true;
+                if self.max_error_px > 0.0 {
+                    self.errors.insert(mesh.key, (mesh.error, mesh.max_y));
+                    self.arrived.push(mesh.key);
+                }
             }
         }
         if uploaded {
@@ -183,6 +265,36 @@ impl LodStream {
             .count();
         (self.wanted.len(), self.wanted.len() - built)
     }
+}
+
+/// Vertical error and top of built tiles (`hearth_lod::Refine::built`).
+pub type Errors = FxHashMap<TileKey, (f32, i32)>;
+
+/// Builds up front — for tools; the game streams them — the tiles `select` wants, refined in
+/// rounds: a tile's error is known once it is built, so each round selects with the errors known
+/// so far and builds what is new (`rounds` = 1 builds the selection without refinement). `build`
+/// builds a batch of tiles; each is handed to `upload`. Returns the errors of all tiles built.
+pub fn build_refined(
+    rounds: u32,
+    mut select: impl FnMut(&Errors) -> Vec<TileKey>,
+    mut build: impl FnMut(&[TileKey]) -> anyhow::Result<Vec<TileMesh>>,
+    mut upload: impl FnMut(&TileMesh),
+) -> anyhow::Result<Errors> {
+    let mut errors = Errors::default();
+    for _ in 0..rounds {
+        let mut new = select(&errors);
+        new.retain(|k| !errors.contains_key(k));
+        new.sort_unstable();
+        new.dedup();
+        if new.is_empty() {
+            break;
+        }
+        for t in build(&new)? {
+            errors.insert(t.key, (t.error, t.max_y));
+            upload(&t);
+        }
+    }
+    Ok(errors)
 }
 
 /// Uploads one tile mesh.

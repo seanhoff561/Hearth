@@ -287,6 +287,8 @@ pub struct VideoOptions {
     pub lod_distance: u32,
     /// Video memory budget for LOD tiles in MiB.
     pub lod_vram_budget_mb: u32,
+    /// Detail of rough distant terrain: how far its steps may stray on screen (`lod_error_px`).
+    pub lod_detail: Quality,
     /// Frame rate cap (10–260); 0 means unlimited.
     pub max_framerate: u32,
     pub vsync: bool,
@@ -348,6 +350,7 @@ impl Default for VideoOptions {
             simulation_distance: 12,
             lod_distance: 256,
             lod_vram_budget_mb: 1024,
+            lod_detail: Quality::Medium,
             max_framerate: 120,
             vsync: true,
             present_mode: PresentModePref::Auto,
@@ -388,6 +391,7 @@ impl Default for VideoOptions {
 /// The subset of video settings a graphics preset controls.
 #[derive(Debug, Clone, PartialEq)]
 struct PresetValues {
+    lod_detail: Quality,
     clouds: CloudMode,
     particles: ParticleMode,
     entity_shadows: bool,
@@ -401,6 +405,7 @@ impl PresetValues {
     fn for_preset(preset: GraphicsPreset) -> Self {
         match preset {
             GraphicsPreset::Fast => Self {
+                lod_detail: Quality::Low,
                 clouds: CloudMode::Fast,
                 particles: ParticleMode::Decreased,
                 entity_shadows: false,
@@ -410,6 +415,7 @@ impl PresetValues {
                 shader: ShaderOptions::for_preset(preset),
             },
             GraphicsPreset::Fancy | GraphicsPreset::Custom => Self {
+                lod_detail: Quality::Medium,
                 clouds: CloudMode::Fancy,
                 particles: ParticleMode::All,
                 entity_shadows: true,
@@ -419,6 +425,7 @@ impl PresetValues {
                 shader: ShaderOptions::for_preset(GraphicsPreset::Fancy),
             },
             GraphicsPreset::Fabulous => Self {
+                lod_detail: Quality::High,
                 clouds: CloudMode::Volumetric,
                 particles: ParticleMode::All,
                 entity_shadows: true,
@@ -432,6 +439,7 @@ impl PresetValues {
 
     fn of(v: &VideoOptions) -> Self {
         Self {
+            lod_detail: v.lod_detail,
             clouds: v.clouds,
             particles: v.particles,
             entity_shadows: v.entity_shadows,
@@ -451,6 +459,7 @@ impl VideoOptions {
             return;
         }
         let p = PresetValues::for_preset(preset);
+        self.lod_detail = p.lod_detail;
         self.clouds = p.clouds;
         self.particles = p.particles;
         self.entity_shadows = p.entity_shadows;
@@ -482,6 +491,18 @@ impl VideoOptions {
     /// True if the framerate is uncapped.
     pub fn unlimited_framerate(&self) -> bool {
         self.max_framerate == 0
+    }
+
+    /// Vertical error of distant terrain allowed on screen, in pixels: rough land gets finer
+    /// tiles until the steps between its columns stray no more than this from what finer columns
+    /// would show. 0 keeps the distance rule alone (columns about 3–6 pixels wide).
+    pub fn lod_error_px(&self) -> f64 {
+        match self.lod_detail {
+            Quality::Off => 0.0,
+            Quality::Low => 4.0,
+            Quality::Medium => 2.0,
+            Quality::High => 1.0,
+        }
     }
 
     fn sanitize(&mut self) {

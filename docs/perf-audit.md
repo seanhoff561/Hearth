@@ -68,7 +68,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 ### LOD
 | Optimization | Status | Evidence / impact |
 |---|---|---|
-| Level choice by screen-space error, with hysteresis | **missing** | Tiles split within four tile sizes of the camera (columns up to ~7 px wide at 1080p) and are re-selected every 16 blocks without per-tile hysteresis; flat and rough land get the same detail. |
+| Level choice by screen-space error, with hysteresis | done (result 7) | The distance rule (columns 3–6 px wide) stays as the floor — coarser tiles would blur colours and trees — and rough tiles are split until the steps between their columns stray at most 2 px on screen (1 px on Fabulous) from what finer columns would show; hysteresis on both rules, neighbours kept within a level. It adds detail, so it costs frame time: −27 % average FPS on the summit, −6 to −10 % elsewhere. |
 | Quantized tile-relative vertex data | done (result 3) | One 16-byte record per quad (was four 16-byte vertices), expanded by the vertex shader: 73–91 MiB less video memory in LOD-heavy scenes. |
 | LOD in the GPU culling path, occluded by near terrain | done (result 4) | See culling. |
 | Batched SIMD surface sampling | not worth it (now) | Tiles build at ~1.8 k tiles/s on all threads (a whole view from scratch in ~0.8 s; streaming needs tens per re-selection); it is off the frame path. Revisit with the disk cache. |
@@ -131,8 +131,10 @@ Missing and worth doing, one commit each with before/after numbers and an SSIM c
    first.
 6. Dithering in the final pass.
 7. Screen-space-error LOD selection with hysteresis.
-8. Render scale with a spatial upscaler (FSR 1, MIT) as an option, off by default.
-9. A performance gate at the end of every milestone (`scripts/perf-gate.sh`).
+8. LOD quads grouped by face direction, the groups facing away from the camera skipped (as
+   the full-detail terrain does) — to win back some of 7's cost.
+9. Render scale with a spatial upscaler (FSR 1, MIT) as an option, off by default.
+10. A performance gate at the end of every milestone (`scripts/perf-gate.sh`).
 
 Results are recorded below as they land.
 
@@ -183,3 +185,23 @@ Results are recorded below as they land.
    stepped bands of dusk skies and fog are gone (contrast-stretched comparison of the sunset
    sky). Tonemap pass 0.03–0.04 → 0.055 ms; SSIM 0.996–0.998 against the goldens, the
    difference being the intended per-pixel noise.
+7. **Screen-space-error LOD selection** — each built tile records its vertical error (half the
+   largest step between neighbouring column tops); a tile is split when the part of that
+   error finer columns would remove (× (1 − 1/column width)), projected at its distance (and
+   foreshortened by the viewing angle), exceeds the allowed error — at most three levels past
+   the distance rule, which stays as the floor. Hysteresis: a tile split before stays split to
+   110 % of the split distance and down to 70 % of the error. Refined selections are balanced
+   (neighbours at most one level apart) so the tile-edge skirts still seal every border. Errors
+   are known once tiles are built, so the stream re-selects when a rough tile arrives (at most
+   every 15 frames), and tools build in rounds. Measured before choosing the tier (summit,
+   forest; SSIM against a 0.25 px reference): distance rule 1.21 / 1.34 ms GPU, SSIM 0.749 /
+   0.979; 4 px +0.1 ms, 0.749; **2 px** +0.5 / +0.2 ms, 0.790 / 0.979; 1 px +1.5 / +0.7 ms,
+   0.923 / 0.980. The first steps fix what shows most — the coarse terraces and blocky trees on
+   slopes seen from above — so the default (Fancy) allows 2 px, Fabulous 1 px, Fast 4 px
+   (`lod_detail`). Alternating A/B runs of the 2 px default against the distance rule (two
+   rounds each): summit 810 → 590 FPS (GPU 1.21 → 1.67 ms; LOD pass 0.70 → 1.15 ms; tiles
+   drawn 454 → 742; triangles 1.67 → 3.14 M), forest 724 → 655, storm 703 → 643, coast
+   1194 → 1124, underwater 1244 → 1170 (1 % lows there dominated by 40–50 ms submission
+   hitches in both builds), cave 2203 → 2181. SSIM against the previous images: summit 0.939
+   (the intended finer slopes), every other scene ≥ 0.998. Selection CPU ≤ 0.04 ms per frame;
+   LOD preparation 0.03 → 0.06 ms. A quality gain paid in frame time — justified in D57.

@@ -445,3 +445,22 @@ parkland look three times denser at 512 blocks); and levels coarser than 8-block
 seconds per tile, but estimate the cover from the tree density and the biome's usual trees.
 The cost is geometry: about +50 % LOD quads and +0.2–0.3 ms of GPU time in a forest at
 1080p, recovered by the performance audit's LOD work.
+
+## D57 — Distant terrain detail follows its error on screen; the default allows 2 px
+The LOD chose levels by distance alone (a tile splits within four tile sizes of the camera,
+keeping columns 3–6 px wide at 1080p). Measured on the benchmark's views, that left the steps
+of rough land standing up to 3–46 px from what finer columns would show: mountainsides as
+coarse terraces, trees on slopes below a summit as blocky lumps. Now each tile records its
+vertical error and rough tiles are split until the error on screen is within a limit (the
+audit asked for about 1 px), with hysteresis and the selection balanced so tile borders stay
+sealed. The distance rule remains the floor: flat land is not made coarser, because columns
+are also colour and trees, and coarser columns blur both (the audit forbids quality loss at
+the default). So the refinement only adds tiles, and costs frame time. Measured tiers: 4 px
+costs almost nothing and changes little; 2 px fixes the terraces and blocky trees for
++0.5 ms of GPU time on the summit (−27 % average FPS there, −6 to −10 % in the other open
+scenes); 1 px also refines distant ridges, for +1.5 ms (−53 %). The default (Fancy) allows
+2 px — the bound is on the largest step of each tile, so typical steps stay well inside it —
+Fabulous 1 px, Fast 4 px (`VideoOptions::lod_detail`). This is the first change to fall more
+than 5 % below the previous benchmark, deliberately: a visible quality gain at a measured cost.
+The next audit step (LOD quads grouped by face, back-facing groups skipped) wins some of it
+back.

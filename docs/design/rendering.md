@@ -66,8 +66,12 @@ horizon when that is farther (so the land never stops short of the skyline):
 - **Tiles**: a quadtree over the wrapped planet, 32×32 LOD columns per tile, a column of level
   L being 2^L blocks (level-7 tiles are 4,096 blocks, and every planet circumference is a
   multiple); a tile is split while the camera is within four tile sizes of it, so columns stay
-  a few pixels wide. About 1,000–1,600 tiles and 1–2 M quads out to 8–40 km, built in
-  0.3–0.7 s on 16 threads.
+  a few pixels wide, and rough tiles further (up to three more levels) until the steps between
+  their columns stray no more than `lod_detail`'s limit on screen from what finer columns
+  would show (Fancy 2 px, Fabulous 1 px, Fast 4 px; D57). A tile split before stays split a
+  little longer (hysteresis), and neighbours stay within a level of each other, so the skirts
+  along tile edges seal every border. About 1,000–2,000 tiles and 1–3 M quads out to 8–40 km,
+  built in 0.5–1 s on 16 threads.
 - **Columns** are sampled straight from the surface sampler (never by generating cubes): the
   top block from the soil and rock models, water with its tint and the bed showing through
   the shallows. Vertices carry the texture's average colour, the tint kind and the climate
@@ -90,9 +94,12 @@ horizon when that is farther (so the land never stops short of the skyline):
   an ordered dither while the LOD, drawn a hair behind them in depth, shows through their
   gaps; inside the area the LOD gives way entirely. The LOD shares the terrain's globals
   (lighting, aerial perspective, curvature).
-- **Streaming**: the preview re-selects tiles when the camera moves 16 blocks and builds the
-  missing ones nearest first on a small thread pool of its own; screenshots build every tile
-  before rendering and fail if that takes longer than `lod_timeout`.
+- **Streaming**: the preview re-selects tiles when the camera moves 16 blocks, or when a
+  tile arrives rough enough to split (a tile's error is known once it is built), and builds
+  the missing ones nearest first, those in view before those behind, on a small thread pool of
+  its own; until a tile is ready the tiles it replaces stay drawn. Screenshots and the
+  benchmark build every tile before rendering, in rounds (select, build, select again with the
+  new errors) and fail if that takes longer than `lod_timeout`.
 - **Regression test**: `lod_horizon` renders from a peak at LOD distance 512 with aerial
   perspective on and off, reads back the depth buffer, and requires that more than 30 % of the
   pixels below the horizon lie beyond the full-detail area and fewer than 0.2 % show no ground
@@ -119,7 +126,8 @@ box in `precip.rs`.
 - No shadow maps: direct light reaches faces with full sky light, so there are no cast shadows
   from trees or overhangs yet beyond the sky-light falloff.
 - LOD tiles are heightfields (no overhangs), are not cached on disk, do not yet reflect edits
-  to the world, are frustum- but not occlusion-culled, and have no VRAM budget; LOD water is an
+  to the world, are occluded by the near terrain but not by nearer LOD tiles, and have no VRAM
+  budget; LOD water is an
   opaque tinted surface (the water shader comes with V2-2e). No TAA.
 - Clouds are a single textured layer (no volumetric clouds, no cloud shadows on the ground).
 - No lightning, fog banks, wet or snowy surface shading, puddles or splashes yet.

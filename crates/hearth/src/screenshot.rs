@@ -373,41 +373,72 @@ pub fn render_shot(
     let t_lod = Instant::now();
     let v = lw.terrain().vertical_scale() as f64;
     let reach = hearth_lod::draw_distance(spec.lod, camera.pos.y, v);
-    let keys = if spec.lod > 0 {
-        hearth_lod::select(&planet, camera.pos.x, camera.pos.z, reach, Some(near))
-    } else {
-        Vec::new()
+    // Refined by screen-space error as the game does (`LodStream`).
+    let ppr = hearth_lod::px_per_rad(spec.height, spec.fov);
+    let unsplit = rustc_hash::FxHashSet::default();
+    let select = |errors: &crate::lod_stream::Errors| {
+        if spec.lod == 0 {
+            return Vec::new();
+        }
+        let built = |k: hearth_lod::TileKey| errors.get(&k).copied();
+        let refine = hearth_lod::Refine {
+            px_per_rad: ppr,
+            max_error_px: hearth_core::options::VideoOptions::default().lod_error_px(),
+            camera_y: camera.pos.y,
+            built: &built,
+            split_before: &unsplit,
+        };
+        hearth_lod::select_refined(
+            &planet,
+            camera.pos.x,
+            camera.pos.z,
+            reach,
+            Some(near),
+            Some(&refine),
+        )
     };
     let late = AtomicBool::new(false);
-    let tiles: Vec<hearth_lod::TileMesh> = keys
-        .par_iter()
-        .filter_map(|k| {
-            if t_lod.elapsed().as_secs_f64() > spec.lod_timeout {
-                late.store(true, Ordering::Relaxed);
-                return None;
-            }
-            Some(lod.build(&lw.generator, *k))
-        })
-        .collect();
-    if late.load(Ordering::Relaxed) {
-        anyhow::bail!(
-            "LOD terrain was not ready after {:.0} s ({} of {} tiles built)",
-            spec.lod_timeout,
-            tiles.len(),
-            keys.len()
-        );
-    }
     let mut quads = 0u64;
-    for t in &tiles {
-        crate::lod_stream::upload(ctx, &mut scene.lod, t);
-        quads += t.quads() as u64;
-    }
-    scene.lod_show = keys.iter().map(|k| k.id()).collect();
+    let errors = crate::lod_stream::build_refined(
+        1 + hearth_lod::MAX_EXTRA_LEVELS,
+        select,
+        |keys| {
+            let tiles: Vec<hearth_lod::TileMesh> = keys
+                .par_iter()
+                .filter_map(|k| {
+                    if t_lod.elapsed().as_secs_f64() > spec.lod_timeout {
+                        late.store(true, Ordering::Relaxed);
+                        return None;
+                    }
+                    Some(lod.build(&lw.generator, *k))
+                })
+                .collect();
+            if late.load(Ordering::Relaxed) {
+                anyhow::bail!(
+                    "LOD terrain was not ready after {:.0} s ({} of {} tiles built)",
+                    spec.lod_timeout,
+                    tiles.len(),
+                    keys.len()
+                );
+            }
+            Ok(tiles)
+        },
+        |t| {
+            crate::lod_stream::upload(ctx, &mut scene.lod, t);
+            quads += t.quads() as u64;
+        },
+    )?;
+    let keys = select(&errors);
+    scene.lod_show = hearth_lod::cover(&keys, |k| errors.contains_key(&k))
+        .iter()
+        .map(|k| k.id())
+        .collect();
     scene.near_area = (spec.lod > 0).then_some(near);
     scene.vertical_scale = lw.terrain().vertical_scale();
     log::info!(
-        "  LOD: {} tiles, {} quads to {:.0} blocks in {:.2}s",
-        tiles.len(),
+        "  LOD: {} tiles ({} built), {} quads to {:.0} blocks in {:.2}s",
+        keys.len(),
+        errors.len(),
         quads,
         reach,
         t_lod.elapsed().as_secs_f64()

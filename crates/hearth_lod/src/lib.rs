@@ -215,6 +215,105 @@ pub fn select(
     distance: f64,
     near: Option<[f64; 4]>,
 ) -> Vec<TileKey> {
+    select_refined(planet, cam_x, cam_z, distance, near, None)
+}
+
+/// Levels the screen-space error may refine beyond the distance rule (a cliff's step never
+/// shrinks, so refinement must stop somewhere).
+pub const MAX_EXTRA_LEVELS: u32 = 3;
+
+/// Pixels per radian at the centre of a view `height_px` tall with a vertical field of view
+/// of `fov_y_deg` degrees.
+pub fn px_per_rad(height_px: u32, fov_y_deg: f32) -> f64 {
+    height_px as f64 / (2.0 * (f64::from(fov_y_deg).to_radians() * 0.5).tan())
+}
+
+/// Screen-space refinement of a selection (`select_refined`).
+pub struct Refine<'a> {
+    /// Pixels per radian at the centre of the screen: its height / (2 tan(fov / 2)).
+    pub px_per_rad: f64,
+    /// Largest reducible vertical error allowed on screen (pixels).
+    pub max_error_px: f64,
+    /// Camera height (blocks).
+    pub camera_y: f64,
+    /// Vertical error (blocks, `TileMesh::error`) and top (Y) of the tiles built so far.
+    pub built: &'a dyn Fn(TileKey) -> Option<(f32, i32)>,
+    /// Tiles split in the previous selection (`split_nodes`), for hysteresis.
+    pub split_before: &'a FxHashSet<TileKey>,
+}
+
+/// The tiles a selection split: every ancestor of its tiles.
+pub fn split_nodes(selection: &[TileKey]) -> FxHashSet<TileKey> {
+    let mut split = FxHashSet::default();
+    for k in selection {
+        let mut p = k.parent();
+        while let Some(a) = p {
+            if !split.insert(a) {
+                break;
+            }
+            p = a.parent();
+        }
+    }
+    split
+}
+
+/// Whether a tile `d` blocks away (horizontally) is split: near enough that its columns would
+/// be more than a few pixels wide (the distance rule), or, with `refine`, built and rough enough
+/// that the steps between its columns stand out on screen by more than the error allowed. A
+/// tile split before stays split a little longer (10 % farther, 70 % of the error).
+fn split(key: TileKey, d: f64, refine: Option<&Refine<'_>>) -> bool {
+    let size = key.size() as f64;
+    let before = refine.is_some_and(|r| r.split_before.contains(&key));
+    if d < SPLIT * size * if before { 1.1 } else { 1.0 } {
+        return true;
+    }
+    let Some(r) = refine else {
+        return false;
+    };
+    if d >= SPLIT * size * f64::from(1u32 << MAX_EXTRA_LEVELS) {
+        return false;
+    }
+    let Some((error, top)) = (r.built)(key) else {
+        return false;
+    };
+    let dy = (r.camera_y - top as f64).max(0.0);
+    // Blocks are steps at any level: only the error finer columns would remove counts. Seen
+    // from above at an angle, a vertical error looks shorter by the angle's cosine (d / 3-D
+    // distance).
+    let reducible = error as f64 * (1.0 - 1.0 / key.column() as f64);
+    let on_screen = reducible * r.px_per_rad * d / (d * d + dy * dy).max(1.0);
+    on_screen > r.max_error_px * if before { 0.7 } else { 1.0 }
+}
+
+/// Whether `refine` would split a built tile for a camera at (x, z): a tile just built may
+/// call for finer ones.
+pub fn refines(planet: &Planet, cam_x: f64, cam_z: f64, key: TileKey, refine: &Refine<'_>) -> bool {
+    key.level > 0 && split(key, offset(planet, cam_x, cam_z, key).2, Some(refine))
+}
+
+/// A tile relative to a camera at (x, z), X by the shortest way around: its minimum corner, and
+/// its horizontal distance.
+fn offset(planet: &Planet, cam_x: f64, cam_z: f64, key: TileKey) -> (f64, f64, f64) {
+    let size = key.size() as f64;
+    let (mx, mz) = key.min_block();
+    let rx0 = planet.delta_x(cam_x, mx as f64 + size * 0.5) - size * 0.5;
+    let rz0 = mz as f64 - cam_z;
+    let dx = (rx0.max(0.0)).max(-(rx0 + size)).max(0.0);
+    let dz = (rz0.max(0.0)).max(-(rz0 + size)).max(0.0);
+    (rx0, rz0, (dx * dx + dz * dz).sqrt())
+}
+
+/// `select`, refined by screen-space error where `refine` gives the built tiles' errors: rough
+/// land gets finer tiles (up to `MAX_EXTRA_LEVELS` beyond the distance rule) until its steps
+/// are within `max_error_px` on screen; flat land keeps the distance rule's detail.
+pub fn select_refined(
+    planet: &Planet,
+    cam_x: f64,
+    cam_z: f64,
+    distance: f64,
+    near: Option<[f64; 4]>,
+    refine: Option<&Refine<'_>>,
+) -> Vec<TileKey> {
     let c = planet.circumference() as f64;
     let distance = distance.min(c * 0.5);
     let root = (TILE << MAX_LEVEL) as f64;
@@ -256,34 +355,68 @@ pub fn select(
             }
         }
     }
-    while let Some(key) = stack.pop() {
+    // Tiles within reach and not wholly inside the full-detail area, with their distance.
+    let keep = |key: TileKey| {
         let size = key.size() as f64;
-        let (mx, mz) = key.min_block();
-        // The tile relative to the camera (X by the shortest way around).
-        let rx0 = planet.delta_x(cam_x, mx as f64 + size * 0.5) - size * 0.5;
-        let rz0 = mz as f64 - cam_z;
-        let dx = (rx0.max(0.0)).max(-(rx0 + size)).max(0.0);
-        let dz = (rz0.max(0.0)).max(-(rz0 + size)).max(0.0);
-        let d = (dx * dx + dz * dz).sqrt();
-        if d > distance {
+        let (rx0, rz0, d) = offset(planet, cam_x, cam_z, key);
+        let inside = near_rel.is_some_and(|[nx0, nz0, nx1, nz1]| {
+            rx0 >= nx0 && rx0 + size <= nx1 && rz0 >= nz0 && rz0 + size <= nz1
+        });
+        (d <= distance && !inside).then_some(d)
+    };
+    while let Some(key) = stack.pop() {
+        let Some(d) = keep(key) else {
             continue;
-        }
-        if let Some([nx0, nz0, nx1, nz1]) = near_rel
-            && rx0 >= nx0
-            && rx0 + size <= nx1
-            && rz0 >= nz0
-            && rz0 + size <= nz1
-        {
-            continue;
-        }
-        if key.level > 0 && d < SPLIT * size {
+        };
+        if key.level > 0 && split(key, d, refine) {
             stack.extend(key.children());
         } else {
             out.push(key);
         }
     }
+    if refine.is_some() {
+        balance(planet, &mut out, |k| keep(k).is_some());
+    }
     out.sort_by_key(|k| (std::cmp::Reverse(k.level), k.z, k.x));
     out
+}
+
+/// Splits tiles of a selection until neighbours are at most one level apart, as the distance
+/// rule leaves them — tile edges are sealed by skirts only as deep as a neighbour one level
+/// coarser needs. `keep` filters the children as the selection does.
+fn balance(planet: &Planet, out: &mut Vec<TileKey>, keep: impl Fn(TileKey) -> bool) {
+    let mut leaves: FxHashSet<TileKey> = out.iter().copied().collect();
+    let mut work = out.clone();
+    while let Some(k) = work.pop() {
+        if !leaves.contains(&k) {
+            continue;
+        }
+        let around = tiles_around(planet, k.level);
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let n = TileKey {
+                level: k.level,
+                x: (k.x + dx).rem_euclid(around),
+                z: k.z + dz,
+            };
+            // A tile two or more levels coarser drawn over the neighbour is split.
+            let mut p = n.parent().and_then(TileKey::parent);
+            while let Some(a) = p {
+                if leaves.remove(&a) {
+                    for c in a.children() {
+                        if keep(c) {
+                            leaves.insert(c);
+                            work.push(c);
+                        }
+                    }
+                    work.push(k);
+                    break;
+                }
+                p = a.parent();
+            }
+        }
+    }
+    out.clear();
+    out.extend(leaves);
 }
 
 /// One quad of a tile mesh in 16 bytes; the vertex shader makes its four corners. Packed:
@@ -397,6 +530,10 @@ pub struct TileMesh {
     pub quads: Vec<LodQuad>,
     pub min_y: i32,
     pub max_y: i32,
+    /// Vertical error of the tile's columns (blocks): half the largest step between the ground
+    /// (or water) tops of neighbouring columns — how far the flat-topped columns can stray from
+    /// the land they stand for.
+    pub error: f32,
 }
 
 impl TileMesh {
@@ -1058,6 +1195,14 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
             quad(&mut v, p, t.rgb, TINT_RGB, false, 0, face);
         }
     }
+    let mut step = 0;
+    for j in 0..TILE {
+        for i in 0..TILE {
+            let c = at(i, j).top;
+            step = step.max((c - at(i + 1, j).top).abs());
+            step = step.max((c - at(i, j + 1).top).abs());
+        }
+    }
     let (mx, mz) = key.min_block();
     TileMesh {
         key,
@@ -1065,6 +1210,7 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
         quads: v,
         min_y: if min_y == i32::MAX { 0 } else { min_y },
         max_y: if max_y == i32::MIN { 0 } else { max_y },
+        error: step as f32 * 0.5,
     }
 }
 
@@ -1165,6 +1311,129 @@ mod tests {
         // Corners of a side face give its minimum corner and extents.
         let s = LodQuad::from_corners(NORTH, side(NORTH, 2, 6, 3, 9, 10, 15), 1, 0, false, 0);
         assert_eq!((s.corner(), s.size()), ((2, 10, 3), (4, 5)));
+    }
+
+    #[test]
+    fn rough_land_is_refined_by_its_error_on_screen() {
+        let p = planet();
+        let (cx, cz) = (1000.0, 500.0);
+        let plain = select(&p, cx, cz, 16_000.0, None);
+        let none = FxHashSet::default();
+        // Every tile of the plain selection is built: flat ones and one rough far tile.
+        let rough = *plain.iter().find(|k| k.level == 5).expect("a level-5 tile");
+        let built = |k: TileKey| Some((if k == rough { 60.0 } else { 0.5 }, 0));
+        let refine = |max_error_px: f64, split_before: &FxHashSet<TileKey>| {
+            select_refined(
+                &p,
+                cx,
+                cz,
+                16_000.0,
+                None,
+                Some(&Refine {
+                    px_per_rad: 771.0,
+                    max_error_px,
+                    camera_y: 100.0,
+                    built: &built,
+                    split_before,
+                }),
+            )
+        };
+        let fine = refine(1.0, &none);
+        // The rough tile is split; flat tiles keep the distance rule's detail.
+        assert!(!fine.contains(&rough) && fine.contains(&rough.children()[0]));
+        // (Its coarser neighbours may be split too, to stay within a level of its children.)
+        assert!(fine.len() >= plain.len() + 3);
+        assert_eq!(
+            refine(1e9, &none),
+            plain,
+            "no error allowed to matter: unchanged"
+        );
+        // Hysteresis: at an error limit between 70 % and 100 % of the tile's error on screen,
+        // it stays split if it was split before, and is not split otherwise.
+        let d = {
+            let (mx, mz) = rough.min_block();
+            let s = rough.size() as f64;
+            let dx = (p.delta_x(cx, mx as f64 + s * 0.5).abs() - s * 0.5).max(0.0);
+            let dz = ((mz as f64 + s * 0.5 - cz).abs() - s * 0.5).max(0.0);
+            (dx * dx + dz * dz).sqrt()
+        };
+        let sse = 60.0 * (1.0 - 1.0 / rough.column() as f64) * 771.0 * d / (d * d + 1e4);
+        let limit = sse / 0.85;
+        assert!(refine(limit, &none).contains(&rough));
+        assert!(!refine(limit, &split_nodes(&fine)).contains(&rough));
+        // A rough tile just built calls for a new selection; a flat one does not.
+        let r = Refine {
+            px_per_rad: 771.0,
+            max_error_px: 1.0,
+            camera_y: 100.0,
+            built: &built,
+            split_before: &none,
+        };
+        assert!(refines(&p, cx, cz, rough, &r));
+        let flat = *plain.iter().find(|k| k.level == 4).expect("a level-4 tile");
+        assert!(!refines(&p, cx, cz, flat, &r));
+        assert!((px_per_rad(1080, 70.0) - 771.2).abs() < 0.1);
+    }
+
+    #[test]
+    fn refined_selections_keep_neighbours_within_a_level() {
+        let p = planet();
+        let (cx, cz) = (1000.0, 500.0);
+        let plain = select(&p, cx, cz, 16_000.0, None);
+        let rough = *plain.iter().find(|k| k.level == 5).expect("a level-5 tile");
+        // The rough tile and everything under it stay rough: refined the most levels allowed.
+        let under = |mut k: TileKey| loop {
+            if k == rough {
+                return true;
+            }
+            match k.parent() {
+                Some(a) if a.level <= rough.level => k = a,
+                _ => return false,
+            }
+        };
+        let built = |k: TileKey| Some((if under(k) { 200.0 } else { 0.5 }, 0));
+        let none = FxHashSet::default();
+        let tiles = select_refined(
+            &p,
+            cx,
+            cz,
+            16_000.0,
+            None,
+            Some(&Refine {
+                px_per_rad: 771.0,
+                max_error_px: 1.0,
+                camera_y: 100.0,
+                built: &built,
+                split_before: &none,
+            }),
+        );
+        let min_level = tiles.iter().filter(|k| under(**k)).map(|k| k.level).min();
+        assert_eq!(min_level, Some(rough.level - MAX_EXTRA_LEVELS as u8));
+        let set: FxHashSet<TileKey> = tiles.iter().copied().collect();
+        assert_eq!(set.len(), tiles.len(), "no tile twice");
+        for k in &tiles {
+            let around = tiles_around(&p, k.level);
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let n = TileKey {
+                    level: k.level,
+                    x: (k.x + dx).rem_euclid(around),
+                    z: k.z + dz,
+                };
+                let mut a = n.parent().and_then(TileKey::parent);
+                while let Some(t) = a {
+                    assert!(!set.contains(&t), "{t:?} next to {k:?}");
+                    a = t.parent();
+                }
+                // Nothing is drawn twice: no tile under another.
+                let mut up = k.parent();
+                while let Some(t) = up {
+                    assert!(!set.contains(&t), "{k:?} under {t:?}");
+                    up = t.parent();
+                }
+            }
+        }
+        // Balancing split some tiles around the refined one.
+        assert!(tiles.len() > plain.len() + 3 * (1 + 4 + 16));
     }
 
     #[test]

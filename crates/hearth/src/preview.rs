@@ -39,6 +39,8 @@ pub struct Preview {
     /// Distant terrain, once the world is ready; LOD distance in chunks (0 = off).
     lod: Option<LodStream>,
     lod_distance: u32,
+    /// Vertical error of distant terrain allowed on screen (pixels).
+    lod_error_px: f64,
     vertical_scale: f32,
     /// World clock (20 ticks per second of play) and calendar.
     pub ticks: u64,
@@ -95,6 +97,7 @@ impl Preview {
             vertical,
             lod: None,
             lod_distance: options.video.lod_distance,
+            lod_error_px: options.video.lod_error_px(),
             vertical_scale: 1.0,
             ticks: 0,
             calendar,
@@ -198,6 +201,7 @@ impl Preview {
                         lod,
                         self.lod_distance,
                         vertical_scale as f64,
+                        self.lod_error_px,
                     ));
                     self.vertical_scale = vertical_scale;
                     self.planet = Some(planet);
@@ -277,6 +281,9 @@ impl Preview {
         dt: f32,
     ) {
         let near = self.near_area();
+        if let Some(lod) = &mut self.lod {
+            lod.set_view(targets.size.1, self.camera.fov_y);
+        }
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {

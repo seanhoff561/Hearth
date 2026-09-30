@@ -34,7 +34,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::environment::{EnvOverrides, EnvSampler};
+use crate::lod_stream::Errors;
 use crate::scene::LocalWorld;
+use hearth_lod::TileKey;
 
 /// Frames that may be queued on the GPU while the CPU records the next (as the swapchain's
 /// frame latency).
@@ -221,6 +223,8 @@ pub struct BenchOptions {
     /// Allowed drop in average FPS or 1 % lows against the baseline (percent).
     pub gate: f64,
     pub software: bool,
+    /// Vertical LOD error allowed on screen (pixels; 0: the distance rule alone).
+    pub lod_error: f64,
 }
 
 impl Default for BenchOptions {
@@ -239,6 +243,7 @@ impl Default for BenchOptions {
             baseline: None,
             gate: 5.0,
             software: false,
+            lod_error: VideoOptions::default().lod_error_px(),
         }
     }
 }
@@ -266,6 +271,8 @@ OPTIONS:
     --baseline FILE              Fail if average FPS or 1 % lows drop more than --gate
                                  percent below FILE's (a --json output)
     --gate PCT                   Allowed drop (default 5)
+    --lod-error PX               Vertical LOD error allowed on screen (default: the
+                                 preset's, 2; 0 = the distance rule alone)
     --software                   Use the software adapter";
 
 impl BenchOptions {
@@ -311,6 +318,7 @@ impl BenchOptions {
                 "--baseline" => o.baseline = Some(PathBuf::from(val()?)),
                 "--gate" => o.gate = val()?.parse()?,
                 "--software" => o.software = true,
+                "--lod-error" => o.lod_error = val()?.parse::<f64>()?.max(0.0),
                 other => anyhow::bail!("unknown argument {other:?}"),
             }
         }
@@ -594,28 +602,56 @@ fn run_scene(
             ((cube.z + r) * 16) as f64,
         ]
     };
-    let select = |c: DVec3| {
+    // Refined by screen-space error as the game does (`LodStream`).
+    let ppr = hearth_lod::px_per_rad(opts.height, VideoOptions::default().fov);
+    let select = |c: DVec3, errors: &Errors, split_before: &FxHashSet<TileKey>| {
         if def.lod == 0 {
             return Vec::new();
         }
         let reach = hearth_lod::draw_distance(def.lod, c.y, v);
-        hearth_lod::select(&planet, c.x, c.z, reach, Some(near_of(c)))
+        let built = |k: TileKey| errors.get(&k).copied();
+        let refine = (opts.lod_error > 0.0).then_some(hearth_lod::Refine {
+            px_per_rad: ppr,
+            max_error_px: opts.lod_error,
+            camera_y: c.y,
+            built: &built,
+            split_before,
+        });
+        hearth_lod::select_refined(&planet, c.x, c.z, reach, Some(near_of(c)), refine.as_ref())
     };
-    let mut wanted: FxHashSet<hearth_lod::TileKey> = FxHashSet::default();
-    for p in path.samples(24) {
-        wanted.extend(select(p));
-    }
-    let wanted: Vec<hearth_lod::TileKey> = wanted.into_iter().collect();
+    let unsplit = FxHashSet::default();
+    let samples = path.samples(24);
     let t_lod = Instant::now();
-    let tiles: Vec<hearth_lod::TileMesh> = wanted
-        .par_iter()
-        .map(|k| lodgen.build(&lw.generator, *k))
-        .collect();
-    let lod_tiles_per_s = tiles.len() as f64 / t_lod.elapsed().as_secs_f64().max(1e-9);
-    for t in &tiles {
-        crate::lod_stream::upload(ctx, &mut scene.lod, t);
-    }
-    drop(tiles);
+    let rounds = if opts.lod_error > 0.0 {
+        1 + hearth_lod::MAX_EXTRA_LEVELS
+    } else {
+        1
+    };
+    let errors = crate::lod_stream::build_refined(
+        rounds,
+        |errors| {
+            let mut wanted = Vec::new();
+            for p in &samples {
+                wanted.extend(select(*p, errors, &unsplit));
+            }
+            wanted
+        },
+        |keys| {
+            Ok(keys
+                .par_iter()
+                .map(|k| lodgen.build(&lw.generator, *k))
+                .collect())
+        },
+        |t| crate::lod_stream::upload(ctx, &mut scene.lod, t),
+    )?;
+    let lod_tiles_per_s = errors.len() as f64 / t_lod.elapsed().as_secs_f64().max(1e-9);
+    // What to draw: the selection, or the built tiles standing in for it.
+    let show = |wanted: &[TileKey]| -> Vec<u64> {
+        hearth_lod::cover(wanted, |k| errors.contains_key(&k))
+            .iter()
+            .map(|k| k.id())
+            .collect()
+    };
     let sampler = EnvSampler::new(lw.grid(), calendar);
     let overrides = EnvOverrides {
         cloud_cover: def.clouds,
@@ -630,7 +666,7 @@ fn run_scene(
         def.name,
         positions.len(),
         mesh_cubes_per_s,
-        wanted.len(),
+        errors.len(),
         lod_tiles_per_s,
         setup_s
     );
@@ -682,7 +718,9 @@ fn run_scene(
             .is_none_or(|p| p.distance(camera.pos) >= LOD_RESELECT)
         {
             state.lod_at = Some(camera.pos);
-            scene.lod_show = select(camera.pos).iter().map(|k| k.id()).collect();
+            let wanted = select(camera.pos, &errors, &state.lod_split);
+            state.lod_split = hearth_lod::split_nodes(&wanted);
+            scene.lod_show = show(&wanted);
             scene.near_area = (def.lod > 0).then(|| near_of(camera.pos));
         }
         let t2 = Instant::now();
@@ -818,7 +856,7 @@ fn run_scene(
         let moment = calendar.at(0);
         let fire = map.block_light(BlockPos::containing(camera.pos)) as f32 / 15.0;
         let (env, _) = sampler.sample(&moment, camera.pos, fire, overrides);
-        scene.lod_show = select(camera.pos).iter().map(|k| k.id()).collect();
+        scene.lod_show = show(&select(camera.pos, &errors, &unsplit));
         scene.near_area = (def.lod > 0).then(|| near_of(camera.pos));
         scene.set_sky_heights(ctx, &sky_heights(camera.pos));
         let mut pixels = Vec::new();
@@ -1000,6 +1038,8 @@ fn load_along(
 #[derive(Default)]
 struct FrameState {
     lod_at: Option<DVec3>,
+    /// The tiles the last LOD selection split (hysteresis).
+    lod_split: FxHashSet<TileKey>,
     sky_at: Option<DVec3>,
 }
 
