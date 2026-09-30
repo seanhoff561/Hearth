@@ -2,10 +2,12 @@
 
 *Status: partial (V2-2 in progress). Implemented: rock types, soils and sediments as
 generated blocks, geological provinces, stratigraphy, basement, intrusions, geothermal
-gradient, soils, loose stones and scree (`hearth_worldgen::geology`, `hearth_worldgen::soil`,
+gradient, soils, loose stones and scree, deposits of every Appendix D resource with their
+surface indicators, panning, and the per-continent resource coverage
+(`hearth_worldgen::{geology, soil, deposits, coverage}`,
 `hearth_content::generate::natural_blocks`, `hearth_texgen::material`). Planned in V2-2:
-groundwater and springs, seasonal rivers, finite water, coasts, deposits and indicators, water
-rendering. Decisions: D38–D41.*
+groundwater and springs, seasonal rivers, finite water, coasts, water rendering.
+Decisions: D38–D47.*
 
 ## Purpose
 Real rocks, soils, water and resources placed by physical causes, so a player can read the
@@ -29,10 +31,12 @@ Every planet grid cell (at half resolution) gets one:
    arcs, other volcanic terrain → hotspot, shields → craton, young and old orogens → fold
    belts, rifts, and the remaining basins → passive margin near coasts or sedimentary basin
    inland;
-2. **conditions** filter the provinces of that setting (arid < 450 mm, humid > 750 mm, warm and
-   cold sea-level temperature, coastal/inland, old/young orogen) — so red beds and evaporites
-   form in dry basins, coal measures and chalk in wet ones, carbonate platforms on warm
-   margins;
+2. **conditions** narrow the provinces of that setting: structural ones (coastal/inland,
+   old/young orogen) decide which may occur; climate ones (arid < 450 mm, humid > 750 mm,
+   warm and cold sea-level temperature) are preferences — a province keeps 15% of its weight
+   where they do not hold (D45) — so red beds and evaporites favour dry basins, coal
+   measures and chalk wet ones, carbonate platforms warm margins, without being confined to
+   them;
 3. a **weighted hash of a warped region** (1/64 of the circumference) picks one, so provinces
    form coherent regions. Columns take the province of the nearest jittered cell site after a
    warp, so borders are irregular.
@@ -48,9 +52,11 @@ provinces bend the layers across an axis (wavelength 300–900 blocks, amplitude
 the phase bent by noise); others warp into irregular domes and basins (wavelengths of
 kilometres). Depth below the top selects the layer; below the sequence lies the basement.
 
-**Plutons**: on a 1,600-block grid, a third of the cells hold a pluton of the host province's
-intrusive rock (granite, diorite, gabbro), 120–500 blocks across, a dome whose roof may rise
-above the surface (granite landscapes) or stay buried.
+**Plutons**: on a 1,600-block grid, a share of the sites set by the host province (a third by
+default, 80% in shields, 60% in old orogens) hold a pluton of its intrusive rock (granite,
+diorite, gabbro), 120–500 blocks across, with a flat roof and steep walls. The roof lies at a
+depth the province sets (D46): deeply eroded shields and old orogens expose their granites
+(granite landscapes, kaolin and tin), young belts keep them buried.
 
 **Geothermal gradient**: rock temperature = mean surface temperature + 25 °C per real km
 (`Geology::rock_temperature_c`), so deep mines are hot (used by physiology, V2-3).
@@ -84,20 +90,91 @@ setting: bare rock, scree and gravel (10 %), deserts and high ground (×2.5), st
 more on slopes, a few anywhere. Boulders are the local bedrock (or mossy cobblestone in wet
 climates). Rock outcrops follow the stratigraphy.
 
+## Deposits (D42, D43)
+`geology/deposits.ron` holds 52 deposit models covering every Appendix D resource: toolstones
+(flint nodule bands in chalk and limestone, chert beds, obsidian flows, quartzite and basalt
+river cobbles, quartz veins), fire stones (pyrite nodules and veins, marcasite in chalk),
+pigments (red and yellow ochre, manganese black), clays (river banks, weathered mudrock,
+fire clay under coal and lignite, kaolin from rotted granite and in beds), salt (pans, rock
+salt lenses, salt springs) and gypsum (beds, desert crusts), copper (oxidised caps, cuprite,
+native copper in basalt, porphyry, sulfide veins), tin (veins near granite, stream tin
+downstream of it), iron (bog iron, hematite, magnetite, limonite, laterite), gold (quartz
+veins, placers), lead–silver, native silver, zinc, sulfur (fumaroles, in gypsum), cinnabar
+(hot springs, veins), saltpetre, travertine, pozzolana, kimberlite, garnet, bauxite and coals.
+
+**Placement.** Each 256-block cell draws a Poisson number of candidates per model (frequency ×
+area); a candidate becomes a body where its province, conditions and host rock hold: place
+conditions (river, lake, wetland) are searched for inside the cell, climate conditions read
+the column, "volcano" means volcanic terrain or a volcano within 1.2 km, "granite" a granite
+pluton under or near the place (500 blocks for placers, which wash down from it). Buried
+bodies try six depths in their range (real metres × vertical scale) for a host rock. The
+cell's bodies are cached and every cube draws the ones that reach it.
+
+**Shapes.** Veins are steep plates (random strike, dip 55–90°) of their thickness; seams and
+evaporites flat lenses with a gentle undulation; nodules three bands of scattered nodules;
+disseminated bodies ellipsoids where 45% of the host takes the ore; pipes vertical cylinders
+to the surface; crusts, flows and bog ores follow the ground (crusts break into blotches
+toward their edges, bog ore lies a block under the peat); placers lie along river beds as
+gravel with heavy grains, or as cobbles on dry bars for rock resources. Bodies replace only
+their host rocks (or any rock and soil when none is listed).
+
+**Indicators.** Shallow bodies (top within 16 blocks of the ground) show at the surface:
+stains and gossans (the indicator mineral's ore block on about a third of the ground over
+the body), float (loose pieces scattered around within 1.5× the body's size, at least 24
+blocks) and their own crusts and outcrops. Each body records the lowest and highest ground
+within its reach, so indicators on slopes are drawn in every cube they fall in.
+
+**Blocks.** Every deposit brings its blocks, generated from the content (D43): `<mineral>_ore`
+(rock matrix flecked with the mineral, glinting where it is metallic), `<mineral>_crust`,
+`<mineral>_placer`, `<mineral>_float`, `<rock>_cobbles`, and the earths and rocks
+themselves.
+
+## Panning
+`Deposits::pan(x, z)` is what a pan of river gravel (8 kg) washed at a bed or bank holds: the
+heavy grains of the placers it lies in, grade × mass, richest in the middle of a placer reach
+(a pan of placer gold holds tens of milligrams; stream tin tens of grams), plus trace indicator
+grains shed by bodies upstream within 300 blocks (garnets below a kimberlite). The panning
+action and its items arrive with the process engine (V2-5) and ore processing (V2-13).
+
+## Resource coverage (D44)
+`hearth_worldgen::coverage` takes a census of every body on the planet (≈0.1–0.5 s at
+Standard), keeps the ones workable in their resource's era (≤ 4 blocks deep in Eras 0–2, 12 in
+Era 3, 40 later), labels continents (landmasses ≥ 50 km² at Standard) and computes, per
+continent and resource, the distance within which 90% of the land lies from a workable body.
+Reach limits are 5 km (Eras 0–2), 8 km (Era 3) and 12 km (Eras 4–5) at Standard; a gap is
+covered when a substitute (same metal, same formula, shared `_ore` or process tag) is within
+reach. Across seeds 1–6 at Standard (11 continents), every Era 0–2 need (toolstone, fire
+stone, ochre, clay) is within reach of every continent; the open gaps are regional
+resources: kimberlite (8 continents), bituminous coal (6), fire clay (3), travertine and
+volcanic ash (3 each), sphalerite, sulfur and kaolin (2 each), and single cases of lignite,
+cinnabar, gypsum and salt. `hearth content lint --coverage [--seed N]…` flags them.
+
 ## Tools
-`bench worldmap` renders province and surface-rock maps of the whole planet and, with
-`--geo-area x,z,size`, a block-scale outcrop map and an east–west cross-section of an area.
+`bench worldmap` renders province, surface-rock and deposit maps of the whole planet, the
+bodies per model and the coverage table, and, with `--geo-area x,z,size`, a block-scale
+outcrop map and an east–west cross-section of an area. `bench deposits [--model id]
+[--near x,z] [--max-depth n] [--coverage]` lists a world's bodies nearest a point (with their
+depth, size, grade, biome and climate) for inspection and screenshots
+(`tools/shots/v22_deposits.shots`).
 
 ## Interactions
 Rock → soils (parent material, V2-2), deposits and indicators (V2-2), hardness and material
 of every mined block (V2-5 tools and mining), heat at depth (V2-3), building stone (V2-8).
+Deposits → prospecting, panning and mining (V2-5, V2-13), the knowledge of eras 0–5 (V2-5,
+V2-12–V2-14), trade distances between continents; springs and water taste over salt and
+sulfur bodies (V2-2d).
 
 ## Known simplifications
 - One sequence per province; no unconformities, no faults inside a province (province borders
   act as faults), no overturned folds or thrust stacks.
 - Plutons are domes without contact metamorphism.
 - Bedding inside a formation is only in the texture.
-- Region choice uses today's climate as a stand-in for the climate the rocks formed in.
+- Region choice uses today's climate as a (soft) stand-in for the climate the rocks formed
+  in.
+- Deposit bodies are independent of one another: no zoning (oxide cap over sulfide ore over
+  primary vein) inside one system, no ore shoots, and placers do not trace back along the
+  river network to their source body.
+- Frequencies are per km² of suitable ground at game scale (D42), not Earth's densities.
 - The Köppen classes of the planet are coarse (e.g. one "Dfb" for all humid continental), so
   soils listing finer codes match by group.
 - Soil horizons are whole blocks; litter layers, texture classes and nutrient dynamics wait

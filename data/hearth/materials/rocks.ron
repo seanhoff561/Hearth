@@ -4,7 +4,7 @@
     schema: 1,
     entries: [
         (
-            id: "flint", name: "flint", category: Rock, tags: ["knappable", "toolstone", "spark_striker"],
+            id: "flint", status: Implemented, name: "flint", category: Rock, tags: ["knappable", "toolstone", "spark_striker"],
             density_kg_m3: 2600, hardness_mohs: 7.0, fracture: Conchoidal, knapping: 0.95,
             strength: (compressive_mpa: 250), thermal: (conductivity_w_mk: 1.4, specific_heat_j_kgk: 740),
             workability: 0.3, durability: 1.0,
@@ -223,6 +223,20 @@
             workability: 0.9, durability: 0.9,
             appearance: (color: "#7b877e", color2: "#5f6b63", pattern: Plain, roughness: 0.4),
             notes: "Talc-rich metamorphic rock: carves with stone or bone, holds heat, casting moulds.",
+        ),
+        (
+            id: "kimberlite", status: Implemented, name: "kimberlite", category: Rock, tags: ["diamond_host"],
+            density_kg_m3: 2800, hardness_mohs: 5.0, fracture: Uneven,
+            strength: (compressive_mpa: 60), workability: 0.3, durability: 0.5,
+            appearance: (color: "#4b5a55", color2: "#8a8f6a", pattern: Clumpy, roughness: 0.9),
+            notes: "Blue-grey ground of volcanic pipes from the deep mantle; weathers to yellow ground; rarely carries diamonds.",
+        ),
+        (
+            id: "banded_iron", status: Implemented, name: "banded iron formation", category: Rock, tags: ["iron_ore"],
+            density_kg_m3: 3500, hardness_mohs: 6.5, fracture: Uneven,
+            strength: (compressive_mpa: 250), workability: 0.1, durability: 1.0,
+            appearance: (color: "#6e2a22", color2: "#3a3a40", pattern: Banded, roughness: 0.6),
+            notes: "Ancient bands of hematite or magnetite and chert, the great iron ores of the shields.",
         ),
 ],
 )

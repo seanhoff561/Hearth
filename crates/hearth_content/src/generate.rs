@@ -193,8 +193,17 @@ pub enum NaturalKind {
     Soil,
     /// Loose grains that slide and fall (sands, gravel, ash): materials tagged `falls`.
     Loose,
-    /// A few loose stones of a rock lying on the ground (`<rock>_cobbles`).
+    /// A few loose stones of a rock lying on the ground (`<rock>_cobbles`), or loose pieces of
+    /// an ore (`<mineral>_float`).
     Cobbles,
+    /// Rock carrying an ore mineral (`<mineral>_ore`): textured as a rock matrix flecked with
+    /// the mineral.
+    Ore,
+    /// Stream gravel with heavy grains of a mineral (`<mineral>_placer`), for panning.
+    Placer,
+    /// An earthy crust or efflorescence of a mineral on the ground (`<mineral>_crust`):
+    /// limonite, sulfur, cinnabar, saltpetre, bog ore.
+    Crust,
 }
 
 /// A block generated from the content tables: one per rock type and one per earth material
@@ -266,6 +275,16 @@ pub fn natural_blocks(c: &crate::Content) -> Vec<NaturalBlock> {
             }
         }
     }
+    // Pigment earths that deposits dig (ochres, manganese black).
+    for d in c.deposits.iter() {
+        if let Some((id, NaturalKind::Soil)) = resource_block(c, d.resource.as_str())
+            && let Some(m) = c.materials.get(&id)
+            && m.category == Cat::Pigment
+            && !earths.contains(&m.id())
+        {
+            earths.push(m.id());
+        }
+    }
     for id in earths {
         if out.iter().any(|b| b.id == id) {
             continue;
@@ -288,7 +307,148 @@ pub fn natural_blocks(c: &crate::Content) -> Vec<NaturalBlock> {
             map_color: m.appearance.color.0,
         });
     }
+    // Deposits: the blocks their bodies, placers, float and indicators are made of.
+    let mut wanted: Vec<(String, NaturalKind, String)> = Vec::new();
+    for d in c.deposits.iter() {
+        let resource = d.resource.as_str();
+        if let Some((id, kind)) = body_block(c, resource, d.geometry) {
+            wanted.push((id, kind, material_of(c, resource).unwrap_or_default()));
+        }
+        if d.geometry == crate::schema::geology::DepositGeometry::Placer
+            && let Some((id, kind)) = placer_block(c, resource)
+        {
+            wanted.push((id, kind, material_of(c, resource).unwrap_or_default()));
+        }
+        for ind in &d.indicators {
+            let shown = ind.mineral.as_ref().map_or(resource, |m| m.as_str());
+            if ind.kind == crate::schema::geology::IndicatorKind::Float {
+                if let Some(id) = float_block(c, shown) {
+                    wanted.push((
+                        id,
+                        NaturalKind::Cobbles,
+                        material_of(c, shown).unwrap_or_default(),
+                    ));
+                }
+            } else if let Some((id, kind)) = resource_block(c, shown) {
+                wanted.push((id, kind, material_of(c, shown).unwrap_or_default()));
+            }
+        }
+    }
+    for (id, kind, material) in wanted {
+        if material.is_empty() || out.iter().any(|b| b.id == id) {
+            continue;
+        }
+        let Some(m) = c.materials.get(&material) else {
+            continue;
+        };
+        let hardness = match kind {
+            NaturalKind::Ore => hardness_of(m).max(1.8),
+            NaturalKind::Rock => hardness_of(m),
+            NaturalKind::Placer => 0.6,
+            NaturalKind::Crust => 0.5,
+            NaturalKind::Cobbles => 0.2,
+            NaturalKind::Soil | NaturalKind::Loose => 0.25 + m.density_kg_m3 / 5000.0,
+        };
+        let name = match kind {
+            NaturalKind::Ore => format!("{} ore", m.name),
+            NaturalKind::Placer => format!("{}-bearing gravel", m.name),
+            NaturalKind::Crust => format!("{} crust", m.name),
+            NaturalKind::Cobbles if !id.ends_with("_cobbles") => format!("{} pieces", m.name),
+            NaturalKind::Cobbles => format!("{} cobbles", m.name),
+            _ => m.name.clone(),
+        };
+        out.push(NaturalBlock {
+            id,
+            name,
+            material,
+            kind,
+            hardness,
+            map_color: m.appearance.color.0,
+        });
+    }
     out
+}
+
+/// The material a resource (rock, mineral or material id) is made of.
+pub fn material_of(c: &crate::Content, resource: &str) -> Option<String> {
+    if let Some(r) = c.rocks.get(resource) {
+        return Some(r.material.as_str().to_owned());
+    }
+    if let Some(m) = c.minerals.get(resource) {
+        return Some(m.material.as_str().to_owned());
+    }
+    c.materials.get(resource).map(|m| m.id().to_owned())
+}
+
+/// The block a deposit body of `resource` is made of: the rock itself, an earth's block, a
+/// rock-like mineral's own block (flint) or the mineral's ore block (`<mineral>_ore`).
+pub fn resource_block(c: &crate::Content, resource: &str) -> Option<(String, NaturalKind)> {
+    use crate::schema::material::MaterialCategory as Cat;
+    if c.rocks.get(resource).is_some() {
+        return Some((resource.to_owned(), NaturalKind::Rock));
+    }
+    let earth = |m: &Material| {
+        let falls = m.tags.iter().any(|t| t == "falls");
+        (
+            m.id().to_owned(),
+            if falls {
+                NaturalKind::Loose
+            } else {
+                NaturalKind::Soil
+            },
+        )
+    };
+    // Minerals first: a mineral's id is usually also its material's.
+    if let Some(mineral) = c.minerals.get(resource) {
+        let m = c.materials.get(mineral.material.as_str())?;
+        return Some(match m.category {
+            Cat::Rock => (resource.to_owned(), NaturalKind::Rock),
+            Cat::Soil | Cat::Clay | Cat::Sediment | Cat::Pigment => earth(m),
+            _ => (format!("{resource}_ore"), NaturalKind::Ore),
+        });
+    }
+    let m = c.materials.get(resource)?;
+    match m.category {
+        Cat::Soil | Cat::Clay | Cat::Sediment | Cat::Pigment => Some(earth(m)),
+        _ => None,
+    }
+}
+
+/// The block a deposit body of `resource` with a geometry is made of: as
+/// [`resource_block`], except that crusts and bog ores of an ore mineral are an earthy crust of
+/// it (`<mineral>_crust`) rather than rock flecked with it.
+pub fn body_block(
+    c: &crate::Content,
+    resource: &str,
+    geometry: crate::schema::geology::DepositGeometry,
+) -> Option<(String, NaturalKind)> {
+    use crate::schema::geology::DepositGeometry as G;
+    match resource_block(c, resource)? {
+        (_, NaturalKind::Ore) if matches!(geometry, G::Crust | G::Bog) => {
+            Some((format!("{resource}_crust"), NaturalKind::Crust))
+        }
+        other => Some(other),
+    }
+}
+
+/// What a placer of `resource` leaves in a stream bed: cobbles of a rock, or gravel with the
+/// mineral's heavy grains.
+pub fn placer_block(c: &crate::Content, resource: &str) -> Option<(String, NaturalKind)> {
+    match resource_block(c, resource)? {
+        (id, NaturalKind::Rock) => Some((format!("{id}_cobbles"), NaturalKind::Cobbles)),
+        (_, NaturalKind::Ore) => Some((format!("{resource}_placer"), NaturalKind::Placer)),
+        _ => None,
+    }
+}
+
+/// Loose pieces of `resource` lying on the surface (float): cobbles of a rock, or pieces of
+/// an ore mineral.
+pub fn float_block(c: &crate::Content, resource: &str) -> Option<String> {
+    match resource_block(c, resource)? {
+        (id, NaturalKind::Rock) => Some(format!("{id}_cobbles")),
+        (_, NaturalKind::Ore) => Some(format!("{resource}_float")),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -299,21 +459,23 @@ mod natural_tests {
     fn every_rock_and_earth_gets_a_block() {
         let c = crate::Content::load_base();
         let blocks = natural_blocks(&c);
-        let rocks = blocks
-            .iter()
-            .filter(|b| b.kind == NaturalKind::Rock)
-            .count();
-        assert_eq!(rocks, c.rocks.len());
+        for rock in c.rocks.iter() {
+            assert!(
+                blocks
+                    .iter()
+                    .any(|b| b.id == rock.id() && b.kind == NaturalKind::Rock),
+                "{} has a block",
+                rock.id()
+            );
+        }
         assert!(
             blocks
                 .iter()
                 .any(|b| b.id == "hearth:granite_cobbles" && b.kind == NaturalKind::Cobbles)
         );
         assert!(
-            !blocks
-                .iter()
-                .any(|b| b.id == "hearth:bituminous_coal_cobbles"),
-            "no coal cobbles"
+            !blocks.iter().any(|b| b.id == "hearth:rock_gypsum_cobbles"),
+            "no loose stones of gypsum (no float indicator asks for them)"
         );
         let kind = |id: &str| blocks.iter().find(|b| b.id == id).map(|b| b.kind);
         assert_eq!(kind("hearth:quartz_sand"), Some(NaturalKind::Loose));
@@ -328,6 +490,46 @@ mod natural_tests {
             None,
             "thin litter is part of the turf"
         );
+        // Deposits bring their ores, placers, float and indicators.
+        assert_eq!(kind("hearth:chalcopyrite_ore"), Some(NaturalKind::Ore));
+        assert_eq!(
+            kind("hearth:malachite_ore"),
+            Some(NaturalKind::Ore),
+            "stains"
+        );
+        assert_eq!(kind("hearth:gossan_ore"), Some(NaturalKind::Ore), "gossans");
+        assert_eq!(kind("hearth:native_gold_placer"), Some(NaturalKind::Placer));
+        assert_eq!(
+            kind("hearth:sulfur_crust"),
+            Some(NaturalKind::Crust),
+            "fumarole crusts"
+        );
+        assert_eq!(
+            kind("hearth:goethite_crust"),
+            Some(NaturalKind::Crust),
+            "limonite crusts"
+        );
+        assert_eq!(
+            kind("hearth:flint"),
+            Some(NaturalKind::Rock),
+            "flint nodules are flint"
+        );
+        assert_eq!(
+            kind("hearth:flint_cobbles"),
+            Some(NaturalKind::Cobbles),
+            "flint float"
+        );
+        assert_eq!(
+            kind("hearth:red_ochre"),
+            Some(NaturalKind::Soil),
+            "ochre earth"
+        );
+        // Every deposit's body resolves to a block.
+        for d in c.deposits.iter() {
+            let (id, _) = body_block(&c, d.resource.as_str(), d.geometry)
+                .unwrap_or_else(|| panic!("{} has no block", d.resource));
+            assert!(kind(&id).is_some(), "{} has a block {id}", d.id);
+        }
         let chalk = blocks
             .iter()
             .find(|b| b.id == "hearth:chalk")

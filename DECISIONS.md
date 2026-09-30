@@ -267,3 +267,69 @@ no conditions is the fallback. Horizons stay in real metres because soil is a lo
 metre per block), which makes profiles one to a few blocks deep, thinned by slope. v1's
 biome surface kinds still say what covers the ground (turf, sand, gravel, rock, snow); the soil
 decides what lies under it.
+
+## D42 — Deposits: Poisson bodies per 256-block cell, frequencies at game scale
+Deposit models are data (`geology/deposits.ron`: resource, geometry, provinces, host rocks,
+conditions, depth, size, thickness, extent, grade, frequency, indicators, era). The generator
+draws a Poisson number of candidates per model in every 256-block cell (mean = frequency ×
+cell area) and keeps those whose province, conditions and host rock hold, so a frequency is
+bodies per km² of *suitable* ground. Place conditions (river, lake, wetland) are ORed and
+searched for inside the cell; the others (arid, humid, warm, cold, near a volcano, near
+granite — for placers within 500 blocks upstream) must all hold. A cell's bodies are
+computed once and cached; each cube draws the bodies that reach it, so generation order does
+not matter. Depths of buried bodies scale with the vertical scale like the strata; surface
+bodies (crusts, flows, bogs, placers) stay at the block scale. Frequencies are far above
+Earth's: the Standard world compresses Earth ~610× horizontally, so a province patch of a
+kilometre stands for hundreds of real kilometres, and deposits must be findable at the game's
+scale while staying rare against the rock around them.
+
+## D43 — Resource blocks derive from the content
+A deposit body is made of its resource's block: a rock resource is the rock (and its
+`<rock>_cobbles` on stream bars and as float), an earth or pigment is its earth block, an ore
+mineral is `<mineral>_ore` (the rock matrix flecked with it) — or, in crusts and bog ores,
+`<mineral>_crust` (an earthy crust of it) — with `<mineral>_placer` (gravel with its heavy
+grains) and `<mineral>_float` (loose pieces). Stains and gossans are the ore block of the
+indicator's mineral. Names, hardness, map colour and texture come from the material, so a new
+deposit model in data brings its blocks with no code.
+
+## D44 — Resource coverage: workable bodies, reach limits by era, substitutes
+The V2-2 acceptance ("each Era 0–5 resource reachable from any continent within a reasonable
+distance at Standard size, or the lint flags the gap") is measured as follows. A census of
+every body on the planet keeps those that can be worked in the resource's era (no more than
+4 blocks of ground over them in Eras 0–2, 12 in Era 3, 40 from the Bronze Age on). Continents
+are landmasses of at least 50 km² (scaled with the planet's area). For each continent and
+resource, the distance within which 90% of its land lies from such a body (a Dijkstra
+distance over 256-block cells, across the sea too) must be within the era's reach: 5 km for
+Eras 0–2 (a long day's walk), 8 km for Era 3, 12 km from Era 4 (a journey), scaled with the
+circumference. A resource out of reach is covered when a substitute is in reach: a resource
+yielding the same metal (so metals were added as planned materials and ore minerals given
+their yields), a mineral of the same formula (pyrite and marcasite), or one whose material
+shares a tag ending in `_ore` or a tag item forms and processes select by (`knappable`).
+`hearth content lint --coverage` generates Standard worlds and reports open gaps as warnings
+and covered ones as notes; `bench deposits --coverage` and `bench worldmap` print the table.
+Gaps that remain are resources that are regional in reality (kimberlite, coal, volcanic
+sulfur and ash, travertine, fire clay).
+
+## D45 — Province climate conditions are preferences, not rules
+Today's climate is only a weak guide to where rocks formed (continents drift, climates
+change). Structural conditions (coastal, inland, old, young) still decide which provinces
+may occur; climate conditions (arid, humid, warm, cold) now multiply a province's weight by
+0.15 where they do not hold. Coal measures and evaporites keep favouring today's wet and dry
+lands but are no longer confined to them, which spreads coal, salt and gypsum across
+continents as on Earth.
+
+## D46 — Plutons per province: how many, how deeply eroded
+Provinces set the share of pluton sites that hold an intrusion (default 0.35) and the depth
+of the plutons' roofs below the top of the sequence (real metres × vertical scale; default
+−120 to 1,000). Old shields (0.8; −500 to 250 m) and old orogens (0.6; −400 to 500 m) are
+eroded deep enough to expose their granites, which is where kaolin and tin belong. Roofs
+are flat with steep walls (600 m × the vertical scale of extra depth at the rim, rising with
+the fourth power of the distance from the centre).
+
+## D47 — Resource eras follow the technology eras
+A deposit's era is the first technological era (v2 §12) that uses its resource: toolstone
+Era 0; pyrite and marcasite, ochres, manganese black and clay Era 1; salt and gypsum Era 3
+(salt making and plaster are Neolithic); copper, tin, gold, silver, cinnabar, kaolin and
+fire clay Era 4; bloomery iron ores, zinc, coal, sulfur, travertine, pozzolana, garnet and
+diamonds Era 5; saltpetre and anthracite Era 6; bauxite Era 8. The coverage lint checks
+Eras 0–5.

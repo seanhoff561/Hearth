@@ -1,0 +1,15 @@
+# V2-2 deposits: surface bodies and the signs of shallow ones, seed 7 (Standard). Positions come
+# from `bench deposits --seed 7 --model <id> --max-depth 1`; each camera stands north of its
+# deposit looking south and down onto it.
+# `hearth --screenshot-list tools/shots/v22_deposits.shots`
+defaults: seed=7, w=960, h=540, dist=6, yaw=0, season=summer, hour=11, clouds=0.3, dry=true
+x=3155, z=-6737, y=26, pitch=28, out=bench-out/v22/red_ochre.png
+x=15245, z=8672, y=440, pitch=26, dist=8, out=bench-out/v22/copper_oxide_cap.png
+x=10506, z=8384, y=372, pitch=28, dist=8, out=bench-out/v22/obsidian_flow.png
+x=9781, z=-7440, y=60, pitch=26, dist=8, out=bench-out/v22/salt_pan.png
+x=45736, z=-9030, above=22, pitch=36, out=bench-out/v22/sulfur_fumarole.png
+x=5988, z=-3130, y=150, pitch=26, dist=8, out=bench-out/v22/laterite.png
+x=3708, z=-7326, y=52, pitch=30, out=bench-out/v22/gold_placer.png
+x=3596, z=-7285, y=38, pitch=30, out=bench-out/v22/quartzite_cobbles.png
+x=4658, z=-6100, y=50, pitch=30, out=bench-out/v22/goethite.png
+x=8338, z=-7927, y=124, pitch=30, out=bench-out/v22/galena_gossan.png

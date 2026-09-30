@@ -35,5 +35,7 @@
         (id: "rock_gypsum", status: Implemented, name: "gypsum rock", material: "gypsum", class: Sedimentary, grain: Medium),
         (id: "travertine", status: Implemented, name: "travertine", material: "travertine", class: Sedimentary, grain: Fine, weathers_to: ["loam"]),
         (id: "soapstone", status: Implemented, name: "soapstone", material: "soapstone", class: Metamorphic, grain: Fine, weathers_to: ["clay_loam"]),
+        (id: "kimberlite", status: Implemented, name: "kimberlite", material: "kimberlite", class: IgneousIntrusive, grain: Clastic, weathers_to: ["clay_loam"]),
+        (id: "banded_iron", status: Implemented, name: "banded iron formation", material: "banded_iron", class: Metamorphic, grain: Fine, weathers_to: ["red_earth"]),
 ],
 )

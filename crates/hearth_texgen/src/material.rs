@@ -141,17 +141,69 @@ pub fn texture(name: &str, a: &Appearance) -> Tex {
     }
 }
 
+/// Rock carrying an ore: a grey rock matrix flecked and veined with the mineral, glinting
+/// where the mineral is metallic.
+pub fn ore_texture(name: &str, a: &Appearance) -> Tex {
+    let seed = seed_of(name);
+    let matrix = Palette(vec![
+        [98, 96, 92],
+        [110, 107, 102],
+        [121, 118, 112],
+        [133, 129, 122],
+    ]);
+    let mineral: Rgb = a.color.0;
+    let second: Rgb = a.color2.map_or_else(|| scale(mineral, 0.75), |c| c.0);
+    let shiny = a.roughness.unwrap_or(0.7) < 0.45;
+    paint(S, S, |x, y| {
+        let blob = value_noise(seed, x as f32, y as f32, 3.0, S as f32);
+        let r = rand01(seed ^ 0x0e, x, y);
+        if blob > 0.62 || r < 0.08 {
+            let c = if r < 0.5 { mineral } else { second };
+            if shiny && rand01(seed ^ 0x61, x, y) > 0.8 {
+                scale(c, 1.5)
+            } else {
+                c
+            }
+        } else {
+            matrix.pick(fbm(seed, x, y, S, 0.5))
+        }
+    })
+}
+
+/// Stream gravel with heavy grains of a mineral in it (a placer).
+pub fn placer_texture(name: &str, a: &Appearance) -> Tex {
+    let seed = seed_of(name);
+    let grains: Rgb = a.color.0;
+    let shiny = a.roughness.unwrap_or(0.7) < 0.45;
+    paint(S, S, |x, y| {
+        let (d1, d2, id) = voronoi(seed, x as f32 + 0.5, y as f32 + 0.5, S as f32, 20);
+        if rand01(seed ^ 0x9d, x, y) < 0.07 {
+            return if shiny { scale(grains, 1.4) } else { grains };
+        }
+        if d2 - d1 < 0.6 {
+            [84, 80, 76]
+        } else {
+            let tone = (id % 5) as f32 / 5.0;
+            let c = lerp([114, 108, 102], [168, 160, 150], tone);
+            if d1 < 1.0 { scale(c, 1.08) } else { c }
+        }
+    })
+}
+
 /// Textures for the natural blocks generated from the content (`block/<path>`).
 pub fn natural_textures(content: &Content) -> Vec<TexEntry> {
+    use hearth_content::generate::NaturalKind;
     hearth_content::generate::natural_blocks(content)
         .into_iter()
         .filter_map(|b| {
             let m = content.materials.get(&b.material)?;
             let path = b.id.split_once(':').map_or(b.id.as_str(), |(_, p)| p);
-            Some(TexEntry::still(
-                &format!("block/{path}"),
-                texture(path, &m.appearance),
-            ))
+            let tex = match b.kind {
+                NaturalKind::Ore => ore_texture(path, &m.appearance),
+                NaturalKind::Placer => placer_texture(path, &m.appearance),
+                _ => texture(path, &m.appearance),
+            };
+            Some(TexEntry::still(&format!("block/{path}"), tex))
         })
         .collect()
 }

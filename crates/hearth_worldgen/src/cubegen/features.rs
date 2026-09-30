@@ -483,7 +483,8 @@ impl FeatureGen {
         let h = hash_2d(self.seed ^ 0x7ee5, fx, fz);
         let ox = fx * TREE_CELL + (h % TREE_CELL as u64) as i32;
         let oz = fz * TREE_CELL + ((h >> 8) % TREE_CELL as u64) as i32;
-        let u = unit_f32(h >> 16);
+        // The upper hash bits (the lower ones placed the tree in its cell).
+        let u = unit_f32(h.rotate_left(24));
         let s = Self::sample_at(wg, ox, oz);
         // Trees are denser than one per cell only where density is ~1.
         if u >= s.tree_density * 0.95 || s.is_underwater() || !soil_ok(&s) || s.slope > 0.95 {
@@ -961,7 +962,7 @@ impl FeatureGen {
         let h = hash_2d(self.seed ^ 0xdeb, fx, fz);
         let ox = fx * DEBRIS_CELL + (h % DEBRIS_CELL as u64) as i32;
         let oz = fz * DEBRIS_CELL + ((h >> 8) % DEBRIS_CELL as u64) as i32;
-        let u = unit_f32(h >> 20);
+        let u = unit_f32(h.rotate_left(24));
         let s = Self::sample_at(wg, ox, oz);
         if s.is_underwater() || s.slope > 0.7 {
             return;

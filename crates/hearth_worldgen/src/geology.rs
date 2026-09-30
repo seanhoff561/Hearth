@@ -37,6 +37,10 @@ const DATUM_OFFSET: f32 = 8.0;
 const EXHUMATION: f64 = 0.6;
 /// Spacing of the pluton grid (blocks).
 const PLUTON_CELL: i32 = 1600;
+/// Weight a province keeps where its climate conditions do not hold: today's climate is only a
+/// weak guide to where rocks formed (continents drift, climates change), so coal measures and
+/// evaporites favour today's humid and dry lands without being confined to them.
+const CLIMATE_MISMATCH: f32 = 0.15;
 
 /// Province conditions as bits.
 mod cond {
@@ -48,6 +52,9 @@ mod cond {
     pub const INLAND: u8 = 32;
     pub const OLD: u8 = 64;
     pub const YOUNG: u8 = 128;
+
+    /// Conditions on today's climate (the others are structural).
+    pub const CLIMATE: u8 = ARID | HUMID | WARM | COLD;
 
     pub fn parse(s: &str) -> Option<u8> {
         Some(match s {
@@ -81,6 +88,9 @@ pub struct ProvinceModel {
     layers: Vec<LayerModel>,
     pub basement: BlockStateId,
     intrusions: Vec<BlockStateId>,
+    /// Share of pluton sites with an intrusion, and the depth range of their roofs (blocks).
+    intrusion_share: f32,
+    intrusion_roof: (f32, f32),
     /// Folded (collision belts) or domed and basined.
     folded: bool,
     /// Fold or warp amplitude (blocks), wavelength (blocks) and axis direction (radians).
@@ -105,6 +115,11 @@ pub struct RockColumn {
 }
 
 impl RockColumn {
+    /// The intrusion under this column, if any: its rock and the Y of its roof.
+    pub fn intrusion(&self) -> Option<(BlockStateId, f32)> {
+        self.intrusion
+    }
+
     /// The rock at world Y.
     #[inline]
     pub fn rock_at(&self, y: i32) -> BlockStateId {
@@ -230,10 +245,28 @@ impl Geology {
                     code::OROGEN => flags_here |= cond::YOUNG,
                     _ => {}
                 }
-                let setting = setting_of(grid, idx, coastal);
+                let mut setting = setting_of(grid, idx, coastal);
                 let wi = i as f64 + region_warp.sample2(i as f64, j as f64) * region as f64 * 0.4;
                 let wj = j as f64
                     + region_warp.sample2(j as f64 + 5000.0, i as f64) * region as f64 * 0.4;
+                // Large igneous provinces: some stable interiors were flooded by basalt from
+                // mantle plumes (about a twelfth of cratons and basins, in regions twice the
+                // usual size).
+                if matches!(
+                    setting,
+                    TectonicSetting::Craton | TectonicSetting::SedimentaryBasin
+                ) && !coastal
+                {
+                    let big = (region * 2) as f64;
+                    let lip = hash_2d(
+                        seed ^ 0x1195,
+                        (wi / big).floor().rem_euclid((n as f64 / big).max(1.0)) as i32,
+                        (wj / big).floor() as i32,
+                    );
+                    if unit_f32(lip) < 0.08 {
+                        setting = TectonicSetting::Hotspot;
+                    }
+                }
                 let key = hash_2d(
                     seed ^ setting as u64,
                     (wi / region as f64)
@@ -338,6 +371,8 @@ impl Geology {
             layers,
             basement: state(p.basement.as_str())?,
             intrusions,
+            intrusion_share: p.intrusion_share.clamp(0.0, 1.0),
+            intrusion_roof: (blocks(p.intrusion_roof_m.0), blocks(p.intrusion_roof_m.1)),
             folded: p.folded,
             amplitude,
             wavelength,
@@ -347,21 +382,31 @@ impl Geology {
         })
     }
 
-    /// Weighted choice among the provinces of a setting whose conditions hold.
+    /// Weighted choice among the provinces of a setting whose structural conditions hold;
+    /// those whose climate conditions do not hold keep a small share of their weight.
     fn pick(provinces: &[ProvinceModel], setting: TectonicSetting, here: u8, key: u64) -> u8 {
         let eligible = |strict: bool| {
             provinces
                 .iter()
                 .enumerate()
                 .filter(move |(_, p)| {
+                    let structural = p.conditions & !cond::CLIMATE;
                     p.setting == setting
                         && (if strict {
-                            p.conditions & here == p.conditions
+                            structural & here == structural
                         } else {
-                            p.conditions == 0
+                            structural == 0
                         })
                 })
-                .map(|(i, p)| (i, p.weight))
+                .map(move |(i, p)| {
+                    let climate = p.conditions & cond::CLIMATE;
+                    let w = if climate & here == climate {
+                        p.weight
+                    } else {
+                        p.weight * CLIMATE_MISMATCH
+                    };
+                    (i, w)
+                })
         };
         let mut candidates: SmallVec<[(usize, f32); 8]> = eligible(true).collect();
         if candidates.is_empty() {
@@ -487,9 +532,6 @@ impl Geology {
             for dx in -1..=1 {
                 let (px, pz) = ((cx + dx).rem_euclid(cells_around), cz + dz);
                 let h = hash_2d(self.seed ^ 0x9107, px, pz);
-                if unit_f32(h) > 0.35 {
-                    continue;
-                }
                 // Centre, size and depth of the pluton.
                 let ox = (cx + dx) as f64 * PLUTON_CELL as f64
                     + unit_f32(hash2(h, 1)) as f64 * PLUTON_CELL as f64;
@@ -503,12 +545,15 @@ impl Geology {
                     continue;
                 }
                 let host = &self.provinces[self.province_index(ox, oz) as usize];
-                if host.intrusions.is_empty() {
+                if host.intrusions.is_empty() || unit_f32(h) > host.intrusion_share {
                     continue;
                 }
                 let rock = host.intrusions[(hash2(h, 4) % host.intrusions.len() as u64) as usize];
-                let roof_depth = -30.0 + 280.0 * unit_f32(hash2(h, 5));
-                let roof = datum - roof_depth - (d * d) as f32 * radius as f32 * 0.8;
+                let (lo, hi) = host.intrusion_roof;
+                let roof_depth = lo + (hi - lo) * unit_f32(hash2(h, 5));
+                // A flat roof with steep walls, a few hundred metres of relief at the edge.
+                let wall = (d * d * d * d) as f32 * 600.0 * self.vertical_scale as f32;
+                let roof = datum - roof_depth - wall;
                 if best.is_none_or(|(_, r)| roof > r) {
                     best = Some((rock, roof));
                 }
@@ -610,6 +655,7 @@ mod tests {
         assert!(seen.len() >= 6, "a varied planet: {seen:?}");
     }
 
+    /// Structural conditions are rules; climate conditions strong preferences (D45).
     #[test]
     fn conditioned_provinces_meet_their_conditions() {
         let f = fixture();
@@ -618,6 +664,14 @@ mod tests {
         for j in 0..f.geology.n {
             for i in 0..f.geology.n {
                 let p = f.geology.province(f.geology.cells[j * f.geology.n + i]);
+                let (fi, fj) = ((2 * i + 1).min(g.n() - 1), (2 * j + 1).min(g.n() - 1));
+                let here = g.province[g.geom.idx(fi, fj)];
+                if p.conditions & cond::OLD != 0 {
+                    assert_eq!(here, code::OLD_OROGEN, "{} only on old orogens", p.id);
+                }
+                if p.conditions & cond::YOUNG != 0 {
+                    assert_eq!(here, code::OROGEN, "{} only on young orogens", p.id);
+                }
                 if p.conditions & cond::ARID != 0 {
                     checked += 1;
                     let precip = g
@@ -630,9 +684,9 @@ mod tests {
             }
         }
         assert!(checked > 0, "some arid basins");
-        assert_eq!(
-            arid_ok, checked,
-            "red beds and evaporites only where it is arid"
+        assert!(
+            arid_ok as f64 >= 0.7 * checked as f64,
+            "red beds and evaporites mostly where it is arid: {arid_ok} of {checked}"
         );
     }
 

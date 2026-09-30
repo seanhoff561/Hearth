@@ -106,6 +106,9 @@ fn generated_blocks(packs: &[PathBuf]) -> Vec<(ResourceLocation, Map<String, Val
             hearth_content::generate::NaturalKind::Soil => "hearth:soil",
             hearth_content::generate::NaturalKind::Loose => "hearth:falling_soil",
             hearth_content::generate::NaturalKind::Cobbles => "hearth:loose_stones",
+            hearth_content::generate::NaturalKind::Ore => "hearth:rock",
+            hearth_content::generate::NaturalKind::Placer => "hearth:falling_soil",
+            hearth_content::generate::NaturalKind::Crust => "hearth:soil",
         };
         let [r, g, bl] = b.map_color;
         let mut obj = Map::new();

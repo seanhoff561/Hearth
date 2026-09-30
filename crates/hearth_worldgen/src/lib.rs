@@ -6,7 +6,9 @@
 //! 2. Regional sampling — block-resolution surface height, water, biome, rivers, materials.
 //! 3. Cube generation — terrain, caves, ores, water and features for one 16³ cube.
 
+pub mod coverage;
 pub mod cubegen;
+pub mod deposits;
 pub mod geology;
 pub mod noise;
 pub mod planet;

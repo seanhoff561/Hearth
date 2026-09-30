@@ -126,6 +126,14 @@ fn one() -> f32 {
     1.0
 }
 
+fn intrusion_share() -> f32 {
+    0.35
+}
+
+fn intrusion_roof() -> Range {
+    (-120.0, 1000.0)
+}
+
 entry! {
     /// A geological province: rocks, structure and deposits of a region.
     pub struct Province in "geology/provinces", schema 1, name name {
@@ -141,6 +149,13 @@ entry! {
         /// Intrusive bodies (granite plutons, dykes).
         #[serde(default)]
         pub intrusions: Vec<IdRef>,
+        /// Share of the pluton sites in the province that hold an intrusion.
+        #[serde(default = "intrusion_share")]
+        pub intrusion_share: f32,
+        /// Depth of the intrusions' roofs below the top of the sequence (real metres; negative
+        /// when erosion has cut into them, so they crop out, as in old shields).
+        #[serde(default = "intrusion_roof")]
+        pub intrusion_roof_m: Range,
         /// Layers folded into anticlines and synclines (collision belts); otherwise they lie
         /// flat or dip gently.
         #[serde(default)]
@@ -178,7 +193,16 @@ pub enum DepositGeometry {
 pub struct Indicator {
     pub kind: IndicatorKind,
     pub description: String,
+    /// The mineral that shows (a stain of malachite over copper, goethite in a gossan); the
+    /// deposit's own resource when absent.
+    #[serde(default)]
+    pub mineral: Option<IdRef>,
 }
+
+/// The words `Deposit::conditions` may use (the world generator checks them at each body).
+pub const DEPOSIT_CONDITIONS: [&str; 9] = [
+    "river", "lake", "wetland", "arid", "humid", "warm", "cold", "volcano", "granite",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IndicatorKind {
@@ -205,10 +229,18 @@ entry! {
         /// Extra conditions in words the generator understands (e.g. "wetland", "arid").
         #[serde(default)]
         pub conditions: Vec<String>,
-        /// Depth below the local surface.
+        /// Depth below the local surface (real metres; deep bodies scale with the world's
+        /// vertical scale, like the strata).
         pub depth_m: Range,
-        /// Typical extent of one body.
+        /// Typical extent of one body (the length of a vein, the diameter of an ore body, crust,
+        /// pipe or flow, the size of a nodule).
         pub size_m: Range,
+        /// Thickness of veins, seams, crusts and flows.
+        #[serde(default)]
+        pub thickness_m: Option<Range>,
+        /// Lateral extent of a nodule band or a placer reach.
+        #[serde(default)]
+        pub extent_m: Option<Range>,
         /// Mass fraction of the resource within the body.
         pub grade: Range,
         /// Bodies per square kilometre of suitable ground.

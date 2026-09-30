@@ -18,6 +18,7 @@ use std::sync::Arc;
 use hearth_math::{CUBE_SIZE, CUBE_VOLUME, ColumnPos, CubePos, Planet};
 use hearth_world::{BlockRegistry, BlockStateId, Cube};
 
+use crate::deposits::Deposits;
 use crate::geology::{Geology, RockColumn};
 use crate::region::{ColumnSample, Terrain};
 use crate::soil::{Profile, Soils};
@@ -112,6 +113,7 @@ pub struct WorldGenerator {
     pub blocks: GenBlocks,
     pub geology: Geology,
     pub soils: Soils,
+    pub deposits: Deposits,
     columns: Cache<ColumnPos, ColumnData>,
     /// Rock columns and soil profiles of 16×16 block columns (index `z * 16 + x`).
     rocks: Cache<ColumnPos, Vec<(RockColumn, Profile)>>,
@@ -133,6 +135,15 @@ impl WorldGenerator {
         let geology = Geology::new(&terrain.grid, content, reg)?;
         let seed = terrain.seed();
         let soils = Soils::new(content, reg, seed, terrain.planet().circumference() as i64)?;
+        let province_ids: Vec<String> = geology.provinces().iter().map(|p| p.id.clone()).collect();
+        let deposits = Deposits::new(
+            content,
+            reg,
+            &province_ids,
+            seed,
+            terrain.planet().circumference(),
+            terrain.vertical_scale() as f64,
+        )?;
         blocks.add_ground(soils.plantable());
         for extra in [
             blocks.grass,
@@ -152,6 +163,7 @@ impl WorldGenerator {
             rocks: Cache::new(1024),
             geology,
             soils,
+            deposits,
             blocks,
             seed,
             terrain,
@@ -294,6 +306,7 @@ impl WorldGenerator {
                 CubeClass::Deep => self.fill_deep(&mut buf, &rocks),
                 _ => self.fill_surface(&mut buf, &col, &rocks),
             }
+            self.deposits.apply(&mut buf, pos, self);
             self.caves
                 .carve(&mut buf, pos, &col, &self.terrain, &self.blocks);
             if class == CubeClass::Surface {

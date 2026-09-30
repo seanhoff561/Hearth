@@ -2,6 +2,8 @@
 //!
 //! * `lint` — load every pack, validate schemas, cross-references, reachability, habitats,
 //!   food webs and units, and print the effort-from-scratch rollup. Exit code 1 on errors.
+//!   `--coverage` also generates Standard worlds (`--seed N`, repeatable; default 1, 2, 3) and
+//!   flags every Era 0–5 resource out of reach of a continent (v2 V2-2).
 //! * `graph [--out DIR]` — write the knowledge graph, the process graph and the food webs as
 //!   DOT, SVG and an HTML index (default `docs/generated`).
 //! * `uncertain` — list entries marked `uncertain: true` for a realism review.
@@ -23,9 +25,19 @@ pub fn run(args: &[String]) -> i32 {
     let mut packs = vec![base_pack()];
     let mut out = PathBuf::from("docs/generated");
     let mut command = None;
+    let mut coverage = false;
+    let mut seeds: Vec<u64> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
+            "--coverage" => coverage = true,
+            "--seed" => match it.next().and_then(|s| s.parse().ok()) {
+                Some(s) => seeds.push(s),
+                None => {
+                    eprintln!("--seed needs a number");
+                    return 2;
+                }
+            },
             "--data" => match it.next() {
                 Some(p) => packs.push(PathBuf::from(p)),
                 None => {
@@ -73,6 +85,16 @@ pub fn run(args: &[String]) -> i32 {
             };
             let mut report = load_report;
             report.extend(lint(&content, &ctx));
+            if coverage {
+                if seeds.is_empty() {
+                    seeds = vec![1, 2, 3];
+                }
+                for &seed in &seeds {
+                    if let Err(e) = coverage_report(&content, &packs, seed, &mut report) {
+                        report.error("coverage", None, None, format!("seed {seed}: {e}"));
+                    }
+                }
+            }
             print(&report, true);
             println!(
                 "content lint: {} errors, {} warnings ({} packs)",
@@ -118,4 +140,58 @@ pub fn run(args: &[String]) -> i32 {
             2
         }
     }
+}
+
+/// Generates a Standard world and reports the resources of Eras 0–5 that some continent
+/// cannot reach: open gaps as warnings, gaps a substitute covers as notes.
+fn coverage_report(
+    content: &Content,
+    packs: &[PathBuf],
+    seed: u64,
+    report: &mut hearth_content::Report,
+) -> anyhow::Result<()> {
+    use std::sync::Arc;
+    let settings = hearth_worldgen::WorldGenSettings {
+        seed,
+        planet_size: hearth_math::PlanetSize::Standard,
+        ..hearth_worldgen::WorldGenSettings::default()
+    }
+    .sanitized();
+    let grid = hearth_worldgen::PlanetGrid::build(&settings, &|_, _| {});
+    let terrain = Arc::new(hearth_worldgen::Terrain::new(Arc::new(grid)));
+    let defs = hearth_world::datapack::load_block_defs(packs)?;
+    let reg = hearth_world::BlockRegistry::build(defs).map_err(|e| anyhow::anyhow!(e))?;
+    let generator = hearth_worldgen::WorldGenerator::new(terrain, &reg, content)?;
+    let cov = hearth_worldgen::coverage::coverage(&generator, content, 5, 50.0);
+    let where_ = |ci: usize| {
+        let c = &cov.continents[ci];
+        format!(
+            "seed {seed}: continent {ci} ({:.0} km² around {}, {})",
+            c.area_km2, c.center.0, c.center.1
+        )
+    };
+    for gap in &cov.gaps {
+        let msg = format!(
+            "{} has no {} (era {}) within {:.0} km: 90% of it is {:.1} km away",
+            where_(gap.continent),
+            gap.resource,
+            gap.era,
+            gap.limit_km,
+            gap.p90_km
+        );
+        match &gap.substitute {
+            Some(s) => report.info("coverage", format!("{msg}; {s} stands in")),
+            None => report.warning("coverage", None, None, msg),
+        }
+    }
+    report.info(
+        "coverage",
+        format!(
+            "seed {seed}: {} continents, {} gaps ({} open)",
+            cov.continents.len(),
+            cov.gaps.len(),
+            cov.open_gaps().count()
+        ),
+    );
+    Ok(())
 }

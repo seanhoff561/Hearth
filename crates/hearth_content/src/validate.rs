@@ -200,6 +200,22 @@ pub fn validate(content: &Content, report: &mut Report) {
         |d, c| {
             c.pair("depth_m", d.depth_m, 0.0, 20_000.0);
             c.pair("size_m", d.size_m, 0.0, 100_000.0);
+            c.opt_pair("thickness_m", d.thickness_m, 0.0, 1_000.0);
+            c.opt_pair("extent_m", d.extent_m, 0.0, 100_000.0);
+            for word in &d.conditions {
+                if !crate::schema::geology::DEPOSIT_CONDITIONS.contains(&word.as_str()) {
+                    c.report.error(
+                        "unknown-condition",
+                        Some(c.file.clone()),
+                        c.line,
+                        format!(
+                            "`{}`: condition {word:?} is not one the generator understands ({})",
+                            c.id,
+                            crate::schema::geology::DEPOSIT_CONDITIONS.join(", ")
+                        ),
+                    );
+                }
+            }
             c.pair("grade", d.grade, 0.0, 1.0);
             c.range("frequency_per_km2", d.frequency_per_km2, 0.0, 10_000.0);
             c.range("era", d.era as f32, 0.0, 8.0);

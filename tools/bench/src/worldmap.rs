@@ -395,8 +395,31 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     };
     colors.push(("province", province_px));
     colors.push(("rock", rock_px));
-    for p in geology.provinces() {
-        println!("  province {:<22} {:?}", p.id, p.setting);
+    // Land area of each province (cell centres, area-weighted by latitude).
+    {
+        let weights = hearth_worldgen::planet::fields::row_area_weights(&g.geom);
+        let mut area = vec![0.0f64; geology.provinces().len()];
+        let mut total = 0.0;
+        for j in (0..n).step_by(2) {
+            for i in (0..n).step_by(2) {
+                let idx = g.geom.idx(i, j);
+                if g.elevation.data[idx] <= 0.0 {
+                    continue;
+                }
+                let (x, z) = g.geom.world_xz(i, j);
+                let p = geology.province_index(x, z) as usize;
+                area[p] += weights[j];
+                total += weights[j];
+            }
+        }
+        for (p, a) in geology.provinces().iter().zip(&area) {
+            println!(
+                "  province {:<22} {:<16} {:>5.1}% of land",
+                p.id,
+                format!("{:?}", p.setting),
+                100.0 * a / total.max(1e-9)
+            );
+        }
     }
     let soils = hearth_worldgen::soil::Soils::new(
         &content,
@@ -407,6 +430,11 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     for &(x, z, size) in &a.geo_areas {
         geo_area(&terrain, &geology, &soils, &reg, x, z, size, &a.out)?;
     }
+    // Deposits: every body on the planet, from a full generator.
+    let generator =
+        hearth_worldgen::WorldGenerator::new(std::sync::Arc::new(terrain), &reg, &content)?;
+    let deposit_px = deposit_layer(&generator, &g, &reg, &content);
+    colors.push(("deposits", deposit_px));
     let g = &*g;
     let merc_size = a.width.min(n).max(64);
     for (name, px) in &colors {
@@ -443,6 +471,120 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     stats(g);
     println!("maps written to {}", a.out.display());
     Ok(())
+}
+
+/// Every deposit body on the planet, drawn on the grid as the map colour of its block, with
+/// counts per model and the resource coverage of each continent (v2 V2-2 acceptance).
+fn deposit_layer(
+    generator: &hearth_worldgen::WorldGenerator,
+    g: &PlanetGrid,
+    reg: &hearth_world::BlockRegistry,
+    content: &hearth_content::Content,
+) -> Vec<[u8; 3]> {
+    let n = g.n();
+    let deposits = &generator.deposits;
+    let t = Instant::now();
+    let bodies = deposits.census(generator);
+    println!(
+        "deposit census: {} bodies in {:.1}s",
+        bodies.len(),
+        t.elapsed().as_secs_f64()
+    );
+    let mut px: Vec<[u8; 3]> = (0..n * n)
+        .map(|idx| {
+            let e = g.elevation.data[idx];
+            if e > 0.0 { [60, 60, 60] } else { [20, 25, 40] }
+        })
+        .collect();
+    for b in &bodies {
+        let m = &deposits.models[b.model as usize];
+        let color = reg.block_of(m.block).map_color;
+        let idx = g.cell_at(b.center[0] as f64, b.center[2] as f64);
+        let (i, j) = g.geom.ij(idx);
+        for dj in 0..2usize {
+            for di in 0..2usize {
+                let (ii, jj) = ((i + di) % n, (j + dj).min(n - 1));
+                px[jj * n + ii] = color;
+            }
+        }
+    }
+    let scale = g.planet().circumference() as f64 / 65_536.0;
+    let cov = hearth_worldgen::coverage::coverage_of(
+        generator,
+        content,
+        &bodies,
+        5,
+        50.0 * scale * scale,
+    );
+    print_coverage(&cov, deposits);
+    px
+}
+
+/// Bodies per deposit model, then each continent's reach to every resource and the gaps.
+pub fn print_coverage(
+    cov: &hearth_worldgen::coverage::Coverage,
+    deposits: &hearth_worldgen::deposits::Deposits,
+) {
+    println!("deposit bodies on {:.0} km² of land:", cov.land_km2);
+    for (m, count) in deposits.models.iter().zip(&cov.bodies_per_model) {
+        println!(
+            "    {:<28} era {} {:>6} bodies ({:.3}/km² of land)",
+            m.id,
+            m.era,
+            count,
+            *count as f64 / cov.land_km2.max(1e-9)
+        );
+    }
+    for (ci, c) in cov.continents.iter().enumerate() {
+        println!(
+            "continent {ci}: {:.0} km², centre ({}, {})",
+            c.area_km2, c.center.0, c.center.1
+        );
+    }
+    if cov.continents.is_empty() {
+        return;
+    }
+    print!("    {:<20} era", "resource");
+    for ci in 0..cov.continents.len() {
+        print!("  {:>12}", format!("c{ci} n/p90km"));
+    }
+    println!();
+    for ri in 0..cov.reach[0].len() {
+        let r = &cov.reach[0][ri];
+        print!("    {:<20} {:>3}", r.resource, r.era);
+        for (ci, reach) in cov.reach.iter().enumerate() {
+            let e = &reach[ri];
+            let mark = match cov
+                .gaps
+                .iter()
+                .find(|g| g.continent == ci && g.resource == e.resource)
+            {
+                Some(g) if g.substitute.is_some() => "~",
+                Some(_) => "!",
+                None => " ",
+            };
+            print!("  {:>12}", format!("{}/{:.1}{mark}", e.bodies, e.p90_km));
+        }
+        println!();
+    }
+    let open = cov.open_gaps().count();
+    println!(
+        "gaps: {} ({} covered by a substitute, {open} open; ~ covered, ! open)",
+        cov.gaps.len(),
+        cov.gaps.len() - open
+    );
+    for gap in &cov.gaps {
+        match &gap.substitute {
+            Some(s) => println!(
+                "    continent {}: {} (era {}) {:.1} km > {:.1} km, covered by {s}",
+                gap.continent, gap.resource, gap.era, gap.p90_km, gap.limit_km
+            ),
+            None => println!(
+                "    continent {}: {} (era {}) {:.1} km > {:.1} km, OPEN",
+                gap.continent, gap.resource, gap.era, gap.p90_km, gap.limit_km
+            ),
+        }
+    }
 }
 
 /// Block-scale geology of a square area centred on (x, z): a top-down map of the rock under

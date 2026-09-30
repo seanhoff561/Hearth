@@ -1,5 +1,6 @@
 //! Headless tools for Hearth: planet maps, benchmarks and screenshot drivers.
 
+mod deposits;
 mod r#gen;
 mod image;
 mod region;
@@ -10,7 +11,9 @@ fn usage() {
     println!(
         "bench <command> [options]\n\ncommands:\n  worldmap [--seed N] [--planet standard] [--res 1024] [--width 2048] [--out DIR] [--rarity rare|standard|common] [--slice lat=45] [--slice lon=-30]\n      Build the planet model and write Mercator/equirectangular PNG maps and slices.
   region [--seed N] [--res 1024] [--at X,Z] [--size 1024] [--scale 1] [--out FILE]
-      Top-down block-resolution render of the surface around a point (default: spawn)."
+      Top-down block-resolution render of the surface around a point (default: spawn).
+  deposits [--seed N] [--model ID] [--near X,Z] [--max-depth N] [--limit 10] [--coverage]
+      List a world's deposit bodies nearest a point, and the resource coverage of its continents."
     );
 }
 
@@ -25,6 +28,7 @@ fn main() -> anyhow::Result<()> {
         "worldmap" => worldmap::run(&args[1..]),
         "region" => region::run(&args[1..]),
         "gen" => r#gen::run(&args[1..]),
+        "deposits" => deposits::run(&args[1..]),
         "textures" => textures::run(&args[1..]),
         "-h" | "--help" | "help" => {
             usage();
