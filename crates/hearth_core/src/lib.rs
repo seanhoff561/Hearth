@@ -5,11 +5,17 @@
 //! This crate deliberately has no dependency on rendering, windowing or world code so that
 //! everything else can build on it.
 
+pub mod events;
 pub mod options;
 pub mod paths;
+pub mod registry;
 pub mod resource;
+pub mod tick;
 
+pub use events::EventQueue;
+pub use registry::{IdMapping, RawId, Registry, RegistryError};
 pub use resource::{ResourceLocation, ResourceLocationError};
+pub use tick::{FixedTimestep, ScheduledTicks};
 
 /// Human-readable game name shown in window titles and menus. The project codename lives in
 /// exactly this one place so the game can be renamed by editing it.

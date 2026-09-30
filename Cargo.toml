@@ -14,6 +14,7 @@ publish = false
 hearth_core = { path = "crates/hearth_core" }
 hearth_math = { path = "crates/hearth_math" }
 hearth_input = { path = "crates/hearth_input" }
+hearth_world = { path = "crates/hearth_world" }
 
 # --- external crates (versions checked with `cargo search` on 2026-09-30) ---
 anyhow = "1.0.104"

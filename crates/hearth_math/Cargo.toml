@@ -1,0 +1,16 @@
+[package]
+name = "hearth_math"
+description = "Coordinates (block/cube/column, all i32), the wrap-aware planet geometry, directions, AABBs and voxel raycasting."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+glam.workspace = true
+serde.workspace = true
+bytemuck.workspace = true
+
+[lints]
+workspace = true
