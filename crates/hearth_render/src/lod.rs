@@ -4,9 +4,11 @@
 //!
 //! Every tile's quads live in one pooled storage buffer as 16-byte records (`hearth_lod::
 //! LodQuad`) that the vertex shader expands into their four corners, and the frame's tiles are
-//! drawn with one indirect multi-draw (one draw per tile where the adapter can't). Where the
-//! terrain is GPU-culled, the tiles inside the frustum are also tested on the GPU against its
-//! Hi-Z pyramid (`shaders/lod_cull.wgsl`), so land hidden behind near terrain is not drawn.
+//! drawn with one indirect multi-draw (one draw per tile where the adapter can't). A tile's
+//! quads are grouped by the way they face, and only the groups that can face the camera are
+//! drawn. Where the terrain is GPU-culled, the tiles inside the frustum are also tested on the
+//! GPU against its Hi-Z pyramid (`shaders/lod_cull.wgsl`), so land hidden behind near terrain
+//! is not drawn.
 
 use bytemuck::{Pod, Zeroable};
 use glam::{DVec3, Vec3};
@@ -20,10 +22,15 @@ use crate::terrain::{Arena, DEPTH_FORMAT, EARTH_RADIUS_M, TerrainRenderer};
 /// Bytes per LOD quad record (`hearth_lod::LodQuad`).
 pub const QUAD_BYTES: u64 = 16;
 
+/// The faces of a tile's quad groups, in storage order (as `hearth_lod::GROUP_FACES`): down,
+/// north (−Z), west (−X), up, east (+X), south (+Z), in the terrain's face codes.
+pub const GROUP_FACES: [u32; 6] = [0, 2, 4, 1, 5, 3];
+
 struct GpuTile {
-    /// First quad in the pool, and how many.
+    /// First quad in the pool, and how many; how many in each group (`GROUP_FACES`).
     off: u32,
     quads: u32,
+    groups: [u32; 6],
     origin: [i32; 2],
     size: i32,
     y: (i32, i32),
@@ -195,8 +202,11 @@ impl LodCuller {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LodStats {
     pub tiles: usize,
-    /// Tiles inside the frustum (before occlusion culling on the GPU).
+    /// Tiles inside the frustum (before occlusion culling on the GPU), and their draws (runs of
+    /// quad groups facing the camera).
     pub drawn: usize,
+    pub draws: usize,
+    /// Quads of the groups facing the camera, in the frustum.
     pub quads: u64,
     pub bytes: u64,
     /// Tested against the near terrain's Hi-Z pyramid on the GPU.
@@ -396,7 +406,9 @@ impl LodRenderer {
     }
 
     /// Uploads (or replaces) a tile: its id, minimum corner in world blocks (X canonical), side,
-    /// height range and quad records (`QUAD_BYTES` each).
+    /// height range and quad records (`QUAD_BYTES` each), grouped by the way they face, with the
+    /// number in each group (`GROUP_FACES`).
+    #[allow(clippy::too_many_arguments)]
     pub fn upload(
         &mut self,
         ctx: &GpuContext,
@@ -405,9 +417,11 @@ impl LodRenderer {
         size: i32,
         y: (i32, i32),
         quads: &[u8],
+        groups: [u32; 6],
     ) {
         self.remove(id);
         let n = (quads.len() as u64 / QUAD_BYTES) as u32;
+        debug_assert_eq!(groups.iter().sum::<u32>(), n, "groups cover the quads");
         if n == 0 {
             return;
         }
@@ -436,6 +450,7 @@ impl LodRenderer {
             GpuTile {
                 off,
                 quads: n,
+                groups,
                 origin,
                 size,
                 y,
@@ -470,7 +485,8 @@ impl LodRenderer {
     }
 
     /// Chooses this frame's draws among `show` (the tiles of the current selection): those
-    /// uploaded and inside the frustum, placed relative to the camera by the shortest way around.
+    /// uploaded and inside the frustum, placed relative to the camera by the shortest way around,
+    /// each drawn as the runs of its quad groups that can face the camera.
     /// With `hzb` (the size and levels of this frame's Hi-Z pyramid of the near terrain), they
     /// are tested against it on the GPU as well (`cull`).
     pub fn prepare(
@@ -491,7 +507,7 @@ impl LodRenderer {
         if let Some(c) = self.culler.as_mut() {
             c.data.clear();
         }
-        let mut quads = 0u64;
+        let (mut quads, mut drawn) = (0u64, 0usize);
         for &id in show {
             let Some(t) = self.tiles.get(&id) else {
                 continue;
@@ -501,34 +517,73 @@ impl LodRenderer {
             let size = t.size as f32;
             // The farthest corner sinks most under the planet's curvature.
             let far = (ox.abs() + size).powi(2) + (oz.abs() + size).powi(2);
-            let min = Vec3::new(ox, (t.y.0 as f64 - cam.y) as f32 - far * curvature, oz);
-            let max = Vec3::new(ox + size, (t.y.1 as f64 - cam.y) as f32, oz + size);
+            let sink = far * curvature;
+            let (y0, y1) = ((t.y.0 as f64 - cam.y) as f32, (t.y.1 as f64 - cam.y) as f32);
+            let min = Vec3::new(ox, y0 - sink, oz);
+            let max = Vec3::new(ox + size, y1, oz + size);
             if !frustum.intersects_aabb(min, max) {
                 continue;
             }
-            let draw = DrawArgs {
-                index_count: t.quads * 6,
-                instance_count: 1,
-                first_index: 0,
-                base_vertex: (t.off * 4) as i32,
-                first_instance: origins.len() as u32,
-            };
-            if let Some(c) = self.culler.as_mut() {
-                // The bounds its vertices can reach, curvature included.
-                c.data.push(Cand {
-                    lo: min.extend(0.0).to_array(),
-                    hi: max.extend(0.0).to_array(),
-                    draw: [
-                        draw.index_count,
-                        draw.base_vertex as u32,
-                        draw.first_instance,
-                        0,
-                    ],
-                });
+            // The groups that can face the camera (`GROUP_FACES`): a side group faces away when
+            // the whole tile lies behind its faces' planes; tops face away when the camera is
+            // below the tile, bottoms when it is above (the curvature tilts far faces away from
+            // the camera, which only matters for bottoms: they may show a little higher).
+            let facing = [
+                y1 + sink > 0.0,
+                oz + size > 0.0,
+                ox + size > 0.0,
+                y0 < 0.0,
+                ox < 0.0,
+                oz < 0.0,
+            ];
+            // Runs of consecutive groups facing the camera (empty groups join runs): at most 3.
+            let mut runs = [(0u32, 0u32); 3];
+            let (mut n_runs, mut open, mut at) = (0, false, t.off);
+            for (g, &n) in t.groups.iter().enumerate() {
+                if n == 0 {
+                    continue;
+                }
+                if !facing[g] {
+                    open = false;
+                } else if open {
+                    runs[n_runs - 1].1 += n;
+                } else {
+                    runs[n_runs] = (at, n);
+                    n_runs += 1;
+                    open = true;
+                }
+                at += n;
             }
-            self.draws.push(draw);
+            if n_runs == 0 {
+                continue;
+            }
+            let slot = origins.len() as u32;
+            for &(off, n) in &runs[..n_runs] {
+                let draw = DrawArgs {
+                    index_count: n * 6,
+                    instance_count: 1,
+                    first_index: 0,
+                    base_vertex: (off * 4) as i32,
+                    first_instance: slot,
+                };
+                if let Some(c) = self.culler.as_mut() {
+                    // The bounds its vertices can reach, curvature included.
+                    c.data.push(Cand {
+                        lo: min.extend(0.0).to_array(),
+                        hi: max.extend(0.0).to_array(),
+                        draw: [
+                            draw.index_count,
+                            draw.base_vertex as u32,
+                            draw.first_instance,
+                            0,
+                        ],
+                    });
+                }
+                self.draws.push(draw);
+                quads += n as u64;
+            }
             origins.push([ox, -(cam.y as f32), oz, 0.0]);
-            quads += t.quads as u64;
+            drawn += 1;
         }
         if origins.len() > self.origins_capacity {
             self.origins_capacity = origins.len().next_power_of_two();
@@ -558,7 +613,8 @@ impl LodRenderer {
         self.origins_scratch = origins;
         self.stats = LodStats {
             tiles: self.tiles.len(),
-            drawn: self.draws.len(),
+            drawn,
+            draws: self.draws.len(),
             quads,
             bytes: self.pool.alloc.used() as u64 * QUAD_BYTES,
             gpu_culled: gpu && hzb.is_some(),

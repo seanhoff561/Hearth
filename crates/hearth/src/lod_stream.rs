@@ -306,5 +306,14 @@ pub fn upload(ctx: &GpuContext, renderer: &mut LodRenderer, mesh: &TileMesh) {
         mesh.key.size(),
         (mesh.min_y, mesh.max_y),
         bytemuck::cast_slice(&mesh.quads),
+        mesh.groups,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn mesher_and_renderer_agree_on_the_quad_groups() {
+        assert_eq!(hearth_lod::GROUP_FACES, hearth_render::lod::GROUP_FACES);
+    }
 }

@@ -527,7 +527,10 @@ pub struct TileMesh {
     pub key: TileKey,
     /// World block of the minimum corner (X canonical).
     pub origin: [i32; 2],
+    /// Grouped by the way they face, in the order of `GROUP_FACES`.
     pub quads: Vec<LodQuad>,
+    /// How many quads each group holds.
+    pub groups: [u32; 6],
     pub min_y: i32,
     pub max_y: i32,
     /// Vertical error of the tile's columns (blocks): half the largest step between the ground
@@ -1045,6 +1048,24 @@ const SOUTH: u32 = 3;
 const WEST: u32 = 4;
 const EAST: u32 = 5;
 
+/// A tile's quads are grouped by the way they face (their geometry, whatever light they take),
+/// in this order, so the renderer can skip the groups facing away from the camera; the same
+/// list as `hearth_render::lod::GROUP_FACES`. The order lets the groups seen together from most
+/// directions be drawn as one run.
+pub const GROUP_FACES: [u32; 6] = [DOWN, NORTH, WEST, UP, EAST, SOUTH];
+
+/// A face's group (`GROUP_FACES`).
+fn group(face: u32) -> usize {
+    match face {
+        DOWN => 0,
+        NORTH => 1,
+        WEST => 2,
+        UP => 3,
+        EAST => 4,
+        _ => 5,
+    }
+}
+
 /// The four corners of a side face of the box `x0..x1 × z0..z1` from `lo` to `hi`, wound to
 /// face outward.
 fn side(face: u32, x0: i32, x1: i32, z0: i32, z1: i32, lo: i32, hi: i32) -> [(i32, i32, i32); 4] {
@@ -1063,7 +1084,7 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
     let cs = key.column();
     let n = TILE + 2;
     let at = |i: i32, j: i32| &cols[((j + 1) * n + (i + 1)) as usize];
-    let mut v = Vec::new();
+    let mut v: [Vec<LodQuad>; 6] = Default::default();
     let (mut min_y, mut max_y) = (i32::MAX, i32::MIN);
     let mut quad = |v: &mut Vec<LodQuad>,
                     p: [(i32, i32, i32); 4],
@@ -1110,8 +1131,9 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
                 end += 1;
             }
             let (x0, x1) = (i * cs, (end + 1) * cs);
+            // A ground top faces up, even where it is lit as shade.
             quad(
-                &mut v,
+                &mut v[group(UP)],
                 [
                     (x0, c.top, z1),
                     (x1, c.top, z1),
@@ -1147,7 +1169,15 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
                     let y = cr.bottom;
                     (DOWN, [(x0, y, z0), (x1, y, z0), (x1, y, z1), (x0, y, z1)])
                 };
-                quad(&mut v, p, cr.rgb, cr.kind, false, c.climate, face);
+                quad(
+                    &mut v[group(face)],
+                    p,
+                    cr.rgb,
+                    cr.kind,
+                    false,
+                    c.climate,
+                    face,
+                );
                 i = end + 1;
             }
         }
@@ -1167,7 +1197,15 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
                 };
                 if low < c.top {
                     let p = side(face, x0, x1, z0, z1, low, c.top);
-                    quad(&mut v, p, c.rgb, c.kind, c.water, c.climate, face);
+                    quad(
+                        &mut v[group(face)],
+                        p,
+                        c.rgb,
+                        c.kind,
+                        c.water,
+                        c.climate,
+                        face,
+                    );
                 }
                 let Some(cr) = c.crown else {
                     continue;
@@ -1182,7 +1220,8 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
                 for (a, b) in spans {
                     if b > a {
                         let p = side(face, x0, x1, z0, z1, a, b);
-                        quad(&mut v, p, cr.rgb, cr.kind, false, c.climate, face);
+                        let g = &mut v[group(face)];
+                        quad(g, p, cr.rgb, cr.kind, false, c.climate, face);
                     }
                 }
             }
@@ -1192,7 +1231,7 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
     for t in trunks {
         for face in [NORTH, SOUTH, WEST, EAST] {
             let p = side(face, t.x, t.x + 1, t.z, t.z + 1, t.y0, t.y1);
-            quad(&mut v, p, t.rgb, TINT_RGB, false, 0, face);
+            quad(&mut v[group(face)], p, t.rgb, TINT_RGB, false, 0, face);
         }
     }
     let mut step = 0;
@@ -1207,7 +1246,8 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
     TileMesh {
         key,
         origin: [mx, mz],
-        quads: v,
+        groups: v.each_ref().map(|g| g.len() as u32),
+        quads: v.concat(),
         min_y: if min_y == i32::MAX { 0 } else { min_y },
         max_y: if max_y == i32::MIN { 0 } else { max_y },
         error: step as f32 * 0.5,
@@ -1486,6 +1526,7 @@ mod tests {
         assert_eq!(m.quads.len() - faces(&m, UP), 4 + 4 * TILE as usize);
         assert_eq!(m.max_y, 14);
         assert_eq!(m.min_y, 10 - 2 * key.column());
+        assert_grouped(&m);
         assert!(m.quads.iter().all(|q| {
             let ((x, _, z), (w, h)) = (q.corner(), q.size());
             let (x1, z1) = match q.face() {
@@ -1495,6 +1536,19 @@ mod tests {
             };
             x1 <= key.size() && z1 <= key.size()
         }));
+    }
+
+    /// Quads come grouped by the way they face (ground tops lit as shade face up).
+    fn assert_grouped(m: &TileMesh) {
+        assert_eq!(m.groups.iter().sum::<u32>() as usize, m.quads.len());
+        let mut start = 0;
+        for (g, &n) in m.groups.iter().enumerate() {
+            for q in &m.quads[start..start + n as usize] {
+                let shade = GROUP_FACES[g] == UP && q.face() == DOWN;
+                assert!(q.face() == GROUP_FACES[g] || shade, "{q:?} in group {g}");
+            }
+            start += n as usize;
+        }
     }
 
     fn tiny_world() -> (WorldGenerator, BlockRegistry, Vec<TexEntry>) {
@@ -1645,5 +1699,8 @@ mod tests {
         // The trunk: four sides of a one-block box.
         let bark = m.quads.iter().filter(|q| q.rgb() == 0x403020).count();
         assert_eq!(bark, 4);
+        // The shaded ground goes with the tops (it faces up), the crown's bottom alone down.
+        assert_grouped(&m);
+        assert_eq!(m.groups[0], 1);
     }
 }

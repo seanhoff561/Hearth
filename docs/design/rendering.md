@@ -89,7 +89,9 @@ horizon when that is farther (so the land never stops short of the skyline):
   crown at the usual height of the place's trees where they are expected to cover half the
   ground or more, and darken the ground under sparser ones.
 - **Meshes**: row-merged tops, the sides that show, skirts along tile edges; crowns as boxes
-  with the faces no neighbour crown hides; trunks as one-block boxes.
+  with the faces no neighbour crown hides; trunks as one-block boxes. Quads are stored grouped
+  by the way they face, and each frame only the groups that can face the camera are drawn
+  (faces are drawn from both sides, so skirts show either way).
 - **Handoff**: across an 8-block band at the edge of the full-detail area the cubes thin out by
   an ordered dither while the LOD, drawn a hair behind them in depth, shows through their
   gaps; inside the area the LOD gives way entirely. The LOD shares the terrain's globals

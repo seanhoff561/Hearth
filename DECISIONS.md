@@ -462,5 +462,5 @@ scenes); 1 px also refines distant ridges, for +1.5 ms (−53 %). The default (F
 2 px — the bound is on the largest step of each tile, so typical steps stay well inside it —
 Fabulous 1 px, Fast 4 px (`VideoOptions::lod_detail`). This is the first change to fall more
 than 5 % below the previous benchmark, deliberately: a visible quality gain at a measured cost.
-The next audit step (LOD quads grouped by face, back-facing groups skipped) wins some of it
-back.
+The next audit step (LOD quads grouped by face, back-facing groups skipped) won it back:
+the summit runs at 805 FPS with the 2 px detail, against 810 with the distance rule before.

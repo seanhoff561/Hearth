@@ -69,6 +69,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Optimization | Status | Evidence / impact |
 |---|---|---|
 | Level choice by screen-space error, with hysteresis | done (result 7) | The distance rule (columns 3–6 px wide) stays as the floor — coarser tiles would blur colours and trees — and rough tiles are split until the steps between their columns stray at most 2 px on screen (1 px on Fabulous) from what finer columns would show; hysteresis on both rules, neighbours kept within a level. It adds detail, so it costs frame time: −27 % average FPS on the summit, −6 to −10 % elsewhere. |
+| Quads grouped by facing, groups facing away skipped | done (result 8) | As the full-detail terrain's buckets: each tile's quads in six groups by geometric facing; only runs of groups that can face the camera are drawn (the pipeline draws both sides, so back faces cost vertices and fragments). LOD pass −40 %. |
 | Quantized tile-relative vertex data | done (result 3) | One 16-byte record per quad (was four 16-byte vertices), expanded by the vertex shader: 73–91 MiB less video memory in LOD-heavy scenes. |
 | LOD in the GPU culling path, occluded by near terrain | done (result 4) | See culling. |
 | Batched SIMD surface sampling | not worth it (now) | Tiles build at ~1.8 k tiles/s on all threads (a whole view from scratch in ~0.8 s; streaming needs tens per re-selection); it is off the frame path. Revisit with the disk cache. |
@@ -205,3 +206,18 @@ Results are recorded below as they land.
    hitches in both builds), cave 2203 → 2181. SSIM against the previous images: summit 0.939
    (the intended finer slopes), every other scene ≥ 0.998. Selection CPU ≤ 0.04 ms per frame;
    LOD preparation 0.03 → 0.06 ms. A quality gain paid in frame time — justified in D57.
+8. **LOD quads grouped by facing** — each tile's quads are stored in six groups by the way
+   they face (down, north, west, up, east, south; a ground top lit as shade under a crown
+   still faces up), and each frame the CPU draws only the runs of groups that can face the
+   camera: a side group when the tile is not wholly behind its faces' planes, tops when the
+   camera is above the tile's lowest point, bottoms when below its highest (plus the
+   curvature's tilt). The LOD pipeline draws both sides of every face (skirts must show from
+   either side), so the back faces cost vertex and fragment work; now a typical tile draws
+   half its sides. Draws per tile 1 → 1–3 (still one indirect-count multi-draw). Alternating
+   A/B against result 7 (two rounds each): summit 592 → 805 FPS (LOD pass 1.14 → 0.69 ms,
+   triangles 3.14 → 1.90 M), forest 658 → 788, storm 638 → 764, coast 1128 → 1246,
+   underwater 1249 → 1328, cave unchanged — result 7's cost is won back (summit 810 FPS
+   before it). SSIM ≥ 0.9993 in the open scenes: the differences are LOD column walls seen
+   from inside through the dithered cubes of the handoff band, where other LOD surfaces now
+   show; underwater 0.987, where the backs of skirts hanging under the distant water surface
+   no longer draw dark dashes along the horizon (that view is incomplete until V2-2e).
