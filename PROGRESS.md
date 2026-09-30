@@ -189,17 +189,20 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
   basement; geothermal gradient; `stone`/`deepslate`/rock veins removed; `bench worldmap`
   province and rock layers and block-scale `--geo-area` maps and sections. Generation speed
   unchanged (≈48k surface, ≈80k deep cubes/s).
+- (b) Soils: 16 soil types chosen per column by formation fit (climate, parent rock,
+  vegetation and landform, drainage, slope) with horizons as blocks, slope-thinned; soils and
+  sediments as blocks generated from their materials (v1 dirt/sand/gravel/clay family
+  removed); beaches, beds, salt flats and glaciers; loose stones of the local rock and scree;
+  `--geo-area` sections draw soil profiles and print soil statistics.
 
 ## Next steps
-1. (b) Soils from climate × parent rock × vegetation × drainage × slope, with profiles and
-   generated soil and sediment blocks; surface detail (pebbles, boulders, talus).
-2. (c) Deposit models with surface indicators for every Appendix D resource; panning;
+1. (c) Deposit models with surface indicators for every Appendix D resource; panning;
    statistical deposit tests and per-continent reachability.
-3. (d) Groundwater, springs, seasonal river levels; finite conserved water with flow (v1 M5
+2. (d) Groundwater, springs, seasonal river levels; finite conserved water with flow (v1 M5
    fluids); coasts (reefs, kelp, mudflats, mangroves, sea ice — which also closes D36's open
    sea).
-4. (e) Water rendering (v1 M7) and ice.
-5. (f) Minimal spawn picker; `worldmap` soil and deposit layers.
+3. (e) Water rendering (v1 M7) and ice.
+4. (f) Minimal spawn picker; `worldmap` soil and deposit layers.
 
 ## Known issues
 - In this environment presents never block (FIFO on both Vulkan and DX12 ran at ~1.5–2k FPS

@@ -398,8 +398,14 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     for p in geology.provinces() {
         println!("  province {:<22} {:?}", p.id, p.setting);
     }
+    let soils = hearth_worldgen::soil::Soils::new(
+        &content,
+        &reg,
+        g.seed,
+        g.planet().circumference() as i64,
+    )?;
     for &(x, z, size) in &a.geo_areas {
-        geo_area(&terrain, &geology, &reg, x, z, size, &a.out)?;
+        geo_area(&terrain, &geology, &soils, &reg, x, z, size, &a.out)?;
     }
     let g = &*g;
     let merc_size = a.width.min(n).max(64);
@@ -442,9 +448,11 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
 /// Block-scale geology of a square area centred on (x, z): a top-down map of the rock under
 /// the soil (hillshaded, water tinted) and an east–west cross-section through the middle, from
 /// 300 blocks under the lowest surface to 60 above the highest.
+#[allow(clippy::too_many_arguments)]
 fn geo_area(
     terrain: &hearth_worldgen::Terrain,
     geology: &hearth_worldgen::geology::Geology,
+    soils: &hearth_worldgen::soil::Soils,
     reg: &hearth_world::BlockRegistry,
     x: i32,
     z: i32,
@@ -502,13 +510,15 @@ fn geo_area(
     for (i, s) in samples.iter().enumerate() {
         let col = geology.column(x0 + i as i32, zc);
         let ground = s.height_i();
-        let soil_top = ground - s.soil_depth as i32;
+        let parent = col.rock_at(ground - 1 - s.soil_depth as i32);
+        let profile = soils.profile(s, parent, x0 + i as i32, zc);
         for row in 0..h {
             let y = top - row as i32;
-            let c = if y < soil_top {
-                reg.block_of(col.rock_at(y)).map_color
+            let depth = ground - 1 - y;
+            let c = if depth >= 0 && (depth as usize) < profile.len() {
+                reg.block_of(profile[depth as usize]).map_color
             } else if y < ground {
-                [110, 80, 50]
+                reg.block_of(col.rock_at(y)).map_color
             } else if y < s.water_i() {
                 [40, 90, 200]
             } else {
@@ -523,6 +533,37 @@ fn geo_area(
         "wrote {name} ({} blocks, province {}, y {bottom}..{top})",
         n, p.id
     );
+    // Soils of the area: which types and how deep.
+    let mut counts = vec![(0usize, 0usize, 0usize); soils.soil_count()];
+    for j in (0..n).step_by(4) {
+        for i in (0..n).step_by(4) {
+            let (bx, bz) = (x0 + i as i32, z0 + j as i32);
+            let s = terrain.sample(bx, bz);
+            if s.is_underwater() {
+                continue;
+            }
+            let parent = geology
+                .column(bx, bz)
+                .rock_at(s.height_i() - 1 - s.soil_depth as i32);
+            let choice = soils.choose(&s, parent, bx, bz);
+            let prof = soils.profile(&s, parent, bx, bz);
+            let c = &mut counts[choice.soil];
+            c.0 += 1;
+            c.1 += prof.len();
+            c.2 += s.soil_depth as usize;
+        }
+    }
+    for (i, (count, prof, sd)) in counts.iter().enumerate() {
+        if *count > 0 {
+            println!(
+                "    {:<24} {:>5} columns, profile {:.1} blocks, soil depth {:.1}",
+                soils.soil_id(i),
+                count,
+                *prof as f64 / *count as f64,
+                *sd as f64 / *count as f64
+            );
+        }
+    }
     Ok(())
 }
 

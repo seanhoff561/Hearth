@@ -103,6 +103,9 @@ fn generated_blocks(packs: &[PathBuf]) -> Vec<(ResourceLocation, Map<String, Val
         };
         let template = match b.kind {
             hearth_content::generate::NaturalKind::Rock => "hearth:rock",
+            hearth_content::generate::NaturalKind::Soil => "hearth:soil",
+            hearth_content::generate::NaturalKind::Loose => "hearth:falling_soil",
+            hearth_content::generate::NaturalKind::Cobbles => "hearth:loose_stones",
         };
         let [r, g, bl] = b.map_color;
         let mut obj = Map::new();

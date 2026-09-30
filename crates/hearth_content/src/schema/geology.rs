@@ -61,6 +61,26 @@ pub struct Yield {
     pub fraction: f32,
 }
 
+/// The words `Formation::vegetation` may use (the world generator derives them from the biome
+/// and the river network).
+pub const SOIL_VEGETATION: [&str; 15] = [
+    "broadleaf_forest",
+    "mixed_forest",
+    "boreal_forest",
+    "montane_forest",
+    "tropical_forest",
+    "temperate_rainforest",
+    "grassland",
+    "steppe",
+    "savanna",
+    "scrub",
+    "desert",
+    "tundra",
+    "alpine",
+    "wetland",
+    "floodplain",
+];
+
 /// The words `Province::conditions` may use (the world generator evaluates them per region).
 pub const PROVINCE_CONDITIONS: [&str; 8] = [
     "arid", "humid", "warm", "cold", "coastal", "inland", "old", "young",

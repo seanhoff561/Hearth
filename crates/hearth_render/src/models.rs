@@ -326,7 +326,7 @@ fn cube_model(
         if prop(reg, s, "snowy") == Some("true") {
             let mut f = all(ctx.tex("grass_block_snow"));
             f[up] = ctx.tex("snow");
-            f[down] = ctx.tex("dirt");
+            f[down] = ctx.tex("loam");
             f
         } else {
             let side = FaceTex {
@@ -336,7 +336,7 @@ fn cube_model(
             };
             let mut f = all(side);
             f[up] = ctx.tex_tint("grass_block_top", Tint::Grass);
-            f[down] = ctx.tex("dirt");
+            f[down] = ctx.tex("loam");
             f
         }
     } else if name == "podzol" {
@@ -346,7 +346,7 @@ fn cube_model(
         } else {
             ctx.tex("podzol_top")
         };
-        f[down] = ctx.tex("dirt");
+        f[down] = ctx.tex("loam");
         f
     } else if name.ends_with("_log") {
         let axis = prop(reg, s, "axis").unwrap_or("y");

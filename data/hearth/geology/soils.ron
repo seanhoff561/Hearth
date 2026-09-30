@@ -1,47 +1,177 @@
-// Soils (v2 §5.3): climate × parent rock × vegetation × drainage × slope. Fertility is a
-// simplified 0–1 N/P/K/organic scale. V2-2 completes the set.
+// Soils (v2 §5.3): climate × parent rock × vegetation × drainage × slope. The world generator
+// picks, for each land column, the soil whose formation fits best (listed climates, parent
+// rocks and drainage must match; vegetation adds to the fit) and lays its horizons as blocks,
+// thinned on steep ground. Horizon thicknesses are real metres (a block is a metre); horizons
+// thinner than half a block are part of the turf. Fertility is a simplified 0–1 N/P/K/organic
+// scale.
+//
+// Climates are Köppen codes or their prefixes ("D" = all continental, "Cs" = mediterranean).
+// Vegetation words the generator understands: broadleaf_forest, mixed_forest, boreal_forest,
+// montane_forest, tropical_forest, temperate_rainforest, grassland, steppe, savanna, scrub,
+// desert, tundra, alpine, wetland, floodplain.
 (
     schema: 1,
     entries: [
         (
-            id: "brown_forest_soil", name: "Brown forest soil",
+            id: "chernozem", status: Implemented, name: "Chernozem",
+            horizons: [
+                (name: "A", material: "chernozem_earth", thickness_m: (0.6, 1.5)),
+                (name: "B", material: "loess", thickness_m: (0.5, 1.2)),
+                (name: "C", material: "loess", thickness_m: (0.5, 2.0)),
+            ],
+            fertility: (n: 0.9, p: 0.8, k: 0.85, organic: 0.9), drainage: 0.7, ph: 7.2, workability: 0.85,
+            formation: (climates: ["BSk", "Dfa", "Dfb", "Dwa", "Dwb"], vegetation: ["steppe", "grassland"], drainage: (0.4, 0.95), max_slope_deg: 15),
+            notes: "Deep black earth of the grass steppes: the most fertile soil on Earth.",
+        ),
+        (
+            id: "brown_forest_soil", status: Implemented, name: "Brown forest soil",
             horizons: [
                 (name: "O", material: "leaf_litter", thickness_m: (0.02, 0.06)),
-                (name: "A", material: "loam", thickness_m: (0.15, 0.35)),
-                (name: "B", material: "clay_loam", thickness_m: (0.4, 1.0)),
+                (name: "A", material: "loam", thickness_m: (0.5, 1.0)),
+                (name: "B", material: "clay_loam", thickness_m: (0.6, 1.5)),
             ],
             fertility: (n: 0.6, p: 0.5, k: 0.6, organic: 0.6), drainage: 0.6, ph: 5.8, workability: 0.7,
-            formation: (climates: ["Cfb", "Dfb", "Cfa"], vegetation: ["broadleaf_forest", "mixed_forest"], drainage: (0.4, 0.9), max_slope_deg: 30),
+            formation: (climates: ["Cfa", "Cfb", "Cs", "Cwa", "Cwb", "Dfa", "Dfb", "Dwa", "Dwb"], vegetation: ["broadleaf_forest", "mixed_forest", "montane_forest", "grassland", "scrub"], drainage: (0.35, 0.95), max_slope_deg: 40),
         ),
         (
-            id: "podzol", name: "Podzol",
+            id: "podzol", status: Implemented, name: "Podzol",
             horizons: [
                 (name: "O", material: "leaf_litter", thickness_m: (0.05, 0.15)),
-                (name: "E", material: "bleached_sand", thickness_m: (0.05, 0.25)),
-                (name: "B", material: "clay_loam", thickness_m: (0.2, 0.6)),
+                (name: "E", material: "bleached_sand", thickness_m: (0.5, 1.0)),
+                (name: "B", material: "clay_loam", thickness_m: (0.5, 1.2)),
             ],
             fertility: (n: 0.25, p: 0.2, k: 0.3, organic: 0.5), drainage: 0.8, ph: 4.2, workability: 0.6,
-            formation: (climates: ["Dfc", "Dfb", "Cfc"], parent_rocks: ["granite", "sandstone", "quartzite"], vegetation: ["boreal_forest"], drainage: (0.6, 1.0)),
+            formation: (climates: ["Dfb", "Dfc", "Dfd", "Dwc", "Cfc"], parent_rocks: ["granite", "sandstone", "quartzite", "gneiss", "schist", "conglomerate", "rhyolite", "red_sandstone"], vegetation: ["boreal_forest"], drainage: (0.55, 1.0)),
+            notes: "Acid sandy soil under conifers: an ash-grey leached layer over a rusty subsoil.",
         ),
         (
-            id: "alluvial_soil", name: "Alluvial soil",
+            id: "alluvial_soil", status: Implemented, name: "Alluvial soil",
             horizons: [
-                (name: "A", material: "alluvium", thickness_m: (0.3, 1.0)),
+                (name: "A", material: "alluvium", thickness_m: (0.8, 2.0)),
                 (name: "C", material: "gravel", thickness_m: (0.5, 3.0)),
             ],
             fertility: (n: 0.8, p: 0.7, k: 0.8, organic: 0.6), drainage: 0.5, ph: 6.8, workability: 0.9,
-            formation: (vegetation: ["floodplain"], drainage: (0.3, 0.7), max_slope_deg: 5),
+            formation: (climates: ["A", "B", "C", "D"], vegetation: ["floodplain"], drainage: (0.2, 0.8), max_slope_deg: 8),
             notes: "Floodplains: very fertile and renewed by floods.",
         ),
         (
-            id: "red_tropical_soil", name: "Red tropical soil",
+            id: "red_tropical_soil", status: Implemented, name: "Red tropical soil",
             horizons: [
-                (name: "A", material: "loam", thickness_m: (0.1, 0.2)),
-                (name: "B", material: "clay_loam", thickness_m: (1.0, 5.0)),
+                (name: "A", material: "loam", thickness_m: (0.2, 0.5)),
+                (name: "B", material: "red_earth", thickness_m: (1.5, 5.0)),
             ],
             fertility: (n: 0.3, p: 0.15, k: 0.25, organic: 0.3), drainage: 0.7, ph: 5.0, workability: 0.6,
-            formation: (climates: ["Aw", "Af", "Am"], drainage: (0.5, 1.0)),
+            formation: (climates: ["Af", "Am", "Aw", "Cwa", "Cfa"], vegetation: ["tropical_forest", "savanna", "temperate_rainforest"], drainage: (0.45, 1.0)),
+            notes: "Deeply weathered, red and poor: the nutrients live in the forest, not the soil.",
             uncertain: true,
+        ),
+        (
+            id: "laterite_soil", status: Implemented, name: "Laterite",
+            horizons: [
+                (name: "A", material: "loam", thickness_m: (0.1, 0.3)),
+                (name: "B", material: "laterite", thickness_m: (0.5, 2.5)),
+                (name: "C", material: "red_earth", thickness_m: (1.0, 4.0)),
+            ],
+            fertility: (n: 0.15, p: 0.08, k: 0.15, organic: 0.2), drainage: 0.7, ph: 5.0, workability: 0.4,
+            formation: (climates: ["Aw", "Am"], parent_rocks: ["granite", "gneiss", "schist", "basalt", "quartzite"], vegetation: ["savanna", "tropical_forest", "grassland"], drainage: (0.5, 1.0), max_slope_deg: 8),
+            notes: "An iron crust on old tropical plateaus with a long dry season; dug for bricks and iron.",
+            uncertain: true,
+        ),
+        (
+            id: "loess_soil", status: Implemented, name: "Loess soil",
+            horizons: [
+                (name: "A", material: "loam", thickness_m: (0.3, 0.6)),
+                (name: "B", material: "loess", thickness_m: (2.0, 6.0)),
+            ],
+            fertility: (n: 0.7, p: 0.7, k: 0.8, organic: 0.5), drainage: 0.75, ph: 7.5, workability: 0.9,
+            formation: (climates: ["BSk", "Cfa", "Cwa", "Dwa", "Dfa"], vegetation: ["grassland", "scrub", "mixed_forest"], drainage: (0.5, 1.0), max_slope_deg: 25),
+            notes: "Wind-blown silt, deep, yellow and easy to dig; stands in vertical walls.",
+        ),
+        (
+            id: "peat_bog", status: Implemented, name: "Peat bog",
+            horizons: [
+                (name: "O", material: "peat", thickness_m: (1.0, 4.0)),
+                (name: "C", material: "gley", thickness_m: (0.5, 1.0)),
+            ],
+            fertility: (n: 0.2, p: 0.1, k: 0.1, organic: 1.0), drainage: 0.05, ph: 4.0, workability: 0.9,
+            formation: (climates: ["Cfb", "Cfc", "Dfb", "Dfc", "ET"], vegetation: ["wetland", "boreal_forest", "tundra"], drainage: (0.0, 0.25)),
+            notes: "Waterlogged plant remains: a fuel when cut and dried.",
+        ),
+        (
+            id: "gley_soil", status: Implemented, name: "Gley soil",
+            horizons: [
+                (name: "A", material: "loam", thickness_m: (0.3, 0.6)),
+                (name: "B", material: "gley", thickness_m: (0.8, 2.0)),
+            ],
+            fertility: (n: 0.5, p: 0.4, k: 0.5, organic: 0.6), drainage: 0.15, ph: 6.0, workability: 0.4,
+            formation: (climates: ["A", "C", "D"], vegetation: ["wetland", "grassland", "broadleaf_forest", "tropical_forest"], drainage: (0.0, 0.35)),
+        ),
+        (
+            id: "andosol", status: Implemented, name: "Volcanic ash soil",
+            horizons: [
+                (name: "A", material: "volcanic_ash", thickness_m: (0.5, 1.0)),
+                (name: "B", material: "volcanic_ash", thickness_m: (0.5, 2.0)),
+            ],
+            fertility: (n: 0.7, p: 0.5, k: 0.8, organic: 0.8), drainage: 0.75, ph: 6.0, workability: 0.9,
+            formation: (climates: ["A", "C", "D"], parent_rocks: ["andesite", "basalt", "tuff", "scoria", "pumice", "rhyolite"], drainage: (0.3, 1.0)),
+            notes: "Young soils on volcanic ash: light, fertile, holding water well.",
+        ),
+        (
+            id: "rendzina", status: Implemented, name: "Rendzina",
+            horizons: [
+                (name: "A", material: "humus", thickness_m: (0.5, 0.9)),
+            ],
+            fertility: (n: 0.6, p: 0.5, k: 0.5, organic: 0.7), drainage: 0.85, ph: 7.8, workability: 0.6,
+            formation: (climates: ["Cfa", "Cfb", "Cfc", "Dfa", "Dfb"], parent_rocks: ["limestone", "chalk", "dolomite", "marble"], drainage: (0.5, 1.0)),
+            notes: "Thin dark soil straight on limestone and chalk; stony and quick to dry.",
+        ),
+        (
+            id: "terra_rossa", status: Implemented, name: "Terra rossa",
+            horizons: [
+                (name: "A", material: "terra_rossa", thickness_m: (0.5, 1.5)),
+            ],
+            fertility: (n: 0.4, p: 0.3, k: 0.5, organic: 0.3), drainage: 0.75, ph: 7.0, workability: 0.6,
+            formation: (climates: ["Cs"], parent_rocks: ["limestone", "dolomite", "marble"], drainage: (0.4, 1.0)),
+            notes: "Red clay on the limestone of mediterranean lands.",
+        ),
+        (
+            id: "desert_soil", status: Implemented, name: "Desert soil",
+            horizons: [
+                (name: "A", material: "sandy_loam", thickness_m: (0.4, 0.8)),
+                (name: "B", material: "sandy_loam", thickness_m: (0.5, 1.5)),
+            ],
+            fertility: (n: 0.1, p: 0.3, k: 0.6, organic: 0.05), drainage: 0.9, ph: 8.2, workability: 0.7,
+            formation: (climates: ["BWh", "BWk", "BSh", "BSk"], vegetation: ["desert", "scrub", "steppe", "savanna"], drainage: (0.4, 1.0)),
+            notes: "Little organic matter, salts and lime near the surface.",
+        ),
+        (
+            id: "tundra_soil", status: Implemented, name: "Tundra soil",
+            horizons: [
+                (name: "O", material: "peat", thickness_m: (0.05, 0.3)),
+                (name: "A", material: "loam", thickness_m: (0.5, 1.0)),
+                (name: "C", material: "permafrost", thickness_m: (2.0, 6.0)),
+            ],
+            fertility: (n: 0.15, p: 0.15, k: 0.2, organic: 0.6), drainage: 0.3, ph: 5.5, workability: 0.3,
+            formation: (climates: ["ET", "Dfd", "Dwd", "Dfc"], vegetation: ["tundra", "alpine", "boreal_forest"]),
+            notes: "A thin summer-thawed layer over ground frozen all year.",
+        ),
+        (
+            id: "lithosol", status: Implemented, name: "Mountain lithosol",
+            horizons: [
+                (name: "A", material: "stony_loam", thickness_m: (0.5, 0.9)),
+            ],
+            fertility: (n: 0.2, p: 0.2, k: 0.3, organic: 0.2), drainage: 0.9, ph: 6.0, workability: 0.3,
+            formation: (vegetation: ["alpine", "scrub"], drainage: (0.6, 1.0)),
+            notes: "Thin stony soil on steep and high ground.",
+        ),
+        (
+            id: "regosol", status: Implemented, name: "Young soil",
+            horizons: [
+                (name: "A", material: "loam", thickness_m: (0.5, 0.8)),
+                (name: "C", material: "sandy_loam", thickness_m: (0.5, 1.5)),
+            ],
+            fertility: (n: 0.4, p: 0.4, k: 0.4, organic: 0.4), drainage: 0.6, ph: 6.5, workability: 0.7,
+            notes: "Weakly developed soil where nothing more specific formed; the generator's fallback.",
         ),
     ],
 )

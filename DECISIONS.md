@@ -257,3 +257,13 @@ planet's 610× horizontal compression would otherwise turn every dip vertical.
 from the generator): every underground block is now a real rock type. Engine tests that need a
 plain opaque block use `stone` from the engine test pack (`hearth_world/testdata`); saves that
 contain the old blocks keep them as named placeholders (D25), as the format-2 fixture checks.
+
+## D41 — Soils by formation fit, at the block scale
+A soil is chosen per column by scoring the formations in `geology/soils.ron` against the
+place: listed climates, parent rocks, drainage and slope limits must hold; exact climates beat
+groups, a parent-rock match beats vegetation (rendzina, terra rossa, podzol and andosol are
+what their rock makes of the climate), landforms (floodplain, wetland) beat plants; a soil with
+no conditions is the fallback. Horizons stay in real metres because soil is a local thing (a
+metre per block), which makes profiles one to a few blocks deep, thinned by slope. v1's
+biome surface kinds still say what covers the ground (turf, sand, gravel, rock, snow); the soil
+decides what lies under it.

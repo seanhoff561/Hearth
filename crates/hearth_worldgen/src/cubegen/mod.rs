@@ -20,6 +20,7 @@ use hearth_world::{BlockRegistry, BlockStateId, Cube};
 
 use crate::geology::{Geology, RockColumn};
 use crate::region::{ColumnSample, Terrain};
+use crate::soil::{Profile, Soils};
 use blocks::{GenBlocks, MissingBlock};
 use cache::Cache;
 
@@ -110,9 +111,10 @@ pub struct WorldGenerator {
     pub terrain: Arc<Terrain>,
     pub blocks: GenBlocks,
     pub geology: Geology,
+    pub soils: Soils,
     columns: Cache<ColumnPos, ColumnData>,
-    /// Rock columns of 16×16 block columns (index `z * 16 + x`).
-    rocks: Cache<ColumnPos, Vec<RockColumn>>,
+    /// Rock columns and soil profiles of 16×16 block columns (index `z * 16 + x`).
+    rocks: Cache<ColumnPos, Vec<(RockColumn, Profile)>>,
     caves: caves::CaveGen,
     features: features::FeatureGen,
     planet: Planet,
@@ -127,9 +129,20 @@ impl WorldGenerator {
         reg: &BlockRegistry,
         content: &hearth_content::Content,
     ) -> Result<Self, MissingBlock> {
-        let blocks = GenBlocks::resolve(reg)?;
+        let mut blocks = GenBlocks::resolve(reg)?;
         let geology = Geology::new(&terrain.grid, content, reg)?;
         let seed = terrain.seed();
+        let soils = Soils::new(content, reg, seed, terrain.planet().circumference() as i64)?;
+        blocks.add_ground(soils.plantable());
+        for extra in [
+            blocks.grass,
+            blocks.grass_snowy,
+            blocks.podzol,
+            blocks.podzol_snowy,
+            blocks.moss_block,
+        ] {
+            blocks.add_ground(std::iter::once(extra));
+        }
         let v = terrain.vertical_scale();
         Ok(Self {
             caves: caves::CaveGen::new(seed, v),
@@ -138,6 +151,7 @@ impl WorldGenerator {
             columns: Cache::new(8192),
             rocks: Cache::new(1024),
             geology,
+            soils,
             blocks,
             seed,
             terrain,
@@ -161,15 +175,21 @@ impl WorldGenerator {
             .get_or_insert_with(pos, || self.compute_column(pos))
     }
 
-    /// Rock columns of a 16×16 column (index `z * 16 + x`).
-    pub fn rock_columns(&self, pos: ColumnPos) -> Arc<Vec<RockColumn>> {
+    /// Rock columns and soil profiles of a 16×16 column (index `z * 16 + x`).
+    pub fn rock_columns(&self, pos: ColumnPos) -> Arc<Vec<(RockColumn, Profile)>> {
         let pos = self.planet.wrap_column(pos);
         self.rocks.get_or_insert_with(pos, || {
+            let col = self.column(pos);
             let (x0, z0) = pos.min_block_xz();
             let mut v = Vec::with_capacity(256);
             for lz in 0..16 {
                 for lx in 0..16 {
-                    v.push(self.geology.column(x0 + lx, z0 + lz));
+                    let (x, z) = (x0 + lx, z0 + lz);
+                    let rock = self.geology.column(x, z);
+                    let s = col.at(lx as usize, lz as usize);
+                    let parent = rock.rock_at(s.height_i() - 1 - s.soil_depth as i32);
+                    let profile = self.soils.profile(s, parent, x, z);
+                    v.push((rock, profile));
                 }
             }
             v
@@ -179,7 +199,7 @@ impl WorldGenerator {
     /// The bedrock (ignoring soil, caves and features) at a block.
     pub fn rock_at(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         let col = self.rock_columns(ColumnPos::new(x >> 4, z >> 4));
-        col[((z & 15) * 16 + (x & 15)) as usize].rock_at(y)
+        col[((z & 15) * 16 + (x & 15)) as usize].0.rock_at(y)
     }
 
     fn compute_column(&self, pos: ColumnPos) -> ColumnData {
@@ -283,11 +303,11 @@ impl WorldGenerator {
         })
     }
 
-    fn fill_deep(&self, buf: &mut CubeBuf, rocks: &[RockColumn]) {
+    fn fill_deep(&self, buf: &mut CubeBuf, rocks: &[(RockColumn, Profile)]) {
         let o = buf.origin;
         for lz in 0..16 {
             for lx in 0..16 {
-                let rc = &rocks[(lz * 16 + lx) as usize];
+                let rc = &rocks[(lz * 16 + lx) as usize].0;
                 for ly in 0..16 {
                     let i = ((ly as usize) << 8) | ((lz as usize) << 4) | lx as usize;
                     buf.states[i] = rc.rock_at(o.y + ly);
@@ -296,21 +316,18 @@ impl WorldGenerator {
         }
     }
 
-    fn fill_surface(&self, buf: &mut CubeBuf, col: &ColumnData, rocks: &[RockColumn]) {
+    fn fill_surface(&self, buf: &mut CubeBuf, col: &ColumnData, rocks: &[(RockColumn, Profile)]) {
         let o = buf.origin;
         let b = &self.blocks;
         for lz in 0..16i32 {
             for lx in 0..16i32 {
                 let s = col.at(lx as usize, lz as usize);
-                let rc = &rocks[(lz * 16 + lx) as usize];
+                let (rc, profile) = &rocks[(lz * 16 + lx) as usize];
                 let (x, z) = (o.x + lx, o.z + lz);
                 let top = s.height_i();
                 let water_top = s.water_i();
                 // Seasonal snow and ice are applied by the environment at the current date
                 // (`hearth_env`); the generator only lays down perennial snow and ice.
-                let surface_state = b.surface(s.surface, false);
-                let filler = b.filler(s.filler);
-                let soil = s.soil_depth as i32;
                 for ly in 0..16i32 {
                     let y = o.y + ly;
                     let i = ((ly as usize) << 8) | ((lz as usize) << 4) | lx as usize;
@@ -323,14 +340,12 @@ impl WorldGenerator {
                             > 0.0;
                     }
                     buf.states[i] = if ground {
+                        // Depth below the top block (0 = the top block).
                         let depth = top - 1 - y;
-                        if depth <= 0 && (s.cliffiness == 0.0 || self.is_exposed(x, y, z, top, s)) {
-                            surface_state.unwrap_or_else(|| rc.rock_at(y))
-                        } else if depth < soil {
-                            filler.unwrap_or_else(|| rc.rock_at(y))
-                        } else {
-                            rc.rock_at(y)
-                        }
+                        let exposed =
+                            depth <= 0 && (s.cliffiness == 0.0 || self.is_exposed(x, y, z, top, s));
+                        let layer = if exposed { 0 } else { depth.max(1) as usize };
+                        profile.get(layer).copied().unwrap_or_else(|| rc.rock_at(y))
                     } else if y < water_top {
                         // Multi-year ice where the water never thaws.
                         if y == water_top - 1 && s.temperature < -10.0 {

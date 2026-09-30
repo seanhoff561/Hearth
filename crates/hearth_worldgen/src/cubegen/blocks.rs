@@ -2,8 +2,6 @@
 
 use hearth_world::{BlockRegistry, BlockStateId};
 
-use crate::region::Surface;
-
 /// A wood species.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Wood {
@@ -26,23 +24,20 @@ pub struct WoodStates {
 #[derive(Debug, Clone)]
 pub struct GenBlocks {
     pub air: BlockStateId,
-    /// Per state: rock made of a material (bedrock and outcrops), and anything caves may cut.
+    /// Per state: rock made of a material (bedrock and outcrops), anything caves may cut, and
+    /// ground plants can grow in.
     rock: Vec<bool>,
     carvable: Vec<bool>,
+    plantable: Vec<bool>,
+    /// Loose-stone block of each rock (by the rock's state), and whether a state is one.
+    cobbles: rustc_hash::FxHashMap<BlockStateId, BlockStateId>,
+    loose_stone: Vec<bool>,
     pub cobblestone: BlockStateId,
     pub mossy_cobblestone: BlockStateId,
     pub grass: BlockStateId,
     pub grass_snowy: BlockStateId,
-    pub dirt: BlockStateId,
-    pub coarse_dirt: BlockStateId,
-    pub rooted_dirt: BlockStateId,
     pub podzol: BlockStateId,
     pub podzol_snowy: BlockStateId,
-    pub mud: BlockStateId,
-    pub clay: BlockStateId,
-    pub sand: BlockStateId,
-    pub red_sand: BlockStateId,
-    pub gravel: BlockStateId,
     pub moss_block: BlockStateId,
     pub snow_layers: [BlockStateId; 8],
     pub snow_block: BlockStateId,
@@ -119,39 +114,31 @@ impl GenBlocks {
                 reg.block_of(st).def.material.is_some() && reg.is_opaque(st)
             })
             .collect();
-        let mut carvable = rock.clone();
-        for name in [
-            "dirt",
-            "coarse_dirt",
-            "gravel",
-            "clay",
-            "sand",
-            "red_sand",
-            "grass_block[snowy=false]",
-            "grass_block[snowy=true]",
-            "podzol[snowy=false]",
-            "podzol[snowy=true]",
-        ] {
-            carvable[s(name)?.0 as usize] = true;
+        let carvable = rock.clone();
+        let plantable = vec![false; reg.state_count()];
+        let mut cobbles = rustc_hash::FxHashMap::default();
+        let mut loose_stone = vec![false; reg.state_count()];
+        for block in reg.blocks() {
+            if let Some(rock) = block.name.path().strip_suffix("_cobbles")
+                && let Ok(r) = reg.parse_state(&format!("{}:{rock}", block.name.namespace()))
+            {
+                cobbles.insert(r, block.default_state);
+                loose_stone[block.default_state.0 as usize] = true;
+            }
         }
         Ok(Self {
             air: BlockStateId::AIR,
             rock,
             carvable,
+            plantable,
+            cobbles,
+            loose_stone,
             cobblestone: s("cobblestone")?,
             mossy_cobblestone: s("mossy_cobblestone")?,
             grass: s("grass_block[snowy=false]")?,
             grass_snowy: s("grass_block[snowy=true]")?,
-            dirt: s("dirt")?,
-            coarse_dirt: s("coarse_dirt")?,
-            rooted_dirt: s("rooted_dirt")?,
             podzol: s("podzol[snowy=false]")?,
             podzol_snowy: s("podzol[snowy=true]")?,
-            mud: s("mud")?,
-            clay: s("clay")?,
-            sand: s("sand")?,
-            red_sand: s("red_sand")?,
-            gravel: s("gravel")?,
             moss_block: s("moss_block")?,
             snow_layers,
             snow_block: s("snow_block")?,
@@ -204,51 +191,33 @@ impl GenBlocks {
         }
     }
 
-    /// Top-block state for a surface kind; `None` for bare rock (the geology's).
-    pub fn surface(&self, s: Surface, snowy: bool) -> Option<BlockStateId> {
-        Some(match s {
-            Surface::Grass | Surface::SnowGrass => {
-                if snowy {
-                    self.grass_snowy
-                } else {
-                    self.grass
-                }
+    /// Marks the soils' and sediments' blocks as ground plants grow in and caves may cut.
+    pub fn add_ground(&mut self, ground: impl Iterator<Item = BlockStateId>) {
+        for g in ground {
+            if let Some(p) = self.plantable.get_mut(g.0 as usize) {
+                *p = true;
             }
-            Surface::Podzol => {
-                if snowy {
-                    self.podzol_snowy
-                } else {
-                    self.podzol
-                }
+            if let Some(c) = self.carvable.get_mut(g.0 as usize) {
+                *c = true;
             }
-            Surface::CoarseDirt => self.coarse_dirt,
-            Surface::Dirt => self.dirt,
-            Surface::Sand => self.sand,
-            Surface::RedSand => self.red_sand,
-            Surface::Gravel => self.gravel,
-            Surface::Snow => self.snow_block,
-            Surface::Ice => self.packed_ice,
-            Surface::Mud => self.mud,
-            Surface::Clay => self.clay,
-            Surface::Moss => self.moss_block,
-            Surface::Stone
-            | Surface::Calcite
-            | Surface::Sandstone
-            | Surface::RedSandstone
-            | Surface::Tuff => {
-                return None;
-            }
-        })
+        }
     }
 
-    /// Filler state under the top block; `None` for bare rock.
-    pub fn filler(&self, s: Surface) -> Option<BlockStateId> {
-        match s {
-            Surface::Grass | Surface::SnowGrass | Surface::Podzol | Surface::Moss => {
-                Some(self.dirt)
-            }
-            other => self.surface(other, false),
-        }
+    /// Loose stones of a rock, if it has them.
+    pub fn cobbles_for(&self, rock: BlockStateId) -> Option<BlockStateId> {
+        self.cobbles.get(&rock).copied()
+    }
+
+    /// True for loose stones lying on the ground.
+    #[inline]
+    pub fn is_loose_stone(&self, s: BlockStateId) -> bool {
+        self.loose_stone.get(s.0 as usize).copied().unwrap_or(false)
+    }
+
+    /// True for ground plants can grow in (turf, soils, sands, muds).
+    #[inline]
+    pub fn is_plantable(&self, s: BlockStateId) -> bool {
+        self.plantable.get(s.0 as usize).copied().unwrap_or(false)
     }
 
     /// True for rock that deposits may replace.

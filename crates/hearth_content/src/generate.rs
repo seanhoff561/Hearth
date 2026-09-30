@@ -189,10 +189,17 @@ mod tests {
 pub enum NaturalKind {
     /// Bedrock and outcrops of a rock type.
     Rock,
+    /// Cohesive earth: soil horizons, clays, peat.
+    Soil,
+    /// Loose grains that slide and fall (sands, gravel, ash): materials tagged `falls`.
+    Loose,
+    /// A few loose stones of a rock lying on the ground (`<rock>_cobbles`).
+    Cobbles,
 }
 
-/// A block generated from the content tables: one per rock type, so a new rock in data gets
-/// its block (and texture, from the material's appearance) without code.
+/// A block generated from the content tables: one per rock type and one per earth material
+/// (soils, clays, sediments and every material a soil horizon is made of), so a new rock or
+/// soil in data gets its block (and texture, from the material's appearance) without code.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NaturalBlock {
     /// Namespaced block id (the rock's id).
@@ -216,8 +223,9 @@ fn hardness_of(m: &Material) -> f32 {
     h.clamp(0.3, 4.0)
 }
 
-/// The natural blocks the content defines (every rock type).
+/// The natural blocks the content defines: every rock type, then every earth material.
 pub fn natural_blocks(c: &crate::Content) -> Vec<NaturalBlock> {
+    use crate::schema::material::MaterialCategory as Cat;
     let mut out = Vec::new();
     for rock in c.rocks.iter() {
         let Some(m) = c.materials.get(rock.material.as_str()) else {
@@ -231,6 +239,54 @@ pub fn natural_blocks(c: &crate::Content) -> Vec<NaturalBlock> {
             hardness: hardness_of(m),
             map_color: m.appearance.color.0,
         });
+        // Loose stones of true rocks (not coal, salt or gypsum).
+        if m.category == Cat::Rock {
+            out.push(NaturalBlock {
+                id: format!("{}_cobbles", rock.id()),
+                name: format!("{} cobbles", rock.name),
+                material: rock.material.as_str().to_owned(),
+                kind: NaturalKind::Cobbles,
+                hardness: 0.2,
+                map_color: m.appearance.color.0,
+            });
+        }
+    }
+    // Earth materials: by category, and whatever a soil horizon at least half a block thick is
+    // made of (peat).
+    let mut earths: Vec<&str> = c
+        .materials
+        .iter()
+        .filter(|m| matches!(m.category, Cat::Soil | Cat::Clay | Cat::Sediment))
+        .map(|m| m.id())
+        .collect();
+    for soil in c.soils.iter() {
+        for h in &soil.horizons {
+            if h.thickness_m.1 >= 0.5 && !earths.contains(&h.material.as_str()) {
+                earths.push(h.material.as_str());
+            }
+        }
+    }
+    for id in earths {
+        if out.iter().any(|b| b.id == id) {
+            continue;
+        }
+        let Some(m) = c.materials.get(id) else {
+            continue;
+        };
+        let falls = m.tags.iter().any(|t| t == "falls");
+        let frozen = m.tags.iter().any(|t| t == "frozen");
+        out.push(NaturalBlock {
+            id: id.to_owned(),
+            name: m.name.clone(),
+            material: id.to_owned(),
+            kind: if falls {
+                NaturalKind::Loose
+            } else {
+                NaturalKind::Soil
+            },
+            hardness: 0.25 + m.density_kg_m3 / 5000.0 + if frozen { 1.0 } else { 0.0 },
+            map_color: m.appearance.color.0,
+        });
     }
     out
 }
@@ -240,10 +296,38 @@ mod natural_tests {
     use super::*;
 
     #[test]
-    fn every_rock_gets_a_block() {
+    fn every_rock_and_earth_gets_a_block() {
         let c = crate::Content::load_base();
         let blocks = natural_blocks(&c);
-        assert_eq!(blocks.len(), c.rocks.len());
+        let rocks = blocks
+            .iter()
+            .filter(|b| b.kind == NaturalKind::Rock)
+            .count();
+        assert_eq!(rocks, c.rocks.len());
+        assert!(
+            blocks
+                .iter()
+                .any(|b| b.id == "hearth:granite_cobbles" && b.kind == NaturalKind::Cobbles)
+        );
+        assert!(
+            !blocks
+                .iter()
+                .any(|b| b.id == "hearth:bituminous_coal_cobbles"),
+            "no coal cobbles"
+        );
+        let kind = |id: &str| blocks.iter().find(|b| b.id == id).map(|b| b.kind);
+        assert_eq!(kind("hearth:quartz_sand"), Some(NaturalKind::Loose));
+        assert_eq!(kind("hearth:loam"), Some(NaturalKind::Soil));
+        assert_eq!(
+            kind("hearth:peat"),
+            Some(NaturalKind::Soil),
+            "thick soil horizons get blocks"
+        );
+        assert_eq!(
+            kind("hearth:leaf_litter"),
+            None,
+            "thin litter is part of the turf"
+        );
         let chalk = blocks
             .iter()
             .find(|b| b.id == "hearth:chalk")

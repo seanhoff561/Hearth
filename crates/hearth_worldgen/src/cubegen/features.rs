@@ -97,12 +97,40 @@ impl Priorities<'_> {
         if s == b.mossy_cobblestone || s == b.cobblestone || s == b.cactus {
             return 50;
         }
-        if is_plant(b, s) {
+        if is_plant(b, s) || b.is_loose_stone(s) {
             return 10;
         }
         // Terrain, water and anything else: never replaced by features.
         1000
     }
+}
+
+/// Chance of loose stones on a column's surface.
+fn loose_stone_chance(s: &ColumnSample) -> f32 {
+    let base = match s.surface {
+        Surface::Stone
+        | Surface::Gravel
+        | Surface::Sandstone
+        | Surface::RedSandstone
+        | Surface::Tuff => 0.1,
+        Surface::CoarseDirt => 0.06,
+        Surface::Sand | Surface::RedSand => 0.004,
+        Surface::Snow
+        | Surface::Ice
+        | Surface::Mud
+        | Surface::Clay
+        | Surface::Dirt
+        | Surface::Moss => 0.0,
+        _ => 0.006,
+    };
+    let place = match s.biome {
+        Biome::HotDesert | Biome::ColdDesert | Biome::Mesa => 2.5,
+        Biome::AlpineMeadow | Biome::AlpineRock | Biome::Krummholz | Biome::Tundra => 2.5,
+        Biome::StonyShore => 3.0,
+        Biome::DuneSea | Biome::Beach => 0.3,
+        _ => 1.0,
+    };
+    (base * place * (1.0 + 4.0 * s.slope.min(1.0))).min(0.35)
 }
 
 fn is_plant(b: &GenBlocks, s: BlockStateId) -> bool {
@@ -273,17 +301,17 @@ impl FeatureGen {
         // Only plant on exposed soil (caves or cliffs may have removed it).
         let ground = w.buf.get(x, top - 1, z);
         let above_air = w.buf.get(x, top, z).is_none_or(|s| s.is_air());
-        let soil_block = ground.is_none_or(|g| {
-            g == b.grass
-                || g == b.grass_snowy
-                || g == b.podzol
-                || g == b.moss_block
-                || g == b.coarse_dirt
-                || g == b.dirt
-                || g == b.sand
-                || g == b.red_sand
-                || g == b.mud
-        });
+        // Loose stones of the local bedrock: on bare and thin ground, scree, deserts and high
+        // ground, now and then anywhere.
+        if above_air
+            && ground.is_some_and(|g| !g.is_air() && !b.is_loose_stone(g))
+            && unit_f32(h.rotate_left(43)) < loose_stone_chance(s)
+            && let Some(c) = b.cobbles_for(wg.rock_at(x, top - 1, z))
+        {
+            w.put(x, top, z, c);
+            return;
+        }
+        let soil_block = ground.is_none_or(|g| b.is_plantable(g));
         if !above_air || !soil_block || s.temperature < -0.5 {
             return;
         }

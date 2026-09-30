@@ -9,5 +9,6 @@
   "plant": {"hardness": 0.0, "resistance": 0.0, "shape": {"boxes": [[2, 0, 2, 14, 13, 14]]}, "collision": false, "opaque": false, "render": "cross", "layer": "cutout", "replaceable": true, "sound": "grass", "behavior": "plant", "map_color": "#007c00"},
   "tall_plant": {"template": "plant", "properties": ["half:lower,upper"], "shape": {"boxes": [[2, 0, 2, 14, 16, 14]]}, "behavior": "tall_plant"},
   "flower": {"template": "plant", "replaceable": false, "shape": {"boxes": [[5, 0, 5, 11, 10, 11]]}},
-  "carpet": {"hardness": 0.1, "resistance": 0.1, "shape": "carpet", "opaque": false, "render": "model", "sound": "wool", "flammable": true, "behavior": "carpet"}
+  "carpet": {"hardness": 0.1, "resistance": 0.1, "shape": "carpet", "opaque": false, "render": "model", "sound": "wool", "flammable": true, "behavior": "carpet"},
+  "loose_stones": {"hardness": 0.2, "resistance": 0.2, "shape": {"boxes": [[2, 0, 2, 7, 3, 6], [9, 0, 8, 14, 4, 13], [3, 0, 10, 7, 2, 14]]}, "collision": false, "opaque": false, "render": "model", "replaceable": true, "sound": "stone", "map_color": "#808080"}
 }

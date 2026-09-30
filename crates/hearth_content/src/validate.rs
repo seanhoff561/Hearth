@@ -140,6 +140,48 @@ pub fn validate(content: &Content, report: &mut Report) {
             }
         },
     );
+    each(
+        &content.soils,
+        report,
+        |e| &e.id,
+        |soil, c| {
+            for h in &soil.horizons {
+                c.pair("thickness_m", h.thickness_m, 0.0, 50.0);
+            }
+            c.range("drainage", soil.drainage, 0.0, 1.0);
+            c.range("ph", soil.ph, 2.0, 11.0);
+            c.range("workability", soil.workability, 0.0, 1.0);
+            let f = &soil.formation;
+            c.opt_pair("formation drainage", f.drainage, 0.0, 1.0);
+            c.opt("max_slope_deg", f.max_slope_deg, 0.0, 90.0);
+            for word in &f.vegetation {
+                if !crate::schema::geology::SOIL_VEGETATION.contains(&word.as_str()) {
+                    c.report.error(
+                        "unknown-condition",
+                        Some(c.file.clone()),
+                        c.line,
+                        format!(
+                            "`{}`: vegetation {word:?} is not one the generator understands",
+                            c.id
+                        ),
+                    );
+                }
+            }
+            for code in &f.climates {
+                let ok = code.len() <= 3
+                    && code.starts_with(['A', 'B', 'C', 'D', 'E'])
+                    && code.chars().all(|ch| ch.is_ascii_alphabetic());
+                if !ok {
+                    c.report.error(
+                        "unknown-condition",
+                        Some(c.file.clone()),
+                        c.line,
+                        format!("`{}`: climate {code:?} is not a Köppen code or group", c.id),
+                    );
+                }
+            }
+        },
+    );
     // Every tectonic setting needs a province, or its regions borrow another's rocks.
     for setting in crate::schema::geology::TectonicSetting::ALL {
         if !content.provinces.iter().any(|p| p.setting == setting) {

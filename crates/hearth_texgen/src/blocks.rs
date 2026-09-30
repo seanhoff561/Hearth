@@ -34,24 +34,6 @@ fn dirt_pal() -> Palette {
         [152, 110, 76],
     ])
 }
-fn sand_pal() -> Palette {
-    Palette(vec![
-        [204, 190, 142],
-        [214, 200, 152],
-        [222, 210, 163],
-        [230, 218, 172],
-        [238, 228, 185],
-    ])
-}
-fn red_sand_pal() -> Palette {
-    Palette(vec![
-        [168, 86, 32],
-        [182, 96, 38],
-        [194, 106, 44],
-        [205, 116, 52],
-        [214, 126, 60],
-    ])
-}
 
 // ------------------------------------------------------------------ generic generators
 
@@ -76,21 +58,6 @@ fn rocky(seed: u64, pal: &Palette, cracks: u32) -> Tex {
             let (x, y) = (x0 + k * dx, y0 + k / 2);
             let p = t.get(x, y);
             t.set(x, y, scale([p[0], p[1], p[2]], 0.82));
-        }
-    }
-    t
-}
-
-/// Speckled rock (granite, diorite): base noise plus coloured specks.
-fn speckled(seed: u64, pal: &Palette, specks: &[Rgb], density: f32) -> Tex {
-    let mut t = noisy(seed, pal, 0.55);
-    for y in 0..S as i32 {
-        for x in 0..S as i32 {
-            let r = rand01(seed ^ 0x5eed, x, y);
-            if r < density {
-                let c = specks[((r / density) * specks.len() as f32) as usize % specks.len()];
-                t.set(x, y, c);
-            }
         }
     }
     t
@@ -465,68 +432,8 @@ pub fn textures() -> Vec<TexEntry> {
 
     // Soils.
     let dirt = noisy(h("dirt"), &dirt_pal(), 0.6);
-    add("dirt", dirt.clone());
-    add(
-        "coarse_dirt",
-        speckled(
-            h("coarse"),
-            &dirt_pal(),
-            &[[96, 90, 86], [140, 130, 120], [70, 50, 34]],
-            0.2,
-        ),
-    );
-    add("rooted_dirt", {
-        let mut t = dirt.clone();
-        let root = [168, 128, 88];
-        for r in 0..4 {
-            let mut x = 2 + r * 4;
-            for y in 0..16 {
-                if rand01(h("roots"), r, y) > 0.45 {
-                    t.set(x, y, root);
-                }
-                if rand01(h("roots2"), r, y) > 0.7 {
-                    x += 1;
-                }
-            }
-        }
-        t
-    });
-    add(
-        "mud",
-        noisy(
-            h("mud"),
-            &Palette(vec![[50, 44, 44], [58, 52, 52], [66, 58, 58], [74, 66, 64]]),
-            0.5,
-        ),
-    );
-    add(
-        "clay",
-        noisy(
-            h("clay"),
-            &Palette(vec![
-                [150, 154, 168],
-                [158, 162, 176],
-                [166, 170, 184],
-                [174, 178, 190],
-            ]),
-            0.35,
-        ),
-    );
-    add("gravel", {
-        let seed = h("gravel");
-        paint(S, S, |x, y| {
-            let (d1, d2, id) = voronoi(seed, x as f32 + 0.5, y as f32 + 0.5, 16.0, 20);
-            if d2 - d1 < 0.6 {
-                [82, 78, 76]
-            } else {
-                let tone = (id % 5) as f32 / 5.0;
-                let c = lerp([112, 106, 104], [168, 162, 158], tone);
-                if d1 < 1.0 { scale(c, 1.08) } else { c }
-            }
-        })
-    });
-    add("sand", noisy(h("sand"), &sand_pal(), 0.7));
-    add("red_sand", noisy(h("red_sand"), &red_sand_pal(), 0.7));
+    // Soils and sediments are drawn from their materials (`material.rs`); the dirt above is
+    // the base of the turf side textures.
     add(
         "moss_block",
         noisy(

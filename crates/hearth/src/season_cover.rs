@@ -434,7 +434,7 @@ mod tests {
     fn canopies_shed_or_pass_snow() {
         let mut f = fixture();
         // A bare oak: snow falls through to the ground, a quarter thinner.
-        put(&mut f, 2, 4, 2, "dirt");
+        put(&mut f, 2, 4, 2, "loam");
         for y in 8..=10 {
             put(
                 &mut f,
@@ -445,7 +445,7 @@ mod tests {
             );
         }
         // A spruce: a couple of layers on the crown.
-        put(&mut f, 5, 4, 5, "dirt");
+        put(&mut f, 5, 4, 5, "loam");
         put(
             &mut f,
             5,
