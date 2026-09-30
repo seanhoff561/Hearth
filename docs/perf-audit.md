@@ -89,7 +89,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Hi-Z ray-marched SSR with sky fallback | n/a | No SSR. |
 | Dual-filter bloom | n/a | No bloom yet (the option exists). |
 | One-pass histogram auto-exposure | done | `meter.wgsl`: one 256-thread dispatch, a workgroup histogram of 64×36 samples (0.02 ms). |
-| Tonemap, grading, vignette, dithering in one final pass | done except **dithering (missing)** | One pass for exposure, the night shift and ACES (0.03–0.04 ms); no dithering, so sky gradients can band at 8 bits. |
+| Tonemap, grading, vignette, dithering in one final pass | done (result 6) | One pass for exposure, the night shift, ACES and dithering in sRGB space (0.055 ms); no grading or vignette yet. |
 | Half precision where supported | not worth it | The shaders are light on arithmetic and the passes are raster- and bandwidth-bound; world-space math needs full precision. |
 | Specialization constants instead of runtime branches | not worth it | The branches are on uniforms (coherent); no measurable cost. |
 | Pipelines precompiled at startup | done | Every pipeline is built with the renderer; none is created during frames. A persistent pipeline cache would only shorten startup. |
@@ -178,3 +178,8 @@ Results are recorded below as they land.
    tiles in view before those behind the camera (weighted as four times farther). Quality of
    motion rather than frame time: the benchmark builds every tile up front; unit-tested
    (refine, merge, nothing built) and smoke-tested in the preview.
+6. **Dithering in the final pass** — triangular noise of about one 8-bit step added in sRGB
+   space where the output is quantized (a per-pixel hash, static so nothing crawls): the
+   stepped bands of dusk skies and fog are gone (contrast-stretched comparison of the sunset
+   sky). Tonemap pass 0.03–0.04 → 0.055 ms; SSIM 0.996–0.998 against the goldens, the
+   difference being the intended per-pixel noise.

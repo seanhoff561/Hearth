@@ -40,6 +40,23 @@ fn aces(x: vec3<f32>) -> vec3<f32> {
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+fn to_srgb(c: vec3<f32>) -> vec3<f32> {
+    return select(1.055 * pow(c, vec3<f32>(1.0 / 2.4)) - 0.055, c * 12.92, c <= vec3<f32>(0.0031308));
+}
+
+fn to_linear(c: vec3<f32>) -> vec3<f32> {
+    return select(pow((c + 0.055) / 1.055, vec3<f32>(2.4)), c / 12.92, c <= vec3<f32>(0.04045));
+}
+
+// Two uniform values per pixel from its coordinates (a small integer hash).
+fn hash2(p: vec2<u32>) -> vec2<f32> {
+    var h = p.x * 0x8da6b343u ^ p.y * 0xd8163841u;
+    h = (h ^ (h >> 15u)) * 0x2c1b3c6du;
+    h = (h ^ (h >> 12u)) * 0x297a2d39u;
+    h = h ^ (h >> 15u);
+    return vec2<f32>(f32(h & 0xffffu), f32(h >> 16u)) / 65535.0;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var c = textureLoad(hdr, vec2<i32>(in.pos.xy), 0).rgb * P.p.x * meter.scale;
@@ -49,5 +66,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let scotopic = vec3<f32>(lum) * vec3<f32>(0.75, 0.88, 1.15);
         c = mix(c, scotopic, night * 0.75);
     }
-    return vec4<f32>(aces(c), 1.0);
+    // Dithering: triangular noise of about one step of the 8-bit sRGB output, added where the
+    // output is quantized, so smooth skies and fog don't band.
+    let r = hash2(vec2<u32>(in.pos.xy));
+    let noise = (r.x + r.y - 1.0) / 255.0;
+    let s = clamp(to_srgb(aces(c)) + vec3<f32>(noise), vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(to_linear(s), 1.0);
 }
