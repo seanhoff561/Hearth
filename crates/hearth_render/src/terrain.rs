@@ -360,6 +360,10 @@ pub struct TerrainRenderer {
     /// Scratch for translucent re-sorting.
     sort_keys: Vec<(f32, u32)>,
     sort_scratch: Vec<GeneralQuad>,
+    /// Scratch for the visibility search, kept so frames allocate nothing.
+    visible: Vec<(CubePos, Vec3)>,
+    bfs_seen: FxHashSet<CubePos>,
+    bfs_queue: VecDeque<(CubePos, Option<Direction>, u8)>,
     /// Horizontal render distance in cubes (for the visibility search).
     pub render_distance: i32,
     pub vertical_distance: i32,
@@ -572,6 +576,9 @@ impl TerrainRenderer {
             cand_slots: Vec::new(),
             sort_keys: Vec::new(),
             sort_scratch: Vec::new(),
+            visible: Vec::new(),
+            bfs_seen: FxHashSet::default(),
+            bfs_queue: VecDeque::new(),
             render_distance: 12,
             vertical_distance: 8,
             cave_culling: true,
@@ -692,8 +699,16 @@ impl TerrainRenderer {
         self.meshes.len()
     }
 
-    /// Visible cubes via cave culling (BFS through connected faces) and frustum tests.
-    fn visible_cubes(&self, camera: &Camera, frustum: &Frustum) -> Vec<(CubePos, Vec3)> {
+    /// Visible cubes via cave culling (BFS through connected faces) and frustum tests, into
+    /// `out` (the search's sets are passed in so they keep their memory between frames).
+    fn visible_cubes(
+        &self,
+        camera: &Camera,
+        frustum: &Frustum,
+        out: &mut Vec<(CubePos, Vec3)>,
+        seen: &mut FxHashSet<CubePos>,
+        queue: &mut VecDeque<(CubePos, Option<Direction>, u8)>,
+    ) {
         let start = self.planet.wrap_cube(CubePos::containing(camera.pos));
         let rel = |c: CubePos| -> Vec3 {
             let min = c.min_block().as_dvec3();
@@ -706,7 +721,9 @@ impl TerrainRenderer {
                 && d.z.abs() <= self.render_distance
                 && d.y.abs() <= self.vertical_distance
         };
-        let mut out = Vec::new();
+        out.clear();
+        seen.clear();
+        queue.clear();
         if !self.cave_culling || !self.meshes.contains_key(&start) {
             for &pos in self.meshes.keys() {
                 if !in_range(pos) {
@@ -717,12 +734,10 @@ impl TerrainRenderer {
                     out.push((pos, o));
                 }
             }
-            return out;
+            return;
         }
         // BFS from the camera's cube, entering each cube through a face and leaving through
         // faces connected to it; never stepping back toward the camera.
-        let mut seen: FxHashSet<CubePos> = FxHashSet::default();
-        let mut queue: VecDeque<(CubePos, Option<Direction>, u8)> = VecDeque::new();
         seen.insert(start);
         queue.push_back((start, None, 0));
         while let Some((pos, entered_from, dirs_taken)) = queue.pop_front() {
@@ -752,7 +767,6 @@ impl TerrainRenderer {
                 queue.push_back((n, Some(d.opposite()), dirs_taken | (1 << d.index())));
             }
         }
-        out
     }
 
     /// Finds this frame's candidate cubes, builds the CPU draw lists (translucent always; opaque
@@ -768,9 +782,16 @@ impl TerrainRenderer {
         let aspect = size.0.max(1) as f32 / size.1.max(1) as f32;
         let vp = camera.view_proj(aspect);
         let frustum = Frustum::from_view_proj(vp);
-        let mut visible = self.visible_cubes(camera, &frustum);
-        // Front to back for opaque (early-z); translucent goes back to front below.
-        visible.sort_by(|a, b| {
+        let mut visible = std::mem::take(&mut self.visible);
+        let (mut seen, mut queue) = (
+            std::mem::take(&mut self.bfs_seen),
+            std::mem::take(&mut self.bfs_queue),
+        );
+        self.visible_cubes(camera, &frustum, &mut visible, &mut seen, &mut queue);
+        (self.bfs_seen, self.bfs_queue) = (seen, queue);
+        // Front to back for opaque (early-z); translucent goes back to front below. The search
+        // order is deterministic, so an unstable sort (no scratch memory) is too.
+        visible.sort_unstable_by(|a, b| {
             let da = (a.1 + Vec3::splat(8.0)).length_squared();
             let db = (b.1 + Vec3::splat(8.0)).length_squared();
             da.total_cmp(&db)
@@ -940,6 +961,7 @@ impl TerrainRenderer {
             resorted,
             translucent_quads,
         };
+        self.visible = visible;
     }
 
     /// Re-sorts the translucent quads of cubes near the camera back to front when the camera

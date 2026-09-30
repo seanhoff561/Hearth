@@ -63,7 +63,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Bindless-style texture arrays | done | All block textures in one mipmapped 2D texture array. |
 | Few pipeline / bind-group switches | done for terrain; LOD: see pooling | Terrain: five pipelines, two bind groups. LOD: one pipeline, but a vertex buffer bound per tile. |
 | Render bundles | not worth it | Command encoding costs 0.04 ms per frame; the draws are GPU-generated. |
-| No per-frame bind groups or buffers | **missing (one)** | The Hi-Z level-0 bind group is created every frame; all else is created at startup or when a buffer grows. |
+| No per-frame bind groups or buffers | done (result 2) | The Hi-Z level-0 bind group was created every frame; now kept until the depth target changes. Everything else is created at startup or when a buffer grows. |
 
 ### LOD
 | Optimization | Status | Evidence / impact |
@@ -144,3 +144,10 @@ Results are recorded below as they land.
    frame 0.56–0.98 → 0.34–0.68 ms; average FPS coast 1015 → 1452, underwater 1034 → 1492, storm
    781 → 839, cave 1228 → 1273, forest 873 → 858 (GPU-bound at 1.14 ms); SSIM ≥ 0.9995 in
    every scene.
+2. **No per-frame allocations in our frame code; Hi-Z bind group cached** — the visibility
+   search keeps its set, queue and list between frames, sorts without scratch memory (the
+   search order is deterministic), the LOD reuses its origins list, and the Hi-Z level-0 bind
+   group is rebuilt only when the depth target changes. Heap allocations per frame 356–399 →
+   330–356 (terrain preparation 70 → 43, the rest being wgpu's staging for each queue write;
+   environment 2 → 0; encoding 91 → 77); the only per-frame bind group is gone. Frame times
+   unchanged within run-to-run noise (±5 %); rendering identical (same SSIM).

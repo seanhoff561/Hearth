@@ -64,6 +64,9 @@ pub(crate) struct GpuCuller {
     pub counts: wgpu::Buffer,
     hzb: Option<Hzb>,
     binds: Option<[wgpu::BindGroup; 2]>,
+    /// The bind group reading the depth target into the pyramid's level 0, and the depth view
+    /// it was made for (rebuilt only when either changes).
+    level0: Option<(wgpu::TextureView, wgpu::BindGroup)>,
     /// Placeholders for bindings a pass doesn't use.
     dummy_hzb: wgpu::TextureView,
     dummy_depth: wgpu::TextureView,
@@ -229,6 +232,7 @@ impl GpuCuller {
             params,
             hzb: None,
             binds: None,
+            level0: None,
             dummy_hzb: placeholder("hzb placeholder", wgpu::TextureFormat::R32Float),
             dummy_depth: placeholder("depth placeholder", crate::terrain::DEPTH_FORMAT),
         }
@@ -382,6 +386,7 @@ impl GpuCuller {
             down_binds,
         });
         self.binds = None;
+        self.level0 = None;
     }
 
     fn ensure_binds(&mut self, ctx: &GpuContext, instances: &wgpu::Buffer) {
@@ -473,24 +478,28 @@ impl GpuCuller {
         let Some(hzb) = &self.hzb else {
             return;
         };
-        let level0 = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("hzb level 0"),
-            layout: &self.hzb_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(depth),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&self.dummy_hzb),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&hzb.levels[0]),
-                },
-            ],
-        });
+        if self.level0.as_ref().is_none_or(|(view, _)| view != depth) {
+            let bind = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("hzb level 0"),
+                layout: &self.hzb_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(depth),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&self.dummy_hzb),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&hzb.levels[0]),
+                    },
+                ],
+            });
+            self.level0 = Some((depth.clone(), bind));
+        }
+        let level0 = &self.level0.as_ref().expect("made above").1;
         let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("hzb build"),
             timestamp_writes: None,
@@ -500,7 +509,7 @@ impl GpuCuller {
             ((s.width >> l).max(1), (s.height >> l).max(1))
         };
         pass.set_pipeline(&self.hzb_depth_pipe);
-        pass.set_bind_group(0, &level0, &[]);
+        pass.set_bind_group(0, level0, &[]);
         let (w, h) = size(0);
         pass.dispatch_workgroups(w.div_ceil(8), h.div_ceil(8), 1);
         pass.set_pipeline(&self.hzb_down_pipe);

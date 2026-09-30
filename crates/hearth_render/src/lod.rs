@@ -42,6 +42,8 @@ pub struct LodRenderer {
     tiles: FxHashMap<u64, GpuTile>,
     /// This frame's draws: tile and instance.
     draws: Vec<(u64, u32)>,
+    /// This frame's tile origins (kept so frames allocate nothing).
+    origins_scratch: Vec<[f32; 4]>,
     planet: Planet,
     pub stats: LodStats,
 }
@@ -157,6 +159,7 @@ impl LodRenderer {
             index_quads,
             tiles: FxHashMap::default(),
             draws: Vec::new(),
+            origins_scratch: Vec::new(),
             planet,
             stats: LodStats::default(),
         }
@@ -265,7 +268,8 @@ impl LodRenderer {
         let frustum = Frustum::from_view_proj(camera.view_proj(aspect));
         let curvature = (0.5 / (EARTH_RADIUS_M * vertical_scale.max(1e-3) as f64)) as f32;
         let cam: DVec3 = camera.pos;
-        let mut origins: Vec<[f32; 4]> = Vec::with_capacity(show.len());
+        let mut origins = std::mem::take(&mut self.origins_scratch);
+        origins.clear();
         self.draws.clear();
         let (mut quads, mut bytes) = (0u64, 0u64);
         for t in self.tiles.values() {
@@ -297,6 +301,7 @@ impl LodRenderer {
         if !origins.is_empty() {
             ctx.write_buffer(&self.origins, 0, bytemuck::cast_slice(&origins));
         }
+        self.origins_scratch = origins;
         self.stats = LodStats {
             tiles: self.tiles.len(),
             drawn: self.draws.len(),
