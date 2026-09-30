@@ -1,6 +1,8 @@
 //! Streams distant terrain (v1 §8) around the camera: re-selects the LOD quadtree as the camera
-//! moves, builds missing tiles nearest first on a small thread pool of its own (so it never
-//! starves the full-detail cube generation), and uploads finished tiles a few per frame.
+//! moves, builds missing tiles nearest first — those in view before those behind — on a small
+//! thread pool of its own (so it never starves the full-detail cube generation), and uploads
+//! finished tiles a few per frame. Until a new tile is ready, the tiles it replaces stay drawn
+//! (`hearth_lod::cover`), so moving never opens holes in the distant land.
 
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -17,6 +19,8 @@ use rustc_hash::FxHashSet;
 const IN_FLIGHT: usize = 48;
 /// The camera moves this far (blocks) before the selection is redone.
 const RESELECT: f64 = 16.0;
+/// Tiles behind the camera wait as if this many times farther away.
+const BEHIND_WEIGHT: f64 = 4.0;
 
 pub struct LodStream {
     generator: Arc<WorldGenerator>,
@@ -33,6 +37,7 @@ pub struct LodStream {
     done_tx: Sender<TileMesh>,
     done_rx: Receiver<TileMesh>,
     last: Option<(DVec3, [f64; 4])>,
+    /// The tiles drawn: the selection where built, stand-ins elsewhere.
     ids: Vec<u64>,
 }
 
@@ -67,12 +72,13 @@ impl LodStream {
         }
     }
 
-    /// Re-selects the tiles around the camera when it has moved (dropping the tiles no longer
-    /// wanted), then keeps the builders busy.
+    /// Re-selects the tiles around the camera when it has moved, then keeps the builders busy.
+    /// `forward` is the camera's view direction.
     pub fn update(
         &mut self,
         planet: &Planet,
         camera: DVec3,
+        forward: DVec3,
         near: [f64; 4],
         renderer: &mut LodRenderer,
     ) {
@@ -87,16 +93,24 @@ impl LodStream {
             let reach = hearth_lod::draw_distance(self.chunks, camera.y, self.vertical_scale);
             self.wanted = hearth_lod::select(planet, camera.x, camera.z, reach, Some(near));
             self.wanted_ids = self.wanted.iter().map(|k| k.id()).collect();
-            self.ids = self.wanted.iter().map(|k| k.id()).collect();
-            let wanted_ids = &self.wanted_ids;
-            renderer.retain(|id| wanted_ids.contains(&id));
-            // Build order: nearest (and finest) first.
+            self.refresh(renderer);
+            // Build order: nearest (and finest) first, what is in view before what is behind.
+            let (fx, fz) = {
+                let l = forward.x.hypot(forward.z).max(1e-9);
+                (forward.x / l, forward.z / l)
+            };
             let dist = |k: &TileKey| {
                 let (x, z) = k.min_block();
                 let h = k.size() as f64 * 0.5;
                 let dx = planet.delta_x(camera.x, x as f64 + h);
                 let dz = z as f64 + h - camera.z;
-                dx * dx + dz * dz
+                let d2 = dx * dx + dz * dz;
+                let ahead = (dx * fx + dz * fz) / d2.sqrt().max(1.0) > -0.2 || d2 < 4.0 * h * h;
+                if ahead {
+                    d2
+                } else {
+                    d2 * BEHIND_WEIGHT * BEHIND_WEIGHT
+                }
             };
             self.queue = self
                 .wanted
@@ -127,6 +141,7 @@ impl LodStream {
 
     /// Uploads up to `max` finished tiles that are still wanted.
     pub fn pump(&mut self, ctx: &GpuContext, renderer: &mut LodRenderer, max: usize) {
+        let mut uploaded = false;
         for _ in 0..max {
             let Ok(mesh) = self.done_rx.try_recv() else {
                 break;
@@ -135,8 +150,23 @@ impl LodStream {
             self.in_flight.remove(&id);
             if self.wanted_ids.contains(&id) {
                 upload(ctx, renderer, &mesh);
+                uploaded = true;
             }
         }
+        if uploaded {
+            self.refresh(renderer);
+        }
+    }
+
+    /// Chooses what to draw — the selection where built, the tiles it replaces elsewhere — and
+    /// lets go of tiles neither wanted nor standing in.
+    fn refresh(&mut self, renderer: &mut LodRenderer) {
+        let draw = hearth_lod::cover(&self.wanted, |k| renderer.contains(k.id()));
+        self.ids.clear();
+        self.ids.extend(draw.iter().map(|k| k.id()));
+        let drawn: FxHashSet<u64> = self.ids.iter().copied().collect();
+        let wanted = &self.wanted_ids;
+        renderer.retain(|id| wanted.contains(&id) || drawn.contains(&id));
     }
 
     /// Ids of the tiles of the current selection (the ones to draw).

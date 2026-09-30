@@ -249,7 +249,8 @@ impl Preview {
         if let (Some(lod), Some(scene), Some(planet)) =
             (&mut self.lod, &mut self.scene, &self.planet)
         {
-            lod.update(planet, self.camera.pos, near, &mut scene.lod);
+            let forward = self.camera.forward().as_dvec3();
+            lod.update(planet, self.camera.pos, forward, near, &mut scene.lod);
             lod.pump(ctx, &mut scene.lod, LOD_UPLOADS_PER_FRAME);
         }
     }

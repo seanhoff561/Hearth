@@ -73,11 +73,11 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | LOD in the GPU culling path, occluded by near terrain | done (result 4) | See culling. |
 | Batched SIMD surface sampling | not worth it (now) | Tiles build at ~1.8 k tiles/s on all threads (a whole view from scratch in ~0.8 s; streaming needs tens per re-selection); it is off the frame path. Revisit with the disk cache. |
 | Stale jobs cancelled | done | Queued builds are dropped at every re-selection; the ≤ 48 in flight finish and are discarded. |
-| Priority by screen importance | **missing (partly)** | Nearest first, whether in view or behind the camera. |
+| Priority by screen importance | done (result 5) | Nearest first, tiles behind the camera weighted as four times farther. |
 | Disk cache reused | missing — V2-6 | Planned with edits reflected in the LOD (V2-6); build throughput above makes it a startup and revisit gain, not a frame-rate one. |
 | Distant forests as canopy geometry | done | D56: the generator's own trees on the fine levels, estimated canopy on the coarse ones. |
 | Seamless handoff, no double geometry | done | D54: the cubes dither out over 8 blocks with the LOD just behind; LOD fragments inside the full-detail area are discarded (tiles straddling its edge still run their vertices). |
-| No holes while tiles stream | **missing** | Tiles leaving the selection are removed at once, before the tiles replacing them are built, so a moving camera can open gaps for a few frames. |
+| No holes while tiles stream | done (result 5) | Replaced tiles stay drawn until their replacements are built (`hearth_lod::cover`), with no ground drawn twice. |
 
 ### Shaders and effects
 | Optimization | Status | Evidence / impact |
@@ -172,3 +172,9 @@ Results are recorded below as they land.
    0.013 ms. Alternating A/B runs: cave 1253 → 2463 FPS average (GPU 0.78 → 0.38 ms; the LOD
    pass 0.40 → 0.014 ms), underwater, storm and the open views unchanged within noise (their
    distant land is not hidden by near terrain). SSIM unchanged; the horizon depth test passes.
+5. **LOD streaming without holes, in-view tiles first** — tiles leaving the selection stay
+   drawn until the tiles replacing them are ready (`hearth_lod::cover`: a parent until all
+   its children are built, children until their parent is; never both), and builds go to the
+   tiles in view before those behind the camera (weighted as four times farther). Quality of
+   motion rather than frame time: the benchmark builds every tile up front; unit-tested
+   (refine, merge, nothing built) and smoke-tested in the preview.

@@ -87,7 +87,16 @@ impl TileKey {
             | ((self.z as u32 as u64) & 0x3fff_ffff)
     }
 
-    fn children(self) -> [TileKey; 4] {
+    /// The tile of the next coarser level containing this one.
+    pub fn parent(self) -> Option<TileKey> {
+        (self.level < MAX_LEVEL).then(|| TileKey {
+            level: self.level + 1,
+            x: self.x.div_euclid(2),
+            z: self.z.div_euclid(2),
+        })
+    }
+
+    pub fn children(self) -> [TileKey; 4] {
         let (l, x, z) = (self.level - 1, self.x * 2, self.z * 2);
         [
             TileKey { level: l, x, z },
@@ -113,6 +122,87 @@ impl TileKey {
 /// Tiles around the planet at a level.
 fn tiles_around(planet: &Planet, level: u8) -> i32 {
     (planet.circumference() / (TILE << level)).max(1)
+}
+
+/// What to draw while a selection streams in: each wanted tile once it is built; until then
+/// the built tiles that cover its ground — its nearest built ancestor (a parent is drawn until
+/// all the tiles replacing it are ready) or, where tiles merge, its built descendants — so a
+/// moving camera never opens holes in the distant land, and no ground is drawn twice.
+pub fn cover(wanted: &[TileKey], built: impl Fn(TileKey) -> bool) -> Vec<TileKey> {
+    let under = |k: TileKey, set: &FxHashSet<TileKey>| {
+        let mut p = k.parent();
+        while let Some(a) = p {
+            if set.contains(&a) {
+                return true;
+            }
+            p = a.parent();
+        }
+        false
+    };
+    // Built ancestors standing in for wanted tiles not built yet, and the built descendants of
+    // wanted tiles that merge.
+    let mut ancestors: FxHashSet<TileKey> = FxHashSet::default();
+    let mut draw: FxHashSet<TileKey> = FxHashSet::default();
+    for &w in wanted {
+        if built(w) {
+            continue;
+        }
+        let mut p = w.parent();
+        let mut stand_in = None;
+        while let Some(a) = p {
+            if built(a) {
+                stand_in = Some(a);
+                break;
+            }
+            p = a.parent();
+        }
+        match stand_in {
+            Some(a) => {
+                ancestors.insert(a);
+            }
+            None => {
+                let mut sub = Vec::new();
+                if built_descendants(w, &built, 3, &mut sub) {
+                    draw.extend(sub);
+                }
+            }
+        }
+    }
+    for &w in wanted {
+        if built(w) {
+            draw.insert(w);
+        }
+    }
+    draw.extend(ancestors.iter().copied());
+    let mut out: Vec<TileKey> = draw
+        .into_iter()
+        .filter(|k| !under(*k, &ancestors))
+        .collect();
+    out.sort_by_key(|k| (std::cmp::Reverse(k.level), k.z, k.x));
+    out
+}
+
+/// The built descendants covering all of `k`'s ground (down `depth` levels), into `out`; false
+/// (and nothing added) if some ground has none.
+fn built_descendants(
+    k: TileKey,
+    built: &impl Fn(TileKey) -> bool,
+    depth: u32,
+    out: &mut Vec<TileKey>,
+) -> bool {
+    if depth == 0 || k.level == 0 {
+        return false;
+    }
+    let start = out.len();
+    for c in k.children() {
+        if built(c) {
+            out.push(c);
+        } else if !built_descendants(c, built, depth - 1, out) {
+            out.truncate(start);
+            return false;
+        }
+    }
+    true
 }
 
 /// The tiles to draw for a camera at (x, z): a quadtree refined toward the camera, out to
@@ -1075,6 +1165,38 @@ mod tests {
         // Corners of a side face give its minimum corner and extents.
         let s = LodQuad::from_corners(NORTH, side(NORTH, 2, 6, 3, 9, 10, 15), 1, 0, false, 0);
         assert_eq!((s.corner(), s.size()), ((2, 10, 3), (4, 5)));
+    }
+
+    #[test]
+    fn streaming_never_opens_holes() {
+        let parent = TileKey {
+            level: 3,
+            x: 5,
+            z: -2,
+        };
+        let kids = parent.children();
+        assert!(kids.iter().all(|k| k.parent() == Some(parent)));
+        // Refining: the parent stands in until all four children are built.
+        let built = |set: &[TileKey]| {
+            let set: FxHashSet<TileKey> = set.iter().copied().collect();
+            move |k: TileKey| set.contains(&k)
+        };
+        assert_eq!(cover(&kids, built(&[parent])), vec![parent]);
+        assert_eq!(
+            cover(&kids, built(&[parent, kids[0], kids[1]])),
+            vec![parent],
+            "no child drawn over its parent"
+        );
+        let mut all = kids.to_vec();
+        all.sort_by_key(|k| (k.z, k.x));
+        let mut both = all.clone();
+        both.push(parent);
+        assert_eq!(cover(&kids, built(&both)), all);
+        // Merging: the children stand in until the parent is built.
+        assert_eq!(cover(&[parent], built(&kids)), all);
+        assert_eq!(cover(&[parent], built(&both)), vec![parent]);
+        // Nothing built nearby: nothing to draw (the tile will come).
+        assert!(cover(&[parent], built(&kids[..3])).is_empty());
     }
 
     #[test]
