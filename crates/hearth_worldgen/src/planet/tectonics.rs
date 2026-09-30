@@ -96,7 +96,10 @@ impl TectonicLayout {
         let minor = 7 + rng.below(6) as usize;
         let total = major + minor;
         // Jittered Fibonacci seeds, randomly rotated.
-        let rot = glam::DQuat::from_axis_angle(random_unit(&mut rng), rng.range_f64(0.0, std::f64::consts::TAU));
+        let rot = glam::DQuat::from_axis_angle(
+            random_unit(&mut rng),
+            rng.range_f64(0.0, std::f64::consts::TAU),
+        );
         let mut plates = Vec::with_capacity(total);
         let mut order: Vec<usize> = (0..total).collect();
         for i in (1..total).rev() {
