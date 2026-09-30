@@ -1072,6 +1072,15 @@ impl TerrainRenderer {
         mark(enc, "terrain 1");
     }
 
+    /// The Hi-Z pyramid built this frame from the full-detail terrain's depth (after its first
+    /// phase), when the terrain is GPU-culled: view, level-0 size and levels.
+    pub(crate) fn hzb(&self) -> Option<(&wgpu::TextureView, [f32; 2], u32)> {
+        if !self.uses_gpu_culling() {
+            return None;
+        }
+        self.culler.as_ref().and_then(|c| c.hzb())
+    }
+
     /// The GPU culling counters (draws, then quads, per phase and pass), when GPU culling
     /// runs; copied into the benchmark's statistics.
     pub fn cull_counters(&self) -> Option<&wgpu::Buffer> {

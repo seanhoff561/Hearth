@@ -58,8 +58,8 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Optimization | Status | Evidence / impact |
 |---|---|---|
 | Frustum culling | done (CPU) | Candidates are frustum-tested during the visibility search, which must run on the CPU anyway; moving the test to a compute pass is **not worth it**. |
-| Two-phase Hi-Z occlusion culling | done for terrain; **missing for LOD** | Phase 0 draws last frame's visible cubes, the Hi-Z pyramid is built, phase 1 re-tests everything (no popping; `verify_cull` checks it is pixel-identical to CPU culling). The LOD is not culled at all (0.40 ms in the cave). |
-| Indirect multi-draw with count | done | Terrain: eight `multi_draw_indexed_indirect_count` calls on Vulkan (CPU multi-draw elsewhere). LOD: one `multi_draw_indexed_indirect` for all tiles (result 3); the count variant comes with GPU culling of the LOD. |
+| Two-phase Hi-Z occlusion culling | done | Terrain: phase 0 draws last frame's visible cubes, the Hi-Z pyramid is built, phase 1 re-tests everything (no popping; `verify_cull` checks it is pixel-identical to CPU culling). LOD: tested against the same pyramid in the same frame (result 4; cave LOD pass 0.40 → 0.014 ms). |
+| Indirect multi-draw with count | done | Terrain: eight `multi_draw_indexed_indirect_count` calls on Vulkan (CPU multi-draw elsewhere). LOD: one `multi_draw_indexed_indirect_count` after the GPU cull (results 3, 4). |
 | Bindless-style texture arrays | done | All block textures in one mipmapped 2D texture array. |
 | Few pipeline / bind-group switches | done | Terrain: five pipelines, two bind groups; LOD: one pipeline, two bind groups, one draw call (result 3). |
 | Render bundles | not worth it | Command encoding costs 0.04 ms per frame; the draws are GPU-generated. |
@@ -70,7 +70,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 |---|---|---|
 | Level choice by screen-space error, with hysteresis | **missing** | Tiles split within four tile sizes of the camera (columns up to ~7 px wide at 1080p) and are re-selected every 16 blocks without per-tile hysteresis; flat and rough land get the same detail. |
 | Quantized tile-relative vertex data | done (result 3) | One 16-byte record per quad (was four 16-byte vertices), expanded by the vertex shader: 73–91 MiB less video memory in LOD-heavy scenes. |
-| LOD in the GPU culling path, occluded by near terrain | **missing** | See culling. |
+| LOD in the GPU culling path, occluded by near terrain | done (result 4) | See culling. |
 | Batched SIMD surface sampling | not worth it (now) | Tiles build at ~1.8 k tiles/s on all threads (a whole view from scratch in ~0.8 s; streaming needs tens per re-selection); it is off the frame path. Revisit with the disk cache. |
 | Stale jobs cancelled | done | Queued builds are dropped at every re-selection; the ≤ 48 in flight finish and are discarded. |
 | Priority by screen importance | **missing (partly)** | Nearest first, whether in view or behind the camera. |
@@ -165,3 +165,10 @@ Results are recorded below as they land.
    LOD ~380–450 → 1. Average FPS summit 911 → 963, underwater 1478 → 1558, cave 1213 → 1309,
    forest and storm unchanged (GPU-bound). SSIM ≥ 0.9985 (the lowest, underwater: grazing
    fragments of distant water seen from below, which the water shading of V2-2e replaces).
+4. **LOD occlusion-culled on the GPU against the near terrain's Hi-Z** — the tiles inside
+   the frustum go to a compute pass (`lod_cull.wgsl`) that tests their bounds (curvature
+   included) against the Hi-Z pyramid the terrain builds from this frame's depth after its
+   first phase; the survivors are drawn with one `multi_draw_indexed_indirect_count`. Cost
+   0.013 ms. Alternating A/B runs: cave 1253 → 2463 FPS average (GPU 0.78 → 0.38 ms; the LOD
+   pass 0.40 → 0.014 ms), underwater, storm and the open views unchanged within noise (their
+   distant land is not hidden by near terrain). SSIM unchanged; the horizon depth test passes.

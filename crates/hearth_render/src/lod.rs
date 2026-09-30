@@ -4,7 +4,9 @@
 //!
 //! Every tile's quads live in one pooled storage buffer as 16-byte records (`hearth_lod::
 //! LodQuad`) that the vertex shader expands into their four corners, and the frame's tiles are
-//! drawn with one indirect multi-draw (one draw per tile where the adapter can't).
+//! drawn with one indirect multi-draw (one draw per tile where the adapter can't). Where the
+//! terrain is GPU-culled, the tiles inside the frustum are also tested on the GPU against its
+//! Hi-Z pyramid (`shaders/lod_cull.wgsl`), so land hidden behind near terrain is not drawn.
 
 use bytemuck::{Pod, Zeroable};
 use glam::{DVec3, Vec3};
@@ -37,13 +39,168 @@ struct DrawArgs {
     first_instance: u32,
 }
 
+/// A tile for the GPU cull (`Cand` in `lod_cull.wgsl`): camera-relative bounds and its draw.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Cand {
+    lo: [f32; 4],
+    hi: [f32; 4],
+    /// Index count, base vertex, first instance, unused.
+    draw: [u32; 4],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct CullParams {
+    view_proj: [[f32; 4]; 4],
+    hzb_size: [f32; 2],
+    hzb_mips: u32,
+    count: u32,
+    near: f32,
+    occlusion: u32,
+    pad: [u32; 2],
+}
+
+/// Culls the frame's tiles against the full-detail terrain's Hi-Z pyramid on the GPU.
+struct LodCuller {
+    pipe: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
+    params: wgpu::Buffer,
+    cands: wgpu::Buffer,
+    cand_capacity: usize,
+    draws: wgpu::Buffer,
+    count: wgpu::Buffer,
+    /// The bind group and the Hi-Z view it reads (rebuilt when either changes).
+    bind: Option<(wgpu::TextureView, wgpu::BindGroup)>,
+    /// Bound when there is no pyramid this frame (occlusion off).
+    no_hzb: wgpu::TextureView,
+    data: Vec<Cand>,
+    /// Culled on the GPU this frame.
+    active: bool,
+}
+
+impl LodCuller {
+    fn new(ctx: &GpuContext) -> Self {
+        let device = &ctx.device;
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("lod_cull.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/lod_cull.wgsl").into()),
+        });
+        let buf = |binding: u32, ty: wgpu::BufferBindingType| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("lod cull layout"),
+            entries: &[
+                buf(0, wgpu::BufferBindingType::Uniform),
+                buf(1, wgpu::BufferBindingType::Storage { read_only: true }),
+                buf(2, wgpu::BufferBindingType::Storage { read_only: false }),
+                buf(3, wgpu::BufferBindingType::Storage { read_only: false }),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("lod cull"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let pipe = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("lod cull"),
+            layout: Some(&pl),
+            module: &module,
+            entry_point: Some("cull_lod"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        let cand_capacity = 1024;
+        let no_hzb = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("lod cull: no hi-z"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R32Float,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+        Self {
+            pipe,
+            layout,
+            params: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("lod cull params"),
+                size: std::mem::size_of::<CullParams>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            cands: Self::cands_buffer(device, cand_capacity),
+            draws: Self::draws_buffer(device, cand_capacity),
+            cand_capacity,
+            count: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("lod cull count"),
+                size: 4,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::INDIRECT
+                    | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            bind: None,
+            no_hzb,
+            data: Vec::new(),
+            active: false,
+        }
+    }
+
+    fn cands_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("lod cull candidates"),
+            size: (capacity * std::mem::size_of::<Cand>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
+    fn draws_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("lod culled draws"),
+            size: (capacity * std::mem::size_of::<DrawArgs>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT,
+            mapped_at_creation: false,
+        })
+    }
+}
+
 /// What the LOD pass holds and drew.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LodStats {
     pub tiles: usize,
+    /// Tiles inside the frustum (before occlusion culling on the GPU).
     pub drawn: usize,
     pub quads: u64,
     pub bytes: u64,
+    /// Tested against the near terrain's Hi-Z pyramid on the GPU.
+    pub gpu_culled: bool,
 }
 
 /// The LOD renderer.
@@ -65,6 +222,8 @@ pub struct LodRenderer {
     origins_scratch: Vec<[f32; 4]>,
     /// Indirect multi-draws with a first instance are available.
     multi_draw: bool,
+    /// Occlusion culling on the GPU (where indirect-count draws work, as for the terrain).
+    culler: Option<LodCuller>,
     bind_dirty: bool,
     planet: Planet,
     pub stats: LodStats,
@@ -186,6 +345,10 @@ impl LodRenderer {
             draws: Vec::new(),
             origins_scratch: Vec::new(),
             multi_draw: ctx.caps.indirect_first_instance,
+            culler: (ctx.caps.multi_draw_indirect_count
+                && ctx.caps.indirect_first_instance
+                && ctx.info.backend == wgpu::Backend::Vulkan)
+                .then(|| LodCuller::new(ctx)),
             bind_dirty: false,
             planet,
             stats: LodStats::default(),
@@ -308,6 +471,8 @@ impl LodRenderer {
 
     /// Chooses this frame's draws among `show` (the tiles of the current selection): those
     /// uploaded and inside the frustum, placed relative to the camera by the shortest way around.
+    /// With `hzb` (the size and levels of this frame's Hi-Z pyramid of the near terrain), they
+    /// are tested against it on the GPU as well (`cull`).
     pub fn prepare(
         &mut self,
         ctx: &GpuContext,
@@ -315,6 +480,7 @@ impl LodRenderer {
         aspect: f32,
         vertical_scale: f32,
         show: &[u64],
+        hzb: Option<([f32; 2], u32)>,
     ) {
         let frustum = Frustum::from_view_proj(camera.view_proj(aspect));
         let curvature = (0.5 / (EARTH_RADIUS_M * vertical_scale.max(1e-3) as f64)) as f32;
@@ -322,6 +488,9 @@ impl LodRenderer {
         let mut origins = std::mem::take(&mut self.origins_scratch);
         origins.clear();
         self.draws.clear();
+        if let Some(c) = self.culler.as_mut() {
+            c.data.clear();
+        }
         let mut quads = 0u64;
         for &id in show {
             let Some(t) = self.tiles.get(&id) else {
@@ -337,13 +506,27 @@ impl LodRenderer {
             if !frustum.intersects_aabb(min, max) {
                 continue;
             }
-            self.draws.push(DrawArgs {
+            let draw = DrawArgs {
                 index_count: t.quads * 6,
                 instance_count: 1,
                 first_index: 0,
                 base_vertex: (t.off * 4) as i32,
                 first_instance: origins.len() as u32,
-            });
+            };
+            if let Some(c) = self.culler.as_mut() {
+                // The bounds its vertices can reach, curvature included.
+                c.data.push(Cand {
+                    lo: min.extend(0.0).to_array(),
+                    hi: max.extend(0.0).to_array(),
+                    draw: [
+                        draw.index_count,
+                        draw.base_vertex as u32,
+                        draw.first_instance,
+                        0,
+                    ],
+                });
+            }
+            self.draws.push(draw);
             origins.push([ox, -(cam.y as f32), oz, 0.0]);
             quads += t.quads as u64;
         }
@@ -360,9 +543,15 @@ impl LodRenderer {
             self.bind1 = Self::bind(&ctx.device, &self.layout1, &self.origins, &self.pool.buffer);
             self.bind_dirty = false;
         }
+        let gpu = self.culler.is_some() && !self.draws.is_empty();
+        if let Some(c) = self.culler.as_mut() {
+            c.active = gpu;
+        }
         if !origins.is_empty() {
             ctx.write_buffer(&self.origins, 0, bytemuck::cast_slice(&origins));
-            if self.multi_draw {
+            if gpu {
+                self.prepare_cull(ctx, camera, aspect, hzb);
+            } else if self.multi_draw {
                 ctx.write_buffer(&self.draw_buffer, 0, bytemuck::cast_slice(&self.draws));
             }
         }
@@ -372,7 +561,90 @@ impl LodRenderer {
             drawn: self.draws.len(),
             quads,
             bytes: self.pool.alloc.used() as u64 * QUAD_BYTES,
+            gpu_culled: gpu && hzb.is_some(),
         };
+    }
+
+    /// Uploads the candidates (every tile inside the frustum) and parameters of the GPU cull.
+    fn prepare_cull(
+        &mut self,
+        ctx: &GpuContext,
+        camera: &Camera,
+        aspect: f32,
+        hzb: Option<([f32; 2], u32)>,
+    ) {
+        let Some(c) = self.culler.as_mut() else {
+            return;
+        };
+        if c.data.len() > c.cand_capacity {
+            c.cand_capacity = c.data.len().next_power_of_two();
+            c.cands = LodCuller::cands_buffer(&ctx.device, c.cand_capacity);
+            c.draws = LodCuller::draws_buffer(&ctx.device, c.cand_capacity);
+            c.bind = None;
+        }
+        ctx.write_buffer(&c.cands, 0, bytemuck::cast_slice(&c.data));
+        let (hzb_size, hzb_mips) = hzb.unwrap_or(([1.0, 1.0], 1));
+        let p = CullParams {
+            view_proj: camera.view_proj(aspect).to_cols_array_2d(),
+            hzb_size,
+            hzb_mips,
+            count: c.data.len() as u32,
+            near: camera.near,
+            occlusion: u32::from(hzb.is_some()),
+            pad: [0; 2],
+        };
+        ctx.write_buffer(&c.params, 0, bytemuck::bytes_of(&p));
+    }
+
+    /// Records the GPU cull of this frame's tiles against the near terrain's Hi-Z pyramid (after
+    /// the full-detail opaque terrain, before `draw`); frustum only without a pyramid.
+    pub fn cull(
+        &mut self,
+        ctx: &GpuContext,
+        enc: &mut wgpu::CommandEncoder,
+        hzb: Option<&wgpu::TextureView>,
+    ) {
+        let Some(c) = self.culler.as_mut().filter(|c| c.active) else {
+            return;
+        };
+        let view = hzb.unwrap_or(&c.no_hzb);
+        if c.bind.as_ref().is_none_or(|(v, _)| v != view) {
+            let bind = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("lod cull bind"),
+                layout: &c.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: c.params.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: c.cands.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: c.draws.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: c.count.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(view),
+                    },
+                ],
+            });
+            c.bind = Some((view.clone(), bind));
+        }
+        enc.clear_buffer(&c.count, 0, None);
+        let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("lod cull"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&c.pipe);
+        pass.set_bind_group(0, &c.bind.as_ref().expect("made above").1, &[]);
+        pass.dispatch_workgroups((c.data.len() as u32).div_ceil(64), 1, 1);
     }
 
     /// Draws this frame's tiles (after the full-detail opaque terrain, before the sky).
@@ -384,7 +656,9 @@ impl LodRenderer {
         pass.set_bind_group(0, bind0, &[]);
         pass.set_bind_group(1, &self.bind1, &[]);
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        if self.multi_draw {
+        if let Some(c) = self.culler.as_ref().filter(|c| c.active) {
+            pass.multi_draw_indexed_indirect_count(&c.draws, 0, &c.count, 0, c.data.len() as u32);
+        } else if self.multi_draw {
             pass.multi_draw_indexed_indirect(&self.draw_buffer, 0, self.draws.len() as u32);
         } else {
             for d in &self.draws {

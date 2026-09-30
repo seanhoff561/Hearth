@@ -242,8 +242,15 @@ impl SceneRenderer {
         self.terrain.prepare(ctx, camera, size, &params);
         let t1 = std::time::Instant::now();
         let aspect = size.0.max(1) as f32 / size.1.max(1) as f32;
-        self.lod
-            .prepare(ctx, camera, aspect, self.vertical_scale, &self.lod_show);
+        let hzb = self.terrain.hzb().map(|(_, size, mips)| (size, mips));
+        self.lod.prepare(
+            ctx,
+            camera,
+            aspect,
+            self.vertical_scale,
+            &self.lod_show,
+            hzb,
+        );
         let t2 = std::time::Instant::now();
         let star_visibility = 1.0 - smoothstep(0.05, 3.0, env.sky_lux.y);
         let moon_trans = (env.moon_dir.y * 6.0).clamp(0.0, 1.0);
@@ -319,6 +326,9 @@ impl SceneRenderer {
             Some(wgpu::Color::BLACK),
             timer.as_mut(),
         );
+        self.lod
+            .cull(ctx, enc, self.terrain.hzb().map(|(view, _, _)| view));
+        mark(&mut timer, enc, "lod cull");
         {
             let (_, bind0) = self.terrain.globals_bind();
             let mut pass = begin_pass(enc, &hdr, depth, None);

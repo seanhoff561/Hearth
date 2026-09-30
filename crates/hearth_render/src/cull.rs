@@ -437,6 +437,18 @@ impl GpuCuller {
         self.binds = Some([make(&self.params[0]), make(&self.params[1])]);
     }
 
+    /// The Hi-Z pyramid for other passes' occlusion tests: the view of all its levels, level
+    /// 0's size in texels (the depth size halved, unrounded) and the number of levels.
+    pub(crate) fn hzb(&self) -> Option<(&wgpu::TextureView, [f32; 2], u32)> {
+        self.hzb.as_ref().map(|h| {
+            (
+                &h.all,
+                [h.depth_size.0 as f32 / 2.0, h.depth_size.1 as f32 / 2.0],
+                h.levels.len() as u32,
+            )
+        })
+    }
+
     /// Forces bind groups to be rebuilt (e.g. after the instance buffer was replaced).
     pub fn invalidate(&mut self) {
         self.binds = None;
