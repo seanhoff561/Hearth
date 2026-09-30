@@ -31,6 +31,8 @@ pub struct RiverNode {
 /// A segment between two nodes, in world coordinates.
 #[derive(Debug, Clone, Copy)]
 pub struct Segment {
+    /// Grid cell of the upstream node: the reach carries that cell's discharge.
+    pub cell: u32,
     pub ax: f64,
     pub az: f64,
     pub bx: f64,
@@ -46,11 +48,16 @@ pub struct Segment {
 /// Result of a river query.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RiverHit {
+    /// Grid cell whose reach this is (a key of `PlanetGrid::rivers`).
+    pub cell: u32,
     /// Distance from the (warped) point to the channel centreline, in blocks.
     pub distance: f32,
     pub level: f32,
     pub width: f32,
     pub depth: f32,
+    /// Height of the land here before the river shaped it (blocks): what lies around the
+    /// river's banks.
+    pub plain: f32,
 }
 
 /// River width in blocks from discharge (square degrees × m/yr).
@@ -61,6 +68,15 @@ pub fn width_for(discharge: f32) -> f32 {
 /// River depth in blocks from width.
 pub fn depth_for(width: f32) -> f32 {
     (1.4 + width * 0.12).clamp(1.5, 9.0)
+}
+
+/// Banks stand this far above a river's water level (blocks).
+pub const BANK_HEIGHT: f32 = 1.2;
+
+/// Width of the banks and floodplain on each side of a channel (blocks), which the terrain
+/// shapes from the bank height down to the surrounding land.
+pub fn bank_width(width: f32) -> f32 {
+    3.0 + width * 0.9
 }
 
 /// The river network.
@@ -219,6 +235,7 @@ impl RiverNet {
                     continue;
                 };
                 out.push(Segment {
+                    cell: idx,
                     ax: unwrap(a.x),
                     az: a.z,
                     bx: unwrap(b.x),
@@ -257,10 +274,12 @@ impl RiverNet {
             let score = d - width * 0.5;
             if best.is_none_or(|b| score < b.distance - b.width * 0.5) {
                 best = Some(RiverHit {
+                    cell: s.cell,
                     distance: d,
                     level: s.level_a + (s.level_b - s.level_a) * t,
                     width,
                     depth: s.depth_a + (s.depth_b - s.depth_a) * t,
+                    plain: f32::INFINITY,
                 });
             }
         }

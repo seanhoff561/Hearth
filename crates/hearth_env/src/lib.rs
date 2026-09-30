@@ -7,10 +7,12 @@ pub mod astro;
 pub mod calendar;
 pub mod climate;
 pub mod phenology;
+pub mod rivers;
 pub mod sky;
 pub mod tint;
 pub mod weather;
 
 pub use calendar::{Calendar, Moment};
 pub use climate::{Normals, SeasonalCover};
+pub use rivers::RiverRegimes;
 pub use weather::{Precip, WeatherModel, WeatherState};

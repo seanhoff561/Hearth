@@ -11,7 +11,7 @@ milestones named; ✅ = implemented, ⏳ = planned (milestone).
 | **Seasons** → animals | Births, rut, migration, hibernation, winter coats, lean-season boldness | ⏳ V2-7 |
 | **Seasons** → body | Cold and heat stress, day length, food availability | ⏳ V2-3 |
 | **Weather** → fire | Dry seasons and lightning ignite wildfires; rain puts them out | ⏳ V2-6 |
-| **Weather** → water | Snowmelt floods, dry-season lows, freezing | ⏳ V2-1/V2-2 |
+| **Weather** → water | Snowmelt floods, dry-season lows, freezing | ✅ freezing (V2-1), river levels and floods (V2-2) |
 | **Water** → animals | Shrinking water holes concentrate prey and predators | ⏳ V2-7/V2-10 |
 | **Fire** → vegetation | Burns reset succession to grassland; smoke visible from afar | ⏳ V2-6 |
 | **Geology** → soils → plants | Parent rock and drainage set fertility, pH and which species thrive | ⏳ V2-2/V2-6 |

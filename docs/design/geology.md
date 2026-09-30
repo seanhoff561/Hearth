@@ -4,11 +4,11 @@
 generated blocks, geological provinces, stratigraphy, basement, intrusions, geothermal
 gradient, soils, loose stones and scree, deposits of every Appendix D resource with their
 surface indicators, panning, the per-continent resource coverage, groundwater, springs, water
-quality, coasts (reefs, mangroves, salt marsh, mudflats, kelp, rocky shores) and sea ice
-(`hearth_worldgen::{geology, soil, deposits, coverage, hydro}`,
+quality, coasts (reefs, mangroves, salt marsh, mudflats, kelp, rocky shores), sea ice and
+seasonal rivers (`hearth_worldgen::{geology, soil, deposits, coverage, hydro}`,
 `hearth_content::generate::natural_blocks`, `hearth_texgen::material`,
-`hearth_env::climate`). Planned in V2-2: seasonal river levels, finite player-moved water,
-water rendering. Decisions: D38–D51.*
+`hearth_env::{climate, rivers}`, `hearth::season_cover`). Planned in V2-2: finite
+player-moved water, water rendering. Decisions: D38–D51, D55.*
 
 ## Purpose
 Real rocks, soils, water and resources placed by physical causes, so a player can read the
@@ -175,6 +175,32 @@ basins keep the salt of evaporation), streams (small cold ones safe, broad warm 
 risky and muddy), springs (safe; salty, sulfurous, hot or mineral by kind) and the groundwater
 a well reaches (safe, brackish in deserts).
 
+## Seasonal rivers (D55)
+Rivers rise and fall through the year with the water of their basins (`hearth_env::rivers`).
+Each river cell of the planet grid runs the year-scale water balance of its own climate
+(`SeasonalCover`: rain and snow, melt from a landscape of slopes 4 °C warmer to 4 °C colder,
+evaporation, a storm share of rain that runs off anyway, and drainage through a fast store
+(15 days) and the ground (120 days; the ground's share falls with the groundwater's wetness, so
+streams of dry lands run dry)). A reach's regime is the mix of everything upstream, weighted by
+the water each part adds (its gain in grid discharge times its runoff ratio) and delayed by the
+flood wave's travel time (1.5 m/s over the real distances the planet stands for). The mix is
+done in the frequency domain, where a delay is a phase shift, over all 36 harmonics of the
+73-step year, and each reach keeps its year as a series (smoothed over one step so shifted
+floods do not ring): 22,000 reaches on a Standard planet in 0.07 s. So snowmelt rivers flood
+in spring (up to 6–8× their mean in cold dry country) and nearly stop in frozen winters,
+savanna rivers run high in the wet season and fall to a fifth of the mean in the dry, oceanic
+rivers are high in winter and low in late summer (about 4:1), and a great river crossing a
+desert floods with the rains of its distant highlands, weeks later.
+
+On the terrain (`season_cover.rs`) a river column's level follows its reach's flow: depth
+grows as flow^0.6 (Manning); floods over the banks (above twice the mean flow or so) rise half
+as fast and stand at most half a block plus a quarter of the channel's depth over them, and
+where they would stand above the land around the river they thin toward the edge of the
+floodplain to meet it, so there are no walls of water. Low water bares bars and banks; small
+rivers (under 8 blocks) stop below 0.15× their mean and any river below 0.02×. The sea holds
+river mouths up. Drowned plants (and water plants left dry) are remembered and come back, and
+everything returns to the mean level when the cover is refreshed.
+
 ## Coasts (D49, D50)
 A slow noise and every river mouth mark **sheltered** coasts (bays, estuaries, lagoons; about
 40 % of them). Low sheltered coasts (under 1.5 blocks, slope under 5 %) are **mangrove** in the
@@ -196,7 +222,8 @@ coasts whose winters are only just below freezing.
 `bench worldmap` renders province, surface-rock and deposit maps of the whole planet, the
 bodies per model and the coverage table, and, with `--geo-area x,z,size`, a block-scale
 outcrop map and an east–west cross-section of an area. `bench deposits [--model id]
-[--near x,z] [--max-depth n] [--coverage] [--springs] [--find biome|coral]` lists a world's
+[--near x,z] [--max-depth n] [--coverage] [--springs] [--rivers min_width] [--find
+biome|coral]` lists a world's
 bodies, springs or columns of a biome nearest a point (with their depth, size, grade, biome and
 climate) for inspection and screenshots (`tools/shots/v22_deposits.shots`,
 `tools/shots/v22_coasts.shots`).

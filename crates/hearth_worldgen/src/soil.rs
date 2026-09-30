@@ -574,10 +574,12 @@ mod tests {
             800.0,
         );
         river.river = Some(RiverHit {
+            cell: 0,
             distance: 12.0,
             level: river.height - 1.0,
             width: 10.0,
             depth: 2.0,
+            plain: river.height,
         });
         assert_eq!(soil_of(&river, "sandstone"), "hearth:alluvial_soil");
     }

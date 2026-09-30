@@ -1,0 +1,10 @@
+# V2-2 seasonal rivers, seed 7 (Standard): a snowmelt river at 46° N in its spring flood, in
+# summer and in late winter (frozen country, its bed nearly dry under snow); a savanna river in
+# the wet and the dry season. Places from `bench deposits --seed 7 --model none --rivers 5`.
+# `hearth --screenshot-list tools/shots/v22_rivers.shots`
+defaults: seed=7, w=960, h=540, dist=6, hour=11, clouds=0.3, dry=true
+x=12252, z=-9316, y=22, yaw=180, pitch=24, yf=0.05, out=bench-out/v22/river_flood.png
+x=12252, z=-9316, y=22, yaw=180, pitch=24, yf=0.45, out=bench-out/v22/river_summer.png
+x=12252, z=-9316, y=22, yaw=180, pitch=24, yf=0.94, out=bench-out/v22/river_winter_low.png
+x=16900, z=3256, y=26, yaw=180, pitch=24, yf=0.83, out=bench-out/v22/savanna_wet.png
+x=16900, z=3256, y=26, yaw=180, pitch=24, yf=0.36, out=bench-out/v22/savanna_dry.png

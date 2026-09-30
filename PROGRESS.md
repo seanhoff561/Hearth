@@ -239,10 +239,22 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
   climate. `bench deposits --springs/--find`, `tools/shots/v22_coasts.shots`. Fixed a v1 bug:
   underwater plants were never placed (the feature writer never let anything replace water).
   Generation cost of the new passes ≈ 5 % of surface cubes.
+- (d, part 2a) Seasonal rivers: river flow regimes from the year-scale water balance
+  (landscape melt bands, evaporation, storm runoff, fast and ground stores with baseflow by
+  wetness), summed over each reach's upstream basin with flood-wave travel times in the
+  frequency domain (`hearth_env::rivers`, D55); river columns rise and fall with them in the
+  seasonal cover (Manning stage, floods over the banks that thin out to the surrounding land,
+  low water baring bars, small rivers running dry; drowned plants and stranded water plants
+  restored); `SeasonCover` now holds the cover's states, the regimes and what it buried.
+  Tests: regimes by climate (snowmelt, savanna, oceanic), a desert reach flooding late from
+  distant rains, confluences mixing by water, the full spectrum keeping the year, cover
+  floods/low water/dry beds restored block for block, and a year on a generated world (a
+  reach floods and falls and returns to the same blocks). `bench deposits --rivers`,
+  `tools/shots/v22_rivers.shots` (snowmelt flood, summer, winter low; savanna wet and dry).
 
 ## Next steps
-1. (d, part 2) Seasonal river levels and floodplain floods; finite conserved player-moved
-   water with levelling and flow (v1 M5 fluids) and per-block quality; coastal salt pans.
+1. (d, part 2b) Finite conserved player-moved water with levelling and flow (v1 M5 fluids)
+   and per-block quality; coastal salt pans.
 2. (e) Water rendering (v1 M7) and ice.
 3. (f) Minimal spawn picker; `worldmap` soil layer; V2-2 acceptance review and commit.
 

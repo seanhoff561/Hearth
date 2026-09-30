@@ -179,12 +179,16 @@ pub struct SeasonalCover {
     ice_cm: Vec<f32>,
     /// Sea ice thickness (cm) at each step.
     sea_ice_cm: Vec<f32>,
+    /// River flow at each step relative to the year's mean (1 = mean; near 0 = dry bed).
+    flow: Vec<f32>,
+    /// Water the place sends to its rivers in a year (mm): rain and meltwater less evaporation.
+    pub runoff_mm: f32,
     /// Snow never melts completely: glacier or ice-sheet conditions.
     pub perennial: bool,
 }
 
 /// Steps per year for the seasonal integration (5-day steps).
-const STEPS: usize = 73;
+pub const STEPS: usize = 73;
 /// Degree-day melt factor (mm water per °C·day).
 const MELT_MM_PER_DEGREE_DAY: f64 = 3.5;
 /// Stefan's law coefficient for lake ice (cm per sqrt(°C·day)), snow-covered ice.
@@ -194,10 +198,66 @@ const ICE_MELT_CM: f64 = 1.2;
 /// Sea water freezes at −1.8 °C, and the heat stored in the sea keeps it open until the air is
 /// colder still: sea ice grows only below this air temperature (°C).
 const SEA_FREEZE_C: f64 = -4.0;
+/// Potential evaporation (mm per day per °C above freezing): about 4.5 mm/day at 25 °C.
+const PET_MM_PER_DEGREE_DAY: f64 = 0.18;
+/// Share of the potential evaporation that the land draws from the water reaching it.
+const ET_SHARE: f64 = 0.7;
+/// Share of the rain that runs off whatever the season's balance: heavy showers fall faster
+/// than the ground takes them in, so rivers of dry lands still run after rain.
+const STORM_RUNOFF: f64 = 0.05;
+/// Water reaching the rivers runs off quickly (residence ~15 days) or seeps through the ground
+/// first (residence ~120 days), which keeps rivers flowing between rains. The ground's share
+/// is this in wet lands and falls with the groundwater's wetness (`hydro::wetness_of`): where
+/// the water table lies deep, streams lose water to the ground instead of gaining it, and run
+/// dry in the dry season.
+const BASEFLOW_SHARE: f64 = 0.5;
+const QUICKFLOW_DAYS: f64 = 15.0;
+const BASEFLOW_DAYS: f64 = 120.0;
+/// Rivers drain a landscape, not a point: snow on warmer and colder slopes and heights (these
+/// offsets from the place's temperature, °C) melts earlier or later, spreading the spring flood
+/// over weeks.
+const RUNOFF_BANDS_C: [f64; 5] = [-4.0, -2.0, 0.0, 2.0, 4.0];
 /// Settled seasonal snow density (kg/m³).
 pub const SNOW_DENSITY: f64 = 280.0;
 /// Snowpack water equivalent is capped here (permanent snow does not grow forever).
 const SWE_CAP_MM: f64 = 3000.0;
+
+/// cos and sin of 2π·h·t_k for harmonics h = 1..=STEPS/2 and step centres t_k, at
+/// `(h − 1) × STEPS + k`.
+fn year_trig() -> &'static [(f64, f64)] {
+    static TABLE: std::sync::LazyLock<Vec<(f64, f64)>> = std::sync::LazyLock::new(|| {
+        (1..=STEPS / 2)
+            .flat_map(|h| {
+                (0..STEPS).map(move |k| {
+                    let a = TAU * h as f64 * (k as f64 + 0.5) / STEPS as f64;
+                    (a.cos(), a.sin())
+                })
+            })
+            .collect()
+    });
+    &TABLE
+}
+
+/// River flow relative to the mean at step `k`'s centre from its harmonics (as
+/// `flow_from_harmonics`, at most `STEPS / 2` of them).
+pub fn flow_at_step(c: &[(f64, f64)], k: usize) -> f64 {
+    let trig = year_trig();
+    let f = c.iter().enumerate().fold(1.0, |acc, (h, (re, im))| {
+        let (cos, sin) = trig[h * STEPS + k];
+        acc + 2.0 * (re * cos - im * sin)
+    });
+    f.max(0.0)
+}
+
+/// River flow relative to the mean at a year fraction from its harmonics (h = 1, 2, …, as from
+/// `SeasonalCover::flow_harmonics`): 1 + 2 Σ Re(c_h·e^(2πi·h·t)), never below zero.
+pub fn flow_from_harmonics(c: &[(f64, f64)], year_frac: f64) -> f64 {
+    let f = c.iter().enumerate().fold(1.0, |acc, (h, (re, im))| {
+        let a = TAU * (h + 1) as f64 * year_frac;
+        acc + 2.0 * (re * a.cos() - im * a.sin())
+    });
+    f.max(0.0)
+}
 
 impl SeasonalCover {
     pub fn compute(n: &Normals) -> Self {
@@ -205,9 +265,20 @@ impl SeasonalCover {
         let mut swe = 0.0f64;
         let mut ice = 0.0f64;
         let mut sea = 0.0f64;
+        // Water on its way to the rivers (mm): running off, and in the ground.
+        let (mut quick, mut base) = (0.0f64, 0.0f64);
+        // Snowpack of each band of the landscape feeding the rivers.
+        let mut band_swe = [0.0f64; RUNOFF_BANDS_C.len()];
         let mut swe_out = vec![0f32; STEPS];
         let mut ice_out = vec![0f32; STEPS];
         let mut sea_out = vec![0f32; STEPS];
+        let mut flow_out = vec![0f32; STEPS];
+        let base_share = BASEFLOW_SHARE
+            * hearth_worldgen::hydro::wetness_of(n.precip as f32, n.t_mean as f32) as f64;
+        let (quick_drain, base_drain) = (
+            1.0 - (-dt / QUICKFLOW_DAYS).exp(),
+            1.0 - (-dt / BASEFLOW_DAYS).exp(),
+        );
         let mut min_swe = f64::MAX;
         // Three years of spin-up from the coldest time so the state is periodic.
         for year in 0..4 {
@@ -218,8 +289,30 @@ impl SeasonalCover {
                 // Snow below −0.5 °C, rain above 2 °C, a mix between.
                 let snow_frac = ((2.0 - t) / 2.5).clamp(0.0, 1.0);
                 swe += snow_frac * p;
-                swe -= (MELT_MM_PER_DEGREE_DAY * t.max(0.0) * dt).min(swe);
+                let melt = (MELT_MM_PER_DEGREE_DAY * t.max(0.0) * dt).min(swe);
+                swe -= melt;
                 swe = swe.min(SWE_CAP_MM);
+                // Rain and meltwater of the landscape, less what it evaporates, feed the rivers
+                // slowly.
+                let (mut water, mut rain) = (0.0, 0.0);
+                for (swe_b, off) in band_swe.iter_mut().zip(RUNOFF_BANDS_C) {
+                    let tb = t + off;
+                    let snow_b = ((2.0 - tb) / 2.5).clamp(0.0, 1.0);
+                    *swe_b += snow_b * p;
+                    let melt_b = (MELT_MM_PER_DEGREE_DAY * tb.max(0.0) * dt).min(*swe_b);
+                    *swe_b = (*swe_b - melt_b).min(SWE_CAP_MM);
+                    water += (1.0 - snow_b) * p + melt_b;
+                    rain += (1.0 - snow_b) * p;
+                }
+                let bands = RUNOFF_BANDS_C.len() as f64;
+                let pet = PET_MM_PER_DEGREE_DAY * t.max(0.0) * dt;
+                let input = (water / bands - ET_SHARE * pet).max(STORM_RUNOFF * rain / bands);
+                quick += input * (1.0 - base_share);
+                base += input * base_share;
+                let (qq, qb) = (quick * quick_drain, base * base_drain);
+                quick -= qq;
+                base -= qb;
+                let q = qq + qb;
                 if t < 0.0 {
                     let fdd = (ice / STEFAN_CM).powi(2) + (-t) * dt;
                     ice = STEFAN_CM * fdd.sqrt();
@@ -238,14 +331,27 @@ impl SeasonalCover {
                     *s_out = swe as f32;
                     *i_out = ice as f32;
                     sea_out[k] = sea as f32;
+                    flow_out[k] = q as f32;
                     min_swe = min_swe.min(swe);
                 }
             }
+        }
+        // Flow relative to the year's mean.
+        let runoff_mm = flow_out.iter().sum::<f32>();
+        let mean = runoff_mm / STEPS as f32;
+        if mean > 1e-6 {
+            for f in &mut flow_out {
+                *f /= mean;
+            }
+        } else {
+            flow_out.fill(0.0);
         }
         Self {
             swe_mm: swe_out,
             ice_cm: ice_out,
             sea_ice_cm: sea_out,
+            flow: flow_out,
+            runoff_mm,
             perennial: min_swe > 1.0,
         }
     }
@@ -276,6 +382,34 @@ impl SeasonalCover {
     /// Sea ice thickness (m).
     pub fn sea_ice_m(&self, year_frac: f64) -> f64 {
         Self::sample(&self.sea_ice_cm, year_frac) / 100.0
+    }
+
+    /// River flow relative to the year's mean (1 = mean; near 0 = a dry bed).
+    pub fn river_flow(&self, year_frac: f64) -> f64 {
+        Self::sample(&self.flow, year_frac)
+    }
+
+    /// The first `N` Fourier harmonics of the relative river flow over the year: for
+    /// h = 1..=N, (re, im) of the year's mean of flow × e^(−2πi·h·t). All zero for a year with
+    /// no runoff. `flow_from_harmonics` turns them back into a flow.
+    pub fn flow_harmonics<const N: usize>(&self) -> [(f64, f64); N] {
+        assert!(
+            N <= STEPS / 2,
+            "a year of {STEPS} steps has {} harmonics",
+            STEPS / 2
+        );
+        let trig = year_trig();
+        let mut out = [(0.0, 0.0); N];
+        for (h, c) in out.iter_mut().enumerate() {
+            for (k, f) in self.flow.iter().enumerate() {
+                let (cos, sin) = trig[h * STEPS + k];
+                c.0 += *f as f64 * cos;
+                c.1 -= *f as f64 * sin;
+            }
+            c.0 /= STEPS as f64;
+            c.1 /= STEPS as f64;
+        }
+        out
     }
 
     /// Year fraction with the deepest snow.
@@ -404,6 +538,62 @@ mod tests {
         // Temperate seas never freeze.
         let maritime = SeasonalCover::compute(&Normals::new(51.0, 10.0, 12.0, 800.0, 0.0, 0.0));
         assert_eq!(maritime.sea_ice_m(0.05), 0.0);
+    }
+
+    #[test]
+    fn the_full_spectrum_keeps_the_regime_exactly() {
+        for n in [
+            Normals::new(62.0, -4.0, 38.0, 450.0, 0.0, 0.0),
+            Normals::new(12.0, 26.0, 4.0, 900.0, 0.9, 0.0),
+            Normals::new(38.0, 16.0, 16.0, 600.0, 0.0, 0.8),
+        ] {
+            let c = SeasonalCover::compute(&n);
+            let h = c.flow_harmonics::<{ STEPS / 2 }>();
+            for k in 0..STEPS {
+                let t = (k as f64 + 0.5) / STEPS as f64;
+                let err = (flow_from_harmonics(&h, t) - c.river_flow(t)).abs();
+                assert!(err < 1e-4, "{n:?} step {k}: off by {err}");
+            }
+        }
+    }
+
+    #[test]
+    fn river_regimes_follow_rain_and_melt() {
+        let peak = |c: &SeasonalCover| {
+            let (i, _) = (0..73)
+                .map(|k| c.river_flow((k as f64 + 0.5) / 73.0))
+                .enumerate()
+                .fold(
+                    (0, f64::MIN),
+                    |acc, (i, v)| if v > acc.1 { (i, v) } else { acc },
+                );
+            (i as f64 + 0.5) / 73.0
+        };
+        // A snowmelt river (continental subarctic): high water in late spring, low in winter.
+        let melt = SeasonalCover::compute(&Normals::new(62.0, -4.0, 38.0, 450.0, 0.0, 0.0));
+        let p = peak(&melt);
+        assert!((0.12..0.35).contains(&p), "spring flood near May–June: {p}");
+        assert!(
+            melt.river_flow(p) > 2.5 * melt.river_flow(0.9),
+            "flood well above the winter low"
+        );
+        // A savanna river (winter-dry monsoon): high in the wet summer, near dry in the dry season.
+        let savanna = SeasonalCover::compute(&Normals::new(12.0, 26.0, 4.0, 900.0, 0.9, 0.0));
+        let wet = savanna.river_flow(0.4);
+        let dry = savanna.river_flow(0.95);
+        assert!(wet > 1.5 && dry < 0.3, "wet {wet}, dry {dry}");
+        // A mild oceanic river: high in winter, low in late summer (about 4:1, as the Thames),
+        // never near dry.
+        let oceanic = SeasonalCover::compute(&Normals::new(51.0, 10.0, 12.0, 800.0, 0.0, 0.0));
+        let (lo, hi) = (0..73)
+            .map(|k| oceanic.river_flow((k as f64 + 0.5) / 73.0))
+            .fold((f64::MAX, 0.0f64), |a, v| (a.0.min(v), a.1.max(v)));
+        assert!(
+            lo > 0.3 && hi < 2.5 && hi / lo < 6.0,
+            "steady flow: {lo}..{hi}"
+        );
+        let winter = oceanic.river_flow(0.9);
+        assert!(winter > oceanic.river_flow(0.4), "winter high water");
     }
 
     #[test]

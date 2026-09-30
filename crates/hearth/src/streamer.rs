@@ -266,15 +266,8 @@ fn run(
         let mut cols: Vec<hearth_math::ColumnPos> = batch.iter().map(|p| p.column()).collect();
         cols.sort_unstable_by_key(|c| (c.x, c.z));
         cols.dedup();
-        crate::season_cover::apply(
-            &mut lw.map,
-            &lw.reg,
-            &lw.cover,
-            &lw.generator,
-            &mut lw.buried,
-            &cols,
-            t.year_frac,
-        );
+        lw.cover
+            .apply(&mut lw.map, &lw.reg, &lw.generator, &cols, t.year_frac);
         lw.light.light_new_cubes(&mut lw.map, &lw.reg, &batch);
         heights_dirty = true;
         // Mesh every cube around the batch whose 26 neighbours are now all present; cubes that
@@ -325,19 +318,13 @@ fn refresh_cover(
     cols.sort_unstable_by_key(|c| (c.x, c.z));
     cols.dedup();
     let planet = *lw.map.planet();
-    lw.buried.retain_columns(|c| {
+    lw.cover.buried.retain_columns(|c| {
         cols.binary_search_by_key(&(c.x, c.z), |k| (k.x, k.z))
             .is_ok()
     });
-    let changed = crate::season_cover::refresh(
-        &mut lw.map,
-        &lw.reg,
-        &lw.cover,
-        &lw.generator,
-        &mut lw.buried,
-        &cols,
-        year_frac,
-    );
+    let changed = lw
+        .cover
+        .refresh(&mut lw.map, &lw.reg, &lw.generator, &cols, year_frac);
     let mut dirty: FxHashSet<CubePos> = FxHashSet::default();
     for &p in &changed {
         // Snow layers don't change light; ice and water do, a little.

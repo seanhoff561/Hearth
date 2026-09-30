@@ -7,13 +7,22 @@
 //! melts); bare deciduous crowns let it through to the ground, a little thinner; conifer crowns
 //! hold a couple of layers and shed the rest. Still water and rivers freeze, and the sea
 //! where winters are cold enough for sea ice.
+//!
+//! Rivers rise and fall with the flow of their basins through the year
+//! (`hearth_env::rivers`): spring floods of snowmelt rivers and wet-season high water spill
+//! over the banks onto the floodplain (drowning low plants, which come back), dry seasons lower
+//! them, and small rivers of dry climates run dry.
+
+use std::sync::Arc;
 
 use hearth_env::climate::{Normals, SeasonalCover};
+use hearth_env::rivers::RiverRegimes;
 use hearth_math::hash::hash_2d;
 use hearth_math::{BlockPos, ColumnPos};
 use hearth_world::{BlockRegistry, BlockStateId, CubeMap, StateFlags, TintKind};
-use hearth_worldgen::WorldGenerator;
 use hearth_worldgen::region::ColumnSample;
+use hearth_worldgen::region::rivers::{BANK_HEIGHT, bank_width};
+use hearth_worldgen::{PlanetGrid, WorldGenerator};
 use rustc_hash::FxHashMap;
 
 /// Block states the cover uses.
@@ -51,7 +60,8 @@ impl CoverStates {
     }
 }
 
-/// Plants buried under seasonal snow, restored when it melts.
+/// Plants buried under seasonal snow or drowned by a flood (and water plants left dry by a
+/// falling river), restored when the season turns.
 #[derive(Debug, Default)]
 pub struct Buried(FxHashMap<BlockPos, BlockStateId>);
 
@@ -119,14 +129,83 @@ pub fn column_normals(generator: &WorldGenerator, col: ColumnPos) -> Normals {
     )
 }
 
-/// Snow depth (m), still-water ice and sea ice thickness (m) for a column at a year fraction.
-pub fn column_cover(generator: &WorldGenerator, col: ColumnPos, year_frac: f64) -> (f64, f64, f64) {
+/// What the date lays on a column: snow depth (m), and still-water and sea ice thickness (m).
+#[derive(Debug, Clone, Copy)]
+pub struct DateCover {
+    pub snow_m: f64,
+    pub ice_m: f64,
+    pub sea_ice_m: f64,
+}
+
+/// The snow and ice of a column at a year fraction.
+pub fn column_cover(generator: &WorldGenerator, col: ColumnPos, year_frac: f64) -> DateCover {
     let cover = SeasonalCover::compute(&column_normals(generator, col));
-    (
-        cover.snow_depth_m(year_frac),
-        cover.ice_m(year_frac),
-        cover.sea_ice_m(year_frac),
-    )
+    DateCover {
+        snow_m: cover.snow_depth_m(year_frac),
+        ice_m: cover.ice_m(year_frac),
+        sea_ice_m: cover.sea_ice_m(year_frac),
+    }
+}
+
+/// A river column's water on a date.
+#[derive(Debug, Clone, Copy)]
+struct RiverTarget {
+    /// First block above the ground: water fills up from here.
+    bed: i32,
+    /// First block above the water at mean flow (the ground for a dry bank).
+    normal: i32,
+    /// First block above the water on the date.
+    date: i32,
+    /// Above the highest the water ever reaches here.
+    reach: i32,
+}
+
+/// A river's depth grows with its discharge to this power (Manning's equation for a wide
+/// channel).
+const STAGE_EXPONENT: f32 = 0.6;
+/// Over its banks a river spreads across the floodplain and rises more slowly…
+const FLOODPLAIN_RISE: f32 = 0.5;
+/// …and the deepest floods stand at most this far over the banks: half a block plus a quarter
+/// of the channel's depth (a block or so on small rivers, a few on great ones).
+const OVERBANK_BASE: f32 = 0.5;
+const OVERBANK_PER_DEPTH: f32 = 0.25;
+/// A flood higher than the land around the river spreads over it in a film too thin to show:
+/// toward the edge of the river's banks its surface falls to the height of that land, by this
+/// much per block, so it never stands in walls above lower ground.
+const FLOOD_THINNING: f32 = 0.5;
+
+/// A river column's water level on a date with its reach flowing at `flow` times the mean.
+fn river_target(s: &ColumnSample, flow: f64) -> Option<RiverTarget> {
+    let r = s.river?;
+    if s.ocean || s.lake {
+        return None;
+    }
+    let flow = flow as f32;
+    let dry = -r.depth - 1.0;
+    let max_rise = BANK_HEIGHT + OVERBANK_BASE + OVERBANK_PER_DEPTH * r.depth;
+    let mut rise = r.depth * (flow.powf(STAGE_EXPONENT) - 1.0);
+    if rise > BANK_HEIGHT {
+        rise = BANK_HEIGHT + (rise - BANK_HEIGHT) * FLOODPLAIN_RISE;
+    }
+    // Small rivers stop flowing in the dry season; large ones only when nothing comes at all.
+    if flow < 0.02 || (flow < 0.15 && r.width < 8.0) {
+        rise = dry;
+    }
+    let rise = rise.clamp(dry, max_rise);
+    // The sea holds up the level at river mouths.
+    let mut level = (r.level + rise).max(r.level.min(0.0));
+    if rise > 0.0 {
+        let edge = r.width * 0.5 + bank_width(r.width);
+        let thin = r.plain + (edge - r.distance).max(0.0) * FLOOD_THINNING;
+        level = level.min(thin.max(r.level));
+    }
+    let bed = s.height_i();
+    Some(RiverTarget {
+        bed,
+        normal: if s.is_underwater() { s.water_i() } else { bed },
+        date: (level.round() as i32).max(bed),
+        reach: (r.level + max_rise).ceil() as i32 + 1,
+    })
 }
 
 /// What the date asks of one block column.
@@ -143,9 +222,12 @@ struct Target {
     freeze: bool,
     /// Y of the top water block for water columns (where ice may lie).
     water_top: Option<i32>,
+    /// River water rising and falling with the date.
+    river: Option<RiverTarget>,
 }
 
-fn target(s: &ColumnSample, x: i32, z: i32, snow_m: f64, ice_m: f64, sea_ice_m: f64) -> Target {
+fn target(s: &ColumnSample, x: i32, z: i32, c: &DateCover, river_flow: f64) -> Target {
+    let (snow_m, ice_m, sea_ice_m) = (c.snow_m, c.ice_m, c.sea_ice_m);
     let top_guess = s.height_i().max(s.water_i());
     // Drifting varies the depth a little from place to place.
     let jitter = (hash_2d(0x5a0e, x, z) & 3) as f64 * 0.04 - 0.06;
@@ -170,75 +252,122 @@ fn target(s: &ColumnSample, x: i32, z: i32, snow_m: f64, ice_m: f64, sea_ice_m: 
         layers,
         freeze: thickness > 0.03,
         water_top: s.is_underwater().then(|| s.water_i() - 1),
+        river: river_target(s, river_flow),
     }
 }
 
-/// Lays the snow and ice of `year_frac` on freshly loaded columns (on the blocks already in
-/// `map`). Call before lighting new cubes; returns how many blocks changed.
-pub fn apply(
-    map: &mut CubeMap,
-    reg: &BlockRegistry,
-    states: &CoverStates,
-    generator: &WorldGenerator,
-    buried: &mut Buried,
-    cols: &[ColumnPos],
-    year_frac: f64,
-) -> usize {
-    let mut edit = Edit::new(map, reg);
-    for_each_target(generator, cols, year_frac, |t| {
-        cover(&mut edit, states, buried, t)
-    });
-    edit.changed().len()
+/// The seasonal cover of loaded terrain: the block states it uses, the planet's river regimes
+/// and what it has buried.
+pub struct SeasonCover {
+    pub states: CoverStates,
+    pub rivers: Arc<RiverRegimes>,
+    pub buried: Buried,
 }
 
-/// Brings loaded columns up to date with the snow and ice of `year_frac`: the old cover is
-/// taken off (buried plants come back, ice thaws) and the date's cover laid again. Returns the
-/// blocks that changed (for relighting and remeshing). Columns with perennial snow keep the
-/// generator's.
-pub fn refresh(
-    map: &mut CubeMap,
-    reg: &BlockRegistry,
-    states: &CoverStates,
-    generator: &WorldGenerator,
-    buried: &mut Buried,
-    cols: &[ColumnPos],
-    year_frac: f64,
-) -> Vec<BlockPos> {
-    let mut edit = Edit::new(map, reg);
-    let seasonal: Vec<ColumnPos> = cols
-        .iter()
-        .copied()
-        .filter(|c| !SeasonalCover::compute(&column_normals(generator, *c)).perennial)
-        .collect();
-    for_each_target(generator, &seasonal, year_frac, |t| {
-        strip(&mut edit, states, buried, t);
-        cover(&mut edit, states, buried, t);
-    });
-    edit.changed()
+impl SeasonCover {
+    pub fn new(reg: &BlockRegistry, grid: &PlanetGrid) -> anyhow::Result<Self> {
+        Ok(Self {
+            states: CoverStates::resolve(reg)?,
+            rivers: Arc::new(RiverRegimes::build(grid)),
+            buried: Buried::default(),
+        })
+    }
+
+    /// Lays the snow, ice and river levels of `year_frac` on freshly loaded columns (on the
+    /// blocks already in `map`). Call before lighting new cubes; returns how many blocks
+    /// changed.
+    pub fn apply(
+        &mut self,
+        map: &mut CubeMap,
+        reg: &BlockRegistry,
+        generator: &WorldGenerator,
+        cols: &[ColumnPos],
+        year_frac: f64,
+    ) -> usize {
+        let mut edit = Edit::new(map, reg);
+        let (states, buried) = (&self.states, &mut self.buried);
+        for_each_target(generator, &self.rivers, cols, year_frac, |t| {
+            cover(&mut edit, states, buried, t)
+        });
+        edit.changed().len()
+    }
+
+    /// Brings loaded columns up to date with `year_frac`: the old cover is taken off (buried
+    /// plants come back, ice thaws, rivers return to their mean level) and the date's cover laid
+    /// again. Returns the blocks that changed (for relighting and remeshing). Columns with
+    /// perennial snow keep the generator's.
+    pub fn refresh(
+        &mut self,
+        map: &mut CubeMap,
+        reg: &BlockRegistry,
+        generator: &WorldGenerator,
+        cols: &[ColumnPos],
+        year_frac: f64,
+    ) -> Vec<BlockPos> {
+        let mut edit = Edit::new(map, reg);
+        let seasonal: Vec<ColumnPos> = cols
+            .iter()
+            .copied()
+            .filter(|c| !SeasonalCover::compute(&column_normals(generator, *c)).perennial)
+            .collect();
+        let (states, buried) = (&self.states, &mut self.buried);
+        for_each_target(generator, &self.rivers, &seasonal, year_frac, |t| {
+            strip(&mut edit, states, buried, t);
+            cover(&mut edit, states, buried, t);
+        });
+        edit.changed()
+    }
 }
 
 fn for_each_target(
     generator: &WorldGenerator,
+    rivers: &RiverRegimes,
     cols: &[ColumnPos],
     year_frac: f64,
     mut f: impl FnMut(&Target),
 ) {
     for &col in cols {
-        let (snow_m, ice_m, sea_ice_m) = column_cover(generator, col, year_frac);
+        let cover = column_cover(generator, col, year_frac);
         let (x0, z0) = col.min_block_xz();
         let data = generator.column(col);
         for lz in 0..16 {
             for lx in 0..16 {
                 let (x, z) = (x0 + lx as i32, z0 + lz as i32);
-                f(&target(data.at(lx, lz), x, z, snow_m, ice_m, sea_ice_m));
+                let s = data.at(lx, lz);
+                let flow = s.river.map_or(1.0, |r| rivers.flow(r.cell, year_frac));
+                f(&target(s, x, z, &cover, flow));
             }
         }
     }
 }
 
-/// Takes seasonal cover off a column: snow layers (restoring buried plants), snowy ground and
-/// ice on the water surface.
+/// Takes seasonal cover off a column: snow layers (restoring buried plants), snowy ground,
+/// ice on the water surface, and a river's seasonal rise or fall (back to its mean level).
 fn strip(edit: &mut Edit<'_>, states: &CoverStates, buried: &mut Buried, t: &Target) {
+    strip_snow_and_ice(edit, states, buried, t);
+    let Some(r) = t.river else {
+        return;
+    };
+    // Water back where the dry season took it (with the water plants it left dry), and off the
+    // banks where the flood left it (with the plants it drowned).
+    for y in r.bed..r.reach.max(r.normal) {
+        let p = BlockPos::new(t.x, y, t.z);
+        let Some(b) = edit.get(p) else {
+            continue;
+        };
+        if !(b.is_air() || b == states.water || b == states.ice) {
+            continue;
+        }
+        let back = match buried.0.remove(&p) {
+            Some(plant) => plant,
+            None if y < r.normal => states.water,
+            None => BlockStateId::AIR,
+        };
+        edit.set(p, back);
+    }
+}
+
+fn strip_snow_and_ice(edit: &mut Edit<'_>, states: &CoverStates, buried: &mut Buried, t: &Target) {
     for y in t.floor..=t.top {
         let p = BlockPos::new(t.x, y, t.z);
         let Some(b) = edit.get(p) else {
@@ -259,8 +388,11 @@ fn strip(edit: &mut Edit<'_>, states: &CoverStates, buried: &mut Buried, t: &Tar
     }
 }
 
-/// Lays the target's snow or ice on a column.
+/// Lays the target's river level, then its snow or ice, on a column.
 fn cover(edit: &mut Edit<'_>, states: &CoverStates, buried: &mut Buried, t: &Target) {
+    if let Some(r) = t.river {
+        set_river_level(edit, states, buried, r, t.x, t.z);
+    }
     let Some((p, b)) = highest_block(edit, t.x, t.z, t.top, t.floor, |_| false) else {
         return;
     };
@@ -272,6 +404,62 @@ fn cover(edit: &mut Edit<'_>, states: &CoverStates, buried: &mut Buried, t: &Tar
     }
     if t.layers > 0 {
         lay_snow(edit, states, buried, p, b, t.layers, t.floor);
+    }
+}
+
+/// Raises or lowers a river column's water from its mean level to the date's.
+fn set_river_level(
+    edit: &mut Edit<'_>,
+    states: &CoverStates,
+    buried: &mut Buried,
+    r: RiverTarget,
+    x: i32,
+    z: i32,
+) {
+    let reg = edit.reg;
+    // Plants and other things without a body drown (and come back when the water falls); tree
+    // trunks and the like stand in the flood.
+    let drowns = |b: BlockStateId| {
+        !b.is_air()
+            && !reg.has(b, StateFlags::HAS_COLLISION)
+            && !reg.has(b, StateFlags::FLUID)
+            && !states.is_snow(b)
+    };
+    if r.date > r.normal {
+        // High water over the banks.
+        for y in r.normal..r.date {
+            let p = BlockPos::new(x, y, z);
+            match edit.get(p) {
+                Some(b) if b.is_air() => edit.set(p, states.water),
+                Some(b) if drowns(b) => {
+                    buried.0.insert(p, b);
+                    edit.set(p, states.water);
+                }
+                _ => {}
+            }
+        }
+        // The top half of a tall plant whose foot drowned goes under with it.
+        let (p, below) = (BlockPos::new(x, r.date, z), BlockPos::new(x, r.date - 1, z));
+        if let (Some(b), Some(&foot)) = (edit.get(p), buried.0.get(&below))
+            && drowns(b)
+            && reg.block_id_of(b) == reg.block_id_of(foot)
+        {
+            buried.0.insert(p, b);
+            edit.set(p, BlockStateId::AIR);
+        }
+    } else if r.date < r.normal {
+        // Low water: the river falls and bares its bed and the water plants on it.
+        for y in r.date..r.normal {
+            let p = BlockPos::new(x, y, z);
+            match edit.get(p) {
+                Some(b) if b == states.water => edit.set(p, BlockStateId::AIR),
+                Some(b) if reg.block_of(b).def.water_filled => {
+                    buried.0.insert(p, b);
+                    edit.set(p, BlockStateId::AIR);
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -399,6 +587,7 @@ mod tests {
             layers,
             freeze: false,
             water_top: None,
+            river: None,
         }
     }
 
@@ -474,6 +663,120 @@ mod tests {
             "2 layers on the spruce"
         );
         assert!(at(&f, 5, 5, 5).is_air(), "the spruce shelters the ground");
+    }
+
+    /// A river channel at (4, 4) (bed y 4, water to y 7) with banks at y 9 east of it: short
+    /// grass at (5, 4), a tall plant at (6, 4), seagrass on the channel floor.
+    fn river_fixture() -> Fixture {
+        let mut f = fixture();
+        for y in 0..4 {
+            put(&mut f, 4, y, 4, "granite");
+        }
+        put(&mut f, 4, 4, 4, "seagrass");
+        for y in 5..8 {
+            f.map
+                .set_block(BlockPos::new(4, y, 4), f.states.water, &f.reg);
+        }
+        for x in 5..7 {
+            for y in 0..9 {
+                put(&mut f, x, y, 4, "loam");
+            }
+        }
+        put(&mut f, 5, 9, 4, "short_grass");
+        put(&mut f, 6, 9, 4, "tall_grass[half=lower]");
+        put(&mut f, 6, 10, 4, "tall_grass[half=upper]");
+        f
+    }
+
+    fn river_targets(date: i32) -> [Target; 3] {
+        let mut out = [target(4, 4, 0), target(5, 4, 0), target(6, 4, 0)];
+        for (t, (bed, normal)) in out.iter_mut().zip([(4, 8), (9, 9), (9, 9)]) {
+            t.river = Some(RiverTarget {
+                bed,
+                normal,
+                date: date.max(bed),
+                reach: 14,
+            });
+        }
+        out
+    }
+
+    fn column(f: &Fixture, x: i32) -> Vec<BlockStateId> {
+        (0..16).map(|y| at(f, x, y, 4)).collect()
+    }
+
+    fn season(f: &mut Fixture, buried: &mut Buried, date: i32, strip_first: bool) -> usize {
+        let mut edit = Edit::new(&mut f.map, &f.reg);
+        for t in &river_targets(date) {
+            if strip_first {
+                strip(&mut edit, &f.states, buried, t);
+            }
+            cover(&mut edit, &f.states, buried, t);
+        }
+        edit.changed().len()
+    }
+
+    #[test]
+    fn floods_drown_the_floodplain_and_recede() {
+        let mut f = river_fixture();
+        let before: Vec<_> = (4..7).map(|x| column(&f, x)).collect();
+        let mut buried = Buried::default();
+        // High water to y 11: two blocks over the banks.
+        season(&mut f, &mut buried, 12, false);
+        for x in 4..7 {
+            for y in 9..12 {
+                assert_eq!(at(&f, x, y, 4), f.states.water, "flooded at ({x}, {y})");
+            }
+        }
+        assert!(at(&f, 6, 12, 4).is_air());
+        // Laying the same date again changes nothing.
+        assert_eq!(season(&mut f, &mut buried, 12, false), 0);
+        // A lower flood: only the tall plant's foot drowns, and its top goes with it.
+        season(&mut f, &mut buried, 9, true);
+        let mut edit = Edit::new(&mut f.map, &f.reg);
+        for t in &river_targets(10) {
+            strip(&mut edit, &f.states, &mut buried, t);
+            cover(&mut edit, &f.states, &mut buried, t);
+        }
+        drop(edit);
+        assert_eq!(at(&f, 6, 9, 4), f.states.water);
+        assert!(
+            at(&f, 6, 10, 4).is_air(),
+            "no top half floating on the flood"
+        );
+        // Back to the mean level: every plant returns.
+        season(&mut f, &mut buried, 8, true);
+        let after: Vec<_> = (4..7).map(|x| column(&f, x)).collect();
+        assert_eq!(after, before);
+        assert!(buried.0.is_empty());
+    }
+
+    #[test]
+    fn low_water_bares_the_bed_and_comes_back() {
+        let mut f = river_fixture();
+        let before = column(&f, 4);
+        let mut buried = Buried::default();
+        // Low water: one block left over the seagrass.
+        season(&mut f, &mut buried, 6, false);
+        assert_eq!(at(&f, 4, 5, 4), f.states.water);
+        assert!(at(&f, 4, 6, 4).is_air() && at(&f, 4, 7, 4).is_air());
+        // A dry bed, snowed on in winter.
+        let mut edit = Edit::new(&mut f.map, &f.reg);
+        let mut t = river_targets(4)[0];
+        t.layers = 2;
+        strip(&mut edit, &f.states, &mut buried, &t);
+        cover(&mut edit, &f.states, &mut buried, &t);
+        drop(edit);
+        assert_eq!(
+            at(&f, 4, 4, 4),
+            f.states.snow_layers[1],
+            "snow on the dry bed"
+        );
+        assert!(at(&f, 4, 5, 4).is_air());
+        // The river comes back with its seagrass.
+        season(&mut f, &mut buried, 8, true);
+        assert_eq!(column(&f, 4), before);
+        assert!(buried.0.is_empty());
     }
 
     #[test]

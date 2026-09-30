@@ -14,7 +14,7 @@ use crate::noise::BlockFbm;
 use crate::planet::climate::{ClimateClass, LAPSE_RATE};
 use crate::planet::{PlanetGrid, flags, province};
 use biome::{Biome, BiomeInputs};
-use rivers::{RiverHit, RiverNet, Segment};
+use rivers::{BANK_HEIGHT, RiverHit, RiverNet, Segment, bank_width};
 
 /// Top-layer material of a column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -310,6 +310,7 @@ impl Terrain {
         }
         // Rivers: carve the channel and shape a floodplain.
         let mut river_hit = None;
+        let plain = h;
         if !segs.is_empty() {
             let wx = xf + self.noise.warp_x.sample2(xf, zf) * g.geom.cell * 0.35;
             let wz = zf + self.noise.warp_z.sample2(xf, zf) * g.geom.cell * 0.35;
@@ -317,9 +318,9 @@ impl Terrain {
             let wx = seg_cx + self.planet.delta_x(seg_cx, wx);
             if let Some(hit) = RiverNet::closest(wx, wz, segs) {
                 let half = hit.width * 0.5;
-                let bank_w = 3.0 + hit.width * 0.9;
+                let bank_w = bank_width(hit.width);
                 if hit.distance < half + bank_w {
-                    let bank = hit.level + 1.2;
+                    let bank = hit.level + BANK_HEIGHT;
                     if hit.distance < half {
                         let t = hit.distance / half;
                         let bed = hit.level - hit.depth * (1.0 - t * t) - 0.3;
@@ -330,7 +331,7 @@ impl Terrain {
                         let w = 1.0 - smoothstep(0.0, 1.0, t);
                         h += (bank - h) * w;
                     }
-                    river_hit = Some(hit);
+                    river_hit = Some(RiverHit { plain, ..hit });
                 }
             }
         }

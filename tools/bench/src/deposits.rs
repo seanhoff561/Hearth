@@ -1,6 +1,8 @@
 //! `bench deposits`: the deposit bodies of a world (the game's own settings for the planet
 //! size), filtered by model and depth and sorted by distance from a point, and the resource
-//! coverage of its continents. Used to find deposits to inspect and photograph.
+//! coverage of its continents. Used to find deposits to inspect and photograph; `--springs`
+//! and `--rivers` (the most seasonal river reaches, with their flood and low-water dates) do
+//! the same for water.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -18,6 +20,7 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     let mut limit = 10usize;
     let mut coverage = false;
     let mut springs = false;
+    let mut rivers: Option<f32> = None;
     let mut find: Option<String> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -45,6 +48,7 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
             "--limit" => limit = val()?.parse()?,
             "--coverage" => coverage = true,
             "--springs" => springs = true,
+            "--rivers" => rivers = Some(val()?.parse()?),
             "--find" => find = Some(val()?),
             other => anyhow::bail!("unknown argument {other}"),
         }
@@ -188,6 +192,9 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
             );
         }
     }
+    if let Some(min_width) = rivers {
+        print_rivers(&wg, near, min_width, limit);
+    }
     if coverage {
         let scale = planet.circumference() as f64 / 65_536.0;
         let cov =
@@ -195,4 +202,70 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         crate::worldmap::print_coverage(&cov, &wg.deposits);
     }
     Ok(())
+}
+
+/// River reaches at least `min_width` blocks wide with the largest seasonal swing (or nearest
+/// `near`), with their flood and low-water dates and a channel column to aim a camera at.
+fn print_rivers(wg: &WorldGenerator, near: Option<(i32, i32)>, min_width: f32, limit: usize) {
+    use hearth_worldgen::region::rivers::width_for;
+    let grid = &wg.terrain.grid;
+    let t0 = Instant::now();
+    let regimes = hearth_env::RiverRegimes::build(grid);
+    println!(
+        "{} river reaches, regimes in {:.2}s",
+        regimes.len(),
+        t0.elapsed().as_secs_f64()
+    );
+    let planet = *wg.planet();
+    let dates: Vec<f64> = (0..73).map(|k| (k as f64 + 0.5) / 73.0).collect();
+    let mut found = Vec::new();
+    for (&cell, r) in &grid.rivers {
+        let width = width_for(r.discharge);
+        if width < min_width {
+            continue;
+        }
+        let flows: Vec<f64> = dates.iter().map(|t| regimes.flow(cell, *t)).collect();
+        let (mut hi, mut lo) = (0, 0);
+        for k in 0..flows.len() {
+            if flows[k] > flows[hi] {
+                hi = k;
+            }
+            if flows[k] < flows[lo] {
+                lo = k;
+            }
+        }
+        let (i, j) = grid.geom.ij(cell as usize);
+        let (x, z) = grid.geom.world_xz(i, j);
+        let rank = match near {
+            Some((nx, nz)) => {
+                let dx = planet.delta_block_x(nx, x as i32) as f64;
+                let dz = z - nz as f64;
+                (dx * dx + dz * dz).sqrt()
+            }
+            None => -(flows[hi] - flows[lo]),
+        };
+        found.push((
+            rank, cell, x as i32, z as i32, width, dates[hi], flows[hi], dates[lo], flows[lo],
+        ));
+    }
+    found.sort_by(|a, b| a.0.total_cmp(&b.0));
+    for &(_, cell, x, z, width, t_hi, f_hi, t_lo, f_lo) in found.iter().take(limit) {
+        // A column of the reach's channel near the node.
+        let channel = (-40..=40).step_by(4).find_map(|dz| {
+            (-40..=40).step_by(4).find_map(|dx| {
+                let s = wg.terrain.sample(x + dx, z + dz);
+                s.river
+                    .filter(|r| r.cell == cell && s.is_underwater() && !s.ocean && !s.lake)
+                    .map(|_| (x + dx, s.water_i(), z + dz, s.biome.name()))
+            })
+        });
+        match channel {
+            Some((cx, cy, cz, biome)) => println!(
+                "  width {width:.0}: channel ({cx}, {cy}, {cz}) {biome}; high {f_hi:.2}x at yf={t_hi:.2}, low {f_lo:.2}x at yf={t_lo:.2}"
+            ),
+            None => println!(
+                "  width {width:.0}: node ({x}, {z}); high {f_hi:.2}x at yf={t_hi:.2}, low {f_lo:.2}x at yf={t_lo:.2}"
+            ),
+        }
+    }
 }

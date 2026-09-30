@@ -12,6 +12,8 @@ hearth_math.workspace = true
 hearth_content.workspace = true
 hearth_worldgen.workspace = true
 glam.workspace = true
+rayon.workspace = true
+rustc-hash.workspace = true
 serde.workspace = true
 
 [dev-dependencies]

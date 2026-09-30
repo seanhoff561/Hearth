@@ -402,3 +402,27 @@ hair farther in depth so the cubes win wherever they are drawn: rays leave the c
 so any gap in the cubes is backed by LOD terrain. Forest LOD columns are a canopy roof over a
 shaded forest floor rather than solid blocks, so rays passing under the roof's edge where the
 real trees end meet ground, not sky.
+
+## D55 — River levels follow basin regimes, and floods thin out instead of standing in walls
+A river's seasonal level comes from its whole upstream basin, not the climate where it flows:
+each river cell of the planet grid contributes the runoff regime of its own climate, weighted
+by the water it adds, and the regimes are summed down the drainage network with the flood
+wave's travel time. A local regime alone would dry the lower Nile every year; the basin mix
+floods it from the Ethiopian rains. The sum is done on Fourier coefficients (a delay is an
+exact phase shift) with all harmonics of the 73-step year, then stored as a series per reach
+(2 bytes a step): cheap (22k reaches, 0.07 s, 3 MB on a Standard planet) and exact, where
+time-domain shifts would blur floods reach by reach and a few harmonics would ring. Two
+liberties in the water balance: runoff comes from a landscape of five temperature bands
+(±4 °C) rather than a point, which spreads snowmelt floods over weeks as real basins do, and
+5 % of rain runs off whatever the season's balance (storm runoff), without which semi-arid
+places run off only in their few coldest weeks. The ground's share of runoff (baseflow) scales
+with the groundwater model's wetness, so streams of dry lands lose their water and run dry.
+Travel times use the real distances the planet's rivers stand for (Earth's circumference over
+the planet's), as the climate uses Earth's.
+On the terrain, the stage follows Manning (depth ∝ flow^0.6), rises half as fast over the
+banks and at most half a block plus a quarter of the channel depth above them — full-scale
+flood stages (several metres) at a vertical scale of 0.25 stood blocks above the plains. The
+flood level is only known within the river's banks zone, so where it would stand above the
+land around the river, it thins toward the zone's edge (0.5 blocks per block) to meet that
+land: water spreading over a plain as a film too thin to show, rather than a wall at the edge
+of the zone.

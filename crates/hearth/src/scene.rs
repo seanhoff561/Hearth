@@ -22,9 +22,8 @@ pub struct LocalWorld {
     pub generator: Arc<WorldGenerator>,
     pub map: CubeMap,
     pub light: LightEngine,
-    pub cover: crate::season_cover::CoverStates,
-    /// Plants under seasonal snow, restored when it melts.
-    pub buried: crate::season_cover::Buried,
+    /// Seasonal snow, ice and river levels on the loaded terrain.
+    pub cover: crate::season_cover::SeasonCover,
     /// The game data the world was built from.
     pub content: Arc<hearth_content::Content>,
 }
@@ -90,12 +89,12 @@ impl LocalWorld {
             }
         };
         log::info!("planet ready in {:.2}s", t0.elapsed().as_secs_f64());
+        let cover = crate::season_cover::SeasonCover::new(&reg, &grid)?;
         let terrain = Arc::new(Terrain::new(Arc::new(grid)));
         let generator = Arc::new(WorldGenerator::new(terrain.clone(), &reg, &content)?);
         Ok(Self {
             map: CubeMap::new(*terrain.planet()),
-            cover: crate::season_cover::CoverStates::resolve(&reg)?,
-            buried: Default::default(),
+            cover,
             content,
             reg,
             generator,
@@ -178,15 +177,9 @@ impl LocalWorld {
             positions.push(p);
         }
         if let Some(yf) = year_frac {
-            let changed = crate::season_cover::apply(
-                &mut self.map,
-                &self.reg,
-                &self.cover,
-                &self.generator,
-                &mut self.buried,
-                &columns,
-                yf,
-            );
+            let changed = self
+                .cover
+                .apply(&mut self.map, &self.reg, &self.generator, &columns, yf);
             log::debug!("seasonal cover changed {changed} blocks");
         }
         let t1 = Instant::now();

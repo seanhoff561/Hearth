@@ -132,7 +132,12 @@ fn follow_of(p: Permeability) -> f32 {
 
 /// 0 (desert) … 1 (wet): the water left for the ground after evaporation.
 fn wetness(s: &ColumnSample) -> f32 {
-    let t = ((s.precipitation - 20.0 * s.temperature.max(0.0) - 150.0) / 850.0).clamp(0.0, 1.0);
+    wetness_of(s.precipitation, s.temperature)
+}
+
+/// Wetness from annual precipitation (mm) and mean temperature (°C): 0 (desert) … 1 (wet).
+pub fn wetness_of(precipitation: f32, temperature: f32) -> f32 {
+    let t = ((precipitation - 20.0 * temperature.max(0.0) - 150.0) / 850.0).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 

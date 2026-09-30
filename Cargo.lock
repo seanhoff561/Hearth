@@ -189,6 +189,7 @@ dependencies = [
  "env_logger",
  "hearth_content",
  "hearth_core",
+ "hearth_env",
  "hearth_math",
  "hearth_texgen",
  "hearth_world",
@@ -856,7 +857,9 @@ dependencies = [
  "hearth_content",
  "hearth_math",
  "hearth_worldgen",
+ "rayon",
  "ron",
+ "rustc-hash 2.1.3",
  "serde",
 ]
 

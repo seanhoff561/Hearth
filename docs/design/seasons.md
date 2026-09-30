@@ -50,6 +50,9 @@ periodic: precipitation falls as snow below −0.5 °C and as rain above 2 °C, 
 3.5 mm per degree-day, settled snow is 280 kg/m³; still-water ice grows by Stefan's law
 (2.4 cm/√(°C·day)) and thaws at 1.2 cm per degree-day. Packs that never melt mark perennial
 snow (glaciers are the generator's). Rivers freeze to about half the still-water thickness.
+The same integration gives the place's runoff through the year (rain and meltwater of a
+landscape of warmer and colder slopes, less evaporation, drained slowly through the ground),
+from which the rivers' seasonal regimes are built (`hearth_env::rivers`, geology.md, D55).
 
 ### Weather (`weather.rs`) — two layers (D30)
 - **Day scale, what the player sees:** a smooth field on the sphere (fBm) advected by the
@@ -81,10 +84,12 @@ weather use (D35).
 When terrain loads, the date's snow depth (8 layers = 1 m, with a little drifting) and ice are
 laid on it: snow lies on full blocks and buries low plants; bare deciduous crowns let it
 through to the ground (three quarters of it); conifer crowns hold two layers and shelter the
-ground. Still water and rivers freeze; the sea stays open until sea ice arrives with the coasts
-(V2-2). Every five days of the year the loaded terrain is refreshed: the old cover comes off
-(buried plants return, ice thaws) and the date's is laid again; only changed blocks are relit
-and remeshed (D36).
+ground. Still water and rivers freeze, and the sea where winters are cold enough for sea ice.
+Rivers stand at the date's level: flooding their banks in high water (drowned plants are
+remembered) and baring their beds in low water. Every five days of the year the loaded terrain
+is refreshed: the old cover comes off (buried plants return, ice thaws, rivers go back to
+their mean level) and the date's is laid again; only changed blocks are relit and remeshed
+(D36).
 
 ## Parameters
 `time.ron`: day length, days per season, axial tilt, starting season, synodic month. Snow and
