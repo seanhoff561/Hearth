@@ -227,8 +227,6 @@ fn material(name: &str) -> String {
     let base = name.trim_end_matches("_slab").trim_end_matches("_stairs");
     match base {
         "oak" | "birch" | "spruce" => format!("{base}_planks"),
-        "brick" => "bricks".into(),
-        "stone_brick" => "stone_bricks".into(),
         other => other.into(),
     }
 }
@@ -260,15 +258,6 @@ fn bake(block: &Block, s: BlockStateId, reg: &BlockRegistry, atlas: &TextureArra
 fn cross_texture(name: &str, s: BlockStateId, reg: &BlockRegistry) -> String {
     if let Some(half) = prop(reg, s, "half") {
         return format!("{name}_{}", if half == "upper" { "top" } else { "bottom" });
-    }
-    if name == "wheat" {
-        return format!("wheat_stage{}", prop(reg, s, "age").unwrap_or("0"));
-    }
-    if name == "sweet_berry_bush" {
-        return format!(
-            "sweet_berry_bush_stage{}",
-            prop(reg, s, "age").unwrap_or("0")
-        );
     }
     name.to_owned()
 }
@@ -359,14 +348,9 @@ fn cube_model(
         };
         f[down] = ctx.tex("dirt");
         f
-    } else if name.ends_with("_log") || name == "hay_block" {
+    } else if name.ends_with("_log") {
         let axis = prop(reg, s, "axis").unwrap_or("y");
-        let (side, end) = if name == "hay_block" {
-            (ctx.tex("hay_block_side"), ctx.tex("hay_block_top"))
-        } else {
-            (ctx.tex(name), ctx.tex(&format!("{name}_top")))
-        };
-        axis_faces(side, end, axis)
+        axis_faces(ctx.tex(name), ctx.tex(&format!("{name}_top")), axis)
     } else if name.ends_with("_wood") {
         let log = name.replace("_wood", "_log");
         let axis = prop(reg, s, "axis").unwrap_or("y");
@@ -376,39 +360,10 @@ fn cube_model(
         f[up] = ctx.tex(&format!("{name}_top"));
         f[down] = ctx.tex(&format!("{name}_bottom"));
         f
-    } else if let Some(base) = name.strip_prefix("cut_") {
-        let mut f = all(ctx.tex(name));
-        f[up] = ctx.tex(&format!("{base}_top"));
-        f[down] = ctx.tex(&format!("{base}_top"));
-        f
     } else if name == "deepslate" {
         let mut f = all(ctx.tex("deepslate"));
         f[up] = ctx.tex("deepslate_top");
         f[down] = ctx.tex("deepslate_top");
-        f
-    } else if name == "crafting_table" {
-        let mut f = all(ctx.tex("crafting_table_side"));
-        f[Direction::North.index()] = ctx.tex("crafting_table_front");
-        f[Direction::South.index()] = ctx.tex("crafting_table_front");
-        f[up] = ctx.tex("crafting_table_top");
-        f[down] = ctx.tex("oak_planks");
-        f
-    } else if name == "furnace" {
-        let lit = prop(reg, s, "lit") == Some("true");
-        let facing = reg.get_dir(s, "facing").unwrap_or(Direction::North);
-        let mut f = all(ctx.tex("furnace_side"));
-        f[facing.index()] = ctx.tex(if lit {
-            "furnace_front_on"
-        } else {
-            "furnace_front"
-        });
-        f[up] = ctx.tex("furnace_top");
-        f[down] = ctx.tex("furnace_top");
-        f
-    } else if name == "pumpkin" {
-        let mut f = all(ctx.tex("pumpkin_side"));
-        f[up] = ctx.tex("pumpkin_top");
-        f[down] = ctx.tex("pumpkin_top");
         f
     } else if name == "snow_block" {
         all(ctx.tex("snow"))
@@ -562,42 +517,6 @@ fn bake_model(
         }
     };
     match name {
-        "torch" | "wall_torch" => {
-            let tex = ctx.tex("torch");
-            let (ox, oz, oy) = if name == "wall_torch" {
-                let f = reg.get_dir(s, "facing").unwrap_or(Direction::North);
-                let o = f.opposite().offset();
-                (o.x as f32 * 0.3, o.z as f32 * 0.3, 0.2)
-            } else {
-                (0.0, 0.0, 0.0)
-            };
-            let min = Vec3::new(7.0 / 16.0 + ox, oy, 7.0 / 16.0 + oz);
-            let max = Vec3::new(9.0 / 16.0 + ox, 10.0 / 16.0 + oy, 9.0 / 16.0 + oz);
-            let mut stick = Vec::new();
-            box_quads(min, max, |_| tex, false, &mut stick);
-            // Map every face to the stick column of the sprite (x 7..9, y 6..16).
-            for q in &mut stick {
-                let d = q.dir.expect("box faces are axis aligned");
-                q.uv = if d.axis() == hearth_math::Axis::Y {
-                    [
-                        Vec2::new(7.0, 8.0),
-                        Vec2::new(9.0, 8.0),
-                        Vec2::new(9.0, 6.0),
-                        Vec2::new(7.0, 6.0),
-                    ]
-                } else {
-                    [
-                        Vec2::new(7.0, 16.0),
-                        Vec2::new(9.0, 16.0),
-                        Vec2::new(9.0, 6.0),
-                        Vec2::new(7.0, 6.0),
-                    ]
-                };
-                q.cull = None;
-            }
-            quads.extend(stick);
-            layer = RenderLayer::Cutout;
-        }
         "vine" => {
             let tex = ctx.tex_tint("vine", Tint::Foliage);
             let e = 0.8 / 16.0;
@@ -657,30 +576,7 @@ fn bake_model(
             });
             layer = RenderLayer::Cutout;
         }
-        "ladder" => {
-            let f = reg.get_dir(s, "facing").unwrap_or(Direction::North);
-            let e = 1.0 / 16.0;
-            // The ladder sits on the wall behind its facing direction.
-            let wall = f.opposite();
-            let (min, max) = match wall {
-                Direction::North => (Vec3::new(0.0, 0.0, e), Vec3::new(1.0, 1.0, e)),
-                Direction::South => (Vec3::new(0.0, 0.0, 1.0 - e), Vec3::new(1.0, 1.0, 1.0 - e)),
-                Direction::West => (Vec3::new(e, 0.0, 0.0), Vec3::new(e, 1.0, 1.0)),
-                _ => (Vec3::new(1.0 - e, 0.0, 0.0), Vec3::new(1.0 - e, 1.0, 1.0)),
-            };
-            let (p, uv) = face_corners(min, max, f);
-            quads.push(ModelQuad {
-                pos: p,
-                uv,
-                tex: ctx.tex("ladder"),
-                dir: Some(f),
-                cull: None,
-                shade: true,
-                waving: false,
-            });
-            layer = RenderLayer::Cutout;
-        }
-        "sweet_berry_bush" | "sugar_cane" | "wheat" => {
+        "sugar_cane" => {
             let tex = ctx.own(&cross_texture(name, s, reg));
             quads = cross(tex, true);
             layer = RenderLayer::Cutout;
@@ -717,58 +613,12 @@ fn bake_model(
                     let t = ctx.tex(name);
                     layer = RenderLayer::Cutout;
                     Box::new(move |_| t)
-                } else if name == "farmland" {
-                    let moist = prop(reg, s, "moisture") == Some("7");
-                    Box::new(side_top_bottom(
-                        ctx.tex("dirt"),
-                        ctx.tex(if moist { "farmland_moist" } else { "farmland" }),
-                        ctx.tex("dirt"),
-                    ))
                 } else if name == "snow" {
                     let t = ctx.tex("snow");
                     Box::new(move |_| t)
-                } else if name.ends_with("_carpet") {
-                    let wool = if name == "moss_carpet" {
-                        "moss_carpet".to_owned()
-                    } else {
-                        name.replace("_carpet", "_wool")
-                    };
-                    let t = ctx.tex(&wool);
+                } else if name == "moss_carpet" {
+                    let t = ctx.tex("moss_carpet");
                     Box::new(move |_| t)
-                } else if let Some(color) = name.strip_suffix("_bed") {
-                    Box::new(side_top_bottom(
-                        ctx.tex(&format!("{color}_bed_side")),
-                        ctx.tex(&format!("{color}_bed_top")),
-                        ctx.tex("oak_planks"),
-                    ))
-                } else if name == "cake" {
-                    let bites = prop(reg, s, "bites").unwrap_or("0") != "0";
-                    let side = ctx.tex("cake_side");
-                    let inner = ctx.tex("cake_inner");
-                    let top = ctx.tex("cake_top");
-                    let bottom = ctx.tex("cake_bottom");
-                    Box::new(move |d| match d {
-                        Direction::Up => top,
-                        Direction::Down => bottom,
-                        Direction::West if bites => inner,
-                        _ => side,
-                    })
-                } else if name == "chest" {
-                    let facing = reg.get_dir(s, "facing").unwrap_or(Direction::North);
-                    let (side, top, front) = (
-                        ctx.tex("chest_side"),
-                        ctx.tex("chest_top"),
-                        ctx.tex("chest_front"),
-                    );
-                    Box::new(move |d| {
-                        if d == facing {
-                            front
-                        } else if d.axis() == hearth_math::Axis::Y {
-                            top
-                        } else {
-                            side
-                        }
-                    })
                 } else if name == "cactus" {
                     layer = RenderLayer::Cutout;
                     Box::new(side_top_bottom(
@@ -776,23 +626,6 @@ fn bake_model(
                         ctx.tex("cactus_top"),
                         ctx.tex("cactus_bottom"),
                     ))
-                } else if name == "glass_pane" {
-                    layer = RenderLayer::Cutout;
-                    Box::new(side_top_bottom(
-                        ctx.tex("glass"),
-                        ctx.tex("glass_pane_top"),
-                        ctx.tex("glass_pane_top"),
-                    ))
-                } else if name == "composter" {
-                    Box::new(side_top_bottom(
-                        ctx.tex("composter_side"),
-                        ctx.tex("composter_compost"),
-                        ctx.tex("composter_bottom"),
-                    ))
-                } else if name == "lantern" {
-                    layer = RenderLayer::Cutout;
-                    let t = ctx.tex("lantern");
-                    Box::new(move |_| t)
                 } else {
                     let t = ctx.own(name);
                     Box::new(move |_| t)
@@ -811,7 +644,7 @@ mod tests {
     use super::*;
 
     fn setup() -> (BlockRegistry, TextureArray, BlockModels) {
-        let reg = hearth_world::datapack::load_builtin_registry().unwrap();
+        let reg = hearth_world::datapack::load_test_registry().unwrap();
         let atlas = TextureArray::from_entries(&hearth_texgen::default_textures());
         let models = BlockModels::build(&reg, &atlas);
         (reg, atlas, models)
@@ -819,7 +652,10 @@ mod tests {
 
     #[test]
     fn every_state_has_a_model_with_known_textures() {
-        let (reg, atlas, models) = setup();
+        // Game content only: the engine test pack's blocks have no textures on purpose.
+        let reg = hearth_world::datapack::load_builtin_registry().unwrap();
+        let atlas = TextureArray::from_entries(&hearth_texgen::default_textures());
+        let models = BlockModels::build(&reg, &atlas);
         assert_eq!(models.len(), reg.state_count());
         let missing = atlas.get("block/missing").layer;
         let mut bad = Vec::new();
@@ -849,7 +685,7 @@ mod tests {
         assert!(Direction::ALL.iter().all(|d| models.occludes(stone, *d)));
         let glass = reg.default_state("glass");
         assert!(!models.occludes(glass, Direction::Up));
-        let slab = reg.parse_state("stone_slab[type=bottom]").unwrap();
+        let slab = reg.parse_state("oak_slab[type=bottom]").unwrap();
         assert!(models.occludes(slab, Direction::Down));
         assert!(!models.occludes(slab, Direction::Up));
         let log = reg.parse_state("oak_log[axis=x]").unwrap();

@@ -1,0 +1,19 @@
+// Workstations are physical builds in the world (v2 §11.3).
+(
+    schema: 1,
+    entries: [
+        (
+            id: "campfire", name: "Campfire",
+            parts: [(item: Tag("firewood"), amount: 4.0), (item: Material("ember"), amount: 0.01)],
+            provides: [MaxTempC(800), Smoke, Drying],
+            knowledge: "fire_keeping", build: (hours: 0.25),
+            notes: "Needs a living ember: carried from a wildfire, or later drilled by friction.",
+        ),
+        (
+            id: "drying_rack", name: "Drying rack",
+            parts: [(item: Form(form: "pole"), amount: 4), (item: Form(form: "cord"), amount: 4)],
+            provides: [Drying, Smoke],
+            knowledge: "drying_and_smoking", build: (hours: 1.5),
+        ),
+    ],
+)

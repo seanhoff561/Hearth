@@ -5,3 +5,5 @@
 *.wasm binary
 *.bin binary
 *.zst binary
+*.hrg binary
+*.bin.zst binary

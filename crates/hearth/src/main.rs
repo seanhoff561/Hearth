@@ -5,6 +5,12 @@ use hearth::screenshot::ShotSpec;
 use hearth_core::paths::GameDirs;
 
 const OPTIONS_HELP: &str = "\
+COMMANDS:
+    content lint               Validate all game data (schemas, references, reachability)
+    content graph [--out DIR]  Export knowledge/process/food-web graphs (default docs/generated)
+    content uncertain          List data entries marked for realism review
+    content status             Implemented/planned counts per content domain
+
 OPTIONS:
     --game-dir <PATH>          Use PATH as the game directory (options, saves, screenshots)
     --seed <N>                 Seed of the preview world (default 1)
@@ -29,6 +35,11 @@ fn main() {
         env_logger::Env::default().default_filter_or("info,wgpu_core=warn,wgpu_hal=warn,naga=warn"),
     )
     .init();
+
+    let all: Vec<String> = std::env::args().skip(1).collect();
+    if all.first().map(String::as_str) == Some("content") {
+        std::process::exit(hearth::content_cli::run(&all[1..]));
+    }
 
     let mut config = LaunchConfig::default();
     let mut shots: Vec<ShotSpec> = Vec::new();

@@ -1,0 +1,43 @@
+// Adult human physiology parameters (v2 §9). Values are rounded textbook figures for healthy
+// adults; the physiology model (V2-3) scales them by body size and the balance layer.
+(
+    schema: 1,
+    height_m: (1.55, 1.90),
+    mass_kg: (50.0, 90.0),
+    // ≈1,700 kcal/day for 70 kg (Mifflin/Harris-Benedict range for adults).
+    bmr_kcal_per_kg_day: 24.0,
+    // Metabolic equivalents (compendium of physical activities, rounded).
+    activity_met: {
+        "sleeping": 0.95,
+        "resting": 1.0,
+        "standing": 1.3,
+        "knapping": 2.5,
+        "walking": 3.5,
+        "foraging": 3.0,
+        "digging": 5.0,
+        "chopping": 6.0,
+        "carrying_heavy": 6.5,
+        "jogging": 7.0,
+        "swimming": 7.0,
+        "climbing": 8.0,
+        "sprinting": 12.0,
+        "shivering_max": 4.5,
+    },
+    // Comfortable meal volume; eating far beyond it is impossible.
+    stomach_capacity_l: 2.0,
+    // At rest in mild weather; sweating adds to it.
+    water_l_per_day: 2.5,
+    // Loss of ~15% of body mass as water is generally fatal.
+    fatal_water_loss: 0.15,
+    core_temp_c: 37.0,
+    hypothermia_c: 35.0,
+    heat_stroke_c: 40.0,
+    blood_l: 5.0,
+    comfortable_load: 0.25,
+    max_load: 0.5,
+    walk_m_s: 1.4,
+    jog_m_s: 3.0,
+    sprint_m_s: 6.5,
+    swim_m_s: 0.8,
+    realism_source: "rounded general physiology references (BMR, MET compendium, load carriage studies); review",
+)

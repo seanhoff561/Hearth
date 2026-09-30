@@ -107,6 +107,47 @@ River channels come from the grid network (jittered nodes, domain-warped query p
 meanders, monotone levels). Sea and lake water fill low ground only where the smoothed local
 water fraction is high; low ground just outside gets a berm, so there are never water walls.
 
+## D22 — Content files: RON first, Rust structs as schemas
+Content is `(schema: N, entries: [...])` in RON (JSON accepted). The serde structs in
+`hearth_content::schema` are the schemas; unknown fields are reported through `serde_ignored`
+(serde's `deny_unknown_fields` doesn't mix with `flatten`, so entries avoid flatten and get their
+standard fields from the `entry!` macro). Bare ids take the file's namespace while parsing.
+Fixed-size arrays are written as RON tuples (`size_m: (0.1, 0.2, 0.3)`).
+
+## D23 — Entries default to `Planned`
+Data authored ahead of its system is hidden in game and only warned about by the lint; a
+system marks the entries it uses `Implemented`, which makes reachability problems errors.
+
+## D24 — Saves: JSON metadata, 8³-cube zstd regions
+`level.json` is JSON because migrations edit a generic value tree and JSON keeps enum variant
+names that RON's untyped values drop. Regions hold 8×8×8 cubes in 4 KiB sectors with
+per-record zstd. Every generated cube is saved, so later world-generator changes never create
+seams in existing worlds.
+
+## D25 — Unknown content keeps its name
+A world's block registry is built from the content plus placeholder blocks for every saved
+state the content lacks, with the same name and properties. They render as "unknown" and
+round-trip exactly, so removing and re-adding a pack loses nothing.
+
+## D26 — Injury healing time scale
+Injuries whose real healing takes more than about a week run on the year scale; shorter ones on
+the day scale. A mild sprain (4 days, day scale) and a fracture (6 weeks, year scale) therefore
+take comparable game days, which keeps both meaningful at the default calendar.
+
+## D27 — What V2-0 removed, and what stays until its replacement
+Removed: ore blocks and the ore bands, crafting table, furnace, chest, composter, cake, lantern,
+glass, ladder, torches (they return as consumable light sources), wool/carpets/beds, bricks and
+polished/cut/smooth stone variants, farmland, wheat, pumpkin, hay, sweet berry bush, planks and
+wooden building sets, stripped logs, and the mining-tier block fields (`tool`, `tier`,
+`requires_tool`, `drops`). Kept as transitional placeholders: the natural terrain, log/leaf and
+plant blocks (until V2-2 geology and V2-6 flora replace them). Engine tests that need special
+shapes or emitters use a separate test block pack (`hearth_world/testdata`).
+
+## D28 — Knowledge dates as years before 1950
+`history.years_bp` follows the radiocarbon convention (before 1950); inventions after 1950 are
+negative. The human-readable `date` string carries the familiar form (BCE/CE, "million years
+ago").
+
 ## D20 — v2 plan folds unfinished v1 engine work into the first milestone that needs it
 v2 lists its milestones in order but they depend on engine parts v1 had not built yet (saves,
 sky, weather, fluids, water rendering, client/server, UI, audio, LOD, ECS). Each goes into the

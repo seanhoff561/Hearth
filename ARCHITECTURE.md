@@ -2,23 +2,24 @@
 
 This document is the design contract for the engine. It describes how the crates fit together,
 which thread owns what, and the data flow of the major systems. Decisions and their rationale
-live in `DECISIONS.md`; status lives in `PROGRESS.md`.
+live in `DECISIONS.md`; status lives in `PROGRESS.md`; per-system design notes (v2) live in
+`docs/design/`.
 
 ## 1. Crate graph
 
 ```
 hearth_math ─┐
-hearth_core ─┼─> hearth_world ─> hearth_worldgen ─> hearth_lod
+hearth_core ─┼─> hearth_content (data packs → typed tables, lint, graphs, time scales, balance)
+             │
+             ├─> hearth_world ─> hearth_worldgen ─> hearth_lod
              │        │                 │
              │        └──> hearth_entity (hecs ECS, physics, AI, pathfinding)
+             │                 │
+             │   hearth_save (level.json, regions, state palette, migrations) [world, worldgen, content]
              │                 │
              │   hearth_protocol (client<->server messages; serializable)
              │                 │
              │   hearth_modapi (stable API traits + WIT; wasmtime host)
-             │                 │
-             │   hearth_content (all base-game content registered through hearth_modapi)
-             │                 │
-             │   hearth_save (regions, metadata, player data, migrations)
              │                 │
              │   hearth_server (authoritative 20 TPS simulation thread)
              │
@@ -37,8 +38,8 @@ Rules:
   engine-specific.
 * Only `hearth_render` (and the binary) touch wgpu; only `hearth_input`/binary touch winit
   event types; only `hearth_audio` touches the audio backend.
-* "Vanilla is a mod": `hearth_content` registers every block, item, entity, recipe, biome and
-  command through `hearth_modapi`, exactly like a third-party mod would.
+* "Vanilla is a mod": base content is a data pack (`data/hearth`) loaded exactly like a
+  third-party pack; code implements mechanisms only (v2 §3.1).
 
 ## 2. Threads
 
@@ -157,7 +158,8 @@ movement with the shared physics code, and interpolates everything else between 
 * WASM components (`mods/*.wasm`, wasmtime component model, WIT API) register content, hook
   events and query/modify the world through capability-checked host functions. Traps are
   contained per mod.
-* Saves store the id→name palette so adding/removing mods never corrupts a world.
+* Saves store the id→name palette so adding/removing mods never corrupts a world; states the
+  content no longer defines load as named placeholders and are written back unchanged.
 
 ## 10. Saves
 

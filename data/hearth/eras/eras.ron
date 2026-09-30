@@ -1,0 +1,33 @@
+// Eras (v2 §17.1). Only Wild Earth is playable now; the others are shown as "coming later".
+(
+    schema: 1,
+    entries: [
+        (
+            id: "wild_earth", name: "Wild Earth", order: 0, available: true, wild_ancestors: true,
+            description: "A timeless wild Earth with no civilisation: present-day wild plants and animals, the wild ancestors of domesticated species, and rare groups of Australopithecus.",
+            hominins: ["australopithecus"],
+            systems: ["geology", "seasons", "flora", "fauna", "physiology", "processes", "knowledge", "building"],
+        ),
+        (
+            id: "last_glacial_maximum", name: "Ice Age", order: 1, available: false, years_bp: 21000,
+            description: "The last glacial maximum: ice sheets, land bridges, mammoths and cave bears, and modern humans with Upper Paleolithic skills.",
+            sea_level_offset_m: -120, temperature_offset_c: -6,
+            status: Planned,
+        ),
+        (
+            id: "neolithic_dawn", name: "Neolithic Dawn", order: 2, available: false, years_bp: 10000,
+            description: "The first farming villages and the domestication of plants and animals.",
+            sea_level_offset_m: -40, temperature_offset_c: -0.5, status: Planned,
+        ),
+        (id: "bronze_age", name: "Bronze Age", order: 3, available: false, years_bp: 4000,
+         description: "Towns, trade in copper and tin, the wheel and the sail.", status: Planned),
+        (id: "classical", name: "Classical Antiquity", order: 4, available: false, years_bp: 2000,
+         description: "Iron, concrete, aqueducts and seafaring empires.", status: Planned),
+        (id: "medieval", name: "Middle Ages", order: 5, available: false, years_bp: 800,
+         description: "Windmills, the compass and the mechanical clock.", status: Planned),
+        (id: "industrial", name: "Industrial Revolution", order: 6, available: false, years_bp: 150,
+         description: "Steam, railways and the telegraph.", status: Planned),
+        (id: "modern", name: "Modern World", order: 7, available: false, years_bp: 0,
+         description: "Electricity, flight and computers.", status: Planned),
+    ],
+)

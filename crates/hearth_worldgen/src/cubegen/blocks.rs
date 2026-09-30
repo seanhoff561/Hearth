@@ -55,10 +55,6 @@ pub struct GenBlocks {
     pub ice: BlockStateId,
     pub packed_ice: BlockStateId,
     pub water: BlockStateId,
-    pub coal_ore: [BlockStateId; 2],
-    pub iron_ore: [BlockStateId; 2],
-    pub gold_ore: [BlockStateId; 2],
-    pub diamond_ore: [BlockStateId; 2],
     pub oak: WoodStates,
     pub birch: WoodStates,
     pub spruce: WoodStates,
@@ -82,8 +78,6 @@ pub struct GenBlocks {
     pub tall_seagrass: [BlockStateId; 2],
     pub kelp: BlockStateId,
     pub kelp_plant: BlockStateId,
-    pub sweet_berry_bush: BlockStateId,
-    pub pumpkin: BlockStateId,
     /// Vine facing each horizontal side (north, east, south, west): the side of the block the
     /// vine is attached to.
     pub vines: [BlockStateId; 4],
@@ -156,10 +150,6 @@ impl GenBlocks {
             ice: s("ice")?,
             packed_ice: s("packed_ice")?,
             water: s("water[level=0]")?,
-            coal_ore: [s("coal_ore")?, s("deepslate_coal_ore")?],
-            iron_ore: [s("iron_ore")?, s("deepslate_iron_ore")?],
-            gold_ore: [s("gold_ore")?, s("deepslate_gold_ore")?],
-            diamond_ore: [s("diamond_ore")?, s("deepslate_diamond_ore")?],
             oak: wood("oak")?,
             birch: wood("birch")?,
             spruce: wood("spruce")?,
@@ -189,8 +179,6 @@ impl GenBlocks {
             tall_seagrass: pair("tall_seagrass")?,
             kelp: s("kelp[age=0]")?,
             kelp_plant: s("kelp_plant")?,
-            sweet_berry_bush: s("sweet_berry_bush[age=3]")?,
-            pumpkin: s("pumpkin")?,
             vines: [
                 s("vine[north=true]")?,
                 s("vine[east=true]")?,
@@ -279,9 +267,5 @@ impl GenBlocks {
             || s == self.podzol
             || s == self.sand
             || s == self.red_sand
-            || self.coal_ore.contains(&s)
-            || self.iron_ore.contains(&s)
-            || self.gold_ore.contains(&s)
-            || self.diamond_ore.contains(&s)
     }
 }

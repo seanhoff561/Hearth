@@ -1,6 +1,7 @@
-//! Ore veins and rock-variety blobs. Veins are seeded per cube and may extend a few blocks into
-//! neighbours; each cube evaluates the veins of its 27-neighbourhood, so results are identical
-//! regardless of generation order.
+//! Rock-variety blobs placed as short veins. Veins are seeded per cube and may extend a few
+//! blocks into neighbours; each cube evaluates the veins of its 27-neighbourhood, so results are
+//! identical regardless of generation order. The v1 ore bands were removed with the v2 direction
+//! change; deposit models placed by geology (V2-2) will reuse this mechanism.
 
 use hearth_math::hash::{Rng, derive_seed, hash_3d};
 use hearth_math::{CUBE_SIZE, CubePos};
@@ -14,10 +15,6 @@ use crate::region::Terrain;
 /// What a vein places.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VeinKind {
-    Coal,
-    Iron,
-    Gold,
-    Diamond,
     Granite,
     Diorite,
     Andesite,
@@ -30,63 +27,30 @@ enum VeinKind {
 /// Maximum reach of a vein from its seeding cube's boundary.
 const MAX_VEIN_REACH: i32 = 6;
 
-/// Ore generation for one world.
+/// Vein generation for one world.
 #[derive(Debug, Clone)]
-pub struct OreGen {
+pub struct VeinGen {
     seed: u64,
     /// Scale of the Y bands relative to the Standard planet (vertical scale / 0.25, clamped).
     scale: f32,
 }
 
-#[inline]
-fn tri(y: f32, lo: f32, peak: f32, hi: f32) -> f32 {
-    if y <= lo || y >= hi {
-        0.0
-    } else if y <= peak {
-        (y - lo) / (peak - lo)
-    } else {
-        (hi - y) / (hi - peak)
-    }
-}
-
-impl OreGen {
+impl VeinGen {
     pub fn new(seed: u64, vertical_scale: f32) -> Self {
         Self {
-            seed: derive_seed(seed, "ores"),
+            seed: derive_seed(seed, "veins"),
             scale: (vertical_scale / 0.25).clamp(0.5, 2.0),
         }
     }
 
     /// Expected veins per cube of each kind at world Y (cube centre), with province bias.
-    fn frequencies(&self, y: f32, depth: f32, prov: u8) -> [(VeinKind, f32, (u32, u32)); 11] {
-        let s = self.scale;
-        let yy = y / s; // Standard-equivalent Y
+    fn frequencies(&self, y: f32, depth: f32, prov: u8) -> [(VeinKind, f32, (u32, u32)); 7] {
+        let yy = y / self.scale; // Standard-equivalent Y
         let shield = prov == province::SHIELD;
         let orogen = prov == province::OROGEN || prov == province::OLD_OROGEN;
         let arc = prov == province::ARC;
-        let basin = prov == province::BASIN;
-        let coal = if yy > -200.0 { 1.0 } else { 0.0 }
-            * (1.0 - ((-yy - 120.0) / 80.0).clamp(0.0, 1.0))
-            * 1.6
-            * if basin || prov == province::OLD_OROGEN {
-                1.4
-            } else {
-                1.0
-            };
-        let iron = (tri(yy, -300.0, -120.0, 20.0) * 1.1 + if yy > 200.0 { 0.8 } else { 0.0 })
-            * if shield { 1.4 } else { 1.0 };
-        let gold = tri(yy, -600.0, -300.0, -60.0) * 0.55 * if orogen || arc { 1.8 } else { 1.0 };
-        let diamond = if yy < -300.0 {
-            (0.03 + 0.25 * ((-yy - 300.0) / 900.0).clamp(0.0, 1.0)) * if shield { 1.3 } else { 1.0 }
-        } else {
-            0.0
-        };
         let near_surface = if depth < 80.0 { 1.0 } else { 0.25 };
         [
-            (VeinKind::Coal, coal, (7, 17)),
-            (VeinKind::Iron, iron, (4, 10)),
-            (VeinKind::Gold, gold, (4, 9)),
-            (VeinKind::Diamond, diamond, (2, 7)),
             (
                 VeinKind::Granite,
                 0.28 * if shield || orogen { 2.0 } else { 1.0 },
@@ -184,7 +148,7 @@ impl OreGen {
         {
             return;
         }
-        // A vein is a short line of overlapping blobs (like the reference game's ore veins).
+        // A vein is a short line of overlapping blobs.
         let len = (size as f32 / 5.0).clamp(1.0, 4.0);
         let yaw = rng.range_f32(0.0, std::f32::consts::TAU);
         let pitch = rng.range_f32(-0.6, 0.6);
@@ -226,10 +190,6 @@ impl OreGen {
                         }
                         let d = deep(y, cur);
                         let new = match kind {
-                            VeinKind::Coal => b.coal_ore[d],
-                            VeinKind::Iron => b.iron_ore[d],
-                            VeinKind::Gold => b.gold_ore[d],
-                            VeinKind::Diamond => b.diamond_ore[d],
                             VeinKind::Granite => b.granite,
                             VeinKind::Diorite => b.diorite,
                             VeinKind::Andesite => b.andesite,
@@ -238,13 +198,8 @@ impl OreGen {
                             VeinKind::Gravel => b.gravel,
                             VeinKind::Calcite => b.calcite,
                         };
-                        // Rock blobs don't overwrite ores already placed and stay out of the
-                        // deepslate (except tuff, which lives down there).
-                        let is_ore = matches!(
-                            kind,
-                            VeinKind::Coal | VeinKind::Iron | VeinKind::Gold | VeinKind::Diamond
-                        );
-                        if !is_ore && d == 1 && kind != VeinKind::Tuff {
+                        // Rock blobs stay out of the deepslate (except tuff, which lives there).
+                        if d == 1 && kind != VeinKind::Tuff {
                             continue;
                         }
                         buf.states[i] = new;

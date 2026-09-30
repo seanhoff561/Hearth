@@ -134,7 +134,6 @@ fn is_feature(b: &super::blocks::GenBlocks, s: BlockStateId) -> bool {
         || s == b.cobblestone
         || s == b.andesite
         || s == b.cactus
-        || s == b.pumpkin
 }
 
 #[test]

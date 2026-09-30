@@ -72,6 +72,6 @@ mod tests {
             assert_eq!(x.tex.h, 16 * x.frames, "{}", x.name);
             assert!(names.insert(x.name.clone()), "duplicate {}", x.name);
         }
-        assert!(a.len() > 150, "{} textures", a.len());
+        assert!(a.len() > 80, "{} textures", a.len());
     }
 }

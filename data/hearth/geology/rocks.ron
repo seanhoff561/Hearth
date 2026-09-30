@@ -1,0 +1,25 @@
+// Rock types. Physical properties live on the material; this adds the geology.
+(
+    schema: 1,
+    entries: [
+        (id: "granite", name: "granite", material: "granite", class: IgneousIntrusive, grain: Coarse, weathers_to: ["quartz_sand", "kaolin", "clay_loam"]),
+        (id: "gneiss", name: "gneiss", material: "gneiss", class: Metamorphic, grain: Coarse, weathers_to: ["quartz_sand", "clay_loam"]),
+        (id: "schist", name: "schist", material: "schist", class: Metamorphic, grain: Medium, weathers_to: ["clay_loam"]),
+        (id: "slate", name: "slate", material: "slate", class: Metamorphic, grain: Fine, weathers_to: ["clay_loam"]),
+        (id: "marble", name: "marble", material: "marble", class: Metamorphic, grain: Medium, weathers_to: ["loam"]),
+        (id: "quartzite", name: "quartzite", material: "quartzite", class: Metamorphic, grain: Medium, weathers_to: ["quartz_sand"]),
+        (id: "basalt", name: "basalt", material: "basalt", class: IgneousExtrusive, grain: Fine, weathers_to: ["clay_loam", "black_sand"]),
+        (id: "andesite", name: "andesite", material: "andesite", class: IgneousExtrusive, grain: Fine, weathers_to: ["clay_loam"]),
+        (id: "rhyolite", name: "rhyolite", material: "rhyolite", class: IgneousExtrusive, grain: Fine, weathers_to: ["kaolin", "quartz_sand"]),
+        (id: "obsidian", name: "obsidian", material: "obsidian", class: IgneousExtrusive, grain: Glassy),
+        (id: "tuff", name: "tuff", material: "tuff", class: IgneousExtrusive, grain: Clastic, weathers_to: ["volcanic_ash", "clay_loam"]),
+        (id: "pumice", name: "pumice", material: "pumice", class: IgneousExtrusive, grain: Glassy, weathers_to: ["volcanic_ash"]),
+        (id: "limestone", name: "limestone", material: "limestone", class: Sedimentary, grain: Fine, weathers_to: ["loam", "earthenware_clay"]),
+        (id: "chalk", name: "chalk", material: "chalk", class: Sedimentary, grain: Fine, weathers_to: ["loam"]),
+        (id: "sandstone", name: "sandstone", material: "sandstone", class: Sedimentary, grain: Medium, weathers_to: ["quartz_sand"]),
+        (id: "shale", name: "shale", material: "shale", class: Sedimentary, grain: Fine, weathers_to: ["earthenware_clay", "clay_loam"]),
+        (id: "mudstone", name: "mudstone", material: "mudstone", class: Sedimentary, grain: Fine, weathers_to: ["earthenware_clay"]),
+        (id: "conglomerate", name: "conglomerate", material: "conglomerate", class: Sedimentary, grain: Clastic, weathers_to: ["gravel", "quartz_sand"]),
+        (id: "chert", name: "chert", material: "chert", class: Sedimentary, grain: Fine),
+    ],
+)

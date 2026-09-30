@@ -1,0 +1,36 @@
+// Realism presets (v2 §3.4). Keys not listed use their defaults (1.0 = real-world proportioned
+// within the time compression of §4.2). Custom is a preset plus per-key overrides.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "authentic",
+            name: "Authentic",
+            description: "Real-world proportioned needs, injuries, dangers and work, within the game's time scales.",
+            values: {},
+        ),
+        (
+            id: "hardy",
+            name: "Hardy",
+            description: "The same systems, more forgiving: slower needs, faster healing, fewer deadly encounters. Good for learning.",
+            values: {
+                "hunger_rate": 0.6,
+                "thirst_rate": 0.7,
+                "fatigue_rate": 0.7,
+                "cold_stress": 0.7,
+                "heat_stress": 0.7,
+                "injury_severity": 0.6,
+                "healing_rate": 2.0,
+                "illness_chance": 0.4,
+                "predator_aggression": 0.5,
+                "animal_awareness": 0.8,
+                "process_duration": 0.7,
+                "spoilage_rate": 0.7,
+                "tool_wear": 0.6,
+                "insight_rate": 1.5,
+                "carry_capacity": 1.3,
+                "excavation_volume": 1.5,
+            },
+        ),
+    ],
+)

@@ -1,0 +1,39 @@
+// Ecosystems: which biomes they occupy, their producers and typical animals, succession and
+// fire regime. Food webs come from the animals' diets.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "temperate_broadleaf_forest", name: "Temperate broadleaf forest",
+            biomes: ["broadleaf_forest", "mixed_forest", "birch_forest", "temperate_plains"],
+            producers: ["english_oak", "silver_birch", "common_hazel", "stinging_nettle", "bramble", "meadow_grass"],
+            consumers: ["red_deer", "roe_deer", "wild_boar", "gray_wolf", "brown_bear", "eurasian_lynx"],
+            succession: [
+                (name: "Open ground: herbs and grasses", plants: ["meadow_grass", "stinging_nettle"], years: (0, 5)),
+                (name: "Scrub", plants: ["bramble", "common_hazel"], years: (3, 20)),
+                (name: "Pioneer woodland", plants: ["silver_birch"], years: (10, 60)),
+                (name: "Oak forest", plants: ["english_oak", "common_hazel"], years: (50, 1000)),
+            ],
+            fire_return_years: (100, 500),
+        ),
+        (
+            id: "boreal_forest_ecosystem", name: "Boreal forest",
+            biomes: ["boreal_forest", "snowy_taiga"],
+            producers: ["norway_spruce", "silver_birch", "meadow_grass"],
+            consumers: ["red_deer", "gray_wolf", "brown_bear", "eurasian_lynx"],
+            succession: [
+                (name: "Burn: grasses and herbs", plants: ["meadow_grass"], years: (0, 5)),
+                (name: "Birch", plants: ["silver_birch"], years: (5, 60)),
+                (name: "Spruce", plants: ["norway_spruce"], years: (50, 400)),
+            ],
+            fire_return_years: (50, 200),
+        ),
+        (
+            id: "savanna_woodland", name: "Savanna–woodland mosaic",
+            biomes: ["savanna"],
+            producers: ["umbrella_acacia", "baobab", "red_oat_grass"],
+            fire_return_years: (1, 5),
+            notes: "Fauna arrives with the savanna expansion wave (V2-10).",
+        ),
+    ],
+)

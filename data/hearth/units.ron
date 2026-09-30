@@ -1,0 +1,59 @@
+// Units (v2 §3.3). Everything is SI internally (metres, kilograms, seconds, litres for fluids,
+// °C for temperature, kcal for food energy, MPa for strengths); conversions happen only in the
+// UI: display = si × factor + offset.
+(
+    schema: 1,
+    quantities: [
+        (name: "length", si: "m", display: [
+            (unit: "m", factor: 1.0),
+            (unit: "cm", factor: 100.0),
+            (unit: "km", factor: 0.001),
+            (unit: "ft", factor: 3.280_84),
+            (unit: "in", factor: 39.370_08),
+            (unit: "mi", factor: 0.000_621_371),
+        ]),
+        (name: "mass", si: "kg", display: [
+            (unit: "kg", factor: 1.0),
+            (unit: "g", factor: 1000.0),
+            (unit: "t", factor: 0.001),
+            (unit: "lb", factor: 2.204_62),
+        ]),
+        (name: "volume", si: "L", display: [
+            (unit: "L", factor: 1.0),
+            (unit: "mL", factor: 1000.0),
+            (unit: "m³", factor: 0.001),
+            (unit: "gal", factor: 0.264_172),
+        ]),
+        (name: "temperature", si: "°C", display: [
+            (unit: "°C", factor: 1.0),
+            (unit: "°F", factor: 1.8, offset: 32.0),
+            (unit: "K", factor: 1.0, offset: 273.15),
+        ]),
+        (name: "food_energy", si: "kcal", display: [
+            (unit: "kcal", factor: 1.0),
+            (unit: "kJ", factor: 4.184),
+        ]),
+        (name: "energy", si: "J", display: [
+            (unit: "J", factor: 1.0),
+            (unit: "MJ", factor: 0.000_001),
+        ]),
+        (name: "speed", si: "m/s", display: [
+            (unit: "m/s", factor: 1.0),
+            (unit: "km/h", factor: 3.6),
+            (unit: "mph", factor: 2.236_94),
+        ]),
+        (name: "strength", si: "MPa", display: [
+            (unit: "MPa", factor: 1.0),
+            (unit: "psi", factor: 145.038),
+        ]),
+        (name: "density", si: "kg/m³", display: [
+            (unit: "kg/m³", factor: 1.0),
+            (unit: "g/cm³", factor: 0.001),
+        ]),
+        (name: "time", si: "s", display: [
+            (unit: "s", factor: 1.0),
+            (unit: "min", factor: 0.016_666_7),
+            (unit: "h", factor: 0.000_277_778),
+        ]),
+    ],
+)

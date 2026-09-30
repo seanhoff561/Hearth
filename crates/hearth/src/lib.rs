@@ -2,6 +2,8 @@
 //! wrapper so tools (benchmarks, screenshot mode) can reuse the pieces.
 
 pub mod app;
+pub mod content_cli;
+pub mod content_state;
 pub mod frame_limiter;
 pub mod preview;
 pub mod scene;

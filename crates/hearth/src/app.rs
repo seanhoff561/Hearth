@@ -15,6 +15,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
+use crate::content_state::ContentState;
 use crate::frame_limiter::FrameLimiter;
 use crate::preview::Preview;
 
@@ -56,6 +57,7 @@ pub struct App {
     quit_after: Option<Duration>,
     frames_rendered: u64,
     seed: u64,
+    content: ContentState,
 }
 
 impl App {
@@ -94,6 +96,7 @@ impl App {
             quit_after,
             frames_rendered: 0,
             seed,
+            content: ContentState::load(vec![crate::scene::data_pack_dir()]),
         }
     }
 
@@ -204,6 +207,8 @@ impl App {
                     self.toggle_fullscreen();
                 } else if action == builtin::PAUSE {
                     self.set_captured(false);
+                } else if action == builtin::DEBUG_RELOAD_RESOURCES {
+                    self.content.reload();
                 }
             }
             if key == InputKey::Mouse(MouseButton::Left) {

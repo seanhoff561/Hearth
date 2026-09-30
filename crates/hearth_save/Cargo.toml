@@ -1,0 +1,24 @@
+[package]
+name = "hearth_save"
+description = "World saves: versioned metadata, region files, block-state mapping and migrations."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_core.workspace = true
+hearth_math.workspace = true
+hearth_world.workspace = true
+hearth_worldgen.workspace = true
+hearth_content.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zstd.workspace = true
+thiserror.workspace = true
+log.workspace = true
+rustc-hash.workspace = true
+
+[lints]
+workspace = true

@@ -104,68 +104,6 @@ fn speckled(seed: u64, pal: &Palette, specks: &[Rgb], density: f32) -> Tex {
     t
 }
 
-/// Polished stone: smooth fill with a bevelled border.
-fn polished(seed: u64, pal: &Palette) -> Tex {
-    let mut t = paint(S, S, |x, y| pal.pick(0.45 + fbm(seed, x, y, S, 0.2) * 0.25));
-    for i in 0..16 {
-        let hi = pal.pick(0.95);
-        let lo = pal.pick(0.05);
-        t.set(i, 0, hi);
-        t.set(0, i, hi);
-        t.set(i, 15, lo);
-        t.set(15, i, lo);
-    }
-    t
-}
-
-/// Ore: base rock with clusters of ore-coloured pixels (shadowed and highlighted).
-fn ore(base: &Tex, seed: u64, colors: [Rgb; 3]) -> Tex {
-    let mut t = base.clone();
-    let clusters = 5;
-    for c in 0..clusters {
-        let cx = (rand01(seed, c, 11) * 14.0) as i32 + 1;
-        let cy = (rand01(seed, c, 12) * 14.0) as i32 + 1;
-        let n = 2 + (rand01(seed, c, 13) * 3.0) as i32;
-        for k in 0..n {
-            let x = cx + (rand01(seed, c * 10 + k, 14) * 3.0) as i32 - 1;
-            let y = cy + (rand01(seed, c * 10 + k, 15) * 3.0) as i32 - 1;
-            t.set(x, y, colors[1]);
-            t.set(x + 1, y, colors[2]);
-            t.set(x, y + 1, colors[0]);
-        }
-    }
-    t
-}
-
-/// Horizontal boards with seams and grain.
-fn planks(seed: u64, base: Rgb) -> Tex {
-    let pal = Palette::around(base, 5, 0.16);
-    let mut t = Tex::new(S, S);
-    for y in 0..16 {
-        let board = y / 4;
-        let joint = (rand01(seed, board, 0) * 16.0) as i32;
-        for x in 0..16 {
-            let grain = value_noise(
-                seed ^ board as u64,
-                x as f32 * 0.35,
-                y as f32 * 3.0,
-                2.0,
-                16.0,
-            );
-            let mut c = pal.pick(0.25 + grain * 0.6);
-            if y % 4 == 3 {
-                c = scale(base, 0.66);
-            } else if x == joint {
-                c = scale(base, 0.72);
-            } else if y % 4 == 0 {
-                c = scale(c, 1.06);
-            }
-            t.set(x, y, c);
-        }
-    }
-    t
-}
-
 /// Bark: vertical stripes with knots.
 fn log_side(seed: u64, dark: Rgb, light: Rgb) -> Tex {
     paint(S, S, |x, y| {
@@ -195,14 +133,6 @@ fn log_top(seed: u64, bark: Rgb, wood: Rgb) -> Tex {
         } else {
             scale(wood, 1.06)
         }
-    })
-}
-
-/// Stripped log side: smooth wood with fine grain.
-fn stripped_side(seed: u64, wood: Rgb) -> Tex {
-    paint(S, S, |x, y| {
-        let g = value_noise(seed, x as f32, y as f32 * 0.3, 2.0, 16.0);
-        scale(wood, 0.9 + g * 0.18)
     })
 }
 
@@ -239,40 +169,6 @@ fn cobble(seed: u64, pal: &Palette, mortar: Rgb) -> Tex {
     })
 }
 
-/// Rectangular bricks with an offset every other row.
-fn bricks(seed: u64, rows: i32, brick: &Palette, mortar: Rgb) -> Tex {
-    let rh = 16 / rows;
-    paint(S, S, |x, y| {
-        let row = y / rh;
-        let offset = if row % 2 == 0 { 0 } else { 4 };
-        let bw = 8;
-        if y % rh == rh - 1 || (x + offset) % bw == bw - 1 {
-            mortar
-        } else {
-            let id = (row * 16 + (x + offset) / bw) as u64;
-            let base = (hearth_math::hash::mix64(seed ^ id) % 1000) as f32 / 1000.0;
-            brick.pick(0.2 + base * 0.5 + rand01(seed, x, y) * 0.3)
-        }
-    })
-}
-
-/// Stone bricks: large rectangular blocks.
-fn stone_bricks(seed: u64) -> Tex {
-    let pal = stone_pal();
-    let mortar = [80, 80, 82];
-    paint(S, S, |x, y| {
-        let row = y / 8;
-        let offset = if row % 2 == 0 { 0 } else { 4 };
-        if y % 8 == 7 || (x + offset) % 8 == 7 {
-            mortar
-        } else {
-            let v = fbm(seed, x, y, S, 0.4);
-            let c = pal.pick(0.35 + v * 0.5);
-            if y % 8 == 0 { scale(c, 1.08) } else { c }
-        }
-    })
-}
-
 /// Moss growing over a texture.
 fn mossify(mut t: Tex, seed: u64, amount: f32) -> Tex {
     let moss = Palette(vec![
@@ -287,51 +183,6 @@ fn mossify(mut t: Tex, seed: u64, amount: f32) -> Tex {
             if n < amount {
                 t.set(x, y, moss.pick(rand01(seed ^ 3, x, y)));
             }
-        }
-    }
-    t
-}
-
-/// Cracks over a texture.
-fn crack(mut t: Tex, seed: u64) -> Tex {
-    let mut x = 3 + (rand01(seed, 0, 0) * 4.0) as i32;
-    for y in 0..16 {
-        let p = t.get(x, y);
-        t.set(x, y, scale([p[0], p[1], p[2]], 0.55));
-        if rand01(seed, 1, y) > 0.6 {
-            x += if rand01(seed, 2, y) > 0.5 { 1 } else { -1 };
-        }
-    }
-    t
-}
-
-/// Wool: soft knit texture in one colour.
-fn wool(seed: u64, c: Rgb) -> Tex {
-    paint(S, S, |x, y| {
-        let knit = if (x + (y / 2) * 2) % 4 < 2 {
-            1.04
-        } else {
-            0.94
-        };
-        scale(c, knit * (0.93 + rand01(seed, x, y) * 0.1))
-    })
-}
-
-/// Metal/gem block: framed tile with highlights.
-fn metal_block(seed: u64, pal: &Palette, rivets: bool) -> Tex {
-    let mut t = paint(S, S, |x, y| {
-        let v = 0.5 + (x as f32 - y as f32) / 64.0 + rand01(seed, x, y) * 0.1;
-        pal.pick(v)
-    });
-    for i in 0..16 {
-        t.set(i, 0, pal.pick(0.99));
-        t.set(0, i, pal.pick(0.99));
-        t.set(i, 15, pal.pick(0.0));
-        t.set(15, i, pal.pick(0.0));
-    }
-    if rivets {
-        for (x, y) in [(2, 2), (13, 2), (2, 13), (13, 13)] {
-            t.set(x, y, pal.pick(0.98));
         }
     }
     t
@@ -551,61 +402,6 @@ fn seagrass(seed: u64) -> Tex {
     t
 }
 
-fn wheat(stage: u32) -> Tex {
-    let mut t = blank();
-    let grow = stage as f32 / 7.0;
-    let hgt = 3 + (grow * 12.0) as i32;
-    let col = lerp([70, 140, 40], [190, 170, 70], grow);
-    for (i, x) in [2, 5, 8, 11, 14].iter().enumerate() {
-        let hh = hgt - (i as i32 % 2) * 2;
-        for k in 0..hh.max(1) {
-            t.put(*x, 15 - k, scale(col, 0.85 + (k % 3) as f32 * 0.07));
-        }
-        if stage >= 5 {
-            for k in 0..3 {
-                t.put(*x - 1, 15 - hh + k + 1, [210, 180, 80]);
-            }
-        }
-    }
-    t
-}
-
-fn berry_bush(stage: u32) -> Tex {
-    let mut t = leaves(h("berry") ^ stage as u64, 0.35, 0.3, 0.55);
-    // Colour it (the bush isn't tinted).
-    for p in &mut t.px {
-        if p[3] > 0 {
-            let v = p[0] as f32 / 255.0;
-            *p = [
-                (40.0 * v + 20.0) as u8,
-                (110.0 * v + 40.0) as u8,
-                (40.0 * v + 20.0) as u8,
-                255,
-            ];
-        }
-    }
-    if stage == 0 {
-        for y in 0..8 {
-            for x in 0..16 {
-                t.clear(x, y);
-            }
-        }
-    }
-    if stage >= 2 {
-        let berry = if stage == 3 {
-            [200, 30, 40]
-        } else {
-            [150, 40, 50]
-        };
-        for i in 0..(stage * 4) as i32 {
-            let x = 2 + (rand01(h("berries"), i, 0) * 12.0) as i32;
-            let y = 3 + (rand01(h("berries"), i, 1) * 11.0) as i32;
-            t.put(x, y, berry);
-        }
-    }
-    t
-}
-
 fn cactus_side(seed: u64) -> Tex {
     paint(S, S, |x, y| {
         let rib = x % 4 == 1;
@@ -651,53 +447,6 @@ fn lily_pad(seed: u64) -> Tex {
     t
 }
 
-fn torch() -> Tex {
-    let mut t = blank();
-    for y in 6..16 {
-        t.put(7, y, [120, 84, 44]);
-        t.put(8, y, [96, 66, 34]);
-    }
-    t.put(7, 5, [255, 240, 150]);
-    t.put(8, 5, [255, 200, 80]);
-    t.put(7, 4, [255, 220, 110]);
-    t.put(8, 4, [255, 160, 40]);
-    t.put(7, 6, [255, 190, 70]);
-    t
-}
-
-fn ladder(seed: u64) -> Tex {
-    let mut t = blank();
-    let wood = [140, 104, 60];
-    for y in 0..16 {
-        t.put(2, y, scale(wood, 0.85));
-        t.put(3, y, wood);
-        t.put(12, y, wood);
-        t.put(13, y, scale(wood, 0.85));
-    }
-    for &y in &[2, 6, 10, 14] {
-        for x in 4..12 {
-            t.put(x, y, scale(wood, 0.95 + rand01(seed, x, y) * 0.1));
-        }
-    }
-    t
-}
-
-fn glass() -> Tex {
-    let mut t = blank();
-    let frame = [218, 236, 240];
-    for i in 0..16 {
-        t.put(i, 0, frame);
-        t.put(0, i, frame);
-        t.put(i, 15, [190, 214, 222]);
-        t.put(15, i, [190, 214, 222]);
-    }
-    for k in 0..4 {
-        t.put(3 + k, 5 - k, [240, 250, 255]);
-        t.put(9 + k, 12 - k, [240, 250, 255]);
-    }
-    t
-}
-
 // ------------------------------------------------------------------ the pack
 
 /// All block textures (name without namespace, e.g. `block/stone`).
@@ -732,11 +481,6 @@ pub fn textures() -> Vec<TexEntry> {
             0.38,
         ),
     );
-    add(
-        "cobbled_deepslate",
-        cobble(h("cdeep"), &deepslate_pal(), [36, 36, 40]),
-    );
-    add("polished_deepslate", polished(h("pdeep"), &deepslate_pal()));
     let granite_pal = Palette(vec![
         [138, 92, 74],
         [152, 104, 84],
@@ -752,7 +496,6 @@ pub fn textures() -> Vec<TexEntry> {
             0.14,
         ),
     );
-    add("polished_granite", polished(h("pgranite"), &granite_pal));
     let diorite_pal = Palette(vec![
         [170, 170, 170],
         [188, 188, 188],
@@ -768,7 +511,6 @@ pub fn textures() -> Vec<TexEntry> {
             0.18,
         ),
     );
-    add("polished_diorite", polished(h("pdiorite"), &diorite_pal));
     let andesite_pal = Palette(vec![
         [112, 112, 112],
         [124, 124, 124],
@@ -784,7 +526,6 @@ pub fn textures() -> Vec<TexEntry> {
             0.1,
         ),
     );
-    add("polished_andesite", polished(h("pandesite"), &andesite_pal));
     let tuff_pal = Palette(vec![
         [92, 94, 86],
         [104, 106, 98],
@@ -805,32 +546,8 @@ pub fn textures() -> Vec<TexEntry> {
         "calcite",
         speckled(h("calcite"), &calcite_pal, &[[190, 192, 186]], 0.08),
     );
-    add("stone_bricks", stone_bricks(h("sbricks")));
-    add(
-        "mossy_stone_bricks",
-        mossify(stone_bricks(h("sbricks")), h("moss2"), 0.34),
-    );
-    add(
-        "cracked_stone_bricks",
-        crack(stone_bricks(h("sbricks")), h("crack")),
-    );
-    let brick_pal = Palette(vec![
-        [134, 58, 42],
-        [150, 68, 50],
-        [164, 78, 58],
-        [176, 90, 66],
-    ]);
-    add(
-        "bricks",
-        bricks(h("bricks"), 4, &brick_pal, [168, 158, 150]),
-    );
-
     // Sandstone.
-    let sand_c = [216, 202, 156];
-    for (prefix, pal, base) in [
-        ("", sand_pal(), sand_c),
-        ("red_", red_sand_pal(), [186, 100, 44]),
-    ] {
+    for (prefix, pal) in [("", sand_pal()), ("red_", red_sand_pal())] {
         let seed = h(&format!("{prefix}sandstone"));
         add(
             &format!("{prefix}sandstone"),
@@ -853,23 +570,6 @@ pub fn textures() -> Vec<TexEntry> {
             &format!("{prefix}sandstone_bottom"),
             rocky(seed ^ 2, &pal, 2),
         );
-        add(
-            &format!("smooth_{prefix}sandstone"),
-            paint(S, S, |x, y| {
-                scale(base, 0.97 + rand01(seed ^ 3, x, y) * 0.05)
-            }),
-        );
-        add(&format!("cut_{prefix}sandstone"), {
-            let mut t = paint(S, S, |x, y| {
-                scale(base, 0.96 + rand01(seed ^ 4, x, y) * 0.06)
-            });
-            for x in 0..16 {
-                t.set(x, 0, scale(base, 1.08));
-                t.set(x, 15, scale(base, 0.8));
-                t.set(x, 7, scale(base, 0.86));
-            }
-            t
-        });
     }
 
     // Soils.
@@ -1026,31 +726,6 @@ pub fn textures() -> Vec<TexEntry> {
         }
         t
     });
-    add("farmland", {
-        let mut t = dirt.clone();
-        for y in 0..16 {
-            if y % 4 == 0 {
-                for x in 0..16 {
-                    t.shade(x, y, 0.72);
-                }
-            }
-        }
-        t
-    });
-    add("farmland_moist", {
-        let mut t = noisy(
-            h("dirt_wet"),
-            &Palette(vec![[58, 38, 24], [68, 44, 28], [78, 52, 32], [88, 60, 38]]),
-            0.5,
-        );
-        for y in (0..16).step_by(4) {
-            for x in 0..16 {
-                t.shade(x, y, 0.72);
-            }
-        }
-        t
-    });
-
     // Snow and ice.
     let snow_pal = Palette(vec![
         [226, 234, 240],
@@ -1081,94 +756,14 @@ pub fn textures() -> Vec<TexEntry> {
         }),
     );
 
-    // Ores (stone and deepslate variants).
-    let ores: [(&str, [Rgb; 3]); 4] = [
-        ("coal", [[20, 20, 20], [42, 42, 42], [70, 70, 70]]),
-        ("iron", [[150, 100, 70], [216, 168, 134], [236, 200, 170]]),
-        ("gold", [[196, 150, 20], [248, 212, 60], [255, 240, 140]]),
-        ("diamond", [[30, 150, 150], [96, 230, 220], [200, 255, 250]]),
-    ];
-    for (name, cols) in ores {
-        add(&format!("{name}_ore"), ore(&stone, h(name), cols));
-        add(
-            &format!("deepslate_{name}_ore"),
-            ore(&deepslate, h(name) ^ 7, cols),
-        );
-    }
-    add(
-        "coal_block",
-        metal_block(
-            h("coalb"),
-            &Palette(vec![[16, 16, 16], [26, 26, 26], [34, 34, 36], [48, 48, 50]]),
-            false,
-        ),
-    );
-    add(
-        "iron_block",
-        metal_block(
-            h("ironb"),
-            &Palette(vec![
-                [170, 170, 170],
-                [196, 196, 196],
-                [214, 214, 214],
-                [232, 232, 232],
-            ]),
-            true,
-        ),
-    );
-    add(
-        "gold_block",
-        metal_block(
-            h("goldb"),
-            &Palette(vec![
-                [204, 150, 20],
-                [234, 190, 40],
-                [250, 216, 70],
-                [255, 240, 130],
-            ]),
-            false,
-        ),
-    );
-    add(
-        "diamond_block",
-        metal_block(
-            h("diab"),
-            &Palette(vec![
-                [40, 170, 160],
-                [80, 210, 200],
-                [120, 232, 222],
-                [190, 250, 245],
-            ]),
-            false,
-        ),
-    );
-
     // Wood.
-    let woods: [(&str, Rgb, Rgb, Rgb, Rgb); 3] = [
-        // name, bark dark, bark light, wood, planks
-        (
-            "oak",
-            [72, 56, 34],
-            [110, 86, 52],
-            [176, 142, 86],
-            [162, 130, 78],
-        ),
-        (
-            "birch",
-            [196, 196, 186],
-            [236, 236, 228],
-            [206, 186, 124],
-            [196, 178, 122],
-        ),
-        (
-            "spruce",
-            [52, 36, 20],
-            [86, 62, 36],
-            [130, 98, 58],
-            [116, 86, 50],
-        ),
+    let woods: [(&str, Rgb, Rgb, Rgb); 3] = [
+        // name, bark dark, bark light, wood
+        ("oak", [72, 56, 34], [110, 86, 52], [176, 142, 86]),
+        ("birch", [196, 196, 186], [236, 236, 228], [206, 186, 124]),
+        ("spruce", [52, 36, 20], [86, 62, 36], [130, 98, 58]),
     ];
-    for (name, dark, light, wood, plank) in woods {
+    for (name, dark, light, wood) in woods {
         let seed = h(name);
         let mut side = log_side(seed, dark, light);
         if name == "birch" {
@@ -1185,15 +780,6 @@ pub fn textures() -> Vec<TexEntry> {
         }
         add(&format!("{name}_log"), side.clone());
         add(&format!("{name}_log_top"), log_top(seed, dark, wood));
-        add(
-            &format!("stripped_{name}_log"),
-            stripped_side(seed ^ 3, wood),
-        );
-        add(
-            &format!("stripped_{name}_log_top"),
-            log_top(seed ^ 5, scale(wood, 0.85), wood),
-        );
-        add(&format!("{name}_planks"), planks(seed ^ 9, plank));
         let (holes, lo, hi) = match name {
             "spruce" => (0.3, 0.42, 0.7),
             "birch" => (0.34, 0.5, 0.8),
@@ -1209,37 +795,6 @@ pub fn textures() -> Vec<TexEntry> {
             &format!("{name}_sapling"),
             sapling(seed ^ 13, leaf, dark, name == "spruce"),
         );
-        add(&format!("{name}_door_bottom"), {
-            let mut t = planks(seed ^ 17, plank);
-            for i in 0..16 {
-                t.set(0, i, scale(plank, 0.7));
-                t.set(15, i, scale(plank, 0.7));
-            }
-            t.set(12, 1, [60, 60, 60]);
-            t
-        });
-        add(&format!("{name}_door_top"), {
-            let mut t = planks(seed ^ 19, plank);
-            for y in 3..10 {
-                for x in 3..13 {
-                    if !(x == 7 || x == 8 || y == 6) {
-                        t.clear(x, y);
-                    }
-                }
-            }
-            t
-        });
-        add(&format!("{name}_trapdoor"), {
-            let mut t = planks(seed ^ 23, plank);
-            for y in [4, 11] {
-                for x in 3..13 {
-                    if x % 3 != 0 {
-                        t.clear(x, y);
-                    }
-                }
-            }
-            t
-        });
     }
 
     // Plants and sprites.
@@ -1290,12 +845,6 @@ pub fn textures() -> Vec<TexEntry> {
     add("seagrass", seagrass(h("seagrass")));
     add("tall_seagrass_bottom", seagrass(h("tseab")));
     add("tall_seagrass_top", seagrass(h("tseat")));
-    for stage in 0..8 {
-        add(&format!("wheat_stage{stage}"), wheat(stage));
-    }
-    for stage in 0..4 {
-        add(&format!("sweet_berry_bush_stage{stage}"), berry_bush(stage));
-    }
     add("cactus_side", cactus_side(h("cactus")));
     add(
         "cactus_top",
@@ -1329,246 +878,6 @@ pub fn textures() -> Vec<TexEntry> {
             0.55,
         ),
     );
-
-    // Building blocks.
-    add("glass", glass());
-    add("glass_pane_top", paint(S, S, |_, _| [214, 234, 240]));
-    add("torch", torch());
-    add("ladder", ladder(h("ladder")));
-    let oak_plank = [162, 130, 78];
-    add("crafting_table_top", {
-        let mut t = planks(h("ctt"), oak_plank);
-        for i in 1..15 {
-            t.set(i, 1, [90, 64, 40]);
-            t.set(i, 14, [90, 64, 40]);
-            t.set(1, i, [90, 64, 40]);
-            t.set(14, i, [90, 64, 40]);
-            t.set(i, 8, [120, 90, 56]);
-            t.set(8, i, [120, 90, 56]);
-        }
-        t
-    });
-    add("crafting_table_side", {
-        let mut t = planks(h("cts"), oak_plank);
-        // A saw and a hammer hanging on the side.
-        line(&mut t, 3, 4, 3, 11, [170, 170, 176]);
-        line(&mut t, 4, 4, 4, 9, [200, 200, 206]);
-        line(&mut t, 11, 4, 11, 12, [110, 80, 50]);
-        for x in 9..14 {
-            t.set(x, 4, [150, 150, 156]);
-        }
-        t
-    });
-    add("crafting_table_front", {
-        let mut t = planks(h("ctf"), oak_plank);
-        for x in 3..13 {
-            t.set(x, 5, [120, 90, 56]);
-        }
-        line(&mut t, 5, 7, 10, 12, [170, 170, 176]);
-        line(&mut t, 10, 7, 5, 12, [110, 80, 50]);
-        t
-    });
-    let smooth_stone = polished(h("smooth"), &stone_pal());
-    add("furnace_side", smooth_stone.clone());
-    add("furnace_top", smooth_stone.clone());
-    for (name, lit) in [("furnace_front", false), ("furnace_front_on", true)] {
-        let mut t = cobble(h("furnace"), &stone_pal(), [76, 76, 76]);
-        for y in 8..14 {
-            for x in 4..12 {
-                let glow = lit && y >= 10;
-                t.set(
-                    x,
-                    y,
-                    if glow {
-                        lerp([255, 160, 40], [255, 230, 120], rand01(h("fire"), x, y))
-                    } else {
-                        [30, 30, 30]
-                    },
-                );
-            }
-        }
-        for x in 3..13 {
-            t.set(x, 7, [110, 110, 110]);
-            t.set(x, 14, [110, 110, 110]);
-        }
-        add(name, t);
-    }
-    let chest_wood = [150, 104, 50];
-    add("chest_top", {
-        let mut t = planks(h("chest_top"), chest_wood);
-        for i in 0..16 {
-            t.set(i, 0, [70, 50, 30]);
-            t.set(i, 15, [70, 50, 30]);
-            t.set(0, i, [70, 50, 30]);
-            t.set(15, i, [70, 50, 30]);
-        }
-        t
-    });
-    add("chest_side", {
-        let mut t = planks(h("chest_side"), chest_wood);
-        for x in 0..16 {
-            t.set(x, 5, [70, 50, 30]);
-            t.set(x, 0, [70, 50, 30]);
-            t.set(x, 15, [70, 50, 30]);
-        }
-        t
-    });
-    add("chest_front", {
-        let mut t = planks(h("chest_front"), chest_wood);
-        for x in 0..16 {
-            t.set(x, 5, [70, 50, 30]);
-            t.set(x, 0, [70, 50, 30]);
-            t.set(x, 15, [70, 50, 30]);
-        }
-        for y in 4..8 {
-            for x in 7..9 {
-                t.set(x, y, [210, 210, 214]);
-            }
-        }
-        t
-    });
-    add("lantern", {
-        let mut t = blank();
-        for y in 2..14 {
-            for x in 4..12 {
-                let frame = x == 4 || x == 11 || y == 2 || y == 13 || y == 7;
-                t.put(
-                    x,
-                    y,
-                    if frame {
-                        [60, 62, 70]
-                    } else {
-                        lerp([255, 210, 110], [255, 170, 60], rand01(h("lant"), x, y))
-                    },
-                );
-            }
-        }
-        t
-    });
-    add(
-        "hay_block_side",
-        paint(S, S, |x, y| {
-            let band = y == 5 || y == 11;
-            if band {
-                [140, 60, 30]
-            } else {
-                lerp(
-                    [190, 150, 40],
-                    [230, 196, 70],
-                    value_noise(h("hay"), x as f32, y as f32 * 0.3, 2.0, 16.0),
-                )
-            }
-        }),
-    );
-    add(
-        "hay_block_top",
-        paint(S, S, |x, y| {
-            lerp([180, 140, 36], [228, 192, 66], rand01(h("haytop"), x, y))
-        }),
-    );
-    add(
-        "pumpkin_side",
-        paint(S, S, |x, y| {
-            let rib = x % 5 == 0;
-            let c = if rib { [196, 110, 20] } else { [226, 138, 30] };
-            scale(c, 0.94 + rand01(h("pump"), x, y) * 0.08)
-        }),
-    );
-    add("pumpkin_top", {
-        let mut t = paint(S, S, |x, y| {
-            scale([220, 132, 28], 0.94 + rand01(h("pumpt"), x, y) * 0.08)
-        });
-        for y in 6..10 {
-            for x in 6..10 {
-                t.set(x, y, [110, 90, 40]);
-            }
-        }
-        t
-    });
-    add("composter_side", planks(h("comp"), [140, 100, 56]));
-    add("composter_top", planks(h("compt"), [140, 100, 56]));
-    add("composter_bottom", planks(h("compb"), [120, 86, 48]));
-    add(
-        "composter_compost",
-        noisy(
-            h("compost"),
-            &Palette(vec![
-                [70, 52, 30],
-                [84, 62, 36],
-                [98, 72, 42],
-                [110, 84, 50],
-            ]),
-            0.6,
-        ),
-    );
-    add("cake_top", {
-        let mut t = paint(S, S, |x, y| {
-            scale([244, 238, 232], 0.97 + rand01(h("caket"), x, y) * 0.04)
-        });
-        for i in 0..6 {
-            let x = 2 + (rand01(h("cherries"), i, 0) * 12.0) as i32;
-            let y = 2 + (rand01(h("cherries"), i, 1) * 12.0) as i32;
-            t.set(x, y, [200, 30, 40]);
-        }
-        t
-    });
-    add(
-        "cake_side",
-        paint(S, S, |x, y| {
-            if y < 4 {
-                [244, 238, 232]
-            } else if y < 5 {
-                [220, 60, 60]
-            } else {
-                scale([200, 140, 80], 0.92 + rand01(h("cakes"), x, y) * 0.1)
-            }
-        }),
-    );
-    add(
-        "cake_bottom",
-        paint(S, S, |x, y| {
-            scale([180, 120, 70], 0.95 + rand01(h("cakeb"), x, y) * 0.08)
-        }),
-    );
-    add(
-        "cake_inner",
-        paint(S, S, |x, y| {
-            scale([220, 170, 110], 0.94 + rand01(h("cakei"), x, y) * 0.08)
-        }),
-    );
-
-    // Wool, carpets and beds.
-    for (name, c) in [
-        ("white", [234, 236, 236]),
-        ("light_gray", [142, 142, 134]),
-        ("gray", [62, 68, 71]),
-        ("black", [26, 26, 30]),
-        ("brown", [114, 71, 40]),
-    ] {
-        add(&format!("{name}_wool"), wool(h(name), c));
-        add(&format!("{name}_bed_top"), {
-            let mut t = wool(h(name) ^ 1, c);
-            for y in 0..5 {
-                for x in 2..14 {
-                    t.set(x, y, [236, 236, 236]);
-                }
-            }
-            t
-        });
-        add(&format!("{name}_bed_side"), {
-            let mut t = wool(h(name) ^ 2, c);
-            for y in 9..16 {
-                for x in 0..16 {
-                    t.set(
-                        x,
-                        y,
-                        scale([162, 130, 78], 0.9 + rand01(h("bedleg"), x, y) * 0.1),
-                    );
-                }
-            }
-            t
-        });
-    }
 
     // Water: grey animated waves (tinted by climate at render time).
     let mut still = Vec::new();

@@ -66,34 +66,6 @@ impl BlockStateId {
     }
 }
 
-/// Tool class that mines a block efficiently.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolKind {
-    #[default]
-    None,
-    Pickaxe,
-    Axe,
-    Shovel,
-    Hoe,
-    Sword,
-    Shears,
-}
-
-/// Tool tiers in increasing strength. Gold mines fast but at wood tier for drop requirements.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolTier {
-    #[default]
-    None,
-    Wood,
-    Stone,
-    Iron,
-    Diamond,
-}
-
 /// How a block is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -153,13 +125,10 @@ pub struct BlockDef {
     pub properties: Vec<String>,
     /// Default property values (otherwise the first allowed value).
     pub defaults: BTreeMap<String, String>,
-    /// Time-to-break scale; negative = unbreakable.
+    /// Resistance to digging and breaking (scales work time); negative = unbreakable. Real
+    /// excavation rates come from the block's material once blocks derive from materials.
     pub hardness: f32,
     pub resistance: f32,
-    pub tool: ToolKind,
-    pub tier: ToolTier,
-    /// Drops only when mined with the right tool at or above `tier`.
-    pub requires_tool: bool,
     pub shape: ShapeKind,
     /// False for plants, torches, fluids: no collision boxes.
     pub collision: bool,
@@ -189,8 +158,6 @@ pub struct BlockDef {
     pub sound: String,
     /// Map colour as `#rrggbb`.
     pub map_color: String,
-    /// Loot table id (defaults to `blocks/<name>`).
-    pub drops: Option<String>,
     /// Register a matching block item.
     pub item: bool,
     /// Named behaviour implemented in code (ticks, interaction).
@@ -208,9 +175,6 @@ impl Default for BlockDef {
             defaults: BTreeMap::new(),
             hardness: 1.0,
             resistance: 1.0,
-            tool: ToolKind::None,
-            tier: ToolTier::None,
-            requires_tool: false,
             shape: ShapeKind::Full,
             collision: true,
             render: RenderKind::Cube,
@@ -231,7 +195,6 @@ impl Default for BlockDef {
             tint: TintKind::None,
             sound: "stone".to_owned(),
             map_color: "#707070".to_owned(),
-            drops: None,
             item: true,
             behavior: None,
             model: None,
@@ -1068,11 +1031,14 @@ pub(crate) mod tests {
         let json = r#"{
             "properties": ["facing:north,south,west,east", "open:bool", "half:top,bottom"],
             "shape": "trapdoor", "opaque": false, "layer": "cutout", "hardness": 3.0,
-            "tool": "axe", "waterloggable": true
+            "waterloggable": true
         }"#;
         let def: BlockDef = serde_json::from_str(json).unwrap();
         assert_eq!(def.shape, ShapeKind::Trapdoor);
-        assert_eq!(def.tool, ToolKind::Axe);
+        assert!(
+            serde_json::from_str::<BlockDef>(r#"{"tool": "axe"}"#).is_err(),
+            "mining tiers are gone"
+        );
         assert!(serde_json::from_str::<BlockDef>(r#"{"hardnes": 1}"#).is_err());
     }
 }

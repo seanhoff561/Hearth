@@ -1,0 +1,47 @@
+// Soils (v2 §5.3): climate × parent rock × vegetation × drainage × slope. Fertility is a
+// simplified 0–1 N/P/K/organic scale. V2-2 completes the set.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "brown_forest_soil", name: "Brown forest soil",
+            horizons: [
+                (name: "O", material: "leaf_litter", thickness_m: (0.02, 0.06)),
+                (name: "A", material: "loam", thickness_m: (0.15, 0.35)),
+                (name: "B", material: "clay_loam", thickness_m: (0.4, 1.0)),
+            ],
+            fertility: (n: 0.6, p: 0.5, k: 0.6, organic: 0.6), drainage: 0.6, ph: 5.8, workability: 0.7,
+            formation: (climates: ["Cfb", "Dfb", "Cfa"], vegetation: ["broadleaf_forest", "mixed_forest"], drainage: (0.4, 0.9), max_slope_deg: 30),
+        ),
+        (
+            id: "podzol", name: "Podzol",
+            horizons: [
+                (name: "O", material: "leaf_litter", thickness_m: (0.05, 0.15)),
+                (name: "E", material: "bleached_sand", thickness_m: (0.05, 0.25)),
+                (name: "B", material: "clay_loam", thickness_m: (0.2, 0.6)),
+            ],
+            fertility: (n: 0.25, p: 0.2, k: 0.3, organic: 0.5), drainage: 0.8, ph: 4.2, workability: 0.6,
+            formation: (climates: ["Dfc", "Dfb", "Cfc"], parent_rocks: ["granite", "sandstone", "quartzite"], vegetation: ["boreal_forest"], drainage: (0.6, 1.0)),
+        ),
+        (
+            id: "alluvial_soil", name: "Alluvial soil",
+            horizons: [
+                (name: "A", material: "alluvium", thickness_m: (0.3, 1.0)),
+                (name: "C", material: "gravel", thickness_m: (0.5, 3.0)),
+            ],
+            fertility: (n: 0.8, p: 0.7, k: 0.8, organic: 0.6), drainage: 0.5, ph: 6.8, workability: 0.9,
+            formation: (vegetation: ["floodplain"], drainage: (0.3, 0.7), max_slope_deg: 5),
+            notes: "Floodplains: very fertile and renewed by floods.",
+        ),
+        (
+            id: "red_tropical_soil", name: "Red tropical soil",
+            horizons: [
+                (name: "A", material: "loam", thickness_m: (0.1, 0.2)),
+                (name: "B", material: "clay_loam", thickness_m: (1.0, 5.0)),
+            ],
+            fertility: (n: 0.3, p: 0.15, k: 0.25, organic: 0.3), drainage: 0.7, ph: 5.0, workability: 0.6,
+            formation: (climates: ["Aw", "Af", "Am"], drainage: (0.5, 1.0)),
+            uncertain: true,
+        ),
+    ],
+)

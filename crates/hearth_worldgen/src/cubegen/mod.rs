@@ -11,7 +11,7 @@ pub mod blocks;
 pub mod cache;
 pub mod caves;
 pub mod features;
-pub mod ores;
+pub mod veins;
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -115,7 +115,7 @@ pub struct WorldGenerator {
     pub blocks: GenBlocks,
     columns: Cache<ColumnPos, ColumnData>,
     caves: caves::CaveGen,
-    ores: ores::OreGen,
+    veins: veins::VeinGen,
     features: features::FeatureGen,
     planet: Planet,
     seed: u64,
@@ -131,7 +131,7 @@ impl WorldGenerator {
         let _ = rarity;
         Ok(Self {
             caves: caves::CaveGen::new(seed, v),
-            ores: ores::OreGen::new(seed, v),
+            veins: veins::VeinGen::new(seed, v),
             features: features::FeatureGen::new(seed),
             planet: *terrain.planet(),
             columns: Cache::new(8192),
@@ -249,7 +249,7 @@ impl WorldGenerator {
                 CubeClass::Deep => self.fill_deep(&mut buf, &col),
                 _ => self.fill_surface(&mut buf, &col),
             }
-            self.ores.apply(&mut buf, pos, &self.terrain, &self.blocks);
+            self.veins.apply(&mut buf, pos, &self.terrain, &self.blocks);
             self.caves
                 .carve(&mut buf, pos, &col, &self.terrain, &self.blocks);
             if class == CubeClass::Surface {

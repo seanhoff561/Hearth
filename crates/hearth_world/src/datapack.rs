@@ -196,7 +196,7 @@ mod tests {
         write(
             &a,
             "data/hearth/blocks/_templates.json",
-            r#"{"rock": {"hardness": 1.5, "tool": "pickaxe", "requires_tool": true}}"#,
+            r#"{"rock": {"hardness": 1.5, "sound": "stone"}}"#,
         );
         write(
             &a,
@@ -221,10 +221,14 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(get("hearth:stone").hardness, 1.5);
-        assert!(get("hearth:stone").requires_tool);
+        assert_eq!(get("hearth:stone").sound, "stone");
         assert_eq!(get("hearth:dirt").hardness, 0.9, "later pack overrides");
         assert_eq!(get("mymod:ruby_ore").hardness, 3.0);
-        assert_eq!(get("mymod:ruby_ore").tool, crate::block::ToolKind::Pickaxe);
+        assert_eq!(
+            get("mymod:ruby_ore").sound,
+            "stone",
+            "cross-namespace template"
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -252,6 +256,19 @@ pub fn load_builtin_registry() -> Result<crate::block::BlockRegistry, String> {
     crate::block::BlockRegistry::build(defs).map_err(|e| e.to_string())
 }
 
+/// A small pack of blocks that engine tests rely on (torches, stairs, glass, slabs, doors…),
+/// kept apart from the game content so content changes can't break mechanism tests.
+pub fn engine_test_pack_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata")
+}
+
+/// The base pack plus the engine test pack. For tests.
+pub fn load_test_registry() -> Result<crate::block::BlockRegistry, String> {
+    let defs = load_block_defs(&[builtin_pack_dir(), engine_test_pack_dir()])
+        .map_err(|e| e.to_string())?;
+    crate::block::BlockRegistry::build(defs).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod builtin_tests {
     use super::*;
@@ -260,27 +277,45 @@ mod builtin_tests {
     #[test]
     fn base_pack_loads_and_builds() {
         let reg = load_builtin_registry().expect("base data pack is valid");
-        assert!(reg.block_count() > 150, "{} blocks", reg.block_count());
+        assert!(reg.block_count() > 50, "{} blocks", reg.block_count());
         assert!(reg.state_count() < 16_000, "{} states", reg.state_count());
         for name in [
             "stone",
             "grass_block[snowy=false]",
             "oak_leaves[distance=3,persistent=false,waterlogged=false]",
             "water[level=0]",
-            "oak_stairs[facing=east,half=top,shape=straight,waterlogged=true]",
-            "deepslate_diamond_ore",
             "tall_grass[half=upper]",
             "seagrass",
         ] {
             reg.parse_state(name)
                 .unwrap_or_else(|e| panic!("{name}: {e}"));
         }
+        for dropped in [
+            "deepslate_diamond_ore",
+            "coal_ore",
+            "crafting_table",
+            "oak_planks",
+        ] {
+            assert!(
+                reg.parse_state(dropped).is_err(),
+                "{dropped} was removed with v1 content"
+            );
+        }
         let seagrass = reg.default_state("seagrass");
         assert!(reg.has(seagrass, StateFlags::WATER));
-        let torch = reg.default_state("torch");
-        assert_eq!(reg.light_emission(torch), 14);
         let ice = reg.default_state("ice");
         assert!(!reg.is_opaque(ice));
         assert!(reg.is_opaque(reg.default_state("stone")));
+    }
+
+    #[test]
+    fn engine_test_pack_adds_mechanism_blocks() {
+        let reg = load_test_registry().expect("test pack is valid");
+        reg.parse_state("oak_stairs[facing=east,half=top,shape=straight,waterlogged=true]")
+            .expect("stairs");
+        let torch = reg.default_state("torch");
+        assert_eq!(reg.light_emission(torch), 14);
+        let lit = reg.parse_state("furnace[lit=true]").unwrap();
+        assert_eq!(reg.light_emission(lit), 13);
     }
 }

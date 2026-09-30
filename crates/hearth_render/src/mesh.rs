@@ -945,7 +945,7 @@ mod tests {
     use std::sync::Arc;
 
     fn setup() -> (BlockRegistry, BlockModels) {
-        let reg = hearth_world::datapack::load_builtin_registry().unwrap();
+        let reg = hearth_world::datapack::load_test_registry().unwrap();
         let atlas = TextureArray::from_entries(&hearth_texgen::default_textures());
         let models = BlockModels::build(&reg, &atlas);
         (reg, models)

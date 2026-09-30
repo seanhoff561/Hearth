@@ -1,0 +1,25 @@
+// Global multipliers (v2 §3.4). Systems read these through `hearth_content::Balance`; presets in
+// presets.ron pick values, and Custom worlds expose every key as a slider.
+(
+    schema: 1,
+    entries: [
+        (id: "hunger_rate", name: "Hunger rate", description: "How fast food energy is used up.", default: 1.0, min: 0.25, max: 3.0),
+        (id: "thirst_rate", name: "Thirst rate", description: "How fast the body loses water.", default: 1.0, min: 0.25, max: 3.0),
+        (id: "fatigue_rate", name: "Fatigue rate", description: "How fast tiredness builds while awake.", default: 1.0, min: 0.25, max: 3.0),
+        (id: "cold_stress", name: "Cold stress", description: "Heat lost to cold, wind and wetness.", default: 1.0, min: 0.25, max: 2.0),
+        (id: "heat_stress", name: "Heat stress", description: "Heat gained in hot weather and hard work.", default: 1.0, min: 0.25, max: 2.0),
+        (id: "injury_severity", name: "Injury severity", description: "Damage from falls, attacks and accidents.", default: 1.0, min: 0.25, max: 2.0),
+        (id: "healing_rate", name: "Healing rate", description: "How fast wounds, bones and illnesses heal.", default: 1.0, min: 0.25, max: 4.0),
+        (id: "illness_chance", name: "Illness chance", description: "Chance of food poisoning, waterborne illness and infection.", default: 1.0, min: 0.0, max: 2.0),
+        (id: "predator_aggression", name: "Predator aggression", description: "Willingness of predators to attack people (also set by Predator Behavior).", default: 1.0, min: 0.0, max: 3.0),
+        (id: "animal_awareness", name: "Animal awareness", description: "How easily animals notice the player.", default: 1.0, min: 0.25, max: 2.0),
+        (id: "process_duration", name: "Process duration", description: "Time taken by crafting and work processes.", default: 1.0, min: 0.1, max: 3.0),
+        (id: "growth_rate", name: "Growth rate", description: "Plant growth, succession and animal maturation.", default: 1.0, min: 0.25, max: 5.0),
+        (id: "yield", name: "Yields", description: "Amounts gathered, harvested and butchered.", default: 1.0, min: 0.25, max: 4.0),
+        (id: "spoilage_rate", name: "Spoilage rate", description: "How fast food and hides go bad.", default: 1.0, min: 0.0, max: 3.0),
+        (id: "tool_wear", name: "Tool wear", description: "How fast edges dull and tools break.", default: 1.0, min: 0.1, max: 3.0),
+        (id: "insight_rate", name: "Insight rate", description: "Insight gained toward new knowledge per experiment or observation.", default: 1.0, min: 0.25, max: 5.0),
+        (id: "carry_capacity", name: "Carry capacity", description: "Loads the body can manage.", default: 1.0, min: 0.5, max: 3.0),
+        (id: "excavation_volume", name: "Excavation volume", description: "Material moved per basket or dig action (playability tuning of v2 §11.2).", default: 1.0, min: 0.25, max: 4.0),
+    ],
+)

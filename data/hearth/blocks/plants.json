@@ -1,55 +1,28 @@
 {
-  "short_grass": { "template": "plant", "tint": "grass" },
-  "tall_grass": { "template": "tall_plant", "tint": "grass" },
-  "fern": { "template": "plant", "tint": "grass" },
-  "large_fern": { "template": "tall_plant", "tint": "grass" },
-  "short_dry_grass": { "template": "plant", "tint": "dry_grass" },
-  "tall_dry_grass": { "template": "tall_plant", "tint": "dry_grass" },
-  "dead_bush": { "template": "plant", "map_color": "#8a6a3a" },
-  "dandelion": { "template": "flower" },
-  "poppy": { "template": "flower" },
-  "cornflower": { "template": "flower" },
-  "oxeye_daisy": { "template": "flower" },
-  "lily_of_the_valley": { "template": "flower" },
-  "azure_bluet": { "template": "flower" },
-  "gentian": { "template": "flower" },
-  "alpine_aster": { "template": "flower" },
-  "brown_mushroom": { "template": "flower", "emission": 1, "shape": { "boxes": [[5, 0, 5, 11, 6, 11]] }, "behavior": "mushroom" },
-  "red_mushroom": { "template": "flower", "shape": { "boxes": [[5, 0, 5, 11, 6, 11]] }, "behavior": "mushroom" },
-  "moss_carpet": { "template": "carpet", "sound": "moss", "flammable": false, "map_color": "#597526" },
-  "vine": {
-    "properties": ["north:bool", "east:bool", "south:bool", "west:bool", "up:bool"], "hardness": 0.2, "resistance": 0.2,
-    "tool": "shears", "shape": "empty", "collision": false, "opaque": false, "render": "model", "layer": "cutout",
-    "replaceable": true, "climbable": true, "random_ticks": true, "tint": "foliage", "sound": "vine", "behavior": "vine",
-    "flammable": true, "map_color": "#007c00"
-  },
-  "lily_pad": {
-    "hardness": 0.0, "resistance": 0.0, "shape": "lily_pad", "opaque": false, "render": "model", "layer": "cutout",
-    "sound": "lily_pad", "behavior": "lily_pad", "map_color": "#007c00"
-  },
-  "sugar_cane": {
-    "template": "plant", "properties": ["age:0..15"], "replaceable": false, "tint": "grass", "random_ticks": true,
-    "shape": { "boxes": [[2, 0, 2, 14, 16, 14]] }, "behavior": "sugar_cane"
-  },
-  "cactus": {
-    "properties": ["age:0..15"], "hardness": 0.4, "resistance": 0.4, "shape": "cactus", "opaque": false, "render": "model",
-    "layer": "cutout", "random_ticks": true, "sound": "wool", "behavior": "cactus", "map_color": "#007c00"
-  },
-  "seagrass": { "template": "plant", "water_filled": true, "sound": "wet_grass", "behavior": "seagrass" },
-  "tall_seagrass": { "template": "tall_plant", "water_filled": true, "sound": "wet_grass", "behavior": "seagrass" },
-  "kelp": {
-    "template": "plant", "properties": ["age:0..25"], "water_filled": true, "replaceable": false, "random_ticks": true,
-    "shape": { "boxes": [[0, 0, 0, 16, 9, 16]] }, "sound": "wet_grass", "behavior": "kelp"
-  },
-  "kelp_plant": { "template": "plant", "water_filled": true, "replaceable": false, "shape": { "boxes": [[0, 0, 0, 16, 16, 16]] }, "sound": "wet_grass", "behavior": "kelp" },
-  "sweet_berry_bush": {
-    "template": "plant", "properties": ["age:0..3"], "replaceable": false, "random_ticks": true, "render": "model",
-    "sound": "sweet_berry_bush", "behavior": "berry_bush", "speed_factor": 0.8
-  },
-  "pumpkin": { "hardness": 1.0, "resistance": 1.0, "tool": "axe", "sound": "wood", "map_color": "#d87f33" },
-  "wheat": {
-    "template": "plant", "properties": ["age:0..7"], "replaceable": false, "random_ticks": true, "render": "cross",
-    "shape": { "boxes": [[0, 0, 0, 16, 8, 16]] }, "sound": "crop", "behavior": "crop"
-  },
-  "hay_block": { "template": "log", "tool": "hoe", "hardness": 0.5, "resistance": 0.5, "sound": "grass", "map_color": "#e5c535" }
+  "short_grass": {"template": "plant", "tint": "grass"},
+  "tall_grass": {"template": "tall_plant", "tint": "grass"},
+  "fern": {"template": "plant", "tint": "grass"},
+  "large_fern": {"template": "tall_plant", "tint": "grass"},
+  "short_dry_grass": {"template": "plant", "tint": "dry_grass"},
+  "tall_dry_grass": {"template": "tall_plant", "tint": "dry_grass"},
+  "dead_bush": {"template": "plant", "map_color": "#8a6a3a"},
+  "dandelion": {"template": "flower"},
+  "poppy": {"template": "flower"},
+  "cornflower": {"template": "flower"},
+  "oxeye_daisy": {"template": "flower"},
+  "lily_of_the_valley": {"template": "flower"},
+  "azure_bluet": {"template": "flower"},
+  "gentian": {"template": "flower"},
+  "alpine_aster": {"template": "flower"},
+  "brown_mushroom": {"template": "flower", "emission": 1, "shape": {"boxes": [[5, 0, 5, 11, 6, 11]]}, "behavior": "mushroom"},
+  "red_mushroom": {"template": "flower", "shape": {"boxes": [[5, 0, 5, 11, 6, 11]]}, "behavior": "mushroom"},
+  "moss_carpet": {"template": "carpet", "sound": "moss", "flammable": false, "map_color": "#597526"},
+  "vine": {"properties": ["north:bool", "east:bool", "south:bool", "west:bool", "up:bool"], "hardness": 0.2, "resistance": 0.2, "shape": "empty", "collision": false, "opaque": false, "render": "model", "layer": "cutout", "replaceable": true, "climbable": true, "random_ticks": true, "tint": "foliage", "sound": "vine", "behavior": "vine", "flammable": true, "map_color": "#007c00"},
+  "lily_pad": {"hardness": 0.0, "resistance": 0.0, "shape": "lily_pad", "opaque": false, "render": "model", "layer": "cutout", "sound": "lily_pad", "behavior": "lily_pad", "map_color": "#007c00"},
+  "sugar_cane": {"template": "plant", "properties": ["age:0..15"], "replaceable": false, "tint": "grass", "random_ticks": true, "shape": {"boxes": [[2, 0, 2, 14, 16, 14]]}, "behavior": "sugar_cane"},
+  "cactus": {"properties": ["age:0..15"], "hardness": 0.4, "resistance": 0.4, "shape": "cactus", "opaque": false, "render": "model", "layer": "cutout", "random_ticks": true, "sound": "wool", "behavior": "cactus", "map_color": "#007c00"},
+  "seagrass": {"template": "plant", "water_filled": true, "sound": "wet_grass", "behavior": "seagrass"},
+  "tall_seagrass": {"template": "tall_plant", "water_filled": true, "sound": "wet_grass", "behavior": "seagrass"},
+  "kelp": {"template": "plant", "properties": ["age:0..25"], "water_filled": true, "replaceable": false, "random_ticks": true, "shape": {"boxes": [[0, 0, 0, 16, 9, 16]]}, "sound": "wet_grass", "behavior": "kelp"},
+  "kelp_plant": {"template": "plant", "water_filled": true, "replaceable": false, "shape": {"boxes": [[0, 0, 0, 16, 16, 16]]}, "sound": "wet_grass", "behavior": "kelp"}
 }

@@ -1,0 +1,20 @@
+// Construction pieces (v2 §14.1), first set for Era 0–3 shelters. Structural capacities come
+// from the materials; V2-8 adds the stability solver and the rest of the pieces.
+(
+    schema: 1,
+    entries: [
+        (id: "brush_windbreak", name: "{material} brush windbreak", materials: (categories: [Wood]),
+         size_m: (2.0, 1.2, 0.4), fill: 0.08, joints: [Stacked], knowledge: "windbreak_shelter", build: (hours: 1.0),
+         insulation_r: 0.1, notes: "Piled branches and brush on the windward side of a camp."),
+        (id: "lean_to_frame", name: "{material} lean-to frame", materials: (categories: [Wood]),
+         size_m: (2.5, 1.5, 2.0), fill: 0.02, joints: [Lashed, Stacked], knowledge: "lean_to", build: (hours: 2.0)),
+        (id: "thatch_bundle", name: "{material} thatch bundle", materials: (tags: ["thatch"]),
+         size_m: (1.0, 0.3, 0.3), fill: 0.6, joints: [Lashed], knowledge: "thatching", build: (hours: 0.3),
+         sheds_rain_min_pitch_deg: 45, insulation_r: 1.5),
+        (id: "wattle_panel", name: "{material} wattle panel", materials: (tags: ["rods", "withies"]),
+         size_m: (1.0, 1.0, 0.05), fill: 0.5, joints: [Woven], knowledge: "wattle_and_daub", build: (hours: 1.5)),
+        (id: "bark_sheet", name: "{material} sheet", materials: (categories: [Bark]),
+         size_m: (1.0, 0.6, 0.004), fill: 1.0, joints: [Lashed, Stacked], knowledge: "lean_to", build: (hours: 0.2),
+         sheds_rain_min_pitch_deg: 30),
+    ],
+)

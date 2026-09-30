@@ -1,0 +1,11 @@
+{
+  "torch": {"hardness": 0.0, "resistance": 0.0, "shape": {"boxes": [[6, 0, 6, 10, 10, 10]]}, "collision": false, "opaque": false, "render": "model", "layer": "cutout", "emission": 14, "sound": "wood", "map_color": "#ffd000"},
+  "wall_torch": {"properties": ["facing:north,south,west,east"], "hardness": 0.0, "resistance": 0.0, "shape": {"boxes": [[5.5, 3, 11, 10.5, 13, 16]]}, "collision": false, "opaque": false, "render": "model", "layer": "cutout", "emission": 14, "sound": "wood", "item": false, "map_color": "#ffd000"},
+  "glass": {"hardness": 0.3, "resistance": 0.3, "opaque": false, "layer": "cutout", "sound": "glass", "map_color": "#c0e0ff"},
+  "furnace": {"template": "rock", "hardness": 3.5, "resistance": 3.5, "properties": ["facing:north,south,west,east", "lit:bool"], "emission_when": {"property": "lit", "values": {"true": 13}}},
+  "oak_planks": {"hardness": 2.0, "resistance": 3.0, "sound": "wood", "flammable": true, "map_color": "#8f7748"},
+  "oak_slab": {"properties": ["type:bottom,top,double"], "shape": "slab", "opaque": false, "waterloggable": true, "render": "model", "hardness": 2.0, "resistance": 3.0, "sound": "wood"},
+  "oak_stairs": {"properties": ["facing:north,south,west,east", "half:bottom,top", "shape:straight,inner_left,inner_right,outer_left,outer_right"], "shape": "stairs", "opaque": false, "waterloggable": true, "render": "model", "hardness": 2.0, "resistance": 3.0, "sound": "wood"},
+  "oak_fence": {"properties": ["north:bool", "east:bool", "south:bool", "west:bool"], "shape": "fence", "opaque": false, "waterloggable": true, "render": "model", "hardness": 2.0, "resistance": 3.0, "sound": "wood"},
+  "oak_door": {"properties": ["facing:north,south,west,east", "half:lower,upper", "hinge:left,right", "open:bool"], "shape": "door", "opaque": false, "render": "model", "layer": "cutout", "hardness": 3.0, "resistance": 3.0, "sound": "wood"}
+}

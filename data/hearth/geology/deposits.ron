@@ -1,0 +1,59 @@
+// Deposit models (v2 §13.2). This is the V2-0 seed set: the toolstones, fire-starting and
+// pigment resources of Eras 0–2. V2-2 adds every Appendix D resource.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "flint_nodules", name: "Flint nodules in chalk", resource: "flint", geometry: Nodules,
+            provinces: ["chalk_basin", "passive_margin"], host_rocks: ["chalk", "limestone"],
+            depth_m: (0, 300), size_m: (0.05, 0.4), grade: (0.02, 0.08), frequency_per_km2: 40.0,
+            indicators: [
+                (kind: Outcrop, description: "Bands of dark nodules in white chalk cliffs"),
+                (kind: Float, description: "Grey flint cobbles in streams below chalk country"),
+            ],
+            era: 0, uncertain: true,
+        ),
+        (
+            id: "chert_beds", name: "Chert beds in limestone", resource: "chert", geometry: Seam,
+            provinces: ["passive_margin", "fold_belt", "chalk_basin"], host_rocks: ["limestone"],
+            depth_m: (0, 1000), size_m: (0.05, 2.0), grade: (0.5, 1.0), frequency_per_km2: 2.0,
+            indicators: [(kind: Outcrop, description: "Hard glassy layers standing out of weathered limestone")],
+            era: 0, uncertain: true,
+        ),
+        (
+            id: "obsidian_flows", name: "Obsidian flows", resource: "obsidian", geometry: Flow,
+            provinces: ["volcanic_arc"], host_rocks: ["rhyolite"],
+            depth_m: (0, 30), size_m: (20, 500), grade: (0.5, 1.0), frequency_per_km2: 0.05,
+            indicators: [(kind: Float, description: "Black glass shards on slopes below rhyolite domes")],
+            era: 0, uncertain: true,
+        ),
+        (
+            id: "river_quartzite", name: "Quartzite river cobbles", resource: "quartzite", geometry: Placer,
+            provinces: ["craton", "fold_belt", "rift", "clastic_basin"], conditions: ["river"],
+            depth_m: (0, 3), size_m: (0.05, 0.3), grade: (0.05, 0.3), frequency_per_km2: 20.0,
+            indicators: [(kind: Float, description: "Rounded hard pale cobbles in gravel bars")],
+            era: 0,
+        ),
+        (
+            id: "pyrite_nodules", name: "Pyrite nodules", resource: "pyrite", geometry: Nodules,
+            provinces: ["chalk_basin", "clastic_basin", "passive_margin"], host_rocks: ["chalk", "shale"],
+            depth_m: (0, 500), size_m: (0.03, 0.2), grade: (0.005, 0.03), frequency_per_km2: 10.0,
+            indicators: [(kind: Stain, description: "Rust-brown nodules that sparkle brassy when broken")],
+            era: 1, uncertain: true,
+        ),
+        (
+            id: "red_ochre_beds", name: "Red ochre", resource: "red_ochre", geometry: Crust,
+            provinces: ["craton", "rift", "clastic_basin", "volcanic_arc"],
+            depth_m: (0, 5), size_m: (2, 50), grade: (0.2, 0.8), frequency_per_km2: 0.5,
+            indicators: [(kind: Outcrop, description: "Blood-red earth in banks and hollows")],
+            era: 1, uncertain: true,
+        ),
+        (
+            id: "clay_banks", name: "River clay banks", resource: "earthenware_clay", geometry: Seam,
+            provinces: ["chalk_basin", "clastic_basin", "passive_margin", "rift", "craton", "fold_belt"], conditions: ["river", "lake"],
+            depth_m: (0, 4), size_m: (5, 200), grade: (0.5, 0.9), frequency_per_km2: 5.0,
+            indicators: [(kind: Outcrop, description: "Sticky grey or brown banks where the river cuts")],
+            era: 1,
+        ),
+    ],
+)

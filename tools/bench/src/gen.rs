@@ -137,10 +137,6 @@ fn block_colors(reg: &BlockRegistry) -> Vec<[u8; 3]> {
                 "sand" => [225, 210, 160],
                 n if n.ends_with("_leaves") => [40, 120, 30],
                 n if n.ends_with("_log") => [110, 80, 45],
-                n if n.contains("coal_ore") => [30, 30, 30],
-                n if n.contains("iron_ore") => [200, 150, 120],
-                n if n.contains("gold_ore") => [250, 220, 60],
-                n if n.contains("diamond_ore") => [90, 240, 230],
                 _ => b.map_color,
             }
         })

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full local CI: formatting, lints (warnings are errors) and the test suite.
+# Full local CI: formatting, lints (warnings are errors), the test suite and the content lint.
 # Usage: scripts/check.sh [--quick]   (--quick skips the release-mode statistical tests)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -13,6 +13,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 echo "==> cargo test"
 cargo test --workspace
+
+echo "==> hearth content lint"
+cargo run -q -p hearth -- content lint | tail -n 1
 
 echo "==> no todo!/unimplemented! in shipped code"
 if grep -rnE '\b(todo|unimplemented)!\(' crates tools --include='*.rs'; then

@@ -1,0 +1,34 @@
+// Savanna plants (Appendix A tier 2, first entries — enough for the hominin habitat).
+(
+    schema: 1,
+    entries: [
+        (
+            id: "umbrella_acacia", name: "Umbrella thorn acacia", scientific: "Vachellia tortilis", form: Tree,
+            climate: (temp_c: (18, 30), min_coldest_month_c: 5, precip_mm: (150, 900), koppen: ["Aw", "BSh"]),
+            shade_tolerance: 0.1, dispersal: Animal, growth_m_per_year: 0.5, max_height_m: 20, max_trunk_diameter_m: 1.0, lifespan_years: 150,
+            parts: [(part: Resin, material: "acacia_gum", edibility: Edible, uses: ["food", "glue"])],
+            flammability: 0.4, appearance: (foliage: "#6b7d3a", bark: "#4b3b2e", crown: "umbrella"),
+            realms: ["Afrotropical"], uncertain: true,
+        ),
+        (
+            id: "baobab", name: "African baobab", scientific: "Adansonia digitata", form: Tree, deciduous: true,
+            climate: (temp_c: (20, 30), min_coldest_month_c: 10, precip_mm: (250, 1500), koppen: ["Aw", "BSh"]),
+            shade_tolerance: 0.1, dispersal: Animal, growth_m_per_year: 0.3, max_height_m: 25, max_trunk_diameter_m: 10, lifespan_years: 2000,
+            parts: [(part: Fruit, material: "baobab_fruit", seasons: [Winter], edibility: Edible, yield_kg: (20, 200), uses: ["food"])],
+            flammability: 0.1, appearance: (foliage: "#5d7a33", bark: "#8f8173", crown: "spreading"),
+            realms: ["Afrotropical"], uncertain: true,
+            notes: "Leafless in the dry season; the fruit ripens then.",
+        ),
+        (
+            id: "red_oat_grass", name: "Red oat grass", scientific: "Themeda triandra", form: Grass,
+            climate: (temp_c: (15, 30), precip_mm: (300, 1500), koppen: ["Aw", "BSh", "Cfa"]),
+            shade_tolerance: 0.1, dispersal: Wind, max_height_m: 1.5,
+            parts: [
+                (part: Leaf, material: "dry_grass", seasons: [Winter, Spring], edibility: Inedible, uses: ["bedding", "thatch", "tinder"]),
+                (part: Seed, material: "grass_seed", seasons: [Autumn], edibility: AfterProcess("grind_seeds")),
+            ],
+            flammability: 0.9, appearance: (foliage: "#8a8f3a", autumn: "#a8653a"),
+            realms: ["Afrotropical", "Australasian", "Indomalayan"], uncertain: true,
+        ),
+    ],
+)

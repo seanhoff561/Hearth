@@ -20,7 +20,7 @@ pub mod storage;
 
 pub use block::{
     Block, BlockDef, BlockError, BlockId, BlockRegistry, BlockStateId, RenderKind, RenderLayer,
-    StateFlags, TintKind, ToolKind, ToolTier,
+    StateFlags, TintKind,
 };
 pub use cube::{Cube, LightStatus};
 pub use light::{LightData, MAX_LIGHT};

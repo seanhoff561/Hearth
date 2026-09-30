@@ -331,8 +331,6 @@ impl FeatureGen {
             Biome::Tundra => {
                 if grassy && r < 0.15 {
                     w.put(x, top, z, b.short_grass);
-                } else if r > 0.995 {
-                    w.put(x, top, z, b.sweet_berry_bush);
                 }
             }
             Biome::TropicalRainforest | Biome::TemperateRainforest => {
@@ -366,8 +364,6 @@ impl FeatureGen {
                     tall(w, b.large_fern);
                 } else if r < 0.26 {
                     w.put(x, top, z, b.short_grass);
-                } else if r < 0.275 {
-                    w.put(x, top, z, b.sweet_berry_bush);
                 } else if r < 0.28 {
                     w.put(x, top, z, b.brown_mushroom);
                 }
@@ -403,8 +399,6 @@ impl FeatureGen {
                         tall(w, b.tall_grass);
                     } else if forest && r < 0.43 {
                         w.put(x, top, z, b.fern);
-                    } else if r > 0.9995 && !forest {
-                        w.put(x, top, z, b.pumpkin);
                     } else if forest && r > 0.997 {
                         w.put(
                             x,

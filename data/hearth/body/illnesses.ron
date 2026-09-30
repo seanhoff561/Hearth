@@ -1,0 +1,23 @@
+// Illnesses (v2 §9.6), kept medically plausible and understated.
+(
+    schema: 1,
+    entries: [
+        (id: "food_poisoning", name: "Food poisoning", causes: ["spoiled_food", "raw_meat"],
+         onset: (hours: 6, scale: Day), lasts: (hours: 36, scale: Day), effects: ["nausea", "weakness", "dehydration"],
+         treatments: ["rest", "clean_water"]),
+        (id: "waterborne_illness", name: "Waterborne illness", causes: ["bad_water"],
+         onset: (hours: 36, scale: Day), lasts: (hours: 120, scale: Day), effects: ["diarrhoea", "dehydration", "weakness"],
+         treatments: ["clean_water", "rest", "boiled_water"], lethality: 0.01),
+        (id: "wound_infection", name: "Infected wound", causes: ["wound_infection"],
+         onset: (hours: 48, scale: Day), lasts: (hours: 240, scale: Day), effects: ["fever", "pain", "weakness"],
+         treatments: ["clean_water", "honey", "resin", "rest"], lethality: 0.05),
+        (id: "envenomation", name: "Venomous bite", causes: ["snake_bite", "scorpion_sting"],
+         onset: (hours: 0.2, scale: Day), lasts: (hours: 48, scale: Day), effects: ["swelling", "pain", "nausea"],
+         treatments: ["rest", "immobilise_limb"], lethality: 0.01,
+         notes: "Species-specific severity; most bites are survivable with rest."),
+        (id: "marsh_fever", name: "Marsh fever", causes: ["mosquito"],
+         onset: (hours: 240, scale: Day), lasts: (hours: 168, scale: Day), effects: ["fever", "chills", "weakness"],
+         treatments: ["rest", "water", "shade"], lethality: 0.005, uncertain: true,
+         notes: "Mild mosquito-borne fever of tropical wetlands."),
+    ],
+)

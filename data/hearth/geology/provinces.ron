@@ -1,0 +1,89 @@
+// Geological provinces (v2 §5.1): the rocks, structure and deposits of a region, assigned from
+// the planet's tectonic history. Sequences list layers from the surface down.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "craton", name: "Craton shield", setting: Craton,
+            sequence: [
+                (rock: "sandstone", thickness_m: (0, 40), presence: 0.3),
+                (rock: "schist", thickness_m: (50, 800), presence: 0.4),
+                (rock: "quartzite", thickness_m: (20, 300), presence: 0.3),
+            ],
+            basement: "gneiss", dip_deg: (0, 30), intrusions: ["granite"],
+            notes: "Old interiors: granite, gneiss and greenstone belts; banded iron formations; rare kimberlite pipes.",
+        ),
+        (
+            id: "fold_belt", name: "Fold mountain belt", setting: FoldBelt,
+            sequence: [
+                (rock: "slate", thickness_m: (100, 1500), presence: 0.7),
+                (rock: "marble", thickness_m: (20, 400), presence: 0.4),
+                (rock: "quartzite", thickness_m: (20, 400), presence: 0.4),
+                (rock: "schist", thickness_m: (200, 3000)),
+            ],
+            basement: "gneiss", dip_deg: (20, 80), intrusions: ["granite"],
+        ),
+        (
+            id: "volcanic_arc", name: "Volcanic arc", setting: VolcanicArc,
+            sequence: [
+                (rock: "tuff", thickness_m: (5, 200), presence: 0.7),
+                (rock: "andesite", thickness_m: (100, 2000)),
+                (rock: "rhyolite", thickness_m: (20, 500), presence: 0.4),
+                (rock: "basalt", thickness_m: (50, 1000), presence: 0.5),
+            ],
+            basement: "granite", dip_deg: (0, 25), intrusions: ["granite"],
+            notes: "Obsidian flows, pumice, fumaroles with sulfur, porphyry copper systems.",
+        ),
+        (
+            id: "hotspot_basalt", name: "Flood basalt plateau", setting: Hotspot,
+            sequence: [(rock: "basalt", thickness_m: (200, 3000))],
+            basement: "granite", dip_deg: (0, 5),
+            notes: "Columnar jointing in cliffs; rare native copper in the lavas.",
+        ),
+        (
+            id: "rift", name: "Rift valley", setting: Rift,
+            sequence: [
+                (rock: "sandstone", thickness_m: (50, 1000), presence: 0.7),
+                (rock: "mudstone", thickness_m: (20, 500), presence: 0.6),
+                (rock: "basalt", thickness_m: (20, 800), presence: 0.6),
+            ],
+            basement: "gneiss", dip_deg: (0, 20),
+        ),
+        (
+            id: "chalk_basin", name: "Chalk and limestone basin", setting: SedimentaryBasin,
+            sequence: [
+                (rock: "chalk", thickness_m: (30, 400), presence: 0.8),
+                (rock: "limestone", thickness_m: (50, 800)),
+                (rock: "shale", thickness_m: (50, 800)),
+                (rock: "sandstone", thickness_m: (50, 600), presence: 0.7),
+            ],
+            basement: "granite", dip_deg: (0, 8),
+            notes: "Flint nodules in the chalk; fire clay and coal in the deeper measures.",
+        ),
+        (
+            id: "clastic_basin", name: "Sandstone and shale basin", setting: SedimentaryBasin,
+            sequence: [
+                (rock: "sandstone", thickness_m: (50, 1000)),
+                (rock: "shale", thickness_m: (50, 1500)),
+                (rock: "conglomerate", thickness_m: (10, 300), presence: 0.4),
+                (rock: "mudstone", thickness_m: (20, 500), presence: 0.6),
+            ],
+            basement: "granite", dip_deg: (0, 10),
+        ),
+        (
+            id: "passive_margin", name: "Passive margin", setting: PassiveMargin,
+            sequence: [
+                (rock: "limestone", thickness_m: (50, 1500), presence: 0.8),
+                (rock: "shale", thickness_m: (100, 2000)),
+                (rock: "sandstone", thickness_m: (50, 1000)),
+            ],
+            basement: "gneiss", dip_deg: (0, 5),
+        ),
+        (
+            id: "ocean_floor", name: "Ocean floor", setting: OceanFloor,
+            sequence: [(rock: "mudstone", thickness_m: (10, 500))],
+            basement: "basalt", dip_deg: (0, 3),
+            notes: "Basalt under sediment; reefs and carbonate platforms in warm shallows.",
+        ),
+    ],
+)
