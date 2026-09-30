@@ -24,5 +24,8 @@
   "seagrass": {"template": "plant", "water_filled": true, "sound": "wet_grass", "behavior": "seagrass"},
   "tall_seagrass": {"template": "tall_plant", "water_filled": true, "sound": "wet_grass", "behavior": "seagrass"},
   "kelp": {"template": "plant", "properties": ["age:0..25"], "water_filled": true, "replaceable": false, "random_ticks": true, "shape": {"boxes": [[0, 0, 0, 16, 9, 16]]}, "sound": "wet_grass", "behavior": "kelp"},
-  "kelp_plant": {"template": "plant", "water_filled": true, "replaceable": false, "shape": {"boxes": [[0, 0, 0, 16, 16, 16]]}, "sound": "wet_grass", "behavior": "kelp"}
+  "kelp_plant": {"template": "plant", "water_filled": true, "replaceable": false, "shape": {"boxes": [[0, 0, 0, 16, 16, 16]]}, "sound": "wet_grass", "behavior": "kelp"},
+  "coral": {"template": "plant", "water_filled": true, "replaceable": false, "sound": "stone", "behavior": "seagrass", "map_color": "#e0708a"},
+  "seaweed": {"template": "plant", "water_filled": true, "sound": "wet_grass", "behavior": "seagrass", "map_color": "#6b5a24"},
+  "cordgrass": {"template": "tall_plant", "map_color": "#9aa85a"}
 }

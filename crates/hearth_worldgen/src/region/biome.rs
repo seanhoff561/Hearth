@@ -52,10 +52,13 @@ pub enum Biome {
     AlpineRock = 33,
     Glacier = 34,
     Volcanic = 35,
+    // Low sheltered coasts.
+    SaltMarsh = 36,
+    Mangrove = 37,
 }
 
 impl Biome {
-    pub const ALL: [Biome; 36] = [
+    pub const ALL: [Biome; 38] = [
         Biome::WarmShallows,
         Biome::TemperateSea,
         Biome::ColdSea,
@@ -92,6 +95,8 @@ impl Biome {
         Biome::AlpineRock,
         Biome::Glacier,
         Biome::Volcanic,
+        Biome::SaltMarsh,
+        Biome::Mangrove,
     ];
 
     pub fn from_u8(v: u8) -> Biome {
@@ -140,6 +145,8 @@ impl Biome {
             Biome::AlpineRock => "alpine_rock",
             Biome::Glacier => "glacier",
             Biome::Volcanic => "volcanic",
+            Biome::SaltMarsh => "salt_marsh",
+            Biome::Mangrove => "mangrove",
         }
     }
 
@@ -198,6 +205,8 @@ impl Biome {
             Biome::AlpineRock => [130, 125, 120],
             Biome::Glacier => [220, 235, 250],
             Biome::Volcanic => [80, 70, 70],
+            Biome::SaltMarsh => [128, 156, 104],
+            Biome::Mangrove => [34, 112, 72],
         }
     }
 }
@@ -233,11 +242,18 @@ pub struct BiomeInputs {
     pub variation2: f32,
     /// Vertical scale (blocks per metre) to express depths in real units.
     pub vertical_scale: f32,
+    /// 0..1: how sheltered the coast is from waves (bays, estuaries, behind barriers).
+    pub shelter: f32,
 }
 
 /// Picks the biome for a column.
 pub fn select(i: &BiomeInputs) -> Biome {
     let underwater = i.water.is_finite() && i.height < i.water - 0.5;
+    // Mangroves stand in the shallow water of sheltered tropical coasts.
+    let tropical_coast = i.temperature > 20.0 && i.sea_temperature > 22.0;
+    if i.ocean && underwater && tropical_coast && i.shelter > 0.5 && i.water - i.height <= 1.3 {
+        return Biome::Mangrove;
+    }
     if i.ocean && underwater {
         let depth_m = (i.water - i.height) / i.vertical_scale;
         if depth_m > 6000.0 {
@@ -285,6 +301,14 @@ pub fn select(i: &BiomeInputs) -> Biome {
             Biome::AlpineRock
         } else {
             Biome::AlpineMeadow
+        };
+    }
+    // Low sheltered coasts: mangrove forest in the tropics, salt marsh elsewhere.
+    if i.near_ocean && i.height < 1.5 && i.slope < 0.05 && i.shelter > 0.5 && i.temperature > -4.0 {
+        return if tropical_coast {
+            Biome::Mangrove
+        } else {
+            Biome::SaltMarsh
         };
     }
     // Coasts.
@@ -491,6 +515,7 @@ mod tests {
             variation: 0.5,
             variation2: 0.5,
             vertical_scale: 0.25,
+            shelter: 0.0,
         }
     }
 

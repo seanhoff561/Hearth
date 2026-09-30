@@ -361,6 +361,89 @@ fn seagrass(seed: u64) -> Tex {
     t
 }
 
+/// Branching and fan corals in reef colours.
+fn coral(seed: u64) -> Tex {
+    let mut t = blank();
+    let colors: [Rgb; 4] = [
+        [226, 112, 138],
+        [236, 170, 64],
+        [150, 96, 190],
+        [90, 170, 170],
+    ];
+    for b in 0..4 {
+        let c = colors[(rand01(seed, b, 9) * 4.0) as usize % 4];
+        let x0 = 2 + b * 4;
+        let hgt = 6 + (rand01(seed, b, 0) * 9.0) as i32;
+        for k in 0..hgt {
+            let x = x0 + ((k as f32 * 0.7 + b as f32 * 2.0).sin() * 1.5) as i32;
+            t.put(x, 15 - k, if k % 3 == 0 { scale(c, 1.15) } else { c });
+            if k > 3 && k % 3 == 1 {
+                t.put(x + 1, 14 - k, scale(c, 0.9));
+                t.put(x - 1, 14 - k, scale(c, 0.9));
+            }
+        }
+    }
+    t
+}
+
+/// A reef surface: coral heads of several colours over pale reef rock.
+fn coral_block(seed: u64) -> Tex {
+    let colors: [Rgb; 5] = [
+        [214, 104, 128],
+        [226, 160, 70],
+        [144, 102, 176],
+        [96, 160, 150],
+        [206, 196, 170],
+    ];
+    paint(S, S, |x, y| {
+        let head = value_noise(seed, x as f32, y as f32, 4.0, S as f32);
+        let pick = value_noise(seed ^ 0x51, x as f32, y as f32, 6.0, S as f32);
+        let c = colors[(pick * 5.0) as usize % 5];
+        if head > 0.45 {
+            if rand01(seed ^ 0x7, x, y) < 0.2 {
+                scale(c, 0.8)
+            } else {
+                c
+            }
+        } else {
+            scale([196, 188, 164], 0.85 + rand01(seed ^ 0x3, x, y) * 0.2)
+        }
+    })
+}
+
+/// Brown bladder wrack on rocks.
+fn seaweed(seed: u64) -> Tex {
+    let mut t = blank();
+    for b in 0..5 {
+        let x0 = 1 + b * 3;
+        let hgt = 5 + (rand01(seed, b, 0) * 8.0) as i32;
+        for k in 0..hgt {
+            let x = x0 + ((k as f32 * 0.6 + b as f32).sin() * 1.3) as i32;
+            let c = [98 + (k * 2) as u8, 82 + (k * 2) as u8, 30];
+            t.put(x, 15 - k, c);
+            if k % 4 == 2 {
+                t.put(x + 1, 15 - k, [140, 118, 44]);
+            }
+        }
+    }
+    t
+}
+
+/// Mangrove prop roots: arching brown roots with gaps between.
+fn mangrove_roots(seed: u64) -> Tex {
+    let mut t = blank();
+    for r in 0..4 {
+        let x0 = 1 + r * 4 + (rand01(seed, r, 1) * 2.0) as i32;
+        for y in 0..16 {
+            let x = x0 + ((y as f32 * 0.35 + r as f32 * 1.7).sin() * 1.5) as i32;
+            let c = scale([92, 64, 44], 0.85 + rand01(seed, x, y) * 0.25);
+            t.put(x, y, c);
+            t.put(x + 1, y, scale(c, 0.8));
+        }
+    }
+    t
+}
+
 fn cactus_side(seed: u64) -> Tex {
     paint(S, S, |x, y| {
         let rib = x % 4 == 1;
@@ -594,6 +677,51 @@ pub fn textures() -> Vec<TexEntry> {
             sapling(seed ^ 13, leaf, dark, name == "spruce"),
         );
     }
+
+    // Mangrove: dark bark, evergreen leaves (untinted), prop roots.
+    let (dark, light, wood) = ([70, 50, 38], [104, 76, 56], [150, 104, 70]);
+    add("mangrove_log", log_side(h("mangrove"), dark, light));
+    add("mangrove_log_top", log_top(h("mangrove"), dark, wood));
+    add("mangrove_leaves", {
+        let mut t = leaves(h("mangrove") ^ 11, 0.3, 0.46, 0.76);
+        for p in &mut t.px {
+            let g = p[1] as f32 / 255.0;
+            *p = [
+                (62.0 * g * 1.3) as u8,
+                (122.0 * g * 1.3) as u8,
+                (52.0 * g * 1.3) as u8,
+                p[3],
+            ];
+        }
+        t
+    });
+    add("mangrove_roots", mangrove_roots(h("mroots")));
+
+    // Coasts.
+    add("coral", coral(h("coral")));
+    add("coral_block", coral_block(h("coralb")));
+    add("seaweed", seaweed(h("seaweed")));
+    // Cordgrass is painted in its own colour (it takes no climate tint).
+    let colour = |mut t: Tex, c: Rgb| {
+        for p in &mut t.px {
+            let g = p[0] as f32 / 255.0 * 1.25;
+            *p = [
+                (c[0] as f32 * g) as u8,
+                (c[1] as f32 * g) as u8,
+                (c[2] as f32 * g) as u8,
+                p[3],
+            ];
+        }
+        t
+    };
+    add(
+        "cordgrass_bottom",
+        colour(grass_blades(h("cordb"), 12, 16), [128, 150, 74]),
+    );
+    add(
+        "cordgrass_top",
+        colour(grass_blades(h("cordt"), 9, 13), [150, 160, 84]),
+    );
 
     // Plants and sprites.
     add("short_grass", grass_blades(h("sgrass"), 9, 11));

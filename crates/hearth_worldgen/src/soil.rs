@@ -86,6 +86,9 @@ pub struct Soils {
     clay: BlockStateId,
     mud: BlockStateId,
     salt: BlockStateId,
+    /// Living reef and the reef rock under it.
+    coral: BlockStateId,
+    reef_rock: BlockStateId,
     stony: BlockStateId,
     /// Per state: rock of volcanic origin (black beaches) and carbonate (shell beaches).
     volcanic: Vec<bool>,
@@ -172,6 +175,8 @@ impl Soils {
             clay: state("earthenware_clay")?,
             mud: state("mud")?,
             salt: state("rock_salt")?,
+            coral: state("coral_block")?,
+            reef_rock: state("limestone")?,
             stony: state("stony_loam")?,
             volcanic,
             carbonate,
@@ -362,6 +367,10 @@ impl Soils {
             Surface::Calcite => {
                 p.push(self.salt);
                 fill(&mut p, self.mud, depth.max(1));
+            }
+            Surface::Coral => {
+                p.push(self.coral);
+                fill(&mut p, self.reef_rock, depth.max(2));
             }
             Surface::Grass
             | Surface::SnowGrass

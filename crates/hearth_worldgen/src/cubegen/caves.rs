@@ -15,10 +15,9 @@ use hearth_math::{CUBE_SIZE, CubePos};
 
 use super::blocks::GenBlocks;
 use super::cache::Cache;
-use super::{ColumnData, CubeBuf};
+use super::{ColumnData, CubeBuf, WorldGenerator};
 use crate::noise::Perlin;
 use crate::planet::province;
-use crate::region::Terrain;
 
 const REGION: i32 = 128;
 const CAVERN_REGION: i32 = 1024;
@@ -65,7 +64,7 @@ impl Worm {
 #[derive(Debug, Clone, Default)]
 pub struct CaveSystem {
     worms: Vec<Worm>,
-    /// Carved blocks below this Y become water (aquifer-flooded system).
+    /// Carved blocks below this Y become water: the water table where the system starts.
     flood_level: Option<i32>,
 }
 
@@ -112,12 +111,19 @@ impl CaveGen {
         self.cavern_frequency = f;
     }
 
-    fn region_systems(&self, rx: i32, ry: i32, rz: i32, terrain: &Terrain) -> Arc<Vec<CaveSystem>> {
+    fn region_systems(
+        &self,
+        rx: i32,
+        ry: i32,
+        rz: i32,
+        wg: &WorldGenerator,
+    ) -> Arc<Vec<CaveSystem>> {
         self.systems
-            .get_or_insert_with((rx, ry, rz), || self.generate_region(rx, ry, rz, terrain))
+            .get_or_insert_with((rx, ry, rz), || self.generate_region(rx, ry, rz, wg))
     }
 
-    fn generate_region(&self, rx: i32, ry: i32, rz: i32, terrain: &Terrain) -> Vec<CaveSystem> {
+    fn generate_region(&self, rx: i32, ry: i32, rz: i32, wg: &WorldGenerator) -> Vec<CaveSystem> {
+        let terrain = &*wg.terrain;
         let mut rng = Rng::new(hash_3d(self.seed, rx, ry, rz));
         let cx = rx * REGION + REGION / 2;
         let cz = rz * REGION + REGION / 2;
@@ -161,10 +167,9 @@ impl CaveGen {
                     sys.worms.push(w);
                 }
             }
-            // Aquifers: wet regions flood some systems.
-            if rng.chance((0.18 * humid) as f64) {
-                sys.flood_level = Some(start.1 as i32 + rng.range_i32(-6, 14));
-            }
+            // Below the water table every void is full of water.
+            let table = wg.hydro.water_table(wg, start.0 as i32, start.2 as i32);
+            sys.flood_level = Some(table.floor() as i32);
             systems.push(sys);
         }
         // Slot canyons: arid regions get rare ravines starting at the surface.
@@ -177,9 +182,10 @@ impl CaveGen {
             let start = (cx as f32, surface - 6.0, cz as f32);
             self.worm(&mut rng, start, true, &mut w, 0);
             w.finish();
+            let table = wg.hydro.water_table(wg, cx, cz);
             systems.push(CaveSystem {
                 worms: vec![w],
-                flood_level: None,
+                flood_level: Some(table.floor() as i32),
             });
         }
         systems
@@ -267,16 +273,17 @@ impl CaveGen {
     }
 
     /// True if the 1024-block cavern region (rx, rz) holds a giant cavern.
-    pub fn has_cavern(&self, rx: i32, rz: i32, terrain: &Terrain) -> bool {
-        self.cavern(rx, rz, terrain).is_some()
+    pub fn has_cavern(&self, rx: i32, rz: i32, wg: &WorldGenerator) -> bool {
+        self.cavern(rx, rz, wg).is_some()
     }
 
-    fn cavern(&self, rx: i32, rz: i32, terrain: &Terrain) -> Arc<Option<Cavern>> {
+    fn cavern(&self, rx: i32, rz: i32, wg: &WorldGenerator) -> Arc<Option<Cavern>> {
         self.caverns
-            .get_or_insert_with((rx, rz), || self.generate_cavern(rx, rz, terrain))
+            .get_or_insert_with((rx, rz), || self.generate_cavern(rx, rz, wg))
     }
 
-    fn generate_cavern(&self, rx: i32, rz: i32, terrain: &Terrain) -> Option<Cavern> {
+    fn generate_cavern(&self, rx: i32, rz: i32, wg: &WorldGenerator) -> Option<Cavern> {
+        let terrain = &*wg.terrain;
         let h = hash_2d(self.seed ^ 0xca7e, rx, rz);
         let mut rng = Rng::new(h);
         // Roughly one per several square kilometres at Rare.
@@ -297,7 +304,9 @@ impl CaveGen {
             rng.range_f32(30.0, 160.0)
         };
         let cy = s.height - cover - ryr;
-        let lake_level = (cy - ryr * rng.range_f32(0.45, 0.75)) as i32;
+        // An underground lake, or the water table if that stands higher.
+        let lake_level = ((cy - ryr * rng.range_f32(0.45, 0.75)) as i32)
+            .max(wg.hydro.water_table(wg, cx as i32, cz as i32).floor() as i32);
         let sinkhole = if !underwater && rng.chance(0.35) {
             let a = rng.range_f32(0.0, std::f32::consts::TAU);
             let d = rng.range_f32(0.0, 0.5);
@@ -347,7 +356,7 @@ impl CaveGen {
         buf: &mut CubeBuf,
         pos: CubePos,
         col: &ColumnData,
-        terrain: &Terrain,
+        wg: &WorldGenerator,
         b: &GenBlocks,
     ) {
         let o = buf.origin;
@@ -378,7 +387,7 @@ impl CaveGen {
                     if !overlaps(reg_min, reg_max, cmin, cmax) {
                         continue;
                     }
-                    let systems = self.region_systems(rx, ry, rz, terrain);
+                    let systems = self.region_systems(rx, ry, rz, wg);
                     for sys in systems.iter() {
                         for w in &sys.worms {
                             if !overlaps(w.min, w.max, cmin, cmax) {
@@ -397,7 +406,7 @@ impl CaveGen {
         let c1 = |v: i32| (v + 500).div_euclid(CAVERN_REGION);
         for rz in c0(cmin[2])..=c1(cmax[2]) {
             for rx in c0(cmin[0])..=c1(cmax[0]) {
-                let cav = self.cavern(rx, rz, terrain);
+                let cav = self.cavern(rx, rz, wg);
                 if let Some(c) = cav.as_ref()
                     && overlaps(c.min, c.max, cmin, cmax)
                 {

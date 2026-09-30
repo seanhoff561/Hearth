@@ -291,7 +291,10 @@
             id: "cinnabar_hot_springs", status: Implemented, name: "Cinnabar at hot springs", resource: "cinnabar", geometry: Crust,
             provinces: ["volcanic_arc", "rift"], conditions: ["volcano"],
             depth_m: (0, 10), size_m: (5, 30), thickness_m: (1, 2), grade: (0.005, 0.05), frequency_per_km2: 0.3,
-            indicators: [(kind: Stain, description: "Vermilion crusts near hot springs")],
+            indicators: [
+                (kind: Spring, description: "Steaming pools with a metallic taste"),
+                (kind: Stain, description: "Vermilion crusts near hot springs"),
+            ],
             era: 4,
         ),
         (

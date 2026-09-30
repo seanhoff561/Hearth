@@ -135,6 +135,7 @@ fn surface_color(c: &ColumnSample) -> [u8; 3] {
         Surface::Sandstone => [215, 200, 150],
         Surface::RedSandstone => [180, 95, 45],
         Surface::Tuff => [100, 100, 90],
+        Surface::Coral => [214, 120, 130],
     }
 }
 

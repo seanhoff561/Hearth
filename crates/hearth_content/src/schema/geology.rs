@@ -25,6 +25,22 @@ pub enum Grain {
     Clastic,
 }
 
+/// How readily groundwater moves through a rock mass (fractures and pores together).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Permeability {
+    /// Unfractured crystalline rock, clay-rich rock: the water table follows the land.
+    Tight,
+    /// Shales, slates, schists.
+    Poor,
+    #[default]
+    Fair,
+    /// Sandstones, conglomerates, fractured lavas, scoria.
+    Good,
+    /// Soluble rock with conduits (limestone, chalk, dolomite, gypsum): water sinks fast and
+    /// the water table lies near the valley floors.
+    Karst,
+}
+
 entry! {
     /// A rock type; physical properties come from its material.
     pub struct Rock in "geology/rocks", schema 1, name name {
@@ -36,6 +52,9 @@ entry! {
         /// Materials it weathers into (soil parent material, sand, clay).
         #[serde(default)]
         pub weathers_to: Vec<IdRef>,
+        /// How groundwater moves through it (the shape of the water table).
+        #[serde(default)]
+        pub permeability: Permeability,
     }
 }
 

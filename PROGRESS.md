@@ -212,12 +212,30 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
   copper stains, gossan, placer gravel, river cobbles, fumarole sulfur).
   Fixed a v1 bug: tree and debris placement drew their chance from 8 and 4 hash bits, so any
   biome with a non-zero tree density (steppe, savanna, plains, scrub) grew a closed forest.
+- (d, part 1) Groundwater and coasts: water table from the drainage base, the smoothed land,
+  rock permeability (new rock data) and climate; cave voids below it flooded (replacing v1's
+  random aquifers); springs where the table meets slopes, desert oases and mineral springs
+  over deposits (salt, sulfur, hot, travertine), each with a pool and a downhill brook; water
+  quality of sea, salt and fresh lakes, streams, springs and groundwater. Coasts: sheltered
+  shores (noise and river mouths) become mangrove (new biome, prop-rooted trees in the
+  shallows) or salt marsh (cordgrass on mud) with mudflats; fringing, barrier and atoll reefs
+  in warm clear shallows (coral over reef limestone, coral fans); kelp on rocky floors in cool
+  water, wrack on cool rocky shores, tide pools on stony shores; sea ice in the seasonal cover
+  (below −4 °C air). Tests: water table shape (deeper under hills, in dry country; shallow in
+  humid lowlands), no dry void below the table, springs and brooks, water quality, reefs only
+  in warm clear shallows, marsh/mangrove by climate, kelp only in cool water, sea ice by
+  climate. `bench deposits --springs/--find`, `tools/shots/v22_coasts.shots`. Fixed a v1 bug:
+  underwater plants were never placed (the feature writer never let anything replace water).
+  Generation cost of the new passes ≈ 5 % of surface cubes.
 
 ## Next steps
-1. (d) Groundwater, springs (salt and sulfur springs over their bodies), seasonal river
-   levels; finite conserved water with flow (v1 M5 fluids); coasts (reefs, kelp, mudflats,
-   salt marsh and coastal salt, mangroves, rocky intertidal, sea ice — which also closes
-   D36's open sea).
+0. **Interjected (in progress):** terrain fades out at a fixed distance in screenshots instead
+   of continuing to the horizon via LOD — diagnose (fog tied to render distance, LOD tiles
+   missing, harness not waiting for LOD, far-plane clipping), fix the root cause (physically
+   based aerial perspective by weather and humidity), add a depth-readback regression shot,
+   then resume V2-2.
+1. (d, part 2) Seasonal river levels and floodplain floods; finite conserved player-moved
+   water with levelling and flow (v1 M5 fluids) and per-block quality; coastal salt pans.
 2. (e) Water rendering (v1 M7) and ice.
 3. (f) Minimal spawn picker; `worldmap` soil layer; V2-2 acceptance review and commit.
 

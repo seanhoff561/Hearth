@@ -20,6 +20,7 @@ use hearth_world::{BlockRegistry, BlockStateId, Cube};
 
 use crate::deposits::Deposits;
 use crate::geology::{Geology, RockColumn};
+use crate::hydro::Hydrology;
 use crate::region::{ColumnSample, Terrain};
 use crate::soil::{Profile, Soils};
 use blocks::{GenBlocks, MissingBlock};
@@ -114,6 +115,7 @@ pub struct WorldGenerator {
     pub geology: Geology,
     pub soils: Soils,
     pub deposits: Deposits,
+    pub hydro: Hydrology,
     columns: Cache<ColumnPos, ColumnData>,
     /// Rock columns and soil profiles of 16×16 block columns (index `z * 16 + x`).
     rocks: Cache<ColumnPos, Vec<(RockColumn, Profile)>>,
@@ -144,6 +146,7 @@ impl WorldGenerator {
             terrain.planet().circumference(),
             terrain.vertical_scale() as f64,
         )?;
+        let hydro = Hydrology::new(content, reg, seed, terrain.planet().circumference());
         blocks.add_ground(soils.plantable());
         for extra in [
             blocks.grass,
@@ -164,6 +167,7 @@ impl WorldGenerator {
             geology,
             soils,
             deposits,
+            hydro,
             blocks,
             seed,
             terrain,
@@ -307,8 +311,10 @@ impl WorldGenerator {
                 _ => self.fill_surface(&mut buf, &col, &rocks),
             }
             self.deposits.apply(&mut buf, pos, self);
-            self.caves
-                .carve(&mut buf, pos, &col, &self.terrain, &self.blocks);
+            if class == CubeClass::Surface {
+                self.hydro.apply(&mut buf, self);
+            }
+            self.caves.carve(&mut buf, pos, &col, self, &self.blocks);
             if class == CubeClass::Surface {
                 self.features.place(&mut buf, pos, self, &col);
             }
@@ -339,6 +345,15 @@ impl WorldGenerator {
                 let (x, z) = (o.x + lx, o.z + lz);
                 let top = s.height_i();
                 let water_top = s.water_i();
+                // Tide pools in the rock of stony shores, just above the sea.
+                let tide_pool = s.biome == crate::region::biome::Biome::StonyShore
+                    && (0..=2).contains(&top)
+                    && s.slope < 0.4
+                    && hearth_math::hash::unit_f32(hearth_math::hash::hash_2d(
+                        self.seed ^ 0x71de,
+                        x,
+                        z,
+                    )) < 0.07;
                 // Seasonal snow and ice are applied by the environment at the current date
                 // (`hearth_env`); the generator only lays down perennial snow and ice.
                 for ly in 0..16i32 {
@@ -358,7 +373,11 @@ impl WorldGenerator {
                         let exposed =
                             depth <= 0 && (s.cliffiness == 0.0 || self.is_exposed(x, y, z, top, s));
                         let layer = if exposed { 0 } else { depth.max(1) as usize };
-                        profile.get(layer).copied().unwrap_or_else(|| rc.rock_at(y))
+                        if depth == 0 && tide_pool {
+                            b.water
+                        } else {
+                            profile.get(layer).copied().unwrap_or_else(|| rc.rock_at(y))
+                        }
                     } else if y < water_top {
                         // Multi-year ice where the water never thaws.
                         if y == water_top - 1 && s.temperature < -10.0 {
@@ -387,7 +406,7 @@ impl WorldGenerator {
 
     /// True if the 1024-block cavern region (rx, rz) holds a giant cavern.
     pub fn has_giant_cavern(&self, rx: i32, rz: i32) -> bool {
-        self.caves.has_cavern(rx, rz, &self.terrain)
+        self.caves.has_cavern(rx, rz, self)
     }
 
     /// Column cache (hits, misses).

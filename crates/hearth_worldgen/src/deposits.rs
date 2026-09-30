@@ -82,6 +82,9 @@ pub struct DepositModel {
     placer_on_top: bool,
     stains: SmallVec<[BlockStateId; 2]>,
     float: Option<BlockStateId>,
+    /// The body shows as a spring of this water (salt beds, fumaroles, hot and travertine
+    /// springs).
+    pub spring: Option<crate::hydro::SpringKind>,
 }
 
 /// One body in the world.
@@ -243,9 +246,30 @@ impl Deposits {
                     _ => {}
                 }
             }
+            let spring = d
+                .indicators
+                .iter()
+                .any(|i| i.kind == IndicatorKind::Spring)
+                .then(|| {
+                    use crate::hydro::SpringKind;
+                    let tags = hearth_content::generate::material_of(content, resource)
+                        .and_then(|m| content.materials.get(m.as_str()))
+                        .map(|m| m.tags.clone())
+                        .unwrap_or_default();
+                    if tags.iter().any(|t| t == "salt") {
+                        SpringKind::Salt
+                    } else if tags.iter().any(|t| t == "fumarole") {
+                        SpringKind::Sulfur
+                    } else if conditions & cond::VOLCANO != 0 {
+                        SpringKind::Hot
+                    } else {
+                        SpringKind::Mineral
+                    }
+                });
             models.push(DepositModel {
                 id: d.id().to_owned(),
                 resource: resource.to_owned(),
+                spring,
                 geometry: d.geometry,
                 era: d.era,
                 grade: (d.grade.0, d.grade.1),

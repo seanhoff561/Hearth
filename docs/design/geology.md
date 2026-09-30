@@ -3,11 +3,12 @@
 *Status: partial (V2-2 in progress). Implemented: rock types, soils and sediments as
 generated blocks, geological provinces, stratigraphy, basement, intrusions, geothermal
 gradient, soils, loose stones and scree, deposits of every Appendix D resource with their
-surface indicators, panning, and the per-continent resource coverage
-(`hearth_worldgen::{geology, soil, deposits, coverage}`,
-`hearth_content::generate::natural_blocks`, `hearth_texgen::material`). Planned in V2-2:
-groundwater and springs, seasonal rivers, finite water, coasts, water rendering.
-Decisions: D38–D47.*
+surface indicators, panning, the per-continent resource coverage, groundwater, springs, water
+quality, coasts (reefs, mangroves, salt marsh, mudflats, kelp, rocky shores) and sea ice
+(`hearth_worldgen::{geology, soil, deposits, coverage, hydro}`,
+`hearth_content::generate::natural_blocks`, `hearth_texgen::material`,
+`hearth_env::climate`). Planned in V2-2: seasonal river levels, finite player-moved water,
+water rendering. Decisions: D38–D51.*
 
 ## Purpose
 Real rocks, soils, water and resources placed by physical causes, so a player can read the
@@ -149,13 +150,56 @@ resources: kimberlite (8 continents), bituminous coal (6), fire clay (3), traver
 volcanic ash (3 each), sphalerite, sulfur and kaolin (2 each), and single cases of lignite,
 cinnabar, gypsum and salt. `hearth content lint --coverage [--seed N]…` flags them.
 
+## Groundwater (D48)
+`hearth_worldgen::hydro`: the **water table** is a subdued copy of the land. From the drainage
+base (the lowest ground or water surface within 256 blocks, from the planet grid) it rises
+under the land smoothed over ~100 blocks by a share of the relief set by the surface rock's
+**permeability** (data on every rock: tight crystalline rock 0.9, shales and slates 0.8, fair
+0.7, sandstones and lavas 0.5, karst 0.12) and by the climate (wetness from precipitation less
+evaporation: wet climates hold it high, dry ones sink it up to 24 blocks below the valley
+floors). It meets rivers, lakes and the sea at their surfaces and stays below the ground. In
+humid lowlands it lies a few blocks down (median ≈ 3), under hills deeper, in deserts tens of
+blocks. **Every cave void below it is water**: worm caves and ravines flood up to the table at
+their start, caverns up to the table or their own lake, so dry caves are found in hills,
+karst uplands and dry country, and lowland caves are sumps.
+
+## Springs and water quality
+Springs rise where the water table would come out of the ground on a slope (spring lines at
+the foot of hills and valley sides: about 1.4 per km² of humid land, 0.5 semi-humid, 0.2
+semi-arid), as rare oases in desert hollows, and over the deposits that show as springs (salt
+springs over salt beds, hot springs by volcanoes, sulfurous fumaroles, travertine springs).
+Each has a pool and a brook that follows the steepest way down until it meets other water,
+finds a hollow or soaks away (longer in wet climates). `Hydrology::quality(x, y, z)` gives the
+natural water at a block: sea (35 g/L, brackish off river mouths), fresh or salt lakes (closed
+basins keep the salt of evaporation), streams (small cold ones safe, broad warm lowland rivers
+risky and muddy), springs (safe; salty, sulfurous, hot or mineral by kind) and the groundwater
+a well reaches (safe, brackish in deserts).
+
+## Coasts (D49, D50)
+A slow noise and every river mouth mark **sheltered** coasts (bays, estuaries, lagoons; about
+40 % of them). Low sheltered coasts (under 1.5 blocks, slope under 5 %) are **mangrove** in the
+tropics (air above 20 °C, sea above 22 °C) — dense trees on arching prop roots standing in up to
+two blocks of water — and **salt marsh** elsewhere (cordgrass on mud); their shallows are
+**mudflats**. **Coral reefs** grow in warm (above 21 °C), clear (not near river mouths or in
+muddy bays), shallow sea: fringing reefs 50–160 blocks out from the shore, barrier reefs
+300–600 blocks out with a lagoon behind, and atolls ringing the drowned hotspot volcanoes; the
+reef raises the floor to 1–3.5 blocks below the surface (coral heads and grooves), living
+coral over reef limestone, with fans and branching corals on top. **Kelp** forests hold to
+rocky and gravel floors in cool water (5–20 °C), thick in patches; **wrack** grows on the rocks
+of cool shores; **tide pools** fill hollows in the rock of stony shores. **Sea ice** (in the
+seasonal cover, `hearth_env::climate`): sea water freezes at −1.8 °C and the sea's heat keeps
+it open until the air is below −4 °C, so the same growth law as lake ice from that threshold
+gives perennial pack ice in the high Arctic, seasonal ice in subarctic bays and open water on
+coasts whose winters are only just below freezing.
+
 ## Tools
 `bench worldmap` renders province, surface-rock and deposit maps of the whole planet, the
 bodies per model and the coverage table, and, with `--geo-area x,z,size`, a block-scale
 outcrop map and an east–west cross-section of an area. `bench deposits [--model id]
-[--near x,z] [--max-depth n] [--coverage]` lists a world's bodies nearest a point (with their
-depth, size, grade, biome and climate) for inspection and screenshots
-(`tools/shots/v22_deposits.shots`).
+[--near x,z] [--max-depth n] [--coverage] [--springs] [--find biome|coral]` lists a world's
+bodies, springs or columns of a biome nearest a point (with their depth, size, grade, biome and
+climate) for inspection and screenshots (`tools/shots/v22_deposits.shots`,
+`tools/shots/v22_coasts.shots`).
 
 ## Interactions
 Rock → soils (parent material, V2-2), deposits and indicators (V2-2), hardness and material
@@ -175,6 +219,11 @@ sulfur bodies (V2-2d).
   primary vein) inside one system, no ore shoots, and placers do not trace back along the
   river network to their source body.
 - Frequencies are per km² of suitable ground at game scale (D42), not Earth's densities.
+- The water table is a static field: no seasonal rise and fall, no perched tables, no
+  confined aquifers or artesian pressure; brooks are static channels until the fluid
+  simulation arrives.
+- No tides yet: the "intertidal" is a band a block or two either side of sea level.
+- Sheltered coasts come from noise and river mouths, not from the coastline's shape.
 - The Köppen classes of the planet are coarse (e.g. one "Dfb" for all humid continental), so
   soils listing finer codes match by group.
 - Soil horizons are whole blocks; litter layers, texture classes and nutrient dynamics wait

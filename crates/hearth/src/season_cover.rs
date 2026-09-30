@@ -5,8 +5,8 @@
 //!
 //! Placement: snow lies on full blocks and buries low plants (remembered and restored when it
 //! melts); bare deciduous crowns let it through to the ground, a little thinner; conifer crowns
-//! hold a couple of layers and shed the rest. Still water and rivers freeze; the sea is left
-//! open until sea ice arrives with the coasts (V2-2).
+//! hold a couple of layers and shed the rest. Still water and rivers freeze, and the sea
+//! where winters are cold enough for sea ice.
 
 use hearth_env::climate::{Normals, SeasonalCover};
 use hearth_math::hash::hash_2d;
@@ -119,10 +119,14 @@ pub fn column_normals(generator: &WorldGenerator, col: ColumnPos) -> Normals {
     )
 }
 
-/// Snow depth (m) and ice thickness (m) for a column at a year fraction.
-pub fn column_cover(generator: &WorldGenerator, col: ColumnPos, year_frac: f64) -> (f64, f64) {
+/// Snow depth (m), still-water ice and sea ice thickness (m) for a column at a year fraction.
+pub fn column_cover(generator: &WorldGenerator, col: ColumnPos, year_frac: f64) -> (f64, f64, f64) {
     let cover = SeasonalCover::compute(&column_normals(generator, col));
-    (cover.snow_depth_m(year_frac), cover.ice_m(year_frac))
+    (
+        cover.snow_depth_m(year_frac),
+        cover.ice_m(year_frac),
+        cover.sea_ice_m(year_frac),
+    )
 }
 
 /// What the date asks of one block column.
@@ -141,7 +145,7 @@ struct Target {
     water_top: Option<i32>,
 }
 
-fn target(s: &ColumnSample, x: i32, z: i32, snow_m: f64, ice_m: f64) -> Target {
+fn target(s: &ColumnSample, x: i32, z: i32, snow_m: f64, ice_m: f64, sea_ice_m: f64) -> Target {
     let top_guess = s.height_i().max(s.water_i());
     // Drifting varies the depth a little from place to place.
     let jitter = (hash_2d(0x5a0e, x, z) & 3) as f64 * 0.04 - 0.06;
@@ -150,9 +154,9 @@ fn target(s: &ColumnSample, x: i32, z: i32, snow_m: f64, ice_m: f64) -> Target {
     } else {
         0
     };
-    // Rivers freeze to about half the thickness of still water; the sea not at all (yet).
+    // Rivers freeze to about half the thickness of still water; the sea by its own rule.
     let thickness = if s.ocean {
-        0.0
+        sea_ice_m
     } else if s.river.is_some() {
         ice_m * 0.5
     } else {
@@ -220,13 +224,13 @@ fn for_each_target(
     mut f: impl FnMut(&Target),
 ) {
     for &col in cols {
-        let (snow_m, ice_m) = column_cover(generator, col, year_frac);
+        let (snow_m, ice_m, sea_ice_m) = column_cover(generator, col, year_frac);
         let (x0, z0) = col.min_block_xz();
         let data = generator.column(col);
         for lz in 0..16 {
             for lx in 0..16 {
                 let (x, z) = (x0 + lx as i32, z0 + lz as i32);
-                f(&target(data.at(lx, lz), x, z, snow_m, ice_m));
+                f(&target(data.at(lx, lz), x, z, snow_m, ice_m, sea_ice_m));
             }
         }
     }

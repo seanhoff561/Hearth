@@ -38,6 +38,8 @@ pub enum Surface {
     RedSandstone = 15,
     Tuff = 16,
     SnowGrass = 17,
+    /// Living reef over reef rock.
+    Coral = 18,
 }
 
 /// Everything known about one block column's surface.
@@ -365,6 +367,63 @@ impl Terrain {
             ),
         );
 
+        // ------------------------------------------------------------ coasts
+        // Sheltered stretches of coast (bays, estuaries, lagoons): long, slow noise, and every
+        // river mouth.
+        let (ci, cj) = g.geom.ij(idx);
+        let delta_near = (-1..=1).any(|dj| {
+            (-1..=1).any(|di| {
+                g.geom
+                    .neighbor(ci, cj, di, dj)
+                    .is_some_and(|k| g.flags[k] & flags::DELTA != 0)
+            })
+        });
+        let shelter_n = self.noise.variation.sample2(xf * 0.45 + 7_000.0, zf * 0.45) as f32;
+        let mut shelter = if delta_near {
+            1.0
+        } else {
+            smoothstep(0.05, 0.3, shelter_n)
+        };
+        // Coral reefs grow up to just below the surface in warm, clear, shallow sea: fringing
+        // reefs along the shore, barrier reefs some way out with a lagoon behind, and atolls
+        // around the drowned hotspot islands.
+        let mut reef = false;
+        if ocean_near && !lake && water == 0.0 && h < -0.5 && sea_t > 21.0 && !delta_near {
+            let depth_m = -h / self.v;
+            if depth_m < 60.0 {
+                let n1 = (self.noise.variation2.sample2(xf * 1.7, zf * 1.7) as f32 * 0.5 + 0.5)
+                    .clamp(0.0, 1.0);
+                let n2 = (self.noise.variation.sample2(zf * 1.3 + 900.0, xf * 1.3) as f32 * 0.5
+                    + 0.5)
+                    .clamp(0.0, 1.0);
+                let blocks_per_radian =
+                    (self.planet.circumference_f64() / std::f64::consts::TAU) as f32;
+                let off = -g.coast.bilinear(gx, gz) * blocks_per_radian;
+                // Fringing reefs need clear water: not in muddy sheltered bays.
+                let fringing = depth_m < 25.0 && off < 50.0 + 110.0 * n1 && shelter < 0.5;
+                let barrier =
+                    depth_m < 45.0 && (off - (320.0 + 280.0 * n2)).abs() < 10.0 + 18.0 * n1;
+                let atoll = depth_m < 60.0
+                    && g.volcanoes.iter().any(|vol| {
+                        if vol.summit >= 0.0 {
+                            return false;
+                        }
+                        let dx = self.planet.delta_x(vol.x, xf) as f32;
+                        let dz = (zf - vol.z) as f32;
+                        let ring = 70.0 + vol.crater_radius * 2.0;
+                        ((dx * dx + dz * dz).sqrt() - ring).abs() < 8.0 + 6.0 * n1
+                    });
+                if fringing || barrier || atoll {
+                    reef = true;
+                    // Coral heads reach the surface in places, spurs and grooves lie deeper.
+                    let heads = self.noise.rough.sample2(xf * 0.7, zf * 0.7) as f32 * 0.5 + 0.5;
+                    h = h.max(-1.0 - 2.5 * (1.0 - heads).clamp(0.0, 1.0));
+                    // The crest takes the waves.
+                    shelter = 0.0;
+                }
+            }
+        }
+
         // ------------------------------------------------------------ biome
         let variation = (self.noise.variation.sample2(xf, zf) as f32 * 0.5 + 0.5).clamp(0.0, 1.0);
         let variation2 = (self.noise.variation2.sample2(xf, zf) as f32 * 0.5 + 0.5).clamp(0.0, 1.0);
@@ -390,6 +449,7 @@ impl Terrain {
             variation,
             variation2,
             vertical_scale: self.v,
+            shelter,
         };
         let biome = if polar > 0.5 {
             if h < 1.0 {
@@ -402,8 +462,11 @@ impl Terrain {
         };
 
         // ------------------------------------------------------------ materials
-        let (surface, filler, soil_depth) =
-            self.materials(biome, h, water, slope, xf, zf, temperature, precip);
+        let (surface, filler, soil_depth) = if reef {
+            (Surface::Coral, Surface::Coral, 2)
+        } else {
+            self.materials(biome, h, water, slope, xf, zf, temperature, precip, shelter)
+        };
         let tree_density = self.tree_density(
             biome,
             temperature,
@@ -492,6 +555,7 @@ impl Terrain {
         z: f64,
         temperature: f32,
         precip: f32,
+        shelter: f32,
     ) -> (Surface, Surface, u8) {
         let soil_n = self.noise.soil.sample2(x, z) as f32;
         let patch = self.noise.patch.sample2(x, z) as f32;
@@ -506,7 +570,15 @@ impl Terrain {
         use Surface::*;
         if underwater {
             let depth_below = water - h;
+            // Tidal mud in the shallow water of sheltered coasts.
+            let mudflat = shelter > 0.5
+                && depth_below < 1.6
+                && matches!(
+                    biome,
+                    Biome::WarmShallows | Biome::TemperateSea | Biome::ColdSea | Biome::Mangrove
+                );
             let s = match biome {
+                _ if mudflat => Dirt,
                 Biome::WarmShallows => Sand,
                 Biome::River => {
                     if patch > 0.2 {
@@ -556,6 +628,7 @@ impl Terrain {
             return (Stone, Stone, 0);
         }
         let (top, fill) = match biome {
+            Biome::SaltMarsh | Biome::Mangrove => (Dirt, Dirt),
             Biome::Beach => (Sand, Sand),
             Biome::StonyShore => (if patch > 0.0 { Gravel } else { Stone }, Stone),
             Biome::DuneSea => (if patch > 0.55 { RedSand } else { Sand }, Sand),
@@ -628,6 +701,7 @@ impl Terrain {
             Biome::Krummholz => 0.35,
             Biome::Wetland => 0.25,
             Biome::Oasis => 0.35,
+            Biome::Mangrove => 0.9,
             Biome::MediterraneanScrub => 0.14,
             Biome::Savanna => 0.05,
             Biome::TemperatePlains => 0.035,

@@ -8,6 +8,7 @@ pub enum Wood {
     Oak,
     Birch,
     Spruce,
+    Mangrove,
 }
 
 /// States for one wood species.
@@ -47,6 +48,13 @@ pub struct GenBlocks {
     pub oak: WoodStates,
     pub birch: WoodStates,
     pub spruce: WoodStates,
+    pub mangrove: WoodStates,
+    /// Mangrove prop roots in air and in water.
+    pub mangrove_roots: [BlockStateId; 2],
+    pub coral: BlockStateId,
+    pub coral_block: BlockStateId,
+    pub seaweed: BlockStateId,
+    pub cordgrass: [BlockStateId; 2],
     pub short_grass: BlockStateId,
     pub tall_grass: [BlockStateId; 2],
     pub fern: BlockStateId,
@@ -148,6 +156,15 @@ impl GenBlocks {
             oak: wood("oak")?,
             birch: wood("birch")?,
             spruce: wood("spruce")?,
+            mangrove: wood("mangrove")?,
+            mangrove_roots: [
+                s("mangrove_roots[waterlogged=false]")?,
+                s("mangrove_roots[waterlogged=true]")?,
+            ],
+            coral: s("coral")?,
+            coral_block: s("coral_block")?,
+            seaweed: s("seaweed")?,
+            cordgrass: pair("cordgrass")?,
             short_grass: s("short_grass")?,
             tall_grass: pair("tall_grass")?,
             fern: s("fern")?,
@@ -188,6 +205,7 @@ impl GenBlocks {
             Wood::Oak => &self.oak,
             Wood::Birch => &self.birch,
             Wood::Spruce => &self.spruce,
+            Wood::Mangrove => &self.mangrove,
         }
     }
 

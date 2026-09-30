@@ -24,8 +24,8 @@ fn snowy_place(lw: &LocalWorld) -> Option<ColumnPos> {
                 continue;
             }
             let col = ColumnPos::new(x >> 4, z >> 4);
-            let (winter, _) = column_cover(&lw.generator, col, WINTER);
-            let (summer, _) = column_cover(&lw.generator, col, SUMMER);
+            let (winter, _, _) = column_cover(&lw.generator, col, WINTER);
+            let (summer, _, _) = column_cover(&lw.generator, col, SUMMER);
             if winter > 0.4 && summer == 0.0 {
                 return Some(col);
             }

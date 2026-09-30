@@ -45,6 +45,8 @@ enum TreeKind {
     GiantSpruce,
     Krummholz,
     Bush,
+    /// On prop roots in the shallows of tropical coasts.
+    Mangrove,
 }
 
 impl TreeKind {
@@ -52,6 +54,7 @@ impl TreeKind {
         match self {
             TreeKind::Birch => Wood::Birch,
             TreeKind::Spruce | TreeKind::GiantSpruce | TreeKind::Krummholz => Wood::Spruce,
+            TreeKind::Mangrove => Wood::Mangrove,
             _ => Wood::Oak,
         }
     }
@@ -70,6 +73,7 @@ impl TreeKind {
             TreeKind::GiantSpruce => (7, 36),
             TreeKind::Krummholz => (2, 5),
             TreeKind::Bush => (2, 3),
+            TreeKind::Mangrove => (5, 11),
         }
     }
 }
@@ -86,7 +90,10 @@ impl Priorities<'_> {
         if s.is_air() {
             return 0;
         }
-        for w in [&b.oak, &b.birch, &b.spruce] {
+        if b.mangrove_roots.contains(&s) {
+            return 60;
+        }
+        for w in [&b.oak, &b.birch, &b.spruce, &b.mangrove] {
             if s == w.log_y || s == w.log_x || s == w.log_z {
                 return 60;
             }
@@ -151,6 +158,18 @@ fn is_plant(b: &GenBlocks, s: BlockStateId) -> bool {
         || b.vines.contains(&s)
 }
 
+/// Blocks that may take the place of water: water plants, and mangrove trunks and roots.
+fn is_aquatic(b: &GenBlocks, s: BlockStateId) -> bool {
+    s == b.seagrass
+        || b.tall_seagrass.contains(&s)
+        || s == b.kelp
+        || s == b.kelp_plant
+        || s == b.coral
+        || s == b.seaweed
+        || s == b.mangrove_roots[1]
+        || s == b.mangrove.log_y
+}
+
 /// Writes blocks into the cube using the priority lattice.
 struct Writer<'a> {
     buf: &'a mut CubeBuf,
@@ -164,6 +183,13 @@ impl Writer<'_> {
             return;
         };
         let cur = self.buf.states[i];
+        // Water plants grow in water, and mangroves stand in it; nothing else replaces it.
+        if cur == self.prio.b.water {
+            if is_aquatic(self.prio.b, s) {
+                self.buf.states[i] = s;
+            }
+            return;
+        }
         let (pc, pn) = (self.prio.of(cur), self.prio.of(s));
         if pn > pc || (pn == pc && pc < 1000 && s.0 > cur.0) {
             self.buf.states[i] = s;
@@ -266,12 +292,34 @@ impl FeatureGen {
                 s.surface,
                 Surface::Sand | Surface::Gravel | Surface::Dirt | Surface::Clay
             );
+            // Kelp forests hold to rocky floors in cool, clear water, thickest in patches.
+            let rocky = matches!(s.surface, Surface::Gravel | Surface::Stone);
+            let kelp_water = (5.0..20.0).contains(&s.sea_temperature);
+            let kelp_patch = self
+                .flower_patch
+                .noise2(x as f64 / 40.0, z as f64 / 40.0, 3) as f32;
+            let kelp_chance = if rocky {
+                if kelp_patch > 0.1 { 0.4 } else { 0.08 }
+            } else {
+                0.02
+            };
             match s.biome {
-                Biome::ColdSea | Biome::TemperateSea
-                    if floor_ok && depth > 4 && depth < 40 && r < 0.12 =>
+                Biome::WarmShallows if s.surface == Surface::Coral => {
+                    // Fans and branching corals on the reef crest and slopes.
+                    if r < 0.3 {
+                        w.put(x, top, z, b.coral);
+                    }
+                }
+                Biome::ColdSea | Biome::TemperateSea | Biome::PolarSea
+                    if rocky && depth <= 2 && s.temperature > -2.0 && r < 0.3 =>
                 {
-                    // Kelp forests in cool water.
-                    let len = (4 + (r2 * 18.0) as i32).min(depth - 2);
+                    // Wrack on the rocks of the shore.
+                    w.put(x, top, z, b.seaweed);
+                }
+                Biome::ColdSea | Biome::TemperateSea
+                    if kelp_water && depth > 3 && depth < 40 && r < kelp_chance =>
+                {
+                    let len = (3 + (r2 * 18.0) as i32).min(depth - 2);
                     for k in 0..len {
                         let st = if k == len - 1 { b.kelp } else { b.kelp_plant };
                         w.put(x, top + k, z, st);
@@ -329,6 +377,15 @@ impl FeatureGen {
                     w.put(x, top, z, b.dead_bush);
                 }
             }
+            Biome::SaltMarsh => {
+                // Cordgrass meadows on the marsh, thinning onto the open mud.
+                if r < 0.42 {
+                    tall(w, b.cordgrass);
+                } else if r < 0.62 {
+                    w.put(x, top, z, b.short_grass);
+                }
+            }
+            Biome::Mangrove => {}
             Biome::Steppe | Biome::Savanna => {
                 if grassy {
                     if r < 0.28 {
@@ -486,8 +543,11 @@ impl FeatureGen {
         // The upper hash bits (the lower ones placed the tree in its cell).
         let u = unit_f32(h.rotate_left(24));
         let s = Self::sample_at(wg, ox, oz);
-        // Trees are denser than one per cell only where density is ~1.
-        if u >= s.tree_density * 0.95 || s.is_underwater() || !soil_ok(&s) || s.slope > 0.95 {
+        // Trees are denser than one per cell only where density is ~1. Mangroves stand in up
+        // to two blocks of water.
+        let wet =
+            s.is_underwater() && !(s.biome == Biome::Mangrove && s.water_i() - s.height_i() <= 2);
+        if u >= s.tree_density * 0.95 || wet || !soil_ok(&s) || s.slope > 0.95 {
             return;
         }
         let kind = self.choose_tree(&s, h);
@@ -585,6 +645,7 @@ impl FeatureGen {
                 }
             }
             Biome::Steppe => Oak,
+            Biome::Mangrove => Mangrove,
             _ => {
                 // Temperate broadleaf, plains, oases.
                 if r < 0.05 && r2 < 0.7 {
@@ -814,6 +875,56 @@ impl FeatureGen {
                     z as f32 + 0.5,
                     rng.range_f32(1.4, 2.1),
                     1.0,
+                ));
+            }
+            TreeKind::Mangrove => {
+                // The trunk starts above the tide on a cage of arching prop roots.
+                let water_top = s.water_i();
+                let root = |yy: i32| {
+                    if yy < water_top {
+                        b.mangrove_roots[1]
+                    } else {
+                        b.mangrove_roots[0]
+                    }
+                };
+                let base = y + 2;
+                for k in 0..2 {
+                    logs.push((x, y + k, z, root(y + k)));
+                }
+                let h = rng.range_i32(3, 5) + (vigor * 1.5) as i32;
+                for k in 0..h {
+                    logs.push((x, base + k, z, wood.log_y));
+                }
+                let roots = rng.range_i32(4, 7);
+                for r in 0..roots {
+                    let a =
+                        r as f32 / roots as f32 * std::f32::consts::TAU + rng.range_f32(-0.3, 0.3);
+                    let reach = rng.range_f32(1.6, 3.2);
+                    let start = base + rng.range_i32(0, 2);
+                    // An arch from the trunk out and down into the mud.
+                    let steps = (reach * 2.0).ceil() as i32;
+                    for k in 1..=steps {
+                        let t = k as f32 / steps as f32;
+                        let rx = (x as f32 + 0.5 + a.cos() * reach * t).floor() as i32;
+                        let rz = (z as f32 + 0.5 + a.sin() * reach * t).floor() as i32;
+                        let ry = start - ((start - y + 1) as f32 * t * t).round() as i32;
+                        logs.push((rx, ry, rz, root(ry)));
+                    }
+                }
+                let top = (base + h) as f32;
+                blobs.push((
+                    x as f32 + 0.5,
+                    top,
+                    z as f32 + 0.5,
+                    rng.range_f32(2.6, 3.4),
+                    1.7,
+                ));
+                blobs.push((
+                    x as f32 + 0.5 + rng.range_f32(-1.5, 1.5),
+                    top - 1.0,
+                    z as f32 + 0.5 + rng.range_f32(-1.5, 1.5),
+                    rng.range_f32(2.0, 2.6),
+                    1.3,
                 ));
             }
             TreeKind::Bush => {

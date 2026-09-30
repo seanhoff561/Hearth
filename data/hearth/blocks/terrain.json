@@ -7,6 +7,7 @@
   "snow": {"properties": ["layers:1..8"], "hardness": 0.1, "resistance": 0.1, "shape": "snow_layer", "opaque": false, "render": "model", "replaceable": true, "random_ticks": true, "sound": "snow", "behavior": "snow_layer", "map_color": "#ffffff"},
   "snow_block": {"hardness": 0.2, "resistance": 0.2, "sound": "snow", "map_color": "#ffffff"},
   "ice": {"hardness": 0.5, "resistance": 0.5, "friction": 0.98, "opaque": false, "layer": "translucent", "light_opacity": 1, "random_ticks": true, "sound": "glass", "behavior": "ice", "map_color": "#a0a0ff"},
+  "coral_block": {"template": "rock", "hardness": 1.0, "resistance": 3.0, "map_color": "#d86a7a"},
   "packed_ice": {"hardness": 0.5, "resistance": 0.5, "friction": 0.98, "sound": "glass", "map_color": "#a0a0ff"},
   "water": {"properties": ["level:0..15"], "hardness": 100.0, "resistance": 100.0, "shape": "empty", "collision": false, "opaque": false, "render": "fluid", "layer": "translucent", "light_opacity": 2, "replaceable": true, "fluid": "water", "tint": "water", "sound": "none", "item": false, "behavior": "water", "map_color": "#4040ff"}
 }

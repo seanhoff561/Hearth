@@ -12,8 +12,9 @@ fn usage() {
         "bench <command> [options]\n\ncommands:\n  worldmap [--seed N] [--planet standard] [--res 1024] [--width 2048] [--out DIR] [--rarity rare|standard|common] [--slice lat=45] [--slice lon=-30]\n      Build the planet model and write Mercator/equirectangular PNG maps and slices.
   region [--seed N] [--res 1024] [--at X,Z] [--size 1024] [--scale 1] [--out FILE]
       Top-down block-resolution render of the surface around a point (default: spawn).
-  deposits [--seed N] [--model ID] [--near X,Z] [--max-depth N] [--limit 10] [--coverage]
-      List a world's deposit bodies nearest a point, and the resource coverage of its continents."
+  deposits [--seed N] [--model ID] [--near X,Z] [--max-depth N] [--limit 10] [--coverage] [--springs] [--find BIOME|coral]
+      List a world's deposit bodies (and springs) nearest a point, and the resource coverage of its
+      continents."
     );
 }
 

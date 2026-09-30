@@ -10,5 +10,9 @@
   "spruce_log": {"template": "log", "map_color": "#815631"},
   "spruce_wood": {"template": "log", "map_color": "#815631"},
   "spruce_leaves": {"template": "leaves", "tint": "spruce"},
-  "spruce_sapling": {"template": "sapling"}
+  "spruce_sapling": {"template": "sapling"},
+  "mangrove_log": {"template": "log", "map_color": "#6b4a36"},
+  "mangrove_wood": {"template": "log", "map_color": "#6b4a36"},
+  "mangrove_leaves": {"template": "leaves", "tint": "none", "map_color": "#3f7a32"},
+  "mangrove_roots": {"template": "log", "properties": [], "defaults": {}, "opaque": false, "layer": "cutout", "light_opacity": 1, "waterloggable": true, "hardness": 0.7, "resistance": 0.7, "map_color": "#5a3e2c"}
 }

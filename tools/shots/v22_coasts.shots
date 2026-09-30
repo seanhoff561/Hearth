@@ -1,0 +1,12 @@
+# V2-2 coasts and water: reefs, mangroves, salt marsh, a stony shore with tide pools, winter sea
+# ice, seed 7 (Standard). Places from `bench deposits --seed 7 --model none --find <biome|coral>`
+# and `--springs`.
+# `hearth --screenshot-list tools/shots/v22_coasts.shots`
+defaults: seed=7, w=960, h=540, dist=6, yaw=0, season=summer, hour=11, clouds=0.3, dry=true
+x=2592, z=-6216, y=14, pitch=24, out=bench-out/v22/coast_reef.png
+x=8976, z=-2610, y=14, pitch=26, out=bench-out/v22/coast_mangrove.png
+x=2112, z=-7750, y=14, pitch=24, out=bench-out/v22/coast_salt_marsh.png
+x=144, z=-4520, y=12, pitch=28, out=bench-out/v22/coast_stony_shore.png
+x=14736, z=-14850, y=20, pitch=20, season=winter, out=bench-out/v22/coast_sea_ice.png
+x=14986, z=9880, above=12, pitch=30, dist=4, out=bench-out/v22/spring_fresh.png
+x=15508, z=9656, above=14, pitch=32, dist=4, out=bench-out/v22/spring_hot.png

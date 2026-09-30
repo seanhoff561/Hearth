@@ -10,6 +10,7 @@ pub mod coverage;
 pub mod cubegen;
 pub mod deposits;
 pub mod geology;
+pub mod hydro;
 pub mod noise;
 pub mod planet;
 pub mod region;

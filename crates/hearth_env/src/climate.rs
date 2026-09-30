@@ -177,6 +177,8 @@ pub struct SeasonalCover {
     swe_mm: Vec<f32>,
     /// Still-water ice thickness (cm) at each step.
     ice_cm: Vec<f32>,
+    /// Sea ice thickness (cm) at each step.
+    sea_ice_cm: Vec<f32>,
     /// Snow never melts completely: glacier or ice-sheet conditions.
     pub perennial: bool,
 }
@@ -189,6 +191,9 @@ const MELT_MM_PER_DEGREE_DAY: f64 = 3.5;
 const STEFAN_CM: f64 = 2.4;
 /// Ice melt rate (cm per °C·day of thaw).
 const ICE_MELT_CM: f64 = 1.2;
+/// Sea water freezes at −1.8 °C, and the heat stored in the sea keeps it open until the air is
+/// colder still: sea ice grows only below this air temperature (°C).
+const SEA_FREEZE_C: f64 = -4.0;
 /// Settled seasonal snow density (kg/m³).
 pub const SNOW_DENSITY: f64 = 280.0;
 /// Snowpack water equivalent is capped here (permanent snow does not grow forever).
@@ -199,8 +204,10 @@ impl SeasonalCover {
         let dt = 365.2422 / STEPS as f64;
         let mut swe = 0.0f64;
         let mut ice = 0.0f64;
+        let mut sea = 0.0f64;
         let mut swe_out = vec![0f32; STEPS];
         let mut ice_out = vec![0f32; STEPS];
+        let mut sea_out = vec![0f32; STEPS];
         let mut min_swe = f64::MAX;
         // Three years of spin-up from the coldest time so the state is periodic.
         for year in 0..4 {
@@ -219,9 +226,18 @@ impl SeasonalCover {
                 } else {
                     ice = (ice - ICE_MELT_CM * t * dt).max(0.0);
                 }
+                // Sea ice: the same growth law below the sea's freezing threshold; it melts once
+                // the air is above the freezing point of sea water.
+                if t < SEA_FREEZE_C {
+                    let fdd = (sea / STEFAN_CM).powi(2) + (SEA_FREEZE_C - t) * dt;
+                    sea = STEFAN_CM * fdd.sqrt();
+                } else if t > -1.8 {
+                    sea = (sea - ICE_MELT_CM * (t + 1.8) * dt).max(0.0);
+                }
                 if year == 3 {
                     *s_out = swe as f32;
                     *i_out = ice as f32;
+                    sea_out[k] = sea as f32;
                     min_swe = min_swe.min(swe);
                 }
             }
@@ -229,6 +245,7 @@ impl SeasonalCover {
         Self {
             swe_mm: swe_out,
             ice_cm: ice_out,
+            sea_ice_cm: sea_out,
             perennial: min_swe > 1.0,
         }
     }
@@ -254,6 +271,11 @@ impl SeasonalCover {
     /// Ice thickness on still water (m); rivers freeze to about half of it.
     pub fn ice_m(&self, year_frac: f64) -> f64 {
         Self::sample(&self.ice_cm, year_frac) / 100.0
+    }
+
+    /// Sea ice thickness (m).
+    pub fn sea_ice_m(&self, year_frac: f64) -> f64 {
+        Self::sample(&self.sea_ice_cm, year_frac) / 100.0
     }
 
     /// Year fraction with the deepest snow.
@@ -352,6 +374,36 @@ mod tests {
         let ds = south.peak_snow();
         let diff = (dn - ds).rem_euclid(1.0);
         assert!((diff - 0.5).abs() < 0.08, "north peak {dn} south peak {ds}");
+    }
+
+    #[test]
+    fn sea_ice_by_climate() {
+        // High Arctic: pack ice all year.
+        let arctic = SeasonalCover::compute(&Normals::new(82.0, -18.0, 30.0, 150.0, 0.0, 0.0));
+        for i in 0..20 {
+            let f = i as f64 / 20.0;
+            assert!(
+                arctic.sea_ice_m(f) > 0.5,
+                "perennial pack at {f}: {}",
+                arctic.sea_ice_m(f)
+            );
+        }
+        // Subarctic bay (Hudson Bay, the northern Baltic): frozen in winter, open in summer.
+        let bay = SeasonalCover::compute(&Normals::new(60.0, -3.0, 32.0, 400.0, 0.0, 0.0));
+        assert!(
+            bay.sea_ice_m(0.05) > 0.4,
+            "winter sea ice: {}",
+            bay.sea_ice_m(0.05)
+        );
+        assert_eq!(bay.sea_ice_m(0.55), 0.0, "open water in late summer");
+        // Sea ice needs colder winters than lake ice: a coast with winters just below freezing
+        // keeps its sea open while its ponds freeze.
+        let mild = SeasonalCover::compute(&Normals::new(66.0, 2.0, 12.0, 900.0, 0.0, 0.0));
+        assert!(mild.ice_m(0.05) > 0.0, "ponds freeze");
+        assert_eq!(mild.sea_ice_m(0.05), 0.0, "the sea stays open");
+        // Temperate seas never freeze.
+        let maritime = SeasonalCover::compute(&Normals::new(51.0, 10.0, 12.0, 800.0, 0.0, 0.0));
+        assert_eq!(maritime.sea_ice_m(0.05), 0.0);
     }
 
     #[test]

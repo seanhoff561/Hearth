@@ -17,6 +17,8 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     let mut max_depth = i32::MAX;
     let mut limit = 10usize;
     let mut coverage = false;
+    let mut springs = false;
+    let mut find: Option<String> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let mut val = || {
@@ -42,6 +44,8 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
             "--max-depth" => max_depth = val()?.parse()?,
             "--limit" => limit = val()?.parse()?,
             "--coverage" => coverage = true,
+            "--springs" => springs = true,
+            "--find" => find = Some(val()?),
             other => anyhow::bail!("unknown argument {other}"),
         }
     }
@@ -109,6 +113,80 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
                 ""
             }
         );
+    }
+    if let Some(what) = &find {
+        // Columns of a biome (or reef surface) on a lattice over the planet, nearest first.
+        use rayon::prelude::*;
+        let c = planet.circumference();
+        let step = 48;
+        let mut hits: Vec<(f64, i32, i32)> = (-c / 2..c / 2)
+            .step_by(step)
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .flat_map_iter(|z| {
+                let wg = &wg;
+                (0..c).step_by(step).filter_map(move |x| {
+                    let s = wg.terrain.sample(x, z);
+                    let hit = if what == "coral" {
+                        s.surface == hearth_worldgen::Surface::Coral
+                    } else {
+                        s.biome.name() == what
+                    };
+                    hit.then(|| {
+                        let dx = planet.delta_block_x(nx, x) as f64;
+                        let dz = (z - nz) as f64;
+                        ((dx * dx + dz * dz).sqrt(), x, z)
+                    })
+                })
+            })
+            .collect();
+        hits.sort_by(|a, b| a.0.total_cmp(&b.0));
+        println!(
+            "{} columns of {what} on a {step}-block lattice; nearest to ({nx}, {nz}):",
+            hits.len()
+        );
+        for (d, x, z) in hits.iter().take(limit) {
+            let s = wg.terrain.sample(*x, *z);
+            println!(
+                "  ({x}, {}, {z}) {:.0} m away, water {}, sea {:.1} °C, air {:.1} °C",
+                s.height_i(),
+                d,
+                s.water_i(),
+                s.sea_temperature,
+                s.temperature
+            );
+        }
+    }
+    if springs {
+        // Springs in the placement cells around the point, nearest first.
+        use hearth_worldgen::hydro::CELL;
+        let mut found = Vec::new();
+        for cz in (nz - 4 * CELL).div_euclid(CELL)..=(nz + 4 * CELL).div_euclid(CELL) {
+            for cx in (nx - 4 * CELL).div_euclid(CELL)..=(nx + 4 * CELL).div_euclid(CELL) {
+                for sp in wg.hydro.cell(&wg, cx, cz).iter() {
+                    let dx = planet.delta_block_x(nx, sp.x) as f64;
+                    let dz = (sp.z - nz) as f64;
+                    found.push(((dx * dx + dz * dz).sqrt(), sp.clone()));
+                }
+            }
+        }
+        found.sort_by(|a, b| a.0.total_cmp(&b.0));
+        println!("{} springs within ~1 km of ({nx}, {nz}):", found.len());
+        for (d, sp) in found.iter().take(limit) {
+            let s = wg.terrain.sample(sp.x, sp.z);
+            println!(
+                "  {:?} spring at ({}, {}, {}), brook {} blocks, {:.0} m away, {} {:.0} mm, table {:.1}",
+                sp.kind,
+                sp.x,
+                sp.level,
+                sp.z,
+                sp.brook.len(),
+                d,
+                s.biome.name(),
+                s.precipitation,
+                wg.hydro.water_table(&wg, sp.x, sp.z)
+            );
+        }
     }
     if coverage {
         let scale = planet.circumference() as f64 / 65_536.0;

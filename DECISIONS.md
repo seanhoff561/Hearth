@@ -333,3 +333,38 @@ Era 0; pyrite and marcasite, ochres, manganese black and clay Era 1; salt and gy
 fire clay Era 4; bloomery iron ores, zinc, coal, sulfur, travertine, pozzolana, garnet and
 diamonds Era 5; saltpetre and anthracite Era 6; bauxite Era 8. The coverage lint checks
 Eras 0–5.
+
+## D48 — The water table is a subdued copy of the land; voids below it are water
+Groundwater is a static field computed from the terrain: the drainage base (lowest ground or
+water within 256 blocks, from the planet grid), the land smoothed over ~100 blocks, the share
+of relief the table follows (set by the surface rock's new `permeability` in the rock data —
+karst drains to the valley floors, tight rock carries water up under the hills) and the
+climate's wetness. It never rises above the ground; where it would, springs rise. Every cave
+void below it is flooded (the random "aquifer" floods of v1 are gone): realistic, and it gives
+the underground regional character — dry caves in hills, karst uplands and deserts, sumps
+under wet lowlands — at the cost of many of v1's deep caves now being water. Mines below the
+table will flood (V2-13). Computing the drainage base from the planet grid rather than from
+terrain samples keeps the cost to about 5 % of surface cube generation.
+
+## D49 — Coast types from temperature, depth, slope and shelter
+Sheltered coasts are marked by a slow noise and river mouths (not the coastline's shape);
+low sheltered coasts become mangrove (tropics) or salt marsh with mudflats; reefs need warm,
+clear, shallow water and take the waves (a reef column is never sheltered). Reefs raise the
+terrain in the sampler itself, so every system (biomes, soils, features, maps) sees them.
+Mangrove and salt marsh are biomes (36, 37); coral, reef, mangrove, cordgrass and wrack blocks
+are data with generated textures; species-level corals and mangroves arrive with V2-10.
+
+## D50 — Sea ice from air temperature below −4 °C
+The seasonal cover integrates sea ice like lake ice (Stefan's law) but only below −4 °C of air
+temperature and melting above −1.8 °C: sea water freezes at −1.8 °C and the heat stored in
+the sea delays freezing. This closes D36's open sea: pack ice where the warmest month stays
+below −1.8 °C, seasonal ice where winters are long and cold, open water where they are mild.
+
+## D51 — Two v1 feature bugs fixed with V2-2
+Tree and debris placement drew their chance from 8 and 4 bits of a hash (`h >> 16`,
+`h >> 20` fed to a function that reads the top 24 bits), so any non-zero tree density grew a
+closed forest (steppe, savanna, plains and scrub were woodland) and cacti and fallen logs
+filled every eligible cell; they now use the full hash. Underwater plants were never placed:
+the feature writer ranks water above every feature, so seagrass and kelp could not take its
+place; water plants (and mangrove wood) now may, and nothing else, so canopies still cannot
+dip into lakes.
