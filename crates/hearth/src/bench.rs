@@ -348,6 +348,13 @@ pub struct SceneResult {
     pub allocs_max: u64,
     /// Seconds spent generating, meshing and building LOD before the frames.
     pub setup_s: f64,
+    /// Cubes meshed per second and LOD tiles built per second during the setup (all threads).
+    pub mesh_cubes_per_s: f64,
+    pub lod_tiles_per_s: f64,
+    /// Heap allocations per frame by system.
+    pub allocs_by_system: Vec<(String, f64)>,
+    /// The slowest frames: frame time (ms) and what the render thread spent it on.
+    pub slowest: Vec<(f64, Vec<(String, f64)>)>,
     /// Structural similarity with the golden image (1 = identical), when compared.
     pub ssim: Option<f64>,
 }
@@ -557,7 +564,9 @@ fn run_scene(
             (path, positions)
         }
     };
+    let t_mesh = Instant::now();
     let meshes = lw.mesh(models, &positions, MeshOptions::default());
+    let mesh_cubes_per_s = meshes.len() as f64 / t_mesh.elapsed().as_secs_f64().max(1e-9);
     let mut scene = SceneRenderer::new(
         ctx,
         atlas,
@@ -597,10 +606,12 @@ fn run_scene(
         wanted.extend(select(p));
     }
     let wanted: Vec<hearth_lod::TileKey> = wanted.into_iter().collect();
+    let t_lod = Instant::now();
     let tiles: Vec<hearth_lod::TileMesh> = wanted
         .par_iter()
         .map(|k| lodgen.build(&lw.generator, *k))
         .collect();
+    let lod_tiles_per_s = tiles.len() as f64 / t_lod.elapsed().as_secs_f64().max(1e-9);
     for t in &tiles {
         crate::lod_stream::upload(ctx, &mut scene.lod, t);
     }
@@ -615,10 +626,12 @@ fn run_scene(
     scene.timer = GpuTimer::new(ctx);
     let setup_s = t_setup.elapsed().as_secs_f64();
     log::info!(
-        "{}: {} cubes meshed, {} LOD tiles, set up in {:.1}s",
+        "{}: {} cubes meshed ({:.0}/s), {} LOD tiles ({:.0}/s), set up in {:.1}s",
         def.name,
         positions.len(),
+        mesh_cubes_per_s,
         wanted.len(),
+        lod_tiles_per_s,
         setup_s
     );
 
@@ -633,6 +646,8 @@ fn run_scene(
     let mut in_flight: VecDeque<wgpu::SubmissionIndex> = VecDeque::new();
     let mut frame_ms = Vec::with_capacity(opts.frames);
     let mut sums = Sums::default();
+    // What each measured frame spent its time on, to explain the slowest frames.
+    let mut sections: Vec<[f64; SECTIONS.len()]> = Vec::with_capacity(opts.frames);
     let mut last_start: Option<Instant> = None;
     for f in 0..total {
         let measured = f >= opts.warmup;
@@ -654,12 +669,14 @@ fn run_scene(
         let uploads0 = ctx.uploaded_bytes();
         // The world clock runs at 20 ticks a second of a 60 Hz frame loop.
         let t0 = Instant::now();
+        let a0 = crate::alloc_count::thread_allocations();
         let moment = calendar.at(f as u64 / 3);
         // Firelight at the camera sets the eye's adaptation (in caves by torchlight).
         let fire = map.block_light(BlockPos::containing(camera.pos)) as f32 / 15.0;
         let (mut env, _) = sampler.sample(&moment, camera.pos, fire, overrides);
         env.seconds = f as f32 / 60.0;
         let t1 = Instant::now();
+        let a1 = crate::alloc_count::thread_allocations();
         if state
             .lod_at
             .is_none_or(|p| p.distance(camera.pos) >= LOD_RESELECT)
@@ -669,6 +686,7 @@ fn run_scene(
             scene.near_area = (def.lod > 0).then(|| near_of(camera.pos));
         }
         let t2 = Instant::now();
+        let a2 = crate::alloc_count::thread_allocations();
         if state
             .sky_at
             .is_none_or(|p| p.distance(camera.pos) >= SKY_HEIGHTS_RECENTRE)
@@ -677,8 +695,10 @@ fn run_scene(
             scene.set_sky_heights(ctx, &sky_heights(camera.pos));
         }
         let t3 = Instant::now();
+        let a3 = crate::alloc_count::thread_allocations();
         scene.prepare(ctx, &camera, size, &env, 1.0 / 60.0);
         let t4 = Instant::now();
+        let a4 = crate::alloc_count::thread_allocations();
         let mut enc = ctx
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -686,10 +706,12 @@ fn run_scene(
             });
         scene.render(ctx, &mut enc, &target.color_view, &target.depth.view, size);
         let t5 = Instant::now();
+        let a5 = crate::alloc_count::thread_allocations();
         let idx = ctx.queue.submit(Some(enc.finish()));
         scene.submitted();
         in_flight.push_back(idx);
         let t6 = Instant::now();
+        let a6 = crate::alloc_count::thread_allocations();
         while in_flight.len() > FRAMES_IN_FLIGHT {
             let i = in_flight.pop_front().expect("non-empty");
             let _ = ctx.device.poll(wgpu::PollType::Wait {
@@ -698,6 +720,7 @@ fn run_scene(
             });
         }
         let t7 = Instant::now();
+        let a7 = crate::alloc_count::thread_allocations();
         let gpu = scene
             .timer
             .as_mut()
@@ -709,15 +732,33 @@ fn run_scene(
             continue;
         }
         let ms = |a: Instant, b: Instant| (b - a).as_secs_f64() * 1e3;
-        sums.add_cpu("environment", ms(t0, t1));
-        sums.add_cpu("lod selection", ms(t1, t2));
-        sums.add_cpu("rain cover map", ms(t2, t3));
-        sums.add_cpu("prepare: terrain", scene.cpu.terrain_ms);
-        sums.add_cpu("prepare: lod", scene.cpu.lod_ms);
-        sums.add_cpu("prepare: sky, rain", scene.cpu.sky_ms);
-        sums.add_cpu("encode", ms(t4, t5));
-        sums.add_cpu("submit", ms(t5, t6));
-        sums.add_cpu("wait for gpu", ms(t6, t7));
+        let times = [
+            ms(t0, t1),
+            ms(t1, t2),
+            ms(t2, t3),
+            scene.cpu.terrain_ms,
+            scene.cpu.lod_ms,
+            scene.cpu.sky_ms,
+            ms(t4, t5),
+            ms(t5, t6),
+            ms(t6, t7),
+        ];
+        let counts = [
+            a1 - a0,
+            a2 - a1,
+            a3 - a2,
+            a4 - a3,
+            0,
+            0,
+            a5 - a4,
+            a6 - a5,
+            a7 - a6,
+        ];
+        for ((label, t), n) in SECTIONS.iter().zip(times).zip(counts) {
+            sums.add_cpu(label, t);
+            sums.add_allocs(label, n);
+        }
+        sections.push(times);
         sums.frames += 1;
         sums.uploads += uploaded as f64;
         sums.uploads_max = sums.uploads_max.max(uploaded);
@@ -827,8 +868,49 @@ fn run_scene(
     } else {
         None
     };
-    Ok(sums.result(def, frame_ms, vram_mib, setup_s, ssim))
+    // The slowest frames: a frame's time runs from its start to the next frame's start, so it
+    // is spent on its own sections.
+    let mut order: Vec<usize> = (0..frame_ms.len()).collect();
+    order.sort_by(|a, b| frame_ms[*b].total_cmp(&frame_ms[*a]));
+    let slowest: Vec<(f64, Vec<(String, f64)>)> = order
+        .iter()
+        .take(5)
+        .filter_map(|&k| {
+            let s = sections.get(k)?;
+            Some((
+                frame_ms[k],
+                SECTIONS
+                    .iter()
+                    .zip(s)
+                    .filter(|(_, t)| **t >= 0.05)
+                    .map(|(l, t)| (l.to_string(), *t))
+                    .collect(),
+            ))
+        })
+        .collect();
+    for (ms, parts) in &slowest {
+        let parts: Vec<String> = parts.iter().map(|(l, t)| format!("{l} {t:.2}")).collect();
+        log::info!("{}: slow frame {ms:.2} ms: {}", def.name, parts.join(", "));
+    }
+    let mut r = sums.result(def, frame_ms, vram_mib, setup_s, ssim);
+    r.mesh_cubes_per_s = mesh_cubes_per_s;
+    r.lod_tiles_per_s = lod_tiles_per_s;
+    r.slowest = slowest;
+    Ok(r)
 }
+
+/// The render thread's work in a frame, in order.
+const SECTIONS: [&str; 9] = [
+    "environment",
+    "lod selection",
+    "rain cover map",
+    "prepare: terrain",
+    "prepare: lod",
+    "prepare: sky, rain",
+    "encode",
+    "submit",
+    "wait for gpu",
+];
 
 /// Keyframes to a dense path (a point every few blocks) whose heights above the ground follow
 /// the terrain, smoothed so the camera clears every rise near the line.
@@ -939,6 +1021,7 @@ struct Sums {
     uploads_max: u64,
     allocs: f64,
     allocs_max: u64,
+    allocs_by: Vec<(&'static str, f64)>,
 }
 
 impl Sums {
@@ -946,6 +1029,13 @@ impl Sums {
         match self.cpu.iter_mut().find(|(l, _)| *l == label) {
             Some(e) => e.1 += ms,
             None => self.cpu.push((label, ms)),
+        }
+    }
+
+    fn add_allocs(&mut self, label: &'static str, n: u64) {
+        match self.allocs_by.iter_mut().find(|(l, _)| *l == label) {
+            Some(e) => e.1 += n as f64,
+            None => self.allocs_by.push((label, n as f64)),
         }
     }
 
@@ -1023,6 +1113,14 @@ impl Sums {
             allocs: self.allocs / n,
             allocs_max: self.allocs_max,
             setup_s,
+            mesh_cubes_per_s: 0.0,
+            lod_tiles_per_s: 0.0,
+            allocs_by_system: self
+                .allocs_by
+                .iter()
+                .map(|(l, a)| (l.to_string(), a / n))
+                .collect(),
+            slowest: Vec::new(),
             ssim,
         }
     }
@@ -1370,21 +1468,36 @@ fn report(run: &BenchRun) -> String {
     let find =
         |v: &[(String, f64)], l: &str| v.iter().find(|(k, _)| k == l).map_or(0.0, |(_, ms)| *ms);
     table("GPU ms per pass", gpu_rows, &|r, l| find(&r.gpu_passes, l));
-    table("CPU ms per system", cpu_rows, &|r, l| find(&r.cpu, l));
+    table("CPU ms per system", cpu_rows.clone(), &|r, l| {
+        find(&r.cpu, l)
+    });
+    table("Allocations per frame", cpu_rows, &|r, l| {
+        find(&r.allocs_by_system, l)
+    });
     let _ = writeln!(
         s,
-        "| Scene | Visible cubes | LOD tiles drawn | Setup s | SSIM vs golden | What |"
+        "| Scene | Visible cubes | LOD tiles drawn | Meshing cubes/s | LOD tiles/s | Setup s | SSIM vs golden | Slowest frame | What |"
     );
-    let _ = writeln!(s, "|---|---:|---:|---:|---:|---|");
+    let _ = writeln!(s, "|---|---:|---:|---:|---:|---:|---:|---|---|");
     for r in &run.scenes {
+        let slow = r.slowest.first().map_or("–".into(), |(ms, parts)| {
+            let top = parts
+                .iter()
+                .max_by(|a, b| a.1.total_cmp(&b.1))
+                .map_or(String::new(), |(l, t)| format!(", {l} {t:.2}"));
+            format!("{ms:.2} ms{top}")
+        });
         let _ = writeln!(
             s,
-            "| {} | {:.0} | {:.0} | {:.1} | {} | {} |",
+            "| {} | {:.0} | {:.0} | {:.0} | {:.0} | {:.1} | {} | {} | {} |",
             r.name,
             r.visible_cubes,
             r.lod_tiles,
+            r.mesh_cubes_per_s,
+            r.lod_tiles_per_s,
             r.setup_s,
             r.ssim.map_or("–".into(), |v| format!("{v:.4}")),
+            slow,
             r.about
         );
     }
