@@ -6,6 +6,9 @@ pub mod elevation;
 pub mod fields;
 pub mod grid;
 pub mod hydrology;
+pub mod io;
+#[cfg(test)]
+mod stats;
 pub mod tectonics;
 
 use glam::DVec3;
@@ -66,21 +69,32 @@ pub struct Volcano {
     pub crater_lake: bool,
 }
 
+/// A river cell of the drainage network.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RiverCell {
+    /// Downstream cell index.
+    pub receiver: u32,
+    /// Discharge (square degrees of catchment × metres of rain per year).
+    pub discharge: f32,
+}
+
 /// The finished planet model.
+///
+/// Elevation and water are stored at full resolution; smooth fields (climate, uplift, coast
+/// distance) at half resolution; the river network sparsely.
 #[derive(Debug, Clone)]
 pub struct PlanetGrid {
     pub geom: GridGeom,
     pub seed: u64,
     pub vertical_scale: f64,
+    /// Settings the planet was built with.
+    pub settings: WorldGenSettings,
     /// Terrain elevation in real metres (sea level 0).
     pub elevation: Field<f32>,
     /// Water surface in metres where there is water (ocean 0, lakes, rivers); NaN when dry.
     pub water: Field<f32>,
-    /// Accumulated discharge (precipitation-weighted upstream area, in equatorial-cell ×
-    /// metre-of-rain units).
-    pub discharge: Field<f32>,
-    /// Receiver (downstream neighbour) index per cell; self for outlets.
-    pub receiver: Vec<u32>,
+    /// River cells (cell index → receiver and discharge).
+    pub rivers: rustc_hash::FxHashMap<u32, RiverCell>,
     pub flags: Vec<u8>,
     pub plate: Vec<u8>,
     pub province: Vec<u8>,
@@ -93,6 +107,8 @@ pub struct PlanetGrid {
     pub temp_range: Field<f32>,
     pub precipitation: Field<f32>,
     pub dry_season: Vec<u8>,
+    pub winter_dry: Field<f32>,
+    pub summer_dry: Field<f32>,
     pub climate: Vec<u8>,
     pub current: Field<f32>,
     pub volcanoes: Vec<Volcano>,
@@ -519,7 +535,7 @@ impl PlanetGrid {
             }
             let eroded = hb / v as f32;
             *e = if *e > 0.0 || !lake_basin[idx] {
-                eroded.max(0.5)
+                eroded.max(2.0)
             } else {
                 eroded
             };
@@ -541,47 +557,41 @@ impl PlanetGrid {
         );
 
         progress(1.0, "Done");
+        let rivers = (0..len)
+            .filter(|&idx| flags[idx] & flags::RIVER != 0)
+            .map(|idx| {
+                (
+                    idx as u32,
+                    RiverCell {
+                        receiver: hydro.receiver[idx],
+                        discharge: hydro.discharge[idx],
+                    },
+                )
+            })
+            .collect();
+        let half = |data: Vec<f32>| Field::from_vec(n, data).downsample2();
         PlanetGrid {
             geom,
             seed,
             vertical_scale: v,
-            elevation: Field { n, data: elev },
-            water: Field {
-                n,
-                data: hydro.water,
-            },
-            discharge: Field {
-                n,
-                data: hydro.discharge,
-            },
-            receiver: hydro.receiver,
+            settings,
+            elevation: Field::from_vec(n, elev),
+            water: Field::from_vec(n, hydro.water),
+            rivers,
             flags,
             plate,
             province,
-            uplift: Field { n, data: uplift },
-            coast: Field { n, data: coast },
-            temperature: Field {
-                n,
-                data: cl.temperature,
-            },
-            sea_level_temperature: Field {
-                n,
-                data: cl.sea_level_temperature,
-            },
-            temp_range: Field {
-                n,
-                data: cl.temp_range,
-            },
-            precipitation: Field {
-                n,
-                data: cl.precipitation,
-            },
+            uplift: half(uplift),
+            coast: half(coast),
+            temperature: half(cl.temperature),
+            sea_level_temperature: half(cl.sea_level_temperature),
+            temp_range: half(cl.temp_range),
+            precipitation: half(cl.precipitation),
             dry_season: cl.dry_season,
+            winter_dry: half(cl.winter_dry),
+            summer_dry: half(cl.summer_dry),
             climate: cl.class,
-            current: Field {
-                n,
-                data: cl.current,
-            },
+            current: half(cl.current),
             volcanoes,
             layout,
         }
@@ -589,6 +599,17 @@ impl PlanetGrid {
 
     pub fn n(&self) -> usize {
         self.geom.n
+    }
+
+    /// Value of a (possibly half-resolution) field at a full-grid cell index.
+    #[inline]
+    pub fn field_at(&self, f: &Field<f32>, idx: usize) -> f32 {
+        f.at_index(idx, self.geom.n)
+    }
+
+    /// Discharge of a river cell (0 elsewhere).
+    pub fn discharge_at(&self, idx: usize) -> f32 {
+        self.rivers.get(&(idx as u32)).map_or(0.0, |r| r.discharge)
     }
 
     pub fn planet(&self) -> &Planet {

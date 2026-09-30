@@ -71,6 +71,10 @@ debug = "line-tables-only"
 opt-level = 3
 debug = false
 
+# World generation is compute-heavy; keep it fast in debug builds and tests too.
+[profile.dev.package.hearth_worldgen]
+opt-level = 3
+
 [profile.test]
 opt-level = 1
 

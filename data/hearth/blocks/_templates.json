@@ -1,0 +1,55 @@
+{
+  "rock": { "hardness": 1.5, "resistance": 6.0, "tool": "pickaxe", "tier": "wood", "requires_tool": true, "sound": "stone", "map_color": "#707070" },
+  "hard_rock": { "template": "rock", "hardness": 3.0, "sound": "deepslate", "map_color": "#505055" },
+  "ore": { "template": "rock", "hardness": 3.0, "resistance": 3.0 },
+  "deep_ore": { "template": "rock", "hardness": 4.5, "resistance": 3.0, "sound": "deepslate", "map_color": "#505055" },
+  "metal_block": { "template": "rock", "hardness": 5.0, "resistance": 6.0, "sound": "metal" },
+  "soil": { "hardness": 0.5, "resistance": 0.5, "tool": "shovel", "sound": "gravel", "map_color": "#866043" },
+  "falling_soil": { "template": "soil", "behavior": "falling" },
+  "log": { "properties": ["axis:x,y,z"], "defaults": { "axis": "y" }, "hardness": 2.0, "resistance": 2.0, "tool": "axe", "sound": "wood", "flammable": true, "map_color": "#8f7748" },
+  "planks": { "hardness": 2.0, "resistance": 3.0, "tool": "axe", "sound": "wood", "flammable": true, "map_color": "#8f7748" },
+  "leaves": {
+    "properties": ["distance:1..7", "persistent:bool"], "defaults": { "distance": "7" },
+    "hardness": 0.2, "resistance": 0.2, "tool": "hoe", "sound": "grass", "opaque": false, "layer": "cutout",
+    "light_opacity": 1, "random_ticks": true, "waterloggable": true, "tint": "foliage", "behavior": "leaves",
+    "flammable": true, "map_color": "#007c00"
+  },
+  "sapling": {
+    "properties": ["stage:0..1"], "hardness": 0.0, "resistance": 0.0, "shape": { "boxes": [[2, 0, 2, 14, 12, 14]] }, "collision": false,
+    "opaque": false, "render": "cross", "layer": "cutout", "random_ticks": true, "sound": "grass", "behavior": "sapling", "map_color": "#007c00"
+  },
+  "slab": { "properties": ["type:bottom,top,double"], "shape": "slab", "opaque": false, "waterloggable": true, "render": "model" },
+  "stairs": {
+    "properties": ["facing:north,south,west,east", "half:bottom,top", "shape:straight,inner_left,inner_right,outer_left,outer_right"],
+    "shape": "stairs", "opaque": false, "waterloggable": true, "render": "model", "behavior": "stairs"
+  },
+  "fence": {
+    "properties": ["north:bool", "east:bool", "south:bool", "west:bool"], "shape": "fence", "opaque": false, "waterloggable": true,
+    "render": "model", "hardness": 2.0, "resistance": 3.0, "tool": "axe", "sound": "wood", "behavior": "fence", "flammable": true
+  },
+  "fence_gate": {
+    "properties": ["facing:north,south,west,east", "open:bool", "in_wall:bool"], "shape": "fence_gate", "opaque": false,
+    "render": "model", "hardness": 2.0, "resistance": 3.0, "tool": "axe", "sound": "wood", "behavior": "fence_gate", "flammable": true
+  },
+  "door": {
+    "properties": ["facing:north,south,west,east", "half:lower,upper", "hinge:left,right", "open:bool"], "shape": "door", "opaque": false,
+    "render": "model", "layer": "cutout", "hardness": 3.0, "resistance": 3.0, "tool": "axe", "sound": "wood", "behavior": "door", "flammable": true
+  },
+  "trapdoor": {
+    "properties": ["facing:north,south,west,east", "half:bottom,top", "open:bool"], "shape": "trapdoor", "opaque": false, "waterloggable": true,
+    "render": "model", "layer": "cutout", "hardness": 3.0, "resistance": 3.0, "tool": "axe", "sound": "wood", "behavior": "trapdoor", "flammable": true
+  },
+  "plant": {
+    "hardness": 0.0, "resistance": 0.0, "shape": { "boxes": [[2, 0, 2, 14, 13, 14]] }, "collision": false, "opaque": false,
+    "render": "cross", "layer": "cutout", "replaceable": true, "sound": "grass", "behavior": "plant", "map_color": "#007c00"
+  },
+  "tall_plant": { "template": "plant", "properties": ["half:lower,upper"], "shape": { "boxes": [[2, 0, 2, 14, 16, 14]] }, "behavior": "tall_plant" },
+  "flower": { "template": "plant", "replaceable": false, "shape": { "boxes": [[5, 0, 5, 11, 10, 11]] } },
+  "wool": { "hardness": 0.8, "resistance": 0.8, "tool": "shears", "sound": "wool", "flammable": true },
+  "carpet": { "hardness": 0.1, "resistance": 0.1, "shape": "carpet", "opaque": false, "render": "model", "sound": "wool", "flammable": true, "behavior": "carpet" },
+  "bed": {
+    "properties": ["facing:north,south,west,east", "part:foot,head", "occupied:bool"], "shape": "bed", "opaque": false, "render": "model",
+    "hardness": 0.2, "resistance": 0.2, "sound": "wood", "behavior": "bed", "flammable": true
+  },
+  "glassy": { "hardness": 0.3, "resistance": 0.3, "opaque": false, "layer": "cutout", "sound": "glass", "map_color": "#c0e0ff" }
+}

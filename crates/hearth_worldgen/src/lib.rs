@@ -6,9 +6,13 @@
 //! 2. Regional sampling — block-resolution surface height, water, biome, rivers, materials.
 //! 3. Cube generation — terrain, caves, ores, water and features for one 16³ cube.
 
+pub mod cubegen;
 pub mod noise;
 pub mod planet;
+pub mod region;
 pub mod settings;
 
+pub use cubegen::{CubeClass, WorldGenerator};
 pub use planet::PlanetGrid;
+pub use region::{ColumnSample, Surface, Terrain};
 pub use settings::{FeatureRarity, SpawnClimate, WorldGenSettings};

@@ -152,7 +152,7 @@ fn relief_color(g: &PlanetGrid, idx: usize) -> [u8; 3] {
         return [235, 230, 215];
     }
     if f & flags::RIVER != 0 {
-        let q = g.discharge.data[idx];
+        let q = g.discharge_at(idx);
         let t = ((q / hearth_worldgen::planet::RIVER_MIN_DISCHARGE).ln() / 6.0).clamp(0.0, 1.0);
         return crate::image::lerp_color([110, 160, 220], [30, 80, 200], t as f64);
     }
@@ -206,7 +206,7 @@ fn current_color(g: &PlanetGrid, idx: usize) -> [u8; 3] {
     if g.elevation.data[idx] > 0.0 {
         return [90, 90, 90];
     }
-    let c = g.current.data[idx] as f64;
+    let c = g.field_at(&g.current, idx) as f64;
     ramp(
         &[
             (-7.0, [0, 60, 255]),
@@ -218,7 +218,7 @@ fn current_color(g: &PlanetGrid, idx: usize) -> [u8; 3] {
 }
 
 fn temperature_color(g: &PlanetGrid, idx: usize) -> [u8; 3] {
-    let t = g.temperature.data[idx] as f64;
+    let t = g.field_at(&g.temperature, idx) as f64;
     let c = ramp(
         &[
             (-40.0, [120, 0, 160]),
@@ -238,7 +238,7 @@ fn temperature_color(g: &PlanetGrid, idx: usize) -> [u8; 3] {
 }
 
 fn precip_color(g: &PlanetGrid, idx: usize) -> [u8; 3] {
-    let p = g.precipitation.data[idx] as f64;
+    let p = g.field_at(&g.precipitation, idx) as f64;
     let c = ramp(
         &[
             (0.0, [150, 60, 20]),
@@ -321,14 +321,37 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     );
     std::fs::create_dir_all(&a.out)?;
     let n = g.n();
-    let colors: Vec<(&str, Vec<[u8; 3]>)> = LAYERS
+    let mut colors: Vec<(&str, Vec<[u8; 3]>)> = LAYERS
         .iter()
         .map(|(name, f)| (*name, (0..n * n).map(|idx| f(&g, idx)).collect()))
         .collect();
+    // Biome layer: sample the block-level biome at every cell centre.
+    let g = std::sync::Arc::new(g);
+    let terrain = hearth_worldgen::Terrain::new(g.clone());
+    let biome_px: Vec<[u8; 3]> = {
+        use rayon::prelude::*;
+        (0..n * n)
+            .into_par_iter()
+            .map(|idx| {
+                let (i, j) = g.geom.ij(idx);
+                let (x, z) = g.geom.world_xz(i, j);
+                let s = terrain.sample(x as i32, z as i32);
+                let c = s.biome.color();
+                if s.is_underwater() {
+                    c
+                } else {
+                    shade(c, 0.8 + 0.2 * hillshade(&g, idx))
+                }
+            })
+            .collect()
+    };
+    colors.push(("biome", biome_px));
+    let g = &*g;
     let merc_size = a.width.min(n).max(64);
     for (name, px) in &colors {
         // Mercator: the grid itself (downsampled if needed).
         let mut img = Image::new(merc_size, merc_size);
+        let _ = &g;
         for y in 0..merc_size {
             for x in 0..merc_size {
                 let i = x * n / merc_size;
@@ -354,9 +377,9 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         eq.save(&a.out.join(format!("equirect_{name}.png")))?;
     }
     for s in &a.slices {
-        slice(&g, *s, &a.out)?;
+        slice(g, *s, &a.out)?;
     }
-    stats(&g);
+    stats(g);
     println!("maps written to {}", a.out.display());
     Ok(())
 }

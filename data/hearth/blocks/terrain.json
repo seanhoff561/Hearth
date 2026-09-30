@@ -1,0 +1,62 @@
+{
+  "stone": { "template": "rock", "drops": "blocks/stone" },
+  "deepslate": { "template": "hard_rock", "drops": "blocks/deepslate" },
+  "cobblestone": { "template": "rock", "hardness": 2.0 },
+  "mossy_cobblestone": { "template": "rock", "hardness": 2.0, "map_color": "#6a7a5a" },
+  "cobbled_deepslate": { "template": "hard_rock", "hardness": 3.5 },
+  "polished_deepslate": { "template": "hard_rock", "hardness": 3.5 },
+  "granite": { "template": "rock", "map_color": "#9a6c5a" },
+  "polished_granite": { "template": "rock", "map_color": "#9a6c5a" },
+  "diorite": { "template": "rock", "map_color": "#bcbcbc" },
+  "polished_diorite": { "template": "rock", "map_color": "#bcbcbc" },
+  "andesite": { "template": "rock", "map_color": "#888888" },
+  "polished_andesite": { "template": "rock", "map_color": "#888888" },
+  "tuff": { "template": "rock", "map_color": "#6c6c62", "sound": "tuff" },
+  "calcite": { "template": "rock", "hardness": 0.75, "map_color": "#e0e0dc", "sound": "calcite" },
+  "sandstone": { "template": "rock", "hardness": 0.8, "map_color": "#d8cc9a" },
+  "smooth_sandstone": { "template": "rock", "hardness": 2.0, "map_color": "#d8cc9a" },
+  "cut_sandstone": { "template": "rock", "hardness": 0.8, "map_color": "#d8cc9a" },
+  "red_sandstone": { "template": "rock", "hardness": 0.8, "map_color": "#b85e2a" },
+  "smooth_red_sandstone": { "template": "rock", "hardness": 2.0, "map_color": "#b85e2a" },
+  "cut_red_sandstone": { "template": "rock", "hardness": 0.8, "map_color": "#b85e2a" },
+  "stone_bricks": { "template": "rock" },
+  "mossy_stone_bricks": { "template": "rock", "map_color": "#6a7a5a" },
+  "cracked_stone_bricks": { "template": "rock" },
+  "bricks": { "template": "rock", "hardness": 2.0, "map_color": "#96503c" },
+
+  "grass_block": {
+    "template": "soil", "properties": ["snowy:bool"], "hardness": 0.6, "resistance": 0.6, "sound": "grass",
+    "tint": "grass", "random_ticks": true, "behavior": "grass_spread", "map_color": "#7fb238"
+  },
+  "dirt": { "template": "soil" },
+  "coarse_dirt": { "template": "soil", "map_color": "#77553a" },
+  "rooted_dirt": { "template": "soil", "map_color": "#8a6243", "sound": "rooted_dirt" },
+  "podzol": { "template": "soil", "properties": ["snowy:bool"], "map_color": "#5a3f24" },
+  "mud": { "template": "soil", "shape": "sunken", "sound": "mud", "map_color": "#3c3a3a" },
+  "clay": { "template": "soil", "hardness": 0.6, "resistance": 0.6, "map_color": "#a4a8b8" },
+  "farmland": {
+    "template": "soil", "properties": ["moisture:0..7"], "hardness": 0.6, "resistance": 0.6, "shape": "farmland",
+    "opaque": false, "render": "model", "random_ticks": true, "behavior": "farmland", "map_color": "#6a4a2a"
+  },
+  "sand": { "template": "falling_soil", "sound": "sand", "map_color": "#f7e9a3" },
+  "red_sand": { "template": "falling_soil", "sound": "sand", "map_color": "#d56d25" },
+  "gravel": { "template": "falling_soil", "hardness": 0.6, "resistance": 0.6, "map_color": "#838280" },
+  "moss_block": { "hardness": 0.1, "resistance": 0.1, "tool": "hoe", "sound": "moss", "map_color": "#597526" },
+
+  "snow": {
+    "properties": ["layers:1..8"], "hardness": 0.1, "resistance": 0.1, "tool": "shovel", "requires_tool": true,
+    "shape": "snow_layer", "opaque": false, "render": "model", "replaceable": true, "random_ticks": true,
+    "sound": "snow", "behavior": "snow_layer", "map_color": "#ffffff"
+  },
+  "snow_block": { "hardness": 0.2, "resistance": 0.2, "tool": "shovel", "requires_tool": true, "sound": "snow", "map_color": "#ffffff" },
+  "ice": {
+    "hardness": 0.5, "resistance": 0.5, "tool": "pickaxe", "friction": 0.98, "opaque": false, "layer": "translucent",
+    "light_opacity": 1, "random_ticks": true, "sound": "glass", "behavior": "ice", "map_color": "#a0a0ff"
+  },
+  "packed_ice": { "hardness": 0.5, "resistance": 0.5, "tool": "pickaxe", "friction": 0.98, "sound": "glass", "map_color": "#a0a0ff" },
+  "water": {
+    "properties": ["level:0..15"], "hardness": 100.0, "resistance": 100.0, "shape": "empty", "collision": false, "opaque": false,
+    "render": "fluid", "layer": "translucent", "light_opacity": 2, "replaceable": true, "fluid": "water", "tint": "water",
+    "sound": "none", "item": false, "behavior": "water", "map_color": "#4040ff"
+  }
+}

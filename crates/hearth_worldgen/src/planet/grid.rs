@@ -139,11 +139,15 @@ impl GridGeom {
     ];
 }
 
-/// A scalar field on the grid.
+/// A scalar field on the grid. Smooth fields may be stored at a coarser resolution
+/// (`scale` grid cells per field cell); sampling takes full-grid coordinates either way.
 #[derive(Debug, Clone)]
 pub struct Field<T> {
+    /// Field resolution (n × n).
     pub n: usize,
     pub data: Vec<T>,
+    /// Grid cells per field cell (1 = full resolution).
+    pub scale: usize,
 }
 
 impl<T: Copy> Field<T> {
@@ -151,7 +155,26 @@ impl<T: Copy> Field<T> {
         Self {
             n,
             data: vec![fill; n * n],
+            scale: 1,
         }
+    }
+
+    /// Wraps full-resolution data.
+    pub fn from_vec(n: usize, data: Vec<T>) -> Self {
+        debug_assert_eq!(data.len(), n * n);
+        Self { n, data, scale: 1 }
+    }
+
+    /// Value at full-grid cell (i, j).
+    #[inline]
+    pub fn cell(&self, i: usize, j: usize) -> T {
+        self.data[(j / self.scale) * self.n + i / self.scale]
+    }
+
+    /// Value at a full-grid cell index given the full grid size.
+    #[inline]
+    pub fn at_index(&self, idx: usize, full_n: usize) -> T {
+        self.cell(idx % full_n, idx / full_n)
     }
 
     #[inline]
@@ -166,9 +189,39 @@ impl<T: Copy> Field<T> {
 }
 
 impl Field<f32> {
-    /// Bilinear sample at continuous grid coordinates (X wraps, Z clamps).
+    /// Halves the resolution by averaging 2×2 blocks (for smooth fields).
+    pub fn downsample2(&self) -> Field<f32> {
+        let m = self.n / 2;
+        let mut data = vec![0f32; m * m];
+        for j in 0..m {
+            for i in 0..m {
+                let a = self.get(2 * i, 2 * j);
+                let b = self.get(2 * i + 1, 2 * j);
+                let c = self.get(2 * i, 2 * j + 1);
+                let d = self.get(2 * i + 1, 2 * j + 1);
+                data[j * m + i] = (a + b + c + d) * 0.25;
+            }
+        }
+        Field {
+            n: m,
+            data,
+            scale: self.scale * 2,
+        }
+    }
+
+    #[inline]
+    fn local(&self, g: f64) -> f64 {
+        if self.scale == 1 {
+            g
+        } else {
+            (g + 0.5) / self.scale as f64 - 0.5
+        }
+    }
+
+    /// Bilinear sample at continuous (full-)grid coordinates (X wraps, Z clamps).
     #[inline]
     pub fn bilinear(&self, gx: f64, gz: f64) -> f32 {
+        let (gx, gz) = (self.local(gx), self.local(gz));
         let n = self.n as isize;
         let x0 = gx.floor();
         let z0 = gz.floor();
@@ -187,6 +240,7 @@ impl Field<f32> {
     /// built on it has no grid creases.
     #[inline]
     pub fn bicubic(&self, gx: f64, gz: f64) -> f32 {
+        let (gx, gz) = (self.local(gx), self.local(gz));
         let n = self.n as isize;
         let x0 = gx.floor();
         let z0 = gz.floor();

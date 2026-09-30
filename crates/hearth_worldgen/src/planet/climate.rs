@@ -119,6 +119,17 @@ pub mod dry_season {
     pub const WINTER: u8 = 1;
     /// Summer-dry (mediterranean).
     pub const SUMMER: u8 = 2;
+
+    /// Dry-season type from continuous strengths.
+    pub fn from_strengths(winter: f32, summer: f32) -> u8 {
+        if winter > 0.5 {
+            WINTER
+        } else if summer > 0.5 {
+            SUMMER
+        } else {
+            NONE
+        }
+    }
 }
 
 /// Maritime (sea-surface / coastal) annual mean temperature (°C) by |latitude| in degrees.
@@ -202,6 +213,10 @@ pub struct ClimateFields {
     /// Annual precipitation (mm).
     pub precipitation: Vec<f32>,
     pub dry_season: Vec<u8>,
+    /// Strength (0..1) of a winter dry season (savanna belts).
+    pub winter_dry: Vec<f32>,
+    /// Strength (0..1) of a summer dry season (mediterranean coasts).
+    pub summer_dry: Vec<f32>,
     pub class: Vec<u8>,
     /// Sea-surface temperature anomaly from currents (°C).
     pub current: Vec<f32>,
@@ -408,37 +423,49 @@ pub fn compute(geom: &GridGeom, elev: &[f32], ocean: &[bool]) -> ClimateFields {
     super::fields::blur(geom, &mut precip, 3, 2);
 
     // ---------------------------------------------------------------- dry seasons & classes
-    let mut dry = vec![dry_season::NONE; geom.len()];
-    let mut class = vec![0u8; geom.len()];
-    dry.par_chunks_mut(n)
-        .zip(class.par_chunks_mut(n))
+    // Dry-season strengths are continuous so block-level sampling can interpolate them and
+    // climate borders stay smooth.
+    let belt_noise = crate::noise::SphereFbm::new(0x6e17_b0a1, 9.0, 3, 0.5, 2.0);
+    let mut winter_dry = vec![0f32; geom.len()];
+    let mut summer_dry = vec![0f32; geom.len()];
+    winter_dry
+        .par_chunks_mut(n)
+        .zip(summer_dry.par_chunks_mut(n))
         .enumerate()
-        .for_each(|(j, (dr, cl))| {
-            let a = lat_deg[j].abs();
+        .for_each(|(j, (wd, sd))| {
             let wind = prevailing_wind(lat_deg[j]);
             for i in 0..n {
                 let idx = j * n + i;
-                if ocean[idx] {
-                    cl[i] = ClimateClass::Ocean as u8;
-                    continue;
-                }
                 let p = precip[idx] as f64;
+                // Belt edges wander a few degrees so climate borders aren't latitude lines.
+                let a = lat_deg[j].abs() + belt_noise.sample(geom.sphere(i, j)) * 3.5;
                 // Savanna belt: winter-dry as the rain belt migrates.
                 let savanna = smoothstep(6.0, 11.0, a) * (1.0 - smoothstep(22.0, 27.0, a));
-                // Mediterranean: subtropical west coasts (westerly side, maritime, cool
-                // currents or ocean to the west).
-                let west_coast = wind > 0.0 && fetch[idx] < 0.12;
+                wd[i] = (savanna * (1.0 - smoothstep(2000.0, 2600.0, p))) as f32;
+                // Mediterranean: subtropical west coasts (westerly side, maritime air).
+                let west =
+                    smoothstep(0.0, 0.3, wind) * (1.0 - smoothstep(0.08, 0.16, fetch[idx] as f64));
                 let med = smoothstep(28.0, 32.0, a) * (1.0 - smoothstep(42.0, 46.0, a));
-                dr[i] = if savanna > 0.5 && p < 2300.0 {
-                    dry_season::WINTER
-                } else if med > 0.5 && west_coast {
-                    dry_season::SUMMER
-                } else {
-                    dry_season::NONE
-                };
-                cl[i] = classify(temp[idx] as f64, range[idx] as f64, p, dr[i]) as u8;
+                sd[i] = (med * west) as f32;
             }
         });
+    super::fields::blur(geom, &mut winter_dry, 2, 1);
+    super::fields::blur(geom, &mut summer_dry, 2, 1);
+    let mut dry = vec![dry_season::NONE; geom.len()];
+    let mut class = vec![0u8; geom.len()];
+    for idx in 0..geom.len() {
+        if ocean[idx] {
+            class[idx] = ClimateClass::Ocean as u8;
+            continue;
+        }
+        dry[idx] = dry_season::from_strengths(winter_dry[idx], summer_dry[idx]);
+        class[idx] = classify(
+            temp[idx] as f64,
+            range[idx] as f64,
+            precip[idx] as f64,
+            dry[idx],
+        ) as u8;
+    }
 
     ClimateFields {
         temperature: temp,
@@ -446,6 +473,8 @@ pub fn compute(geom: &GridGeom, elev: &[f32], ocean: &[bool]) -> ClimateFields {
         temp_range: range,
         precipitation: precip,
         dry_season: dry,
+        winter_dry,
+        summer_dry,
         class,
         current,
         continentality: cont,

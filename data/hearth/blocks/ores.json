@@ -1,0 +1,14 @@
+{
+  "coal_ore": { "template": "ore" },
+  "deepslate_coal_ore": { "template": "deep_ore" },
+  "iron_ore": { "template": "ore", "tier": "stone", "map_color": "#9a8a7a" },
+  "deepslate_iron_ore": { "template": "deep_ore", "tier": "stone" },
+  "gold_ore": { "template": "ore", "tier": "iron", "map_color": "#a09050" },
+  "deepslate_gold_ore": { "template": "deep_ore", "tier": "iron" },
+  "diamond_ore": { "template": "ore", "tier": "iron", "map_color": "#80b0b0" },
+  "deepslate_diamond_ore": { "template": "deep_ore", "tier": "iron" },
+  "coal_block": { "template": "metal_block", "sound": "stone", "map_color": "#191919" },
+  "iron_block": { "template": "metal_block", "tier": "stone", "map_color": "#a7a7a7" },
+  "gold_block": { "template": "metal_block", "tier": "iron", "hardness": 3.0, "map_color": "#faee4d" },
+  "diamond_block": { "template": "metal_block", "tier": "iron", "map_color": "#5cdbd5" }
+}

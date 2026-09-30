@@ -182,6 +182,8 @@ pub struct BlockDef {
     pub waterloggable: bool,
     /// This block *is* a fluid (e.g. `water`, with a `level:0..15` property).
     pub fluid: Option<String>,
+    /// Always contains water (seagrass, kelp): like a permanently waterlogged block.
+    pub water_filled: bool,
     pub climbable: bool,
     pub tint: TintKind,
     pub sound: String,
@@ -224,6 +226,7 @@ impl Default for BlockDef {
             replaceable: false,
             waterloggable: false,
             fluid: None,
+            water_filled: false,
             climbable: false,
             tint: TintKind::None,
             sound: "stone".to_owned(),
@@ -591,7 +594,7 @@ impl BlockRegistry {
             if !def.collision {
                 collision = Shape::empty();
             }
-            let waterlogged = props.flag("waterlogged");
+            let waterlogged = props.flag("waterlogged") || def.water_filled;
             let is_fluid = def.fluid.is_some();
             let fluid_amount = if is_fluid {
                 let level = props.int("level").clamp(0, 15);

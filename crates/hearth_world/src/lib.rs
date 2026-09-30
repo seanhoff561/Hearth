@@ -10,6 +10,7 @@
 
 pub mod block;
 pub mod cube;
+pub mod datapack;
 pub mod light;
 pub mod palette;
 pub mod query;

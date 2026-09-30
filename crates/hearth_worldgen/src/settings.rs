@@ -42,8 +42,8 @@ pub struct WorldGenSettings {
     /// Target fraction of the planet's surface that is land (0.2–0.5).
     pub land_fraction: f64,
     pub spawn_climate: SpawnClimate,
-    /// Resolution of the planet analysis grid (N×N cells). 2048 for real worlds; tests use
-    /// smaller grids.
+    /// Resolution of the planet analysis grid (N×N cells); 0 picks the recommended resolution
+    /// for the planet size. Tests use small explicit grids.
     pub grid_resolution: usize,
 }
 
@@ -56,7 +56,7 @@ impl Default for WorldGenSettings {
             rarity: FeatureRarity::Rare,
             land_fraction: 0.3,
             spawn_climate: SpawnClimate::Temperate,
-            grid_resolution: 2048,
+            grid_resolution: 0,
         }
     }
 }
@@ -82,7 +82,19 @@ impl WorldGenSettings {
     pub fn sanitized(mut self) -> Self {
         self.vertical_scale_factor = self.vertical_scale_factor.clamp(0.25, 2.0);
         self.land_fraction = self.land_fraction.clamp(0.2, 0.5);
+        if self.grid_resolution == 0 {
+            self.grid_resolution = Self::recommended_resolution(self.planet_size);
+        }
         self.grid_resolution = self.grid_resolution.clamp(64, 4096).next_power_of_two();
         self
+    }
+
+    /// Grid resolution for a planet size: cells of at most ~32 blocks where affordable.
+    pub fn recommended_resolution(size: hearth_math::PlanetSize) -> usize {
+        use hearth_math::PlanetSize as P;
+        match size {
+            P::Tiny | P::Small => 1024,
+            _ => 2048,
+        }
     }
 }

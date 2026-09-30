@@ -64,3 +64,32 @@ without blend artifacts in rivers.
 ## D11 — `hearth_protocol` crate (planned, M4)
 The client↔server message types get their own small crate (not listed in the spec) so neither
 side depends on the other's internals and a network layer can later serialize the same types.
+
+## D12 — Planet grid resolution by planet size
+2048² (≈4M cells) for Standard and larger, 1024² for Tiny/Small (cells ≤ 16 blocks there).
+Standard gets 32-block cells, fine enough for dendritic valleys and dense river networks.
+
+## D13 — Planet storage layout
+Elevation and water at full resolution; smooth fields (climate, uplift, coast distance) at
+half resolution (`Field::scale`, sampled with full-grid coordinates); river network sparse.
+≈90 MB at 2048² instead of ≈240 MB. Saved as byte-plane-shuffled zstd; the tectonic layout is
+regenerated from the seed on load.
+
+## D14 — Biomes in code, colours from climate
+Biome *selection* is inherently structural (climate class + altitude zones + local water/
+slope/coast), so it lives in code. Grass/foliage/water colours come from temperature ×
+precipitation colormaps. Per-biome decoration weights move to data packs in M12.
+
+## D15 — Ore bands scale with vertical scale
+Ore Y bands in the spec are Standard-planet numbers; like §6.3 they scale with the world's
+vertical scale (clamped to 0.5–2×) so geology stays proportional. The deepslate transition
+(~50 blocks under the local surface) is block-scale and does not scale.
+
+## D16 — Data-pack templates
+Block files may reference templates (`"template": "rock"`) defined in `_*.json` files; keeps the
+~190 base blocks compact and gives modders the same mechanism.
+
+## D17 — Rivers and lakes at block level
+River channels come from the grid network (jittered nodes, domain-warped query point for
+meanders, monotone levels). Sea and lake water fill low ground only where the smoothed local
+water fraction is high; low ground just outside gets a berm, so there are never water walls.

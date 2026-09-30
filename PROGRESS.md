@@ -27,7 +27,37 @@
     serialization with remap and corruption checks), lazily allocated light, `Cube`,
     `CubeMap` (Arc copy-on-write cubes, wrap-aware access, exact sky heightmap with worldgen
     estimate fallback), raycasts against real shapes, collision gathering.
-- [ ] M2 — Worldgen
+- [x] **M2 — World generation** (2026-09-30)
+  - Planet model (`hearth_worldgen::planet`) on an N×N Mercator grid with sphere metrics
+    (2048² for Standard+, 1024² for Tiny/Small; 4.6 s at 2048² on 16 threads): warped
+    weighted spherical-Voronoi plates with Euler poles; continental plates chosen for a
+    realistic size mix (supercontinent cluster, colliding subcontinent); coasts from active/
+    passive margins; elevation (shelf/slope/abyss with crust-age subsidence, collision ranges +
+    plateaus, Andean ranges, trenches, discrete island arcs, rifts, fault valleys, old ranges,
+    hotspot chains, polar ice plateaus) with slope-rule footprints; Priority-Flood+ε, implicit
+    stream-power erosion + talus, protected lake basins (rift, scour, arid); climate from
+    currents per basin, upwind continentality, zonal moisture advection with orographic lift
+    and rain shadows, dry-season belts, Köppen classes; lakes vs endorheic basins by water
+    balance; resolution-independent discharge; volcanoes; zstd save/load (lossless).
+  - Regional sampler (`region`): block-resolution height (bicubic grid + hills/ridged/rough
+    detail), meandering river channels with floodplains (never uphill), lakes, sea with smooth
+    flood fractions and berms, craters, polar plateau, lapse-rate temperature, tree/snow lines,
+    36 biomes from climate + highland zones + local conditions, surface materials, tree
+    density, spawn search. ~0.1 µs/column amortised.
+  - Cube generation (`cubegen`): empty/deep/surface classification, rock by depth (deepslate
+    below ~50 blocks and below Y −512), 3D cliff overhangs, ores and rock blobs (27-neighbour
+    veins, Y bands scaled by vertical scale, province bias), worm caves (humidity/orogen/depth
+    dependent), ravines and slot canyons, flooded systems, giant caverns with pillars, lakes and
+    sinkholes, procedural trees for 11 shapes, plants, underwater flora, logs, boulders, cacti;
+    order-independent priority-lattice merging. 33–42k surface cubes/s, ~86k deep cubes/s.
+  - Data pack: `data/hearth/blocks/*.json` (~190 blocks, templates), loader with overrides.
+  - Tools: `bench worldmap` (relief, bathymetry, climate, biome, plates, currents,
+    temperature, precipitation, rivers; Mercator + equirect; slices; stats), `bench region`,
+    `bench gen` (throughput + top/slice renders).
+  - Tests: determinism across threads/orders, cross-cube features, surface agreement ≥99%,
+    fast paths, seam twins, rivers never uphill, temperate spawn, climate zone statistics over
+    6 seeds, west/east continental patterns, windward vs leeward rain, hypsometry, cavern
+    rarity, planet save/load.
 - [ ] M3 — Near-field rendering
 - [ ] M4 — Player & interaction
 - [ ] M5 — Light & fluids
@@ -42,13 +72,14 @@
 - [ ] M14 — Final QA
 
 ## In progress
-M2 — world generation.
+M3 — near-field rendering.
 
 ## Next steps
-1. `hearth_worldgen` noise library (sphere + plane, batched).
-2. Planet grid: plates, crust, boundaries, elevation profile, erosion, drainage, climate.
-3. `tools/bench worldmap` to visualise the planet.
-4. Regional sampler, column cache, cube generator, caves, ores, features; tests.
+1. `hearth_texgen`: procedural 16×16 texture pack (blocks, items later) + block model table.
+2. Texture array with alpha-aware mips; block model baking (cube/cross/model shapes).
+3. Mesher (binary greedy for full cubes, AO, smooth light, tint), packed quads.
+4. Renderer: camera, terrain pass with vertex pulling, buffer sub-allocator, culling.
+5. `hearth --screenshot` headless mode.
 
 ## Known issues
 - With Vulkan FIFO on this Optimus laptop the clear-only loop reported ~2.8k FPS during the
@@ -56,7 +87,10 @@ M2 — world generation.
   consider DX12 as the default backend on Windows if Vulkan presentation misbehaves.
 
 ## Deferred
-(none)
+- Walking/boating across the seam and over a pole is verified in M4 when physics exists
+  (coordinate-level seam/pole tests pass in `hearth_math` and `hearth_worldgen`).
+- Biome parameters (plant/tree weights) are in code; making them data-driven is scheduled
+  with the data-pack work in M12.
 
 ## Environment notes
 - Rust was installed via rustup in `%USERPROFILE%\.cargo`; shells started before the install
