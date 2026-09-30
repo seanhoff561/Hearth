@@ -13,6 +13,7 @@ use hearth_math::{CubePos, Planet, PlanetSize};
 use hearth_render::atlas::TextureArray;
 use hearth_render::mesh::{CubeMesh, MeshOptions};
 use hearth_render::models::BlockModels;
+use hearth_render::precip::SkyHeights;
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
@@ -29,6 +30,8 @@ pub struct StreamTarget {
     pub radius: i32,
     /// Vertical radius in cubes.
     pub vertical: i32,
+    /// Date whose seasonal snow and ice new terrain gets.
+    pub year_frac: f64,
 }
 
 /// Messages from the streamer thread.
@@ -37,9 +40,12 @@ pub enum StreamEvent {
     Ready {
         planet: Planet,
         spawn: DVec3,
+        grid: Arc<hearth_worldgen::PlanetGrid>,
     },
     Mesh(Box<CubeMesh>),
     Unload(CubePos),
+    /// What covers the sky around the camera (hides rain and snow under cover).
+    SkyHeights(Box<SkyHeights>),
     Failed(String),
 }
 
@@ -120,7 +126,14 @@ fn run(
         lw.surface_y(sx as f64, sz as f64) + 12.0,
         sz as f64 + 0.5,
     );
-    if tx.send(StreamEvent::Ready { planet, spawn }).is_err() {
+    if tx
+        .send(StreamEvent::Ready {
+            planet,
+            spawn,
+            grid: lw.grid(),
+        })
+        .is_err()
+    {
         return Ok(());
     }
     let models = BlockModels::build(&lw.reg, &atlas);
@@ -131,11 +144,30 @@ fn run(
     let mut last_center: Option<CubePos> = None;
     let mut last_radius = (0, 0);
     let mut idle_since = Instant::now();
+    // The sky-height map is rebuilt when the camera has moved a few blocks or terrain arrived,
+    // at most a few times a second.
+    let mut cover_step: Option<i64> = None;
+    let mut heights_at: Option<(i32, i32)> = None;
+    let mut heights_dirty = true;
+    let mut heights_sent = Instant::now();
     while !stop.load(Ordering::Relaxed) {
         let t = match target.lock() {
             Ok(g) => *g,
             Err(_) => break,
         };
+        let column = (t.center.x.floor() as i32, t.center.z.floor() as i32);
+        let moved =
+            heights_at.is_none_or(|(x, z)| (x - column.0).abs().max((z - column.1).abs()) >= 8);
+        if (moved || heights_dirty) && heights_sent.elapsed() > Duration::from_millis(250) {
+            let map = &lw.map;
+            let heights = SkyHeights::build(column.0, column.1, |x, z| map.sky_top(x, z));
+            if tx.send(StreamEvent::SkyHeights(Box::new(heights))).is_err() {
+                return Ok(());
+            }
+            heights_at = Some(column);
+            heights_dirty = false;
+            heights_sent = Instant::now();
+        }
         let center = planet.wrap_cube(CubePos::containing(t.center));
         if last_center != Some(center) || last_radius != (t.radius, t.vertical) {
             last_center = Some(center);
@@ -178,6 +210,17 @@ fn run(
             // Farthest first so the nearest can be popped off the end.
             wanted.sort_unstable_by_key(|(d, _)| std::cmp::Reverse(*d));
         }
+        // As the calendar moves on (every five days of the year), loaded terrain gets the
+        // date's snow and ice.
+        let step = (t.year_frac * COVER_STEPS).floor() as i64;
+        if cover_step != Some(step) {
+            if cover_step.is_some()
+                && refresh_cover(&mut lw, &models, opts, &loaded, &meshed, t.year_frac, tx).is_err()
+            {
+                return Ok(());
+            }
+            cover_step = Some(step);
+        }
         if wanted.is_empty() {
             if idle_since.elapsed() > Duration::from_millis(2) {
                 std::thread::sleep(Duration::from_millis(5));
@@ -207,7 +250,22 @@ fn run(
             lw.map.insert_cube(p, Arc::new(cube), &lw.reg);
             loaded.insert(p);
         }
+        // Seasonal snow and ice on the new terrain (idempotent: snow already lying on a column
+        // is not a full block, so it isn't covered twice).
+        let mut cols: Vec<hearth_math::ColumnPos> = batch.iter().map(|p| p.column()).collect();
+        cols.sort_unstable_by_key(|c| (c.x, c.z));
+        cols.dedup();
+        crate::season_cover::apply(
+            &mut lw.map,
+            &lw.reg,
+            &lw.cover,
+            &lw.generator,
+            &mut lw.buried,
+            &cols,
+            t.year_frac,
+        );
         lw.light.light_new_cubes(&mut lw.map, &lw.reg, &batch);
+        heights_dirty = true;
         // Mesh every cube around the batch whose 26 neighbours are now all present; cubes that
         // were already meshed are redone because their lighting may have changed.
         let mut ready: FxHashSet<CubePos> = FxHashSet::default();
@@ -234,6 +292,74 @@ fn run(
                 return Ok(());
             }
         }
+    }
+    Ok(())
+}
+
+/// Seasonal cover steps per year (as the year-scale snow model).
+const COVER_STEPS: f64 = 73.0;
+
+/// Re-lays the date's snow and ice on all loaded terrain; relights and remeshes what changed.
+fn refresh_cover(
+    lw: &mut LocalWorld,
+    models: &BlockModels,
+    opts: MeshOptions,
+    loaded: &FxHashSet<CubePos>,
+    meshed: &FxHashSet<CubePos>,
+    year_frac: f64,
+    tx: &Sender<StreamEvent>,
+) -> Result<(), ()> {
+    let t0 = Instant::now();
+    let mut cols: Vec<hearth_math::ColumnPos> = loaded.iter().map(|p| p.column()).collect();
+    cols.sort_unstable_by_key(|c| (c.x, c.z));
+    cols.dedup();
+    let planet = *lw.map.planet();
+    lw.buried.retain_columns(|c| {
+        cols.binary_search_by_key(&(c.x, c.z), |k| (k.x, k.z))
+            .is_ok()
+    });
+    let changed = crate::season_cover::refresh(
+        &mut lw.map,
+        &lw.reg,
+        &lw.cover,
+        &lw.generator,
+        &mut lw.buried,
+        &cols,
+        year_frac,
+    );
+    let mut dirty: FxHashSet<CubePos> = FxHashSet::default();
+    for &p in &changed {
+        // Snow layers don't change light; ice and water do, a little.
+        lw.light.block_changed(&mut lw.map, &lw.reg, p);
+        // The block's cube and, on a cube face, the neighbour that shows it.
+        let p = planet.wrap_block(p);
+        let local = p.local();
+        dirty.insert(p.cube());
+        for (d, edge) in [
+            ((-1, 0, 0), local.x == 0),
+            ((1, 0, 0), local.x == 15),
+            ((0, -1, 0), local.y == 0),
+            ((0, 1, 0), local.y == 15),
+            ((0, 0, -1), local.z == 0),
+            ((0, 0, 1), local.z == 15),
+        ] {
+            if edge {
+                let c = p.cube();
+                dirty.insert(planet.wrap_cube(CubePos::new(c.x + d.0, c.y + d.1, c.z + d.2)));
+            }
+        }
+    }
+    let dirty: Vec<CubePos> = dirty.into_iter().filter(|c| meshed.contains(c)).collect();
+    let meshes = lw.mesh(models, &dirty, opts);
+    log::info!(
+        "seasonal cover for year {:.3}: {} blocks changed, {} cubes remeshed in {:.0} ms",
+        year_frac,
+        changed.len(),
+        meshes.len(),
+        t0.elapsed().as_secs_f64() * 1e3
+    );
+    for m in meshes {
+        tx.send(StreamEvent::Mesh(Box::new(m))).map_err(|_| ())?;
     }
     Ok(())
 }

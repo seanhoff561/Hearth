@@ -1,19 +1,25 @@
-//! Headless screenshot mode: `hearth --screenshot "seed=1,yaw=30,pitch=12,out=shot.png"` renders
-//! fixed camera shots to PNG without a window (a software adapter is used if no GPU exists).
+//! Headless screenshot mode: `hearth --screenshot "seed=1,season=autumn,hour=16,out=shot.png"`
+//! renders fixed camera shots to PNG without a window (a software adapter is used if no GPU
+//! exists). Shots can pick a latitude, date and time, so seasonal suites are one list file.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use glam::{DVec3, Vec3};
+use glam::DVec3;
+use hearth_content::schema::Season;
+use hearth_content::schema::config::TimeConfig;
+use hearth_env::{Calendar, Precip};
 use hearth_math::PlanetSize;
+use hearth_render::GpuContext;
 use hearth_render::atlas::TextureArray;
 use hearth_render::camera::Camera;
 use hearth_render::mesh::MeshOptions;
 use hearth_render::models::BlockModels;
 use hearth_render::offscreen::{OFFSCREEN_FORMAT, OffscreenTarget, write_png};
-use hearth_render::terrain::{FrameParams, TerrainRenderer};
-use hearth_render::{GpuContext, LinearColor, render_terrain};
+use hearth_render::precip::SkyHeights;
+use hearth_render::scene::SceneRenderer;
 
+use crate::environment::{EnvOverrides, EnvSampler};
 use crate::scene::LocalWorld;
 
 /// One screenshot request.
@@ -22,10 +28,12 @@ pub struct ShotSpec {
     pub seed: u64,
     pub planet: PlanetSize,
     pub resolution: usize,
-    /// Camera position; `None` → spawn (x, z) and above the surface (y).
+    /// Camera position; `None` → spawn (x, z) or a land spot at `lat`, above the surface (y).
     pub x: Option<f64>,
     pub y: Option<f64>,
     pub z: Option<f64>,
+    /// Pick a land spot near this latitude (degrees) when x/z aren't given.
+    pub lat: Option<f64>,
     /// Height above the surface when `y` is not given.
     pub above: f64,
     pub yaw: f32,
@@ -35,6 +43,17 @@ pub struct ShotSpec {
     pub height: u32,
     /// Horizontal load radius in cubes.
     pub distance: i32,
+    /// Season (mid-season in the place's hemisphere) or an explicit year fraction.
+    pub season: Option<Season>,
+    pub year_frac: Option<f64>,
+    /// Local solar hour (0–24).
+    pub hour: f64,
+    /// Cloud cover override (0–1); `None` = the weather's.
+    pub clouds: Option<f64>,
+    /// Lay the date's snow and ice.
+    pub snow: bool,
+    /// Precipitation override: type and rate (mm/h of water); `None` = the weather's.
+    pub precipitation: Option<(Precip, f64)>,
     /// Output file; `None` → a numbered file in the game's screenshot folder.
     pub out: Option<PathBuf>,
     pub software: bool,
@@ -51,6 +70,7 @@ impl Default for ShotSpec {
             x: None,
             y: None,
             z: None,
+            lat: None,
             above: 24.0,
             yaw: 30.0,
             pitch: 15.0,
@@ -58,11 +78,27 @@ impl Default for ShotSpec {
             width: 1280,
             height: 720,
             distance: 10,
+            season: None,
+            year_frac: None,
+            hour: 11.0,
+            clouds: None,
+            snow: true,
+            precipitation: None,
             out: None,
             software: false,
             verify_cull: false,
         }
     }
+}
+
+fn parse_season(v: &str) -> anyhow::Result<Season> {
+    Ok(match v {
+        "spring" => Season::Spring,
+        "summer" => Season::Summer,
+        "autumn" | "fall" => Season::Autumn,
+        "winter" => Season::Winter,
+        other => anyhow::bail!("unknown season {other:?}"),
+    })
 }
 
 impl ShotSpec {
@@ -73,6 +109,7 @@ impl ShotSpec {
             let (k, v) = kv
                 .split_once('=')
                 .ok_or_else(|| anyhow::anyhow!("expected key=value, got {kv:?}"))?;
+            let v = v.trim();
             match k.trim() {
                 "seed" => spec.seed = v.parse()?,
                 "planet" => {
@@ -83,6 +120,7 @@ impl ShotSpec {
                 "x" => spec.x = Some(v.parse()?),
                 "y" => spec.y = Some(v.parse()?),
                 "z" => spec.z = Some(v.parse()?),
+                "lat" => spec.lat = Some(v.parse()?),
                 "above" => spec.above = v.parse()?,
                 "yaw" => spec.yaw = v.parse()?,
                 "pitch" => spec.pitch = v.parse()?,
@@ -90,6 +128,16 @@ impl ShotSpec {
                 "w" | "width" => spec.width = v.parse()?,
                 "h" | "height" => spec.height = v.parse()?,
                 "dist" | "distance" => spec.distance = v.parse()?,
+                "season" => spec.season = Some(parse_season(v)?),
+                "yf" => spec.year_frac = Some(v.parse()?),
+                "hour" => spec.hour = v.parse()?,
+                "clouds" => spec.clouds = Some(v.parse()?),
+                "snow" => spec.snow = v.parse()?,
+                "rain" => spec.precipitation = Some((Precip::Rain, v.parse()?)),
+                "sleet" => spec.precipitation = Some((Precip::Sleet, v.parse()?)),
+                "snowfall" => spec.precipitation = Some((Precip::Snow, v.parse()?)),
+                "dry" if v.parse::<bool>()? => spec.precipitation = Some((Precip::None, 0.0)),
+                "dry" => {}
                 "out" => spec.out = Some(PathBuf::from(v)),
                 "software" => spec.software = v.parse()?,
                 "verify_cull" => spec.verify_cull = v.parse()?,
@@ -134,6 +182,11 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
     })?;
     log::info!("rendering on {} ({:?})", ctx.info.name, ctx.info.backend);
     let atlas = TextureArray::from_entries(&hearth_texgen::default_textures());
+    let (time, report) =
+        hearth_content::content::load_time_config(&[crate::scene::data_pack_dir()]);
+    for d in report.sorted() {
+        log::warn!("{d}");
+    }
     let mut world: Option<(u64, PlanetSize, usize, LocalWorld)> = None;
     for (i, spec) in specs.iter().enumerate() {
         let out = spec
@@ -146,7 +199,9 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
             world = Some((spec.seed, spec.planet, spec.resolution, lw));
         }
         let lw = &mut world.as_mut().expect("created above").3;
-        shoot(&ctx, &atlas, lw, spec, &out)?;
+        // Each shot starts from a clean map so dates don't mix (snow from an earlier shot).
+        lw.map = hearth_world::CubeMap::new(*lw.map.planet());
+        shoot(&ctx, &atlas, lw, spec, &out, time.as_ref())?;
     }
     log::info!(
         "{} screenshot(s) in {:.2}s",
@@ -156,15 +211,41 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
     Ok(())
 }
 
+/// A gentle land spot near a latitude (scans along the parallel).
+fn land_at_latitude(lw: &LocalWorld, lat: f64) -> Option<(f64, f64)> {
+    let planet = *lw.map.planet();
+    let z = planet.z_for_latitude(lat.to_radians());
+    let c = planet.circumference_f64();
+    let steps = 4096;
+    let mut best: Option<(f64, (f64, f64))> = None;
+    for i in 0..steps {
+        let x = c * i as f64 / steps as f64;
+        let s = lw.terrain().sample(x as i32, z as i32);
+        if s.is_underwater() || s.ocean || s.lake {
+            continue;
+        }
+        // Prefer gentle, vegetated, moderately high ground.
+        let score =
+            -s.slope as f64 * 3.0 + s.tree_density as f64 + (s.height as f64 / 200.0).min(1.0);
+        if best.is_none_or(|(b, _)| score > b) {
+            best = Some((score, (x + 0.5, z + 0.5)));
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
 fn shoot(
     ctx: &GpuContext,
     atlas: &TextureArray,
     lw: &mut LocalWorld,
     spec: &ShotSpec,
     out: &Path,
+    time: Option<&TimeConfig>,
 ) -> anyhow::Result<()> {
-    let (sx, sz) = match (spec.x, spec.z) {
-        (Some(x), Some(z)) => (x, z),
+    let (sx, sz) = match (spec.x, spec.z, spec.lat) {
+        (Some(x), Some(z), _) => (x, z),
+        (_, _, Some(lat)) => land_at_latitude(lw, lat)
+            .ok_or_else(|| anyhow::anyhow!("no land near latitude {lat}"))?,
         _ => {
             let (x, z) = lw.terrain().find_spawn(false);
             (x as f64 + 0.5, z as f64 + 0.5)
@@ -178,48 +259,98 @@ fn shoot(
         fov_y: spec.fov,
         near: 0.05,
     };
-    log::info!("shot {} at {:.1}, {:.1}, {:.1}", out.display(), sx, sy, sz);
-    let positions = lw.load_area(camera.pos, spec.distance, 2);
+    // Date and time: season (mid-season in this hemisphere) or year fraction; local hour.
+    let planet = *lw.map.planet();
+    let southern = planet.latitude(sz) < 0.0;
+    let year_frac = spec.year_frac.unwrap_or_else(|| {
+        spec.season
+            .map_or(0.3, |s| Calendar::season_start(s, southern) + 0.125)
+    });
+    let mut calendar = time.map_or_else(|| Calendar::new(48, 8, 23.44), Calendar::from_config);
+    calendar.year_offset = year_frac;
+    calendar.day_offset = (spec.hour / 24.0 - planet.solar_time_offset(sx)).rem_euclid(1.0);
+    let moment = calendar.at(0);
+    log::info!(
+        "shot {} at {:.1}, {:.1}, {:.1} (lat {:.1}°, year {:.3}, {:.1} h)",
+        out.display(),
+        sx,
+        sy,
+        sz,
+        planet.latitude_deg(sz),
+        year_frac,
+        spec.hour
+    );
+    let positions = lw.load_area(camera.pos, spec.distance, 2, spec.snow.then_some(year_frac));
     let models = BlockModels::build(&lw.reg, atlas);
     let meshes = lw.mesh(&models, &positions, MeshOptions::default());
-    let mut terrain = TerrainRenderer::new(ctx, atlas, OFFSCREEN_FORMAT, *lw.map.planet(), 4, 4);
-    terrain.render_distance = spec.distance;
-    terrain.vertical_distance = 64;
+    let mut scene = SceneRenderer::new(ctx, atlas, OFFSCREEN_FORMAT, planet, 4, 4);
+    scene.terrain.render_distance = spec.distance;
+    scene.terrain.vertical_distance = 64;
     for m in &meshes {
-        terrain.upload(ctx, m);
+        scene.terrain.upload(ctx, m);
     }
-    let target = OffscreenTarget::new(ctx, spec.width, spec.height);
-    let fog = Vec3::new(0.62, 0.76, 0.95);
+    let (bx, bz) = (camera.pos.x.floor() as i32, camera.pos.z.floor() as i32);
+    scene.set_sky_heights(ctx, &SkyHeights::build(bx, bz, |x, z| lw.map.sky_top(x, z)));
+    let sampler = EnvSampler::new(lw.grid(), calendar);
+    let (mut env, weather) = sampler.sample(
+        &moment,
+        camera.pos,
+        0.0,
+        EnvOverrides {
+            cloud_cover: spec.clouds,
+            precipitation: spec.precipitation,
+        },
+    );
     let radius = (spec.distance * 16) as f32;
-    let params = FrameParams {
-        fog_color: fog,
-        fog_start: radius * 0.55,
-        fog_end: radius * 0.95,
-        ..FrameParams::default()
-    };
-    let clear = LinearColor {
-        r: fog.x as f64,
-        g: fog.y as f64,
-        b: fog.z as f64,
-        a: 1.0,
-    };
+    env.fog_start = radius * 0.6;
+    env.fog_end = radius * 0.95;
+    log::info!(
+        "  sun elevation {:.1}°, {:.0} lux, clouds {:.0}%, {:.1} °C, {:?}",
+        env.sun_dir.y.asin().to_degrees(),
+        env.horizontal_lux(),
+        weather.cloud_cover * 100.0,
+        weather.temperature_c,
+        weather.precip
+    );
+    let n = crate::season_cover::column_normals(
+        &lw.generator,
+        hearth_math::BlockPos::containing(camera.pos).column(),
+    );
+    let cover = hearth_env::climate::SeasonalCover::compute(&n);
+    log::info!(
+        "  climate: mean {:.1} °C (months {:.1}..{:.1}), {:.0} mm/yr, dry season {:?}, snow {:.2} m now, {:.2} m at the peak",
+        n.t_mean,
+        n.t_mean - n.t_range / 2.0,
+        n.t_mean + n.t_range / 2.0,
+        n.precip,
+        hearth_env::tint::DryType::of(&n, false),
+        cover.snow_depth_m(year_frac),
+        cover.snow_depth_m(cover.peak_snow()),
+    );
+    let target = OffscreenTarget::new(ctx, spec.width, spec.height);
     let size = (spec.width, spec.height);
-    let frame = |terrain: &mut TerrainRenderer| {
-        terrain.prepare(ctx, &camera, size, &params);
-        render_terrain(ctx, terrain, &target.color_view, &target.depth.view, clear);
+    let frame = |scene: &mut SceneRenderer| {
+        scene.prepare(ctx, &camera, size, &env, f32::INFINITY);
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("shot"),
+            });
+        scene.render(ctx, &mut enc, &target.color_view, &target.depth.view, size);
+        ctx.queue.submit(Some(enc.finish()));
         target.read_rgba(ctx)
     };
     // Three frames: with GPU culling the first draws everything in phase 1, the second learns
     // which cubes are occluded, and the third draws only the survivors in phase 0.
-    frame(&mut terrain);
-    frame(&mut terrain);
-    let pixels = frame(&mut terrain);
-    if spec.verify_cull && terrain.uses_gpu_culling() {
-        let counts = terrain.read_gpu_draw_counts(ctx).unwrap_or_default();
-        terrain.gpu_culling = false;
-        let reference = frame(&mut terrain);
-        let cpu_draws = terrain.stats.draws;
-        terrain.gpu_culling = true;
+    frame(&mut scene);
+    frame(&mut scene);
+    let pixels = frame(&mut scene);
+    if spec.verify_cull && scene.terrain.uses_gpu_culling() {
+        let counts = scene.terrain.read_gpu_draw_counts(ctx).unwrap_or_default();
+        scene.terrain.gpu_culling = false;
+        let reference = frame(&mut scene);
+        let cpu_draws = scene.terrain.stats.draws;
+        scene.terrain.gpu_culling = true;
         let differing = pixels
             .as_chunks::<4>()
             .0
@@ -248,7 +379,7 @@ fn shoot(
         }
     }
     write_png(out, spec.width, spec.height, &pixels)?;
-    let s = terrain.stats;
+    let s = scene.terrain.stats;
     log::info!(
         "wrote {} ({} visible cubes, {} draws, {} quads, {:.1} MiB mesh memory)",
         out.display(),
@@ -266,23 +397,23 @@ mod tests {
 
     #[test]
     fn parses_specs_and_lists() {
-        let s = ShotSpec::parse("seed=7, x=10.5, z=-3, yaw=90, w=640, h=360, out=a.png").unwrap();
+        let s = ShotSpec::parse(
+            "seed=7, x=10.5, z=-3, yaw=90, w=640, h=360, out=a.png, season=autumn, hour=16.5",
+        )
+        .unwrap();
         assert_eq!(s.seed, 7);
         assert_eq!(s.x, Some(10.5));
         assert_eq!(s.z, Some(-3.0));
         assert_eq!((s.width, s.height), (640, 360));
         assert_eq!(s.out, Some(PathBuf::from("a.png")));
+        assert_eq!(s.season, Some(Season::Autumn));
+        assert_eq!(s.hour, 16.5);
         assert!(ShotSpec::parse("seed=x").is_err());
         assert!(ShotSpec::parse("colour=red").is_err());
-        let list = ShotSpec::parse_list(
-            "# suite
-defaults: seed=3, w=320
-
-yaw=0
-yaw=180 # back
-",
-        )
-        .unwrap();
+        assert!(ShotSpec::parse("season=monsoon").is_err());
+        let list =
+            ShotSpec::parse_list("# suite\ndefaults: seed=3, w=320\n\nyaw=0\nyaw=180 # back\n")
+                .unwrap();
         assert_eq!(list.len(), 2);
         assert!(list.iter().all(|s| s.seed == 3 && s.width == 320));
         assert_eq!(list[1].yaw, 180.0);

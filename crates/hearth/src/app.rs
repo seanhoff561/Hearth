@@ -209,6 +209,22 @@ impl App {
                     self.set_captured(false);
                 } else if action == builtin::DEBUG_RELOAD_RESOURCES {
                     self.content.reload();
+                } else if let Some(run) = &mut self.running {
+                    let p = &mut run.preview;
+                    if action == builtin::DEBUG_TIME_FORWARD {
+                        p.skip_hours(1.0);
+                    } else if action == builtin::DEBUG_TIME_BACK {
+                        p.skip_hours(-1.0);
+                    } else if action == builtin::DEBUG_SEASON_FORWARD {
+                        p.skip_hours(24.0 * p.calendar.days_per_season as f64);
+                    } else if action == builtin::DEBUG_TIME_WARP {
+                        // Off → one game hour per real second → off.
+                        p.time_warp = if p.time_warp > 0.0 {
+                            0.0
+                        } else {
+                            p.calendar.ticks_per_day() / 24.0
+                        };
+                    }
                 }
             }
             if key == InputKey::Mouse(MouseButton::Left) {
@@ -254,7 +270,7 @@ impl App {
             let preview = &mut run.preview;
             if run
                 .renderer
-                .render_with(|ctx, enc, targets| preview.render(ctx, enc, targets))
+                .render_with(|ctx, enc, targets| preview.render(ctx, enc, targets, dt as f32))
             {
                 self.frames_rendered += 1;
                 run.title_frames += 1;
@@ -318,6 +334,7 @@ impl ApplicationHandler for App {
             Preview::default_world(self.seed, Some(self.dirs.cache())),
             &self.options,
             renderer.color_format(),
+            self.content.content.as_ref().map(|c| &c.time),
         );
         self.running = Some(Running {
             window,

@@ -12,7 +12,7 @@ use hearth_render::mesh::{ColumnTints, CubeMesh, MeshInput, MeshOptions, Mesher}
 use hearth_render::models::BlockModels;
 use hearth_world::{BlockRegistry, Cube, CubeMap, LightEngine};
 use hearth_worldgen::cubegen::MAX_FEATURE_HEIGHT;
-use hearth_worldgen::region::biome::{foliage_color, grass_color, water_color};
+use hearth_worldgen::region::biome::water_color;
 use hearth_worldgen::{PlanetGrid, Terrain, WorldGenSettings, WorldGenerator};
 use rayon::prelude::*;
 
@@ -22,6 +22,9 @@ pub struct LocalWorld {
     pub generator: Arc<WorldGenerator>,
     pub map: CubeMap,
     pub light: LightEngine,
+    pub cover: crate::season_cover::CoverStates,
+    /// Plants under seasonal snow, restored when it melts.
+    pub buried: crate::season_cover::Buried,
 }
 
 impl LocalWorld {
@@ -77,10 +80,17 @@ impl LocalWorld {
         let generator = Arc::new(WorldGenerator::new(terrain.clone(), &reg)?);
         Ok(Self {
             map: CubeMap::new(*terrain.planet()),
+            cover: crate::season_cover::CoverStates::resolve(&reg)?,
+            buried: Default::default(),
             reg,
             generator,
             light: LightEngine::new(),
         })
+    }
+
+    /// The planet model (for the environment sampler).
+    pub fn grid(&self) -> Arc<hearth_worldgen::PlanetGrid> {
+        self.generator.terrain.grid.clone()
     }
 
     pub fn terrain(&self) -> &Terrain {
@@ -91,7 +101,14 @@ impl LocalWorld {
     /// `center`, over one vertical range spanning the lowest surface to above the tallest trees
     /// (and the camera). Returns the cubes whose six neighbours are all loaded, i.e. the ones
     /// that can be meshed without guessing at missing neighbours.
-    pub fn load_area(&mut self, center: DVec3, radius: i32, extra_above: i32) -> Vec<CubePos> {
+    /// With `year_frac`, the seasonal snow and ice of that date are laid on before lighting.
+    pub fn load_area(
+        &mut self,
+        center: DVec3,
+        radius: i32,
+        extra_above: i32,
+        year_frac: Option<f64>,
+    ) -> Vec<CubePos> {
         let t0 = Instant::now();
         let c = CubePos::containing(center);
         let mut columns = Vec::new();
@@ -145,6 +162,18 @@ impl LocalWorld {
             self.map.insert_cube(p, Arc::new(cube), &self.reg);
             positions.push(p);
         }
+        if let Some(yf) = year_frac {
+            let changed = crate::season_cover::apply(
+                &mut self.map,
+                &self.reg,
+                &self.cover,
+                &self.generator,
+                &mut self.buried,
+                &columns,
+                yf,
+            );
+            log::debug!("seasonal cover changed {changed} blocks");
+        }
         let t1 = Instant::now();
         self.light
             .light_new_cubes(&mut self.map, &self.reg, &positions);
@@ -162,21 +191,36 @@ impl LocalWorld {
         positions
     }
 
-    /// Climate tints of a column.
+    /// Tint inputs of a column: climate codes for seasonal vegetation colours, baked water.
     pub fn tints(&self, col: ColumnPos) -> ColumnTints {
+        use hearth_env::tint::{DryType, encode};
+        use hearth_worldgen::planet::climate::ClimateClass as C;
         let data = self.generator.column(col);
+        let (x0, z0) = col.min_block_xz();
+        let southern = self.map.planet().latitude(z0 as f64 + 8.0) < 0.0;
+        // Dry-season strengths vary smoothly: one sample per column.
+        let normals = hearth_env::climate::Normals::sample(
+            &self.generator.terrain.grid,
+            x0 as f64 + 8.0,
+            z0 as f64 + 8.0,
+        );
         let mut t = ColumnTints::default();
         for (i, s) in data.samples.iter().enumerate() {
-            t.grass[i] = grass_color(s.temperature, s.precipitation);
-            t.foliage[i] = foliage_color(s.temperature, s.precipitation);
+            let arid = matches!(
+                s.climate,
+                C::HotDesert | C::HotSteppe | C::ColdDesert | C::ColdSteppe
+            );
+            let dry = DryType::of(&normals, arid);
+            let range = (2.0 * (s.t_warm - s.temperature)).max(0.0) as f64;
+            t.climate[i] = encode(
+                s.temperature as f64,
+                range,
+                s.precipitation as f64,
+                dry,
+                southern,
+            );
             let depth = s.water_i().saturating_sub(s.height_i()).max(0) as f32;
             t.water[i] = water_color(s.sea_temperature, depth);
-            let g = t.grass[i];
-            t.dry_grass[i] = [
-                ((g[0] as u16 + 200) / 2) as u8,
-                ((g[1] as u16 + 180) / 2) as u8,
-                ((g[2] as u16 + 90) / 2) as u8,
-            ];
         }
         t
     }

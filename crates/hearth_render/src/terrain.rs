@@ -201,36 +201,51 @@ struct Instance {
     origin: [f32; 4],
 }
 
-/// Per-frame lighting/fog/time parameters.
+/// Per-frame lighting, fog and time. Light values are pre-exposed illuminances (lux ×
+/// exposure), so the HDR target stays in a comfortable range day and night.
 #[derive(Debug, Clone, Copy)]
 pub struct FrameParams {
+    /// Direct light of the dominant body (sun or moon) on a surface facing it.
+    pub direct_light: Vec3,
+    /// Direction toward the dominant body.
+    pub light_dir: Vec3,
+    /// Sky irradiance on an upward surface.
     pub sky_light: Vec3,
-    pub ambient: f32,
+    /// Light that reaches everything (starlight, airglow).
+    pub ambient_floor: f32,
+    /// Firelight at block-light level 15.
     pub block_light: Vec3,
-    pub fog_color: Vec3,
+    /// Aerial extinction per metre (haze and fog).
+    pub aerial: f32,
+    /// Render-distance fog range (blends into the sky at the loaded area's edge).
     pub fog_start: f32,
     pub fog_end: f32,
     pub seconds: f32,
     pub anim_ticks: f32,
-    pub sun_dir: Vec3,
     pub wind: f32,
-    pub exposure: f32,
+    /// Year fraction (0 = March equinox) for seasonal colours.
+    pub year_frac: f32,
+    /// Grey of an overcast sky (rgb) and how far haze and fog take it instead of the clear
+    /// sky's colour (w, 0..1).
+    pub overcast: glam::Vec4,
 }
 
 impl Default for FrameParams {
     fn default() -> Self {
         Self {
-            sky_light: Vec3::splat(1.0),
-            ambient: 0.02,
+            direct_light: Vec3::splat(2.0),
+            light_dir: Vec3::new(0.3, 0.9, 0.2).normalize(),
+            sky_light: Vec3::new(0.35, 0.45, 0.6),
+            ambient_floor: 0.0,
             block_light: Vec3::new(1.0, 0.82, 0.6),
-            fog_color: Vec3::new(0.62, 0.76, 0.95),
+            aerial: 5.8e-5,
             fog_start: 120.0,
             fog_end: 200.0,
             seconds: 0.0,
             anim_ticks: 0.0,
-            sun_dir: Vec3::new(0.3, 0.9, 0.2).normalize(),
             wind: 1.0,
-            exposure: 1.0,
+            year_frac: 0.3,
+            overcast: glam::Vec4::ZERO,
         }
     }
 }
@@ -239,12 +254,14 @@ impl Default for FrameParams {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Globals {
     view_proj: [[f32; 4]; 4],
+    sun_light: [f32; 4],
     sky_light: [f32; 4],
     block_light: [f32; 4],
     fog: [f32; 4],
     params: [f32; 4],
     sun: [f32; 4],
     camera: [f32; 4],
+    overcast: [f32; 4],
 }
 
 /// Statistics for the debug overlay.
@@ -346,14 +363,17 @@ struct Pipelines {
 }
 
 impl TerrainRenderer {
+    /// Terrain drawn into the HDR target; `sky` provides the sky-view table for aerial
+    /// perspective.
     pub fn new(
         ctx: &GpuContext,
         atlas: &TextureArray,
-        color_format: wgpu::TextureFormat,
+        sky: &crate::sky::SkyRenderer,
         planet: Planet,
         mip_levels: u32,
         anisotropy: u16,
     ) -> Self {
+        let color_format = crate::post::HDR_FORMAT;
         let device = &ctx.device;
         let texture = upload_texture_array(ctx, atlas, mip_levels);
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
@@ -411,6 +431,22 @@ impl TerrainRenderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
         let storage = |binding: u32| wgpu::BindGroupLayoutEntry {
@@ -442,6 +478,14 @@ impl TerrainRenderer {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&sky.skyview_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(sky.sampler()),
                 },
             ],
         });
@@ -822,44 +866,27 @@ impl TerrainRenderer {
             c.prepare(ctx, &self.cand_slots, vp, camera.near, size);
         }
         let cam = camera.pos;
+        let v4 = |v: Vec3, w: f32| [v.x, v.y, v.z, w];
         let globals = Globals {
             view_proj: vp.to_cols_array_2d(),
-            sky_light: [
-                params.sky_light.x,
-                params.sky_light.y,
-                params.sky_light.z,
-                params.ambient,
-            ],
-            block_light: [
-                params.block_light.x,
-                params.block_light.y,
-                params.block_light.z,
-                0.0,
-            ],
-            fog: [
-                params.fog_color.x,
-                params.fog_color.y,
-                params.fog_color.z,
-                0.0,
-            ],
+            sun_light: v4(params.direct_light, 0.0),
+            sky_light: v4(params.sky_light, params.ambient_floor),
+            block_light: v4(params.block_light, 0.0),
+            fog: [params.aerial, 0.0, 0.0, 0.0],
             params: [
                 params.seconds,
                 params.anim_ticks,
                 params.fog_start,
                 params.fog_end,
             ],
-            sun: [
-                params.sun_dir.x,
-                params.sun_dir.y,
-                params.sun_dir.z,
-                params.wind,
-            ],
+            sun: v4(params.light_dir, params.wind),
             camera: [
                 (cam.x.rem_euclid(4096.0)) as f32,
                 (cam.y.rem_euclid(4096.0)) as f32,
                 (cam.z.rem_euclid(4096.0)) as f32,
-                params.exposure,
+                params.year_frac,
             ],
+            overcast: params.overcast.to_array(),
         };
         ctx.queue
             .write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
@@ -929,9 +956,10 @@ impl TerrainRenderer {
         n
     }
 
-    /// Records the terrain passes into `enc`: opaque and cutout geometry (GPU- or CPU-culled),
-    /// then translucent geometry. Clears the targets first when `clear` is given.
-    pub fn render(
+    /// Records the opaque and cutout geometry into `enc` (GPU- or CPU-culled). Clears the
+    /// targets first when `clear` is given. Translucent geometry is drawn afterwards with
+    /// [`Self::draw_translucent`], after the sky.
+    pub fn render_opaque(
         &mut self,
         ctx: &GpuContext,
         enc: &mut wgpu::CommandEncoder,
@@ -942,7 +970,6 @@ impl TerrainRenderer {
         if !self.uses_gpu_culling() {
             let mut pass = begin_pass(enc, color, depth, clear);
             self.draw_opaque(&mut pass);
-            self.draw_translucent(&mut pass);
             return;
         }
         let count = self.cand_slots.len() as u32;
@@ -959,6 +986,19 @@ impl TerrainRenderer {
         culler.cull(ctx, enc, &self.instances, 1, count);
         let mut pass = begin_pass(enc, color, depth, None);
         self.draw_gpu_phase(&mut pass, 1);
+    }
+
+    /// Opaque then translucent terrain in one call (no sky in between).
+    pub fn render(
+        &mut self,
+        ctx: &GpuContext,
+        enc: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        clear: Option<wgpu::Color>,
+    ) {
+        self.render_opaque(ctx, enc, color, depth, clear);
+        let mut pass = begin_pass(enc, color, depth, None);
         self.draw_translucent(&mut pass);
     }
 
@@ -1009,8 +1049,8 @@ impl TerrainRenderer {
         }
     }
 
-    /// Records the translucent pass (after opaque geometry).
-    fn draw_translucent<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
+    /// Records the translucent pass (after opaque geometry and the sky).
+    pub fn draw_translucent<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
         pass.set_bind_group(0, &self.bind0, &[]);
         pass.set_bind_group(1, &self.bind1, &[]);
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -1042,7 +1082,8 @@ impl TerrainRenderer {
     }
 }
 
-fn begin_pass<'e>(
+/// Begins a pass on the scene's colour and depth targets (clearing both when `clear` is set).
+pub fn begin_pass<'e>(
     enc: &'e mut wgpu::CommandEncoder,
     color: &wgpu::TextureView,
     depth: &wgpu::TextureView,

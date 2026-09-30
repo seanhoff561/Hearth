@@ -10,37 +10,13 @@ pub mod gpu;
 pub mod mesh;
 pub mod models;
 pub mod offscreen;
+pub mod post;
+pub mod precip;
+pub mod scene;
+pub mod sky;
 pub mod terrain;
 
 pub use gpu::{GpuCapabilities, GpuContext, GpuError, PresentPreference, SurfaceState};
-
-/// Renders the terrain into `color`/`depth` (cleared to `clear`) and submits the frame.
-pub fn render_terrain(
-    ctx: &GpuContext,
-    terrain: &mut terrain::TerrainRenderer,
-    color: &wgpu::TextureView,
-    depth: &wgpu::TextureView,
-    clear: LinearColor,
-) {
-    let mut enc = ctx
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("terrain frame"),
-        });
-    terrain.render(
-        ctx,
-        &mut enc,
-        color,
-        depth,
-        Some(wgpu::Color {
-            r: clear.r,
-            g: clear.g,
-            b: clear.b,
-            a: clear.a,
-        }),
-    );
-    ctx.queue.submit(Some(enc.finish()));
-}
 
 /// Linear RGBA color.
 #[derive(Debug, Clone, Copy, PartialEq)]

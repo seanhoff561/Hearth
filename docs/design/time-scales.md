@@ -1,7 +1,8 @@
 # Units and the two time scales
 
-*Status: partial. Units and time scales implemented (V2-0, `hearth_content::time`,
-`data/hearth/units.ron`, `data/hearth/time.ron`); the calendar, sun and seasons come in V2-1.*
+*Status: implemented. Units and time scales (V2-0, `hearth_content::time`,
+`data/hearth/units.ron`, `data/hearth/time.ron`); the calendar, sun and seasons (V2-1,
+`hearth_env`, see `seasons.md`).*
 
 ## Units
 SI everywhere inside the game: metres, kilograms, seconds, litres for fluids, °C, kcal for
@@ -24,6 +25,13 @@ through `TimeScales` (`factor`, `play_seconds`, `game_days`, `ticks`).
 `time.ron`: day length (20–120 min, default 48), days per season (3–91, default 8), axial tilt
 (0–45°, default 23.44), starting season, real day/year lengths, synodic month, sleep
 acceleration (up to 100× with a 3 s ramp).
+
+## The calendar in play (V2-1)
+`hearth_env::Calendar::from_config(time.ron)` turns world ticks (20 per second of play) into
+days, the local solar time and the year fraction. Day-scale things (the sun's course, weather,
+the body) run on the day; year-scale things (seasonal temperature, snowpack, ice, phenology)
+read the year fraction, so a short game year still passes through every season in order. The
+moon keeps its 12.37 months per year (D31).
 
 ## Interactions
 Physiology (needs on the day scale, healing mostly year scale), processes (declared per

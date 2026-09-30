@@ -21,7 +21,7 @@ use hearth_math::{CUBE_SIZE, CUBE_VOLUME, ColumnPos, CubePos, Planet};
 use hearth_world::{BlockRegistry, BlockStateId, Cube};
 
 use crate::region::biome::Biome;
-use crate::region::{ColumnSample, Surface, Terrain};
+use crate::region::{ColumnSample, Terrain};
 use blocks::{GenBlocks, MissingBlock};
 use cache::Cache;
 
@@ -307,9 +307,9 @@ impl WorldGenerator {
                 let (x, z) = (o.x + lx, o.z + lz);
                 let top = s.height_i();
                 let water_top = s.water_i();
-                let underwater = water_top > top;
-                let snowy = !underwater && s.temperature < -0.5;
-                let surface_state = b.surface(s.surface, snowy);
+                // Seasonal snow and ice are applied by the environment at the current date
+                // (`hearth_env`); the generator only lays down perennial snow and ice.
+                let surface_state = b.surface(s.surface, false);
                 let filler = b.filler(s.filler);
                 let soil = s.soil_depth as i32;
                 let desert_rock =
@@ -347,15 +347,12 @@ impl WorldGenerator {
                             self.rock(x, y, z, top)
                         }
                     } else if y < water_top {
-                        // Frozen water surfaces.
-                        if y == water_top - 1 && s.temperature < -2.5 {
+                        // Multi-year ice where the water never thaws.
+                        if y == water_top - 1 && s.temperature < -10.0 {
                             b.ice
                         } else {
                             b.water
                         }
-                    } else if y == top && snowy && s.surface != Surface::Snow && s.slope < 1.2 {
-                        let layers = if s.temperature < -8.0 { 2 } else { 1 };
-                        b.snow_layers[layers - 1]
                     } else {
                         b.air
                     };

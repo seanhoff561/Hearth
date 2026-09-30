@@ -807,6 +807,7 @@ dependencies = [
  "glam",
  "hearth_content",
  "hearth_core",
+ "hearth_env",
  "hearth_input",
  "hearth_math",
  "hearth_render",
@@ -842,6 +843,18 @@ dependencies = [
  "serde",
  "thiserror 2.0.21",
  "toml",
+]
+
+[[package]]
+name = "hearth_env"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hearth_content",
+ "hearth_math",
+ "hearth_worldgen",
+ "ron",
+ "serde",
 ]
 
 [[package]]

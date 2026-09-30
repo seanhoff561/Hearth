@@ -1,18 +1,22 @@
-//! Free-flying world preview: streams terrain around a camera and renders it in the window.
-//! This is the development view until the player and client/server split exist.
+//! Free-flying world preview: streams terrain around a camera and renders it with the sky,
+//! seasons and weather of a running world clock. This is the development view until the
+//! player and the client/server split exist.
 
 use std::sync::Arc;
-use std::time::Instant;
 
-use glam::{DVec3, Vec3};
+use glam::DVec3;
+use hearth_content::schema::Season;
+use hearth_content::schema::config::TimeConfig;
 use hearth_core::options::Options;
+use hearth_env::Calendar;
 use hearth_input::{InputState, builtin};
 use hearth_math::{Planet, PlanetSize};
 use hearth_render::atlas::TextureArray;
 use hearth_render::camera::Camera;
-use hearth_render::terrain::{FrameParams, TerrainRenderer};
+use hearth_render::scene::SceneRenderer;
 use hearth_render::{FrameTargets, GpuContext};
 
+use crate::environment::{EnvOverrides, EnvSampler};
 use crate::streamer::{StreamEvent, StreamTarget, StreamWorld, Streamer};
 
 /// Meshes uploaded per frame at most (keeps frame times smooth while streaming).
@@ -20,7 +24,8 @@ const UPLOADS_PER_FRAME: usize = 256;
 
 pub struct Preview {
     streamer: Streamer,
-    terrain: Option<TerrainRenderer>,
+    scene: Option<SceneRenderer>,
+    env: Option<EnvSampler>,
     atlas: Arc<TextureArray>,
     color_format: wgpu::TextureFormat,
     planet: Option<Planet>,
@@ -29,17 +34,33 @@ pub struct Preview {
     speed: f64,
     radius: i32,
     vertical: i32,
-    start: Instant,
+    /// World clock (20 ticks per second of play) and calendar.
+    pub ticks: u64,
+    pub calendar: Calendar,
+    /// Extra ticks per second of play (time warp for looking at days and seasons).
+    pub time_warp: f64,
+    tick_remainder: f64,
+    starting_season: Season,
     pub status: String,
 }
 
 impl Preview {
-    pub fn new(world: StreamWorld, options: &Options, color_format: wgpu::TextureFormat) -> Self {
+    /// `time` is the calendar configuration (`time.ron`); the built-in defaults when `None`.
+    pub fn new(
+        world: StreamWorld,
+        options: &Options,
+        color_format: wgpu::TextureFormat,
+        time: Option<&TimeConfig>,
+    ) -> Self {
         let atlas = Arc::new(TextureArray::from_entries(
             &hearth_texgen::default_textures(),
         ));
         let radius = options.video.render_distance as i32;
         let vertical = options.video.vertical_render_distance as i32;
+        let (calendar, starting_season) = match time {
+            Some(cfg) => (Calendar::from_config(cfg), cfg.starting_season),
+            None => (Calendar::new(48, 8, 23.44), Season::Spring),
+        };
         let streamer = Streamer::start(
             world,
             atlas.clone(),
@@ -47,11 +68,13 @@ impl Preview {
                 center: DVec3::ZERO,
                 radius,
                 vertical,
+                year_frac: calendar.at(0).year_frac,
             },
         );
         Self {
             streamer,
-            terrain: None,
+            scene: None,
+            env: None,
             atlas,
             color_format,
             planet: None,
@@ -62,7 +85,11 @@ impl Preview {
             speed: 12.0,
             radius,
             vertical,
-            start: Instant::now(),
+            ticks: 0,
+            calendar,
+            time_warp: 0.0,
+            tick_remainder: 0.0,
+            starting_season,
             status: "generating planet".into(),
         }
     }
@@ -75,6 +102,12 @@ impl Preview {
         }
     }
 
+    /// Jumps the clock forward (or back) by a number of game hours.
+    pub fn skip_hours(&mut self, hours: f64) {
+        let dt = hours / 24.0 * self.calendar.ticks_per_day();
+        self.ticks = (self.ticks as f64 + dt).max(0.0) as u64;
+    }
+
     /// Moves the camera from input; `look` is the accumulated mouse motion when captured.
     pub fn update(
         &mut self,
@@ -83,6 +116,10 @@ impl Preview {
         look: Option<(f64, f64)>,
         sensitivity: f32,
     ) {
+        // The clock runs at 20 ticks per second, plus any time warp.
+        let advance = dt * (20.0 + self.time_warp) + self.tick_remainder;
+        self.ticks += advance.floor() as u64;
+        self.tick_remainder = advance.fract();
         if let Some((dx, dy)) = look {
             let f = sensitivity as f64 * 0.6 + 0.2;
             let deg_per_count = f * f * f * 8.0 * 0.15;
@@ -137,25 +174,42 @@ impl Preview {
                 break;
             };
             match ev {
-                StreamEvent::Ready { planet, spawn } => {
+                StreamEvent::Ready {
+                    planet,
+                    spawn,
+                    grid,
+                } => {
                     self.planet = Some(planet);
                     self.camera.pos = spawn;
-                    let mut t =
-                        TerrainRenderer::new(ctx, &self.atlas, self.color_format, planet, 4, 4);
-                    t.render_distance = self.radius;
-                    t.vertical_distance = self.vertical;
-                    self.terrain = Some(t);
+                    // Start the world in the morning, local time, at the spawn.
+                    self.calendar = self.calendar.start_at(
+                        self.starting_season,
+                        planet.latitude(spawn.z) < 0.0,
+                        0.33,
+                        planet.solar_time_offset(spawn.x),
+                    );
+                    let mut scene =
+                        SceneRenderer::new(ctx, &self.atlas, self.color_format, planet, 4, 4);
+                    scene.terrain.render_distance = self.radius;
+                    scene.terrain.vertical_distance = self.vertical;
+                    self.scene = Some(scene);
+                    self.env = Some(EnvSampler::new(grid, self.calendar));
                     self.status = "streaming".into();
                 }
                 StreamEvent::Mesh(m) => {
-                    if let Some(t) = &mut self.terrain {
-                        t.upload(ctx, &m);
+                    if let Some(s) = &mut self.scene {
+                        s.terrain.upload(ctx, &m);
                     }
                     uploaded += 1;
                 }
                 StreamEvent::Unload(p) => {
-                    if let Some(t) = &mut self.terrain {
-                        t.remove(p);
+                    if let Some(s) = &mut self.scene {
+                        s.terrain.remove(p);
+                    }
+                }
+                StreamEvent::SkyHeights(h) => {
+                    if let Some(s) = &mut self.scene {
+                        s.set_sky_heights(ctx, &h);
                     }
                 }
                 StreamEvent::Failed(e) => {
@@ -168,6 +222,7 @@ impl Preview {
             center: self.camera.pos,
             radius: self.radius,
             vertical: self.vertical,
+            year_frac: self.calendar.at(self.ticks).year_frac,
         });
     }
 
@@ -177,15 +232,9 @@ impl Preview {
         ctx: &GpuContext,
         enc: &mut wgpu::CommandEncoder,
         targets: FrameTargets<'_>,
+        dt: f32,
     ) {
-        let fog = Vec3::new(0.62, 0.76, 0.95);
-        let clear = wgpu::Color {
-            r: fog.x as f64,
-            g: fog.y as f64,
-            b: fog.z as f64,
-            a: 1.0,
-        };
-        let Some(terrain) = &mut self.terrain else {
+        let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear"),
@@ -194,7 +243,12 @@ impl Preview {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.05,
+                            g: 0.06,
+                            b: 0.08,
+                            a: 1.0,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -205,37 +259,44 @@ impl Preview {
             });
             return;
         };
+        env.calendar = self.calendar;
+        let moment = self.calendar.at(self.ticks);
+        let (mut e, _) = env.sample(&moment, self.camera.pos, 0.0, EnvOverrides::default());
         let radius = (self.radius * 16) as f32;
-        let params = FrameParams {
-            fog_color: fog,
-            fog_start: radius * 0.6,
-            fog_end: radius * 0.95,
-            seconds: self.start.elapsed().as_secs_f32(),
-            anim_ticks: self.start.elapsed().as_secs_f32() * 20.0,
-            ..FrameParams::default()
-        };
-        terrain.prepare(ctx, &self.camera, targets.size, &params);
-        terrain.render(ctx, enc, targets.color, targets.depth, Some(clear));
+        e.fog_start = radius * 0.6;
+        e.fog_end = radius * 0.95;
+        scene.prepare(ctx, &self.camera, targets.size, &e, dt);
+        scene.render(ctx, enc, targets.color, targets.depth, targets.size);
     }
 
     /// One-line status for the window title.
     pub fn title_status(&self, fps: f64) -> String {
         let p = self.camera.pos;
-        match &self.terrain {
-            Some(t) => {
-                let s = t.stats;
+        match (&self.scene, &self.planet) {
+            (Some(s), Some(planet)) => {
+                let st = s.terrain.stats;
+                let m = self.calendar.at(self.ticks);
+                let local = m.local_time(planet.solar_time_offset(p.x)) * 24.0;
+                let southern = planet.latitude(p.z) < 0.0;
+                let day_of_season =
+                    (m.season_progress() * self.calendar.days_per_season as f64) as u32 + 1;
                 format!(
-                    "{fps:.0} fps | {:.0} {:.0} {:.0} | {} cubes, {} visible{} | {:.0} b/s",
+                    "{fps:.0} fps | {:.0} {:.0} {:.0} (lat {:.1}°) | {:?} day {} {:02}:{:02} | {} cubes, {} visible{} | {:.0} b/s",
                     p.x,
                     p.y,
                     p.z,
-                    s.meshes,
-                    s.visible_cubes,
-                    if s.gpu_culling { ", GPU culled" } else { "" },
+                    planet.latitude_deg(p.z),
+                    m.season(southern),
+                    day_of_season,
+                    local as u32,
+                    (local.fract() * 60.0) as u32,
+                    st.meshes,
+                    st.visible_cubes,
+                    if st.gpu_culling { ", GPU culled" } else { "" },
                     self.speed
                 )
             }
-            None => self.status.clone(),
+            _ => self.status.clone(),
         }
     }
 }

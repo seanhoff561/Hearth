@@ -1,0 +1,22 @@
+# V2-1 acceptance suite: 4 seasons at 62°N (subarctic coast), 42°N (mixed forest) and 12°N
+# (tropical, winter-dry), plus the southern hemisphere, sunset, dusk, night, rain and snowfall.
+# `hearth --screenshot-list tools/shots/v21_seasons.shots`
+defaults: seed=7, w=960, h=540, dist=8, above=16, pitch=14, yaw=40, hour=11
+lat=62, season=spring, out=bench-out/v21/lat62_spring.png
+lat=62, season=summer, out=bench-out/v21/lat62_summer.png
+lat=62, season=autumn, out=bench-out/v21/lat62_autumn.png
+lat=62, season=winter, out=bench-out/v21/lat62_winter.png
+lat=42, season=spring, out=bench-out/v21/lat42_spring.png
+lat=42, season=summer, out=bench-out/v21/lat42_summer.png
+lat=42, season=autumn, out=bench-out/v21/lat42_autumn.png
+lat=42, season=winter, out=bench-out/v21/lat42_winter.png
+lat=12, season=spring, out=bench-out/v21/lat12_spring.png
+lat=12, season=summer, out=bench-out/v21/lat12_summer.png
+lat=12, season=autumn, out=bench-out/v21/lat12_autumn.png
+lat=12, season=winter, out=bench-out/v21/lat12_winter.png
+lat=-46, season=winter, out=bench-out/v21/lat-46_winter.png
+lat=46, season=summer, hour=18.8, yf=0.4, yaw=123, pitch=6, clouds=0.25, out=bench-out/v21/lat46_sunset.png
+lat=46, season=summer, hour=19.6, yf=0.4, yaw=123, pitch=6, clouds=0.25, out=bench-out/v21/lat46_dusk.png
+lat=46, season=summer, hour=23.5, yf=0.4, pitch=-5, clouds=0, out=bench-out/v21/lat46_night.png
+lat=62, season=summer, hour=15, yaw=200, pitch=4, above=2.5, rain=6, clouds=1, out=bench-out/v21/lat62_rain.png
+lat=46, season=winter, hour=12, yaw=200, pitch=-8, above=14, snowfall=1.5, clouds=1, out=bench-out/v21/lat46_snowfall.png

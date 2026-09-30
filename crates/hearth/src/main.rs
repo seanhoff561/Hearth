@@ -15,8 +15,10 @@ OPTIONS:
     --game-dir <PATH>          Use PATH as the game directory (options, saves, screenshots)
     --seed <N>                 Seed of the preview world (default 1)
     --screenshot <SPEC>        Render a shot headlessly and exit (repeatable). SPEC is
-                               comma-separated key=value: seed, planet, res, x, y, z, above,
-                               yaw, pitch, fov, w, h, dist, out, software, verify_cull
+                               comma-separated key=value: seed, planet, res, x, y, z, lat,
+                               above, yaw, pitch, fov, w, h, dist, season, yf, hour, clouds,
+                               snow (cover), rain|sleet|snowfall (mm/h), dry, out, software,
+                               verify_cull
     --screenshot-list <FILE>   Render every shot listed in FILE (one SPEC per line)
     --software                 Prefer the software (CPU) adapter for screenshots
     --quit-after <SECONDS>     Exit cleanly after a delay (smoke tests)

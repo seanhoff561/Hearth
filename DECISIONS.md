@@ -160,3 +160,75 @@ v2 §12.2 mentions a Britannica technology timeline supplied by the user; it was
 direction-change document. The knowledge graph uses the milestones and approximate dates given
 in §12.2 and Appendix C, expanded into realistic intermediate steps from general
 history-of-technology knowledge. Dates are approximate and marked in data.
+
+## D29 — One atmosphere model on GPU and CPU
+The sky is Hillaire's LUT atmosphere (transmittance, multiple scattering, sky view) on the GPU;
+the lighting and exposure come from the same model on the CPU (`hearth_env::sky`, the same
+tables and integration), so the sky and the terrain it lights can't drift apart. The
+`sky_consistency` test integrates the GPU sky-view table and compares it with the CPU from
+high sun to the sun 8° down. Two fixes came out of it: the transmittance and multi-scattering
+tables need a clamping sampler (the sky view's wrapping sampler blended the horizon column with
+the zenith column and lit twilight with daylight), and the multi-scattering table is stored as
+a logarithm (linear interpolation smeared daylight into the dusk). The planet's shadow is
+applied to single scattering explicitly.
+
+## D30 — Weather in two layers
+What the player sees (clouds, rain, snow, wind, the day's temperature) is a day-scale field
+advected over the sphere whose wet fraction follows the seasonal climate. What accumulates
+(snowpack, lake ice) is integrated on the year scale from the climate normals, not from the
+events the player happened to see. The snow is then right at any calendar speed and everywhere
+at once, and the displayed weather never has to be simulated for the whole planet.
+
+## D31 — The moon keeps its month-to-year ratio
+The synodic month is scaled with the game year (12.37 months per year), not with the game
+day: at the default 32-day year a full cycle of phases takes ~2.6 game days. Tied to the day it
+would take 29.5 game days — almost a whole default year — and nights would sit in one phase
+for a season.
+
+## D32 — Aerosol calibrated to clean continental air
+Hillaire's default aerosol (optical depth ≈ 0.005) gave half the sky light of measured clear
+skies. Haze 1 is now optical depth ≈ 0.05 (ten times the aerosol), which matches the CIE clear
+sky within ~15 % (12.7 klx diffuse with the sun at 60°) and published twilight illuminance
+(750 lx at sunset, 3.4 lx at the end of civil twilight; the model gives 780 and 4.0). Humidity
+and rain raise the haze. The terrain's aerial perspective uses the same extinction.
+
+## D33 — Exposure: an adapting eye plus highlight metering
+Lighting is in lux and pre-exposed. The eye adapts to the horizontal illuminance (about a
+second brightening, slower darkening) down to 0.3 lx (full-moon light); darker scenes stay
+dark. In dim light it compensates only partly (a key falling from 1 at 1000 lx to 0.3 at the
+floor), so dusk reads as dusk. A GPU histogram of the frame then scales the exposure down just
+enough to keep its 90th percentile at 1.2 (the tonemapper's colourful range), at most 16×,
+adapting over a second; the tonemap pass reads the result directly, so there is no readback
+and headless screenshots adapt instantly. The sun disc's radiance is scaled down to stay
+within half-float range (it saturates after tonemapping either way).
+
+## D34 — Weather rendering
+Rain and snow are generated in the vertex shader from the vertex index in a box that wraps
+around the camera, so they cost no CPU work and stay fixed in the world while the camera moves.
+A 128×128 map of the highest sky-blocking block per column (the column heightmaps, streamed
+from the world thread when the camera moves or terrain arrives) hides them under cover. Under a
+thick cloud deck (above ~55 % cover) or in precipitation the sky, haze and distance blend to the
+grey of the cloud base (the sky irradiance over π) instead of the clear sky's colour, and falling
+rain and snow add extinction from the visibility they leave (Koschmieder, 3.9 / visibility).
+
+## D35 — Vegetation colours use the dry-season strengths, not the climate class
+The shader's dry-season type came from the Köppen class, so a winter-dry place too cool to be
+"tropical savanna" (coldest month 15.8 °C) kept green grass through a dry season its weather
+and phenology knew about. The type now comes from the planet's winter/summer dry-season
+strengths with the same threshold as `Normals::is_dry_season`; only deserts and steppes use the
+class (always arid).
+
+## D36 — Seasonal snow and ice as block states, refreshed in steps
+The generator lays only perennial snow and ice. Seasonal cover is laid on terrain when it loads
+and refreshed on loaded terrain every five days of the year (the snow model's step): the old
+cover comes off (plants it buried are remembered and come back, ice thaws to water) and the
+date's is laid again; only blocks that differ are relit and remeshed. Snow layers don't change
+light, so the refresh is cheap. The sea is left open until sea ice arrives with the coasts
+(V2-2) — the lake-ice model would freeze oceans that real ocean heat keeps open.
+
+## D37 — Leaf fall and snow on canopies
+Deciduous leaves thin out in the cutout pass: a stable hash of each leaf texel's world position
+is compared with the leaf cover from the same phenology formula the CPU uses, and a sixth of the
+fallen texels stay as grey-brown twigs. No remeshing, no extra geometry. Snow follows the
+canopy: bare deciduous crowns pass it through to the ground (three quarters of the open-ground
+depth), conifer crowns hold two layers and shelter the ground beneath.

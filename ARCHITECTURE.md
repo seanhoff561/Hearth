@@ -13,6 +13,10 @@ hearth_core ─┼─> hearth_content (data packs → typed tables, lint, graphs
              │
              ├─> hearth_world ─> hearth_worldgen ─> hearth_lod
              │        │                 │
+             │        │                 └─> hearth_env (calendar, sun/moon/stars, seasonal
+             │        │                      climate, weather, snow & ice, phenology, sky
+             │        │                      radiometry in lux) [math, content, worldgen]
+             │        │                 │
              │        └──> hearth_entity (hecs ECS, physics, AI, pathfinding)
              │                 │
              │   hearth_save (level.json, regions, state palette, migrations) [world, worldgen, content]
@@ -118,7 +122,10 @@ handoff, and cached on disk (lz4).
 
 ## 7. Rendering (hearth_render)
 
-Frame graph (HDR RGBA16F, reverse-Z infinite projection, camera-relative):
+Frame graph (HDR RGBA16F, reverse-Z infinite projection, camera-relative; `SceneRenderer`
+records it, lighting arrives in lux from `hearth_env` and is pre-exposed by the adapting eye):
+0. Atmosphere LUTs (compute): transmittance and multiple scattering when the aerosol density
+   changes, the camera's sky view every frame (`sky.rs`, `atmosphere.wgsl`).
 1. CPU: cave-culling visibility BFS over the cubes' face-connectivity bits + frustum test →
    candidate cubes (camera-relative origins uploaded as instances), front to back.
 2. Opaque terrain, two-phase GPU culling (Vulkan): a compute pass emits indirect draws for the
@@ -129,10 +136,11 @@ Frame graph (HDR RGBA16F, reverse-Z infinite projection, camera-relative):
    the same draws on the CPU (`multi_draw_indexed_indirect`), because DX12 indirect-count
    draws don't apply the base vertex / first instance to the shader builtins (see D19).
    Then LOD and entities.
-3. Sky (atmosphere LUTs: transmittance, multi-scattering, sky-view), sun, moon, stars.
-4. Translucent: water (waves, SSR, refraction, absorption, foam), glass, ice; clouds.
-5. Volumetrics (fog/light shafts), weather particles.
-6. TAA (optional) → bloom → auto-exposure (histogram) → tonemap → grade → UI.
+3. Sky pass where the depth is still clear: sky view, sun and moon discs, stars, the cloud
+   layer, the overcast grey (`sky.wgsl`).
+4. Translucent terrain (water, ice) back to front; rain and snow particles (`precip.rs`).
+5. Highlight metering (compute histogram, no readback) → ACES tonemap with the night shift
+   (`post.rs`). Planned: water shading (V2-2), volumetrics, TAA, bloom, grading, UI.
 
 Terrain geometry lives in two large storage buffers managed by a first-fit sub-allocator:
 16-byte packed quads for full-cube faces (greedy-merged where light, AO and tint are uniform)

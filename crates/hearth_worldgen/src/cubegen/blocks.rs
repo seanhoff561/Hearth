@@ -206,7 +206,14 @@ impl GenBlocks {
                     self.grass
                 }
             }
-            Surface::SnowGrass => self.grass_snowy,
+            // Snow on it is seasonal and applied by the environment.
+            Surface::SnowGrass => {
+                if snowy {
+                    self.grass_snowy
+                } else {
+                    self.grass
+                }
+            }
             Surface::Podzol => {
                 if snowy {
                     self.podzol_snowy

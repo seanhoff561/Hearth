@@ -7,13 +7,13 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | System | Doc | Status |
 |---|---|---|
 | Content platform (data, lint, graphs, hot reload) | [content-platform.md](content-platform.md) | implemented (V2-0) |
-| Units and the two time scales | [time-scales.md](time-scales.md) | partial (V2-0; calendar V2-1) |
+| Units and the two time scales | [time-scales.md](time-scales.md) | implemented (V2-0, calendar V2-1) |
 | Balance layer and realism presets | [balance.md](balance.md) | implemented (V2-0) |
 | Saves, versioning and migrations | [saves.md](saves.md) | implemented (V2-0) |
 | Planet generation (tectonics, erosion, climate) | [planet.md](planet.md) | implemented (v1 M2) |
-| Rendering | [rendering.md](rendering.md) | implemented (v1 M3) |
+| Rendering (terrain, sky, lighting, weather) | [rendering.md](rendering.md) | implemented (v1 M3, V2-1) |
 | Light | [light.md](light.md) | implemented (v1) |
-| Calendar, seasons and weather | [seasons.md](seasons.md) | planned (V2-1) |
+| Calendar, seasons and weather | [seasons.md](seasons.md) | implemented (V2-1) |
 | Geology, soils, hydrology, resources | [geology.md](geology.md) | planned (V2-2; seed data in V2-0) |
 | Body and physiology | [physiology.md](physiology.md) | planned (V2-3) |
 | Inventory, carrying, clothing | [inventory.md](inventory.md) | planned (V2-4) |

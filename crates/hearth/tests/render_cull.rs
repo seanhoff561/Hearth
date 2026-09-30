@@ -5,13 +5,13 @@
 use glam::DVec3;
 use hearth::scene::LocalWorld;
 use hearth_math::PlanetSize;
+use hearth_render::GpuContext;
 use hearth_render::atlas::TextureArray;
 use hearth_render::camera::Camera;
 use hearth_render::mesh::MeshOptions;
 use hearth_render::models::BlockModels;
 use hearth_render::offscreen::{OFFSCREEN_FORMAT, OffscreenTarget};
-use hearth_render::terrain::{FrameParams, TerrainRenderer};
-use hearth_render::{GpuContext, LinearColor, render_terrain};
+use hearth_render::scene::{Environment, SceneRenderer};
 
 #[test]
 fn gpu_culling_matches_cpu_culling() {
@@ -24,14 +24,18 @@ fn gpu_culling_matches_cpu_culling() {
     let (sx, sz) = world.terrain().find_spawn(false);
     let (x, z) = (sx as f64 + 0.5, sz as f64 + 0.5);
     let models = BlockModels::build(&world.reg, &atlas);
-    let mut terrain =
-        TerrainRenderer::new(&ctx, &atlas, OFFSCREEN_FORMAT, *world.map.planet(), 2, 1);
-    if !terrain.uses_gpu_culling() {
+    let mut scene = SceneRenderer::new(&ctx, &atlas, OFFSCREEN_FORMAT, *world.map.planet(), 2, 1);
+    if !scene.terrain.uses_gpu_culling() {
         eprintln!("skipped: adapter {} can't GPU-cull", ctx.info.name);
         return;
     }
     let (w, h) = (320, 180);
     let target = OffscreenTarget::new(&ctx, w, h);
+    let env = Environment {
+        fog_start: 50.0,
+        fog_end: 76.0,
+        ..Environment::default()
+    };
     // Several views: low in the terrain (lots of occlusion), and looking down from above.
     for (above, yaw, pitch) in [(1.7, 40.0, 5.0), (1.7, 220.0, -10.0), (40.0, 100.0, 45.0)] {
         let camera = Camera {
@@ -41,34 +45,39 @@ fn gpu_culling_matches_cpu_culling() {
             fov_y: 70.0,
             near: 0.05,
         };
-        let positions = world.load_area(camera.pos, 5, 1);
+        let positions = world.load_area(camera.pos, 5, 1, None);
         for m in world.mesh(&models, &positions, MeshOptions::default()) {
-            terrain.upload(&ctx, &m);
+            scene.terrain.upload(&ctx, &m);
         }
-        terrain.render_distance = 5;
-        terrain.vertical_distance = 16;
-        let params = FrameParams {
-            fog_start: 50.0,
-            fog_end: 76.0,
-            ..FrameParams::default()
-        };
-        let clear = LinearColor {
-            r: 0.6,
-            g: 0.7,
-            b: 0.9,
-            a: 1.0,
-        };
-        let frame = |terrain: &mut TerrainRenderer| {
-            terrain.prepare(&ctx, &camera, (w, h), &params);
-            render_terrain(&ctx, terrain, &target.color_view, &target.depth.view, clear);
+        scene.terrain.render_distance = 5;
+        scene.terrain.vertical_distance = 16;
+        let frame = |scene: &mut SceneRenderer| {
+            scene.prepare(&ctx, &camera, (w, h), &env, f32::INFINITY);
+            let mut enc = ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("frame"),
+                });
+            scene.render(
+                &ctx,
+                &mut enc,
+                &target.color_view,
+                &target.depth.view,
+                (w, h),
+            );
+            ctx.queue.submit(Some(enc.finish()));
             target.read_rgba(&ctx)
         };
-        terrain.gpu_culling = true;
-        frame(&mut terrain);
-        frame(&mut terrain);
-        let gpu = frame(&mut terrain);
-        terrain.gpu_culling = false;
-        let cpu = frame(&mut terrain);
+        scene.terrain.gpu_culling = true;
+        frame(&mut scene);
+        frame(&mut scene);
+        let gpu = frame(&mut scene);
+        let counts = scene
+            .terrain
+            .read_gpu_draw_counts(&ctx)
+            .expect("GPU culler");
+        scene.terrain.gpu_culling = false;
+        let cpu = frame(&mut scene);
         let differing = gpu
             .as_chunks::<4>()
             .0
@@ -81,13 +90,7 @@ fn gpu_culling_matches_cpu_culling() {
             "GPU culling changed {differing} pixels (view above={above} yaw={yaw})"
         );
         // Something must actually be on screen.
-        let sky = [153u8, 178, 229];
-        let non_sky = cpu
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .filter(|p| p[..3] != sky)
-            .count();
-        assert!(non_sky > (w * h / 10) as usize, "terrain visible");
+        assert!(scene.terrain.stats.visible_cubes > 0, "cubes in view");
+        assert!(counts.iter().any(|&c| c > 0), "GPU culling drew something");
     }
 }

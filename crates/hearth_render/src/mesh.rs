@@ -24,38 +24,50 @@ fn pidx(x: i32, y: i32, z: i32) -> usize {
     (((y + 1) as usize) * PAD + (z + 1) as usize) * PAD + (x + 1) as usize
 }
 
-/// Per-column tint colours (index `z * 16 + x`).
+/// Per-column tint inputs (index `z * 16 + x`): the 24-bit climate code that the shader turns
+/// into seasonal grass and leaf colours (layout in `hearth_env::tint`), and baked water colours.
 #[derive(Debug, Clone)]
 pub struct ColumnTints {
-    pub grass: [[u8; 3]; 256],
-    pub foliage: [[u8; 3]; 256],
+    pub climate: [u32; 256],
     pub water: [[u8; 3]; 256],
-    pub dry_grass: [[u8; 3]; 256],
 }
+
+/// Climate code of a mild temperate place (12 °C mean, 16 °C range, 900 mm).
+pub const DEFAULT_CLIMATE: u32 = 155 | (8 << 8) | (99 << 13);
+
+/// Tint kinds understood by the shader (low 2 bits; the next 2 bits are a variant).
+pub const TINT_RGB: u32 = 0;
+pub const TINT_GRASS: u32 = 1;
+pub const TINT_DECIDUOUS: u32 = 2;
+pub const TINT_EVERGREEN: u32 = 3;
+/// Deciduous variant with yellow autumn colour (birch).
+pub const VARIANT_BIRCH: u32 = 1 << 2;
+/// Dry-season type 3 (arid) in the climate code: grass that is mostly cured.
+const ARID_BITS: u32 = 3 << 21;
 
 impl Default for ColumnTints {
     fn default() -> Self {
         Self {
-            grass: [[124, 189, 107]; 256],
-            foliage: [[89, 174, 48]; 256],
+            climate: [DEFAULT_CLIMATE; 256],
             water: [[63, 118, 228]; 256],
-            dry_grass: [[190, 180, 100]; 256],
         }
     }
 }
 
 impl ColumnTints {
+    /// Shader tint kind (4 bits) and 24-bit value (RGB or climate code) for a face.
     #[inline]
-    pub fn get(&self, tint: Tint, lx: usize, lz: usize) -> [u8; 3] {
+    pub fn get(&self, tint: Tint, lx: usize, lz: usize) -> (u32, u32) {
         let i = (lz.min(15)) * 16 + lx.min(15);
+        let rgb = |c: [u8; 3]| (c[0] as u32) | ((c[1] as u32) << 8) | ((c[2] as u32) << 16);
         match tint {
-            Tint::None => [255, 255, 255],
-            Tint::Grass => self.grass[i],
-            Tint::Foliage => self.foliage[i],
-            Tint::Water => self.water[i],
-            Tint::Birch => [128, 167, 85],
-            Tint::Spruce => [97, 153, 97],
-            Tint::DryGrass => self.dry_grass[i],
+            Tint::None => (TINT_RGB, 0x00ff_ffff),
+            Tint::Water => (TINT_RGB, rgb(self.water[i])),
+            Tint::Grass => (TINT_GRASS, self.climate[i]),
+            Tint::DryGrass => (TINT_GRASS, (self.climate[i] & !(3 << 21)) | ARID_BITS),
+            Tint::Foliage => (TINT_DECIDUOUS, self.climate[i]),
+            Tint::Birch => (TINT_DECIDUOUS | VARIANT_BIRCH, self.climate[i]),
+            Tint::Spruce => (TINT_EVERGREEN, self.climate[i]),
         }
     }
 }
@@ -123,9 +135,9 @@ impl MeshInput {
 
 /// 16-byte greedy quad for full-cube faces. Layout (little-endian u32s):
 /// * `a`: x:4 y:4 z:4 | w−1:4 h−1:4 | face:3 | flip:1 | fluid:1 | waving:1 | rot:2 | frames−1:4
-/// * `b`: layer:12 | overlay:12 (4095 = none) | frame_time−1:4 | overlay_tint_only:1 | spare:3
+/// * `b`: layer:12 | overlay:12 (4095 = none) | frame_time−1:4 | tint kind:4 (see `TINT_*`)
 /// * `c`: per-corner light, 8 bits each (sky:4 | block:4), corner 0 in the low byte
-/// * `d`: tint rgb (24) | ao per corner 2 bits each (8)
+/// * `d`: tint value (24: RGB or climate code) | ao per corner 2 bits each (8)
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
 pub struct PackedQuad {
@@ -144,7 +156,7 @@ pub struct GeneralQuad {
     pub corners: [[u32; 3]; 4],
     /// layer:12 | frames−1:4 | frame_time−1:4 | shade dir:3 (7 = none) | waving:1 | fluid:1
     pub layer: u32,
-    /// rgb tint (24) | flags (8)
+    /// tint value (24: RGB or climate code) | tint kind (4) | spare (4)
     pub tint: u32,
     /// Overlay layer (4095 = none).
     pub overlay: u32,
@@ -394,10 +406,10 @@ impl Mesher<'_> {
                         }
                         let ft = cube.faces[d.index()];
                         let (lights, aos) = self.corner_light(inp, x, y, z, d);
-                        let tint = inp.tints.get(ft.tint, x as usize, z as usize);
+                        let (tint_kind, tint) = inp.tints.get(ft.tint, x as usize, z as usize);
                         let key = FaceKey {
                             layer_bits: layer_bits(&ft, cube.waving, false),
-                            b: b_bits(&ft),
+                            b: b_bits(&ft) | (tint_kind << 28),
                             light: u32::from_le_bytes(lights),
                             tint_ao: tint_ao(tint, aos),
                             uniform: lights.iter().all(|l| *l == lights[0])
@@ -555,7 +567,7 @@ impl Mesher<'_> {
     fn general(&self, inp: &MeshInput, x: i32, y: i32, z: i32, q: &ModelQuad) -> GeneralQuad {
         let base = Vec3::new(x as f32, y as f32, z as f32);
         let own = inp.light_at(x, y, z);
-        let tint = inp.tints.get(q.tex.tint, x as usize, z as usize);
+        let (tint_kind, tint) = inp.tints.get(q.tex.tint, x as usize, z as usize);
         let mut corners = [[0u32; 3]; 4];
         for (c, corner) in corners.iter_mut().enumerate() {
             let p = base + q.pos[c];
@@ -570,7 +582,7 @@ impl Mesher<'_> {
         GeneralQuad {
             corners,
             layer: tex_bits(&q.tex) | (dir << 20) | ((q.waving as u32) << 23),
-            tint: (tint[0] as u32) | ((tint[1] as u32) << 8) | ((tint[2] as u32) << 16),
+            tint: tint | (tint_kind << 24),
             overlay: if q.tex.overlay == NO_OVERLAY {
                 4095
             } else {
@@ -671,7 +683,7 @@ impl Mesher<'_> {
         } else {
             inp.light_at(x, y + 1, z).max(own)
         };
-        let tint = inp.tints.get(Tint::Water, x as usize, z as usize);
+        let (tint_kind, tint) = inp.tints.get(Tint::Water, x as usize, z as usize);
         let base = Vec3::new(x as f32, y as f32, z as f32);
         let flat = (h00 - h10).abs() < 1e-3 && (h00 - h11).abs() < 1e-3 && (h00 - h01).abs() < 1e-3;
         let push = |out: &mut Vec<GeneralQuad>,
@@ -687,7 +699,7 @@ impl Mesher<'_> {
             out.push(GeneralQuad {
                 corners,
                 layer: tex_bits(tex) | (dir << 20) | (1 << 24),
-                tint: (tint[0] as u32) | ((tint[1] as u32) << 8) | ((tint[2] as u32) << 16),
+                tint: tint | (tint_kind << 24),
                 overlay: 4095,
                 _pad: 0,
             });
@@ -866,10 +878,8 @@ fn b_bits(t: &FaceTex) -> u32 {
 }
 
 #[inline]
-fn tint_ao(tint: [u8; 3], aos: [u8; 4]) -> u32 {
-    (tint[0] as u32)
-        | ((tint[1] as u32) << 8)
-        | ((tint[2] as u32) << 16)
+fn tint_ao(tint: u32, aos: [u8; 4]) -> u32 {
+    (tint & 0x00ff_ffff)
         | ((aos[0] as u32) << 24)
         | ((aos[1] as u32) << 26)
         | ((aos[2] as u32) << 28)
@@ -930,7 +940,7 @@ fn packed_to_general(q: &PackedQuad, d: Direction) -> GeneralQuad {
     GeneralQuad {
         corners,
         layer: layer | (frames << 12) | (frame_time << 16) | ((d.index() as u32) << 20),
-        tint: q.d & 0x00ff_ffff,
+        tint: (q.d & 0x00ff_ffff) | ((q.b >> 28) << 24),
         overlay: (q.b >> 12) & 0xfff,
         _pad: 0,
     }

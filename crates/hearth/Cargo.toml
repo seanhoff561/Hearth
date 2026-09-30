@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 hearth_core.workspace = true
 hearth_content.workspace = true
+hearth_env.workspace = true
 hearth_input.workspace = true
 hearth_math.workspace = true
 hearth_world.workspace = true

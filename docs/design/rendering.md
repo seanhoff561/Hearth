@@ -1,12 +1,16 @@
 # Rendering
 
-*Status: implemented (v1 M3). Code: `crates/hearth_render`. Details: `ARCHITECTURE.md` §7,
-`DECISIONS.md` D18–D19.*
+*Status: implemented (v1 M3 terrain; V2-1 sky, lighting, exposure, seasons and weather). Code:
+`crates/hearth_render`. Details: `ARCHITECTURE.md` §7, `DECISIONS.md` D18–D19, D29, D32–D34,
+D37.*
 
 ## Purpose
-Fast, correct voxel rendering that scales to large view distances.
+Fast, correct voxel rendering that scales to large view distances, lit physically so that
+days, nights, seasons and weather look like Earth's.
 
 ## Model
+
+### Terrain (v1 M3)
 Procedural textures in a texture array; greedy meshing of uniform faces into 16-byte packed
 quads, 64-byte general quads for models/fluids/translucent; vertex pulling from sub-allocated
 storage buffers; reverse-Z infinite projection with camera-relative origins; CPU cave culling;
@@ -14,7 +18,61 @@ two-phase Hi-Z GPU occlusion culling with indirect-count draws on Vulkan (CPU dr
 elsewhere); translucent back-to-front with near re-sorting; headless screenshots with a GPU vs
 CPU culling pixel check.
 
+### Frame (V2-1, `scene.rs`)
+1. Atmosphere lookup tables (compute): transmittance 256×64 and multiple scattering 32×32 when
+   the aerosol density changes, the camera's sky view 256×128 every frame.
+2. Opaque and cutout terrain into an HDR target (RGBA16F), GPU-culled.
+3. Sky pass where nothing was drawn: sky view, sun and moon discs (the moon lit by its phase),
+   stars rotating about the celestial pole, a cloud layer drifting with the wind.
+4. Translucent terrain, then rain and snow.
+5. Highlight metering (compute) and tonemapping (ACES) with a night shift toward blue.
+
+### Atmosphere (`atmosphere.wgsl`, D29)
+After Hillaire (2020): Rayleigh, aerosol (Mie, Cornette–Shanks phase) and ozone on an
+Earth-sized planet, with the planet's shadow for twilight. The multiple-scattering table is
+stored as a logarithm because in twilight it falls tenfold every degree or two. The same model
+runs on the CPU (`hearth_env::sky`) to give the lighting in lux; a GPU test integrates the
+sky-view table and checks it against the CPU within 20 % from high sun to the sun 8° down
+(they agree within 10 %). Calibrated against measurements (D32): about 100 klx at a clear noon
+with 10–20 % from the sky, ~750 lx at sunset, 4 lx at the end of civil twilight, 0.3 lx two
+degrees later.
+
+### Lighting and exposure (`terrain.wgsl`, `scene.rs`, D33)
+Lighting is physical and pre-exposed: direct sun (or moon) on faces open to the sky (sky light
+15; there are no shadow maps yet), sky irradiance scaled by the voxel sky-light level and face
+orientation, a floor of starlight and airglow, firelight from the block-light level; aerial
+perspective toward the sky's colour in the view direction. The eye adapts to the horizontal
+illuminance (brightening in about a second, darkening more slowly) down to full-moon light;
+below that scenes are simply dark; in dim light it compensates only partly, so dusk looks like
+dusk. A histogram of the frame then darkens it just enough to keep the bright end (90th
+percentile) in the tonemapper's colourful range — sunsets keep their colours and the ground
+goes to silhouette — with no readback (the tonemap pass reads the result directly).
+
+### Seasons and weather (D34, D37)
+- Grass and leaf colours from a climate code per quad and the date (`docs/design/seasons.md`);
+  deciduous leaves thin out and show twigs as they fall, in the cutout pass.
+- Clouds: a 2D layer at the weather's cloud base, lit by the sun and sky. Under a thick deck or
+  in rain and snow, the sky, haze and distance fade to the grey of the cloud base.
+- Rain and snow: particles generated in the vertex shader in a 48×32×48 m box that wraps
+  around the camera (fixed in the world), up to 40,000 at full intensity, falling with the
+  wind; a 128×128 map of the highest sky-blocking block per column hides them under roofs,
+  trees and overhangs, and the depth test behind terrain. Falling rain and snow add extinction
+  from the visibility they leave (~4 km in a heavy shower, ~600 m in heavy snow).
+
+## Parameters
+Atmosphere constants in `atmosphere.wgsl` and `hearth_env::sky` (kept equal; the
+`sky_consistency` test guards them); exposure constants in `scene.rs` and `post.rs`
+(adaptation floor 0.3 lx, highlight target 1.2, at most 16× darkening); particle counts and
+box in `precip.rs`.
+
+## Known simplifications
+- No shadow maps: direct light reaches faces with full sky light, so there are no cast shadows
+  from trees or overhangs yet beyond the sky-light falloff.
+- Clouds are a single textured layer (no volumetric clouds, no cloud shadows on the ground).
+- No lightning, fog banks, wet or snowy surface shading, puddles or splashes yet.
+- Rain streaks are thin and alias at a distance.
+
 ## v2 extensions (planned)
-Seasonal tints as GPU parameters (V2-1), atmosphere/sky (V2-1), water and ice (V2-2),
-passable foliage and branch models (V2-6), LOD showing vegetation state (V2-6), instanced
-animals (V2-7), fire, smoke, glowing hot items (V2-5).
+Water and ice rendering (V2-2), passable foliage and branch models (V2-6), LOD showing
+vegetation state (V2-6), instanced animals (V2-7), fire, smoke, glowing hot items (V2-5),
+shadow maps and volumetric light (V2-16 at the latest).

@@ -19,6 +19,7 @@ hearth_worldgen = { path = "crates/hearth_worldgen" }
 hearth_texgen = { path = "crates/hearth_texgen" }
 hearth_content = { path = "crates/hearth_content" }
 hearth_save = { path = "crates/hearth_save" }
+hearth_env = { path = "crates/hearth_env" }
 hearth_render = { path = "crates/hearth_render" }
 
 # --- external crates (versions checked with `cargo search` on 2026-09-30) ---
