@@ -28,7 +28,9 @@ pub struct WaterHeights {
 }
 
 impl WaterHeights {
-    /// Builds the map centred on a block column from a lookup of the water surface.
+    /// Builds the map centred on a block column from a lookup of the water surface. Its
+    /// 65,536 lookups take over a millisecond: build it off the frame thread (the streamer
+    /// does).
     pub fn build(center_x: i32, center_z: i32, surface: impl Fn(i32, i32) -> Option<f32>) -> Self {
         let n = WATER_MAP_SIZE as i32;
         let origin = (center_x - n / 2, center_z - n / 2);

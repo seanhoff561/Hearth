@@ -469,3 +469,34 @@ The same session's numbers for the first commit are 10–20 % below those record
 the start of the audit (laptop clocks and temperature hours apart), which is why comparisons
 are made between builds run alternately (`scripts/perf-gate.sh`, D59). The slower summit and
 coast tails are accepted in D60.
+
+## End of V2-2 — the performance gate: 2e45a05 against the end of V2-2, alternating, three rounds each, NVIDIA GeForce RTX 4060 Laptop GPU (Vulkan), 1920x1080, preset Fancy
+
+| Scene | Avg FPS | 1% low FPS (1st percentile) | GPU ms | VRAM MiB | Triangles |
+|---|---:|---:|---:|---:|---:|
+| lowland_forest | 792 → 720 (-9.0 %) | 594 → 556 (-6.5 %) | 1.23 → 1.33 | 227 → 244 | 1.26 → 1.27 M |
+| peak_lod512 | 811 → 746 (-8.0 %) | 482 → 467 (-3.2 %) | 1.19 → 1.31 | 226 → 243 | 1.90 → 1.93 M |
+| cave_torches | 2214 → 2144 (-3.2 %) | 1272 → 1230 (-3.3 %) | 0.42 → 0.44 | 227 → 244 | 1.21 → 1.22 M |
+
+| GPU ms per pass | lowland_forest | peak_lod512 | cave_torches |
+|---|---:|---:|---:|
+| sky tables | 0.051 → 0.049 | 0.050 → 0.050 | 0.048 → 0.047 |
+| cull 0 | 0.020 → 0.020 | 0.017 → 0.017 | 0.016 → 0.015 |
+| terrain 0 | 0.467 → 0.470 | 0.088 → 0.092 | 0.160 → 0.165 |
+| hi-z | 0.062 → 0.062 | 0.060 → 0.063 | 0.057 → 0.054 |
+| cull 1 | 0.010 → 0.010 | 0.011 → 0.012 | 0.009 → 0.009 |
+| terrain 1 | 0.010 → 0.010 | 0.010 → 0.010 | 0.010 → 0.010 |
+| lod cull | 0.015 → 0.014 | 0.015 → 0.015 | 0.014 → 0.013 |
+| lod terrain | 0.333 → 0.346 | 0.684 → 0.780 | 0.012 → 0.012 |
+| sky, translucent, rain | 0.167 → – | 0.165 → – | 0.013 → – |
+| metering | 0.023 → 0.023 | 0.022 → 0.022 | 0.018 → 0.018 |
+| tonemap | 0.066 → 0.067 | 0.063 → 0.067 | 0.062 → 0.065 |
+| sky | – → 0.127 | – → 0.163 | – → 0.008 |
+| water's scene copy | – → 0.036 | – → 0.003 | – → 0.004 |
+| translucent, rain | – → 0.091 | – → 0.011 | – → 0.013 |
+
+Medians of three runs each; 1 % lows as the gate judges them (the 99th-percentile frame). The
+water's shading at Medium (D62–D63) costs the forest and summit their 8–9 %; accepted in D65,
+where the benchmark's map building moved off its frame thread (the first gate run's 1 % lows
+fell 26–29 % from it) and the water's scene copy was trimmed. The candidate's GPU passes split
+the old "sky, translucent, rain" into the sky, the water's scene copy and the translucent pass.

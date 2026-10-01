@@ -16,6 +16,7 @@ use hearth_render::scene::SceneRenderer;
 use hearth_render::{FrameTargets, GpuContext};
 
 use crate::environment::{EnvOverrides, EnvSampler};
+use crate::globe::GlobePicker;
 use crate::lod_stream::LodStream;
 use crate::streamer::{StreamEvent, StreamTarget, StreamWorld, Streamer};
 
@@ -31,6 +32,10 @@ pub struct Preview {
     atlas: Arc<TextureArray>,
     color_format: wgpu::TextureFormat,
     planet: Option<Planet>,
+    /// The world's terrain, once ready (for the globe).
+    terrain: Option<Arc<hearth_worldgen::Terrain>>,
+    /// The planet as a globe to pick a place on (the world-map key).
+    pub globe: GlobePicker,
     pub camera: Camera,
     /// Base flying speed in blocks per second.
     speed: f64,
@@ -91,6 +96,8 @@ impl Preview {
             atlas,
             color_format,
             planet: None,
+            terrain: None,
+            globe: GlobePicker::default(),
             camera: Camera {
                 fov_y: options.video.fov,
                 ..Camera::default()
@@ -127,6 +134,36 @@ impl Preview {
         self.ticks = (self.ticks as f64 + dt).max(0.0) as u64;
     }
 
+    /// Opens or closes the globe; whether it is open. It opens once the world is ready,
+    /// centred on the camera.
+    pub fn toggle_globe(&mut self) -> bool {
+        if self.globe.open {
+            self.globe.close();
+        } else if let (Some(terrain), Some(planet)) = (&self.terrain, &self.planet) {
+            let (lat, lon) = crate::globe::lat_lon(planet, self.camera.pos);
+            self.globe.open(terrain, lat, lon);
+        }
+        self.globe.open
+    }
+
+    /// The mouse button over the globe went down or up: a click goes to the place under it
+    /// (closing the globe).
+    pub fn globe_button(&mut self, pressed: bool) {
+        if let Some((lat, lon)) = self.globe.button(pressed)
+            && let Some(terrain) = &self.terrain
+        {
+            self.camera.pos = crate::globe::start_at(terrain, lat, lon);
+            log::info!(
+                "went to {} ({:.0}, {:.0}, {:.0})",
+                crate::globe::describe(terrain, lat, lon),
+                self.camera.pos.x,
+                self.camera.pos.y,
+                self.camera.pos.z
+            );
+            self.globe.close();
+        }
+    }
+
     /// Moves the camera from input; `look` is the accumulated mouse motion when captured.
     pub fn update(
         &mut self,
@@ -139,6 +176,12 @@ impl Preview {
         let advance = dt * (20.0 + self.time_warp) + self.tick_remainder;
         self.ticks += advance.floor() as u64;
         self.tick_remainder = advance.fract();
+        if self.globe.open {
+            // The wheel zooms the globe; the camera stays put.
+            let steps = input.take_scroll_steps(1.0, true);
+            self.globe.view.zoom_by(steps);
+            return;
+        }
         if let Some((dx, dy)) = look {
             let f = sensitivity as f64 * 0.6 + 0.2;
             let deg_per_count = f * f * f * 8.0 * 0.15;
@@ -201,6 +244,7 @@ impl Preview {
                     lod,
                     vertical_scale,
                 } => {
+                    self.terrain = Some(generator.terrain.clone());
                     self.lod = Some(LodStream::new(
                         generator,
                         lod,
@@ -293,6 +337,20 @@ impl Preview {
             // Distant terrain is detailed for the pixels rendered.
             lod.set_view(scene.render_size(targets.size).1, self.camera.fov_y);
         }
+        if self.globe.open
+            && let Some(planet) = &self.planet
+        {
+            let camera = crate::globe::lat_lon(planet, self.camera.pos);
+            self.globe.render(
+                ctx,
+                enc,
+                targets.color,
+                targets.size,
+                self.color_format,
+                camera,
+            );
+            return;
+        }
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -336,6 +394,17 @@ impl Preview {
 
     /// One-line status for the window title.
     pub fn title_status(&self, fps: f64) -> String {
+        if self.globe.open
+            && let Some(terrain) = &self.terrain
+        {
+            let place = self.globe.hovered().map_or_else(
+                || "point at a place".to_owned(),
+                |(lat, lon)| crate::globe::describe(terrain, lat, lon),
+            );
+            return format!(
+                "{place} | click to go there, drag to turn, wheel to zoom, M or Esc to close"
+            );
+        }
         let p = self.camera.pos;
         match (&self.scene, &self.planet) {
             (Some(s), Some(planet)) => {

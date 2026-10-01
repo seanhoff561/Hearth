@@ -169,6 +169,19 @@ horizon when that is farther (so the land never stops short of the skyline):
   trees and overhangs, and the depth test behind terrain. Falling rain and snow add extinction
   from the visibility they leave (~4 km in a heavy shower, ~600 m in heavy snow).
 
+### Globe
+
+The world map's key opens the planet as a globe (`hearth_render::globe`, the minimal spawn
+picker of v2 §16): an equirectangular map (2048 × 1024; each texel the biome at its point,
+land shaded by its relief, made on its own thread in about half a second the first time it
+opens) drawn on an orthographic sphere in one full-screen pass, with mipmaps sampled by
+gradients that ignore the date line's jump, a graticule every 30°, a desk-globe light, the
+camera's place and the point under the cursor marked, and a thin glow of air at the edge.
+Dragging turns it (the land at the centre follows the cursor), the wheel zooms (up to 16×),
+the window title describes the place under the cursor (latitude, longitude, climate, biome,
+height or depth, temperature and rain) and a click goes there: to the nearest dry, gentle
+column, and from the sea or a lake to the nearest coast (`Terrain::spawn_near`).
+
 ## Parameters
 Atmosphere constants in `atmosphere.wgsl` and `hearth_env::sky` (kept equal; the
 `sky_consistency` test guards them); exposure constants in `scene.rs` and `post.rs`
@@ -191,7 +204,6 @@ box in `precip.rs`.
 - Rain streaks are thin and alias at a distance.
 
 ## v2 extensions (planned)
-Water and ice rendering (V2-2), passable foliage and branch models (V2-6), LOD showing
-vegetation state and the rest of v1 M8 — disk cache, edits, occlusion culling, VRAM budget,
-TAA (V2-6), instanced animals (V2-7), fire, smoke, glowing hot items (V2-5), shadow maps and
-volumetric light (V2-16 at the latest).
+Passable foliage and branch models (V2-6), LOD showing vegetation state and the rest of v1
+M8 — disk cache, edits, occlusion culling, VRAM budget, TAA (V2-6), instanced animals (V2-7),
+fire, smoke, glowing hot items (V2-5), shadow maps and volumetric light (V2-16 at the latest).

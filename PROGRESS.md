@@ -139,7 +139,112 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
     generated planet (snow/ice/wet-dry timing by latitude and hemisphere); GPU vs CPU sky
     consistency; twilight illuminance vs published values; seasonal cover reversible block for
     block.
-- [ ] V2-2 — Geology, soils, hydrology & resources
+- [x] **V2-2 — Geology, soils, hydrology & resources** (2026-10-01)
+  - (a) Rock types as blocks generated from content (33 rocks, textures from material
+    appearance); 14 geological provinces assigned from the tectonic history with climate and age
+    conditions; stratigraphy (varying thickness, pinch-outs, folds in collision belts, domes and
+    basins elsewhere) cut by today's terrain with exhumation of uplifted land; plutons;
+    basement; geothermal gradient; `stone`/`deepslate`/rock veins removed; `bench worldmap`
+    province and rock layers and block-scale `--geo-area` maps and sections. Generation speed
+    unchanged (≈48k surface, ≈80k deep cubes/s).
+  - (b) Soils: 16 soil types chosen per column by formation fit (climate, parent rock,
+    vegetation and landform, drainage, slope) with horizons as blocks, slope-thinned; soils and
+    sediments as blocks generated from their materials (v1 dirt/sand/gravel/clay family
+    removed); beaches, beds, salt flats and glaciers; loose stones of the local rock and scree;
+    `--geo-area` sections draw soil profiles and print soil statistics.
+  - (c) Deposits: 52 models covering every Appendix D resource (veins, seams, nodule bands,
+    placers, disseminated bodies, crusts, flows, bog ores, evaporites, pipes) placed per
+    256-block cell by province, host rock and conditions, cached per cell and drawn per cube;
+    surface indicators (stains, gossans, float, crusts, placer gravel and cobbles) drawn on
+    slopes too; ore, crust, placer and float blocks generated from the content; panning as a
+    pure function (`Deposits::pan`); planned metal materials (tin, iron, lead, zinc, mercury,
+    aluminium) and ore yields; per-province pluton share and roof depth so shields and old
+    orogens expose granite; province climate conditions became preferences (D45); resource eras
+    aligned with the technology eras (D47). Coverage (`hearth_worldgen::coverage`, D44): every
+    Era 0–2 need is within reach of every continent on seeds 1–6 at Standard; the lint
+    (`hearth content lint --coverage`) flags the regional gaps (kimberlite, coal, fire clay,
+    travertine, volcanic ash…). Tests: bodies only in their provinces, host rocks and climates,
+    frequencies match the content, early resources reach every continent, panning.
+    `bench deposits`, `bench worldmap` deposit layer and coverage table,
+    `tools/shots/v22_deposits.shots` (ochre, laterite, limonite, salt pan, obsidian flow,
+    copper stains, gossan, placer gravel, river cobbles, fumarole sulfur).
+    Fixed a v1 bug: tree and debris placement drew their chance from 8 and 4 hash bits, so any
+    biome with a non-zero tree density (steppe, savanna, plains, scrub) grew a closed forest.
+  - **Interjection — distant terrain (done):** screenshots faded the terrain out at a fixed
+    distance. Cause: a render-distance fog in the terrain shader and, at the root, no LOD
+    terrain at all (v1 M8 had been left for V2-6). Fixed by building the core of v1 M8 now
+    (`hearth_lod` quadtree, fast surface sampling, meshes with skirts, `hearth_render::lod`,
+    preview streaming on its own thread pool, screenshots waiting for every tile with a loud
+    timeout; the LOD always reaches the horizon), replacing the fog with physical aerial
+    perspective (Rayleigh per colour and humidity-driven aerosol through an exponential
+    atmosphere, precipitation extinction), planet curvature, and a dithered handoff with the LOD
+    just behind the cubes and forest floors under LOD canopies. Regression test `lod_horizon`
+    (depth readback from a peak at LOD 512, fog on and off: 43 % of the ground below the horizon
+    beyond the full-detail area, 0.01 % empty); `tools/shots/lod_horizon.shots`. Also fixed:
+    reversed-edge `smoothstep` in the sky shader (undefined on Vulkan). D52–D54.
+  - (d, part 1) Groundwater and coasts: water table from the drainage base, the smoothed land,
+    rock permeability (new rock data) and climate; cave voids below it flooded (replacing v1's
+    random aquifers); springs where the table meets slopes, desert oases and mineral springs
+    over deposits (salt, sulfur, hot, travertine), each with a pool and a downhill brook; water
+    quality of sea, salt and fresh lakes, streams, springs and groundwater. Coasts: sheltered
+    shores (noise and river mouths) become mangrove (new biome, prop-rooted trees in the
+    shallows) or salt marsh (cordgrass on mud) with mudflats; fringing, barrier and atoll reefs
+    in warm clear shallows (coral over reef limestone, coral fans); kelp on rocky floors in cool
+    water, wrack on cool rocky shores, tide pools on stony shores; sea ice in the seasonal cover
+    (below −4 °C air). Tests: water table shape (deeper under hills, in dry country; shallow in
+    humid lowlands), no dry void below the table, springs and brooks, water quality, reefs only
+    in warm clear shallows, marsh/mangrove by climate, kelp only in cool water, sea ice by
+    climate. `bench deposits --springs/--find`, `tools/shots/v22_coasts.shots`. Fixed a v1 bug:
+    underwater plants were never placed (the feature writer never let anything replace water).
+    Generation cost of the new passes ≈ 5 % of surface cubes.
+  - (d, part 2a) Seasonal rivers: river flow regimes from the year-scale water balance
+    (landscape melt bands, evaporation, storm runoff, fast and ground stores with baseflow by
+    wetness), summed over each reach's upstream basin with flood-wave travel times in the
+    frequency domain (`hearth_env::rivers`, D55); river columns rise and fall with them in the
+    seasonal cover (Manning stage, floods over the banks that thin out to the surrounding land,
+    low water baring bars, small rivers running dry; drowned plants and stranded water plants
+    restored); `SeasonCover` now holds the cover's states, the regimes and what it buried.
+    Tests: regimes by climate (snowmelt, savanna, oceanic), a desert reach flooding late from
+    distant rains, confluences mixing by water, the full spectrum keeping the year, cover
+    floods/low water/dry beds restored block for block, and a year on a generated world (a
+    reach floods and falls and returns to the same blocks). `bench deposits --rivers`,
+    `tools/shots/v22_rivers.shots` (snowmelt flood, summer, winter low; savanna wet and dry).
+  - (d, part 2b) Finite water (D61, `hearth_world::water`): natural water stays a sustained,
+    never-simulated reservoir that feeds what opens beside or under it and drains what comes
+    down onto it; finite water is integer litres with salinity, germ risk and temperature per
+    block, shown in eighths (`water[level=1..8]`; level 0 = natural). It falls, evens out with
+    lower neighbours, and at rest levels per connected body (connected wells, flat ponds,
+    channels at their river's level); wells fill by seepage below the water table (rate by rock
+    permeability); water mixes, evaporates by the mass-transfer law (`water_env`) leaving salt as
+    `salt_crust` blocks with their kilograms (dissolved again by water), takes the air's
+    temperature and grows germs when still and warm. `pour`/`take`/`block_changed`/`restore`
+    for the world loop of V2-3; `hearth::water_env::WorldWater` gives it the world. Coastal
+    salt pans (sabkhas) on hot desert coasts. Tests: levelling and conservation, downhill flow,
+    connected vessels, a channel fed from the sea and water draining into it, a well filling to
+    the table and refilling, mixing/evaporation/crust/dissolving, displacement and spilling,
+    taking from finite and natural water; in a generated world a channel from a river fills to
+    its level with river water and a well fills to the table (`tests/finite_water.rs`); salt
+    pans only on hot dry coasts with rock-salt crusts (`tests/coasts.rs`).
+  - (e) Water rendering (v1 M7, D62–D64): wind-driven waves, Fresnel sky reflection, sun
+    glitter, refraction of a scene copy absorbed by depth, shore foam, Snell's window; distant
+    water shaded to match; under water, light by real depth with caustics from a map of water
+    surfaces around the camera and the view through the water; screen-space reflections at
+    High; glossy translucent ice. Tiers by `shader.water` (`hearth bench --water`).
+  - Interjected rendering performance audit (`docs/perf-audit.md`, D56–D60): the benchmark
+    (`hearth bench`), distant trees like Distant Horizons, screen-space-error LOD selection,
+    LOD culled on the GPU and grouped by facing, render scale with FSR 1, the performance gate.
+  - (f) `bench worldmap` soil layer with each soil's land share; the minimal globe spawn picker
+    (world-map key M in the preview; `--screenshot "globe=1"`): drag, zoom, the place under
+    the cursor in the title, a click goes there (from the sea to the nearest coast,
+    `Terrain::spawn_near`).
+  - Acceptance (`docs/design/geology.md`, "Acceptance (V2-2)"): `worldmap` geology, soil and
+    deposit layers; deposits only in their provinces at the content's frequencies
+    (`tests/deposits.rs`); every Era 0–2 need within reach of every continent on seeds 1–6,
+    the coverage lint flagging the gaps for eras 0–5. Performance gate (D65): average FPS
+    forest −9.0 %, summit −8.0 %, cave −3.2 % (1 % lows −6.5, −3.2, −3.3 %) against the end of
+    the rendering audit — the water's shading at Medium, accepted; the benchmark's map
+    building moved off its frame thread and the water's scene copy trimmed on the way. The
+    baseline moved to this commit.
 - [ ] V2-3 — Player: character, body & physiology
 - [ ] V2-4 — Inventory, carrying & clothing
 - [ ] V2-5 — Interaction, process crafting & knowledge
@@ -181,122 +286,28 @@ Generated by `hearth content status` (Implemented = used by a game system; Plann
 | Eras | 0 | 8 |
 
 ## In progress
-V2-2 — geology, soils, hydrology & resources. Done so far:
-- (a) Rock types as blocks generated from content (33 rocks, textures from material
-  appearance); 14 geological provinces assigned from the tectonic history with climate and age
-  conditions; stratigraphy (varying thickness, pinch-outs, folds in collision belts, domes and
-  basins elsewhere) cut by today's terrain with exhumation of uplifted land; plutons;
-  basement; geothermal gradient; `stone`/`deepslate`/rock veins removed; `bench worldmap`
-  province and rock layers and block-scale `--geo-area` maps and sections. Generation speed
-  unchanged (≈48k surface, ≈80k deep cubes/s).
-- (b) Soils: 16 soil types chosen per column by formation fit (climate, parent rock,
-  vegetation and landform, drainage, slope) with horizons as blocks, slope-thinned; soils and
-  sediments as blocks generated from their materials (v1 dirt/sand/gravel/clay family
-  removed); beaches, beds, salt flats and glaciers; loose stones of the local rock and scree;
-  `--geo-area` sections draw soil profiles and print soil statistics.
-- (c) Deposits: 52 models covering every Appendix D resource (veins, seams, nodule bands,
-  placers, disseminated bodies, crusts, flows, bog ores, evaporites, pipes) placed per
-  256-block cell by province, host rock and conditions, cached per cell and drawn per cube;
-  surface indicators (stains, gossans, float, crusts, placer gravel and cobbles) drawn on
-  slopes too; ore, crust, placer and float blocks generated from the content; panning as a
-  pure function (`Deposits::pan`); planned metal materials (tin, iron, lead, zinc, mercury,
-  aluminium) and ore yields; per-province pluton share and roof depth so shields and old
-  orogens expose granite; province climate conditions became preferences (D45); resource eras
-  aligned with the technology eras (D47). Coverage (`hearth_worldgen::coverage`, D44): every
-  Era 0–2 need is within reach of every continent on seeds 1–6 at Standard; the lint
-  (`hearth content lint --coverage`) flags the regional gaps (kimberlite, coal, fire clay,
-  travertine, volcanic ash…). Tests: bodies only in their provinces, host rocks and climates,
-  frequencies match the content, early resources reach every continent, panning.
-  `bench deposits`, `bench worldmap` deposit layer and coverage table,
-  `tools/shots/v22_deposits.shots` (ochre, laterite, limonite, salt pan, obsidian flow,
-  copper stains, gossan, placer gravel, river cobbles, fumarole sulfur).
-  Fixed a v1 bug: tree and debris placement drew their chance from 8 and 4 hash bits, so any
-  biome with a non-zero tree density (steppe, savanna, plains, scrub) grew a closed forest.
-- **Interjection — distant terrain (done):** screenshots faded the terrain out at a fixed
-  distance. Cause: a render-distance fog in the terrain shader and, at the root, no LOD
-  terrain at all (v1 M8 had been left for V2-6). Fixed by building the core of v1 M8 now
-  (`hearth_lod` quadtree, fast surface sampling, meshes with skirts, `hearth_render::lod`,
-  preview streaming on its own thread pool, screenshots waiting for every tile with a loud
-  timeout; the LOD always reaches the horizon), replacing the fog with physical aerial
-  perspective (Rayleigh per colour and humidity-driven aerosol through an exponential
-  atmosphere, precipitation extinction), planet curvature, and a dithered handoff with the LOD
-  just behind the cubes and forest floors under LOD canopies. Regression test `lod_horizon`
-  (depth readback from a peak at LOD 512, fog on and off: 43 % of the ground below the horizon
-  beyond the full-detail area, 0.01 % empty); `tools/shots/lod_horizon.shots`. Also fixed:
-  reversed-edge `smoothstep` in the sky shader (undefined on Vulkan). D52–D54.
-- (d, part 1) Groundwater and coasts: water table from the drainage base, the smoothed land,
-  rock permeability (new rock data) and climate; cave voids below it flooded (replacing v1's
-  random aquifers); springs where the table meets slopes, desert oases and mineral springs
-  over deposits (salt, sulfur, hot, travertine), each with a pool and a downhill brook; water
-  quality of sea, salt and fresh lakes, streams, springs and groundwater. Coasts: sheltered
-  shores (noise and river mouths) become mangrove (new biome, prop-rooted trees in the
-  shallows) or salt marsh (cordgrass on mud) with mudflats; fringing, barrier and atoll reefs
-  in warm clear shallows (coral over reef limestone, coral fans); kelp on rocky floors in cool
-  water, wrack on cool rocky shores, tide pools on stony shores; sea ice in the seasonal cover
-  (below −4 °C air). Tests: water table shape (deeper under hills, in dry country; shallow in
-  humid lowlands), no dry void below the table, springs and brooks, water quality, reefs only
-  in warm clear shallows, marsh/mangrove by climate, kelp only in cool water, sea ice by
-  climate. `bench deposits --springs/--find`, `tools/shots/v22_coasts.shots`. Fixed a v1 bug:
-  underwater plants were never placed (the feature writer never let anything replace water).
-  Generation cost of the new passes ≈ 5 % of surface cubes.
-- (d, part 2a) Seasonal rivers: river flow regimes from the year-scale water balance
-  (landscape melt bands, evaporation, storm runoff, fast and ground stores with baseflow by
-  wetness), summed over each reach's upstream basin with flood-wave travel times in the
-  frequency domain (`hearth_env::rivers`, D55); river columns rise and fall with them in the
-  seasonal cover (Manning stage, floods over the banks that thin out to the surrounding land,
-  low water baring bars, small rivers running dry; drowned plants and stranded water plants
-  restored); `SeasonCover` now holds the cover's states, the regimes and what it buried.
-  Tests: regimes by climate (snowmelt, savanna, oceanic), a desert reach flooding late from
-  distant rains, confluences mixing by water, the full spectrum keeping the year, cover
-  floods/low water/dry beds restored block for block, and a year on a generated world (a
-  reach floods and falls and returns to the same blocks). `bench deposits --rivers`,
-  `tools/shots/v22_rivers.shots` (snowmelt flood, summer, winter low; savanna wet and dry).
-- (d, part 2b) Finite water (D61, `hearth_world::water`): natural water stays a sustained,
-  never-simulated reservoir that feeds what opens beside or under it and drains what comes
-  down onto it; finite water is integer litres with salinity, germ risk and temperature per
-  block, shown in eighths (`water[level=1..8]`; level 0 = natural). It falls, evens out with
-  lower neighbours, and at rest levels per connected body (connected wells, flat ponds,
-  channels at their river's level); wells fill by seepage below the water table (rate by rock
-  permeability); water mixes, evaporates by the mass-transfer law (`water_env`) leaving salt as
-  `salt_crust` blocks with their kilograms (dissolved again by water), takes the air's
-  temperature and grows germs when still and warm. `pour`/`take`/`block_changed`/`restore`
-  for the world loop of V2-3; `hearth::water_env::WorldWater` gives it the world. Coastal
-  salt pans (sabkhas) on hot desert coasts. Tests: levelling and conservation, downhill flow,
-  connected vessels, a channel fed from the sea and water draining into it, a well filling to
-  the table and refilling, mixing/evaporation/crust/dissolving, displacement and spilling,
-  taking from finite and natural water; in a generated world a channel from a river fills to
-  its level with river water and a well fills to the table (`tests/finite_water.rs`); salt
-  pans only on hot dry coasts with rock-salt crusts (`tests/coasts.rs`).
+Nothing: V2-2 is done; V2-3 starts next (see Next steps).
 
 ## Next steps
-0. **Done — the interjected rendering performance audit** (`docs/perf-audit.md`: table,
-   ten results, where it ended; `BENCHMARKS.md`). Commits: the benchmark (`hearth bench`,
-   1e04b39, f2378b4), distant trees like Distant Horizons (D56, 038759c), sky light cache,
-   no per-frame allocations in our code, LOD quads pooled and multi-drawn, LOD occlusion-culled
-   on the GPU, LOD streaming without holes, dithering, screen-space-error LOD selection (D57,
-   `lod_detail`), LOD quads grouped by facing, render scale with FSR 1 (D58), and the
-   performance gate (D59; end state accepted in D60; baseline `perf/baseline` = 2e45a05).
-   From now on every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline
-   in `bench-out/gate`, three alternating rounds of the quick scenes); a failure is fixed or
-   justified in DECISIONS.md and the baseline moved with `--accept` on a committed tree.
-   For one-off claims, A/B alternate builds as the gate does (or `--lod-error` /
-   `--render-scale` within one build); capture golden images with `hearth bench --golden DIR`
-   before comparing looks. Known issues found on the way: underwater views are dark with an
-   empty region beyond the full-detail area (no underwater light/fog, no LOD sea floor —
-   V2-2e); the preview passes no firelight to the eye's adaptation (torch-lit caves at night
-   would be overexposed in the preview — the benchmark passes it). **Resume at 1.**
-1. (e) Water rendering (v1 M7) and ice. Done: (e, part 1) water surfaces (D62): wind-driven
-   waves from a tiling slope texture, Fresnel sky reflection, sun glitter, refraction of a scene
-   copy absorbed by depth, shore foam, Snell's window from below; distant water baked and shaded
-   to match; tiers by `shader.water`; (e, part 2) under water (D63): light by real depth with
-   caustics from a map of water surfaces around the camera, the view through the water when
-   the camera is in it; (e, part 3) screen-space reflections at High (D64; `hearth bench
-   --water low|medium|high`); (e, part 4) ice as glossy translucent ice (Fresnel sky
-   reflection, sun glint) over the water's own shading. (e) is done.
-2. (f) Minimal spawn picker; `worldmap` soil layer; V2-2 acceptance review, the performance
-   gate (`scripts/perf-gate.sh`), and commit.
+0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
+   `perf/baseline` in `bench-out/gate`, three alternating rounds of the quick scenes); a fall
+   of more than 5 % in average FPS or 1 % lows is fixed or justified in DECISIONS.md and the
+   baseline moved with `--accept` on a committed tree (then commit `perf/baseline`). For
+   one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
+   / `--water` within one build); capture golden images with `hearth bench --golden DIR`
+   before comparing looks.
+1. V2-3 — Player: character, body & physiology (PLAN.md). Start with the engine: v1 M4's
+   protocol, integrated server thread (20 TPS), client mirror, physics and collision shared
+   with entities and player saves, then v1 M11's UI toolkit with text rendering (a clean-room
+   font), screens and audio. Then the character creator and profiles, the rig and movement,
+   and physiology with its headless acceptance tests first (hypothermia in 5 °C rain without
+   clothing vs fur and a fire, death by thirst after ~3 days, sprain vs fracture recovery).
+   The world loop hooks in the finite water there (`WaterSim::pour`/`take`/`block_changed`,
+   and the seasonal cover's changes next to finite water).
 
 ## Known issues
+- The preview passes no firelight to the eye's adaptation (torch-lit caves at night would be
+  overexposed in the preview; the benchmark passes it).
 - In this environment presents never block (FIFO on both Vulkan and DX12 ran at ~1.5–2k FPS
   with terrain), most likely because the window is occluded. Re-check pacing on a visible
   window; the frame limiter covers the vsync-off case.

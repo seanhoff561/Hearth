@@ -572,3 +572,25 @@ subtle and flickers a little on ripples without temporal smoothing (TAA, V2-6). 
 Medium; Medium keeps the sky's reflection and copies only the water's part of the screen.
 Hits right by the reflection (lily pads on the water) are ignored, and rays are traced on a
 surface calmer than the ripples.
+
+## D65 — V2-2's performance gate: the water's cost at the default quality accepted
+The gate (2e45a05, the end of the rendering audit, against the end of V2-2; Fancy at 1080p, the
+quick scenes, three alternating rounds) failed first on 1 % lows: forest −29 %, cave −26 %. The
+benchmark rebuilt the rain-cover map and, since D63, the 256² map of water surfaces on its frame
+thread whenever the camera had moved 32 blocks, and the water map's 65,536 lookups take 1.4 ms
+(bisected: the 1 % lows fell with D63's commit). The game never does that work on its frame
+thread — the streamer builds both maps and the frame uploads them — so the benchmark now builds
+them on a long-lived thread of its own, as the streamer does, and uploads them when they arrive.
+The water's copy of the scene was also trimmed: it covers the screen box of the translucent
+quads themselves rather than of their 16³ cubes, clipped where the box passes the camera's
+plane instead of taking the whole screen (forest 0.046 → 0.036 ms, cave 0.014 → 0.004 ms).
+
+What remains is the water itself at Medium, the cost D62–D63 measured step by step and accepted
+for the look: average FPS forest −9.0 % (1 % lows −6.5 %), summit −8.0 % (−3.2 %), cave −3.2 %
+(−3.3 %). GPU time per pass shows where: in the forest the sky, the water's scene copy and the
+translucent pass take 0.254 ms where the sky and the old translucent water took 0.167 (water
+shading +0.05, the copy 0.036); on the summit the distant water of the LOD pass +0.096 ms; VRAM
++17 MiB (the scene copy). The baseline moves to the end of V2-2. Frames stalled 5–50 ms inside
+`queue.submit` (one to three in some runs) showed up in both builds alike and in a bisection
+before V2-2 — the driver or the system, not this code; the gate's 1 % lows (the median run's
+99th-percentile frame) are robust to them.

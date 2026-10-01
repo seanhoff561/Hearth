@@ -7,6 +7,8 @@ pub mod rivers;
 
 use std::sync::Arc;
 
+use glam::DVec3;
+
 use hearth_math::Planet;
 use hearth_math::hash::derive_seed;
 
@@ -761,16 +763,79 @@ impl Terrain {
                 break;
             }
         }
-        let (mut x, mut z) = best.map(|b| (b.1, b.2)).unwrap_or((0, 0));
-        // Refine at block level: nearest dry, gentle column.
-        for r in 0..64 {
-            let s = self.sample(x, z);
-            if !s.is_underwater() && s.height > 1.0 && s.slope < 0.6 {
+        let (x, z) = best.map(|b| (b.1, b.2)).unwrap_or((0, 0));
+        self.settle(x, z)
+    }
+
+    /// A place to start at near (x, z) (v2 §16): there if it is dry, gentle land, else the
+    /// nearest such column; from the sea or a lake, the nearest land on the planet (the coast).
+    pub fn spawn_near(&self, x: i32, z: i32) -> (i32, i32) {
+        if !self.sample(x, z).is_underwater() {
+            return self.settle(x, z);
+        }
+        // The nearest land cell by distance on the sphere.
+        let g = &*self.grid;
+        let n = g.n();
+        let target = self.planet.sphere_point(x as f64, z as f64);
+        let mut best: Option<(f64, usize, usize)> = None;
+        for j in 0..n {
+            let (sl, cl) = (g.geom.sin_lat[j], g.geom.cos_lat[j]);
+            for i in 0..n {
+                let idx = g.geom.idx(i, j);
+                if g.elevation.data[idx] <= 0.0 || g.flags[idx] & flags::LAKE != 0 {
+                    continue;
+                }
+                let p = DVec3::new(cl * g.geom.cos_lon[i], sl, cl * g.geom.sin_lon[i]);
+                let near = p.dot(target);
+                if best.is_none_or(|b| near > b.0) {
+                    best = Some((near, i, j));
+                }
+            }
+        }
+        let Some((_, i, j)) = best else {
+            return (self.planet.wrap_x(x), z);
+        };
+        // From the land cell's centre toward the clicked point, the last dry column before
+        // the water: the coast itself.
+        let (cx, cz) = g.geom.world_xz(i, j);
+        let (cx, cz) = (cx as i32, cz as i32);
+        let dx = self.planet.delta_block_x(cx, x) as f64;
+        let dz = (z - cz) as f64;
+        let len = dx.hypot(dz);
+        let steps = (len / 8.0).ceil().max(1.0) as i32;
+        let mut shore = (cx, cz);
+        for k in 1..=steps {
+            let t = k as f64 / steps as f64;
+            let (px, pz) = (cx + (dx * t) as i32, cz + (dz * t) as i32);
+            if self.sample(px, pz).is_underwater() {
                 break;
             }
-            let a = r as f64 * 2.4;
-            x += (a.cos() * 12.0) as i32;
-            z += (a.sin() * 12.0) as i32;
+            shore = (px, pz);
+        }
+        self.settle(shore.0, shore.1)
+    }
+
+    /// The nearest dry, gentle column to (x, z), searched on widening rings (up to 256
+    /// blocks away; (x, z) itself if none is).
+    fn settle(&self, x: i32, z: i32) -> (i32, i32) {
+        let good = |x: i32, z: i32| {
+            let s = self.sample(x, z);
+            !s.is_underwater() && s.height > 1.0 && s.slope < 0.6
+        };
+        if good(x, z) {
+            return (self.planet.wrap_x(x), z);
+        }
+        for r in (4..=256).step_by(4) {
+            // A column every few blocks around the ring.
+            let k = (r as f64 * std::f64::consts::TAU / 6.0).ceil() as usize;
+            for i in 0..k {
+                let a = i as f64 / k as f64 * std::f64::consts::TAU;
+                let px = x + (a.cos() * r as f64).round() as i32;
+                let pz = z + (a.sin() * r as f64).round() as i32;
+                if good(px, pz) {
+                    return (self.planet.wrap_x(px), pz);
+                }
+            }
         }
         (self.planet.wrap_x(x), z)
     }
@@ -815,6 +880,53 @@ pub(crate) mod tests {
         let t = test_terrain();
         assert!(t.rivers().node_count() > 50, "network exists");
         assert!(t.rivers().max_uphill_step() <= 0.0);
+    }
+
+    #[test]
+    fn spawning_at_sea_lands_on_the_nearest_coast() {
+        let t = test_terrain();
+        let planet = *t.planet();
+        // A point a few hundred blocks out to sea from the default spawn's coast, and one in
+        // mid-ocean.
+        let (sx, sz) = t.find_spawn(false);
+        let mut at_sea = None;
+        'search: for r in (64..4096).step_by(64) {
+            for k in 0..16 {
+                let a = k as f64 * std::f64::consts::TAU / 16.0;
+                let (x, z) = (
+                    sx + (a.cos() * r as f64) as i32,
+                    sz + (a.sin() * r as f64) as i32,
+                );
+                if t.sample(x, z).is_underwater() && t.sample(x, z).biome != Biome::River {
+                    at_sea = Some((x, z));
+                    break 'search;
+                }
+            }
+        }
+        let (x, z) = at_sea.expect("water near the spawn");
+        let (lx, lz) = t.spawn_near(x, z);
+        let s = t.sample(lx, lz);
+        assert!(!s.is_underwater() && s.height > 1.0, "{s:?}");
+        let d = planet.great_circle_distance((x as f64, z as f64), (lx as f64, lz as f64));
+        let to_spawn = planet.great_circle_distance((x as f64, z as f64), (sx as f64, sz as f64));
+        assert!(
+            d <= to_spawn + 400.0,
+            "landed {d:.0} blocks away, land {to_spawn:.0} away"
+        );
+        // On dry land: there or close by.
+        let (px, pz) = t.spawn_near(sx, sz);
+        assert!(
+            planet.great_circle_distance((sx as f64, sz as f64), (px as f64, pz as f64)) < 800.0
+        );
+        // Mid-ocean (the deepest cell): still some coast.
+        let g = &*t.grid;
+        let deepest = (0..g.geom.len())
+            .min_by(|&a, &b| g.elevation.data[a].total_cmp(&g.elevation.data[b]))
+            .expect("cells");
+        let (i, j) = g.geom.ij(deepest);
+        let (ox, oz) = g.geom.world_xz(i, j);
+        let (lx, lz) = t.spawn_near(ox as i32, oz as i32);
+        assert!(!t.sample(lx, lz).is_underwater());
     }
 
     #[test]

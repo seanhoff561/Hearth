@@ -199,19 +199,29 @@ impl App {
     }
 
     fn handle_key(&mut self, key: InputKey, pressed: bool) {
+        let globe_open = self
+            .running
+            .as_ref()
+            .is_some_and(|run| run.preview.globe.open);
         if pressed {
             let activated: Vec<_> = self.input.press(key, &self.bindings).to_vec();
+            let mut release_mouse = false;
             for action in activated {
                 log::debug!("action {}", self.bindings.registry().def(action).id);
                 if action == builtin::FULLSCREEN {
                     self.toggle_fullscreen();
                 } else if action == builtin::PAUSE {
                     self.set_captured(false);
+                    if let Some(run) = &mut self.running {
+                        run.preview.globe.close();
+                    }
                 } else if action == builtin::DEBUG_RELOAD_RESOURCES {
                     self.content.reload();
                 } else if let Some(run) = &mut self.running {
                     let p = &mut run.preview;
-                    if action == builtin::DEBUG_TIME_FORWARD {
+                    if action == builtin::WORLD_MAP {
+                        release_mouse |= p.toggle_globe();
+                    } else if action == builtin::DEBUG_TIME_FORWARD {
                         p.skip_hours(1.0);
                     } else if action == builtin::DEBUG_TIME_BACK {
                         p.skip_hours(-1.0);
@@ -227,11 +237,26 @@ impl App {
                     }
                 }
             }
+            if release_mouse {
+                self.set_captured(false);
+            }
             if key == InputKey::Mouse(MouseButton::Left) {
-                self.set_captured(true);
+                if globe_open {
+                    if let Some(run) = &mut self.running {
+                        run.preview.globe_button(true);
+                    }
+                } else {
+                    self.set_captured(true);
+                }
             }
         } else {
             self.input.release(key, &self.bindings);
+            if key == InputKey::Mouse(MouseButton::Left)
+                && globe_open
+                && let Some(run) = &mut self.running
+            {
+                run.preview.globe_button(false);
+            }
         }
     }
 
@@ -276,7 +301,9 @@ impl App {
                 run.title_frames += 1;
             }
             let elapsed = run.title_timer.elapsed().as_secs_f64();
-            if elapsed >= 0.5 {
+            // The globe describes the place under the cursor: keep up with it.
+            let period = if run.preview.globe.open { 0.1 } else { 0.5 };
+            if elapsed >= period {
                 let fps = run.title_frames as f64 / elapsed;
                 run.window.set_title(&format!(
                     "{} | {}",
@@ -382,6 +409,13 @@ impl ApplicationHandler for App {
                     InputKey::Mouse(MouseButton::from_winit(button)),
                     state == ElementState::Pressed,
                 );
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(run) = &mut self.running {
+                    run.preview
+                        .globe
+                        .cursor_moved(glam::Vec2::new(position.x as f32, position.y as f32));
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let lines = match delta {

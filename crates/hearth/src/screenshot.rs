@@ -69,6 +69,8 @@ pub struct ShotSpec {
     pub fog: bool,
     /// Seconds the LOD terrain may take to build before the shot fails.
     pub lod_timeout: f64,
+    /// Draw the planet as the globe (at this zoom) centred on the camera's place instead.
+    pub globe: Option<f32>,
 }
 
 impl Default for ShotSpec {
@@ -100,6 +102,7 @@ impl Default for ShotSpec {
             lod: 256,
             fog: true,
             lod_timeout: 180.0,
+            globe: None,
         }
     }
 }
@@ -157,6 +160,7 @@ impl ShotSpec {
                 "lod" => spec.lod = v.parse()?,
                 "fog" => spec.fog = v.parse()?,
                 "lod_timeout" => spec.lod_timeout = v.parse()?,
+                "globe" => spec.globe = Some(v.parse()?),
                 other => anyhow::bail!("unknown screenshot key {other:?}"),
             }
         }
@@ -519,6 +523,9 @@ fn shoot(
     out: &Path,
     time: Option<&TimeConfig>,
 ) -> anyhow::Result<()> {
+    if let Some(zoom) = spec.globe {
+        return shoot_globe(ctx, lw, spec, out, zoom);
+    }
     let shot = render_shot(ctx, atlas, lod, lw, spec, out, time)?;
     write_png(out, spec.width, spec.height, &shot.pixels)?;
     let s = shot.terrain;
@@ -532,6 +539,57 @@ fn shoot(
         shot.lod.drawn,
         shot.lod.quads,
         shot.lod.bytes as f64 / (1 << 20) as f64
+    );
+    Ok(())
+}
+
+/// The planet as the globe, centred on the shot's place (marked).
+fn shoot_globe(
+    ctx: &GpuContext,
+    lw: &LocalWorld,
+    spec: &ShotSpec,
+    out: &Path,
+    zoom: f32,
+) -> anyhow::Result<()> {
+    let t0 = Instant::now();
+    let (x, z) = match (spec.x, spec.z, spec.lat) {
+        (Some(x), Some(z), _) => (x, z),
+        (_, _, Some(lat)) => land_at_latitude(lw, lat)
+            .ok_or_else(|| anyhow::anyhow!("no land near latitude {lat}"))?,
+        _ => {
+            let (x, z) = lw.terrain().find_spawn(false);
+            (x as f64, z as f64)
+        }
+    };
+    let map = crate::globe::planet_map(lw.terrain(), crate::globe::MAP_WIDTH);
+    log::info!("globe map in {:.2}s", t0.elapsed().as_secs_f64());
+    let mut globe = hearth_render::globe::GlobeRenderer::new(ctx, OFFSCREEN_FORMAT);
+    let w = crate::globe::MAP_WIDTH as u32;
+    globe.set_map(ctx, w, w / 2, &map);
+    let (lat, lon) = crate::globe::lat_lon(lw.map.planet(), DVec3::new(x, 0.0, z));
+    let view = hearth_render::globe::GlobeView { lat, lon, zoom };
+    let target = OffscreenTarget::new(ctx, spec.width, spec.height);
+    let size = (spec.width, spec.height);
+    let mut enc = ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("globe shot"),
+        });
+    globe.render(
+        ctx,
+        &mut enc,
+        &target.color_view,
+        size,
+        &view,
+        Some((lat, lon)),
+        None,
+    );
+    ctx.queue.submit(Some(enc.finish()));
+    write_png(out, spec.width, spec.height, &target.read_rgba(ctx))?;
+    log::info!(
+        "wrote {} (globe at {})",
+        out.display(),
+        crate::globe::describe(lw.terrain(), lat, lon)
     );
     Ok(())
 }

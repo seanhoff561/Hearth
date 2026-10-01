@@ -1,6 +1,7 @@
 //! `bench worldmap`: renders whole-planet maps (Mercator and equirectangular) of the planet
-//! model — relief, climate, biomes, geological provinces and the rock at the surface — plus
-//! side-profile slices, block-scale geological cross-sections, and summary statistics.
+//! model — relief, climate, biomes, geological provinces, the rock at the surface, soils and
+//! deposits — plus side-profile slices, block-scale geological cross-sections, and summary
+//! statistics.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -430,6 +431,8 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     for &(x, z, size) in &a.geo_areas {
         geo_area(&terrain, &geology, &soils, &reg, x, z, size, &a.out)?;
     }
+    let soil_px = soil_layer(&g, &terrain, &geology, &soils, &reg);
+    colors.push(("soil", soil_px));
     // Deposits: every body on the planet, from a full generator.
     let generator =
         hearth_worldgen::WorldGenerator::new(std::sync::Arc::new(terrain), &reg, &content)?;
@@ -471,6 +474,124 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     stats(g);
     println!("maps written to {}", a.out.display());
     Ok(())
+}
+
+/// The colour of a soil type on the soil map: the conventions of soil maps where there is one
+/// (black chernozem, red tropical soils, blue alluvium, purple peat), else a colour from the id.
+fn soil_color(id: &str) -> [u8; 3] {
+    match id.rsplit_once(':').map_or(id, |(_, name)| name) {
+        "chernozem" => [55, 40, 30],
+        "brown_forest_soil" => [150, 105, 55],
+        "podzol" => [195, 180, 160],
+        "alluvial_soil" => [80, 150, 205],
+        "red_tropical_soil" => [200, 75, 45],
+        "laterite_soil" => [235, 125, 35],
+        "loess_soil" => [235, 210, 130],
+        "peat_bog" => [110, 60, 110],
+        "gley_soil" => [100, 135, 150],
+        "andosol" => [200, 40, 125],
+        "rendzina" => [215, 215, 110],
+        "terra_rossa" => [160, 40, 35],
+        "desert_soil" => [245, 225, 175],
+        "tundra_soil" => [150, 185, 205],
+        "lithosol" => [150, 150, 140],
+        "regosol" => [185, 165, 125],
+        _ => {
+            let h = id.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+                (h ^ b as u64).wrapping_mul(0x1b3)
+            });
+            let h = hearth_math::hash::hash2(0x5011, h);
+            [
+                (h & 0xff) as u8 | 0x40,
+                ((h >> 8) & 0xff) as u8 | 0x40,
+                ((h >> 16) & 0xff) as u8 | 0x40,
+            ]
+        }
+    }
+}
+
+/// The soil at every cell centre: the soil type where the ground has one, the surface sediment
+/// (sand, gravel, clay, mud, salt) where it does not, bare rock in grey and snow and ice in
+/// white; the land area of each, printed.
+fn soil_layer(
+    g: &PlanetGrid,
+    terrain: &hearth_worldgen::Terrain,
+    geology: &hearth_worldgen::geology::Geology,
+    soils: &hearth_worldgen::soil::Soils,
+    reg: &hearth_world::BlockRegistry,
+) -> Vec<[u8; 3]> {
+    use hearth_worldgen::Surface;
+    use rayon::prelude::*;
+    // What covers a cell: a soil type (its index), or one of the kinds after the soils.
+    let (rock, frozen, sediment) = (
+        soils.soil_count(),
+        soils.soil_count() + 1,
+        soils.soil_count() + 2,
+    );
+    let n = g.n();
+    let cells: Vec<([u8; 3], Option<usize>)> = (0..n * n)
+        .into_par_iter()
+        .map(|idx| {
+            let (i, j) = g.geom.ij(idx);
+            let (x, z) = g.geom.world_xz(i, j);
+            let (x, z) = (x as i32, z as i32);
+            let s = terrain.sample(x, z);
+            if s.is_underwater() {
+                return ([25, 35, 60], None);
+            }
+            let parent = geology
+                .column(x, z)
+                .rock_at(s.height_i() - 1 - s.soil_depth as i32);
+            let (c, kind) = match s.surface {
+                Surface::Stone | Surface::Sandstone | Surface::RedSandstone | Surface::Tuff => {
+                    ([120, 120, 120], rock)
+                }
+                Surface::Snow | Surface::Ice => ([245, 248, 252], frozen),
+                Surface::Grass
+                | Surface::SnowGrass
+                | Surface::Podzol
+                | Surface::Moss
+                | Surface::CoarseDirt
+                | Surface::Mud => {
+                    let soil = soils.choose(&s, parent, x, z).soil;
+                    (soil_color(soils.soil_id(soil)), soil)
+                }
+                _ => {
+                    let top = soils.profile(&s, parent, x, z);
+                    let c = top
+                        .first()
+                        .map_or([200, 190, 160], |b| reg.block_of(*b).map_color);
+                    (c, sediment)
+                }
+            };
+            (shade(c, 0.75 + 0.25 * hillshade(g, idx)), Some(kind))
+        })
+        .collect();
+    // Land area of each kind (cell centres, area-weighted by latitude).
+    let weights = hearth_worldgen::planet::fields::row_area_weights(&g.geom);
+    let mut area = vec![0.0f64; soils.soil_count() + 3];
+    let mut total = 0.0;
+    for (idx, (_, kind)) in cells.iter().enumerate() {
+        if let Some(k) = kind {
+            let w = weights[g.geom.ij(idx).1];
+            area[*k] += w;
+            total += w;
+        }
+    }
+    let name = |k: usize| match k {
+        k if k == rock => "(bare rock)",
+        k if k == frozen => "(snow and ice)",
+        k if k == sediment => "(sand, gravel, clay, mud, salt)",
+        k => soils.soil_id(k),
+    };
+    for (k, a) in area.iter().enumerate() {
+        println!(
+            "  soil {:<32} {:>5.1}% of land",
+            name(k),
+            100.0 * a / total.max(1e-9)
+        );
+    }
+    cells.into_iter().map(|(c, _)| c).collect()
 }
 
 /// Every deposit body on the planet, drawn on the grid as the map colour of its block, with

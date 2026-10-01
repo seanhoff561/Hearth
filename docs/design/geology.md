@@ -255,14 +255,36 @@ gives perennial pack ice in the high Arctic, seasonal ice in subarctic bays and 
 coasts whose winters are only just below freezing.
 
 ## Tools
-`bench worldmap` renders province, surface-rock and deposit maps of the whole planet, the
-bodies per model and the coverage table, and, with `--geo-area x,z,size`, a block-scale
-outcrop map and an east–west cross-section of an area. `bench deposits [--model id]
+`bench worldmap` renders province, surface-rock, soil and deposit maps of the whole planet
+(the soil map in the colours of soil maps: black chernozem, red tropical soils, blue alluvium,
+purple peat; sediments, bare rock and ice set apart), the land share of every province and
+soil, the bodies per model and the coverage table, and, with `--geo-area x,z,size`, a
+block-scale outcrop map and an east–west cross-section of an area. `bench deposits [--model id]
 [--near x,z] [--max-depth n] [--coverage] [--springs] [--rivers min_width] [--find
 biome|coral]` lists a world's
 bodies, springs or columns of a biome nearest a point (with their depth, size, grade, biome and
 climate) for inspection and screenshots (`tools/shots/v22_deposits.shots`,
 `tools/shots/v22_coasts.shots`).
+
+## Acceptance (V2-2)
+- `bench worldmap` gains geology (province and surface-rock), soil and deposit layers
+  (`bench-out/worldmap/equirect_{province,rock,soil,deposits}.png`). On seed 1 at 512² the
+  soils cover the land much as Earth's orders do: brown forest soils 20 %, desert soils 18 %,
+  tundra soils 14 %, red tropical soils 11 %, podzols 8 %, loess and alluvium 4 % and 3 %,
+  chernozem 3 %, bare rock, ice and loose sediments 12 % between them (the grid's cells
+  smooth away the steep ground where mountain lithosols lie).
+- Deposits occur only in their provinces, host rocks and climates, at the frequencies the
+  content gives (`crates/hearth_worldgen/tests/deposits.rs`).
+- Every Era 0–2 need is within reach of every continent on seeds 1–6 at Standard size
+  (tested), and `hearth content lint --coverage` flags each continent's gaps for eras 0–5:
+  as notes where a resource of the same use stands in, as warnings where none does (rock
+  salt and gypsum on some continents; sulfur, sphalerite, travertine, coal, fire clay,
+  kaolin, volcanic ash and kimberlite are regional, as on Earth).
+- The rest of the milestone's list — groundwater and springs, seasonal rivers, finite water,
+  reefs and coasts, surface indicators, panning — is covered by the tests named in the
+  sections above and the shot lists `tools/shots/v22_*.shots`. The minimal globe spawn picker
+  (§16, for testing; finished in V2-15) opens with the world-map key (M) in the preview and
+  as `--screenshot "globe=1"`.
 
 ## Interactions
 Rock → soils (parent material, V2-2), deposits and indicators (V2-2), hardness and material

@@ -405,6 +405,7 @@ impl SceneRenderer {
             let mut pass = begin_pass(enc, &hdr, depth, None);
             self.sky.draw(&mut pass);
         }
+        mark(&mut timer, enc, "sky");
         // The water sees the scene drawn so far through itself (copied, unless nothing
         // translucent is drawn), and its depth (read-only in the pass).
         let reads = self.terrain.water.reads_scene();
@@ -418,6 +419,7 @@ impl SceneRenderer {
             }
             self.terrain.water.copy_scene(enc, color, rect);
         }
+        mark(&mut timer, enc, "water's scene copy");
         let water = self.terrain.water.bind(ctx, depth).clone();
         {
             let mut pass = if reads {
@@ -428,7 +430,7 @@ impl SceneRenderer {
             self.terrain.draw_translucent(&mut pass, &water);
             self.precip.draw(&mut pass);
         }
-        mark(&mut timer, enc, "sky, translucent, rain");
+        mark(&mut timer, enc, "translucent, rain");
         self.post.meter(ctx, enc, self.meter_dt);
         mark(&mut timer, enc, "metering");
         self.post.render(

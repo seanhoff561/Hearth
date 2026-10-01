@@ -744,153 +744,172 @@ fn run_scene(
     // What each measured frame spent its time on, to explain the slowest frames.
     let mut sections: Vec<[f64; SECTIONS.len()]> = Vec::with_capacity(opts.frames);
     let mut last_start: Option<Instant> = None;
-    for f in 0..total {
-        let measured = f >= opts.warmup;
-        let t = if measured {
-            (f - opts.warmup) as f64 / (opts.frames - 1) as f64
-        } else {
-            0.0
-        };
-        let camera = path.at(t);
-        let start = Instant::now();
-        if let Some(prev) = last_start
-            && measured
-            && f > opts.warmup
-        {
-            frame_ms.push((start - prev).as_secs_f64() * 1e3);
-        }
-        last_start = Some(start);
-        let allocs0 = crate::alloc_count::thread_allocations();
-        let uploads0 = ctx.uploaded_bytes();
-        // The world clock runs at 20 ticks a second of a 60 Hz frame loop.
-        let t0 = Instant::now();
-        let a0 = crate::alloc_count::thread_allocations();
-        let moment = calendar.at(f as u64 / 3);
-        // Firelight at the camera sets the eye's adaptation (in caves by torchlight).
-        let fire = map.block_light(BlockPos::containing(camera.pos)) as f32 / 15.0;
-        let (mut env, _) = sampler.sample(&moment, camera.pos, fire, overrides);
-        env.seconds = f as f32 / 60.0;
-        let t1 = Instant::now();
-        let a1 = crate::alloc_count::thread_allocations();
-        if state
-            .lod_at
-            .is_none_or(|p| p.distance(camera.pos) >= LOD_RESELECT)
-        {
-            state.lod_at = Some(camera.pos);
-            let wanted = select(camera.pos, &errors, &state.lod_split);
-            state.lod_split = hearth_lod::split_nodes(&wanted);
-            scene.lod_show = show(&wanted);
-            scene.near_area = (def.lod > 0).then(|| near_of(camera.pos));
-        }
-        let t2 = Instant::now();
-        let a2 = crate::alloc_count::thread_allocations();
-        if state
-            .sky_at
-            .is_none_or(|p| p.distance(camera.pos) >= SKY_HEIGHTS_RECENTRE)
-        {
-            state.sky_at = Some(camera.pos);
-            scene.set_sky_heights(ctx, &sky_heights(camera.pos));
-            scene
-                .terrain
-                .water
-                .set_heights(ctx, water_heights(camera.pos));
-        }
-        let t3 = Instant::now();
-        let a3 = crate::alloc_count::thread_allocations();
-        scene.prepare(ctx, &camera, size, &env, 1.0 / 60.0);
-        let t4 = Instant::now();
-        let a4 = crate::alloc_count::thread_allocations();
-        let mut enc = ctx
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("bench frame"),
-            });
-        scene.render(ctx, &mut enc, &target.color_view, &target.depth.view, size);
-        let t5 = Instant::now();
-        let a5 = crate::alloc_count::thread_allocations();
-        let idx = ctx.queue.submit(Some(enc.finish()));
-        scene.submitted();
-        in_flight.push_back(idx);
-        let t6 = Instant::now();
-        let a6 = crate::alloc_count::thread_allocations();
-        while in_flight.len() > FRAMES_IN_FLIGHT {
-            let i = in_flight.pop_front().expect("non-empty");
-            let _ = ctx.device.poll(wgpu::PollType::Wait {
-                submission_index: Some(i),
-                timeout: None,
-            });
-        }
-        let t7 = Instant::now();
-        let a7 = crate::alloc_count::thread_allocations();
-        let gpu = scene
-            .timer
-            .as_mut()
-            .map(|t| t.collect(ctx))
-            .unwrap_or_default();
-        let allocs = crate::alloc_count::thread_allocations() - allocs0;
-        let uploaded = ctx.uploaded_bytes() - uploads0;
-        if !measured {
-            continue;
-        }
-        let ms = |a: Instant, b: Instant| (b - a).as_secs_f64() * 1e3;
-        let times = [
-            ms(t0, t1),
-            ms(t1, t2),
-            ms(t2, t3),
-            scene.cpu.terrain_ms,
-            scene.cpu.lod_ms,
-            scene.cpu.sky_ms,
-            ms(t4, t5),
-            ms(t5, t6),
-            ms(t6, t7),
-        ];
-        let counts = [
-            a1 - a0,
-            a2 - a1,
-            a3 - a2,
-            a4 - a3,
-            0,
-            0,
-            a5 - a4,
-            a6 - a5,
-            a7 - a6,
-        ];
-        for ((label, t), n) in SECTIONS.iter().zip(times).zip(counts) {
-            sums.add_cpu(label, t);
-            sums.add_allocs(label, n);
-        }
-        sections.push(times);
-        sums.frames += 1;
-        sums.uploads += uploaded as f64;
-        sums.uploads_max = sums.uploads_max.max(uploaded);
-        sums.allocs += allocs as f64;
-        sums.allocs_max = sums.allocs_max.max(allocs);
-        let st = scene.terrain.stats;
-        sums.visible += st.visible_cubes as f64;
-        sums.lod_tiles += scene.lod.stats.drawn as f64;
-        // CPU-issued draws: terrain draw lists (translucent, or all on the CPU path), one per
-        // LOD tile, the sky, rain and tonemap.
-        sums.cpu_draws += (st.draws + scene.lod.stats.drawn + 3) as f64;
-        sums.cpu_quads += (st.translucent_quads + scene.lod.stats.quads) as f64;
-        if !st.gpu_culling {
-            sums.cpu_quads += (st.quads_drawn - st.translucent_quads) as f64;
-        }
-        for g in gpu {
-            if g.seq as usize <= opts.warmup {
+    std::thread::scope(|scope| {
+        // The rain-cover and water-surface maps are made on a thread of their own, as the
+        // preview's streamer makes them, and uploaded when they arrive: the frame thread only
+        // uploads them (building the water map takes over a millisecond).
+        let (want, wanted) = std::sync::mpsc::channel::<DVec3>();
+        let (made, maps) = std::sync::mpsc::channel();
+        scope.spawn(move || {
+            for c in wanted {
+                if made.send((sky_heights(c), water_heights(c))).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut building = false;
+        for f in 0..total {
+            let measured = f >= opts.warmup;
+            let t = if measured {
+                (f - opts.warmup) as f64 / (opts.frames - 1) as f64
+            } else {
+                0.0
+            };
+            let camera = path.at(t);
+            let start = Instant::now();
+            if let Some(prev) = last_start
+                && measured
+                && f > opts.warmup
+            {
+                frame_ms.push((start - prev).as_secs_f64() * 1e3);
+            }
+            last_start = Some(start);
+            let allocs0 = crate::alloc_count::thread_allocations();
+            let uploads0 = ctx.uploaded_bytes();
+            // The world clock runs at 20 ticks a second of a 60 Hz frame loop.
+            let t0 = Instant::now();
+            let a0 = crate::alloc_count::thread_allocations();
+            let moment = calendar.at(f as u64 / 3);
+            // Firelight at the camera sets the eye's adaptation (in caves by torchlight).
+            let fire = map.block_light(BlockPos::containing(camera.pos)) as f32 / 15.0;
+            let (mut env, _) = sampler.sample(&moment, camera.pos, fire, overrides);
+            env.seconds = f as f32 / 60.0;
+            let t1 = Instant::now();
+            let a1 = crate::alloc_count::thread_allocations();
+            if state
+                .lod_at
+                .is_none_or(|p| p.distance(camera.pos) >= LOD_RESELECT)
+            {
+                state.lod_at = Some(camera.pos);
+                let wanted = select(camera.pos, &errors, &state.lod_split);
+                state.lod_split = hearth_lod::split_nodes(&wanted);
+                scene.lod_show = show(&wanted);
+                scene.near_area = (def.lod > 0).then(|| near_of(camera.pos));
+            }
+            let t2 = Instant::now();
+            let a2 = crate::alloc_count::thread_allocations();
+            if let Ok((sky, water)) = maps.try_recv() {
+                building = false;
+                scene.set_sky_heights(ctx, &sky);
+                scene.terrain.water.set_heights(ctx, water);
+            }
+            if !building
+                && state
+                    .sky_at
+                    .is_none_or(|p| p.distance(camera.pos) >= SKY_HEIGHTS_RECENTRE)
+            {
+                state.sky_at = Some(camera.pos);
+                building = want.send(camera.pos).is_ok();
+            }
+            let t3 = Instant::now();
+            let a3 = crate::alloc_count::thread_allocations();
+            scene.prepare(ctx, &camera, size, &env, 1.0 / 60.0);
+            let t4 = Instant::now();
+            let a4 = crate::alloc_count::thread_allocations();
+            let mut enc = ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("bench frame"),
+                });
+            scene.render(ctx, &mut enc, &target.color_view, &target.depth.view, size);
+            let t5 = Instant::now();
+            let a5 = crate::alloc_count::thread_allocations();
+            let idx = ctx.queue.submit(Some(enc.finish()));
+            scene.submitted();
+            in_flight.push_back(idx);
+            let t6 = Instant::now();
+            let a6 = crate::alloc_count::thread_allocations();
+            while in_flight.len() > FRAMES_IN_FLIGHT {
+                let i = in_flight.pop_front().expect("non-empty");
+                let _ = ctx.device.poll(wgpu::PollType::Wait {
+                    submission_index: Some(i),
+                    timeout: None,
+                });
+            }
+            let t7 = Instant::now();
+            let a7 = crate::alloc_count::thread_allocations();
+            let gpu = scene
+                .timer
+                .as_mut()
+                .map(|t| t.collect(ctx))
+                .unwrap_or_default();
+            let allocs = crate::alloc_count::thread_allocations() - allocs0;
+            let uploaded = ctx.uploaded_bytes() - uploads0;
+            if !measured {
                 continue;
             }
-            sums.gpu_frames += 1;
-            sums.gpu_total += g.total_ms;
-            for (label, ms) in &g.passes {
-                sums.add_gpu(label, *ms);
+            let ms = |a: Instant, b: Instant| (b - a).as_secs_f64() * 1e3;
+            let times = [
+                ms(t0, t1),
+                ms(t1, t2),
+                ms(t2, t3),
+                scene.cpu.terrain_ms,
+                scene.cpu.lod_ms,
+                scene.cpu.sky_ms,
+                ms(t4, t5),
+                ms(t5, t6),
+                ms(t6, t7),
+            ];
+            let counts = [
+                a1 - a0,
+                a2 - a1,
+                a3 - a2,
+                a4 - a3,
+                0,
+                0,
+                a5 - a4,
+                a6 - a5,
+                a7 - a6,
+            ];
+            for ((label, t), n) in SECTIONS.iter().zip(times).zip(counts) {
+                sums.add_cpu(label, t);
+                sums.add_allocs(label, n);
             }
-            if let Some(s) = g.stats {
-                sums.gpu_draws += s[..8].iter().map(|&x| x as f64).sum::<f64>();
-                sums.gpu_quads += s[8..].iter().map(|&x| x as f64).sum::<f64>();
-                sums.gpu_stat_frames += 1;
+            sections.push(times);
+            sums.frames += 1;
+            sums.uploads += uploaded as f64;
+            sums.uploads_max = sums.uploads_max.max(uploaded);
+            sums.allocs += allocs as f64;
+            sums.allocs_max = sums.allocs_max.max(allocs);
+            let st = scene.terrain.stats;
+            sums.visible += st.visible_cubes as f64;
+            sums.lod_tiles += scene.lod.stats.drawn as f64;
+            // CPU-issued draws: terrain draw lists (translucent, or all on the CPU path), one per
+            // LOD tile, the sky, rain and tonemap.
+            sums.cpu_draws += (st.draws + scene.lod.stats.drawn + 3) as f64;
+            sums.cpu_quads += (st.translucent_quads + scene.lod.stats.quads) as f64;
+            if !st.gpu_culling {
+                sums.cpu_quads += (st.quads_drawn - st.translucent_quads) as f64;
+            }
+            for g in gpu {
+                if g.seq as usize <= opts.warmup {
+                    continue;
+                }
+                sums.gpu_frames += 1;
+                sums.gpu_total += g.total_ms;
+                for (label, ms) in &g.passes {
+                    sums.add_gpu(label, *ms);
+                }
+                if let Some(s) = g.stats {
+                    sums.gpu_draws += s[..8].iter().map(|&x| x as f64).sum::<f64>();
+                    sums.gpu_quads += s[8..].iter().map(|&x| x as f64).sum::<f64>();
+                    sums.gpu_stat_frames += 1;
+                }
             }
         }
-    }
+        // No more maps: the worker ends and the scope joins it.
+        drop(want);
+    });
     if let Some(t) = scene.timer.as_mut() {
         for g in t.drain(ctx) {
             if g.seq as usize <= opts.warmup {

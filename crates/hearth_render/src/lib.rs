@@ -6,6 +6,7 @@
 pub mod atlas;
 pub mod camera;
 mod cull;
+pub mod globe;
 pub mod gpu;
 pub mod lod;
 pub mod mesh;

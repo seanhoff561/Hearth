@@ -189,6 +189,20 @@ struct GpuMesh {
     /// last sorted for.
     trans: Vec<GeneralQuad>,
     sorted_for: Option<BlockPos>,
+    /// The box the translucent quads span (blocks from the cube's origin): the part of the
+    /// screen the water reads is copied from it.
+    trans_box: [Vec3; 2],
+}
+
+/// The box (blocks from the cube's origin) a set of general quads spans.
+fn quad_box(quads: &[GeneralQuad]) -> [Vec3; 2] {
+    let coord = |v: u32| (v as u16 as i16) as f32 / 256.0;
+    let mut b = [Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)];
+    for c in quads.iter().flat_map(|q| &q.corners) {
+        let p = Vec3::new(coord(c[0]), coord(c[0] >> 16), coord(c[1]));
+        b = [b[0].min(p), b[1].max(p)];
+    }
+    b
 }
 
 #[repr(C)]
@@ -660,6 +674,7 @@ impl TerrainRenderer {
             slot,
             trans: mesh.translucent.clone(),
             sorted_for: None,
+            trans_box: quad_box(&mesh.translucent),
         };
         if g.packed_len > 0 {
             let (off, grew) = self.packed.alloc(ctx, g.packed_len);
@@ -896,16 +911,17 @@ impl TerrainRenderer {
         for (inst, (pos, o)) in visible.iter().enumerate().rev() {
             let m = &self.meshes[pos];
             if m.trans_len > 0 {
-                let r = screen_rect(vp, *o, *o + Vec3::splat(CUBE_SIZE as f32));
-                translucent_rect = Some(match translucent_rect {
-                    Some(t) => [
-                        t[0].min(r[0]),
-                        t[1].min(r[1]),
-                        t[2].max(r[2]),
-                        t[3].max(r[3]),
-                    ],
-                    None => r,
-                });
+                if let Some(r) = screen_rect(vp, *o + m.trans_box[0], *o + m.trans_box[1]) {
+                    translucent_rect = Some(match translucent_rect {
+                        Some(t) => [
+                            t[0].min(r[0]),
+                            t[1].min(r[1]),
+                            t[2].max(r[2]),
+                            t[3].max(r[3]),
+                        ],
+                        None => r,
+                    });
+                }
                 push_draws(
                     &mut self.passes[4].draws,
                     m.trans_off,
@@ -1251,30 +1267,49 @@ impl TerrainRenderer {
     }
 }
 
-/// Begins a pass on the scene's colour and depth targets (clearing both when `clear` is set).
 /// The part of the screen (0–1, y down: min x, min y, max x, max y) a camera-relative box
-/// covers; all of it when the box reaches behind the camera.
-pub fn screen_rect(view_proj: glam::Mat4, lo: Vec3, hi: Vec3) -> [f32; 4] {
-    let mut r = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
-    for c in 0..8 {
+/// covers: its corners in front of the camera and the points where its edges pass the
+/// camera's plane (a box reaching behind the camera covers the screen only toward where it
+/// lies); `None` when it lies wholly behind.
+pub fn screen_rect(view_proj: glam::Mat4, lo: Vec3, hi: Vec3) -> Option<[f32; 4]> {
+    // Clip w of points counted as in front (a block's thousandth from the camera).
+    const FRONT: f32 = 1e-3;
+    let clip: [glam::Vec4; 8] = std::array::from_fn(|c| {
         let p = Vec3::new(
             if c & 1 == 0 { lo.x } else { hi.x },
             if c & 2 == 0 { lo.y } else { hi.y },
             if c & 4 == 0 { lo.z } else { hi.z },
         );
-        let clip = view_proj * p.extend(1.0);
-        if clip.w <= 1e-3 {
-            return [0.0, 0.0, 1.0, 1.0];
-        }
-        let (u, v) = (clip.x / clip.w * 0.5 + 0.5, 0.5 - clip.y / clip.w * 0.5);
+        view_proj * p.extend(1.0)
+    });
+    let mut r = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+    let mut add = |p: glam::Vec4| {
+        let (u, v) = (p.x / p.w * 0.5 + 0.5, 0.5 - p.y / p.w * 0.5);
         r = [r[0].min(u), r[1].min(v), r[2].max(u), r[3].max(v)];
+    };
+    for (a, &pa) in clip.iter().enumerate() {
+        if pa.w > FRONT {
+            add(pa);
+        }
+        // The edges from this corner to the corners one step up an axis.
+        for axis in [1, 2, 4] {
+            if a & axis != 0 {
+                continue;
+            }
+            let pb = clip[a | axis];
+            if (pa.w > FRONT) != (pb.w > FRONT) {
+                add(pa + (pb - pa) * ((pa.w - FRONT) / (pa.w - pb.w)));
+            }
+        }
     }
-    [
-        r[0].clamp(0.0, 1.0),
-        r[1].clamp(0.0, 1.0),
-        r[2].clamp(0.0, 1.0),
-        r[3].clamp(0.0, 1.0),
-    ]
+    (r[0] <= r[2]).then(|| {
+        [
+            r[0].clamp(0.0, 1.0),
+            r[1].clamp(0.0, 1.0),
+            r[2].clamp(0.0, 1.0),
+            r[3].clamp(0.0, 1.0),
+        ]
+    })
 }
 
 /// A render pass over `color` that tests against `depth` without writing it, so the depth can
@@ -1306,6 +1341,7 @@ pub fn begin_pass_read_depth<'e>(
     })
 }
 
+/// Begins a pass on the scene's colour and depth targets (clearing both when `clear` is set).
 pub fn begin_pass<'e>(
     enc: &'e mut wgpu::CommandEncoder,
     color: &wgpu::TextureView,
@@ -1564,6 +1600,38 @@ pub fn relative(planet: &Planet, camera: DVec3, world: DVec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn screen_rects_clip_at_the_camera() {
+        let camera = crate::camera::Camera {
+            pitch: 20.0,
+            ..Default::default()
+        };
+        let vp = camera.view_proj(16.0 / 9.0);
+        // A pond ahead, 7° below the horizon (13° above the view's centre): a small rectangle
+        // above the middle of the screen.
+        let r = screen_rect(vp, Vec3::new(-4.0, -3.0, 20.0), Vec3::new(4.0, -2.9, 30.0))
+            .expect("in view");
+        assert!(
+            r[0] > 0.4 && r[2] < 0.6 && r[1] > 0.3 && r[3] < 0.4,
+            "{r:?}"
+        );
+        // A lake under the camera reaching behind it: from the bottom of the screen up to
+        // its far shore, not the sky above.
+        let r = screen_rect(
+            vp,
+            Vec3::new(-50.0, -3.0, -50.0),
+            Vec3::new(50.0, -2.9, 50.0),
+        )
+        .expect("in view");
+        assert_eq!((r[0], r[2], r[3]), (0.0, 1.0, 1.0), "{r:?}");
+        // The horizon is at 0.24 of the screen's height; the far shore just below it.
+        assert!(r[1] > 0.25, "the sky is left out: {r:?}");
+        // Wholly behind the camera.
+        assert!(
+            screen_rect(vp, Vec3::new(-4.0, -3.0, -30.0), Vec3::new(4.0, 3.0, -20.0)).is_none()
+        );
+    }
 
     #[test]
     fn allocator_reuses_and_coalesces() {
