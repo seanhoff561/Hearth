@@ -30,7 +30,7 @@ CPU culling pixel check.
    cover, plus a margin), then translucent terrain — water shaded as below — and rain and snow,
    with the depth buffer read-only so the water can read it.
 6. Highlight metering (compute) and tonemapping (ACES) with a night shift toward blue,
-   dithered into the 8-bit output. At a render scale other than 1 (`render_scale`) the scene
+   dithered into the 8-bit output; under water, the view through the water first. At a render scale other than 1 (`render_scale`) the scene
    renders at the scaled size, is tonemapped at that size, then upscaled with FSR 1 (EASU,
    then RCAS sharpening) or, above 1, filtered down; the dither comes last either way.
 
@@ -85,6 +85,19 @@ reflected outside it (past 48.6°). **Distant water** (LOD) gets the same Fresne
 glitter over the swell, on a colour the column is given the same way (its bed through 1.5 times
 its depth of water and the scattered light), so near and far water meet without a seam and the
 shelf's turquoise darkens to navy past its edge.
+
+**Under water** (D63). A map of the water surface over each column in 256 × 256 blocks around
+the camera (the highest sky-blocking block where it is water, rebuilt with the rain's sky map)
+tells each terrain vertex how deep under water it lies. There the light that reaches it falls
+off exponentially with real depth (0.35, 0.07, 0.045 per metre for red, green, blue: sunlit
+turquoise shelves, deep blue slopes, black below a few hundred metres) instead of the voxel sky
+light's two levels a block, the sun arrives refracted toward the vertical, and caustics play on
+the floor: a 256² map made at startup by bending light through the same wave field and
+gathering where it lands, two drifting layers of it, fading out with depth. With the camera
+under water (below the surface over its column), the tonemap pass dims each pixel along its
+view through the water — to what it shows, or to the surface overhead where the view leaves the
+water — at 0.40, 0.08, 0.06 per metre and adds the light the water scatters toward the eye
+(blue-green, from the light at the camera's depth), and the eye adapts to the dimmer light.
 
 ### Distant terrain (`hearth_lod`, `lod.rs`, `lod.wgsl`, D52, D54)
 Beyond the full-detail cubes the land continues as LOD tiles out to the LOD distance, or to the
@@ -157,7 +170,9 @@ box in `precip.rs`.
   to the world, are occluded by the near terrain but not by nearer LOD tiles, and have no VRAM
   budget. No TAA.
 - Water: no screen-space reflections yet (the sky is reflected, not the land), waves follow
-  the wind and not a river's flow, no caustics, underwater fog or god rays yet (V2-2e).
+  the wind and not a river's flow; under water no god rays, bubbles or muffled sound, one kind
+  of water (clear sea) for the view through it, and flooded caves under land are not
+  recognised (their columns' tops are dry).
 - Clouds are a single textured layer (no volumetric clouds, no cloud shadows on the ground).
 - No lightning, fog banks, wet or snowy surface shading, puddles or splashes yet.
 - Rain streaks are thin and alias at a distance.

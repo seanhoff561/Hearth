@@ -32,6 +32,9 @@ struct VsOut {
     @location(7) @interpolate(flat) flags: u32,
     // Leaf cover of deciduous foliage for the date (1 for everything else).
     @location(8) @interpolate(flat) leaf: f32,
+    // How far below the water surface the point lies (blocks; negative above water), from the
+    // map of the surfaces around the camera.
+    @location(9) water_depth: f32,
 };
 
 fn face_normal(face: u32) -> vec3<f32> {
@@ -76,6 +79,19 @@ fn face_corner(face: u32, c: u32, w: f32, h: f32) -> vec3<f32> {
     }
 }
 
+// How far below the water surface a camera-relative point lies (blocks), from the map of the
+// surfaces around the camera; negative above water and outside the map.
+fn depth_under_water(world: vec3<f32>) -> f32 {
+    if g.water_map.w < 0.5 {
+        return -1.0;
+    }
+    let c = vec2<i32>(floor(world.xz - g.water_map.xy));
+    if c.x < 0 || c.y < 0 || c.x >= 256 || c.y >= 256 {
+        return -1.0;
+    }
+    return textureLoad(water_heights, c, 0).r - (world.y + g.water_map.z);
+}
+
 fn animated_layer(layer: u32, frames_m1: u32, frame_time_m1: u32) -> u32 {
     if frames_m1 == 0u {
         return layer;
@@ -112,6 +128,7 @@ fn vs_packed(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
     if ((q.a >> 25u) & 1u) == 1u {
         world += wind(world, 1.0);
     }
+    let water_depth = depth_under_water(world);
     world = curve(world);
     var out: VsOut;
     out.pos = g.view_proj * vec4<f32>(world, 1.0);
@@ -134,6 +151,7 @@ fn vs_packed(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
     out.ao = f32((q.d >> (24u + c * 2u)) & 3u) / 3.0;
     out.normal = face_normal(face);
     out.world = world;
+    out.water_depth = water_depth;
     out.flags = 0u;
     return out;
 }
@@ -161,6 +179,7 @@ fn vs_general(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) 
         world += wind(world, up);
     }
     let fluid = (q.layer >> 24u) & 1u;
+    let water_depth = depth_under_water(world);
     world = curve(world);
     var out: VsOut;
     out.pos = g.view_proj * vec4<f32>(world, 1.0);
@@ -175,6 +194,7 @@ fn vs_general(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) 
     out.ao = f32((e.y >> 24u) & 3u) / 3.0;
     out.normal = face_normal((q.layer >> 20u) & 7u);
     out.world = world;
+    out.water_depth = water_depth;
     out.flags = fluid;
     return out;
 }
@@ -195,17 +215,44 @@ fn light_curve(l: f32) -> f32 {
 }
 
 
+// The sun's light on a floor `depth_m` metres under the waves, relative to its mean: two
+// drifting layers of the caustic map, smoothing out with depth; the mip level from the distance
+// (about 0.05 texels per block of distance at 1080p).
+fn caustic_light(p: vec2<f32>, dist: f32, depth_m: f32) -> f32 {
+    let t = g.params.x;
+    let lod = log2(max(dist * 0.05, 1.0));
+    let a = textureSampleLevel(caustics, samp, p / 7.0 + vec2<f32>(t * 0.031, t * 0.017), lod).r * 4.0;
+    let q = vec2<f32>(-p.y, p.x);
+    let b = textureSampleLevel(caustics, samp, q / 5.3 + vec2<f32>(-t * 0.023, t * 0.029), lod).r * 4.0;
+    return mix(1.0, a * b, exp(-depth_m / 6.0));
+}
+
 fn shade_color(albedo: vec3<f32>, in: VsOut) -> vec3<f32> {
     let sky_vis = light_curve(in.light.x);
     let n = in.normal;
     let omni = dot(n, n) < 0.5;
     // Sky light on a face: full on top, less on the sides, least underneath.
     let sky_dir = select(0.62 + 0.38 * n.y + 0.1 * (1.0 - abs(n.y)), 0.75, omni);
-    let ambient = g.sky_light.rgb * sky_vis * max(sky_dir, 0.2) + vec3<f32>(g.sky_light.a);
+    var ambient = g.sky_light.rgb * sky_vis * max(sky_dir, 0.2) + vec3<f32>(g.sky_light.a);
     // Direct light only on faces fully open to the sky (no shadow maps yet).
     let open = smoothstep(0.8, 1.0, in.light.x);
     let lambert = select(max(dot(n, g.sun.xyz), 0.0), 0.5 * max(g.sun.y, 0.0) + 0.25, omni);
-    let direct = g.sun_light.rgb * lambert * open;
+    var direct = g.sun_light.rgb * lambert * open;
+    let depth = in.water_depth;
+    if depth > 0.0 && in.light.x > 0.0 {
+        // Under water open to the sky: the light that reaches this depth, falling off
+        // exponentially (red first, blue deepest), the sun's refracted toward the vertical and
+        // gathered into caustics by the waves above.
+        let depth_m = depth * g.fog.z;
+        let reach = exp(-vec3<f32>(0.35, 0.07, 0.045) * depth_m);
+        ambient = (g.sky_light.rgb * max(sky_dir, 0.2) + vec3<f32>(g.sky_light.a)) * reach;
+        let h = g.sun.xz / 1.333;
+        let sun_w = vec3<f32>(h.x, sqrt(max(1.0 - dot(h, h), 0.0)), h.y);
+        let lam = select(max(dot(n, sun_w), 0.0), 0.5 * sun_w.y + 0.25, omni);
+        let p = in.world.xz + g.camera.xz;
+        direct = g.sun_light.rgb * lam * reach * select(0.0, 1.0, g.sun.y > 0.0)
+            * caustic_light(p, length(in.world), depth_m);
+    }
     let fire = g.block_light.rgb * light_curve(in.light.y);
     let ao = mix(0.45, 1.0, in.ao);
     var c = albedo * (ambient * ao + direct * mix(0.75, 1.0, in.ao) + fire * ao) / 3.14159265;

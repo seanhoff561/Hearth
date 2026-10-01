@@ -49,7 +49,8 @@ pub enum StreamEvent {
     Mesh(Box<CubeMesh>),
     Unload(CubePos),
     /// What covers the sky around the camera (hides rain and snow under cover).
-    SkyHeights(Box<SkyHeights>),
+    /// What covers the sky and where the water's surface lies around the camera.
+    Heights(Box<SkyHeights>, Box<hearth_render::water::WaterHeights>),
     Failed(String),
 }
 
@@ -172,7 +173,11 @@ fn run(
         if (moved || heights_dirty) && heights_sent.elapsed() > Duration::from_millis(250) {
             let map = &lw.map;
             let heights = SkyHeights::build(column.0, column.1, |x, z| map.sky_top(x, z));
-            if tx.send(StreamEvent::SkyHeights(Box::new(heights))).is_err() {
+            let water = crate::water_env::water_heights(map, &lw.reg, column.0, column.1);
+            if tx
+                .send(StreamEvent::Heights(Box::new(heights), Box::new(water)))
+                .is_err()
+            {
                 return Ok(());
             }
             heights_at = Some(column);

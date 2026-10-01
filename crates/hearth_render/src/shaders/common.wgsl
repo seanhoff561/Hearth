@@ -29,6 +29,9 @@ struct Globals {
     // Full-detail terrain, camera-relative: min x, min z, max x, max z. The LOD takes over
     // beyond it through a dithered band.
     near: vec4<f32>,
+    // The map of water surfaces around the camera (`water.rs`): xy its first column relative to
+    // the camera, z the camera's height (world Y), w 1 when there is a map.
+    water_map: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -36,6 +39,10 @@ struct Globals {
 @group(0) @binding(2) var samp: sampler;
 @group(0) @binding(3) var skyview: texture_2d<f32>;
 @group(0) @binding(4) var sky_samp: sampler;
+// The water surface (world Y) of each column around the camera, and the caustics the waves
+// focus on floors below them (value / 4, mean 1 / 4).
+@group(0) @binding(5) var water_heights: texture_2d<f32>;
+@group(0) @binding(6) var caustics: texture_2d<f32>;
 
 const TAU: f32 = 6.2831853;
 

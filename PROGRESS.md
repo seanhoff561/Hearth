@@ -288,10 +288,10 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
 1. (e) Water rendering (v1 M7) and ice. Done: (e, part 1) water surfaces (D62): wind-driven
    waves from a tiling slope texture, Fresnel sky reflection, sun glitter, refraction of a scene
    copy absorbed by depth, shore foam, Snell's window from below; distant water baked and shaded
-   to match; tiers by `shader.water`. Next: (e, part 2) underwater — fog and light falling off
-   with depth, caustics on shallow floors (a map of the water surface around the camera, as
-   the rain's sky-height map), god rays at High; (e, part 3) screen-space reflections at High;
-   (e, part 4) ice.
+   to match; tiers by `shader.water`; (e, part 2) under water (D63): light by real depth with
+   caustics from a map of water surfaces around the camera, the view through the water when
+   the camera is in it. Next: (e, part 3) screen-space reflections (High, maybe Medium at half
+   resolution: far lake water now mirrors only the sky); (e, part 4) ice.
 2. (f) Minimal spawn picker; `worldmap` soil layer; V2-2 acceptance review, the performance
    gate (`scripts/perf-gate.sh`), and commit.
 

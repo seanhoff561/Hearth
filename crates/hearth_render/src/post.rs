@@ -26,6 +26,28 @@ struct Params {
     p: [f32; 4],
 }
 
+/// The tonemap's parameters (`Params` in `post.wgsl`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct ToneParams {
+    /// x: extra exposure, y: night factor.
+    p: [f32; 4],
+    /// Under water: x the water surface above the camera (blocks), 0 when not under water.
+    water: [f32; 4],
+    /// rgb: light the water scatters toward the eye (pre-exposed).
+    inscatter: [f32; 4],
+    /// Clip space to camera-relative world space.
+    inv_view_proj: [[f32; 4]; 4],
+}
+
+/// The camera under water: the surface above it (blocks) and the light the water scatters
+/// toward the eye (pre-exposed).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Underwater {
+    pub surface_above: f32,
+    pub inscatter: glam::Vec3,
+}
+
 /// The upscaling passes' parameters (`Scale` in `post.wgsl`).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -65,6 +87,10 @@ pub struct PostProcess {
     meter_layout: wgpu::BindGroupLayout,
     meter_pipe: wgpu::ComputePipeline,
     hdr: Option<HdrTarget>,
+    /// The depth buffer the tonemap reads for the water seen from below (group 1), and the
+    /// view it was made for.
+    depth_layout: wgpu::BindGroupLayout,
+    depth_bind: Option<(wgpu::TextureView, wgpu::BindGroup)>,
     /// Rendering at another size: tonemapping to the perceptual copy, EASU, RCAS, and the
     /// down-filter, with their layout, sampler and targets.
     tonemap_pipe: wgpu::RenderPipeline,
@@ -79,16 +105,16 @@ pub struct PostProcess {
 impl PostProcess {
     pub fn new(ctx: &GpuContext, output_format: wgpu::TextureFormat) -> Self {
         let device = &ctx.device;
-        let uniform = |label: &str| {
+        let uniform = |label: &str, size: usize| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
-                size: std::mem::size_of::<Params>() as u64,
+                size: size as u64,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             })
         };
-        let params = uniform("post params");
-        let meter_params = uniform("meter params");
+        let params = uniform("post params", std::mem::size_of::<ToneParams>());
+        let meter_params = uniform("meter params", std::mem::size_of::<Params>());
         let meter_state = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("meter state"),
             size: 16,
@@ -140,9 +166,21 @@ impl PostProcess {
             label: Some("post.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/post.wgsl").into()),
         });
+        let depth_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("post depth layout"),
+            entries: &[entry(
+                0,
+                fs,
+                wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+            )],
+        });
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("post pipeline layout"),
-            bind_group_layouts: &[Some(&layout)],
+            bind_group_layouts: &[Some(&layout), Some(&depth_layout)],
             immediate_size: 0,
         });
         let scale_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -237,6 +275,8 @@ impl PostProcess {
             meter_layout,
             meter_pipe,
             hdr: None,
+            depth_layout,
+            depth_bind: None,
             tonemap_pipe,
             easu_pipe,
             rcas_pipe,
@@ -335,7 +375,10 @@ impl PostProcess {
 
     /// Tonemaps the HDR target into `output` (`size` pixels): directly at the same size; else
     /// through a tonemapped copy at the HDR target's size, upscaled by EASU and sharpened by
-    /// RCAS, or filtered down when larger.
+    /// RCAS, or filtered down when larger. Under water (`underwater`), what is seen is dimmed
+    /// along the view through the water and replaced by the light it scatters; `depth` is the
+    /// scene's depth and `inv_view_proj` takes clip space back to camera-relative space.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         ctx: &GpuContext,
@@ -344,6 +387,9 @@ impl PostProcess {
         size: (u32, u32),
         exposure: f32,
         night: f32,
+        depth: &wgpu::TextureView,
+        underwater: Option<Underwater>,
+        inv_view_proj: glam::Mat4,
         mut timer: Option<&mut GpuTimer>,
     ) {
         let mut mark = |enc: &mut wgpu::CommandEncoder, label: &'static str| {
@@ -354,13 +400,35 @@ impl PostProcess {
         let Some(render) = self.hdr.as_ref().map(|h| h.size) else {
             return;
         };
+        let (above, inscatter) = underwater.map_or((0.0, glam::Vec3::ZERO), |u| {
+            (u.surface_above.max(1e-3), u.inscatter)
+        });
         ctx.write_buffer(
             &self.params,
             0,
-            bytemuck::bytes_of(&Params {
+            bytemuck::bytes_of(&ToneParams {
                 p: [exposure, night, 0.0, 0.0],
+                water: [
+                    if underwater.is_some() { above } else { 0.0 },
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+                inscatter: inscatter.extend(0.0).to_array(),
+                inv_view_proj: inv_view_proj.to_cols_array_2d(),
             }),
         );
+        if self.depth_bind.as_ref().is_none_or(|(v, _)| v != depth) {
+            let bind = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("post depth bind"),
+                layout: &self.depth_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(depth),
+                }],
+            });
+            self.depth_bind = Some((depth.clone(), bind));
+        }
         if render != size
             && self
                 .scaled
@@ -370,8 +438,16 @@ impl PostProcess {
             self.scaled = Some(self.scaled_targets(ctx, render, size));
         }
         let hdr = self.hdr.as_ref().expect("checked above");
+        let depth_bind = &self.depth_bind.as_ref().expect("made above").1;
         if render == size {
-            fullscreen(enc, "tonemap", output, &self.pipe, &hdr.tonemap_bind);
+            fullscreen(
+                enc,
+                "tonemap",
+                output,
+                &self.pipe,
+                &hdr.tonemap_bind,
+                Some(depth_bind),
+            );
             mark(enc, "tonemap");
             return;
         }
@@ -382,17 +458,25 @@ impl PostProcess {
             &s.ldr,
             &self.tonemap_pipe,
             &hdr.tonemap_bind,
+            Some(depth_bind),
         );
         mark(enc, "tonemap");
         match &s.up {
             Some((_, up, from_up)) => {
-                fullscreen(enc, "easu", up, &self.easu_pipe, &s.from_ldr);
+                fullscreen(enc, "easu", up, &self.easu_pipe, &s.from_ldr, None);
                 mark(enc, "upscale (easu)");
-                fullscreen(enc, "rcas", output, &self.rcas_pipe, from_up);
+                fullscreen(enc, "rcas", output, &self.rcas_pipe, from_up, None);
                 mark(enc, "sharpen (rcas)");
             }
             None => {
-                fullscreen(enc, "resample", output, &self.resample_pipe, &s.from_ldr);
+                fullscreen(
+                    enc,
+                    "resample",
+                    output,
+                    &self.resample_pipe,
+                    &s.from_ldr,
+                    None,
+                );
                 mark(enc, "filter down");
             }
         }
@@ -484,6 +568,7 @@ fn fullscreen(
     target: &wgpu::TextureView,
     pipe: &wgpu::RenderPipeline,
     bind: &wgpu::BindGroup,
+    bind1: Option<&wgpu::BindGroup>,
 ) {
     let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some(label),
@@ -503,5 +588,8 @@ fn fullscreen(
     });
     pass.set_pipeline(pipe);
     pass.set_bind_group(0, bind, &[]);
+    if let Some(b) = bind1 {
+        pass.set_bind_group(1, b, &[]);
+    }
     pass.draw(0..3, 0..1);
 }

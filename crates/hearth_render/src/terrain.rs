@@ -277,6 +277,7 @@ struct Globals {
     camera: [f32; 4],
     overcast: [f32; 4],
     near: [f32; 4],
+    water_map: [f32; 4],
 }
 
 /// Earth's mean radius (m): with the vertical scale, the radius of the planet's curvature.
@@ -425,6 +426,7 @@ impl TerrainRenderer {
             anisotropy_clamp: aniso,
             border_color: None,
         });
+        let water = crate::water::WaterRenderer::new(ctx);
         let globals = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("terrain globals"),
             size: std::mem::size_of::<Globals>() as u64,
@@ -476,6 +478,27 @@ impl TerrainRenderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // The water surfaces around the camera, and the caustics.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let storage = |binding: u32| wgpu::BindGroupLayoutEntry {
@@ -516,6 +539,14 @@ impl TerrainRenderer {
                     binding: 4,
                     resource: wgpu::BindingResource::Sampler(sky.sampler()),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(water.heights_view()),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(water.caustics_view()),
+                },
             ],
         });
         let packed = Arena::new(device, "packed quads", 16, 1 << 20);
@@ -547,7 +578,6 @@ impl TerrainRenderer {
             mapped_at_creation: false,
         });
         ctx.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
-        let water = crate::water::WaterRenderer::new(ctx);
         let pipes = make_pipelines(device, &layout0, &layout1, water.layout(), color_format);
         let passes = [
             Pass::new(device, "draws packed opaque"),
@@ -971,6 +1001,17 @@ impl TerrainRenderer {
             ],
             overcast: params.overcast.to_array(),
             near,
+            // The map of water surfaces: its first column relative to the camera, the
+            // camera's height, and whether there is a map.
+            water_map: match self.water.map_origin() {
+                Some((ox, oz)) => [
+                    self.planet.delta_x(cam.x, ox as f64) as f32,
+                    (oz as f64 - cam.z) as f32,
+                    cam.y as f32,
+                    1.0,
+                ],
+                None => [0.0; 4],
+            },
         };
         ctx.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
         self.stats = TerrainStats {

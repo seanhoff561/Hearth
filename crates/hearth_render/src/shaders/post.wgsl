@@ -11,6 +11,12 @@
 struct Params {
     // x: extra exposure multiplier, y: night factor 0..1, z,w: unused.
     p: vec4<f32>,
+    // Under water: x the water surface above the camera (blocks), 0 when not under water.
+    water: vec4<f32>,
+    // rgb: light the water scatters toward the eye (pre-exposed).
+    inscatter: vec4<f32>,
+    // Clip space to camera-relative world space.
+    inv_view_proj: mat4x4<f32>,
 };
 
 struct Meter {
@@ -37,6 +43,9 @@ struct Scale {
 @group(0) @binding(3) var<uniform> S: Scale;
 @group(0) @binding(4) var src: texture_2d<f32>;
 @group(0) @binding(5) var src_linear: sampler;
+
+// The scene's depth (reverse-Z), for the water seen from below.
+@group(1) @binding(0) var scene_depth: texture_depth_2d;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -76,9 +85,34 @@ fn hash2(p: vec2<u32>) -> vec2<f32> {
     return vec2<f32>(f32(h & 0xffffu), f32(h >> 16u)) / 65535.0;
 }
 
+// Under water: the light of what is seen dimmed along the view through the water — to it, or
+// to the surface overhead where the view leaves the water — and replaced by the light the water
+// scatters toward the eye (clear sea water: 0.40, 0.08, 0.06 per metre for red, green, blue).
+fn underwater(c: vec3<f32>, p: vec2<i32>) -> vec3<f32> {
+    let size = vec2<f32>(textureDimensions(hdr));
+    let ndc = vec2<f32>((f32(p.x) + 0.5) / size.x * 2.0 - 1.0, 1.0 - (f32(p.y) + 0.5) / size.y * 2.0);
+    let near = P.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
+    let dir = normalize(near.xyz / near.w);
+    let d = textureLoad(scene_depth, p, 0);
+    var dist = 1.0e4;
+    if d > 0.0 {
+        let q = P.inv_view_proj * vec4<f32>(ndc, d, 1.0);
+        dist = length(q.xyz / q.w);
+    }
+    if dir.y > 1e-4 {
+        dist = min(dist, P.water.x / dir.y);
+    }
+    let t = exp(-vec3<f32>(0.40, 0.08, 0.06) * dist);
+    return c * t + P.inscatter.rgb * (1.0 - t);
+}
+
 // The HDR texel at `p`, exposed, night-shifted and tonemapped, in perceptual (sRGB) values.
 fn graded(p: vec2<i32>) -> vec3<f32> {
-    var c = textureLoad(hdr, p, 0).rgb * P.p.x * meter.scale;
+    var c = textureLoad(hdr, p, 0).rgb;
+    if P.water.x > 0.0 {
+        c = underwater(c, p);
+    }
+    c = c * P.p.x * meter.scale;
     let night = P.p.y;
     if night > 0.0 {
         let lum = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));

@@ -548,3 +548,16 @@ screen-space reflections. Measured against the previous build (alternating, two 
 underwater −13 %, storm −5.4 %, cave −1.6 % — the cost of shading water where it covers the
 screen, accepted for the look (SSIM against the old images 0.78 on the coast, 0.96 on the
 summit, 0.99 in the forest).
+
+## D63 — Under water: light by real depth from a map of water surfaces
+The voxel sky light falls by two levels a block in water, so shallow shelves went dark a few
+blocks down and the sun stopped at the first block. Underwater surfaces are lit instead by the
+light that reaches their real depth (Beer–Lambert with the diffuse attenuation of clear sea
+water), which needs to know where the surface is: a 256² map of water surfaces around the
+camera, built from the columns' highest sky-blocking block where it is water (as the rain's
+map), read per vertex (per pixel it cost 0.07 ms in the forest; per vertex 0.01). The voxel sky
+light still gates it (a cave under the sea floor stays dark). The renderer cannot see the
+world, so the camera is under water when it is below the surface of its column in the map, and
+then the tonemap pass applies the view through the water (the depth gives the distance; the
+surface overhead clips it), with the eye adapting to the light at the camera's depth. Measured
+against the surfaces commit: −0.8 to −2.3 % in the open scenes, −4.4 % under water.

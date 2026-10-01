@@ -3,7 +3,9 @@
 //! hole dug below the water table takes in.
 
 use hearth_math::BlockPos;
+use hearth_render::water::WaterHeights;
 use hearth_world::water::{Ground, Quality, WaterEnv};
+use hearth_world::{BlockRegistry, CubeMap, StateFlags};
 use hearth_worldgen::WorldGenerator;
 use hearth_worldgen::hydro::WaterQuality;
 
@@ -14,6 +16,20 @@ pub struct WorldWater<'a> {
     pub air_c: f32,
     pub humidity: f32,
     pub wind_m_s: f32,
+}
+
+/// The water surface (Y) of a column, where its highest sky-blocking block is water: the
+/// surface the mesher draws (the block's top less a ninth when full).
+pub fn water_surface(map: &CubeMap, reg: &BlockRegistry, x: i32, z: i32) -> Option<f32> {
+    let top = map.sky_top(x, z)?;
+    let s = map.block(BlockPos::new(x, top, z))?;
+    let amount = reg.fluid_amount(s);
+    (reg.has(s, StateFlags::WATER) && amount > 0).then(|| top as f32 + amount as f32 / 9.0)
+}
+
+/// The map of water surfaces around a column, for the renderer.
+pub fn water_heights(map: &CubeMap, reg: &BlockRegistry, x: i32, z: i32) -> WaterHeights {
+    WaterHeights::build(x, z, |x, z| water_surface(map, reg, x, z))
 }
 
 /// The finite water's view of a natural water quality.

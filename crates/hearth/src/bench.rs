@@ -714,6 +714,10 @@ fn run_scene(
     );
 
     let map = &lw.map;
+    let reg = lw.reg.clone();
+    let water_heights = |c: DVec3| {
+        crate::water_env::water_heights(map, &reg, c.x.floor() as i32, c.z.floor() as i32)
+    };
     let sky_heights = |c: DVec3| {
         SkyHeights::build(c.x.floor() as i32, c.z.floor() as i32, |x, z| {
             map.sky_top(x, z)
@@ -773,6 +777,10 @@ fn run_scene(
         {
             state.sky_at = Some(camera.pos);
             scene.set_sky_heights(ctx, &sky_heights(camera.pos));
+            scene
+                .terrain
+                .water
+                .set_heights(ctx, water_heights(camera.pos));
         }
         let t3 = Instant::now();
         let a3 = crate::alloc_count::thread_allocations();
@@ -901,6 +909,10 @@ fn run_scene(
         scene.lod_show = show(&select(camera.pos, &errors, &unsplit));
         scene.near_area = (def.lod > 0).then(|| near_of(camera.pos));
         scene.set_sky_heights(ctx, &sky_heights(camera.pos));
+        scene
+            .terrain
+            .water
+            .set_heights(ctx, water_heights(camera.pos));
         let mut pixels = Vec::new();
         for _ in 0..3 {
             scene.prepare(ctx, &camera, size, &env, f32::INFINITY);

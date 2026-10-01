@@ -138,6 +138,10 @@ pub struct SceneRenderer {
     pub render_scale: f32,
     /// The depth target when the frame is rendered at another size than the output's.
     depth: Option<crate::offscreen::DepthTarget>,
+    /// The camera under water this frame (from the map of water surfaces), and clip space back
+    /// to camera-relative space, for the tonemap's view through the water.
+    underwater: Option<crate::post::Underwater>,
+    inv_view_proj: glam::Mat4,
 }
 
 impl SceneRenderer {
@@ -170,6 +174,8 @@ impl SceneRenderer {
             cpu: PrepareTimes::default(),
             render_scale: 1.0,
             depth: None,
+            underwater: None,
+            inv_view_proj: glam::Mat4::IDENTITY,
         }
     }
 
@@ -204,9 +210,19 @@ impl SceneRenderer {
         dt: f32,
     ) {
         let size = self.render_size(size);
+        // Under water: how deep the camera is (real metres) below the surface over its column.
+        let below = self
+            .terrain
+            .water
+            .surface_at(camera.pos.x.floor() as i32, camera.pos.z.floor() as i32)
+            .map(|s| s as f64 - camera.pos.y)
+            .filter(|&d| d > 0.0);
+        let depth_m = below.map_or(0.0, |d| d as f32 / self.vertical_scale.max(1e-3));
+        // Light falls off with depth (red first, blue deepest), and the eye adapts to it.
+        let reach = Vec3::new(-0.35, -0.07, -0.045) * depth_m;
+        let reach = Vec3::new(reach.x.exp(), reach.y.exp(), reach.z.exp());
         let fire = FIRE_LUX * env.block_light_at_camera * env.block_light_at_camera;
-        let target = env
-            .horizontal_lux()
+        let target = (env.horizontal_lux() * reach.y)
             .max(fire)
             .max(ADAPTATION_FLOOR_LUX)
             .ln();
@@ -229,7 +245,15 @@ impl SceneRenderer {
             std::f32::consts::PI / lux_adapted * adaptation_key(adapted) * env.exposure_bias;
         self.night = 1.0 - smoothstep(0.5f32.ln(), 20f32.ln(), adapted);
         let e = self.exposure;
-        // The dominant direct light: the sun by day, the moon by night.
+        // The water around an underwater camera scatters the light reaching its depth toward the
+        // eye: blue-green, from the sky and the sun overhead.
+        self.underwater = below.map(|d| {
+            let down = env.sky_lux + env.sun_lux * env.sun_dir.y.max(0.0);
+            crate::post::Underwater {
+                surface_above: d as f32,
+                inscatter: down * reach * e * Vec3::new(0.03, 0.12, 0.16) / std::f32::consts::PI,
+            }
+        });
         let sun_h = env.sun_lux.y * env.sun_dir.y.max(0.0);
         let moon_h = env.moon_lux.y * env.moon_dir.y.max(0.0);
         let (direct, dir) = if sun_h >= moon_h || env.sun_dir.y > -0.02 {
@@ -268,6 +292,7 @@ impl SceneRenderer {
             .prepare(ctx, size, env.wind_dir, env.wind_speed_m_s, camera.near);
         let t1 = std::time::Instant::now();
         let aspect = size.0.max(1) as f32 / size.1.max(1) as f32;
+        self.inv_view_proj = camera.view_proj(aspect).inverse();
         let hzb = self.terrain.hzb().map(|(_, size, mips)| (size, mips));
         self.lod.prepare(
             ctx,
@@ -402,8 +427,18 @@ impl SceneRenderer {
         mark(&mut timer, enc, "sky, translucent, rain");
         self.post.meter(ctx, enc, self.meter_dt);
         mark(&mut timer, enc, "metering");
-        self.post
-            .render(ctx, enc, output, size, 1.0, self.night, timer.as_mut());
+        self.post.render(
+            ctx,
+            enc,
+            output,
+            size,
+            1.0,
+            self.night,
+            depth,
+            self.underwater,
+            self.inv_view_proj,
+            timer.as_mut(),
+        );
         if let Some(t) = &mut timer {
             t.end_frame(enc, self.terrain.cull_counters());
         }

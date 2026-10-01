@@ -1,6 +1,8 @@
 //! Water surfaces (v1 §9.3): what the water shading reads besides the terrain's globals — the
 //! scene behind the water (its colour, copied before the translucent pass, and the depth buffer,
-//! read-only during it) for refraction and the water's depth, tiling wave normals, and the wind.
+//! read-only during it) for refraction and the water's depth, tiling wave normals, and the wind;
+//! and for what lies under water, a map of the water surface around the camera and the caustics
+//! the waves focus on shallow floors.
 
 use bytemuck::{Pod, Zeroable};
 use glam::Vec2;
@@ -10,6 +12,46 @@ use crate::post::HDR_FORMAT;
 
 /// Side of the tiling wave normal texture (texels).
 const WAVE_SIZE: u32 = 256;
+/// Side of the map of water surfaces around the camera (blocks).
+pub const WATER_MAP_SIZE: u32 = 256;
+/// A column without water in the map.
+pub const NO_WATER: f32 = -1.0e9;
+
+/// The water surface (Y) of each column in a square around the camera: what lies under it is lit
+/// through the water, and a camera below it is under water.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WaterHeights {
+    /// World block (x, z) of the first entry.
+    pub origin: (i32, i32),
+    /// `WATER_MAP_SIZE`² surfaces (row-major by z), `NO_WATER` where there is none.
+    pub heights: Vec<f32>,
+}
+
+impl WaterHeights {
+    /// Builds the map centred on a block column from a lookup of the water surface.
+    pub fn build(center_x: i32, center_z: i32, surface: impl Fn(i32, i32) -> Option<f32>) -> Self {
+        let n = WATER_MAP_SIZE as i32;
+        let origin = (center_x - n / 2, center_z - n / 2);
+        let mut heights = Vec::with_capacity((n * n) as usize);
+        for z in 0..n {
+            for x in 0..n {
+                heights.push(surface(origin.0 + x, origin.1 + z).unwrap_or(NO_WATER));
+            }
+        }
+        Self { origin, heights }
+    }
+
+    /// The surface over a world column, if the map holds it and it has water.
+    pub fn surface(&self, x: i32, z: i32) -> Option<f32> {
+        let n = WATER_MAP_SIZE as i32;
+        let (dx, dz) = (x - self.origin.0, z - self.origin.1);
+        if !(0..n).contains(&dx) || !(0..n).contains(&dz) {
+            return None;
+        }
+        let h = self.heights[(dz * n + dx) as usize];
+        (h > NO_WATER * 0.5).then_some(h)
+    }
+}
 
 /// How the water is shaded: `Low` lays a translucent surface over the scene with the sky's
 /// reflection; `Medium` refracts the scene behind it, absorbed by the water's depth, with foam on
@@ -64,6 +106,11 @@ pub struct WaterRenderer {
     blank_depth: wgpu::TextureView,
     /// The bind group and the depth view it reads (rebuilt when either changes).
     bind: Option<(wgpu::TextureView, wgpu::BindGroup)>,
+    /// The water surfaces around the camera (texture and the map it holds), and the caustics.
+    heights: wgpu::Texture,
+    heights_view: wgpu::TextureView,
+    map: Option<WaterHeights>,
+    caustics: wgpu::TextureView,
     pub quality: WaterQuality,
 }
 
@@ -206,10 +253,30 @@ impl WaterRenderer {
                 },
             ],
         });
+        let heights = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("water surfaces around the camera"),
+            size: wgpu::Extent3d {
+                width: WATER_MAP_SIZE,
+                height: WATER_MAP_SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let heights_view = heights.create_view(&Default::default());
+        let caustics = upload_caustics(ctx);
         Self {
             layout,
             waves_layout,
             waves_bind,
+            heights,
+            heights_view,
+            map: None,
+            caustics,
             params,
             waves,
             wave_sampler,
@@ -223,6 +290,51 @@ impl WaterRenderer {
 
     pub fn layout(&self) -> &wgpu::BindGroupLayout {
         &self.layout
+    }
+
+    /// Replaces the map of the water surfaces around the camera.
+    pub fn set_heights(&mut self, ctx: &GpuContext, h: WaterHeights) {
+        debug_assert_eq!(h.heights.len(), (WATER_MAP_SIZE * WATER_MAP_SIZE) as usize);
+        ctx.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.heights,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytemuck::cast_slice(&h.heights),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(WATER_MAP_SIZE * 4),
+                rows_per_image: Some(WATER_MAP_SIZE),
+            },
+            wgpu::Extent3d {
+                width: WATER_MAP_SIZE,
+                height: WATER_MAP_SIZE,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.map = Some(h);
+    }
+
+    /// The water surface over a world column, from the map.
+    pub fn surface_at(&self, x: i32, z: i32) -> Option<f32> {
+        self.map.as_ref()?.surface(x, z)
+    }
+
+    /// The map's first column (world blocks), once there is a map.
+    pub fn map_origin(&self) -> Option<(i32, i32)> {
+        self.map.as_ref().map(|m| m.origin)
+    }
+
+    /// The map of water surfaces (R32Float, world Y) and the caustics (mean 0.25 × light), bound
+    /// with the terrain's globals.
+    pub fn heights_view(&self) -> &wgpu::TextureView {
+        &self.heights_view
+    }
+
+    pub fn caustics_view(&self) -> &wgpu::TextureView {
+        &self.caustics
     }
 
     /// The waves' layout and bind group, for the distant land.
@@ -498,6 +610,105 @@ fn upload_waves(ctx: &GpuContext) -> wgpu::TextureView {
     texture.create_view(&Default::default())
 }
 
+/// Caustics: sunlight focused by the wave field onto a floor below it — each point's light, bent
+/// by the slope over it, lands displaced and is summed where it lands (wrapping, so the map tiles),
+/// then scaled to a mean of 1: bright networks where the waves converge the light, dim cells
+/// between them.
+pub fn caustic_map(size: u32) -> Vec<f32> {
+    let n = size as usize;
+    let slopes = wave_slopes(size);
+    let mut acc = vec![0.0f32; n * n];
+    const SUB: usize = 2;
+    let reach = n as f32 * 0.05;
+    for z in 0..n * SUB {
+        for x in 0..n * SUB {
+            let s = slopes[(z / SUB) * n + x / SUB];
+            let px = (x as f32 + 0.5) / SUB as f32 + s[0] * reach - 0.5;
+            let pz = (z as f32 + 0.5) / SUB as f32 + s[1] * reach - 0.5;
+            let (x0, z0) = (px.floor(), pz.floor());
+            let (tx, tz) = (px - x0, pz - z0);
+            for (dx, dz, w) in [
+                (0, 0, (1.0 - tx) * (1.0 - tz)),
+                (1, 0, tx * (1.0 - tz)),
+                (0, 1, (1.0 - tx) * tz),
+                (1, 1, tx * tz),
+            ] {
+                let ix = (x0 as i64 + dx).rem_euclid(n as i64) as usize;
+                let iz = (z0 as i64 + dz).rem_euclid(n as i64) as usize;
+                acc[iz * n + ix] += w;
+            }
+        }
+    }
+    let mean = acc.iter().sum::<f32>() / (n * n) as f32;
+    for v in &mut acc {
+        *v = (*v / mean).min(4.0);
+    }
+    acc
+}
+
+/// The caustic map as a mipmapped single-channel texture (value / 4).
+fn upload_caustics(ctx: &GpuContext) -> wgpu::TextureView {
+    let levels = WAVE_SIZE.ilog2() + 1;
+    let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("caustics"),
+        size: wgpu::Extent3d {
+            width: WAVE_SIZE,
+            height: WAVE_SIZE,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: levels,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut level = caustic_map(WAVE_SIZE);
+    let mut size = WAVE_SIZE as usize;
+    for mip in 0..levels {
+        let data: Vec<u8> = level
+            .iter()
+            .map(|v| (v / 4.0 * 255.0).round().clamp(0.0, 255.0) as u8)
+            .collect();
+        ctx.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: mip,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size as u32),
+                rows_per_image: Some(size as u32),
+            },
+            wgpu::Extent3d {
+                width: size as u32,
+                height: size as u32,
+                depth_or_array_layers: 1,
+            },
+        );
+        if size == 1 {
+            break;
+        }
+        let half_size = size / 2;
+        let mut next = vec![0.0f32; half_size * half_size];
+        for z in 0..half_size {
+            for x in 0..half_size {
+                next[z * half_size + x] = [(0, 0), (1, 0), (0, 1), (1, 1)]
+                    .iter()
+                    .map(|(dx, dz)| level[(2 * z + dz) * size + 2 * x + dx])
+                    .sum::<f32>()
+                    * 0.25;
+            }
+        }
+        level = next;
+        size = half_size;
+    }
+    texture.create_view(&Default::default())
+}
+
 /// An f32 as IEEE half-precision bits (normal range, rounded toward zero; enough for slopes).
 fn half(v: f32) -> u16 {
     let bits = v.to_bits();
@@ -535,6 +746,17 @@ mod tests {
             .sum::<f32>()
             / n as f32;
         assert!(edge < inner * 2.0, "edge {edge} inner {inner}");
+        // Caustics keep the light (mean 1) but gather it into bright lines.
+        let c = caustic_map(64);
+        let mean = c.iter().sum::<f32>() / c.len() as f32;
+        assert!((mean - 1.0).abs() < 0.05, "mean {mean}");
+        let bright = c.iter().filter(|&&v| v > 1.5).count() as f32 / c.len() as f32;
+        let dim = c.iter().filter(|&&v| v < 0.7).count() as f32 / c.len() as f32;
+        assert!(bright > 0.03 && dim > 0.1, "bright {bright} dim {dim}");
+        let map = WaterHeights::build(100, -50, |x, _| (x > 100).then_some(62.9));
+        assert_eq!(map.surface(101, -50), Some(62.9));
+        assert_eq!(map.surface(100, -50), None);
+        assert_eq!(map.surface(1000, -50), None);
         assert_eq!(half(1.0), 0x3c00);
         assert_eq!(half(0.5), 0x3800);
         assert_eq!(half(-2.0), 0xc000);

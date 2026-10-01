@@ -239,9 +239,10 @@ impl Preview {
                         s.terrain.remove(p);
                     }
                 }
-                StreamEvent::SkyHeights(h) => {
+                StreamEvent::Heights(h, water) => {
                     if let Some(s) = &mut self.scene {
                         s.set_sky_heights(ctx, &h);
+                        s.terrain.water.set_heights(ctx, *water);
                     }
                 }
                 StreamEvent::Failed(e) => {

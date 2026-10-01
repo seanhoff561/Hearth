@@ -326,6 +326,10 @@ pub fn render_shot(
     }
     let (bx, bz) = (camera.pos.x.floor() as i32, camera.pos.z.floor() as i32);
     scene.set_sky_heights(ctx, &SkyHeights::build(bx, bz, |x, z| lw.map.sky_top(x, z)));
+    scene.terrain.water.set_heights(
+        ctx,
+        crate::water_env::water_heights(&lw.map, &lw.reg, bx, bz),
+    );
     let sampler = EnvSampler::new(lw.grid(), calendar);
     let (mut env, weather) = sampler.sample(
         &moment,
