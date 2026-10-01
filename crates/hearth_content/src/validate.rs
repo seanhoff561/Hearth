@@ -282,7 +282,7 @@ pub fn validate(content: &Content, report: &mut Report) {
             c.range("senses.night_vision", a.senses.night_vision, 0.0, 1.0);
             c.range("danger.aggression", a.danger.aggression, 0.0, 1.0);
             c.opt("growth_rate", a.growth_rate, -1.0, 10.0);
-            c.opt("density_per_km2", a.density_per_km2, 0.0, 100_000.0);
+            c.opt("density_per_km2", a.density_per_km2, 0.0, 10_000_000.0);
             c.opt("diet.daily_food_kg", a.diet.daily_food_kg, 0.0, 500.0);
             for f in &a.diet.foods {
                 c.range("diet preference", f.preference, 0.0, 1.0);
@@ -290,6 +290,52 @@ pub fn validate(content: &Content, report: &mut Report) {
             if let Some(d) = &a.domestication {
                 c.range("domestication.difficulty", d.difficulty, 0.0, 1.0);
                 c.range("domestication.era", d.era as f32, 0.0, 8.0);
+            }
+            if let Some(l) = &a.life {
+                c.range("life.maturity_years", l.maturity_years, 0.05, 40.0);
+                c.range("life.lifespan_years", l.lifespan_years, 0.2, 250.0);
+                c.pair("life.litter", l.litter, 1.0, 1_000_000.0);
+                c.range("life.births_per_year", l.births_per_year, 0.05, 12.0);
+                c.range("life.birth_day", l.birth_day as f32, 0.0, 365.0);
+                c.range("life.adult_survival", l.adult_survival, 0.0, 1.0);
+                c.range("life.young_survival", l.young_survival, 0.0, 1.0);
+                c.range("life.birth_mass_kg", l.birth_mass_kg, 0.0, 10_000.0);
+            }
+            if let Some(r) = &a.ranging {
+                c.range("ranging.home_range_km2", r.home_range_km2, 0.0, 100_000.0);
+                c.range("ranging.dispersal_km", r.dispersal_km, 0.0, 10_000.0);
+                c.range("ranging.cover", r.cover, 0.0, 1.0);
+            }
+            if let Some(y) = &a.yields {
+                for (what, v) in [
+                    ("meat", y.meat),
+                    ("fat", y.fat),
+                    ("organs", y.organs),
+                    ("bone", y.bone),
+                    ("hide", y.hide),
+                    ("sinew", y.sinew),
+                ] {
+                    c.range(&format!("yields.{what}"), v, 0.0, 1.0);
+                }
+                c.range(
+                    "yields (their sum)",
+                    y.meat + y.fat + y.organs + y.bone + y.hide + y.sinew,
+                    0.0,
+                    1.0,
+                );
+            }
+            if let Some(t) = &a.track {
+                c.range("track.length_cm", t.length_cm, 0.0, 100.0);
+                c.range("track.stride_m", t.stride_m, 0.0, 10.0);
+            }
+            for call in &a.calls {
+                c.range("call loudness_db", call.loudness_db, 0.0, 200.0);
+                c.pair("call pitch_hz", call.pitch_hz, 1.0, 100_000.0);
+                c.range("call seconds", call.seconds, 0.0, 60.0);
+            }
+            if let Some(t) = &a.temperament {
+                c.range("temperament.flight_m", t.flight_m, 0.0, 2_000.0);
+                c.range("temperament.boldness", t.boldness, 0.0, 1.0);
             }
         },
     );

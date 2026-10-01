@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Range, Season, entry};
+use super::{Color, Range, Season, entry};
 use crate::IdRef;
 
 /// Shared skeleton families (v2 §7.2).
@@ -154,6 +154,257 @@ pub struct Domestication {
     pub difficulty: f32,
 }
 
+/// How it breeds, grows up and dies (V2-7).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LifeHistory {
+    /// Age at first breeding, years.
+    pub maturity_years: f32,
+    /// The greatest age commonly reached in the wild, years.
+    pub lifespan_years: f32,
+    /// Young at a birth.
+    pub litter: Range,
+    /// Births a year; below one, a birth every so many years (a bear's 0.4: every two and a
+    /// half).
+    #[serde(default = "one")]
+    pub births_per_year: f32,
+    /// The day of the year most young are born (in the north; the south is half a year on).
+    pub birth_day: u16,
+    /// Yearly survival of adults from what is not simulated (disease, accident, old age).
+    pub adult_survival: f32,
+    /// First-year survival of the young from such causes.
+    pub young_survival: f32,
+    /// A newborn's mass, kg.
+    pub birth_mass_kg: f32,
+}
+
+/// Which young leave home to settle elsewhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Dispersers {
+    #[default]
+    Males,
+    Females,
+    Both,
+}
+
+/// How the population is simulated: large animals as groups that keep their members, small
+/// ones as numbers per ecological cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PopulationModel {
+    Groups,
+    Density,
+}
+
+/// How it uses the land (V2-7).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Ranging {
+    /// The area one group (or one solitary adult) lives in, km².
+    pub home_range_km2: f32,
+    /// Keeps others of its kind out of its range.
+    #[serde(default)]
+    pub territorial: bool,
+    /// How far the young go to settle, km.
+    pub dispersal_km: f32,
+    #[serde(default)]
+    pub dispersers: Dispersers,
+    /// How much it keeps to cover, 0 (open country) to 1 (thickets only).
+    #[serde(default)]
+    pub cover: f32,
+    /// Groups or density; by default groups from 5 kg up.
+    #[serde(default)]
+    pub model: Option<PopulationModel>,
+}
+
+/// A coat's pattern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum CoatPattern {
+    #[default]
+    Plain,
+    /// Pale spots on the back and flanks (fawns, lynx).
+    Spotted,
+    /// Pale stripes along the body (piglets).
+    Striped,
+    /// Dark and pale hairs mixed (wolves, hares).
+    Grizzled,
+    /// Black and white stripes on the face (badgers).
+    Masked,
+    /// Speckled feathers.
+    Speckled,
+    /// Black and white in bold patches (woodpeckers).
+    Pied,
+    /// Overlapping scales with a zig-zag down the back (adders).
+    ZigZag,
+    /// Dark bands across the body (rattlesnakes).
+    Banded,
+}
+
+/// Colours and patterns of its coat, feathers or scales (V2-7): the recipe for its texture.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Coat {
+    /// Back and flanks.
+    pub base: Color,
+    /// Belly, throat and inner legs.
+    pub belly: Color,
+    /// Muzzle, ear rims, lower legs, tail tip.
+    #[serde(default)]
+    pub points: Option<Color>,
+    /// The rump patch (deer).
+    #[serde(default)]
+    pub rump: Option<Color>,
+    #[serde(default)]
+    pub pattern: CoatPattern,
+    /// The pattern's colour (spots, stripes, the mask).
+    #[serde(default)]
+    pub marking: Option<Color>,
+    /// The winter coat's back, where it differs.
+    #[serde(default)]
+    pub winter: Option<Color>,
+    /// The male's back, where it differs (aurochs bulls, cock birds).
+    #[serde(default)]
+    pub male: Option<Color>,
+    /// The young's pattern, where it differs.
+    #[serde(default)]
+    pub young: Option<CoatPattern>,
+}
+
+/// One more thing butchering yields: antlers, tusks, a pelt.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtraYield {
+    /// The material.
+    pub material: IdRef,
+    /// Mass from a grown animal, kg.
+    pub mass_kg: Range,
+    /// Only from males (antlers, tusks) when set.
+    #[serde(default)]
+    pub males_only: bool,
+    /// Only in these seasons (antlers are cast in late winter), when not empty.
+    #[serde(default)]
+    pub seasons: Vec<Season>,
+}
+
+/// What butchering yields, as fractions of the live mass (V2-7).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Yields {
+    /// Lean meat.
+    pub meat: f32,
+    /// Fat (more in autumn, less in late winter).
+    pub fat: f32,
+    /// Edible organs: liver, heart, kidneys, tongue.
+    pub organs: f32,
+    pub bone: f32,
+    /// The hide or pelt.
+    pub hide: f32,
+    pub sinew: f32,
+    /// The hide's material (`rawhide` by default, or a fur).
+    #[serde(default)]
+    pub hide_material: Option<IdRef>,
+    /// The flesh's material (`meat` by default; `raw_fish`).
+    #[serde(default)]
+    pub meat_material: Option<IdRef>,
+    #[serde(default)]
+    pub extras: Vec<ExtraYield>,
+}
+
+/// The foot that makes its tracks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Foot {
+    /// Two toes with a gap between (deer, boar, aurochs).
+    ClovenHoof,
+    /// Four toes and claw marks (dogs, foxes, wolves).
+    PawClawed,
+    /// Four toes, claws drawn in (cats).
+    PawRetracted,
+    /// A whole sole with five toes (bears, badgers, hedgehogs).
+    Plantigrade,
+    /// Long hind feet ahead of the fore (hares, rabbits, squirrels).
+    Hopping,
+    /// Three toes forward (birds walking).
+    BirdToes,
+    /// A trail of a body (snakes).
+    Slither,
+}
+
+/// The tracks it leaves (V2-7).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Track {
+    pub foot: Foot,
+    /// A print's length, cm.
+    pub length_cm: f32,
+    /// A walking stride, m.
+    pub stride_m: f32,
+}
+
+/// A kind of call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CallKind {
+    Roar,
+    Bark,
+    Grunt,
+    Squeal,
+    Howl,
+    Growl,
+    Hiss,
+    Hoot,
+    Song,
+    Caw,
+    Drum,
+    Croak,
+    Scream,
+    Bellow,
+    Gobble,
+    Chatter,
+    Rattle,
+    Huff,
+    Buzz,
+}
+
+/// When a call is made.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CallWhen {
+    /// In the rut or the breeding season.
+    Rut,
+    /// On sensing danger.
+    Alarm,
+    /// To keep the group together.
+    Contact,
+    /// Holding a territory.
+    Territory,
+    /// Hurt or caught.
+    Distress,
+    /// Warning off a threat.
+    Threat,
+    /// At dawn (song).
+    Dawn,
+    /// At night.
+    Night,
+}
+
+/// A call (V2-7): what kind, when, how loud and how high.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Call {
+    pub kind: CallKind,
+    pub when: CallWhen,
+    /// Sound level at 1 m, dB.
+    pub loudness_db: f32,
+    /// Fundamental frequency, Hz.
+    pub pitch_hz: Range,
+    /// Length of one call, s.
+    #[serde(default = "one")]
+    pub seconds: f32,
+}
+
+/// How it behaves toward people (V2-7).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Temperament {
+    /// The distance at which an approaching person makes it flee, m.
+    pub flight_m: f32,
+    /// 0 shy to 1 bold: how slowly fear rises and how soon it comes back.
+    #[serde(default)]
+    pub boldness: f32,
+    /// Freezes (and hides) before fleeing (fawns, hares, grouse).
+    #[serde(default)]
+    pub freezes: bool,
+}
+
 entry! {
     /// An animal species.
     pub struct Animal in "fauna", schema 1, name name {
@@ -191,5 +442,19 @@ entry! {
         pub first_appearance_ya: Option<f64>,
         #[serde(default)]
         pub extinction_ya: Option<f64>,
+        #[serde(default)]
+        pub life: Option<LifeHistory>,
+        #[serde(default)]
+        pub ranging: Option<Ranging>,
+        #[serde(default)]
+        pub coat: Option<Coat>,
+        #[serde(default)]
+        pub yields: Option<Yields>,
+        #[serde(default)]
+        pub track: Option<Track>,
+        #[serde(default)]
+        pub calls: Vec<Call>,
+        #[serde(default)]
+        pub temperament: Option<Temperament>,
     }
 }

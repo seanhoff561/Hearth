@@ -7,7 +7,15 @@
             id: "temperate_broadleaf_forest", name: "Temperate broadleaf forest",
             biomes: ["broadleaf_forest", "mixed_forest", "birch_forest", "temperate_plains"],
             producers: ["english_oak", "silver_birch", "common_hazel", "stinging_nettle", "bramble", "meadow_grass"],
-            consumers: ["red_deer", "roe_deer", "wild_boar", "gray_wolf", "brown_bear", "eurasian_lynx"],
+            consumers: [
+                "red_deer", "white_tailed_deer", "roe_deer", "aurochs", "wild_boar", "gray_wolf", "red_fox", "brown_bear",
+                "american_black_bear", "eurasian_lynx", "bobcat", "european_badger", "brown_hare", "eastern_cottontail",
+                "red_squirrel", "eastern_gray_squirrel", "european_hedgehog", "bank_vole", "deer_mouse", "capercaillie",
+                "wild_turkey", "tawny_owl", "barred_owl", "great_spotted_woodpecker", "hairy_woodpecker", "common_raven",
+                "carrion_crow", "american_crow", "european_robin", "common_blackbird", "common_chaffinch", "american_robin",
+                "northern_cardinal", "black_capped_chickadee", "common_european_adder", "timber_rattlesnake",
+                "western_honey_bee", "common_frog", "wood_frog",
+            ],
             succession: [
                 (name: "Open ground: herbs and grasses", plants: ["meadow_grass", "stinging_nettle"], years: (0, 5)),
                 (name: "Scrub", plants: ["bramble", "common_hazel"], years: (3, 20)),
@@ -20,13 +28,28 @@
             id: "boreal_forest_ecosystem", name: "Boreal forest",
             biomes: ["boreal_forest", "snowy_taiga"],
             producers: ["norway_spruce", "silver_birch", "meadow_grass"],
-            consumers: ["red_deer", "gray_wolf", "brown_bear", "eurasian_lynx"],
+            consumers: [
+                "red_deer", "white_tailed_deer", "gray_wolf", "red_fox", "brown_bear", "american_black_bear", "eurasian_lynx",
+                "bobcat", "red_squirrel", "bank_vole", "deer_mouse", "capercaillie", "barred_owl", "great_spotted_woodpecker",
+                "hairy_woodpecker", "common_raven", "common_chaffinch", "american_robin", "black_capped_chickadee",
+                "common_european_adder", "wood_frog",
+            ],
             succession: [
                 (name: "Burn: grasses and herbs", plants: ["meadow_grass"], years: (0, 5)),
                 (name: "Birch", plants: ["silver_birch"], years: (5, 60)),
                 (name: "Spruce", plants: ["norway_spruce"], years: (50, 400)),
             ],
             fire_return_years: (50, 200),
+        ),
+        (
+            id: "temperate_freshwater", name: "Temperate rivers, lakes and wetlands",
+            biomes: ["river", "lake", "wetland"],
+            producers: ["osier", "white_willow", "black_alder", "meadow_grass"],
+            consumers: [
+                "brown_trout", "brook_trout", "european_perch", "yellow_perch", "common_frog", "wood_frog",
+                "red_deer", "aurochs", "wild_boar",
+            ],
+            notes: "Fish densities are per km² of water; the land animals come to drink.",
         ),
         (
             id: "savanna_woodland", name: "Savanna–woodland mosaic",

@@ -80,6 +80,8 @@ pub struct ColumnSample {
     pub province: u8,
     /// 0..1 strength of 3D overhang/cliff shaping in this column.
     pub cliffiness: f32,
+    /// The biogeographic realm.
+    pub realm: crate::realms::Realm,
 }
 
 impl ColumnSample {
@@ -147,6 +149,8 @@ impl DetailNoise {
 #[derive(Debug, Clone)]
 pub struct Terrain {
     pub grid: Arc<PlanetGrid>,
+    /// The biogeographic realms of the planet's landmasses.
+    pub realms: Arc<crate::realms::Realms>,
     planet: Planet,
     /// Blocks per real metre.
     v: f32,
@@ -172,6 +176,7 @@ impl Terrain {
             rivers,
             noise,
             seed: grid.seed,
+            realms: Arc::new(crate::realms::Realms::new(&grid)),
             grid,
         }
     }
@@ -506,6 +511,7 @@ impl Terrain {
             lake,
             province: g.province[idx],
             cliffiness,
+            realm: self.realms.realm_at(self.planet.wrap_xf(xf), zf),
         }
     }
 

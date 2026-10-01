@@ -13,6 +13,7 @@ pub mod geology;
 pub mod hydro;
 pub mod noise;
 pub mod planet;
+pub mod realms;
 pub mod region;
 pub mod settings;
 pub mod soil;

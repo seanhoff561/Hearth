@@ -854,3 +854,23 @@ plants with distance, opaque leaves far off), which belongs to a lower quality p
 default; it is noted for the next rendering pass. The forest's video memory (245 → 357 MiB)
 is the quad arenas doubling past a power of two, room allocated rather than used. The
 baseline moves to the end of V2-6.
+
+## D80 — Realms by continent size and latitude; stand-ins from one realm
+The spec asks for landmasses grouped into faunal realms by isolation and climate. On the planet
+grid the landmasses are found by flood fill (8-connected, wrapping); those of at least 4 % of
+the land are continents. Ranking the continents by area and giving the largest the Old World's
+realms (Palearctic north of 23.5°, Afrotropical in the tropics) and the next the New World's
+(Nearctic, Neotropical) mirrors Earth, where Afro-Eurasia is the largest landmass, and puts the
+richest content (the Palearctic tier 1) where a player most often starts: ranking the northern
+zones alone gave seed 7's spawn continent, the larger by 21 km², the Nearctic for being 1 km²
+smaller north of the tropics. Southern temperate land takes its continent's tropical realm (as
+the Cape is Afrotropical and Patagonia Neotropical); islands near a continent share its realm,
+remote ones are Oceanian. Most realms have no species of their own yet for most climates, and
+the spec allows "a clearly labeled composite where a random planet needs an ecological role
+filled": where the realm has none, the species of one stand-in realm fill the place (the
+Palearctic outside the tropics, the Afrotropical in them), weighted down fiftyfold so that a
+native that suits at all outweighs them, and never two realms mixed. The Nearctic has three
+trees of its own so far, so a fifth or more of its trees are Palearctic stand-ins where none of
+the three suits; more Nearctic species come with the expansion waves (V2-10). The species chooser
+reads the realm from the column sample, so the near terrain, the distant tiles and the
+vegetation's regrowth all agree.

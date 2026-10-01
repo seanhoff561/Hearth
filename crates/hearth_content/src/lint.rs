@@ -200,6 +200,14 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
                 );
             }
         }
+        if let Some(y) = &e.yields {
+            for m in y.hide_material.iter().chain(&y.meat_material) {
+                r.material(m, o, e.id());
+            }
+            for x in &y.extras {
+                r.material(&x.material, o, e.id());
+            }
+        }
         for h in &e.habitat {
             r.check(&c.ecosystems, "ecosystem", h, o, e.id());
         }

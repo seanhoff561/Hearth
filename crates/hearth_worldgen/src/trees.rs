@@ -102,7 +102,14 @@ pub struct Niche {
     /// How fast it grows against the others (0.5 slow … 2 fast): in a gap of the old forest the
     /// quicker of the shade-tolerant reach the light first.
     pub pace: f32,
+    /// The realms it is native to (none: all).
+    pub realms: crate::realms::RealmSet,
 }
+
+/// How a species of the stand-in realm ([`crate::realms::stand_in`]) does outside its realms:
+/// it shows where no native suits the place, and seldom among natives (a stand-in until the
+/// realm has its own species).
+pub const FOREIGN: f32 = 0.02;
 
 impl Niche {
     /// A plant's niche.
@@ -122,6 +129,7 @@ impl Niche {
             conifer,
             colonizes: travels * pace,
             pace,
+            realms: crate::realms::set_of(&p.realms),
         }
     }
 }
@@ -137,6 +145,8 @@ pub struct PlaceClimate {
     pub biome: Biome,
     /// Wet ground (floodplains, wetlands).
     pub wet: bool,
+    /// The biogeographic realm.
+    pub realm: crate::realms::Realm,
 }
 
 /// A plant of the understory as the generator places it.
@@ -238,6 +248,19 @@ fn fit(v: f32, lo: f32, hi: f32, soft: f32) -> f32 {
 
 impl Niche {
     /// How well a place suits it, 0–1.
+    /// 1 where the place's realm is its own, [`FOREIGN`] where it is of the realm that stands in
+    /// for the place's climate, 0 elsewhere.
+    #[inline]
+    pub fn native(&self, c: &PlaceClimate) -> f32 {
+        if crate::realms::native(self.realms, c.realm) {
+            1.0
+        } else if self.realms & crate::realms::stand_in(c.class).bit() != 0 {
+            FOREIGN
+        } else {
+            0.0
+        }
+    }
+
     pub fn suits(&self, c: &PlaceClimate) -> f32 {
         let e = &self.climate;
         let mut s = 1.0;
@@ -430,7 +453,7 @@ impl Forest {
             } else {
                 0.02 * u.abundance * fit
             };
-            odds.push(p);
+            odds.push(p * self.understory[i].niche.native(c));
         }
         let total: f32 = odds.iter().sum::<f32>().min(0.7);
         if roll >= total {
@@ -481,7 +504,7 @@ impl Forest {
             let s = n.suits(c);
             best = best.max(s);
             let id = &self.templates.species[i].id;
-            weights.push(s * s * n.affinity(id, c.biome) * light(n));
+            weights.push(s * s * n.affinity(id, c.biome) * light(n) * n.native(c));
         }
         if best < 0.25 {
             return None;

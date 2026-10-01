@@ -707,6 +707,7 @@ impl FeatureGen {
             class: s.climate,
             biome: s.biome,
             wet: s.biome == Biome::Wetland,
+            realm: s.realm,
         };
         let wet = s.biome == Biome::Wetland
             || s.river
@@ -967,6 +968,7 @@ impl FeatureGen {
             class: s.climate,
             biome: s.biome,
             wet: s.biome == Biome::Wetland,
+            realm: s.realm,
         };
         let mut sp = forest.choose(&climate, 0.0, roll)?;
         let species = &forest.templates.species[sp];
@@ -1013,6 +1015,7 @@ impl FeatureGen {
             class: s.climate,
             biome: s.biome,
             wet,
+            realm: s.realm,
         };
         let site = super::succession::SiteInput {
             forest,
