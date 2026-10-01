@@ -593,3 +593,18 @@ alternates which build runs first (D74). Gate passed; the baseline moves to the 
 |---|---:|---:|---:|---:|---:|---:|---|---|
 | flythrough | 1812 | 364 | 33006 | 0 | 70.4 | – | 12.17 ms, lod selection 9.17 | 1.2 km at sprint-fly speed (30 m/s) 70 m over the land, terrain streaming |
 
+## End of V2-6 — the performance gate: 946304d (end of V2-5) against d4931e6 (end of V2-6), alternating, the first build alternating by round, three rounds each, NVIDIA GeForce RTX 4060 Laptop GPU (Vulkan), 1920x1080, preset Fancy
+
+| Scene | Avg FPS | 1% low FPS (1st percentile) | GPU ms | Triangles |
+|---|---:|---:|---:|---:|
+| lowland_forest | 731 → 668 (-8.6 %) | 693 → 599 (-13.6 %) | 1.34 → 1.47 | 1.27 → 1.75 M |
+| peak_lod512 | 763 → 725 (-5.0 %) | 543 → 490 (-9.9 %) | 1.28 → 1.35 | 1.93 → 2.03 M |
+| cave_torches | 2167 → 2137 (-1.4 %) | 1078 → 1005 (-6.8 %) | 0.43 → 0.44 | 1.22 → 1.33 M |
+
+Medians of three runs each. V2-6 grows its trees from their species (limbs as joined bars,
+crowns of foliage), adds an understory and carries the vegetation into the distant tiles: in
+the forest the near terrain pass went from 0.48 to 0.60 ms and the distant terrain pass from
+0.34 to 0.39 ms. Three measured optimizations came first (foliage behind two layers of leaves;
+a limb's faces toward foliage; a limb's end inside another), recovering about 6 %. The gate
+failed and the cost is accepted as the content's (D79); the cave's lows are one run's 43 ms
+stall in submit with the GPU time unchanged. The baseline moves to the end of V2-6.

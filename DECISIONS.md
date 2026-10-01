@@ -834,3 +834,23 @@ uploaded as they come within reach, at most 256 a frame as the client) and dista
 through the game's own streamer, so what it measures is the game's streaming on the frame
 thread; its slow frames are the tile selection, which is the first thing to move off the
 frame thread.
+
+## D79 — V2-6's frame cost is its forests
+At the end of V2-6 the gate against the end of V2-5 (946304d against d4931e6, three alternating
+rounds) failed: lowland_forest −8.6 % average (731 → 668 FPS) and −13.6 % 1 % lows (693 → 599),
+peak_lod512 −5.0 % and −9.9 %, cave_torches −1.4 % and −6.8 %. The forest's triangles grew from
+1.27 to 1.75 million: trees are now grown from their species with limbs as joined bars and
+crowns of foliage, an understory of 26 plants stands under them, and the distant tiles carry
+the vegetation. Its near terrain pass went from 0.48 to 0.60 ms and its distant terrain pass
+from 0.34 to 0.39 ms; the frames wait on the GPU (0.9 ms of 1.5), so that is the loss, and the
+1 % lows fall further because they are the densest views of the forest. The cave's GPU time
+did not change (0.433 → 0.437 ms, a 0.47 ms frame); its lows are one run's 43 ms stall in
+submit. Three measured optimizations were made first: foliage behind two layers of leaves
+(+4.1 % average, +5.0 % lows in the forest), a limb's faces toward foliage (−2.4 % triangles)
+and a limb's end inside another (−2.5 % triangles, +1.4 %), all with an SSIM of 0.98 or more.
+What is left is the content, and the forest still runs at 668 FPS average and 599 FPS 1 % low
+at 1920×1080 on the RTX 4060 Laptop. Cutting further would change what is seen (fewer small
+plants with distance, opaque leaves far off), which belongs to a lower quality preset, not the
+default; it is noted for the next rendering pass. The forest's video memory (245 → 357 MiB)
+is the quad arenas doubling past a power of two, room allocated rather than used. The
+baseline moves to the end of V2-6.
