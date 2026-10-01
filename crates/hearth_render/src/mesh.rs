@@ -407,6 +407,17 @@ impl Mesher<'_> {
                         if !self.face_visible(s, nb, d) {
                             continue;
                         }
+                        // Between two blocks of the same foliage, a face is seen only through
+                        // the leaf beside it: where another leaf lies beyond that one, it is
+                        // behind two layers of foliage and is not drawn (the first layer in,
+                        // seen through the gaps at a crown's surface, is).
+                        if s == nb && cube.waving {
+                            let (fx, fy, fz) = (x + 2 * n.x, y + 2 * n.y, z + 2 * n.z);
+                            let inside = |v: i32| (-1..=16).contains(&v);
+                            if inside(fx) && inside(fy) && inside(fz) && inp.at(fx, fy, fz) == s {
+                                continue;
+                            }
+                        }
                         let ft = cube.faces[d.index()];
                         let (lights, aos) = self.corner_light(inp, x, y, z, d);
                         let (tint_kind, tint) = inp.tints.get(ft.tint, x as usize, z as usize);
@@ -1022,6 +1033,45 @@ mod tests {
         // Everything but the air above connects; the solid half blocks nothing on the top side.
         assert!(
             mesh.visibility & (1 << (Direction::Up.index() * 6 + Direction::North.index())) != 0
+        );
+    }
+
+    #[test]
+    fn deep_foliage_is_not_drawn_but_the_first_layer_in_is() {
+        let (reg, models) = setup();
+        let leaves = reg.default_state("oak_leaves");
+        // A 6×6×6 block of foliage: its outer faces, and inside the faces seen through one leaf
+        // only (each slab's faces toward a neighbour on the surface).
+        let map = world_with(&reg, |x, y, z| {
+            if (4..10).contains(&x) && (4..10).contains(&y) && (4..10).contains(&z) {
+                leaves
+            } else {
+                BlockStateId::AIR
+            }
+        });
+        let mesher = Mesher {
+            reg: &reg,
+            models: &models,
+            opts: MeshOptions::default(),
+        };
+        let mesh = mesher.mesh(&MeshInput::gather(
+            &map,
+            CubePos::new(0, 0, 0),
+            ColumnTints::default(),
+        ));
+        // Per direction, faces are drawn on the 6×6 blocks of the slab at the surface and those
+        // just behind it: at most 2 slabs of 36 faces (fewer quads where they merge), where all 6
+        // slabs were drawn before.
+        let faces: u32 = mesh.quad_counts.iter().flatten().sum();
+        let east: u32 = mesh
+            .quad_counts
+            .iter()
+            .map(|layer| layer[Direction::East.index()])
+            .sum();
+        assert!(east > 0, "the crown's east face");
+        assert!(
+            faces <= 6 * 2 * 36,
+            "{faces} quads for a 6×6×6 block of foliage"
         );
     }
 
