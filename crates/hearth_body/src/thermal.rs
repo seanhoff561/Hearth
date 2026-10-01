@@ -87,6 +87,8 @@ pub struct Drive {
     pub mass_kg: f64,
     /// Metabolic heat apart from shivering (W).
     pub metabolic_w: f64,
+    /// Basal metabolic rate (W): exercise above it opens the muscles' blood flow.
+    pub basal_w: f64,
     /// The most shivering can add (W), lower when the glycogen that fuels it runs low.
     pub shiver_max_w: f64,
     /// Raise of the core's set point by fever (°C).
@@ -192,7 +194,10 @@ impl Thermal {
         let warm_s = (self.skin_c - SKIN_SET).max(0.0);
         let cold_s = (SKIN_SET - self.skin_c).max(0.0);
         let skin_blood = ((2.5 + 200.0 * warm_c) / (1.0 + 0.5 * cold_s)).clamp(0.5, 90.0);
-        let k = K_TISSUE + 1.163 * skin_blood;
+        // Working muscles carry blood close to the skin: exercise thins the shell's insulation
+        // (swimming in cold water cools faster than floating still).
+        let exercise = (d.metabolic_w / d.basal_w.max(1.0) - 1.0).max(0.0);
+        let k = K_TISSUE * (1.0 + 0.15 * exercise) + 1.163 * skin_blood;
         // Blood to the hands and feet: wide open in the heat, kept up while the body is warm
         // and its skin not cold, shut off when the body has heat to save.
         let heat_open = ((skin_blood - 0.5) / 20.0).clamp(0.0, 1.0);

@@ -144,6 +144,8 @@ pub struct BlockDef {
     pub friction: f32,
     pub speed_factor: f32,
     pub jump_factor: f32,
+    /// 0–1: how much a fall onto the block is softened (deep snow, leaves).
+    pub cushion: f32,
     pub random_ticks: bool,
     /// Can be replaced by placing another block into it (air, grass, water, snow layer 1).
     pub replaceable: bool,
@@ -190,6 +192,7 @@ impl Default for BlockDef {
             friction: 0.6,
             speed_factor: 1.0,
             jump_factor: 1.0,
+            cushion: 0.0,
             random_ticks: false,
             replaceable: false,
             waterloggable: false,

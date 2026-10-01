@@ -208,10 +208,11 @@ impl BodyConfig {
             "resting" => (0.0, Posture::Sitting, false, 0.0),
             "standing" => (0.05, Posture::Standing, false, 0.0),
             "walking" => (0.15, Posture::Standing, false, self.params.walk_m_s),
-            "jogging" => (0.45, Posture::Standing, false, self.params.jog_m_s),
+            "jogging" => (0.4, Posture::Standing, false, self.params.jog_m_s),
             "sprinting" => (1.0, Posture::Standing, false, self.params.sprint_m_s),
-            "swimming" => (0.5, Posture::Lying, false, self.params.swim_m_s),
-            "climbing" => (0.7, Posture::Standing, false, 0.3),
+            "swimming" => (0.45, Posture::Lying, false, self.params.swim_m_s),
+            "treading_water" => (0.3, Posture::Lying, false, 0.0),
+            "climbing" => (0.85, Posture::Standing, false, 0.3),
             "carrying_heavy" => (0.6, Posture::Standing, false, 1.0),
             _ => (0.3, Posture::Standing, false, 0.0),
         };
@@ -273,6 +274,8 @@ pub enum Refusal {
 pub struct Effects {
     /// Multiplier on walking and running speed.
     pub walk: f32,
+    /// Running at all (a sprained ankle or broken leg allows only a walk).
+    pub jog: bool,
     pub sprint: bool,
     pub jump: bool,
     /// Both hands usable (a broken arm leaves one).
@@ -427,6 +430,8 @@ const DEATH_HOT_C: f64 = 43.0;
 const FATAL_BLOOD_LOSS: f64 = 0.4;
 /// Body fat (share of mass) below which starvation kills.
 const FATAL_FAT: f64 = 0.015;
+/// Share of all-out effort the body keeps up without spending stamina.
+pub const AEROBIC: f64 = 0.5;
 /// Blood made back per real day when fed and watered (l).
 const BLOOD_REGEN_L_DAY: f64 = 0.3;
 
@@ -484,11 +489,13 @@ impl Body {
         };
         let fuel = 0.3 + 0.7 * self.energy.glycogen_frac(mass).max(0.3);
         let shiver_met = cfg.met("shivering_max") as f64;
+        // Shivering and work share one ceiling of heat production.
         let drive = Drive {
             area_m2: cfg.area_m2,
             mass_kg: mass,
             metabolic_w: met * cfg.bmr_w,
-            shiver_max_w: (shiver_met - 1.0).max(0.0) * cfg.bmr_w * fuel,
+            basal_w: cfg.bmr_w,
+            shiver_max_w: (shiver_met - met).max(0.0) * cfg.bmr_w * fuel,
             fever_c: self.fever_c(cfg),
             sweat_capacity: (1.0 - self.water.deficit_share(mass) / 0.1).clamp(0.2, 1.0),
             cold_stress: r.cold_stress,
@@ -528,11 +535,13 @@ impl Body {
             dt,
         );
 
-        // Stamina, in seconds of play.
+        // Stamina, in seconds of play: effort beyond what the body sustains aerobically (half
+        // of all-out) spends it; less than that lets it come back.
         let sp = cfg.params.stamina;
         let effort = activity.exertion as f64;
-        if effort > 0.35 {
-            self.stamina -= effort / sp.all_out_s.max(1.0) as f64 * play_dt;
+        if effort > AEROBIC {
+            self.stamina -=
+                (effort - AEROBIC) / (1.0 - AEROBIC) / sp.all_out_s.max(1.0) as f64 * play_dt;
         } else {
             let tired = (self.sleep.pressure - 0.6).max(0.0) / 0.4;
             let condition = (1.0 - 0.5 * tired)
@@ -543,7 +552,7 @@ impl Body {
                     1.0
                 };
             self.stamina +=
-                (1.0 - effort / 0.35) * condition / sp.recover_s.max(1.0) as f64 * play_dt;
+                (1.0 - effort / AEROBIC) * condition / sp.recover_s.max(1.0) as f64 * play_dt;
         }
         self.stamina = self.stamina.clamp(0.0, 1.0);
 
@@ -847,6 +856,67 @@ impl Body {
         }
     }
 
+    /// The injuries of landing at `impact_m_s` (after the ground's cushioning). Below 5.5 m/s
+    /// (a drop of 1.5 m) nothing; then sprained ankles and bruises; fractures in a fifth of
+    /// falls from 3 m, most from 6 m; deep wounds past 11 m/s; and death: rare below 12 m/s,
+    /// half of falls from about 12 m (16 m/s), nearly all past 21 m/s (22 m). The balance's
+    /// injury severity scales the impact.
+    pub fn land(&mut self, cfg: &BodyConfig, impact_m_s: f64) {
+        let v = impact_m_s * cfg.rates.injury_severity.sqrt();
+        if v < 5.5 || self.dead.is_some() {
+            return;
+        }
+        let ramp = |lo: f64, hi: f64| ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+        let smooth = |lo: f64, hi: f64| {
+            let t = ramp(lo, hi);
+            t * t * (3.0 - 2.0 * t)
+        };
+        if self.roll() < smooth(11.0, 21.0) {
+            self.kill(Death::Injury("fall".into()));
+            return;
+        }
+        let side = |b: &mut Body| {
+            if b.roll() < 0.5 {
+                Side::Left
+            } else {
+                Side::Right
+            }
+        };
+        let severity = |lo: f64| ramp(lo, lo + 8.0).max(0.2) as f32;
+        let fracture = self.roll() < 0.9 * ramp(6.5, 11.5);
+        if fracture {
+            let region = if v > 11.0 && self.roll() < 0.4 {
+                BodyRegion::UpperLeg
+            } else if self.roll() < 0.6 {
+                BodyRegion::LowerLeg
+            } else {
+                BodyRegion::Foot
+            };
+            let s = side(self);
+            self.injure(cfg, "fracture", region, s, severity(7.5));
+            if v > 11.0 && self.roll() < 0.5 {
+                let s = side(self);
+                let arm = if self.roll() < 0.5 {
+                    BodyRegion::LowerArm
+                } else {
+                    BodyRegion::Hand
+                };
+                self.injure(cfg, "fracture", arm, s, severity(9.0));
+            }
+        } else if self.roll() < 0.15 + 0.6 * ramp(5.5, 9.0) {
+            let s = side(self);
+            self.injure(cfg, "sprain", BodyRegion::Foot, s, severity(5.5));
+        }
+        if self.roll() < 0.5 * ramp(5.5, 8.0) {
+            let s = side(self);
+            self.injure(cfg, "bruise", BodyRegion::LowerLeg, s, severity(5.5));
+        }
+        if v > 11.0 && self.roll() < 0.3 {
+            let s = side(self);
+            self.injure(cfg, "deep_wound", BodyRegion::UpperLeg, s, severity(11.0));
+        }
+    }
+
     /// Ends the body's life (drowning, a fatal fall...).
     pub fn kill(&mut self, death: Death) {
         if self.dead.is_none() {
@@ -859,6 +929,7 @@ impl Body {
         let mass = cfg.mass_kg;
         let mut fx = Effects {
             walk: 1.0,
+            jog: true,
             sprint: true,
             jump: true,
             two_hands: true,
@@ -881,9 +952,13 @@ impl Body {
             for e in &kind.effects {
                 match e.as_str() {
                     "slow_walk" if is_leg(inj.region) => fx.walk *= 1.0 - 0.5 * sev.max(0.3),
-                    "no_sprint" if is_leg(inj.region) => fx.sprint = false,
+                    "no_sprint" if is_leg(inj.region) => {
+                        fx.sprint = false;
+                        fx.jog = false;
+                    }
                     "no_use_of_limb" if is_leg(inj.region) => {
                         fx.walk *= 0.4;
+                        fx.jog = false;
                         fx.sprint = false;
                         fx.jump = false;
                     }
@@ -960,6 +1035,7 @@ impl Body {
         fx.conscious = core > 30.0 && lost < 0.35 && self.dead.is_none();
         if !fx.conscious {
             fx.walk = 0.0;
+            fx.jog = false;
             fx.sprint = false;
             fx.jump = false;
         }

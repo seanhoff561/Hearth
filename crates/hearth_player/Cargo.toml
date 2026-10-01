@@ -1,0 +1,20 @@
+[package]
+name = "hearth_player"
+description = "The player: a body moving through the world (movement and physiology together)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_body.workspace = true
+hearth_physics.workspace = true
+glam.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+hearth_content.workspace = true
+
+[lints]
+workspace = true

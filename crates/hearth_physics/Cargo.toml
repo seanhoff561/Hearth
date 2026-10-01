@@ -1,0 +1,17 @@
+[package]
+name = "hearth_physics"
+description = "Bodies moving through the block world: collision, gaits, jumps, climbing, swimming, falls."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_math.workspace = true
+hearth_world.workspace = true
+glam.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

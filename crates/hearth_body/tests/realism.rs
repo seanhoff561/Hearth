@@ -443,3 +443,42 @@ fn a_meal_ends_hunger_and_a_full_stomach_refuses_more() {
     };
     assert_eq!(body.eat(&cfg, &big), Err(hearth_body::Refusal::Full));
 }
+
+#[test]
+fn falls_hurt_by_their_height() {
+    let cfg = config();
+    let v = |h: f64| (2.0 * 9.81 * h).sqrt();
+    let outcome = |h: f64| {
+        let (mut hurt, mut broken, mut dead) = (0, 0, 0);
+        for seed in 0..1000 {
+            let mut b = Body::new(&cfg, 5000 + seed);
+            b.land(&cfg, v(h));
+            if b.dead.is_some() {
+                dead += 1;
+            } else if !b.injuries.is_empty() {
+                hurt += 1;
+                if b.injuries.iter().any(|i| i.id.ends_with("fracture")) {
+                    broken += 1;
+                }
+            }
+        }
+        (
+            hurt as f64 / 1000.0,
+            broken as f64 / 1000.0,
+            dead as f64 / 1000.0,
+        )
+    };
+    for h in [1.0, 2.0, 3.0, 6.0, 10.0, 15.0, 25.0] {
+        let (hurt, broken, dead) = outcome(h);
+        println!("{h:>4} m: hurt {hurt:.2}, fractures {broken:.2}, dead {dead:.2}");
+    }
+    assert_eq!(outcome(1.0), (0.0, 0.0, 0.0));
+    let (hurt, broken, dead) = outcome(3.0);
+    assert!(hurt > 0.5 && (0.1..0.35).contains(&broken) && dead == 0.0);
+    let (_, broken, dead) = outcome(6.0);
+    assert!(broken > 0.6 && dead < 0.05);
+    let (_, _, dead) = outcome(12.0);
+    assert!((0.3..0.7).contains(&dead));
+    let (_, _, dead) = outcome(25.0);
+    assert!(dead > 0.95);
+}

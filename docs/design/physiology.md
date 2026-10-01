@@ -34,9 +34,11 @@ compressed. All conversion goes through `TimeScales`.
   vapour resistance 0.6 m²kPa/W, about 0.35 l a day), the rain it warms, water when immersed
   (150 W/m²K), the ground when lying (through bedding), and the sun's and fires' radiation
   reaching it through the cover. Warm and cold signals drive the skin's blood flow, sweating
-  (Gagge's 170 g/m²h per °C) and shivering (19.4 W/m² per °C², up to 4.5 METs, less on low
-  glycogen, failing below 32 °C core); the hands and feet are shut off most in the cold unless
-  the body is warm, so they grow cold while the trunk stays warm. Fever raises the set point.
+  (Gagge's 170 g/m²h per °C) and shivering (19.4 W/m² per °C², under one ceiling of 4.5 METs
+  shared with work, less on low glycogen, failing below 32 °C core); the hands and feet are shut
+  off most in the cold unless the body is warm, so they grow cold while the trunk stays warm.
+  Working muscles thin the shell's insulation (swimming in cold water cools faster than floating
+  still). Fever raises the set point.
 - **Food energy** (`energy.rs`): the stomach (2 l) empties with a 1.5-hour time constant
   (drink in 20 minutes); energy fills glycogen (28 kcal/kg, about a day's worth) then fat (at
   85 %); burning draws on glycogen in proportion to how full it is, then fat alone. The body
@@ -90,8 +92,8 @@ world loop); death → respawn rules (V2-3).
 
 ## Acceptance (V2-3)
 `crates/hearth_body/tests/acceptance.rs`:
-- Naked in 5 °C rain with a breeze: mild hypothermia (core below 35 °C) after 1.4 h of body time
-  — 2.7 minutes of play; in furs (parka, leggings, mittens, moccasins) by a fire in the same
+- Naked in 5 °C rain with a breeze: mild hypothermia (core below 35 °C) after 1.0 h of body time
+  — 2.0 minutes of play; in furs (parka, leggings, mittens, moccasins) by a fire in the same
   rain the core holds at 36.4 °C.
 - Without water: dead after 3.3 days of hot, active days (32 °C, walking in the sun), and
   after about 11 days resting in mild shade — as with people, heat and work decide.
@@ -106,6 +108,12 @@ water makes a body hypothermic in 42 minutes and kills in 3.6 hours; a resting d
 bound it costs a tenth of the blood; uncleaned punctures get infected at their rate and cleaned
 ones never; seawater deepens thirst; a day awake tires and a warm night restores; bare hands
 freeze at −20 °C in wind while fur mittens save them.
+
+Movement and the body together (`crates/hearth_player/tests/living.rs`): a 4 m fall hurts
+most people and 30 m kills; a sprint lasts 16 s and drops to a jog; a broken leg allows 0.4 m/s
+and no jump; a diver who stays down drowns after 105 s; floating in 8 °C water chills the body
+until it faints and drowns. Falls by height (`tests/realism.rs`): 2 m hurts 39 %, 3 m breaks a
+bone in 24 %, 6 m in 78 %, 10 m kills 20 %, 15 m 68 %, 25 m all.
 
 ## Known simplifications
 - One skin temperature per region (no left and right, no front and back); the radiant heat of

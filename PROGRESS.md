@@ -297,6 +297,14 @@ V2-3 — player: character, body & physiology. Done so far:
   `human.ron`, fur leggings, fur mittens 1.5 clo, closed fractures. Acceptance tests
   (`tests/acceptance.rs`: hypothermia naked in cold rain vs furs by a fire, death by thirst,
   sprain vs fracture) and realism tests against human data (`tests/realism.rs`, twelve).
+- (b) Movement (`hearth_physics`, `hearth_player`, D67, `docs/design/movement.md`): the box
+  swept against block shapes, gaits at human speeds (sprint on stamina above the aerobic
+  threshold), jumps of 0.45 m, steps in stride, scrambles up a block, ledges to head height
+  climbed with both hands, crouch (edges kept) and crawl (low gaps), wading and swimming with
+  breath, ladders, ice; landings by speed softened by snow, leaves or water, judged by the body
+  (`Body::land`); the player joining body and mover (effects → ability, motion → activity and
+  immersion, drowning, limp bodies sink). Blocks gained `cushion`; treading water (3.5 METs).
+  Tests: eleven of movement, five of the living player, falls by height.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -306,10 +314,8 @@ V2-3 — player: character, body & physiology. Done so far:
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. V2-3 — Player: character, body & physiology (PLAN.md). Done: (a) the body. Next:
-   (b) physics and movement — the player's box against the blocks (collision shapes,
-   stepping, sliding), walk/jog/sprint/crouch/crawl/swim/climb at the body's speeds and
-   stamina, jumps, falls injuring by impact speed, drowning — headless tests first; (c) the
+1. V2-3 — Player: character, body & physiology (PLAN.md). Done: (a) the body, (b)
+   movement. Next: (c) the
    world loop: `hearth_protocol`, an integrated server thread at 20 TPS owning the world, the
    player's body (exposure from weather, water, sun and shelter) and the finite water
    (`WaterSim::pour`/`take`/`block_changed`, the seasonal cover's changes next to it), the

@@ -615,3 +615,17 @@ reference adult (the middle of the data's ranges) for every character, because h
 are cosmetic (v2 §9.1). Garment insulation is local (clo where the garment covers): fur mittens
 became 1.5 clo, where 0.4 was a whole-outfit share. Fractures in the data are closed (no
 infection); an open one is a fracture and a deep wound.
+
+## D67 — Movement: steps, scrambles and ledges instead of jumps; falls judged by their speed
+A person steps up about 0.6 m in stride and jumps about 0.45 m, so a block-tall step cannot be
+jumped as in other block games. Voxel hills are made of block steps, so a block (to 1.05 m) is
+scrambled up when walking or jogging — slower for a moment and hard work — and ledges up to head
+height (1.9 m) are climbed with both hands, strength and stamina, in one to two seconds; two
+blocks are out of reach (rock faces with holds are a later feature). Landings report their
+speed and the body decides the injuries (v2 §9.2): fractures from a fifth of 3 m falls, death
+in half of falls from about 12 m (the commonly cited range). Water passes on about a third of
+the speed of entering it. Breath: 45 s held, fainting 25 s after, drowning 60 s after; a body
+that cannot act goes limp and sinks, so a swimmer chilled to unconsciousness drowns, as most
+cold-water deaths go. Two physiological corrections came with it: shivering and work share one
+ceiling of heat production (4.5 METs), and work thins the shell's insulation (K × (1 + 0.15 ×
+METs above rest)), so treading water in cold water cools rather than holding warm.

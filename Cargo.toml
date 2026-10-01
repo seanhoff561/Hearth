@@ -21,6 +21,8 @@ hearth_content = { path = "crates/hearth_content" }
 hearth_save = { path = "crates/hearth_save" }
 hearth_env = { path = "crates/hearth_env" }
 hearth_body = { path = "crates/hearth_body" }
+hearth_physics = { path = "crates/hearth_physics" }
+hearth_player = { path = "crates/hearth_player" }
 hearth_render = { path = "crates/hearth_render" }
 hearth_lod = { path = "crates/hearth_lod" }
 

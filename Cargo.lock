@@ -913,6 +913,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "hearth_physics"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hearth_math",
+ "hearth_world",
+ "serde",
+]
+
+[[package]]
+name = "hearth_player"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hearth_body",
+ "hearth_content",
+ "hearth_physics",
+ "serde",
+]
+
+[[package]]
 name = "hearth_render"
 version = "0.1.0"
 dependencies = [
