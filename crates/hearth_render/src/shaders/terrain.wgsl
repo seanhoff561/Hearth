@@ -489,5 +489,24 @@ fn fs_translucent(in: VsOut) -> @location(0) vec4<f32> {
     if in.flags == 1u {
         return water_shade(in, gx, gy);
     }
-    return vec4<f32>(shade_color(c.rgb, in), c.a);
+    // Ice (the one translucent solid): its texture's colour and opacity under a Fresnel
+    // reflection of the sky (1.8 % head-on) and the sun's sharp glint on its smooth face; more
+    // opaque where it reflects more.
+    let dist = length(in.world);
+    let view = -in.world / max(dist, 1e-3);
+    let n = select(in.normal, vec3<f32>(0.0, 1.0, 0.0), dot(in.normal, in.normal) < 0.5);
+    let ndv = abs(dot(n, view));
+    let f = 0.018 + 0.982 * pow(1.0 - ndv, 5.0);
+    let open = smoothstep(0.8, 1.0, in.light.x);
+    let rn = select(n, -n, dot(n, view) < 0.0);
+    var sky = water_sky(reflect(-view, rn)) * mix(0.35, 1.0, open);
+    let rough = 0.06;
+    let a2 = rough * rough * rough * rough;
+    let h = normalize(view + g.sun.xyz);
+    let dd = max(dot(rn, h), 0.0) * max(dot(rn, h), 0.0) * (a2 - 1.0) + 1.0;
+    let glint = g.sun_light.rgb * a2 / (3.14159265 * dd * dd) * f
+        * select(0.0, 1.0, dot(rn, g.sun.xyz) > 0.0) * open / (4.0 * max(ndv, 0.1));
+    let body = shade_color(c.rgb, in);
+    let reflected = aerial(sky + glint, in.world);
+    return vec4<f32>(mix(body, reflected, f), max(c.a, f));
 }

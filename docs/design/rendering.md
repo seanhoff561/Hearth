@@ -105,6 +105,12 @@ view through the water — to what it shows, or to the surface overhead where th
 water — at 0.40, 0.08, 0.06 per metre and adds the light the water scatters toward the eye
 (blue-green, from the light at the camera's depth), and the eye adapts to the dimmer light.
 
+**Ice** (lake, river and sea ice of the seasonal cover) keeps its texture's colour and
+translucency under a Fresnel reflection of the sky (1.8 % head-on, ice's index 1.31) and a sharp
+glint of the sun on its smooth face, growing more opaque where it reflects more; the water under
+it shows through it with its own shading, so thin lake ice reads as dark, glossy black ice. Far
+sea ice is the LOD's sea-ice colour, without the water's reflections.
+
 ### Distant terrain (`hearth_lod`, `lod.rs`, `lod.wgsl`, D52, D54)
 Beyond the full-detail cubes the land continues as LOD tiles out to the LOD distance, or to the
 horizon when that is farther (so the land never stops short of the skyline):
