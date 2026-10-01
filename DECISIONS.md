@@ -594,3 +594,24 @@ shading +0.05, the copy 0.036); on the summit the distant water of the LOD pass 
 `queue.submit` (one to three in some runs) showed up in both builds alike and in a bisection
 before V2-2 — the driver or the system, not this code; the gate's 1 % lows (the median run's
 99th-percentile frame) are robust to them.
+
+## D66 — The body: a core and a regional shell, needs on the day scale, one reference adult
+`hearth_body` models the player's body (v2 §9) from data. Heat balance: Gagge's two-node model
+with two changes. The shell is split into the eleven body regions, each region's skin solved as
+the balance between the heat reaching it from the core and what it loses through its own cover;
+with one mean skin, the cold hands, feet and neck of a well-dressed body drained the core as if
+they were warm, and a person in furs by a fire froze. And the shell's conductance at full
+vasoconstriction is the whole shell's tissue insulation (10 W/m²K) rather than Gagge's
+skin-layer 5.28 W/m²K, with which a naked person shivering in 5 °C rain never became
+hypothermic. Skin diffusion uses the skin's vapour resistance (0.6 m²kPa/W) instead of Gagge's
+6 % of the evaporative capacity, which for a near-naked body in wind gave three litres a day of
+insensible loss. Calibrated against human data in `tests/realism.rs`.
+
+Needs, heat and short illnesses run on the day scale (a game day is a real day for the body);
+injuries and illnesses use their data's scale; stamina is in seconds of play. Time to die of
+thirst follows heat and work as it does in people — 3.3 days of hot, active days, about 11
+resting in the shade — so "about three days" is a hot, active life, not a fixed timer. One
+reference adult (the middle of the data's ranges) for every character, because height and build
+are cosmetic (v2 §9.1). Garment insulation is local (clo where the garment covers): fur mittens
+became 1.5 clo, where 0.4 was a whole-outfit share. Fractures in the data are closed (no
+infection); an open one is a fracture and a deep wound.

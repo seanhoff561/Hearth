@@ -1,19 +1,117 @@
 # Body and physiology
 
-*Status: planned (V2-3). Parameters in `data/hearth/body/` (human, injuries, illnesses).*
+*Status: the physiology is implemented (V2-3 part a, `hearth_body`, D66); the player who lives
+in it — movement, the world loop, the HUD and Body panel — comes with the rest of V2-3.
+Parameters in `data/hearth/body/` (human, injuries, illnesses) and `data/hearth/clothing/`.*
 
-## Planned model
-- Energy: BMR (24 kcal/kg/day) plus activity costs from MET values; stomach capacity limits
-  intake; body fat as the reserve; macronutrients and a slow fresh-food reserve.
-- Hydration: ~2.5 L/day at rest, more with heat and work; fatal at ~15% body-mass water loss;
-  seawater worsens it; water quality per source.
-- Thermoregulation: heat balance of metabolism, clothing clo and wind/water resistance,
-  wetness, air/water temperature, wind chill, sun, shelter, fire radiation.
-- Sleep with smooth time acceleration (up to 100×) and interruptions; fatigue.
-- Localised injuries with bleeding, pain, infection risk and healing on the right time scale;
-  illnesses by cause; death modes Legacy / Permadeath / Hardy.
-- Diegetic feedback; Body panel; optional Guided HUD.
+## Purpose
+The player's body as v2 §9 describes it: needs, heat and cold, sleep, stamina, injuries and
+illness with real causes and real time scales, so survival is about food, water, shelter,
+clothing and care rather than a health bar.
+
+## Time
+Needs, heat and short illnesses run on the **day scale** (v2 §4.2): a game day stands for a
+real day, so a body needs a day's food and water each game day, a naked body in cold rain
+becomes hypothermic in the real hour or two (2–3 minutes of play at the default 48-minute day)
+and a night's sleep takes eight real hours (16 minutes of play). Each injury and illness heals
+or runs on the scale its data declares (a sprain on the day scale, a fracture on the year
+scale). Short-term **stamina** is measured in seconds of play, because movement is not
+compressed. All conversion goes through `TimeScales`.
+
+## Model
+`Body::step(config, play_seconds, exposure, worn, activity)` advances everything together.
+
+- **Reference body.** One adult whatever the character looks like (height and build are
+  cosmetic, v2 §9.1): the middle of `human.ron`'s ranges — 70 kg, 1.73 m, 1.83 m² of skin, a
+  basal rate of 24 kcal/kg/day (81 W).
+- **Heat balance** (`thermal.rs`): a core and a shell of eleven skin regions, after Gagge's
+  two-node model with the shell split by region. The core makes the metabolic heat (METs from
+  `activity_met`, plus shivering) and holds the body's heat store; each region's skin settles
+  where the heat reaching it from the core (tissue conductance 10 W/m²K at full
+  vasoconstriction plus the skin's blood flow) meets what it loses: convection and radiation
+  through what covers it (local clo, reduced by wind for permeable covers and by soaking), the
+  evaporation of sweat, of rain that got through and of water diffusing through dry skin (skin
+  vapour resistance 0.6 m²kPa/W, about 0.35 l a day), the rain it warms, water when immersed
+  (150 W/m²K), the ground when lying (through bedding), and the sun's and fires' radiation
+  reaching it through the cover. Warm and cold signals drive the skin's blood flow, sweating
+  (Gagge's 170 g/m²h per °C) and shivering (19.4 W/m² per °C², up to 4.5 METs, less on low
+  glycogen, failing below 32 °C core); the hands and feet are shut off most in the cold unless
+  the body is warm, so they grow cold while the trunk stays warm. Fever raises the set point.
+- **Food energy** (`energy.rs`): the stomach (2 l) empties with a 1.5-hour time constant
+  (drink in 20 minutes); energy fills glycogen (28 kcal/kg, about a day's worth) then fat (at
+  85 %); burning draws on glycogen in proportion to how full it is, then fat alone. The body
+  starts with 20 % fat (≈ 108,000 kcal) and dies of starvation at 1.5 %. Protein's share of
+  the energy absorbed over three days above 45 % weakens ("rabbit starvation"); a reserve of
+  fresh-food vitamins (60 days at the start, up to 120) runs down by a day a day and its
+  absence slows healing and weakens on the Authentic preset.
+- **Body water** (`water.rs`): losses are sweat, insensible evaporation (skin and breath, from
+  the heat balance), urine (1.5 l/day well watered, down to 0.5 l/day at a 3 % deficit, more to
+  shed extra), faeces (0.1 l) and illness; gains are what is absorbed from the stomach and the
+  water of burning food (0.13 ml/kcal). Salt costs the water to excrete it (23.3 g per litre
+  of urine: seawater loses half a litre per litre drunk). Death at a 15 % deficit.
+- **Sleep** (`sleep.rs`): Borbély's two processes — pressure building while awake (18.2 h
+  time constant, faster with work) and draining asleep (4.2 h, slower when the sleep is poor:
+  cold, wet, hard ground, pain, noise) — and the body clock's swing. `wakes` says what would
+  wake a sleeper (rested, cold, heat, wet, pain, hunger, thirst, disturbance).
+- **Stamina**: drains with effort above a third (an all-out sprint empties it in 15 s of play),
+  recovers in 30 s at rest, slower when tired, weak or out of glycogen.
+- **Injuries** (`harm.rs`): on a region and side with a severity; bleeding from the data's
+  range by severity, clotting over minutes for small wounds and barely for deep ones, a tenth
+  under pressure or a bandage; pain; infection rolled six hours after the wound unless it was
+  cleaned (clean or boiled water, honey, resin); healing over the data's time × (0.5 +
+  severity) on its scale, slower when starving, dry, cold, without fresh food, infected or
+  unsplinted, faster asleep. Frostbite comes from skin frozen (below −0.5 °C) for ten minutes
+  on the hands, feet or face.
+- **Illness**: caught from causes (`bad_water` when drinking, `raw_meat`, `wound_infection`…)
+  at the data's chance; onset and course on their scales; effects act on the body (fever,
+  diarrhoea and vomiting as water loss, weakness); a course rolled fatal kills at its end unless
+  any of its treatments was given.
+- **Death**: core ≤ 26 °C or ≥ 43 °C, a 15 % water deficit, 40 % of the blood lost, fat gone,
+  a fatal illness, or what the world reports (drowning, a fatal fall).
+- **Effects** for movement and actions: walking speed, sprint, jump, two hands, grip, strength,
+  sight, consciousness, shivering and sweating (for animation), pain.
+- **Status** for the Body panel and the diegetic cues: hunger, thirst, warmth and tiredness as
+  words (localisation keys `body.*`), core and skin temperature, blood lost, bleeding, sickness,
+  stamina, wetness.
+
+## Parameters
+`body/human.ron` (body size ranges, basal rate, METs, stomach, water, temperatures, blood,
+loads, speeds, stamina), `body/injuries.ron`, `body/illnesses.ron`, garments in `clothing/`
+(clo where they cover), and the balance keys `hunger_rate`, `thirst_rate`, `fatigue_rate`,
+`cold_stress`, `heat_stress`, `injury_severity`, `healing_rate`, `illness_chance` (D46).
+Physical constants of heat transfer are in `thermal.rs`.
+
+## Interactions
+Weather and seasons (air, wind, rain, sun, sky) → heat balance; water sources (`Quality`:
+salinity, germs) → drinking; food items and cooking (V2-5) → `Food`; clothing (V2-4) →
+`Worn`; movement (V2-3) → activity, falls → injuries, swimming → immersion and drowning; fire
+(V2-5) → radiant heat; shelter (V2-8) → rain and wind kept off; sleep → time acceleration (the
+world loop); death → respawn rules (V2-3).
 
 ## Acceptance (V2-3)
-Naked in 5 °C rain → hypothermic in realistic game time, fur + fire → not; no water → fatal
-after ~3 game days; sprain vs fracture recovery on their time scales.
+`crates/hearth_body/tests/acceptance.rs`:
+- Naked in 5 °C rain with a breeze: mild hypothermia (core below 35 °C) after 1.4 h of body time
+  — 2.7 minutes of play; in furs (parka, leggings, mittens, moccasins) by a fire in the same
+  rain the core holds at 36.4 °C.
+- Without water: dead after 3.3 days of hot, active days (32 °C, walking in the sun), and
+  after about 11 days resting in mild shade — as with people, heat and work decide.
+- A moderate sprain heals in about 4 real days (3.7 game days, day scale); a splinted fracture
+  in about 6 weeks (3.4 game days, year scale).
+
+`tests/realism.rs` checks the rest against human data: a naked body at rest holds its core in
+29 °C still air without shivering or sweating; ordinary clothes are comfortable indoors; 5 °C
+water makes a body hypothermic in 42 minutes and kills in 3.6 hours; a resting day costs about
+2,000 kcal, an active one about 3,400; starving with water lasts 46 days; walking three hours at
+38 °C in the sun sweats 2.2 l; an untreated deep wound bleeds out in 13 minutes, pressed and
+bound it costs a tenth of the blood; uncleaned punctures get infected at their rate and cleaned
+ones never; seawater deepens thirst; a day awake tires and a warm night restores; bare hands
+freeze at −20 °C in wind while fur mittens save them.
+
+## Known simplifications
+- One skin temperature per region (no left and right, no front and back); the radiant heat of
+  a fire or the sun is spread over the whole body rather than its facing side.
+- Clothing soaks as one: a body's wetness is one store of water on skin and clothing.
+- No acclimatisation to heat or cold, no fitness, no age; one reference body for everyone.
+- Shivering fatigue only through glycogen; no hypoglycaemia of its own.
+- Infection is a single roll at six hours; illnesses of one kind do not stack.
+- Bleeding is per wound with no shock physiology beyond blood volume.

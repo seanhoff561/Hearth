@@ -1,4 +1,5 @@
-// Garments (v2 §10.3). Insulation in clo (1 clo ≈ a business suit; a heavy parka ≈ 3–4).
+// Garments (v2 §10.3). Insulation in clo where the garment covers (1 clo ≈ a business suit;
+// a heavy parka ≈ 3–4), not its share of a whole outfit; layers on one region add up.
 (
     schema: 1,
     entries: [
@@ -12,11 +13,15 @@
         (id: "sewn_fur_parka", name: "{material} parka", layer: Outer, regions: [Head, Chest, Abdomen, UpperArm, LowerArm],
          materials: (tags: ["hide"]), clo: 2.5, wind: 0.9, water: 0.5, mass_kg: 2.5, capacity_l: 1.0, attachments: ["belt", "hood"], noise: 0.25,
          knowledge: "sewn_clothing"),
+        (id: "fur_leggings", name: "{material} leggings", layer: Main, regions: [Pelvis, UpperLeg, LowerLeg],
+         materials: (tags: ["hide"]), clo: 1.5, wind: 0.85, water: 0.4, mass_kg: 1.4, noise: 0.15,
+         knowledge: "sewn_clothing",
+         notes: "Fur-in hide leggings, as worn with parkas in the far north."),
         (id: "moccasins", name: "{material} moccasins", layer: Feet, regions: [Foot],
          materials: (tags: ["hide"]), clo: 0.2, wind: 0.5, water: 0.2, mass_kg: 0.4, noise: 0.05,
          knowledge: "sewn_clothing"),
         (id: "fur_mittens", name: "{material} mittens", layer: Hands, regions: [Hand],
-         materials: (tags: ["hide"]), clo: 0.4, wind: 0.8, water: 0.3, mass_kg: 0.2, noise: 0.05,
+         materials: (tags: ["hide"]), clo: 1.5, wind: 0.8, water: 0.3, mass_kg: 0.2, noise: 0.05,
          knowledge: "sewn_clothing"),
         (id: "bark_rain_cape", name: "{material} rain cape", layer: Outer, regions: [Head, Chest, Abdomen],
          materials: (categories: [Bark]), clo: 0.2, wind: 0.6, water: 0.9, mass_kg: 1.2, noise: 0.4,

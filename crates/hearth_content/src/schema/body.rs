@@ -34,10 +34,30 @@ pub struct BodyParams {
     pub jog_m_s: f32,
     pub sprint_m_s: f32,
     pub swim_m_s: f32,
+    /// Short-term stamina, in seconds of play (movement is not compressed by the day scale).
+    #[serde(default)]
+    pub stamina: StaminaParams,
     #[serde(default)]
     pub notes: Option<String>,
     #[serde(default)]
     pub realism_source: Option<String>,
+}
+
+/// Short-term stamina: how long an all-out effort lasts and how long a full recovery takes, in
+/// seconds of play.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct StaminaParams {
+    pub all_out_s: f32,
+    pub recover_s: f32,
+}
+
+impl Default for StaminaParams {
+    fn default() -> Self {
+        Self {
+            all_out_s: 15.0,
+            recover_s: 30.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

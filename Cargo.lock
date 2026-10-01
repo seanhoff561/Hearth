@@ -829,6 +829,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hearth_body"
+version = "0.1.0"
+dependencies = [
+ "hearth_content",
+ "hearth_math",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hearth_content"
 version = "0.1.0"
 dependencies = [
