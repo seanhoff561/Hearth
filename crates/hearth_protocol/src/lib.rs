@@ -39,6 +39,10 @@ pub enum ToServer {
     SkipHours(f64),
     /// Debug: extra ticks per second of play (0 for none).
     TimeWarp(f64),
+    /// Stop the clock and the body (a single-player menu is open), or go on.
+    Pause(bool),
+    /// How much terrain to keep around the player (cubes).
+    View { radius: i32, vertical: i32 },
     /// Save and stop.
     Quit,
 }

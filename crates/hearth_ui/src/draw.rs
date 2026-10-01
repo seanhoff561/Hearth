@@ -98,6 +98,33 @@ impl DrawList {
         (pen - x - 1.0).max(0.0)
     }
 
+    /// Text `size` times as large (whole numbers keep the pixels crisp), with a shadow.
+    pub fn text_sized(&mut self, font: &Font, text: &str, x: f32, y: f32, size: f32, color: Rgba) {
+        let a = ATLAS as f32;
+        for (dx, c) in [(size, Rgba::SHADOW), (0.0, color)] {
+            let mut pen = x;
+            for ch in text.chars() {
+                if let Some(g) = font.glyph(ch) {
+                    let uv = [
+                        g.x as f32 / a,
+                        g.y as f32 / a,
+                        (g.x + g.width) as f32 / a,
+                        (g.y + CELL) as f32 / a,
+                    ];
+                    self.quad(
+                        pen + dx,
+                        y + dx,
+                        g.width as f32 * size,
+                        CELL as f32 * size,
+                        uv,
+                        c,
+                    );
+                }
+                pen += font.advance(ch) as f32 * size;
+            }
+        }
+    }
+
     /// Text with a shadow one pixel down and right, readable over the world.
     pub fn text_shadowed(&mut self, font: &Font, text: &str, x: f32, y: f32, color: Rgba) -> f32 {
         self.text(

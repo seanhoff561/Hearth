@@ -7,10 +7,12 @@ pub mod draw;
 pub mod font;
 mod glyphs;
 pub mod lang;
+pub mod widgets;
 
 pub use draw::{DrawList, Rgba, UiVertex};
 pub use font::Font;
 pub use lang::Lang;
+pub use widgets::{Column, NavKey, Rect, Ui, UiInput, UiState};
 
 /// The interface's scale: screen pixels per interface pixel. `setting` 0 picks the largest
 /// that keeps 300 interface pixels of height (about 4 at 1440p, 3 at 1080p).

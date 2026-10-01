@@ -15,9 +15,8 @@ use hearth_protocol::{BodyView, Moved, ToClient, ToServer};
 use hearth_render::atlas::TextureArray;
 use hearth_render::camera::Camera;
 use hearth_render::scene::SceneRenderer;
-use hearth_render::ui::UiRenderer;
 use hearth_render::{FrameTargets, GpuContext};
-use hearth_ui::{DrawList, Font, Lang, Rgba};
+use hearth_ui::{Lang, Rgba, Ui};
 use hearth_world::{BlockRegistry, CubeMap};
 
 use crate::environment::{EnvOverrides, EnvSampler};
@@ -100,12 +99,6 @@ pub struct Client {
     /// Extra ticks per second of play (asked of the server).
     pub time_warp: f64,
     pub status: String,
-    /// The interface: its renderer, font, words and this frame's drawing.
-    ui: Option<UiRenderer>,
-    font: Font,
-    pub lang: Lang,
-    draw: DrawList,
-    gui_scale: u32,
     /// The debug screen (F3), and the frame rate it shows.
     pub debug_overlay: bool,
     pub fps: f64,
@@ -166,14 +159,6 @@ impl Client {
             calendar,
             time_warp: 0.0,
             status: "generating planet".into(),
-            ui: None,
-            font: Font::new(),
-            lang: Lang::load(
-                &[crate::scene::data_pack_dir().join("hearth")],
-                &options.language,
-            ),
-            draw: DrawList::new(1),
-            gui_scale: options.video.gui_scale,
             debug_overlay: false,
             fps: 0.0,
         }
@@ -182,6 +167,36 @@ impl Client {
     /// Shows or hides the debug screen.
     pub fn toggle_debug(&mut self) {
         self.debug_overlay = !self.debug_overlay;
+    }
+
+    /// Pauses the world (a single-player menu) or lets it run.
+    pub fn pause(&mut self, paused: bool) {
+        self.server.send(ToServer::Pause(paused));
+    }
+
+    /// Takes changed options: the view, distances and detail.
+    pub fn apply_options(&mut self, options: &Options) {
+        let v = &options.video;
+        self.camera.fov_y = v.fov;
+        self.render_scale = v.render_scale;
+        self.water_quality = v.shader.water.into();
+        self.lod_distance = v.lod_distance;
+        self.lod_error_px = v.lod_error_px();
+        let (radius, vertical) = (v.render_distance as i32, v.vertical_render_distance as i32);
+        if (radius, vertical) != (self.radius, self.vertical) {
+            self.radius = radius;
+            self.vertical = vertical;
+            self.server.send(ToServer::View { radius, vertical });
+        }
+        if let Some(scene) = &mut self.scene {
+            scene.render_scale = self.render_scale;
+            scene.terrain.water.quality = self.water_quality;
+            scene.terrain.render_distance = self.radius;
+            scene.terrain.vertical_distance = self.vertical;
+        }
+        if let Some(lod) = &mut self.lod {
+            lod.set_settings(self.lod_distance, self.lod_error_px);
+        }
     }
 
     /// The default world: its name, seed and where it is saved.
@@ -547,7 +562,6 @@ impl Client {
                 self.color_format,
                 camera,
             );
-            self.draw_interface(ctx, enc, &targets);
             return;
         }
         let near = self.near_area();
@@ -595,68 +609,49 @@ impl Client {
         }
         scene.prepare(ctx, &self.camera, targets.size, &e, dt);
         scene.render(ctx, enc, targets.color, targets.depth, targets.size);
-        self.draw_interface(ctx, enc, &targets);
     }
 
-    /// The interface over the frame: what death says, and the debug screen.
-    fn draw_interface(
-        &mut self,
-        ctx: &GpuContext,
-        enc: &mut wgpu::CommandEncoder,
-        targets: &FrameTargets<'_>,
-    ) {
-        let scale = hearth_ui::gui_scale(self.gui_scale, targets.size.1);
-        let mut draw = std::mem::take(&mut self.draw);
-        draw.clear(scale);
-        let (w, h) = (
-            targets.size.0 as f32 / scale as f32,
-            targets.size.1 as f32 / scale as f32,
-        );
+    /// The client's part of the interface: what death says, and the debug screen;
+    /// `backdrop` is the opacity of the panels behind text (0–1).
+    pub fn hud(&self, ui: &mut Ui<'_>, backdrop: f32) {
+        let (w, h) = ui.size;
+        let veil = (backdrop.clamp(0.0, 1.0) * 255.0) as u8;
         if let Some(b) = &self.body
             && let Some(death) = &b.dead
         {
-            let what = death_words(&self.lang, death);
-            let lines = [what, self.lang.get("body.death.live_on").to_owned()];
-            draw.rect(0.0, h * 0.4 - 6.0, w, 34.0, Rgba([0, 0, 0, 140]));
+            let what = death_words(ui.lang, death);
+            let lines = [what, ui.t("body.death.live_on")];
+            ui.draw
+                .rect(0.0, h * 0.4 - 6.0, w, 34.0, Rgba([0, 0, 0, veil]));
             for (k, line) in lines.iter().enumerate() {
-                let lw = self.font.width(line) as f32;
-                draw.text_shadowed(
-                    &self.font,
+                let lw = ui.font.width(line) as f32;
+                ui.label(
+                    (w - lw) / 2.0,
+                    h * 0.4 + 12.0 * k as f32,
                     line,
-                    ((w - lw) / 2.0).round(),
-                    (h * 0.4 + 12.0 * k as f32).round(),
                     Rgba::rgb(240, 220, 200),
                 );
             }
         }
         if self.debug_overlay {
-            let lines = self.debug_lines();
-            let width = lines.iter().map(|l| self.font.width(l)).max().unwrap_or(0) as f32;
+            let lines = self.debug_lines(ui.lang);
+            let width = lines.iter().map(|l| ui.font.width(l)).max().unwrap_or(0) as f32;
             let lh = hearth_ui::font::LINE as f32;
-            draw.rect(
+            ui.draw.rect(
                 1.0,
                 1.0,
                 width + 4.0,
                 lines.len() as f32 * lh + 3.0,
-                Rgba([0, 0, 0, 110]),
+                Rgba([0, 0, 0, veil]),
             );
             for (k, line) in lines.iter().enumerate() {
-                draw.text_shadowed(&self.font, line, 3.0, 3.0 + k as f32 * lh, Rgba::WHITE);
+                ui.label(3.0, 3.0 + k as f32 * lh, line, Rgba::WHITE);
             }
         }
-        if !draw.vertices.is_empty() {
-            let font = &self.font;
-            let ui = self
-                .ui
-                .get_or_insert_with(|| UiRenderer::new(ctx, self.color_format, &font.pixels));
-            ui.draw(ctx, enc, targets.color, targets.size, &draw);
-        }
-        self.draw = draw;
     }
 
     /// The debug screen's lines.
-    fn debug_lines(&self) -> Vec<String> {
-        let l = &self.lang;
+    fn debug_lines(&self, l: &Lang) -> Vec<String> {
         let mut out = vec![format!(
             "{} {} · {:.0} fps",
             l.get("game.title"),

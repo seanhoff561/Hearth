@@ -95,6 +95,15 @@ impl LodStream {
         }
     }
 
+    /// New settings: the distance (chunks) and the vertical error allowed on screen.
+    pub fn set_settings(&mut self, distance_chunks: u32, max_error_px: f64) {
+        if distance_chunks != self.chunks || max_error_px != self.max_error_px {
+            self.chunks = distance_chunks;
+            self.max_error_px = max_error_px;
+            self.last = None;
+        }
+    }
+
     /// The view the tiles are seen in: its height in pixels and vertical field of view (degrees).
     pub fn set_view(&mut self, height_px: u32, fov_y_deg: f32) {
         let ppr = hearth_lod::px_per_rad(height_px.max(1), fov_y_deg);

@@ -8,6 +8,7 @@ use hearth_core::options::{DisplayMode, Options, PresentModePref};
 use hearth_core::paths::GameDirs;
 use hearth_input::{InputKey, InputOptions, InputState, Key, KeyBindings, MouseButton, builtin};
 use hearth_render::{PresentPreference, Renderer};
+use hearth_ui::NavKey;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{DeviceEvent, DeviceId, ElementState, MouseScrollDelta, WindowEvent};
@@ -18,6 +19,8 @@ use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 use crate::client::Client;
 use crate::content_state::ContentState;
 use crate::frame_limiter::FrameLimiter;
+use crate::interface::Interface;
+use crate::menus::{MenuAction, MenuContext, Menus, Screen};
 
 /// Command-line configuration of a run.
 #[derive(Debug, Clone, Default)]
@@ -27,14 +30,17 @@ pub struct LaunchConfig {
     pub quit_after: Option<Duration>,
     /// Seed of a new world.
     pub seed: Option<u64>,
-    /// Name of the world to play (its save folder); `default` when not given.
+    /// A world to play at once (its save folder), skipping the title screen.
     pub world: Option<String>,
 }
 
 struct Running {
     window: Arc<Window>,
     renderer: Renderer,
-    client: Client,
+    /// The world being played, if any (none at the title).
+    client: Option<Client>,
+    interface: Interface,
+    menus: Menus,
     /// Mouse captured for looking around.
     captured: bool,
     last_frame: Instant,
@@ -59,13 +65,20 @@ pub struct App {
     quit_after: Option<Duration>,
     frames_rendered: u64,
     seed: u64,
-    /// Name of the world being played.
-    world: String,
+    /// A world named on the command line, played at once.
+    world: Option<String>,
     content: ContentState,
+    /// The languages there are words for.
+    languages: Vec<String>,
 }
 
 impl App {
-    pub fn new(dirs: GameDirs, quit_after: Option<Duration>, seed: u64, world: String) -> Self {
+    pub fn new(
+        dirs: GameDirs,
+        quit_after: Option<Duration>,
+        seed: u64,
+        world: Option<String>,
+    ) -> Self {
         if let Err(e) = dirs.ensure_created() {
             log::warn!(
                 "could not create game directory {}: {e}",
@@ -102,6 +115,7 @@ impl App {
             seed,
             world,
             content: ContentState::load(vec![crate::scene::data_pack_dir()]),
+            languages: Interface::languages(),
         }
     }
 
@@ -204,10 +218,55 @@ impl App {
     }
 
     fn handle_key(&mut self, key: InputKey, pressed: bool) {
-        let globe_open = self
-            .running
-            .as_ref()
-            .is_some_and(|run| run.client.globe.open);
+        let Some(run) = &mut self.running else {
+            return;
+        };
+        // A binding being captured takes every key.
+        if run.menus.capturing() {
+            if pressed && run.menus.capture(key, &mut self.bindings) {
+                self.save_options();
+            }
+            return;
+        }
+        if run.menus.is_open() {
+            if !pressed {
+                if key == InputKey::Mouse(MouseButton::Left) {
+                    run.interface.button(false);
+                }
+                return;
+            }
+            match key {
+                InputKey::Mouse(MouseButton::Left) => run.interface.button(true),
+                InputKey::Keyboard(k) => {
+                    let nav = match k {
+                        Key::Up => Some(NavKey::Up),
+                        Key::Down => Some(NavKey::Down),
+                        Key::Left => Some(NavKey::Left),
+                        Key::Right => Some(NavKey::Right),
+                        Key::Enter | Key::NumpadEnter => Some(NavKey::Enter),
+                        Key::Tab => Some(NavKey::Tab),
+                        Key::Backspace => Some(NavKey::Backspace),
+                        Key::Delete => Some(NavKey::Delete),
+                        Key::Home => Some(NavKey::Home),
+                        Key::End => Some(NavKey::End),
+                        _ => None,
+                    };
+                    if let Some(n) = nav {
+                        run.interface.key(n);
+                    } else if k == Key::Escape {
+                        let action = run.menus.back();
+                        if let Some(a) = action {
+                            self.menu_actions(vec![a]);
+                        }
+                    } else if k == Key::F11 {
+                        self.toggle_fullscreen();
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        let globe_open = run.client.as_ref().is_some_and(|c| c.globe.open);
         if pressed {
             let activated: Vec<_> = self.input.press(key, &self.bindings).to_vec();
             let mut release_mouse = false;
@@ -216,14 +275,23 @@ impl App {
                 if action == builtin::FULLSCREEN {
                     self.toggle_fullscreen();
                 } else if action == builtin::PAUSE {
-                    self.set_captured(false);
-                    if let Some(run) = &mut self.running {
-                        run.client.globe.close();
+                    let Some(run) = &mut self.running else {
+                        continue;
+                    };
+                    match &mut run.client {
+                        Some(c) if c.globe.open => c.globe.close(),
+                        Some(c) => {
+                            c.pause(true);
+                            run.menus.open(Screen::Pause);
+                        }
+                        None => {}
                     }
+                    release_mouse = true;
                 } else if action == builtin::DEBUG_RELOAD_RESOURCES {
                     self.content.reload();
-                } else if let Some(run) = &mut self.running {
-                    let p = &mut run.client;
+                } else if let Some(run) = &mut self.running
+                    && let Some(p) = &mut run.client
+                {
                     if action == builtin::WORLD_MAP {
                         release_mouse |= p.toggle_globe();
                     } else if action == builtin::DEBUG_TIME_FORWARD {
@@ -252,10 +320,10 @@ impl App {
             }
             if key == InputKey::Mouse(MouseButton::Left) {
                 if globe_open {
-                    if let Some(run) = &mut self.running {
-                        run.client.globe_button(true);
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.globe_button(true);
                     }
-                } else {
+                } else if self.running.as_ref().is_some_and(|r| r.client.is_some()) {
                     self.set_captured(true);
                 }
             }
@@ -263,9 +331,77 @@ impl App {
             self.input.release(key, &self.bindings);
             if key == InputKey::Mouse(MouseButton::Left)
                 && globe_open
-                && let Some(run) = &mut self.running
+                && let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut())
             {
-                run.client.globe_button(false);
+                c.globe_button(false);
+            }
+        }
+    }
+
+    /// Starts playing a world.
+    fn play(&mut self, folder: &str, seed: u64) {
+        let Some(run) = &mut self.running else {
+            return;
+        };
+        log::info!("playing world {folder:?}");
+        let mut client = Client::new(
+            Client::default_world(
+                folder,
+                seed,
+                Some(self.dirs.cache()),
+                Some(self.dirs.saves()),
+            ),
+            &self.options,
+            run.renderer.color_format(),
+            self.content.content.as_deref(),
+        );
+        client.apply_options(&self.options);
+        run.client = Some(client);
+        run.menus.close_all();
+    }
+
+    /// Does what the menus asked.
+    fn menu_actions(&mut self, actions: Vec<MenuAction>) {
+        for a in actions {
+            match a {
+                MenuAction::Play { folder, seed } => self.play(&folder, seed),
+                MenuAction::Resume => {
+                    if let Some(run) = &mut self.running {
+                        run.menus.close_all();
+                        if let Some(c) = &mut run.client {
+                            c.pause(false);
+                        }
+                    }
+                }
+                MenuAction::QuitToTitle => {
+                    self.set_captured(false);
+                    if let Some(run) = &mut self.running {
+                        // Dropping the client stops its server, which saves.
+                        run.client = None;
+                        run.menus = Menus::title();
+                    }
+                }
+                MenuAction::QuitGame => self.exit_requested = true,
+                MenuAction::LanguageChanged => {
+                    if let Some(run) = &mut self.running {
+                        run.interface.set_language(&self.options.language);
+                    }
+                }
+                MenuAction::OptionsChanged => {
+                    self.input.set_options(InputOptions {
+                        toggle_sneak: self.options.controls.toggle_sneak,
+                        toggle_sprint: self.options.controls.toggle_sprint,
+                    });
+                    let present = self.present_preference();
+                    if let Some(run) = &mut self.running {
+                        run.renderer.set_present(present);
+                        if let Some(c) = &mut run.client {
+                            c.apply_options(&self.options);
+                        }
+                    }
+                    self.apply_display_mode();
+                    self.save_options();
+                }
             }
         }
     }
@@ -295,42 +431,85 @@ impl App {
 
     fn frame(&mut self) {
         let sensitivity = self.options.controls.mouse_sensitivity;
+        let invert = self.options.controls.invert_y;
+        let mut actions = Vec::new();
         if let Some(run) = &mut self.running {
             let now = Instant::now();
             let dt = (now - run.last_frame).as_secs_f64().min(0.25);
             run.last_frame = now;
-            let look = run.captured.then(|| self.input.mouse_delta());
-            run.client.pump(&run.renderer.ctx);
-            run.client.update(dt, &mut self.input, look, sensitivity);
+            let menu_open = run.menus.is_open();
+            let look = run.captured.then(|| {
+                let (dx, dy) = self.input.mouse_delta();
+                (dx, if invert { -dy } else { dy })
+            });
+            if let Some(c) = &mut run.client {
+                c.pump(&run.renderer.ctx);
+                if !menu_open {
+                    c.update(dt, &mut self.input, look, sensitivity);
+                }
+            }
             let client = &mut run.client;
-            if run
-                .renderer
-                .render_with(|ctx, enc, targets| client.render(ctx, enc, targets, dt as f32))
-            {
+            let interface = &mut run.interface;
+            let menus = &mut run.menus;
+            let options = &mut self.options;
+            let bindings = &mut self.bindings;
+            let saves = self.dirs.saves();
+            let languages = &self.languages;
+            let format = run.renderer.color_format();
+            if run.renderer.render_with(|ctx, enc, targets| {
+                match client.as_mut() {
+                    Some(c) => c.render(ctx, enc, targets, dt as f32),
+                    None => clear(enc, targets.color),
+                }
+                let gui = options.video.gui_scale;
+                let backdrop = options.accessibility.text_background_opacity;
+                interface.frame(ctx, enc, targets.color, format, targets.size, gui, |ui| {
+                    if let Some(c) = client.as_ref() {
+                        c.hud(ui, backdrop);
+                    }
+                    let mut cx = MenuContext {
+                        options,
+                        bindings,
+                        saves,
+                        in_game: client.is_some(),
+                        languages,
+                    };
+                    actions = menus.ui(ui, &mut cx);
+                });
+            }) {
                 self.frames_rendered += 1;
                 run.title_frames += 1;
             }
-            if self.input.debug_overlay_toggled() {
-                run.client.toggle_debug();
+            if self.input.debug_overlay_toggled()
+                && let Some(c) = &mut run.client
+            {
+                c.toggle_debug();
             }
             let elapsed = run.title_timer.elapsed().as_secs_f64();
             // The globe describes the place under the cursor: keep up with it.
-            let period = if run.client.globe.open { 0.1 } else { 0.5 };
+            let globe = run.client.as_ref().is_some_and(|c| c.globe.open);
+            let period = if globe { 0.1 } else { 0.5 };
             if elapsed >= period {
                 let fps = run.title_frames as f64 / elapsed;
-                run.client.fps = fps;
-                run.window.set_title(&format!(
-                    "{} | {}",
-                    hearth_core::window_title(),
-                    run.client.title_status(fps)
-                ));
+                let status = match &mut run.client {
+                    Some(c) => {
+                        c.fps = fps;
+                        c.title_status(fps)
+                    }
+                    None => format!("{fps:.0} fps"),
+                };
+                run.window
+                    .set_title(&format!("{} | {status}", hearth_core::window_title()));
                 if run.log_timer.elapsed().as_secs() >= 5 {
-                    log::info!("{}", run.client.title_status(fps));
+                    log::info!("{status}");
                     run.log_timer = Instant::now();
                 }
                 run.title_timer = Instant::now();
                 run.title_frames = 0;
             }
+        }
+        if !actions.is_empty() {
+            self.menu_actions(actions);
         }
         self.input.end_frame();
     }
@@ -371,27 +550,21 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        let client = Client::new(
-            Client::default_world(
-                &self.world,
-                self.seed,
-                Some(self.dirs.cache()),
-                Some(self.dirs.saves()),
-            ),
-            &self.options,
-            renderer.color_format(),
-            self.content.content.as_deref(),
-        );
         self.running = Some(Running {
             window,
             renderer,
-            client,
+            client: None,
+            interface: Interface::new(&self.options.language),
+            menus: Menus::title(),
             captured: false,
             last_frame: Instant::now(),
             title_timer: Instant::now(),
             title_frames: 0,
             log_timer: Instant::now(),
         });
+        if let Some(world) = self.world.clone() {
+            self.play(&world, self.seed);
+        }
         self.apply_display_mode();
         event_loop.set_control_flow(ControlFlow::Poll);
     }
@@ -414,6 +587,13 @@ impl ApplicationHandler for App {
                 self.set_captured(false);
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed
+                    && let Some(text) = &event.text
+                    && let Some(run) = &mut self.running
+                    && run.menus.is_open()
+                {
+                    run.interface.typed(text);
+                }
                 if let PhysicalKey::Code(code) = event.physical_key
                     && let Some(key) = Key::from_winit(code)
                 {
@@ -431,9 +611,17 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(run) = &mut self.running {
-                    run.client
-                        .globe
-                        .cursor_moved(glam::Vec2::new(position.x as f32, position.y as f32));
+                    run.interface
+                        .pointer_moved(position.x as f32, position.y as f32);
+                    if let Some(c) = &mut run.client {
+                        c.globe
+                            .cursor_moved(glam::Vec2::new(position.x as f32, position.y as f32));
+                    }
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                if let Some(run) = &mut self.running {
+                    run.interface.pointer_left();
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -441,7 +629,10 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y as f64,
                     MouseScrollDelta::PixelDelta(p) => p.y / 40.0,
                 };
-                self.input.add_scroll(lines);
+                match &mut self.running {
+                    Some(run) if run.menus.is_open() => run.interface.scroll(lines as f32),
+                    _ => self.input.add_scroll(lines),
+                }
             }
             WindowEvent::RedrawRequested => self.frame(),
             _ => {}
@@ -456,6 +647,7 @@ impl ApplicationHandler for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if self.exit_requested {
+            event_loop.exit();
             return;
         }
         if self.quit_after.is_some_and(|d| self.start.elapsed() >= d) {
@@ -505,7 +697,7 @@ pub fn run(config: LaunchConfig) -> anyhow::Result<()> {
         dirs,
         config.quit_after,
         config.seed.unwrap_or(1),
-        config.world.unwrap_or_else(|| "default".into()),
+        config.world,
     );
     event_loop.run_app(&mut app)?;
     if let Some(err) = app.fatal_error() {
@@ -517,4 +709,29 @@ pub fn run(config: LaunchConfig) -> anyhow::Result<()> {
 /// Sleep granularity helper used by the limiter; exposed for tests.
 pub(crate) fn frame_budget(fps: u32) -> Duration {
     Duration::from_secs_f64(1.0 / fps.max(1) as f64)
+}
+
+/// Clears a frame with nothing to draw but the interface.
+fn clear(enc: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
+    let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("clear"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: target,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color {
+                    r: 0.005,
+                    g: 0.007,
+                    b: 0.011,
+                    a: 1.0,
+                }),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
 }

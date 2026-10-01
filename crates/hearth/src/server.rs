@@ -268,7 +268,7 @@ fn save(save: &mut Option<Save>, player: &Player, ticks: u64) {
 fn run(
     spec: WorldSpec,
     atlas: Arc<TextureArray>,
-    view: View,
+    mut view: View,
     inbox: Receiver<ToServer>,
     tx: &Sender<ToClient>,
 ) -> anyhow::Result<()> {
@@ -354,6 +354,7 @@ fn run(
     let mut last_moved: Option<Moved> = None;
     let mut warp = 0.0f64;
     let mut warp_carry = 0.0f64;
+    let mut paused = false;
     let mut next_tick = Instant::now();
     let mut since_save = 0u64;
     loop {
@@ -396,6 +397,13 @@ fn run(
                     ticks = (ticks as f64 + dt).max(0.0) as u64;
                 }
                 Ok(ToServer::TimeWarp(w)) => warp = w.max(0.0),
+                Ok(ToServer::Pause(p)) => paused = p,
+                Ok(ToServer::View { radius, vertical }) => {
+                    view = View {
+                        radius: radius.clamp(1, 64),
+                        vertical: vertical.clamp(1, 32),
+                    };
+                }
                 Ok(ToServer::Quit) | Err(TryRecvError::Disconnected) => {
                     save(&mut save_state, &player, ticks);
                     let _ = tx.send(ToClient::Saved);
@@ -405,8 +413,10 @@ fn run(
             }
         }
 
-        // The tick.
-        if Instant::now() >= next_tick {
+        // The tick (none while paused: the world stands still, the terrain still streams).
+        if paused {
+            next_tick = Instant::now() + Duration::from_secs_f64(TICK_S);
+        } else if Instant::now() >= next_tick {
             let moment = calendar.at(ticks);
             let immersion = last_moved.map_or(0.0, |m| m.immersion);
             let e = exposure(&env, &lw, &moment, &player.mover, immersion);

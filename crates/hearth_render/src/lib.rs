@@ -40,6 +40,7 @@ pub struct Renderer {
 }
 
 /// What a frame callback draws into.
+#[derive(Clone, Copy)]
 pub struct FrameTargets<'a> {
     pub color: &'a wgpu::TextureView,
     pub depth: &'a wgpu::TextureView,
