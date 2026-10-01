@@ -515,3 +515,15 @@ tone-mapping pass gained the body's senses (D69's sounds cost nothing here; the 
 costs 0.006–0.010 ms of the tone map, within the frame-rate noise). Gate passed; the baseline
 moves to the end of V2-3.
 
+## End of V2-4 — the performance gate: 984d909 (end of V2-3) against 5e20268 (end of V2-4), alternating, three rounds each, NVIDIA GeForce RTX 4060 Laptop GPU (Vulkan), 1920x1080, preset Fancy
+
+| Scene | Avg FPS | 1% low FPS (1st percentile) | GPU ms | Triangles |
+|---|---:|---:|---:|---:|
+| lowland_forest | 712 → 731 (+2.7 %) | 556 → 553 (-0.5 %) | 1.38 → 1.34 | 1.27 → 1.27 M |
+| peak_lod512 | 755 → 741 (-1.9 %) | 463 → 465 (+0.4 %) | 1.29 → 1.32 | 1.93 → 1.93 M |
+| cave_torches | 2018 → 2137 (+5.9 %) | 1163 → 1260 (+8.4 %) | 0.46 → 0.44 | 1.22 → 1.22 M |
+
+Medians of three runs each; 1 % lows as the gate judges them. V2-4 (things, carrying, clothing,
+the inventory) adds nothing to the benchmark's scenes; the differences are run-to-run noise.
+Gate passed; the baseline moves to the end of V2-4.
+
