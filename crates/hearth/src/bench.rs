@@ -284,7 +284,8 @@ OPTIONS:
     --baseline FILE[,FILE...]    Fail if average FPS or 1 % lows drop more than --gate
                                  percent below the median of these runs (--json outputs)
     --candidate FILE[,FILE...]   With --judge: the runs to compare with --baseline
-    --judge                      Compare saved runs (medians per scene) instead of rendering
+    --judge                      Compare saved runs (medians per scene; 1 % lows as the 1st
+                                 percentile) instead of rendering
     --gate PCT                   Allowed drop (default 5)
     --cache DIR|none             Where worlds are cached (default: the game's cache)
     --lod-error PX               Vertical LOD error allowed on screen (default: the
@@ -1641,10 +1642,14 @@ fn median(mut v: Vec<f64>) -> f64 {
 }
 
 /// Compares a candidate's runs with a baseline's, scene by scene, by each side's median average
-/// FPS and median 1 % lows — medians, because single runs on a laptop vary by 3–10 % and one
-/// driver hitch can halve a run's 1 % lows. False if either falls more than `pct` percent
-/// below the baseline's in any scene. Runs on different GPUs are not compared (true, with a
-/// warning), nor scenes whose definition changed (accept a new baseline).
+/// FPS and median 1 % lows — medians, because single runs on a laptop vary by 3–10 %. The 1 %
+/// lows are judged as the 1st percentile of frame rates (from the 99th-percentile frame time):
+/// the average of the slowest 1 % is dominated by single driver hitches (one 30 ms frame in 600
+/// cuts it threefold, in half of the runs), while the percentile holds within ±2 % between
+/// identical runs and still moves with anything that slows more than 1 % of frames. False if
+/// either falls more than `pct` percent below the baseline's in any scene. Runs on different
+/// GPUs are not compared (true, with a warning), nor scenes whose definition changed (accept a
+/// new baseline).
 fn compare(base: &[BenchRun], new: &[BenchRun], pct: f64) -> bool {
     let (Some(b0), Some(n0)) = (base.first(), new.first()) else {
         return true;
@@ -1690,7 +1695,7 @@ fn compare(base: &[BenchRun], new: &[BenchRun], pct: f64) -> bool {
                 "average FPS",
                 (|s: &SceneResult| s.avg_fps) as fn(&SceneResult) -> f64,
             ),
-            ("1 % low FPS", |s: &SceneResult| s.low1_fps),
+            ("1 % low FPS", |s: &SceneResult| 1e3 / s.p99_ms.max(1e-6)),
         ] {
             let old = median(b.iter().map(field).collect());
             let now = median(n.iter().map(field).collect());
@@ -1716,13 +1721,14 @@ mod tests {
 
     #[test]
     fn the_gate_compares_medians_and_skips_other_gpus() {
+        // `low`: the 1st percentile of frame rates (1000 / the 99th-percentile frame time).
         let run = |adapter: &str, fps: f64, low: f64| BenchRun {
             adapter: adapter.into(),
             scenes: vec![SceneResult {
                 name: "forest".into(),
                 about: "a flight".into(),
                 avg_fps: fps,
-                low1_fps: low,
+                p99_ms: 1e3 / low,
                 ..Default::default()
             }],
             ..Default::default()
@@ -1732,7 +1738,7 @@ mod tests {
             run("gpu", 980.0, 200.0),
             run("gpu", 1020.0, 510.0),
         ];
-        // One hitch-ridden run does not move the medians (1000, 500).
+        // One slow run does not move the medians (1000, 500).
         assert!(compare(&base, &[run("gpu", 960.0, 480.0)], 5.0));
         assert!(
             !compare(&base, &[run("gpu", 940.0, 500.0)], 5.0),

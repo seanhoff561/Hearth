@@ -44,7 +44,11 @@ if [ -z "$BASE" ]; then
   exit 2
 fi
 
-ROOT=$(pwd)
+# Paths as the benchmark binaries take them (Windows paths under Git Bash).
+native() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
+}
+ROOT=$(native "$(pwd)")
 OUT="$ROOT/bench-out/gate"
 WT="$OUT/base-src"
 mkdir -p "$OUT"
@@ -65,12 +69,22 @@ fi
 OLD="$OUT/base-target/release/hearth"
 
 bench() {
-  "$@" bench --scenes quick --frames "$FRAMES" --report none
+  local exe=$1
+  shift
+  "$exe" bench --scenes quick --frames "$FRAMES" --report none "$@"
 }
 for i in $(seq 1 "$ROUNDS"); do
-  echo "==> round $i of $ROUNDS"
-  (cd "$WT" && bench "$OLD" --cache "$OUT/cache-base" --json "$OUT/base-$i.json")
-  bench "$NEW" --cache "$OUT/cache-new" --json "$OUT/new-$i.json"
+  echo "==> round $i of $ROUNDS (logs in bench-out/gate)"
+  if ! (cd "$WT" && bench "$OLD" --cache "$OUT/cache-base" --json "$OUT/base-$i.json") \
+    > "$OUT/base-$i.log" 2>&1; then
+    tail -n 5 "$OUT/base-$i.log"
+    exit 2
+  fi
+  if ! bench "$NEW" --cache "$OUT/cache-new" --json "$OUT/new-$i.json" \
+    > "$OUT/new-$i.log" 2>&1; then
+    tail -n 5 "$OUT/new-$i.log"
+    exit 2
+  fi
 done
 
 list() {

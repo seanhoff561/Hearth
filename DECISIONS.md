@@ -485,6 +485,11 @@ run's 1 % lows. So `scripts/perf-gate.sh` keeps the baseline as a commit (`perf/
 builds it in a git worktree next to the current tree, runs the two alternately (three rounds by
 default, each with its own data packs and world cache), and compares the medians per scene
 (`hearth bench --judge`). It fails when either median falls more than 5 % below the baseline's.
+The 1 % lows are judged as the 1st percentile of frame rates (1000 / the 99th-percentile frame
+time), not the average of the slowest 1 % that the reports also show: comparing a commit with
+itself, half of the forest runs of both builds had one 10–30 ms driver hitch, which cut that
+average to 160–330 FPS from about 570, while the percentile held within ±2 %; it still moves
+with anything that slows more than 1 % of frames.
 The baseline moves only on purpose (`--accept`, on a committed tree), so small regressions
 cannot pile up milestone after milestone unnoticed: every accepted regression has an entry
 here. Runs on another GPU are not compared, nor scenes whose definition changed (accept a new

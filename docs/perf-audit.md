@@ -241,6 +241,7 @@ Results are recorded below as they land.
    current tree and the baseline commit (`perf/baseline`, built in a worktree under
    `bench-out/gate`) run the quick scenes (forest, summit at LOD 512, cave) alternately, three
    rounds by default; `hearth bench --judge` compares the medians per scene and fails on a
-   drop of more than 5 % in average FPS or 1 % lows. A failure is fixed, or justified in
+   drop of more than 5 % in average FPS or 1 % lows (judged as the 1st percentile of frame
+   rates: the average of the slowest 1 % swings threefold with single driver hitches). A failure is fixed, or justified in
    `DECISIONS.md` with the baseline moved by `--accept`. Part of every milestone's definition
    of done (`PLAN.md`).
