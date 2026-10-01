@@ -11,6 +11,7 @@ pub mod blocks;
 pub mod cache;
 pub mod caves;
 pub mod features;
+pub mod succession;
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -296,15 +297,27 @@ impl WorldGenerator {
         CubeClass::Surface
     }
 
-    /// Generates one cube. Pure: the same position always yields the same cube.
+    /// Generates one cube of the world as it began (the trees as they stood, nothing
+    /// disturbed). Pure: the same position always yields the same cube.
     pub fn generate_cube(&self, pos: CubePos) -> Cube {
+        self.generate_cube_in(pos, &crate::vegetation::Vegetation::default())
+            .0
+    }
+
+    /// Generates one cube as the vegetation has grown, and the year its trees or ground next
+    /// change (infinity: never). Pure for a vegetation.
+    pub fn generate_cube_in(
+        &self,
+        pos: CubePos,
+        veg: &crate::vegetation::Vegetation,
+    ) -> (Cube, f64) {
         use std::sync::atomic::Ordering::Relaxed;
         let pos = self.planet.wrap_cube(pos);
         let class = self.classify(pos);
         match class {
             CubeClass::Empty => {
                 self.stats.empty.fetch_add(1, Relaxed);
-                return Cube::filled(BlockStateId::AIR);
+                return (Cube::filled(BlockStateId::AIR), f64::INFINITY);
             }
             CubeClass::Deep => self.stats.deep.fetch_add(1, Relaxed),
             CubeClass::Surface => self.stats.surface.fetch_add(1, Relaxed),
@@ -323,10 +336,12 @@ impl WorldGenerator {
                 self.hydro.apply(&mut buf, self);
             }
             self.caves.carve(&mut buf, pos, &col, self, &self.blocks);
-            if class == CubeClass::Surface {
-                self.features.place(&mut buf, self, &col);
-            }
-            Cube::from_states(&buf.states)
+            let next = if class == CubeClass::Surface {
+                self.features.place(&mut buf, self, &col, veg)
+            } else {
+                f64::INFINITY
+            };
+            (Cube::from_states(&buf.states), next)
         })
     }
 

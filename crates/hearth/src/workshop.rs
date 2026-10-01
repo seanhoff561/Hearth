@@ -1070,17 +1070,16 @@ impl Workshop {
         pos: BlockPos,
     ) -> Option<hearth_worldgen::cubegen::features::PlacedTree> {
         let wg = h.lw.generator.clone();
-        let t = wg.features().tree_at(&wg, pos)?;
-        let blocks = &wg.forest.blocks[t.species];
+        let t = wg.features().tree_at(&wg, &h.lw.vegetation, pos)?;
         // Still there: the block aimed at and the foot of the trunk.
         let here = t
             .blocks()
             .find(|(p, _)| *p == pos)
-            .map(|(_, part)| blocks.state(part));
+            .map(|(_, part)| t.state(&wg.forest, part));
         let foot = t
             .blocks()
             .find(|(p, part)| p.y == t.foot[1] && !matches!(part, hearth_flora::Part::Leaves))
-            .map(|(p, part)| (p, blocks.state(part)));
+            .map(|(p, part)| (p, t.state(&wg.forest, part)));
         let standing = here.is_some_and(|s| h.lw.map.block(pos) == Some(s))
             && foot.is_some_and(|(p, s)| h.lw.map.block(p) == Some(s));
         standing.then_some(t)
@@ -1100,7 +1099,10 @@ impl Workshop {
             return;
         };
         let wg = h.lw.generator.clone();
-        let blocks = &wg.forest.blocks[t.species];
+        let blocks = match (&wg.forest.charred, t.remains) {
+            (Some(c), hearth_worldgen::cubegen::features::Remains::Charred) => c,
+            _ => &wg.forest.blocks[t.species],
+        };
         let foot = BlockPos::new(t.foot[0], t.foot[1], t.foot[2]);
         // The tree as it stands now (what is already taken stays taken); the stump stays.
         let standing: Vec<(BlockPos, BlockStateId, hearth_flora::Part)> = t
@@ -1154,10 +1156,23 @@ impl Workshop {
             .filter(|k| fits(*k))
             .min_by_key(|k| (!rests(*k), k.abs()))
             .unwrap_or(0);
-        // Taken from where it stood.
+        // Taken from where it stood: felled, as the vegetation keeps it (the generator leaves
+        // the stump, and in a few years another tree takes the place), not as the player's
+        // change to the blocks.
         for (p, _, _) in &standing {
-            self.set_block(h, *p, BlockStateId::AIR);
+            self.set_natural(h, *p, BlockStateId::AIR);
         }
+        let year = h.lw.vegetation.year;
+        h.lw.vegetation =
+            h.lw.vegetation
+                .with(hearth_worldgen::vegetation::Disturbance {
+                    kind: hearth_worldgen::vegetation::DisturbanceKind::Felled,
+                    year,
+                    x: foot.x,
+                    z: foot.z,
+                    radius: (t.template.reach() as f32).max(2.0),
+                    severity: 1.0,
+                });
         let height = standing
             .iter()
             .map(|(p, _, _)| p.y - foot.y)
@@ -1249,6 +1264,18 @@ impl Workshop {
         }
         for p in limb.into_iter().chain(leaves) {
             self.set_block(h, p, BlockStateId::AIR);
+        }
+    }
+
+    /// Sets a block as nature changed it: not kept as the player's change, so the terrain
+    /// generated again (as the vegetation has it) shows what is there.
+    fn set_natural(&mut self, h: &mut Here, pos: BlockPos, state: BlockStateId) {
+        let reg = h.lw.reg.clone();
+        h.lw.map.set_block(pos, state, &reg);
+        h.lw.edits.forget(pos);
+        h.changed.push(pos);
+        if state.is_air() {
+            self.stations.retain(|s| s.pos != pos);
         }
     }
 

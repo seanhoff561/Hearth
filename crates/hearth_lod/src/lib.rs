@@ -880,8 +880,18 @@ impl LodGen {
         }
     }
 
-    /// Samples and meshes one tile.
+    /// Samples and meshes one tile of the world as it began.
     pub fn build(&self, wg: &WorldGenerator, key: TileKey) -> TileMesh {
+        self.build_in(wg, &hearth_worldgen::vegetation::Vegetation::default(), key)
+    }
+
+    /// Samples and meshes one tile as the vegetation has grown.
+    pub fn build_in(
+        &self,
+        wg: &WorldGenerator,
+        veg: &hearth_worldgen::vegetation::Vegetation,
+        key: TileKey,
+    ) -> TileMesh {
         let planet = wg.planet();
         let cs = key.column();
         let (mx, mz) = key.min_block();
@@ -898,7 +908,7 @@ impl LodGen {
             let size = key.size();
             let mut map =
                 CanopyMap::new(mx - cs, mz - cs, size + 2 * cs, size + 2 * cs, &self.class);
-            wg.features().grow_trees(&mut map, wg);
+            wg.features().grow_trees(&mut map, wg, veg);
             map
         });
         // Columns with a ring of neighbours around the tile.
@@ -913,7 +923,7 @@ impl LodGen {
                 let mut col = self.column(wg, &s, x, z, &normals, southern);
                 col.crown = match &canopy {
                     Some(map) => map.crown(bx, bz, cs, col.top, &self.colors),
-                    None => self.expected_crown(wg, &s, &mut col, x, z),
+                    None => self.expected_crown(wg, veg, &s, &mut col, x, z),
                 };
                 cols.push(col);
             }
@@ -950,6 +960,7 @@ impl LodGen {
     fn expected_crown(
         &self,
         wg: &WorldGenerator,
+        veg: &hearth_worldgen::vegetation::Vegetation,
         s: &ColumnSample,
         col: &mut Col,
         x: i32,
@@ -960,7 +971,7 @@ impl LodGen {
         }
         // The place's own species where it has them; elsewhere the biome's usual trees.
         let roll = (hash_2d(0x5bec, x, z) & 0xffff) as f32 / 65535.0;
-        if let Some((sp, height, cover)) = wg.features().expected_canopy(wg, s, x, z, roll) {
+        if let Some((sp, height, cover)) = wg.features().expected_canopy(wg, veg, s, x, z, roll) {
             if cover < FAR_CROWN_COVER {
                 let dim = 1.0 - 0.35 * cover / FAR_CROWN_COVER;
                 let c = col.rgb;
@@ -1646,7 +1657,7 @@ mod tests {
         let (x0, z0) = forest(&wg);
         let size = 48;
         let mut map = CanopyMap::new(x0, z0, size, size, &lod.class);
-        wg.features().grow_trees(&mut map, &wg);
+        wg.features().grow_trees(&mut map, &wg, &Default::default());
         // The highest leaves of each column in the generated cubes.
         let mut cubes: FxHashMap<hearth_math::CubePos, hearth_world::Cube> = FxHashMap::default();
         let (mut both, mut agree, mut only_one) = (0, 0, 0);

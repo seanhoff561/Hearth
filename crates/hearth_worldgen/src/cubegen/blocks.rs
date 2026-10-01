@@ -43,6 +43,8 @@ pub struct GenBlocks {
     pub podzol: BlockStateId,
     pub podzol_snowy: BlockStateId,
     pub moss_block: BlockStateId,
+    /// Ground a fire has burned over, bare a while.
+    pub burnt_ground: BlockStateId,
     pub snow_layers: [BlockStateId; 8],
     pub snow_block: BlockStateId,
     pub ice: BlockStateId,
@@ -183,6 +185,7 @@ impl GenBlocks {
             podzol: s("podzol[snowy=false]")?,
             podzol_snowy: s("podzol[snowy=true]")?,
             moss_block: s("moss_block")?,
+            burnt_ground: s("burnt_ground")?,
             snow_layers,
             snow_block: s("snow_block")?,
             ice: s("ice")?,

@@ -2,7 +2,9 @@
 //! states their parts are drawn with.
 
 use hearth_content::Content;
-use hearth_content::schema::flora::{ClimateEnvelope, Ground, TreeForm, Understory};
+use hearth_content::schema::flora::{
+    ClimateEnvelope, Dispersal, Ground, GrowthForm, Plant, TreeForm, Understory,
+};
 use hearth_flora::{Part, Templates};
 use hearth_world::{BlockRegistry, BlockStateId};
 
@@ -30,8 +32,20 @@ fn thickness_index(px: u8) -> usize {
 
 impl SpeciesBlocks {
     pub fn new(reg: &BlockRegistry, form: &TreeForm) -> Result<Self, String> {
+        let leaves = reg
+            .parse_state(form.leaves.as_str())
+            .map_err(|e| format!("{}: {e}", form.leaves.as_str()))?;
+        Self::named(reg, form.log.as_str(), form.branch.as_str(), leaves)
+    }
+
+    /// The blocks of a log and a branch block, with `leaves` for the foliage.
+    pub fn named(
+        reg: &BlockRegistry,
+        log_id: &str,
+        branch_id: &str,
+        leaves: BlockStateId,
+    ) -> Result<Self, String> {
         let state = |s: String| reg.parse_state(&s).map_err(|e| format!("{s}: {e}"));
-        let log_id = form.log.as_str();
         let log = [
             state(format!("{log_id}[axis=x]"))?,
             state(format!("{log_id}[axis=y]"))?,
@@ -43,7 +57,7 @@ impl SpeciesBlocks {
                 let b = |bit: u8| if joins & bit != 0 { "true" } else { "false" };
                 branch.push(state(format!(
                     "{}[thickness={px},down={},up={},north={},south={},west={},east={}]",
-                    form.branch.as_str(),
+                    branch_id,
                     b(hearth_flora::template::DOWN),
                     b(hearth_flora::template::UP),
                     b(hearth_flora::template::NORTH),
@@ -53,7 +67,6 @@ impl SpeciesBlocks {
                 ))?);
             }
         }
-        let leaves = state(form.leaves.as_str().to_owned())?;
         Ok(Self {
             log,
             branch,
@@ -83,6 +96,34 @@ pub struct Niche {
     /// Drainage it likes: 0 waterlogged … 1 dry.
     pub drainage: Option<(f32, f32)>,
     pub conifer: bool,
+    /// How quickly it takes opened ground, by how its seed travels and how fast it grows
+    /// (about 1; the wind-sown, fast-growing pioneers 2 and more, heavy nuts a half).
+    pub colonizes: f32,
+    /// How fast it grows against the others (0.5 slow … 2 fast): in a gap of the old forest the
+    /// quicker of the shade-tolerant reach the light first.
+    pub pace: f32,
+}
+
+impl Niche {
+    /// A plant's niche.
+    pub fn of(p: &Plant, conifer: bool) -> Self {
+        let travels = match p.dispersal {
+            Dispersal::Wind | Dispersal::Spores => 1.5,
+            Dispersal::Water => 1.0,
+            Dispersal::Animal => 0.6,
+            Dispersal::Explosive => 0.5,
+            Dispersal::Gravity => 0.3,
+        };
+        let pace = (p.growth_m_per_year.unwrap_or(0.4) / 0.5).clamp(0.5, 2.0);
+        Self {
+            climate: p.climate.clone(),
+            shade_tolerance: p.shade_tolerance,
+            drainage: p.soil.drainage,
+            conifer,
+            colonizes: travels * pace,
+            pace,
+        }
+    }
 }
 
 /// The climate of a place, as the trees read it.
@@ -102,6 +143,9 @@ pub struct PlaceClimate {
 #[derive(Debug, Clone)]
 pub struct UnderPlant {
     pub id: String,
+    /// Herb, shrub, fern or fungus: on cleared ground the herbs come at once, the shrubs from
+    /// the second year.
+    pub form: GrowthForm,
     pub niche: Niche,
     pub understory: Understory,
     /// Its block, and the upper half's for plants two blocks tall.
@@ -110,12 +154,26 @@ pub struct UnderPlant {
 }
 
 /// The ground under a place, as the understory reads it.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlaceGround {
     pub wet: bool,
     pub rich: bool,
     pub acid: bool,
     pub disturbed: bool,
+    /// Shrubs have had time to grow (not in the first year after the ground was cleared).
+    pub shrubs: bool,
+}
+
+impl Default for PlaceGround {
+    fn default() -> Self {
+        Self {
+            wet: false,
+            rich: false,
+            acid: false,
+            disturbed: false,
+            shrubs: true,
+        }
+    }
 }
 
 impl PlaceGround {
@@ -139,6 +197,11 @@ pub struct Forest {
     pub blocks: Vec<SpeciesBlocks>,
     pub niches: Vec<Niche>,
     pub understory: Vec<UnderPlant>,
+    /// The blocks trees killed by fire stand in (charred trunk and limbs), if the content has
+    /// them.
+    pub charred: Option<SpeciesBlocks>,
+    /// The greatest height (m) any species reaches.
+    pub tallest_m: f32,
 }
 
 /// The coarse climate class a Köppen code belongs to.
@@ -265,13 +328,10 @@ impl Forest {
             };
             match SpeciesBlocks::new(reg, form) {
                 Ok(b) => {
-                    niches.push(Niche {
-                        climate: p.climate.clone(),
-                        shade_tolerance: p.shade_tolerance,
-                        drainage: p.soil.drainage,
-                        conifer: !p.deciduous
-                            && form.leaf != hearth_content::schema::flora::LeafKind::Broad,
-                    });
+                    niches.push(Niche::of(
+                        p,
+                        !p.deciduous && form.leaf != hearth_content::schema::flora::LeafKind::Broad,
+                    ));
                     species.push(sp);
                     blocks.push(b);
                 }
@@ -299,22 +359,35 @@ impl Forest {
             };
             understory.push(UnderPlant {
                 id: p.id.clone(),
-                niche: Niche {
-                    climate: p.climate.clone(),
-                    shade_tolerance: p.shade_tolerance,
-                    drainage: p.soil.drainage,
-                    conifer: false,
-                },
+                form: p.form,
+                niche: Niche::of(p, false),
                 understory: u.clone(),
                 lower,
                 upper,
             });
         }
+        let charred = match SpeciesBlocks::named(
+            reg,
+            "hearth:charred_log",
+            "hearth:charred_branch",
+            BlockStateId::AIR,
+        ) {
+            Ok(b) => Some(b),
+            Err(e) => {
+                if !species.is_empty() {
+                    log::warn!("burned trees stand unburned: {e}");
+                }
+                None
+            }
+        };
+        let tallest_m = species.iter().map(|s| s.max_height_m).fold(0.0, f32::max);
         Self {
             templates: Templates::new(species),
             blocks,
             niches,
             understory,
+            charred,
+            tallest_m,
         }
     }
 
@@ -333,6 +406,10 @@ impl Forest {
         let mut odds: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
         for (i, p) in self.understory.iter().enumerate() {
             let u = &p.understory;
+            if !ground.shrubs && matches!(p.form, GrowthForm::Shrub | GrowthForm::Vine) {
+                odds.push(0.0);
+                continue;
+            }
             let climate = p.niche.suits(c).min(1.0);
             let lit = fit(light, u.light.0, u.light.1, 0.15);
             let soil = if u.ground.is_empty() || u.ground.iter().any(|g| ground.has(*g)) {
@@ -374,14 +451,37 @@ impl Forest {
     /// well; `shade` (0–1) favours the shade-tolerant (the understory). None where no species
     /// fits (the tropics, deserts and tundra wait for their species).
     pub fn choose(&self, c: &PlaceClimate, shade: f32, roll: f32) -> Option<usize> {
+        self.choose_by(c, roll, |n| {
+            1.0 - shade + shade * (0.2 + 1.6 * n.shade_tolerance)
+        })
+    }
+
+    /// The species that takes opened ground (a clearing, a burn), drawn by `roll`: the
+    /// light-demanding, wind-sown, fast-growing pioneers most often, the shade-tolerant
+    /// seldom.
+    pub fn choose_open(&self, c: &PlaceClimate, roll: f32) -> Option<usize> {
+        self.choose_by(c, roll, |n| (1.0 - n.shade_tolerance).powi(3) * n.colonizes)
+    }
+
+    /// The species that takes a gap in the old forest, drawn by `roll`: those that grow in
+    /// shade, the quicker of them more often.
+    pub fn choose_gap(&self, c: &PlaceClimate, roll: f32) -> Option<usize> {
+        self.choose_by(c, roll, |n| (0.2 + 1.6 * n.shade_tolerance) * n.pace)
+    }
+
+    fn choose_by(
+        &self,
+        c: &PlaceClimate,
+        roll: f32,
+        light: impl Fn(&Niche) -> f32,
+    ) -> Option<usize> {
         let mut weights: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
         let mut best = 0.0f32;
         for (i, n) in self.niches.iter().enumerate() {
             let s = n.suits(c);
             best = best.max(s);
-            let light = 1.0 - shade + shade * (0.2 + 1.6 * n.shade_tolerance);
             let id = &self.templates.species[i].id;
-            weights.push(s * s * n.affinity(id, c.biome) * light);
+            weights.push(s * s * n.affinity(id, c.biome) * light(n));
         }
         if best < 0.25 {
             return None;

@@ -31,13 +31,10 @@ fn trunk(w: &World) -> Option<BlockPos> {
         })
 }
 
-#[test]
-fn a_tree_is_felled_limbed_and_bucked() {
-    let dir = temp("felling");
-    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
-    // Look about for a tree.
+/// Looks about for a slim tree to fell (see `trunk`), going a little way from the start.
+fn find_trunk(w: &mut World) -> BlockPos {
     let start = w.mover.pos;
-    let mut foot = trunk(&w);
+    let mut foot = trunk(w);
     for (dx, dz) in [
         (40.0, 0.0),
         (-40.0, 0.0),
@@ -50,9 +47,16 @@ fn a_tree_is_felled_limbed_and_bucked() {
             break;
         }
         w.go(start.x + dx, start.z + dz);
-        foot = trunk(&w);
+        foot = trunk(w);
     }
-    let foot = foot.expect("a tree to fell");
+    foot.expect("a tree to fell")
+}
+
+#[test]
+fn a_tree_is_felled_limbed_and_bucked() {
+    let dir = temp("felling");
+    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
+    let foot = find_trunk(&mut w);
     let wood = w.block(foot).expect("log");
     println!("felling the {wood} at {foot:?}");
     w.go_to_block(foot);
@@ -132,6 +136,65 @@ fn a_tree_is_felled_limbed_and_bucked() {
         let (done, words) = w.act("buck_log", AimAt::Block { pos: p, top: false });
         assert!(!done && words.contains("Fell it first"), "{words}");
     }
+    drop(w);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_felled_tree_stays_felled_and_a_young_tree_takes_its_place() {
+    let dir = temp("regrowth");
+    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
+    let foot = find_trunk(&mut w);
+    let wood = w.block(foot).expect("log");
+    w.go_to_block(foot);
+    w.give("hearth:hand_axe/flint", 1);
+    let (done, words) = w.act(
+        "fell_tree",
+        AimAt::Block {
+            pos: foot,
+            top: false,
+        },
+    );
+    assert!(done, "felled: {words}");
+    w.run(200);
+    let felled = |w: &World| {
+        w.block(foot).as_deref() == Some(wood.as_str())
+            && w.block(foot.up()).is_some_and(|b| b != wood)
+    };
+    assert!(w.until(10.0, felled), "a stump: {:?}", w.block(foot.up()));
+    // Gone far away and back, the terrain generated anew: the tree stays felled.
+    let home = w.mover.pos;
+    w.go(home.x + 300.0, home.z);
+    w.run(20);
+    assert!(
+        w.until(20.0, |w| w.block(foot).is_none()),
+        "the stump's terrain was unloaded"
+    );
+    w.go_exact(home);
+    assert!(w.until(30.0, felled), "still felled on coming back");
+    // Saved and opened again: still felled.
+    drop(w);
+    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
+    w.go_exact(home);
+    assert!(w.until(30.0, felled), "still felled in the saved world");
+    // Years later a young tree stands where it stood.
+    let days_per_year = w.content.time.days_per_season.default as f64 * 4.0;
+    let hours = 12.0 * days_per_year * 24.0;
+    let want = w.ticks + (hours / 24.0 * w.ticks_per_day) as u64;
+    w.server.send(hearth_protocol::ToServer::SkipHours(hours));
+    w.server.send(hearth_protocol::ToServer::Run(1));
+    assert!(w.until(60.0, |w| w.ticks >= want), "the clock moved on");
+    w.run(30);
+    let young = |w: &World| {
+        w.block(foot).is_some_and(|b| {
+            b != wood && (b.ends_with("_branch") || b.ends_with("_log") || b.ends_with("_leaves"))
+        })
+    };
+    assert!(
+        w.until(10.0, young),
+        "a young tree at the stump's place: {:?}",
+        w.block(foot)
+    );
     drop(w);
     let _ = std::fs::remove_dir_all(&dir);
 }

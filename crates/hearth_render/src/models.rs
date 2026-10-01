@@ -378,6 +378,11 @@ fn cube_model(
         };
         f[down] = ctx.tex("loam");
         f
+    } else if name == "burnt_ground" {
+        let mut f = all(ctx.tex("burnt_ground_side"));
+        f[up] = ctx.tex("burnt_ground_top");
+        f[down] = ctx.tex("loam");
+        f
     } else if name.ends_with("_log") {
         let axis = prop(reg, s, "axis").unwrap_or("y");
         axis_faces(ctx.tex(name), ctx.tex(&format!("{name}_top")), axis)

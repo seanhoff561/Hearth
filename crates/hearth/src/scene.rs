@@ -28,6 +28,9 @@ pub struct LocalWorld {
     pub content: Arc<hearth_content::Content>,
     /// The blocks the player has changed, laid over the terrain as it loads.
     pub edits: crate::edits::Edits,
+    /// The vegetation the terrain is grown with: the year the trees have grown to, and what
+    /// has been felled, cleared and burned.
+    pub vegetation: hearth_worldgen::vegetation::Vegetation,
 }
 
 impl LocalWorld {
@@ -94,6 +97,11 @@ impl LocalWorld {
         let cover = crate::season_cover::SeasonCover::new(&reg, &grid)?;
         let terrain = Arc::new(Terrain::new(Arc::new(grid)));
         let generator = Arc::new(WorldGenerator::new(terrain.clone(), &reg, &content)?);
+        let vegetation = hearth_worldgen::vegetation::Vegetation::new(
+            &Default::default(),
+            terrain.planet().circumference(),
+            0.0,
+        );
         Ok(Self {
             map: CubeMap::new(*terrain.planet()),
             cover,
@@ -102,6 +110,7 @@ impl LocalWorld {
             generator,
             light: LightEngine::new(),
             edits: crate::edits::Edits::default(),
+            vegetation,
         })
     }
 
@@ -135,6 +144,7 @@ impl LocalWorld {
             }
         }
         let generator = self.generator.clone();
+        let veg = self.vegetation.clone();
         let data: Vec<_> = columns
             .par_iter()
             .map(|col| generator.column(*col))
@@ -157,10 +167,10 @@ impl LocalWorld {
         let cubes: Vec<(CubePos, Cube)> = columns
             .par_iter()
             .flat_map_iter(|col| {
-                let generator = &generator;
+                let (generator, veg) = (&generator, &veg);
                 (lo..=hi).map(move |cy| {
                     let p = col.cube(cy);
-                    (p, generator.generate_cube(p))
+                    (p, generator.generate_cube_in(p, veg).0)
                 })
             })
             .collect();

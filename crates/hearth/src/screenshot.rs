@@ -79,6 +79,9 @@ pub struct ShotSpec {
     /// Trees grown on the ground in front of the camera: (species, stage, variant, metres
     /// ahead, metres to the right).
     pub trees: Vec<(String, String, u8, f64, f64)>,
+    /// Ground cleared or burned in front of the camera, seen years later: (what, radius m,
+    /// years since, metres ahead). The rest of the land has grown those years too.
+    pub disturb: Vec<(hearth_worldgen::vegetation::DisturbanceKind, f64, f64, f64)>,
     /// See through the eyes of a person standing on the ground below the camera (their body
     /// drawn as in first person).
     pub body: bool,
@@ -119,6 +122,7 @@ impl Default for ShotSpec {
             person: None,
             place: Vec::new(),
             trees: Vec::new(),
+            disturb: Vec::new(),
             body: false,
             senses: None,
         }
@@ -202,6 +206,20 @@ impl ShotSpec {
                     let ahead = n.next().unwrap_or("8").parse()?;
                     let right = n.next().unwrap_or("0").parse()?;
                     spec.trees.push((species, stage, variant, ahead, right));
+                }
+                // `clear=30@5` or `burn=40@0.1:20` (radius @ years since : metres ahead).
+                "clear" | "burn" => {
+                    use hearth_worldgen::vegetation::DisturbanceKind;
+                    let kind = if k.trim() == "burn" {
+                        DisturbanceKind::Burned
+                    } else {
+                        DisturbanceKind::Cleared
+                    };
+                    let (radius, at) = v.split_once('@').unwrap_or((v, "1"));
+                    let mut n = at.split(':');
+                    let years = n.next().unwrap_or("1").parse()?;
+                    let ahead = n.next().unwrap_or("0").parse()?;
+                    spec.disturb.push((kind, radius.parse()?, years, ahead));
                 }
                 "body" => spec.body = v.parse()?,
                 "senses" => spec.senses = Some(v.to_owned()),
@@ -363,6 +381,32 @@ pub fn render_shot(
         year_frac,
         spec.hour
     );
+    // Cleared and burned ground in front of the camera, as it is years later.
+    if !spec.disturb.is_empty() {
+        let years = spec.disturb.iter().map(|d| d.2).fold(0.0, f64::max);
+        let f = camera.forward().as_dvec3();
+        let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+        let disturbances = spec
+            .disturb
+            .iter()
+            .map(|&(kind, radius, since, ahead)| {
+                let at = camera.pos + flat * ahead;
+                hearth_worldgen::vegetation::Disturbance {
+                    kind,
+                    year: years - since,
+                    x: at.x.floor() as i32,
+                    z: at.z.floor() as i32,
+                    radius: radius as f32,
+                    severity: 1.0,
+                }
+            })
+            .collect();
+        lw.vegetation = hearth_worldgen::vegetation::Vegetation::new(
+            &hearth_worldgen::vegetation::VegetationSave { disturbances },
+            planet.circumference(),
+            years,
+        );
+    }
     let positions = lw.load_area(camera.pos, spec.distance, 2, spec.snow.then_some(year_frac));
     // Things set on the ground in front of the camera, lit as they would be.
     for (state, ahead, right, up) in &spec.place {
@@ -534,7 +578,7 @@ pub fn render_shot(
                         late.store(true, Ordering::Relaxed);
                         return None;
                     }
-                    Some(lod.build(&lw.generator, *k))
+                    Some(lod.build_in(&lw.generator, &lw.vegetation, *k))
                 })
                 .collect();
             if late.load(Ordering::Relaxed) {

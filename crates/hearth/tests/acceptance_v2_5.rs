@@ -471,8 +471,11 @@ impl Bot {
             self.home();
             self.w.put_down_all();
             let long = n >= 3;
-            let order: &[&str] = if kindle && i == 0 {
-                &["twig/", "stick/"]
+            // Embers want kindling (the sticks kept for making things too, rather than let the
+            // fire go out), then whatever there is.
+            let first = kindle && i == 0;
+            let order: &[&str] = if first {
+                &["twig/", "stick/", "pole/", "log_section/"]
             } else if long {
                 &["pole/", "stick/", "log_section/", "twig/"]
             } else {
@@ -480,9 +483,8 @@ impl Bot {
             };
             let mut laid = false;
             for kind in order {
-                if self.lying_fuel(kind) > Self::kept(kind)
-                    && self.take(|id| id.contains(kind) && burns(id))
-                {
+                let spare = if first { 0 } else { Self::kept(kind) };
+                if self.lying_fuel(kind) > spare && self.take(|id| id.contains(kind) && burns(id)) {
                     laid = true;
                     break;
                 }
@@ -896,7 +898,10 @@ impl Bot {
                 if s.is_underwater() || s.tree_density < 0.3 {
                     continue;
                 }
-                let Some((sp, _, _)) = g.features().expected_canopy(&g, &s, x, z, 0.5) else {
+                let Some((sp, _, _)) =
+                    g.features()
+                        .expected_canopy(&g, &Default::default(), &s, x, z, 0.5)
+                else {
                     continue;
                 };
                 let id = &g.forest.templates.species[sp].id;
@@ -1113,6 +1118,19 @@ impl Bot {
     }
 
     /// A kill fetched to camp and butchered.
+    /// A kill fetched and butchered, its hide scraped while it is fresh.
+    fn hide_from_a_kill(&mut self) {
+        self.butcher_one();
+        if self.count("sheet/rawhide") > 0 {
+            let scrape = if self.knows("hide_scraping") {
+                "scrape_hide"
+            } else {
+                "scrape_hide_crudely"
+            };
+            self.work(scrape, AimAt::Nothing);
+        }
+    }
+
     fn butcher_one(&mut self) {
         if !self.fetch_carcass() {
             self.say("no kill turned up");
@@ -1447,15 +1465,27 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
     }
     assert!(bot.knows("butchery"), "{:?}", bot.w.learned);
     bot.say("knows butchery");
-    for _ in 0..4 {
+    // A first kill butchered, its hide scraped while it is fresh (raw hides keep only a few
+    // days): crudely at first, which teaches scraping. More kills are fetched while the meat
+    // dries and the clothes are sewn.
+    for _ in 0..1 {
         assert!(bot.fetch_carcass(), "a kill turns up");
         let c = bot.carcass_here().expect("carcass at camp");
         bot.work("butcher_small_game", AimAt::Thing(c));
         feed(&mut bot);
+        if bot.count("sheet/rawhide") > 0 {
+            let scrape = if bot.knows("hide_scraping") {
+                "scrape_hide"
+            } else {
+                "scrape_hide_crudely"
+            };
+            bot.work(scrape, AimAt::Nothing);
+        }
     }
     bot.say(&format!(
-        "{} hides, {} meat, {} bone, {} sinew",
+        "{} hides ({} scraped), {} meat, {} bone, {} sinew",
         bot.count("sheet/rawhide"),
+        bot.count("sheet/scraped_hide"),
         bot.count("cut/meat"),
         bot.count("piece/bone"),
         bot.count("hank/sinew")
@@ -1472,9 +1502,12 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
     }
 
     // ---- Hides: scraping teaches scrapers and hide work; a hide worn, wraps. ----
-    for _ in 0..4 {
+    for _ in 0..6 {
         if bot.knows("hide_scraping") {
             break;
+        }
+        if bot.count("sheet/rawhide") == 0 {
+            bot.butcher_one();
         }
         bot.work("scrape_hide_crudely", AimAt::Nothing);
     }
@@ -1484,6 +1517,13 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         bot.w.learned
     );
     bot.until_known("hide_wrap_clothing", "drape_hide", AimAt::Nothing, 6);
+    // Raw hides keep only a few days; scraped, they keep for weeks until there is a needle.
+    for _ in 0..6 {
+        if bot.count("sheet/rawhide") == 0 || bot.count("sheet/scraped_hide") >= 3 {
+            break;
+        }
+        bot.work("scrape_hide", AimAt::Nothing);
+    }
 
     // ---- Cord: rolling sinew fibres teaches cordage. ----
     bot.until_known("cordage_basic", "roll_fibres", AimAt::Nothing, 8);
@@ -1491,128 +1531,11 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         bot.work("twist_sinew", AimAt::Nothing);
     }
 
-    // ---- Spear: a pole whittled, a point knapped, bound and glued. ----
-    bot.work("whittle_spear", AimAt::Nothing);
-    if !bot.knows("stone_tipped_spear") {
-        bot.work("whittle_spear", AimAt::Nothing);
-    }
-    assert!(bot.knows("stone_tipped_spear"), "{:?}", bot.w.learned);
-    // Resin from the spruces and pines.
-    let resinous = |_: &str, m: Option<&str>| {
-        m.is_some_and(|m| m.ends_with("spruce_wood") || m.ends_with("pine_wood"))
-    };
-    for _ in 0..3 {
-        if bot.count("pine_resin") > 0 {
-            break;
-        }
-        bot.gather(48, resinous, "collect_resin", 2);
-    }
-    if bot.count("pine_resin") == 0 {
-        bot.resin_afar();
-    }
-    bot.say(&format!("{} resin", bot.count("pine_resin")));
-    if bot.count("point/flint") == 0 {
-        bot.cobbles(2, &knappable);
-        bot.work("test_nodule", AimAt::Nothing);
-        bot.work("knap_point", AimAt::Nothing);
-    }
-    let mut spear = false;
-    for _ in 0..3 {
-        if bot.work("haft_spear", AimAt::Nothing) {
-            spear = true;
-            break;
-        }
-    }
-    assert!(
-        spear && bot.count("stone_tipped_spear/") > 0,
-        "a hafted spear"
-    );
-    bot.say("GOAL spear: a stone-tipped spear");
-
-    // ---- Bone: scratching bone teaches burins and bone work; awls; needles. ----
-    bot.until_known("burin", "scratch_bone", AimAt::Nothing, 6);
-    bot.until_known("bone_antler_working", "scratch_bone", AimAt::Nothing, 6);
-    // A blade for the burin (a nodule may shatter, a blade may snap: try again).
-    for _ in 0..8 {
-        if bot.count("burin/flint") > 0 {
-            break;
-        }
-        if bot.count("blade/flint") == 0 {
-            if bot.count("core/flint") == 0 {
-                bot.cobbles(2, &knappable);
-                bot.work("test_nodule", AimAt::Nothing);
-            }
-            bot.work("knap_blades", AimAt::Nothing);
-        }
-        bot.work("make_burin", AimAt::Nothing);
-    }
-    bot.until_known("awl", "pierce_hide", AimAt::Nothing, 6);
-    for _ in 0..4 {
-        if bot.knows("eyed_needle") {
-            break;
-        }
-        bot.work("make_awl", AimAt::Nothing);
-    }
-    assert!(bot.knows("eyed_needle"), "{:?}", bot.w.learned);
-    for _ in 0..12 {
-        if bot.count("needle/bone") > 0 {
-            break;
-        }
-        bot.work("make_needle", AimAt::Nothing);
-    }
-    assert!(bot.count("needle/bone") > 0, "a needle");
-    bot.say("a bone needle");
-
-    // ---- Sewing: stitching hides together teaches sewn clothing; moccasins. ----
-    for _ in 0..10 {
-        if bot.count("scraped_hide") >= 3 {
-            break;
-        }
-        if bot.count("rawhide") == 0 {
-            bot.butcher_one();
-        }
-        bot.work("scrape_hide", AimAt::Nothing);
-    }
-    bot.say(&format!("{} scraped hides", bot.count("scraped_hide")));
-    if bot.count("cord/sinew") < 2 {
-        for _ in 0..3 {
-            bot.work("twist_sinew", AimAt::Nothing);
-        }
-    }
-    for _ in 0..8 {
-        if bot.knows("sewn_clothing") {
-            break;
-        }
-        bot.work("stitch_hides", AimAt::Nothing);
-    }
-    assert!(bot.knows("sewn_clothing"), "{:?}", bot.w.learned);
-    let mut sewn = false;
-    for _ in 0..6 {
-        if bot.work("sew_moccasins", AimAt::Nothing) {
-            sewn = true;
-            break;
-        }
-    }
-    assert!(sewn && bot.count("moccasins/scraped_hide") > 0, "moccasins");
-    bot.say("GOAL clothing: sewn moccasins");
-    bot.put_on("moccasins");
-    // Autumn nights are cold: a cape of two hides.
-    for _ in 0..6 {
-        if bot.count("scraped_hide") >= 2 {
-            break;
-        }
-        if bot.count("rawhide") == 0 {
-            bot.butcher_one();
-        }
-        bot.work("scrape_hide", AimAt::Nothing);
-    }
-    if bot.work("make_hide_cape", AimAt::Nothing) {
-        bot.put_on("hide_cape");
-    }
-
     // ---- Drying: meat hung in the smoke teaches drying; a rack, and three dry days. ----
-    // Fresh meat (what lay at camp from the last kills has gone off).
-    bot.butcher_one();
+    // Fresh meat (what lay at camp from the first kill may have gone off).
+    if bot.count("cut/meat") < 3 {
+        bot.hide_from_a_kill();
+    }
     for _ in 0..6 {
         if bot.knows("drying_and_smoking") {
             break;
@@ -1676,7 +1599,12 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         {
             break;
         }
-        bot.pass_time(6.0);
+        // While it dries: kills for their hides (the clothes want five or six).
+        if bot.count("sheet/scraped_hide") + bot.count("sheet/rawhide") < 6 {
+            bot.hide_from_a_kill();
+        } else {
+            bot.pass_time(6.0);
+        }
     }
     assert!(
         bot.w
@@ -1686,6 +1614,134 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         "dried meat on the rack"
     );
     bot.say("GOAL dried meat");
+
+    // ---- Bone: scratching bone teaches burins and bone work; awls; needles. ----
+    bot.until_known("burin", "scratch_bone", AimAt::Nothing, 6);
+    bot.until_known("bone_antler_working", "scratch_bone", AimAt::Nothing, 6);
+    // A blade for the burin (a nodule may shatter, a blade may snap: try again).
+    for _ in 0..8 {
+        if bot.count("burin/flint") > 0 {
+            break;
+        }
+        if bot.count("blade/flint") == 0 {
+            if bot.count("core/flint") == 0 {
+                bot.cobbles(2, &knappable);
+                bot.work("test_nodule", AimAt::Nothing);
+            }
+            bot.work("knap_blades", AimAt::Nothing);
+        }
+        bot.work("make_burin", AimAt::Nothing);
+    }
+    // A hide to pierce (those of the last kills may have torn or gone off).
+    if bot.count("sheet/rawhide") + bot.count("sheet/scraped_hide") == 0 {
+        bot.butcher_one();
+    }
+    bot.until_known("awl", "pierce_hide", AimAt::Nothing, 6);
+    for _ in 0..4 {
+        if bot.knows("eyed_needle") {
+            break;
+        }
+        bot.work("make_awl", AimAt::Nothing);
+    }
+    assert!(bot.knows("eyed_needle"), "{:?}", bot.w.learned);
+    for _ in 0..12 {
+        if bot.count("needle/bone") > 0 {
+            break;
+        }
+        bot.work("make_needle", AimAt::Nothing);
+    }
+    assert!(bot.count("needle/bone") > 0, "a needle");
+    bot.say("a bone needle");
+
+    // ---- Sewing: stitching hides together teaches sewn clothing; moccasins. ----
+    for _ in 0..10 {
+        if bot.count("sheet/scraped_hide") >= 3 {
+            break;
+        }
+        if bot.count("sheet/rawhide") == 0 {
+            bot.butcher_one();
+        }
+        bot.work("scrape_hide", AimAt::Nothing);
+    }
+    bot.say(&format!(
+        "{} scraped hides",
+        bot.count("sheet/scraped_hide")
+    ));
+    if bot.count("cord/sinew") < 2 {
+        for _ in 0..3 {
+            bot.work("twist_sinew", AimAt::Nothing);
+        }
+    }
+    for _ in 0..8 {
+        if bot.knows("sewn_clothing") {
+            break;
+        }
+        bot.work("stitch_hides", AimAt::Nothing);
+    }
+    assert!(bot.knows("sewn_clothing"), "{:?}", bot.w.learned);
+    let mut sewn = false;
+    for _ in 0..6 {
+        if bot.work("sew_moccasins", AimAt::Nothing) {
+            sewn = true;
+            break;
+        }
+    }
+    assert!(sewn && bot.count("moccasins/scraped_hide") > 0, "moccasins");
+    bot.say("GOAL clothing: sewn moccasins");
+    bot.put_on("moccasins");
+    // Autumn nights are cold: a cape of two hides.
+    for _ in 0..6 {
+        if bot.count("sheet/scraped_hide") >= 2 {
+            break;
+        }
+        if bot.count("sheet/rawhide") == 0 {
+            bot.butcher_one();
+        }
+        bot.work("scrape_hide", AimAt::Nothing);
+    }
+    if bot.work("make_hide_cape", AimAt::Nothing) {
+        bot.put_on("hide_cape");
+    }
+
+    // Clothes first, against the autumn nights; then the spear.
+    // ---- Spear: a pole whittled, a point knapped, bound and glued. ----
+    bot.work("whittle_spear", AimAt::Nothing);
+    if !bot.knows("stone_tipped_spear") {
+        bot.work("whittle_spear", AimAt::Nothing);
+    }
+    assert!(bot.knows("stone_tipped_spear"), "{:?}", bot.w.learned);
+    // Resin from the spruces and pines.
+    let resinous = |_: &str, m: Option<&str>| {
+        m.is_some_and(|m| m.ends_with("spruce_wood") || m.ends_with("pine_wood"))
+    };
+    for _ in 0..3 {
+        if bot.count("pine_resin") > 0 {
+            break;
+        }
+        bot.gather(48, resinous, "collect_resin", 2);
+    }
+    if bot.count("pine_resin") == 0 {
+        bot.resin_afar();
+    }
+    bot.say(&format!("{} resin", bot.count("pine_resin")));
+    if bot.count("point/flint") == 0 {
+        bot.cobbles(2, &knappable);
+        bot.work("test_nodule", AimAt::Nothing);
+        bot.work("knap_point", AimAt::Nothing);
+    }
+    let mut spear = false;
+    for _ in 0..3 {
+        if bot.work("haft_spear", AimAt::Nothing) {
+            spear = true;
+            break;
+        }
+    }
+    assert!(
+        spear && bot.count("stone_tipped_spear/") > 0,
+        "a hafted spear"
+    );
+    bot.say("GOAL spear: a stone-tipped spear");
+
     bot.say(&format!("learned: {:?}", bot.w.learned));
     // Everything learned came by a route (no knowledge was given).
     for (node, learned) in &bot.w.knowledge.known {

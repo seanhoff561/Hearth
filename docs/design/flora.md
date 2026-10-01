@@ -1,8 +1,11 @@
 # Flora
 
-*Status: in progress (V2-6). Code: `crates/hearth_flora` (the growth model), the placement in
-`hearth_worldgen`, the server's vegetation state and fire in `crates/hearth`. Data:
-`data/hearth/flora`, `data/hearth/materials/wood.ron`, `data/hearth/blocks/trees.json`.*
+*Status: in progress (V2-6). Code: `crates/hearth_flora` (the growth model), the placement,
+succession and vegetation state in `hearth_worldgen` (`trees`, `cubegen::features`,
+`cubegen::succession`, `vegetation`), felling and the regrowing of loaded terrain in
+`crates/hearth` (`workshop`, `server`). Data: `data/hearth/flora`,
+`data/hearth/materials/wood.ron` and `organic.ron`, `data/hearth/blocks/trees.json` and
+`understory.json`. Decisions D75, D76.*
 
 ## Purpose
 Plants are the world's living surface: food, fibre, medicine, poison, fuel, timber and
@@ -33,8 +36,8 @@ look-alike group when they can be mistaken for another (below).
 A tree is a pure function of its species, its age and a variant number:
 1. **Allometry.** Height follows a Chapman–Richards curve, H(a) = Hmax · (1 − e^(−k·a))^1.4,
    with k set by the species' early growth rate; trunk diameter grows on after height
-   levels off, D(a) = Dmax · (1 − e^(−a/τ)), τ = lifespan ÷ 4. A 60-year oak is about 20 m
-   tall and 0.5 m through; a 300-year oak 30 m and 1.6 m.
+   levels off, D(a) = Dmax · (1 − e^(−a/τ))^1.3, τ = lifespan ÷ 3. A 60-year oak is about
+   20–26 m tall and under 0.6 m through; a 250-year oak over 30 m and over a metre.
 2. **Stages.** Seedling (under 0.6 m), sapling (to 3 m), pole, young, mature, old, ancient,
    and dead standing (snag). A tree is grown at a representative age for its stage, so its
    blocks change only when it passes from one stage to the next.
@@ -72,12 +75,22 @@ light under the canopy (shade-tolerant under trees, pioneers in clearings and on
 ground. The distant terrain grows the same trees from their templates' crown summaries.
 
 ### Useful, edible, medicinal and poisonous plants
-Plants yield their parts by season through gathering processes. Some foods need processing
-(acorns are leached, nettles cooked). Medicinal plants have modest effects (willow bark eases
-pain, yarrow stems bleeding). Poisonous plants have look-alikes (hemlock among the edible
-umbellifers, death cap among white mushrooms, deadly nightshade among dark berries): until the
-player has learned to tell a group apart, its plants are seen by their group's name, and
-eating one may poison. Identification is knowledge, learned by its routes.
+The temperate understory has 26 species: berries (raspberry, bilberry, lingonberry, wild
+strawberry, bramble, dog rose), greens and herbs (wild garlic, wood sorrel, dandelion, ribwort
+plantain, yarrow, nettle, fireweed, burdock, wild carrot), poisonous plants (hemlock,
+foxglove, deadly nightshade), juniper, heather, bracken and fungi (chanterelle, porcini, field
+mushroom, death cap, fly agaric). Each is placed per column by climate, the light under the
+canopy (from the tree density and the stand's age), the ground it needs (wet, rich, acid or
+broken) and its abundance, in patches of its own size. Plants yield their parts by season
+through gathering processes (picking berries, leaves and herbs, digging roots, gathering
+mushrooms, cutting bracken). Medicinal plants have modest effects: willow bark eases pain by
+30 % for four hours; a yarrow poultice slows a wound's bleeding to 0.4 of its rate; plantain
+cleans a wound. Poisonous plants have look-alikes (hemlock among the edible umbellifers, death
+cap among the pale mushrooms, deadly nightshade among the dark berries): until the player has
+learned to tell a group apart, its plants and their parts are seen by the group's name, and
+eating one poisons (plant poisoning, or deadly poisoning for the death cap and nightshade).
+Telling a group apart (`telling_<group>`) is knowledge, learned by its routes, among them
+eating the wrong one.
 
 ### Felling, limbing and bucking
 Cutting through a trunk with a chopping tool takes time by its diameter, the wood's hardness
@@ -85,18 +98,47 @@ and the tool. The tree then **falls** away from the cut: the server takes the tr
 (its template, as changed), removes them, and lays the trunk with its crown along the ground,
 turned about its foot, resting where it first meets the ground; what stood in its way is
 broken, and anyone under it is hurt by its weight and speed. The client shows the fall as the
-whole tree turning about its foot under gravity over a few seconds. Felled trees stay felled.
-Limbing takes the branches off a fallen trunk (poles, sticks, twigs; the foliage becomes
-litter); bucking cuts the trunk into log sections (a metre of 40 cm oak is over 100 kg).
+whole tree turning about its foot under gravity over a few seconds. Felled trees stay felled:
+the felling is kept in the vegetation state (below), not as the player's change to the blocks,
+so the stump stands until another tree takes the place a few years on. The fallen trunk is the
+player's change and lies where it came to rest. Limbing takes the branches off a fallen trunk
+(poles, sticks, twigs; the foliage becomes litter); bucking cuts the trunk into log sections (a
+metre of 40 cm oak is over 100 kg). Snags and charred trunks are felled the same way.
 
 ### Vegetation state and succession
-The land is divided into ecological cells (256 × 256 m on the wrapped grid). Undisturbed
-cells are what the generator makes; a cell that is cleared, burned or otherwise disturbed
-keeps when, how, and how much, and the generator grows it back from that date: grasses and
-herbs at once, then brambles and shrubs, then pioneer trees (birch, aspen, pine) a few years
-on, then the climax species as the pioneers age. The player's felled trees are kept by place,
-and new trees take their spots after a few years. Trees age with the calendar: when a tree
-passes into its next stage, the cubes holding it are rebuilt. The state is saved
+The generator grows the land from a **vegetation state**: the year the trees have grown to
+(calendar years since the world began) and every disturbance so far: a tree felled at its
+foot, ground cleared, land burned, each with its year, centre, radius (its edge ragged) and
+severity (a light fire leaves unburned patches). Disturbances are found by place; the
+ecological cells (256 m) are the grid fire spreads over far from the player.
+
+**Tree sites.** Each tree site holds a sequence of generations drawn from its hash. The first
+is the tree the world began with, at the stand's age. A tree lives its species' lifespan
+(± its own share), then stands as a snag for a few years and falls; a tree of the gap takes
+its place, the shade-tolerant most often and the quicker-growing of them more often still. A
+disturbance ends a generation early: a felled tree leaves its stump until the next takes root;
+fire leaves the trunks of trees from poles up standing charred for 3–15 years; clearing takes
+all. Opened ground grows back with the light-demanding first, by how their seed travels and
+how fast they grow (wind-sown pioneers within 1–4 years: willow, aspen, birch, pine; others in
+3–11), the shade-tolerant coming up under them after a third of the pioneers' lives and taking
+the site when the pioneers die. A young stand thins as the stand grows, by the crowns of the
+place's usual species at the stand's age, so the pioneers are not thinned before the others.
+One tree felled in a closed forest is a gap (the shade-tolerant take it); three felled in each
+other's gaps make an opening (the pioneers do).
+
+**Ground.** Burned ground lies bare and black (`burnt_ground`) for 0.4 years; then herbs come
+(fireweed first on burns); on cleared ground the herbs of open, broken ground come at once
+and shrubs (brambles, raspberries, roses) from the second year; the ground counts as broken
+for six years, and the young trees close the canopy over it, dimming the light, over the
+forty years after the third. A felled tree's gap lets more light onto the ground from its
+second year to its twelfth.
+
+**Change in the loaded world.** Trees age with the calendar: generating a cube gives the year
+it next changes (a tree's next stage, a generation's birth or death, a snag or stump falling,
+a ground phase). The server keeps each loaded cube's state and that year; when it comes, or a
+new disturbance reaches the cube, the cube is generated with the old state and the new, and
+what changed is laid in where the player has not changed the block and no water stands (the
+seasonal cover taken off and laid again), then relit and remeshed. The state is saved
 (`vegetation.json`), sent to the client and drawn in the distant terrain.
 
 ### Wildfire
@@ -117,8 +159,17 @@ fields). Tiles stay within a VRAM budget, far tiles coarsening first. TAA is an 
   mature, old > ½ lifespan, ancient > ⅘ lifespan.
 - Logs from 0.9 m of wood; branch thickness 12/8/4/2 px from 0.5/0.3/0.15/0 m.
 - Templates: eight variants per stage; four turns and a mirror per tree.
-- Ecological cells: 256 m; succession: herbs at once, shrubs from 2 years, pioneer trees
-  from 3–8, climax species from ⅓ of the pioneers' lifespan.
+- Ecological cells: 256 m; disturbances found in 16 m buckets; edges ragged by ±15 %.
+- Succession: burned ground bare 0.4 years; herbs at once; shrubs from 2 years; broken ground
+  6 years; canopy closing over 40 years from the third; a felled tree's gap lighter from 1 to
+  12 years; pioneers (shade tolerance under 0.3) from 1–4 years, others 3–11, the
+  shade-tolerant under them from ⅓ of the pioneers' lifespan; gap trees 1–5 years after a
+  death or a felling.
+- Lifespans: the first trees die at 0.97–1.12 of their species' lifespan, later ones at
+  0.75–1.10; snags stand 4–14 years, charred trunks 3–15, stumps until the next tree takes root.
+- Taking opened ground: (1 − shade tolerance)³ × seed travel (wind 1.5, water 1, animals 0.6,
+  gravity 0.3) × pace (growth ÷ 0.5 m a year, 0.5–2). Taking a gap: (0.2 + 1.6 × shade
+  tolerance) × pace.
 
 ## Interactions
 Seasons (phenology tints and leaf cover, snow on crowns), light (shade under foliage), body
@@ -131,6 +182,11 @@ danger, rain), fauna (cover and forage, V2-7), the distant terrain.
   neighbours' shade.
 - A felled tree falls as one rigid body; it does not break up or roll.
 - Wildfire near the player is a block automaton; far away a cell model.
+- A site holds one tree at a time: the tree that takes a gap waits unseen until the snag or
+  stump before it falls, and grows from when it took root as if in the open.
+- Trees regrow only on tree sites; the understory's plants are drawn afresh for a disturbed
+  place, not grown individually.
+- A fallen trunk does not rot away, and a felled tree's foliage does not wither.
 
 ## Future extensions
 Tier 2 species and biomes (V2-10); crops and domestication (V2-12); coppicing and pollarding;

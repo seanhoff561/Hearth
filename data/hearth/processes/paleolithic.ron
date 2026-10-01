@@ -53,7 +53,7 @@
         ),
         (
             id: "pick_greens", status: Implemented, name: "Pick leaves", action: "pick the young leaves",
-            verb: "pick", target: Block(Any([Id("wood_sorrel"), Id("ribwort_plantain"), Id("dandelion"), Id("wild_garlic")])), harvests: Some(2),
+            verb: "pick", target: Block(Any([Id("wood_sorrel"), Id("ribwort_plantain"), Id("dandelion"), Id("wild_garlic"), Id("fireweed")])), harvests: Some(2),
             inputs: [], conditions: [Season([Spring, Summer])], duration: (hours: 0.1),
             outputs: [(item: Form(form: "handful"), amount: (1, 1))],
         ),

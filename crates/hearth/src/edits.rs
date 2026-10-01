@@ -59,6 +59,16 @@ impl Edits {
         self.by_cube.entry(p.cube()).or_default().insert(p, state);
     }
 
+    /// Forgets any change at `p` (the block is the generator's again).
+    pub fn forget(&mut self, p: BlockPos) {
+        if let Some(m) = self.by_cube.get_mut(&p.cube()) {
+            m.remove(&p);
+            if m.is_empty() {
+                self.by_cube.remove(&p.cube());
+            }
+        }
+    }
+
     /// The changed state at `p`, if the player changed it.
     pub fn get(&self, p: BlockPos) -> Option<BlockStateId> {
         self.by_cube.get(&p.cube())?.get(&p).copied()

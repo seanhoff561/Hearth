@@ -136,6 +136,12 @@ impl Stage {
         [seedling, sapling, pole, young, old, ancient]
     }
 
+    /// The age (years) at which a living tree of this age passes into its next stage; None
+    /// once it is ancient.
+    pub fn next_age(sp: &Species, age: f32) -> Option<f32> {
+        Self::bounds(sp).into_iter().find(|edge| age < *edge)
+    }
+
     /// The stage of a living tree of this age.
     pub fn of(sp: &Species, age: f32) -> Stage {
         let b = Self::bounds(sp);
@@ -208,6 +214,18 @@ mod tests {
         assert!(oak.diameter_at(750.0) > 2.5);
         // The inverse holds.
         assert!((oak.age_at_height(h60) - 60.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn the_next_stage_begins_where_the_stage_changes() {
+        let oak = oak();
+        for age in [0.5, 3.0, 12.0, 40.0, 150.0, 450.0] {
+            let next = Stage::next_age(&oak, age).expect("not yet ancient");
+            assert!(next > age);
+            assert_eq!(Stage::of(&oak, next - 0.01), Stage::of(&oak, age));
+            assert_ne!(Stage::of(&oak, next + 0.01), Stage::of(&oak, age));
+        }
+        assert_eq!(Stage::next_age(&oak, 790.0), None);
     }
 
     #[test]

@@ -63,6 +63,19 @@
             realms: ["Palearctic"],
         ),
         (
+            id: "fireweed", name: "Rosebay willowherb", scientific: "Chamaenerion angustifolium", form: Herb, status: Implemented,
+            climate: (temp_c: (-6, 16), precip_mm: (300, 2000), koppen: ["Cfb", "Dfb", "Dfc", "Dfa", "Cfa"]),
+            shade_tolerance: 0.15, phenology: (flowering: (0.45, 0.6), fruiting: (0.6, 0.7)),
+            max_height_m: 1.5, lifespan_years: 10,
+            parts: [
+                (part: Shoot, material: "fireweed_shoots", seasons: [Spring, Summer], edibility: Edible, yield_kg: (0.05, 0.2), uses: ["food"]),
+            ],
+            understory: (block: "fireweed", abundance: 0.7, light: (0.6, 1.0), ground: [Disturbed], patch_m: 10),
+            flammability: 0.2, appearance: (foliage: "#4f7a3a", flower: "#c8508a", sprite: Spike),
+            notes: "First onto burned ground: hillsides turn pink in the summers after a fire.",
+            realms: ["Palearctic", "Nearctic"],
+        ),
+        (
             id: "bilberry", name: "Bilberry", scientific: "Vaccinium myrtillus", form: Shrub, status: Implemented,
             climate: (temp_c: (-3, 12), precip_mm: (500, 2000), koppen: ["Cfb", "Dfb", "Dfc"]),
             shade_tolerance: 0.6, phenology: (flowering: (0.1, 0.2), fruiting: (0.4, 0.55)),

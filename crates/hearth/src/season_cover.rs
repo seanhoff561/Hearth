@@ -319,6 +319,54 @@ impl SeasonCover {
     }
 }
 
+impl SeasonCover {
+    /// Takes the seasonal cover off loaded columns (as `refresh` does before laying the date's
+    /// again); returns the blocks changed. Columns with perennial snow keep the generator's.
+    pub fn strip(
+        &mut self,
+        map: &mut CubeMap,
+        reg: &BlockRegistry,
+        generator: &WorldGenerator,
+        cols: &[ColumnPos],
+        year_frac: f64,
+    ) -> Vec<BlockPos> {
+        let mut edit = Edit::new(map, reg);
+        let seasonal = seasonal_columns(generator, cols);
+        let (states, buried) = (&self.states, &mut self.buried);
+        for_each_target(generator, &self.rivers, &seasonal, year_frac, |t| {
+            strip(&mut edit, states, buried, t)
+        });
+        edit.changed()
+    }
+
+    /// Lays the date's cover on loaded columns taken bare by `strip`; returns the blocks
+    /// changed.
+    pub fn lay(
+        &mut self,
+        map: &mut CubeMap,
+        reg: &BlockRegistry,
+        generator: &WorldGenerator,
+        cols: &[ColumnPos],
+        year_frac: f64,
+    ) -> Vec<BlockPos> {
+        let mut edit = Edit::new(map, reg);
+        let seasonal = seasonal_columns(generator, cols);
+        let (states, buried) = (&self.states, &mut self.buried);
+        for_each_target(generator, &self.rivers, &seasonal, year_frac, |t| {
+            cover(&mut edit, states, buried, t)
+        });
+        edit.changed()
+    }
+}
+
+/// The columns whose cover comes and goes with the seasons (not perennial snow).
+fn seasonal_columns(generator: &WorldGenerator, cols: &[ColumnPos]) -> Vec<ColumnPos> {
+    cols.iter()
+        .copied()
+        .filter(|c| !SeasonalCover::compute(&column_normals(generator, *c)).perennial)
+        .collect()
+}
+
 fn for_each_target(
     generator: &WorldGenerator,
     rivers: &RiverRegimes,

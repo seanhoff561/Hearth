@@ -26,8 +26,10 @@ use hearth_render::models::BlockModels;
 use hearth_render::precip::SkyHeights;
 use hearth_save::{WorldDir, WorldMeta, WorldSettings};
 use hearth_world::water::{WaterEnv, WaterSim};
+use hearth_world::{BlockStateId, Cube};
+use hearth_worldgen::vegetation::Vegetation;
 use rayon::prelude::*;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::environment::{EnvOverrides, EnvSampler};
 use crate::scene::LocalWorld;
@@ -41,6 +43,8 @@ pub const TICK_S: f64 = 0.05;
 const AUTOSAVE_TICKS: u64 = 6000;
 /// Seasonal cover steps per year (as the year-scale snow model).
 const COVER_STEPS: f64 = 73.0;
+/// Cubes grown again at most per step of streaming as the vegetation changes.
+const REGROW_BATCH: usize = 48;
 /// Format of `player.json`.
 const PLAYER_FORMAT: u32 = 1;
 
@@ -161,6 +165,11 @@ fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> 
 }
 
 /// Whether a point is within the player's reach (3 m of the eyes).
+/// The year the vegetation has grown to: years of the calendar since the world began.
+fn vegetation_year(calendar: &Calendar, ticks: u64) -> f64 {
+    ticks as f64 / calendar.ticks_per_day() / calendar.days_per_year()
+}
+
 fn within_reach(player: &Player, at: DVec3) -> bool {
     let eye = player.mover.pos + DVec3::new(0.0, 1.6, 0.0);
     (at - eye).length() <= 3.0 && at.is_finite()
@@ -384,6 +393,7 @@ fn save(
         .and_then(|()| s.dir.write_json("items.json", world_items))
         .and_then(|()| s.dir.write_json("crafts.json", &workshop.save()))
         .and_then(|()| s.dir.write_json("blocks.json", &lw.edits.save(&lw.reg)))
+        .and_then(|()| s.dir.write_json("vegetation.json", &lw.vegetation.save()))
     {
         log::error!("could not save the world: {e}");
     } else {
@@ -530,6 +540,16 @@ fn run(
     }) {
         lw.edits = crate::edits::Edits::load(e, &lw.reg);
     }
+    // The vegetation: what has been felled, cleared and burned, grown to the calendar's year.
+    let vegetation: hearth_worldgen::vegetation::VegetationSave = save_state
+        .as_ref()
+        .and_then(|s| s.dir.read_json("vegetation.json").ok().flatten())
+        .unwrap_or_default();
+    lw.vegetation = hearth_worldgen::vegetation::Vegetation::new(
+        &vegetation,
+        planet.circumference(),
+        vegetation_year(&calendar, ticks),
+    );
     let mut workshop = Workshop::new(&content, &items, mode, workshop_save, seed, ticks);
     if mode == hearth_craft::Mode::Open {
         player.knowledge.known = hearth_craft::KnowledgeState::open(&workshop.graph, ticks).known;
@@ -795,6 +815,19 @@ fn run(
                 Ok(ToServer::Strike { x, z }) => {
                     workshop.strike(&mut here!(), x, z);
                 }
+                Ok(ToServer::Disturb { kind, x, z, radius }) => {
+                    let year = vegetation_year(&calendar, ticks);
+                    lw.vegetation = lw.vegetation.at_year(year).with(
+                        hearth_worldgen::vegetation::Disturbance {
+                            kind,
+                            year,
+                            x,
+                            z,
+                            radius,
+                            severity: 1.0,
+                        },
+                    );
+                }
                 Ok(ToServer::View { radius, vertical }) => {
                     view = View {
                         radius: radius.clamp(1, 64),
@@ -1038,8 +1071,9 @@ fn run(
             }
         }
 
-        // Terrain around the player between ticks.
+        // Terrain around the player between ticks, grown to the calendar's year.
         let year_frac = calendar.at(ticks).year_frac;
+        lw.vegetation.year = vegetation_year(&calendar, ticks);
         let worked = stream
             .work(
                 &mut lw,
@@ -1094,6 +1128,11 @@ struct Stream {
     heights_at: Option<(i32, i32)>,
     heights_dirty: bool,
     heights_sent: Option<Instant>,
+    /// Each loaded cube's vegetation: the snapshot it was grown with and the year it next
+    /// changes.
+    grown: FxHashMap<CubePos, (Vegetation, f64)>,
+    /// The vegetation last looked at (new disturbances since it regrow what they reach).
+    veg_seen: Option<Vegetation>,
 }
 
 impl Stream {
@@ -1147,6 +1186,7 @@ impl Stream {
                 .collect();
             for p in far {
                 self.loaded.remove(&p);
+                self.grown.remove(&p);
                 lw.map.remove_cube(p);
                 if self.meshed.remove(&p) {
                     tx.send(ToClient::Unload(p)).map_err(|_| ())?;
@@ -1179,6 +1219,8 @@ impl Stream {
             }
             self.cover_step = Some(step);
         }
+        // Trees grow and the land disturbed grows back.
+        covered.extend(self.regrow(lw, models, opts, year_frac, tx)?);
         if self.wanted.is_empty() {
             return Ok((!covered.is_empty(), covered));
         }
@@ -1189,11 +1231,13 @@ impl Stream {
             .map(|(_, p)| p)
             .collect();
         let generator = lw.generator.clone();
+        let veg = lw.vegetation.clone();
         let cubes: Vec<_> = batch
             .par_iter()
-            .map(|p| (*p, generator.generate_cube(*p)))
+            .map(|p| (*p, generator.generate_cube_in(*p, &veg)))
             .collect();
-        for (p, cube) in cubes {
+        for (p, (cube, next)) in cubes {
+            self.grown.insert(p, (veg.clone(), next));
             let data = lw.generator.column(p.column());
             lw.map.ensure_column(p.column(), || {
                 let mut est = [0i32; hearth_math::CUBE_AREA];
@@ -1248,6 +1292,116 @@ impl Stream {
             tx.send(ToClient::Mesh(Box::new(m))).map_err(|_| ())?;
         }
         Ok((true, covered))
+    }
+
+    /// Grows the loaded terrain on with the vegetation: the cubes whose trees pass into a new
+    /// stage or whose ground moves on, and those a new disturbance reaches, are generated again
+    /// and what changed laid in, under the player's changes and the water. Relights and
+    /// remeshes; returns the blocks changed.
+    fn regrow(
+        &mut self,
+        lw: &mut LocalWorld,
+        models: &BlockModels,
+        opts: MeshOptions,
+        year_frac: f64,
+        tx: &Sender<ToClient>,
+    ) -> Result<Vec<BlockPos>, ()> {
+        let now = lw.vegetation.clone();
+        if let Some(seen) = &self.veg_seen
+            && !now.same_disturbances(seen)
+        {
+            for d in now.added_since(seen) {
+                let reach = d.radius * hearth_worldgen::vegetation::EDGE + 32.0;
+                for (p, (_, next)) in self.grown.iter_mut() {
+                    if now.distance(d, p.x * 16 + 8, p.z * 16 + 8) <= reach {
+                        *next = f64::NEG_INFINITY;
+                    }
+                }
+            }
+        }
+        self.veg_seen = Some(now.clone());
+        let mut due: Vec<CubePos> = self
+            .grown
+            .iter()
+            .filter(|(_, (_, next))| *next <= now.year)
+            .map(|(p, _)| *p)
+            .collect();
+        if due.is_empty() {
+            return Ok(Vec::new());
+        }
+        let t0 = Instant::now();
+        due.sort_unstable_by_key(|p| (p.x, p.z, p.y));
+        due.truncate(REGROW_BATCH);
+        let jobs: Vec<(CubePos, Vegetation)> =
+            due.iter().map(|p| (*p, self.grown[p].0.clone())).collect();
+        let generator = lw.generator.clone();
+        let grown: Vec<(CubePos, Cube, Cube, f64)> = jobs
+            .par_iter()
+            .map(|(p, old)| {
+                let (before, _) = generator.generate_cube_in(*p, old);
+                let (after, next) = generator.generate_cube_in(*p, &now);
+                (*p, before, after, next)
+            })
+            .collect();
+        let mut diffs: Vec<(BlockPos, BlockStateId)> = Vec::new();
+        for (p, before, after, next) in &grown {
+            // Never due again before the year moves on.
+            self.grown
+                .insert(*p, (now.clone(), next.max(now.year + 1e-4)));
+            let o = p.min_block();
+            for i in 0..hearth_math::CUBE_VOLUME {
+                let (b, a) = (before.get_index(i), after.get_index(i));
+                if a != b {
+                    let l = hearth_math::LocalPos::from_index(i);
+                    diffs.push((
+                        BlockPos::new(o.x + l.x as i32, o.y + l.y as i32, o.z + l.z as i32),
+                        a,
+                    ));
+                }
+            }
+        }
+        if diffs.is_empty() {
+            return Ok(Vec::new());
+        }
+        // The seasonal cover comes off the columns that change, and is laid again after.
+        let mut cols: Vec<hearth_math::ColumnPos> =
+            diffs.iter().map(|(p, _)| p.cube().column()).collect();
+        cols.sort_unstable_by_key(|c| (c.x, c.z));
+        cols.dedup();
+        let mut changed = lw
+            .cover
+            .strip(&mut lw.map, &lw.reg, &lw.generator, &cols, year_frac);
+        let reg = lw.reg.clone();
+        let mut grew = 0;
+        for (pos, state) in diffs {
+            if lw.edits.get(pos).is_some() {
+                continue;
+            }
+            let Some(cur) = lw.map.block(pos) else {
+                continue;
+            };
+            if cur == state || reg.block_of(cur).def.fluid.is_some() {
+                continue;
+            }
+            lw.map.set_block(pos, state, &reg);
+            changed.push(pos);
+            grew += 1;
+        }
+        changed.extend(
+            lw.cover
+                .lay(&mut lw.map, &lw.reg, &lw.generator, &cols, year_frac),
+        );
+        changed.sort_unstable_by_key(|p| (p.x, p.y, p.z));
+        changed.dedup();
+        let remeshed = self.blocks_changed(lw, models, opts, &changed, tx)?;
+        log::info!(
+            "vegetation of year {:.2}: {} cubes grown again, {grew} blocks changed, {remeshed} \
+             remeshed in {:.0} ms",
+            now.year,
+            grown.len(),
+            t0.elapsed().as_secs_f64() * 1e3
+        );
+        Ok(changed)
     }
 
     /// Re-lays the date's snow and ice on all loaded terrain; relights and remeshes what

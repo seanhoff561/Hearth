@@ -582,6 +582,57 @@ pub fn textures() -> Vec<TexEntry> {
         }
         t
     });
+    // Burned land: black ground flecked with ash, and charred trunks.
+    add("burnt_ground_top", {
+        let seed = h("burnt_ground");
+        let pal = Palette(vec![[28, 25, 23], [36, 32, 29], [44, 39, 35], [54, 47, 41]]);
+        paint(S, S, |x, y| {
+            let r = rand01(seed ^ 3, x, y);
+            if r > 0.94 {
+                [150, 146, 140]
+            } else if r > 0.89 {
+                [96, 92, 88]
+            } else {
+                pal.pick(fbm(seed, x, y, S, 0.6))
+            }
+        })
+    });
+    add("burnt_ground_side", {
+        let mut t = dirt.clone();
+        let seed = h("burnt_side");
+        for x in 0..16 {
+            let depth = 2 + (rand01(seed, x, 0) * 2.5) as i32;
+            for y in 0..depth {
+                t.set(
+                    x,
+                    y,
+                    lerp([30, 27, 25], [52, 46, 40], rand01(seed, x, y + 5)),
+                );
+            }
+        }
+        t
+    });
+    add("charred_log", {
+        // Alligator-cracked charcoal: blocks with a dull sheen between black cracks.
+        let seed = h("charred_log");
+        paint(S, S, |x, y| {
+            let (d1, d2, cell) = voronoi(seed, x as f32 + 0.5, y as f32 + 0.5, 16.0, 7);
+            if d2 - d1 < 0.9 {
+                [12, 11, 11]
+            } else {
+                let sheen = ((cell >> 8) & 0xff) as f32 / 255.0;
+                lerp(
+                    [30, 28, 27],
+                    [66, 63, 62],
+                    sheen * 0.6 + rand01(seed, x, y) * 0.25,
+                )
+            }
+        })
+    });
+    add(
+        "charred_log_top",
+        log_top(h("charred_log"), [22, 20, 19], [58, 46, 36]),
+    );
     // Grass: grey top and overlay fringe (tinted), dirt side base.
     let mut grass_top = noisy(
         h("grass_top"),

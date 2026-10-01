@@ -754,3 +754,32 @@ through. Felling is a process on any standing tree's trunk: the generator says w
 block belongs to, the tree is taken away but its stump and falls about it away from the cutter,
 coming to rest on the ground after a few seconds (the client draws it turning as boxes), and
 the edits overlay keeps it there.
+
+## D76 — Vegetation is a state the generator grows from: the year and the disturbances
+The terrain is generated afresh whenever a cube loads (D73), so trees that age, land that is
+cleared or burned and grows back, and felled trees that are replaced must all come out of the
+generator. Its input is a small vegetation state (`hearth_worldgen::vegetation`): the year the
+trees have grown to (calendar years since the world began) and every disturbance so far (a
+tree felled at its foot, ground cleared, land burned: when, where, how far, how much), found by
+place in 16 m buckets. A tree site is a sequence of generations drawn from the site's hash: the
+tree the world began with (at the stand's age, as before), dying at its lifespan and standing
+some years as a snag, then a tree that took the gap (the shade-tolerant, the quicker of them
+more often); a disturbance ends a generation early (felled: the stump stands until the next
+takes root; burned: the trunk stands charred for years; cleared: gone), and opened ground
+grows back with the light-demanding first, weighted by how their seed travels and how fast they
+grow (the wind-sown pioneers within a few years, others later), the shade-tolerant coming up
+under them after a third of their lives and taking the site when they die. A young stand on
+opened ground thins by the crowns of the place's usual species at the stand's age, not by each
+tree's own, so the fast-growing pioneers are not thinned first. The ground of a disturbed
+place has its phases (burned bare and black for a season and a half; herbs at once; shrubs
+from the second year; broken ground for six; light under the young trees closing over forty
+years, a felled tree's gap lighter for twelve). Generating a cube gives the year it next
+changes (a tree's next stage, a generation's birth or death, a remains falling, a ground
+phase). The server keeps each loaded cube's snapshot and that year; when the year comes, or a
+new disturbance reaches the cube, it generates the cube with the old and the new state and
+lays in what changed where the player has not changed the block and no water stands (under
+the seasonal cover, taken off and laid again), then relights and remeshes. A felled tree is
+the vegetation's change, not the player's: its blocks are taken without entries in the edits
+overlay, so the tree that takes its place is not cut by them. The state is saved
+(`vegetation.json`). The world as it began is unchanged: the generator at year 0 with nothing
+disturbed is the old generator, and the screenshots and benchmarks use it.

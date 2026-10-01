@@ -14,6 +14,7 @@
   "hemlock": {"template": "tall_plant", "material": "hearth:hemlock", "replaceable": false, "map_color": "#4f7a3a"},
   "burdock": {"template": "plant", "material": "hearth:burdock_root", "replaceable": false, "map_color": "#4a7038"},
   "wild_strawberry": {"template": "plant", "material": "hearth:wild_strawberry", "replaceable": false, "map_color": "#4f8038"},
+  "fireweed": {"template": "tall_plant", "material": "hearth:fireweed_shoots", "replaceable": false, "map_color": "#b4508a"},
   "foxglove": {"template": "tall_plant", "material": "hearth:foxglove", "replaceable": false, "map_color": "#4f7038"},
   "deadly_nightshade": {"template": "tall_plant", "material": "hearth:nightshade_berry", "replaceable": false, "map_color": "#3a6030", "drag": 0.35},
   "bracken": {"template": "tall_plant", "material": "hearth:bracken", "replaceable": false, "map_color": "#5a7a2a", "drag": 0.35},

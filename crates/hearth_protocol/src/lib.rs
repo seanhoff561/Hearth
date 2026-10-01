@@ -88,6 +88,13 @@ pub enum ToServer {
     Run(u64),
     /// Tests and bots: lightning strikes this column (a tree there catches fire).
     Strike { x: i32, z: i32 },
+    /// Tests and bots: the vegetation about a place is cleared or burned, from now on.
+    Disturb {
+        kind: hearth_worldgen::vegetation::DisturbanceKind,
+        x: i32,
+        z: i32,
+        radius: f32,
+    },
     /// Stop the clock and the body (a single-player menu is open), or go on.
     Pause(bool),
     /// How much terrain to keep around the player (cubes).

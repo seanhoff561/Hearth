@@ -11,10 +11,12 @@ use hearth_math::hash::{Rng, derive_seed, hash_2d, hash_3d, unit_f32};
 use hearth_world::BlockStateId;
 
 use super::blocks::{GenBlocks, Wood};
+pub use super::succession::Remains;
 use super::{ColumnData, CubeBuf, WorldGenerator};
 use crate::noise::Perlin;
 use crate::region::biome::Biome;
 use crate::region::{ColumnSample, Surface};
+use crate::vegetation::{DisturbanceKind, Vegetation};
 
 /// Size of the tree placement grid cells.
 const TREE_CELL: i32 = 5;
@@ -22,6 +24,36 @@ const TREE_CELL: i32 = 5;
 const TREE_REACH: i32 = 22;
 /// Grid for fallen logs and boulders.
 const DEBRIS_CELL: i32 = 12;
+/// Years burned ground lies bare before the first herbs come.
+const BARE_YEARS: f32 = 0.4;
+/// Years after a clearing before the shrubs come up.
+const SHRUB_YEARS: f32 = 2.0;
+/// Years ground counts as broken after a disturbance.
+const DISTURBED_YEARS: f32 = 6.0;
+/// Years the young trees on cleared ground take to close their canopy (after the first three).
+const CLOSING_YEARS: f32 = 40.0;
+/// Years a felled tree's gap lets more light onto the ground (from its second year).
+const GAP_YEARS: f32 = 12.0;
+
+/// The year a disturbed column's ground next changes: its phases (bare, herbs, shrubs, broken
+/// ground) and the canopy closing over it a year at a time.
+fn ground_change(kind: DisturbanceKind, year: f64, since: f32) -> f64 {
+    let at = year - since as f64;
+    let mut next = f64::INFINITY;
+    for p in [BARE_YEARS, 1.0, SHRUB_YEARS, DISTURBED_YEARS] {
+        if since < p {
+            next = next.min(at + p as f64);
+        }
+    }
+    let horizon = match kind {
+        DisturbanceKind::Felled => GAP_YEARS,
+        _ => 3.0 + CLOSING_YEARS,
+    };
+    if since < horizon {
+        next = next.min(at + since.floor() as f64 + 1.0);
+    }
+    next
+}
 
 /// Feature placement.
 #[derive(Debug, Clone)]
@@ -43,12 +75,44 @@ pub struct PlacedTree {
     pub turn: hearth_flora::Turn,
     /// The block over the ground the trunk stands in.
     pub foot: [i32; 3],
+    /// What of it is left: all of it, a snag, a charred trunk or a stump.
+    pub remains: Remains,
+    /// A young tree of the understory, where no canopy tree stands.
+    pub understory: bool,
 }
 
 impl PlacedTree {
-    /// Its blocks where they stand, as template parts turned with it.
+    /// Whether a part of the template is drawn, for what is left of the tree.
+    pub fn shows(&self, c: [i16; 3], part: hearth_flora::Part) -> bool {
+        use hearth_flora::Part;
+        match self.remains {
+            Remains::Living => true,
+            Remains::Snag => !matches!(part, Part::Leaves),
+            Remains::Charred => match part {
+                Part::Leaves => false,
+                Part::Branch { thickness, .. } => thickness > 2,
+                Part::Log { .. } => true,
+            },
+            Remains::Stump => c[1] <= 0 && !matches!(part, Part::Leaves),
+        }
+    }
+
+    /// The block a part of it is drawn with (charred where fire killed it).
+    pub fn state(&self, forest: &crate::trees::Forest, part: hearth_flora::Part) -> BlockStateId {
+        match (&forest.charred, self.remains) {
+            (Some(c), Remains::Charred) => c.state(part),
+            _ => forest.blocks[self.species].state(part),
+        }
+    }
+
+    /// Its blocks where they stand (what is left of it), as template parts turned with it.
     pub fn blocks(&self) -> impl Iterator<Item = (hearth_math::BlockPos, hearth_flora::Part)> + '_ {
-        self.template.blocks.iter().map(|(c, part)| {
+        let shown = self
+            .template
+            .blocks
+            .iter()
+            .filter(|(c, part)| self.shows(*c, *part));
+        shown.map(|(c, part)| {
             let (dx, dz) = self
                 .turn
                 .apply(c[0] as i32, c[2] as i32, self.template.corner);
@@ -300,19 +364,28 @@ impl FeatureGen {
             .noise3(x as f64 * f, y as f64 * f * 1.4, z as f64 * f, 0) as f32
     }
 
-    /// Places all features intersecting the cube.
-    pub fn place(&self, buf: &mut CubeBuf, wg: &WorldGenerator, col: &ColumnData) {
+    /// Places all features intersecting the cube, as the vegetation has grown. Returns the year
+    /// the cube's trees or ground next change (infinity: never).
+    pub fn place(
+        &self,
+        buf: &mut CubeBuf,
+        wg: &WorldGenerator,
+        col: &ColumnData,
+        veg: &Vegetation,
+    ) -> f64 {
         let b = &wg.blocks;
         let o = buf.origin;
         let mut w = Writer {
             buf,
             prio: Priorities { b },
         };
+        let mut next = f64::INFINITY;
         // Plants and underwater flora of this cube's own columns.
         for lz in 0..16 {
             for lx in 0..16 {
                 let s = col.at(lx as usize, lz as usize);
-                self.decorate_column(&mut w, wg, col, o.x + lx, o.z + lz, s);
+                let n = self.decorate_column(&mut w, wg, col, o.x + lx, o.z + lz, s, veg);
+                next = next.min(n);
             }
         }
         // Trees whose origin cell is near the cube.
@@ -321,7 +394,7 @@ impl FeatureGen {
         let sample = |x: i32, z: i32| Self::sample_at(wg, x, z);
         for fz in z0.div_euclid(TREE_CELL)..=z1.div_euclid(TREE_CELL) {
             for fx in x0.div_euclid(TREE_CELL)..=x1.div_euclid(TREE_CELL) {
-                self.tree_cell(&mut w, wg, fx, fz, &sample);
+                next = next.min(self.tree_cell(&mut w, wg, veg, fx, fz, &sample));
             }
         }
         for fz in (o.z - 8).div_euclid(DEBRIS_CELL)..=(o.z + 23).div_euclid(DEBRIS_CELL) {
@@ -329,6 +402,7 @@ impl FeatureGen {
                 self.debris_cell(&mut w, wg, fx, fz);
             }
         }
+        next
     }
 
     fn sample_at(wg: &WorldGenerator, x: i32, z: i32) -> ColumnSample {
@@ -336,6 +410,8 @@ impl FeatureGen {
         *c.at((x & 15) as usize, (z & 15) as usize)
     }
 
+    /// The plants of a column; returns the year its ground next changes.
+    #[allow(clippy::too_many_arguments)]
     fn decorate_column(
         &self,
         w: &mut Writer<'_>,
@@ -344,18 +420,40 @@ impl FeatureGen {
         x: i32,
         z: i32,
         s: &ColumnSample,
-    ) {
+        veg: &Vegetation,
+    ) -> f64 {
         let b = &wg.blocks;
         let top = s.height_i();
         let o = w.buf.origin;
+        // Cleared and burned ground (and the gap of a felled tree), as long ago as it was.
+        let disturbed = if s.is_underwater() {
+            None
+        } else {
+            veg.ground(x, z)
+        };
+        let mut next = f64::INFINITY;
+        if let Some((kind, since)) = disturbed
+            && top - 1 <= o.y + 15
+            && top + 2 >= o.y
+        {
+            next = ground_change(kind, veg.year, since);
+        }
+        let bare =
+            matches!(disturbed, Some((DisturbanceKind::Burned, since)) if since < BARE_YEARS);
+        if bare
+            && let Some(g) = w.buf.get(x, top - 1, z)
+            && b.is_plantable(g)
+        {
+            w.buf.set(x, top - 1, z, b.burnt_ground);
+        }
         // Quick reject: nothing this column places can reach the cube.
         let reach_top = if s.is_underwater() {
             s.water_i()
         } else {
             top + 2
         };
-        if reach_top < o.y || top > o.y + 15 {
-            return;
+        if reach_top < o.y || top > o.y + 15 || bare {
+            return next;
         }
         let h = hash_2d(self.seed, x, z);
         let r = unit_f32(h);
@@ -418,7 +516,7 @@ impl FeatureGen {
                 }
                 _ => {}
             }
-            return;
+            return next;
         }
         // Only plant on exposed soil (caves or cliffs may have removed it).
         let ground = w.buf.get(x, top - 1, z);
@@ -431,11 +529,11 @@ impl FeatureGen {
             && let Some(c) = b.cobbles_for(wg.rock_at(x, top - 1, z))
         {
             w.put(x, top, z, c);
-            return;
+            return next;
         }
         let soil_block = ground.is_none_or(|g| b.is_plantable(g));
         if !above_air || !soil_block || s.temperature < -0.5 {
-            return;
+            return next;
         }
         let flower_n = self
             .flower_patch
@@ -542,8 +640,8 @@ impl FeatureGen {
                     s.biome,
                     Biome::BroadleafForest | Biome::BirchForest | Biome::MixedForest
                 );
-                if grassy && self.understory(w, wg, x, z, top, s, flower_n) {
-                    return;
+                if grassy && self.understory(w, wg, x, z, top, s, flower_n, disturbed) {
+                    return next;
                 }
                 if grassy {
                     if flower_n > 0.42 && r < if forest { 0.12 } else { 0.3 } {
@@ -580,9 +678,13 @@ impl FeatureGen {
                 }
             }
         }
+        next
     }
 
     /// A plant of the understory's species on a column, if one grows there. Whether one did.
+    /// On cleared and burned ground the herbs of open, broken ground come at once and the
+    /// shrubs from the second year, until the young trees close over it; a felled tree's gap
+    /// lets light onto the ground for some years.
     #[allow(clippy::too_many_arguments)]
     fn understory(
         &self,
@@ -593,6 +695,7 @@ impl FeatureGen {
         top: i32,
         s: &ColumnSample,
         flower_n: f32,
+        disturbed: Option<(DisturbanceKind, f32)>,
     ) -> bool {
         let forest = &wg.forest;
         if forest.understory.is_empty() {
@@ -612,13 +715,29 @@ impl FeatureGen {
                 .is_some_and(|r| r.distance < r.width * 0.5 + 14.0 && s.height - r.level < 2.5);
         // Light under the canopy: closed where trees are dense and the stand has grown.
         let stand = self.stand_age(x, z);
-        let closure = (s.tree_density * 1.9).min(1.0) * (stand / 40.0).min(1.0);
+        let density = (s.tree_density * 1.9).min(1.0);
+        let mut closure = density * (stand / 40.0).min(1.0);
+        let mut broken = false;
+        let mut shrubs = true;
+        match disturbed {
+            Some((DisturbanceKind::Felled, since)) if (1.0..GAP_YEARS).contains(&since) => {
+                closure = closure.min(0.3 + 0.05 * since.floor());
+                broken = since < DISTURBED_YEARS;
+            }
+            Some((DisturbanceKind::Cleared | DisturbanceKind::Burned, since)) => {
+                closure = density * ((since.floor() - 3.0) / CLOSING_YEARS).clamp(0.0, 1.0);
+                broken = since < DISTURBED_YEARS;
+                shrubs = since >= SHRUB_YEARS;
+            }
+            _ => {}
+        }
         let light = 1.0 - 0.85 * closure;
         let ground = crate::trees::PlaceGround {
             wet,
             rich: flower_n > 0.1 || wet,
             acid: matches!(s.surface, Surface::Podzol | Surface::Moss) || s.precipitation > 1100.0,
-            disturbed: s.slope > 0.35 || (s.tree_density > 0.3 && closure < 0.45),
+            disturbed: broken || s.slope > 0.35 || (s.tree_density > 0.3 && closure < 0.45),
+            shrubs,
         };
         let seed = self.seed;
         let roll = unit_f32(hash_2d(seed ^ 0x0de5, x, z));
@@ -676,7 +795,7 @@ impl FeatureGen {
 
     /// Grows every tree that reaches into the sink's bounds, as the cubes grow them (distant
     /// terrain: the sink maps the canopy).
-    pub fn grow_trees<S: TreeSink>(&self, sink: &mut S, wg: &WorldGenerator) {
+    pub fn grow_trees<S: TreeSink>(&self, sink: &mut S, wg: &WorldGenerator, veg: &Vegetation) {
         let (lo, hi) = sink.bounds();
         let (x0, x1) = (lo[0] - TREE_REACH, hi[0] + TREE_REACH);
         let (z0, z1) = (lo[2] - TREE_REACH, hi[2] + TREE_REACH);
@@ -684,42 +803,55 @@ impl FeatureGen {
         let sample = |x: i32, z: i32| wg.terrain.sample(planet.wrap_x(x), z);
         for fz in z0.div_euclid(TREE_CELL)..=z1.div_euclid(TREE_CELL) {
             for fx in x0.div_euclid(TREE_CELL)..=x1.div_euclid(TREE_CELL) {
-                self.tree_cell(sink, wg, fx, fz, &sample);
+                self.tree_cell(sink, wg, veg, fx, fz, &sample);
             }
         }
     }
 
+    /// The tree of a tree cell, written into the sink; returns the year it next changes.
     fn tree_cell<S: TreeSink>(
         &self,
         w: &mut S,
         wg: &WorldGenerator,
+        veg: &Vegetation,
         fx: i32,
         fz: i32,
         sample: &impl Fn(i32, i32) -> ColumnSample,
-    ) {
+    ) -> f64 {
         let Some((h, ox, oz, s)) = self.cell_site(fx, fz, sample) else {
-            return;
+            return f64::INFINITY;
         };
-        match self.species_cell(wg, ox, oz, &s, h) {
-            Some(Some(t)) => {
-                self.place_template(w, wg, &t);
-                return;
+        let base = s.height_i();
+        let (lo, hi) = w.bounds();
+        if let Some((tree, next)) = self.species_cell(wg, veg, ox, oz, &s, h) {
+            if let Some(t) = &tree {
+                self.place_template(w, wg, t);
             }
-            Some(None) => return,
-            None => {}
+            // Its changes matter where the tallest tree could grow into the sink.
+            let reaches =
+                base - 4 <= hi[1] && base + wg.forest.tallest_m.ceil() as i32 + 4 >= lo[1];
+            return if reaches { next } else { f64::INFINITY };
+        }
+        // The old shapes (where no species fits) are gone where the ground was cleared or
+        // burned, and do not grow back.
+        if veg
+            .at(ox, oz)
+            .iter()
+            .any(|e| e.kind != DisturbanceKind::Felled)
+        {
+            return f64::INFINITY;
         }
         let kind = self.choose_tree(&s, h);
         let (reach, height) = kind.extent();
-        let base = s.height_i();
-        let (lo, hi) = w.bounds();
         if base + height < lo[1] || base - 3 > hi[1] {
-            return;
+            return f64::INFINITY;
         }
         if ox + reach < lo[0] || ox - reach > hi[0] || oz + reach < lo[2] || oz - reach > hi[2] {
-            return;
+            return f64::INFINITY;
         }
         let mut rng = Rng::new(hash_3d(self.seed, ox, base, oz));
         self.grow(w, &wg.blocks, kind, ox, base, oz, &mut rng, &s);
+        f64::INFINITY
     }
 
     /// Where a tree cell's tree would stand, if the place takes a tree: its hash, origin and
@@ -746,8 +878,14 @@ impl FeatureGen {
         Some((h, ox, oz, s))
     }
 
-    /// The tree of a real species whose template holds wood at `p`, as the cubes grow it.
-    pub fn tree_at(&self, wg: &WorldGenerator, p: hearth_math::BlockPos) -> Option<PlacedTree> {
+    /// The tree of a real species (or what is left of one) with wood at `p`, as the cubes grow
+    /// it.
+    pub fn tree_at(
+        &self,
+        wg: &WorldGenerator,
+        veg: &Vegetation,
+        p: hearth_math::BlockPos,
+    ) -> Option<PlacedTree> {
         let planet = wg.planet();
         let sample = |x: i32, z: i32| wg.terrain.sample(planet.wrap_x(x), z);
         for fz in
@@ -759,22 +897,46 @@ impl FeatureGen {
                 let Some((h, ox, oz, s)) = self.cell_site(fx, fz, &sample) else {
                     continue;
                 };
-                let Some(Some(t)) = self.species_cell(wg, ox, oz, &s, h) else {
+                let Some((Some(t), _)) = self.species_cell(wg, veg, ox, oz, &s, h) else {
                     continue;
                 };
-                let rel = [p.x - t.foot[0], p.y - t.foot[1], p.z - t.foot[2]];
-                let wood = t.template.blocks.iter().any(|(c, part)| {
-                    c[1] as i32 == rel[1]
-                        && !matches!(part, hearth_flora::Part::Leaves)
-                        && t.turn.apply(c[0] as i32, c[2] as i32, t.template.corner)
-                            == (rel[0], rel[2])
-                });
+                let wood = t
+                    .blocks()
+                    .any(|(q, part)| q == p && !matches!(part, hearth_flora::Part::Leaves));
                 if wood {
                     return Some(t);
                 }
             }
         }
         None
+    }
+
+    /// The trees of real species (and what is left of them) with their foot in a rectangle
+    /// (inclusive), as the vegetation has grown them.
+    pub fn trees_in(
+        &self,
+        wg: &WorldGenerator,
+        veg: &Vegetation,
+        min: (i32, i32),
+        max: (i32, i32),
+    ) -> Vec<PlacedTree> {
+        let planet = wg.planet();
+        let sample = |x: i32, z: i32| wg.terrain.sample(planet.wrap_x(x), z);
+        let mut out = Vec::new();
+        for fz in min.1.div_euclid(TREE_CELL)..=max.1.div_euclid(TREE_CELL) {
+            for fx in min.0.div_euclid(TREE_CELL)..=max.0.div_euclid(TREE_CELL) {
+                let Some((h, ox, oz, s)) = self.cell_site(fx, fz, &sample) else {
+                    continue;
+                };
+                if ox < min.0 || ox > max.0 || oz < min.1 || oz > max.1 {
+                    continue;
+                }
+                if let Some((Some(t), _)) = self.species_cell(wg, veg, ox, oz, &s, h) {
+                    out.push(t);
+                }
+            }
+        }
+        out
     }
 
     /// Age (years) of the stand at a place: young woods and old growth in patches a few
@@ -792,6 +954,7 @@ impl FeatureGen {
     pub fn expected_canopy(
         &self,
         wg: &WorldGenerator,
+        veg: &Vegetation,
         s: &ColumnSample,
         x: i32,
         z: i32,
@@ -807,25 +970,36 @@ impl FeatureGen {
             biome: s.biome,
             wet: s.biome == Biome::Wetland,
         };
-        let sp = forest.choose(&climate, 0.0, roll)?;
+        let mut sp = forest.choose(&climate, 0.0, roll)?;
         let species = &forest.templates.species[sp];
-        let age = (self.stand_age(x, z) * 0.9).min(species.lifespan_years * 0.9);
-        let h = species.height_at(age).round() as i32;
+        let mut age =
+            (self.stand_age(x, z) * 0.9 + veg.year as f32).min(species.lifespan_years * 0.9);
         // Crowns are spaced to close where the trees are dense (`species_tree`).
-        let cover = (s.tree_density * 0.95 * 2.0).min(1.0);
+        let mut cover = (s.tree_density * 0.95 * 2.0).min(1.0);
+        // Cleared and burned land: the young stand growing back.
+        if let Some((kind, since)) = veg.ground(x, z)
+            && kind != DisturbanceKind::Felled
+        {
+            sp = forest.choose_open(&climate, roll).unwrap_or(sp);
+            age = (since - 2.5).max(0.0);
+            cover *= (age / 12.0).min(1.0);
+        }
+        let h = forest.templates.species[sp].height_at(age).round() as i32;
         Some((sp, h.max(2), cover))
     }
 
-    /// The tree of a real species in a tree cell: None where no species fits the place (the
-    /// old shapes stand there), Some(None) where one fits but no tree stands in the cell.
+    /// The tree of a real species in a tree cell, as the vegetation has grown, and the year it
+    /// next changes: None where no species fits the place (the old shapes stand there), a
+    /// tree of None where one fits but no tree stands in the cell.
     fn species_cell(
         &self,
         wg: &WorldGenerator,
+        veg: &Vegetation,
         ox: i32,
         oz: i32,
         s: &ColumnSample,
         h: u64,
-    ) -> Option<Option<PlacedTree>> {
+    ) -> Option<(Option<PlacedTree>, f64)> {
         let forest = &wg.forest;
         if forest.niches.is_empty() {
             return None;
@@ -842,48 +1016,28 @@ impl FeatureGen {
             biome: s.biome,
             wet,
         };
-        let first = forest.choose(&climate, 0.0, unit_f32(h.rotate_left(40)))?;
-        let stand = self.stand_age(ox, oz);
-        let foot = [ox, s.height_i(), oz];
-        let turn = hearth_flora::Turn::from_hash(h.rotate_left(13));
-        let variant = ((h >> 56) as u8) % hearth_flora::VARIANTS;
-        // Crowns fill the canopy without heaping on each other: a tree stands in its cell as
-        // often as the cell is a share of its crown; where a big tree does not stand, a young
-        // one of the shade-tolerant understory may.
-        let mut sp = first;
-        let species = &forest.templates.species[sp];
-        let age =
-            (stand * (0.5 + 0.8 * unit_f32(h.rotate_left(52)))).min(species.lifespan_years * 0.97);
-        let mut stage = hearth_flora::Stage::of(species, age);
-        for attempt in 0..2 {
-            let template = forest.templates.get(sp, stage, variant);
-            let r = template.reach().max(1) as f32;
-            let cell = (TREE_CELL * TREE_CELL) as f32;
-            let p = if attempt == 0 {
-                (cell / (std::f32::consts::PI * r * r * 0.5)).min(1.0)
-            } else {
-                0.35
-            };
-            if unit_f32(h.rotate_left(17 + attempt * 9)) < p {
-                return Some(Some(PlacedTree {
-                    species: sp,
-                    stage,
-                    template,
-                    turn,
-                    foot,
-                }));
-            }
-            let Some(under) = forest.choose(&climate, 0.85, unit_f32(h.rotate_left(29))) else {
-                return Some(None);
-            };
-            sp = under;
-            stage = if unit_f32(h.rotate_left(33)) < 0.5 {
-                hearth_flora::Stage::Sapling
-            } else {
-                hearth_flora::Stage::Pole
-            };
+        let site = super::succession::SiteInput {
+            forest,
+            climate: &climate,
+            veg,
+            h,
+            stand: self.stand_age(ox, oz),
+            x: ox,
+            z: oz,
+            cell_area: (TREE_CELL * TREE_CELL) as f32,
         }
-        Some(None)
+        .now()?;
+        let foot = [ox, s.height_i(), oz];
+        let tree = site.tree.map(|t| PlacedTree {
+            species: t.species,
+            stage: t.stage,
+            template: forest.templates.get(t.species, t.stage, t.variant),
+            turn: t.turn,
+            foot,
+            remains: t.remains,
+            understory: t.understory,
+        });
+        Some((tree, site.next_change))
     }
 
     /// Writes a tree from its template, turned, with its foot where it stands.
@@ -899,31 +1053,28 @@ impl FeatureGen {
         if x + reach < lo[0] || x - reach > hi[0] || z + reach < lo[2] || z - reach > hi[2] {
             return;
         }
-        let blocks = &wg.forest.blocks[tree.species];
+        let forest = &wg.forest;
         if w.crowns_only() {
-            for c in &t.crowns {
-                let (dx, dz) = turn.apply(c[0] as i32, c[1] as i32, t.corner);
-                w.crown(
-                    x + dx,
-                    z + dz,
-                    y + c[2] as i32,
-                    y + c[3] as i32 + 1,
-                    blocks.leaves,
-                );
+            if tree.remains == Remains::Living {
+                let leaves = forest.blocks[tree.species].leaves;
+                for c in &t.crowns {
+                    let (dx, dz) = turn.apply(c[0] as i32, c[1] as i32, t.corner);
+                    w.crown(x + dx, z + dz, y + c[2] as i32, y + c[3] as i32 + 1, leaves);
+                }
             }
-            for c in &t.trunks {
-                let (dx, dz) = turn.apply(c[0] as i32, c[1] as i32, t.corner);
-                w.trunk(
-                    x + dx,
-                    z + dz,
-                    y + c[2] as i32,
-                    y + c[3] as i32 + 1,
-                    blocks.log[1],
-                );
+            if tree.remains != Remains::Stump {
+                let log = tree.state(forest, hearth_flora::Part::Log { axis: 1 });
+                for c in &t.trunks {
+                    let (dx, dz) = turn.apply(c[0] as i32, c[1] as i32, t.corner);
+                    w.trunk(x + dx, z + dz, y + c[2] as i32, y + c[3] as i32 + 1, log);
+                }
             }
             return;
         }
         for (c, part) in &t.blocks {
+            if !tree.shows(*c, *part) {
+                continue;
+            }
             let by = y + c[1] as i32;
             if by < lo[1] || by > hi[1] {
                 continue;
@@ -933,7 +1084,7 @@ impl FeatureGen {
             if bx < lo[0] || bx > hi[0] || bz < lo[2] || bz > hi[2] {
                 continue;
             }
-            w.put(bx, by, bz, blocks.state(turn.part(*part)));
+            w.put(bx, by, bz, tree.state(forest, turn.part(*part)));
         }
     }
 

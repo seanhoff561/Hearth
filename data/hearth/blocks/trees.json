@@ -1,4 +1,6 @@
 {
+  "charred_log": {"template": "log", "material": "hearth:charred_wood", "map_color": "#1e1c1b"},
+  "charred_branch": {"template": "branch", "material": "hearth:charred_wood", "map_color": "#1e1c1b"},
   "oak_branch": {"template": "branch", "material": "hearth:oak_wood"},
   "white_oak_log": {"template": "log", "material": "hearth:white_oak_wood"},
   "white_oak_branch": {"template": "branch", "material": "hearth:white_oak_wood"},
