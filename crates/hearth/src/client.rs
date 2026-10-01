@@ -5,12 +5,13 @@
 
 use std::sync::Arc;
 
-use glam::{DVec2, DVec3};
+use glam::{Affine3A, DVec2, DVec3, Quat};
+use hearth_character::{Activity, Drive, Figure, FigureInstance, Pose, Show};
 use hearth_core::options::Options;
 use hearth_env::Calendar;
 use hearth_input::{InputState, builtin};
 use hearth_math::Planet;
-use hearth_physics::{Ability, BlockWorld, Gait, Intent, Mover};
+use hearth_physics::{Ability, BlockWorld, Gait, Intent, Motion, Mover, Stance};
 use hearth_protocol::{BodyView, Moved, ToClient, ToServer};
 use hearth_render::atlas::TextureArray;
 use hearth_render::camera::Camera;
@@ -32,6 +33,18 @@ const LOD_UPLOADS_PER_FRAME: usize = 24;
 const REPORT_S: f64 = 0.05;
 /// A second press of the sprint key within this long breaks into a sprint.
 const DOUBLE_TAP_S: f64 = 0.35;
+
+/// Where the camera looks from in the body: the eyes, behind the shoulders, or facing them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Perspective {
+    #[default]
+    First,
+    Behind,
+    Front,
+}
+
+/// How far a third-person camera stands from the eyes (m).
+const THIRD_PERSON_M: f64 = 3.5;
 
 /// Where the camera is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +121,14 @@ pub struct Client {
     weather: (f32, f32),
     paused: bool,
     captions: bool,
+    /// The player's person, their pose this frame, which way the body faces (degrees, as the
+    /// camera's yaw), and the boxes drawn.
+    figure: Option<Figure>,
+    pose: Option<Pose>,
+    body_yaw: f32,
+    pub perspective: Perspective,
+    view_bobbing: bool,
+    figure_boxes: Vec<FigureInstance>,
 }
 
 impl Client {
@@ -171,7 +192,159 @@ impl Client {
             weather: (0.0, 0.0),
             paused: false,
             captions: options.sound.subtitles,
+            figure: None,
+            pose: None,
+            body_yaw: 0.0,
+            perspective: Perspective::First,
+            view_bobbing: options.video.view_bobbing,
+            figure_boxes: Vec::new(),
         }
+    }
+
+    /// First person, behind, in front, and round again.
+    pub fn toggle_perspective(&mut self) {
+        self.perspective = match self.perspective {
+            Perspective::First => Perspective::Behind,
+            Perspective::Behind => Perspective::Front,
+            Perspective::Front => Perspective::First,
+        };
+    }
+
+    /// The camera the frame is seen through: the eyes', or one standing back from them
+    /// (stopped short of anything solid).
+    pub fn view_camera(&self) -> Camera {
+        let mut cam = self.camera;
+        if self.mode != CameraMode::Body || self.perspective == Perspective::First {
+            return cam;
+        }
+        let f = cam.forward().as_dvec3();
+        let dir = if self.perspective == Perspective::Behind {
+            -f
+        } else {
+            f
+        };
+        let dist = self.clear_distance(cam.pos, dir, THIRD_PERSON_M);
+        cam.pos += dir * dist;
+        if self.perspective == Perspective::Front {
+            cam.yaw = (cam.yaw + 180.0).rem_euclid(360.0);
+            cam.pitch = -cam.pitch;
+        }
+        cam
+    }
+
+    /// How far along `dir` from `from` the way is clear (m, at most `max`).
+    fn clear_distance(&self, from: DVec3, dir: DVec3, max: f64) -> f64 {
+        let Some(w) = &self.world else {
+            return max;
+        };
+        let mut t = 0.2;
+        while t < max {
+            let p = hearth_math::BlockPos::containing(from + dir * t);
+            if let Some(s) = w.mirror.block(p)
+                && !w.reg.collision_shape(s).is_empty()
+            {
+                return (t - 0.3).max(0.2);
+            }
+            t += 0.1;
+        }
+        max
+    }
+
+    /// Moves the body: which way it faces, what it is doing, its pose; then the eyes.
+    fn animate(&mut self, dt: f64) {
+        let Some(previous) = self.figure.as_ref().map(|f| f.animator.activity()) else {
+            return;
+        };
+        let limp = self.dead()
+            || self
+                .body
+                .as_ref()
+                .is_some_and(|b| b.asleep || !b.status.effects.conscious);
+        let report = self.last_report.unwrap_or_default();
+        let m = &self.mover;
+        // The body turns to where the eyes look as it moves, or when the head would turn
+        // too far.
+        let diff = wrap180(self.camera.yaw - self.body_yaw);
+        let moving = report.speed > 0.2
+            || matches!(report.motion, Motion::Swimming | Motion::Climbing)
+            || m.climb.is_some();
+        if moving {
+            self.body_yaw += diff * (1.0 - (-dt * 10.0).exp()) as f32;
+        } else if diff.abs() > 55.0 {
+            self.body_yaw += diff - 55.0 * diff.signum();
+        }
+        self.body_yaw = self.body_yaw.rem_euclid(360.0);
+        let (sy, cy) = (self.body_yaw as f64).to_radians().sin_cos();
+        let along = m.vel.x * -sy + m.vel.z * cy;
+        let body = self.body.as_ref();
+        let activity = if limp {
+            Activity::Lie
+        } else if m.climb.is_some() {
+            Activity::Climb
+        } else {
+            match (report.motion, m.stance) {
+                (Motion::Climbing, _) => Activity::Ladder,
+                (_, Stance::Swimming) if report.eyes_under => Activity::Dive,
+                (_, Stance::Swimming) if report.speed < 0.3 => Activity::Tread,
+                (_, Stance::Swimming) => Activity::Swim,
+                (_, Stance::Crawling) => Activity::Crawl,
+                (_, Stance::Crouching) => Activity::Crouch,
+                (Motion::Walking, _) => Activity::Walk,
+                (Motion::Jogging, _) => Activity::Jog,
+                (Motion::Sprinting, _) => Activity::Sprint,
+                (Motion::Wading, _) => Activity::Wade,
+                (Motion::Falling, _) if m.vel.y < -4.0 => Activity::Fall,
+                // A hop keeps the gait it left the ground with.
+                (Motion::Falling, _) => previous,
+                _ => Activity::Stand,
+            }
+        };
+        let climb = m.climb.map_or(0.0, |c| {
+            (1.0 - c.left_s / c.total_s.max(1e-3)).clamp(0.0, 1.0) as f32
+        });
+        let drive = Drive {
+            activity,
+            speed: if along < -0.2 {
+                -report.speed as f32
+            } else {
+                report.speed as f32
+            },
+            vertical: m.vel.y as f32,
+            look_pitch: self.camera.pitch,
+            look_yaw: diff.clamp(-75.0, 75.0),
+            climb,
+            shiver: body.map_or(0.0, |b| b.status.effects.shivering),
+            breaths_per_min: self.hearing.rhythms.breaths_per_min,
+        };
+        if let Some(fig) = &mut self.figure {
+            self.pose = Some(fig.animator.update(&fig.rig, &drive, dt as f32));
+        }
+    }
+
+    /// The eyes, from the body's pose (or steady at the person's height without view bobbing),
+    /// smoothed over steps up.
+    fn place_eyes(&mut self, dt: f64) {
+        let feet = self.mover.pos;
+        let physics_eye = self.mover.eye() - feet;
+        let local = match (&self.figure, &self.pose) {
+            (Some(f), Some(p))
+                if self.view_bobbing
+                    || matches!(self.mover.stance, Stance::Swimming | Stance::Crawling)
+                    || self.mover.climb.is_some() =>
+            {
+                f.eye(p).as_dvec3()
+            }
+            (Some(f), _) => DVec3::new(0.0, physics_eye.y * f.rig.dims.stature as f64 / 1.75, 0.0),
+            _ => physics_eye,
+        };
+        let turn = glam::DQuat::from_rotation_y(-(self.body_yaw as f64).to_radians());
+        let eye = feet + turn * local;
+        if eye.y > self.eye_y && eye.y - self.eye_y < 1.2 {
+            self.eye_y += (eye.y - self.eye_y) * (1.0 - (-dt * 14.0).exp());
+        } else {
+            self.eye_y = eye.y;
+        }
+        self.camera.pos = DVec3::new(eye.x, self.eye_y, eye.z);
     }
 
     /// Shows or hides the debug screen.
@@ -209,6 +382,7 @@ impl Client {
     pub fn apply_options(&mut self, options: &Options) {
         self.captions = options.sound.subtitles;
         let v = &options.video;
+        self.view_bobbing = v.view_bobbing;
         self.camera.fov_y = v.fov;
         self.render_scale = v.render_scale;
         self.water_quality = v.shader.water.into();
@@ -237,6 +411,7 @@ impl Client {
         seed: u64,
         cache_dir: Option<std::path::PathBuf>,
         saves_dir: Option<std::path::PathBuf>,
+        appearance: hearth_character::Appearance,
     ) -> WorldSpec {
         WorldSpec {
             name: name.to_owned(),
@@ -244,6 +419,7 @@ impl Client {
             planet: hearth_math::PlanetSize::Standard,
             cache_dir,
             saves_dir,
+            appearance,
         }
     }
 
@@ -459,8 +635,13 @@ impl Client {
         };
         let vy_before = self.mover.vel.y;
         let report = hearth_physics::step(&terrain, &mut self.mover, &intent, &ability, dt);
-        self.hearing
+        let foot = self
+            .hearing
             .moved(&w.mirror, &w.reg, &self.mover, &report, vy_before, dt);
+        // The footsteps heard and the feet seen come down together.
+        if let (Some(left), Some(f)) = (foot, &mut self.figure) {
+            f.animator.foot_down(left);
+        }
         self.pending.landed = match (self.pending.landed, report.landed) {
             (Some(a), Some(b)) => Some(a.max(b)),
             (a, b) => a.or(b),
@@ -480,14 +661,8 @@ impl Client {
                 airless_s: report.airless_s,
             }));
         }
-        // The eyes, smoothed over steps up; falls and crouches follow at once.
-        let eye = self.mover.eye();
-        if eye.y > self.eye_y && eye.y - self.eye_y < 1.2 {
-            self.eye_y += (eye.y - self.eye_y) * (1.0 - (-dt * 14.0).exp());
-        } else {
-            self.eye_y = eye.y;
-        }
-        self.camera.pos = DVec3::new(eye.x, self.eye_y, eye.z);
+        self.animate(dt);
+        self.place_eyes(dt);
     }
 
     /// Applies the server's messages; call once per frame before rendering.
@@ -515,6 +690,8 @@ impl Client {
                     self.mover = r.player;
                     self.eye_y = self.mover.eye().y;
                     self.camera.pos = self.mover.eye();
+                    self.figure = Some(Figure::new(r.appearance));
+                    self.pose = None;
                     self.world = Some(World {
                         planet,
                         terrain: r.generator.terrain.clone(),
@@ -627,6 +804,7 @@ impl Client {
             lod.set_view(scene.render_size(targets.size).1, self.camera.fov_y);
         }
         let ticks = self.now_ticks();
+        let view = self.view_camera();
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -654,7 +832,7 @@ impl Client {
         };
         env.calendar = self.calendar;
         let moment = self.calendar.at(ticks);
-        let (e, weather) = env.sample(&moment, self.camera.pos, 0.0, EnvOverrides::default());
+        let (e, weather) = env.sample(&moment, view.pos, 0.0, EnvOverrides::default());
         // Rain is heard; snow falls silently.
         let rain = match weather.precip {
             hearth_env::weather::Precip::Rain => weather.precip_mm_h,
@@ -671,7 +849,31 @@ impl Client {
             }
             _ => scene.near_area = None,
         }
-        scene.prepare(ctx, &self.camera, targets.size, &e, dt);
+        // The player's body: in first person without the head (the eyes are in it).
+        self.figure_boxes.clear();
+        if let (Some(f), Some(pose), Some(w)) = (&self.figure, &self.pose, &self.world) {
+            let rel = (self.mover.pos - view.pos).as_vec3();
+            let place = Affine3A::from_rotation_translation(
+                Quat::from_rotation_y(-self.body_yaw.to_radians()),
+                rel,
+            );
+            let chest = hearth_math::BlockPos::containing(self.mover.pos + DVec3::Y * 1.2);
+            let show = Show {
+                hide_head: self.mode == CameraMode::Body && self.perspective == Perspective::First,
+                sky_light: w.mirror.sky_light(chest),
+                block_light: w.mirror.block_light(chest),
+            };
+            hearth_character::instances(
+                &f.rig,
+                &f.palette,
+                pose,
+                place,
+                show,
+                &mut self.figure_boxes,
+            );
+        }
+        scene.figures.set(ctx, &self.figure_boxes);
+        scene.prepare(ctx, &view, targets.size, &e, dt);
         scene.render(ctx, enc, targets.color, targets.depth, targets.size);
     }
 
@@ -1003,4 +1205,9 @@ fn death_words(l: &Lang, d: &hearth_body::Death) -> String {
         Some(first) => format!("You {}{}.", first.to_lowercase(), c.as_str()),
         None => String::new(),
     }
+}
+
+/// An angle in degrees brought into −180..180.
+fn wrap180(a: f32) -> f32 {
+    (a + 180.0).rem_euclid(360.0) - 180.0
 }

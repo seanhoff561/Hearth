@@ -15,6 +15,7 @@ pub mod hearing;
 pub mod interface;
 pub mod lod_stream;
 pub mod menus;
+pub mod profiles;
 pub mod scene;
 pub mod screenshot;
 pub mod season_cover;

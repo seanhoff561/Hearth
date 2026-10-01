@@ -332,6 +332,20 @@ V2-3 — player: character, body & physiology. Done so far:
   the Sound options (volumes, output device, captions) and captions on screen. Tests: the
   mixer offline (every sound heard and ended, volumes, wind, rain, water, rhythms, echo,
   limiter), hearing (surfaces, enclosure, footstep pace, splashes); `bench-out/sounds/*.wav`.
+- (e) The person (D70, `docs/design/character.md`): `hearth_character` with appearances
+  (body, height, build, skin tone and undertone, eleven hair styles, facial hair, hair colour
+  by name or hue, eyes, name, loincloth) kept as profiles (`characters.json`) and in each
+  world's `player.json`. A seventeen-joint box rig in anthropometric proportions. Procedural
+  movement with real gait phases: stance and swing, a flat foot rolling to the toes, flight
+  between running strides, a bob of 4 cm walking, footsteps heard and seen in step. Also
+  crouch, belly crawl, breaststroke, treading water, ledge and ladder climbing, falling,
+  lying, a shivering hug. Drawn as instanced boxes lit like the terrain
+  (`hearth_render::figure`): the first-person body seen looking down (eyes in the posed head),
+  third person behind or in front (F5), a character screen with a turning preview under four
+  lights, and the person chosen for a new world. A female body starts with a chest band (D70,
+  a garment in the data). Tests: proportions, poses in their boxes, gaits that stride and
+  bob as people do, skin tones in order, profiles, hair, first person;
+  `bench-out/character_*.png`; `--screenshot person=4` / `body=true`.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -342,10 +356,10 @@ V2-3 — player: character, body & physiology. Done so far:
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
 1. V2-3 — Player: character, body & physiology (PLAN.md). Done: (a) the body, (b)
-   movement, (c) the world loop, (d) the interface, controllers and sound. Next: (e) the character creator,
-   profiles, rig, first-person body and animations; (f) the diegetic HUD, Body panel (B),
-   Guided HUD, sleep with time acceleration, death and respawn rules, the acceptance review
-   and the performance gate.
+   movement, (c) the world loop, (d) the interface, controllers and sound, (e) the person
+   (appearance, rig, movement, views, character screen). Next: (f) the diegetic HUD, Body
+   panel (B), Guided HUD, sleep with time acceleration, death and respawn rules, the
+   acceptance review and the performance gate.
 
 ## Known issues
 - The preview passes no firelight to the eye's adaptation (torch-lit caves at night would be

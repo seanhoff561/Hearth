@@ -20,6 +20,7 @@ fn render(
     let target = OffscreenTarget::new(ctx, w, h);
     let saves = std::env::temp_dir().join("hearth-menu-test-saves");
     let languages = vec!["en_us".to_owned()];
+    let mut profiles = hearth::profiles::Profiles::default();
     let mut actions = Vec::new();
     let mut enc = ctx
         .device
@@ -41,6 +42,7 @@ fn render(
                 in_game: false,
                 languages: &languages,
                 audio_devices: &[],
+                profiles: &mut profiles,
             };
             actions = menus.ui(ui, &mut cx);
         },
@@ -84,6 +86,14 @@ fn the_screens_draw_and_answer() {
         ("options", Screen::Options),
         ("video", Screen::Video),
         ("sound", Screen::Sound),
+        (
+            "character",
+            Screen::Character {
+                yaw: 0.4,
+                light: 0,
+                drag: None,
+            },
+        ),
         (
             "controls",
             Screen::Controls {

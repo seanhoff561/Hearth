@@ -71,6 +71,11 @@ pub struct ShotSpec {
     pub lod_timeout: f64,
     /// Draw the planet as the globe (at this zoom) centred on the camera's place instead.
     pub globe: Option<f32>,
+    /// A person standing on the ground this far (m) in front of the camera, facing it.
+    pub person: Option<f64>,
+    /// See through the eyes of a person standing on the ground below the camera (their body
+    /// drawn as in first person).
+    pub body: bool,
 }
 
 impl Default for ShotSpec {
@@ -103,6 +108,8 @@ impl Default for ShotSpec {
             fog: true,
             lod_timeout: 180.0,
             globe: None,
+            person: None,
+            body: false,
         }
     }
 }
@@ -161,6 +168,8 @@ impl ShotSpec {
                 "fog" => spec.fog = v.parse()?,
                 "lod_timeout" => spec.lod_timeout = v.parse()?,
                 "globe" => spec.globe = Some(v.parse()?),
+                "person" => spec.person = Some(v.parse()?),
+                "body" => spec.body = v.parse()?,
                 other => anyhow::bail!("unknown screenshot key {other:?}"),
             }
         }
@@ -291,7 +300,7 @@ pub fn render_shot(
         }
     };
     let sy = spec.y.unwrap_or_else(|| lw.surface_y(sx, sz) + spec.above);
-    let camera = Camera {
+    let mut camera = Camera {
         pos: DVec3::new(sx, sy, sz),
         yaw: spec.yaw,
         pitch: spec.pitch,
@@ -451,6 +460,68 @@ pub fn render_shot(
         reach,
         t_lod.elapsed().as_secs_f64()
     );
+    if spec.body {
+        // The camera in the eyes of someone standing here, looking as the shot looks.
+        let feet = DVec3::new(sx, lw.surface_y(sx, sz) + 1.0, sz);
+        let figure = hearth_character::Figure::new(hearth_character::Appearance::default());
+        let pose = figure.animator.pose(
+            &figure.rig,
+            hearth_character::Activity::Stand,
+            &hearth_character::Drive {
+                look_pitch: spec.pitch,
+                ..Default::default()
+            },
+        );
+        let turn = glam::Quat::from_rotation_y(-spec.yaw.to_radians());
+        camera.pos = feet + (turn * figure.eye(&pose)).as_dvec3();
+        let chest = hearth_math::BlockPos::containing(feet + DVec3::Y * 1.2);
+        let mut boxes = Vec::new();
+        hearth_character::instances(
+            &figure.rig,
+            &figure.palette,
+            &pose,
+            glam::Affine3A::from_rotation_translation(turn, (feet - camera.pos).as_vec3()),
+            hearth_character::Show {
+                hide_head: true,
+                sky_light: lw.map.sky_light(chest),
+                block_light: lw.map.block_light(chest),
+            },
+            &mut boxes,
+        );
+        scene.figures.set(ctx, &boxes);
+    }
+    if let Some(d) = spec.person {
+        // Someone standing on the ground in front of the camera, facing it.
+        let f = camera.forward().as_dvec3();
+        let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+        let (px, pz) = (camera.pos.x + flat.x * d, camera.pos.z + flat.z * d);
+        let feet = DVec3::new(px, lw.surface_y(px, pz), pz);
+        let figure = hearth_character::Figure::new(hearth_character::Appearance::default());
+        let pose = figure.animator.pose(
+            &figure.rig,
+            hearth_character::Activity::Stand,
+            &hearth_character::Drive::default(),
+        );
+        let chest = hearth_math::BlockPos::containing(feet + DVec3::Y * 1.2);
+        let place = glam::Affine3A::from_rotation_translation(
+            glam::Quat::from_rotation_y(-(spec.yaw + 180.0).to_radians()),
+            (feet - camera.pos).as_vec3(),
+        );
+        let mut boxes = Vec::new();
+        hearth_character::instances(
+            &figure.rig,
+            &figure.palette,
+            &pose,
+            place,
+            hearth_character::Show {
+                hide_head: false,
+                sky_light: lw.map.sky_light(chest),
+                block_light: lw.map.block_light(chest),
+            },
+            &mut boxes,
+        );
+        scene.figures.set(ctx, &boxes);
+    }
     let target = OffscreenTarget::new(ctx, spec.width, spec.height);
     let size = (spec.width, spec.height);
     let frame = |scene: &mut SceneRenderer| {

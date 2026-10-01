@@ -76,6 +76,8 @@ pub struct Ready {
     pub calendar: hearth_env::Calendar,
     pub ticks: u64,
     pub player: Mover,
+    /// How the player looks.
+    pub appearance: hearth_character::Appearance,
 }
 
 /// The player's body as the client shows it and lets it move.

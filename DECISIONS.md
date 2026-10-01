@@ -656,3 +656,18 @@ own thread, taking commands over a channel; offline rendering of the same mixer 
 tests listen to (`tests/mixer.rs`, which also writes `bench-out/sounds/*.wav`). The heart and
 the breath are the body's state made audible, for the HUD's minimalism (v2 §9.8): you hear a
 pounding heart or a gasp in cold water before a panel says anything.
+
+## D70 — The person: a box rig from anthropometry, moved procedurally; a chest band for a female body
+Characters are boxes on a seventeen-joint skeleton whose proportions are anthropometric
+fractions of stature, built from the appearance in code rather than modelled by hand. A
+modelled mesh would need authoring for every height, build and hair style. The box rig keeps
+the world's blocky look while holding to human proportions, and any appearance is built at
+once. Movement is procedural, from the activity, speed and phase, with the gait's phases
+(stance and swing shares, a flat stance foot, pre-swing knee bend, flight between running
+strides) taken from gait studies. That way the bob, stride and timing come out right at any
+speed without animation files, and footsteps heard and seen stay in step. The spec starts
+every character in only a loincloth. A liberty: a female body also starts with a band of the
+same hide or fibre across the chest (`chest_band`, worn and counted in the heat balance like
+any garment, 0.02 clo). The figures carry no anatomical detail either way. It keeps the start
+suitable for a general audience without changing what the body faces from the cold.
+

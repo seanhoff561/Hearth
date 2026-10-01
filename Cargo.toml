@@ -26,6 +26,7 @@ hearth_player = { path = "crates/hearth_player" }
 hearth_protocol = { path = "crates/hearth_protocol" }
 hearth_ui = { path = "crates/hearth_ui" }
 hearth_audio = { path = "crates/hearth_audio" }
+hearth_character = { path = "crates/hearth_character" }
 hearth_render = { path = "crates/hearth_render" }
 hearth_lod = { path = "crates/hearth_lod" }
 

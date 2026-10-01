@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 hearth_ui.workspace = true
+hearth_character.workspace = true
 hearth_core.workspace = true
 hearth_math.workspace = true
 hearth_world.workspace = true

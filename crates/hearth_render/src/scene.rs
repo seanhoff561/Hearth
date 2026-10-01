@@ -7,6 +7,7 @@ use hearth_math::Planet;
 
 use crate::atlas::TextureArray;
 use crate::camera::Camera;
+use crate::figure::FigureRenderer;
 use crate::gpu::GpuContext;
 use crate::lod::LodRenderer;
 use crate::post::PostProcess;
@@ -121,6 +122,8 @@ pub struct SceneRenderer {
     /// by altitude and the planet's curvature follow it.
     pub vertical_scale: f32,
     pub precip: PrecipRenderer,
+    /// Bodies (the player's own, later people and animals), drawn with the opaque terrain.
+    pub figures: FigureRenderer,
     pub post: PostProcess,
     /// Adapted illuminance (natural log of lux).
     adapted: Option<f32>,
@@ -156,7 +159,9 @@ impl SceneRenderer {
         let sky = SkyRenderer::new(ctx);
         let terrain = TerrainRenderer::new(ctx, atlas, &sky, planet, mip_levels, anisotropy);
         let lod = LodRenderer::new(ctx, &terrain, planet, crate::post::HDR_FORMAT);
+        let figures = FigureRenderer::new(ctx, terrain.globals_bind().0);
         Self {
+            figures,
             post: PostProcess::new(ctx, output_format),
             precip: PrecipRenderer::new(ctx),
             sky,
@@ -391,6 +396,11 @@ impl SceneRenderer {
             Some(wgpu::Color::BLACK),
             timer.as_mut(),
         );
+        if self.figures.count() > 0 {
+            let (_, bind0) = self.terrain.globals_bind();
+            let mut pass = begin_pass(enc, &hdr, depth, None);
+            self.figures.draw(&mut pass, bind0);
+        }
         self.lod
             .cull(ctx, enc, self.terrain.hzb().map(|(view, _, _)| view));
         mark(&mut timer, enc, "lod cull");

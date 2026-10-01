@@ -88,7 +88,8 @@ impl Hearing {
     }
 
     /// The player moved this step: footsteps, landings, splashes, strokes, coming up for air.
-    /// `vy_before` is the vertical speed before the step.
+    /// `vy_before` is the vertical speed before the step. Returns the foot that came down
+    /// (true for the left), if one did.
     pub fn moved(
         &mut self,
         map: &CubeMap,
@@ -97,7 +98,7 @@ impl Hearing {
         report: &Report,
         vy_before: f64,
         dt: f64,
-    ) {
+    ) -> Option<bool> {
         let immersion = report.immersion;
         // Into the water.
         if self.was_immersed < 0.15 && immersion >= 0.15 {
@@ -161,11 +162,11 @@ impl Hearing {
         if every == 0.0 || moving < 0.05 {
             // The first step comes soon after setting off.
             self.stride = self.stride.min(0.4);
-            return;
+            return None;
         }
         self.stride += moving * dt;
         if self.stride < every {
-            return;
+            return None;
         }
         self.stride = (self.stride - every).min(every);
         self.foot = !self.foot;
@@ -178,7 +179,7 @@ impl Hearing {
                 0.0,
                 "subtitles.swim",
             );
-            return;
+            return None;
         }
         let surface = if report.motion == Motion::Wading || immersion > 0.08 {
             Surface::Shallow
@@ -195,6 +196,7 @@ impl Hearing {
             pan,
             "subtitles.step",
         );
+        Some(self.foot)
     }
 
     /// The body's news: new injuries, cold water's shock, the heart and the breath.

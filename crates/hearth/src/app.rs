@@ -22,6 +22,7 @@ use crate::frame_limiter::FrameLimiter;
 use crate::gamepad::{Gamepads, Press};
 use crate::interface::Interface;
 use crate::menus::{MenuAction, MenuContext, Menus, Screen};
+use crate::profiles::Profiles;
 
 /// Command-line configuration of a run.
 #[derive(Debug, Clone, Default)]
@@ -79,6 +80,11 @@ pub struct App {
     audio_devices: Vec<String>,
     audio_checked: Instant,
     ambience_sent: Instant,
+    /// The people, and the one on the character screen as drawn.
+    profiles: Profiles,
+    preview_figure: Option<hearth_character::Figure>,
+    figure_preview: Option<hearth_render::figure::FigurePreview>,
+    preview_boxes: Vec<hearth_character::FigureInstance>,
 }
 
 impl App {
@@ -104,6 +110,7 @@ impl App {
             toggle_sneak: options.controls.toggle_sneak,
             toggle_sprint: options.controls.toggle_sprint,
         });
+        let profiles = Profiles::load(&dirs.root.join("characters.json"));
         let last_fullscreen = match options.video.display_mode {
             DisplayMode::Exclusive => DisplayMode::Exclusive,
             _ => DisplayMode::Borderless,
@@ -131,6 +138,16 @@ impl App {
             audio_devices: Vec::new(),
             audio_checked: Instant::now(),
             ambience_sent: Instant::now(),
+            profiles,
+            preview_figure: None,
+            figure_preview: None,
+            preview_boxes: Vec::new(),
+        }
+    }
+
+    fn save_profiles(&self) {
+        if let Err(e) = self.profiles.save(&self.dirs.root.join("characters.json")) {
+            log::error!("could not save the characters: {e}");
         }
     }
 
@@ -412,6 +429,8 @@ impl App {
                         p.set_time_warp(warp);
                     } else if action == builtin::DEBUG_FREE_CAMERA {
                         p.toggle_free_camera();
+                    } else if action == builtin::TOGGLE_PERSPECTIVE {
+                        p.toggle_perspective();
                     } else if action == builtin::JUMP && p.dead() {
                         p.respawn();
                     }
@@ -452,6 +471,7 @@ impl App {
                 seed,
                 Some(self.dirs.cache()),
                 Some(self.dirs.saves()),
+                self.profiles.current().clone(),
             ),
             &self.options,
             run.renderer.color_format(),
@@ -484,6 +504,7 @@ impl App {
                     }
                 }
                 MenuAction::QuitGame => self.exit_requested = true,
+                MenuAction::ProfilesChanged => self.save_profiles(),
                 MenuAction::LanguageChanged => {
                     if let Some(run) = &mut self.running {
                         run.interface.set_language(&self.options.language);
@@ -630,6 +651,10 @@ impl App {
             let saves = self.dirs.saves();
             let languages = &self.languages;
             let audio_devices = &self.audio_devices;
+            let profiles = &mut self.profiles;
+            let preview_figure = &mut self.preview_figure;
+            let figure_preview = &mut self.figure_preview;
+            let preview_boxes = &mut self.preview_boxes;
             let format = run.renderer.color_format();
             if run.renderer.render_with(|ctx, enc, targets| {
                 match client.as_mut() {
@@ -649,9 +674,51 @@ impl App {
                         in_game: client.is_some(),
                         languages,
                         audio_devices,
+                        profiles,
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
+                // The character screen's person, over its space in the interface.
+                if let Some(p) = menus.preview() {
+                    let fig = preview_figure
+                        .get_or_insert_with(|| hearth_character::Figure::new(p.appearance.clone()));
+                    fig.set_appearance(&p.appearance);
+                    let drive = hearth_character::Drive {
+                        breaths_per_min: 12.0,
+                        ..Default::default()
+                    };
+                    let pose = fig.animator.update(&fig.rig, &drive, dt as f32);
+                    preview_boxes.clear();
+                    hearth_character::instances(
+                        &fig.rig,
+                        &fig.palette,
+                        &pose,
+                        glam::Affine3A::from_rotation_y(p.yaw),
+                        hearth_character::Show::default(),
+                        preview_boxes,
+                    );
+                    let s = interface.scale as f32;
+                    let rect = [
+                        (p.rect.x * s) as u32,
+                        (p.rect.y * s) as u32,
+                        (p.rect.w * s) as u32,
+                        (p.rect.h * s) as u32,
+                    ];
+                    let r = figure_preview.get_or_insert_with(|| {
+                        hearth_render::figure::FigurePreview::new(ctx, format)
+                    });
+                    // Framed for the tallest person, so heights compare.
+                    r.render(
+                        ctx,
+                        enc,
+                        targets.color,
+                        targets.size,
+                        rect,
+                        preview_boxes,
+                        2.0,
+                        p.light,
+                    );
+                }
             }) {
                 self.frames_rendered += 1;
                 run.title_frames += 1;

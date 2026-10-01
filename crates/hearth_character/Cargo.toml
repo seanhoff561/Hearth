@@ -1,0 +1,19 @@
+[package]
+name = "hearth_character"
+description = "The player's person: appearance profiles, a realistically proportioned blocky rig, its procedural animation and its mesh."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+glam.workspace = true
+serde.workspace = true
+bytemuck.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

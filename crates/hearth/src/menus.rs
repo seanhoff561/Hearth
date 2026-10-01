@@ -1,12 +1,18 @@
-//! The screens (v1 §11, the minimal set for V2-3; the full flow is V2-15): the title, the worlds
-//! (pick one or make a new one), pause, and the options — video, sound, controls with
+//! The screens (v1 §11, the minimal set for V2-3; the full flow is V2-15): the title, the
+//! character (people kept as profiles, made with a turning preview), the worlds (pick one or
+//! make a new one with a person), pause, and the options — video, sound, controls with
 //! rebinding, language, accessibility. Every screen is drawn each frame with the widgets of `hearth_ui`
 //! and says what the player chose.
 
 use std::path::{Path, PathBuf};
 
+use hearth_character::appearance::{MAX_HEIGHT_M, MIN_HEIGHT_M, from_hsl, skin_presets, to_hsl};
+use hearth_character::{
+    Appearance, BodyType, EyeColor, FacialHair, HAIR_COLORS, HairStyle, Loincloth,
+};
 use hearth_core::options::{DisplayMode, GraphicsPreset, Options, Quality};
 use hearth_input::{ActionId, CaptureResult, InputKey, KeyBindings, RebindCapture};
+use hearth_render::figure::PreviewLight;
 use hearth_ui::widgets::theme;
 use hearth_ui::{Column, Rect, Ui};
 
@@ -60,6 +66,23 @@ pub enum Screen {
         capture: RebindCapture,
     },
     Accessibility,
+    /// Making people: which way the preview faces (radians), its light, and a drag in
+    /// progress (the pointer's last x).
+    Character {
+        yaw: f32,
+        light: usize,
+        drag: Option<f32>,
+    },
+}
+
+/// The person on the character screen, for the app to draw.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Preview {
+    /// Where (interface pixels).
+    pub rect: Rect,
+    pub appearance: Appearance,
+    pub yaw: f32,
+    pub light: PreviewLight,
 }
 
 /// What the player chose.
@@ -76,6 +99,8 @@ pub enum MenuAction {
     /// The options changed: save and apply them.
     OptionsChanged,
     LanguageChanged,
+    /// The people changed: save them.
+    ProfilesChanged,
 }
 
 /// What the screens edit and need.
@@ -87,11 +112,14 @@ pub struct MenuContext<'a> {
     pub languages: &'a [String],
     /// The sound output devices there are.
     pub audio_devices: &'a [String],
+    pub profiles: &'a mut crate::profiles::Profiles,
 }
 
 /// The open screens, the top one shown.
 pub struct Menus {
     stack: Vec<Screen>,
+    /// The character screen's person this frame.
+    preview: Option<Preview>,
 }
 
 const W: f32 = 220.0;
@@ -101,11 +129,28 @@ impl Menus {
     pub fn title() -> Self {
         Self {
             stack: vec![Screen::Title],
+            preview: None,
         }
     }
 
     pub fn none() -> Self {
-        Self { stack: Vec::new() }
+        Self {
+            stack: Vec::new(),
+            preview: None,
+        }
+    }
+
+    /// The person shown on the character screen this frame, if it is open.
+    pub fn preview(&self) -> Option<&Preview> {
+        self.preview.as_ref()
+    }
+
+    fn character() -> Screen {
+        Screen::Character {
+            yaw: 0.4,
+            light: 0,
+            drag: None,
+        }
     }
 
     pub fn is_open(&self) -> bool {
@@ -168,6 +213,7 @@ impl Menus {
     /// Draws the top screen and returns what was chosen.
     pub fn ui(&mut self, ui: &mut Ui<'_>, cx: &mut MenuContext<'_>) -> Vec<MenuAction> {
         let mut out = Vec::new();
+        self.preview = None;
         let Some(top) = self.stack.last_mut() else {
             return out;
         };
@@ -203,6 +249,9 @@ impl Menus {
                         list: list_worlds(&cx.saves),
                         selected: None,
                     });
+                }
+                if ui.button(c.row(ROW), &ui.t("menu.title.character")) {
+                    push = Some(Self::character());
                 }
                 if ui.button(c.row(ROW), &ui.t("menu.options")) {
                     push = Some(Screen::Options);
@@ -273,6 +322,22 @@ impl Menus {
                 ui.label(x, c.y, &ui.t("menu.new_world.seed"), theme::DIM);
                 c.space(10.0);
                 ui.text_field(c.row(ROW), &ui.t("menu.new_world.seed_hint"), seed, 20);
+                c.space(6.0);
+                // Who lives there.
+                let unnamed = ui.t("menu.character.unnamed");
+                let people: Vec<String> = (0..cx.profiles.list.len())
+                    .map(|i| cx.profiles.name(i, &unnamed))
+                    .collect();
+                let row = c.row(ROW);
+                let (pick, edit) = row.split_left(W - 64.0, 4.0);
+                let mut who = cx.profiles.selected;
+                if ui.cycle(pick, &ui.t("menu.new_world.character"), &people, &mut who) {
+                    cx.profiles.selected = who;
+                    out.push(MenuAction::ProfilesChanged);
+                }
+                if ui.button(edit, &ui.t("menu.new_world.edit_character")) {
+                    push = Some(Self::character());
+                }
                 c.space(10.0);
                 let folder = folder_name(name);
                 let exists = cx.saves.join(&folder).join("level.json").exists();
@@ -662,6 +727,14 @@ impl Menus {
                     out.push(MenuAction::OptionsChanged);
                 }
             }
+            Screen::Character { yaw, light, drag } => {
+                let (preview, changed, done) = character_screen(ui, cx.profiles, yaw, light, drag);
+                self.preview = Some(preview);
+                if changed {
+                    out.push(MenuAction::ProfilesChanged);
+                }
+                pop |= done;
+            }
             Screen::Accessibility => {
                 ui.title(30.0, &ui.t("menu.options.accessibility"));
                 let a = &mut cx.options.accessibility;
@@ -693,6 +766,251 @@ impl Menus {
         }
         out
     }
+}
+
+/// The character screen: the people on the left, the one chosen turning in the middle, what
+/// they look like on the right. Returns the preview, whether the people changed, and whether
+/// the screen is done.
+fn character_screen(
+    ui: &mut Ui<'_>,
+    profiles: &mut crate::profiles::Profiles,
+    yaw: &mut f32,
+    light: &mut usize,
+    drag: &mut Option<f32>,
+) -> (Preview, bool, bool) {
+    let size = ui.size;
+    let mut changed = false;
+    let mut done = false;
+    ui.title(8.0, &ui.t("menu.character.title"));
+    // The people.
+    let list_w = 120.0;
+    let list_r = Rect::new(8.0, 24.0, list_w, (size.1 - 24.0 - 52.0).max(40.0));
+    let unnamed = ui.t("menu.character.unnamed");
+    let names: Vec<String> = (0..profiles.list.len())
+        .map(|i| profiles.name(i, &unnamed))
+        .collect();
+    if let Some(i) = ui.list(
+        list_r,
+        "people",
+        names.len(),
+        14.0,
+        Some(profiles.selected),
+        |ui, r, i, _| {
+            ui.label(r.x + 3.0, r.y + 3.0, &names[i], theme::TEXT);
+        },
+    ) && i != profiles.selected
+    {
+        profiles.selected = i;
+        changed = true;
+    }
+    let mut c = Column::new(8.0, size.1 - 46.0, list_w);
+    let (a, b) = c.row(ROW).split_left((list_w - 4.0) / 2.0, 4.0);
+    if ui.button(a, &ui.t("menu.character.new")) {
+        let n = profiles.list.len();
+        profiles.list.push(if n % 2 == 1 {
+            Appearance::female()
+        } else {
+            Appearance::default()
+        });
+        profiles.selected = n;
+        changed = true;
+    }
+    if ui.button_enabled(b, &ui.t("menu.character.delete"), profiles.list.len() > 1) {
+        profiles.list.remove(profiles.selected);
+        profiles.selected = profiles.selected.min(profiles.list.len() - 1);
+        changed = true;
+    }
+    if ui.button(c.row(ROW), &ui.t("menu.done")) {
+        done = true;
+    }
+    // What they look like.
+    let cw = 200.0;
+    let mut c = Column::new(size.0 - cw - 8.0, 24.0, cw);
+    c.gap = 2.0;
+    let a = profiles.current_mut();
+    let before = a.clone();
+    ui.text_field(c.row(ROW), &ui.t("menu.character.name"), &mut a.name, 32);
+    let bodies = [BodyType::Female, BodyType::Male];
+    let body_names: Vec<String> = ["character.body.female", "character.body.male"]
+        .iter()
+        .map(|k| ui.t(k))
+        .collect();
+    let mut i = bodies.iter().position(|b| *b == a.body).unwrap_or(1);
+    if ui.cycle(
+        c.row(ROW),
+        &ui.t("menu.character.body"),
+        &body_names,
+        &mut i,
+    ) {
+        a.body = bodies[i];
+    }
+    let text = format!("{:.2} m", a.height_m);
+    ui.slider(
+        c.row(ROW),
+        &ui.t("menu.character.height"),
+        &mut a.height_m,
+        MIN_HEIGHT_M,
+        MAX_HEIGHT_M,
+        &text,
+    );
+    let build = ["slight", "lean", "average", "sturdy", "heavy"][((a.build * 5.0) as usize).min(4)];
+    let text = ui.t(&format!("character.build.{build}"));
+    ui.slider(
+        c.row(ROW),
+        &ui.t("menu.character.build"),
+        &mut a.build,
+        0.0,
+        1.0,
+        &text,
+    );
+    let presets = skin_presets();
+    let nearest = presets
+        .iter()
+        .enumerate()
+        .min_by(|x, y| {
+            (x.1 - a.skin_tone)
+                .abs()
+                .total_cmp(&(y.1 - a.skin_tone).abs())
+        })
+        .map_or(0, |(i, _)| i);
+    let text = ui
+        .lang
+        .format("character.skin.tone", &[("n", &(nearest + 1).to_string())]);
+    ui.slider(
+        c.row(ROW),
+        &ui.t("menu.character.skin"),
+        &mut a.skin_tone,
+        0.0,
+        1.0,
+        &text,
+    );
+    let under = if a.undertone < -0.33 {
+        "cool"
+    } else if a.undertone > 0.33 {
+        "warm"
+    } else {
+        "neutral"
+    };
+    let text = ui.t(&format!("character.undertone.{under}"));
+    ui.slider(
+        c.row(ROW),
+        &ui.t("menu.character.undertone"),
+        &mut a.undertone,
+        -1.0,
+        1.0,
+        &text,
+    );
+    let styles: Vec<String> = HairStyle::ALL.iter().map(|h| ui.t(h.key())).collect();
+    let mut i = HairStyle::ALL
+        .iter()
+        .position(|h| *h == a.hair)
+        .unwrap_or(0);
+    if ui.cycle(c.row(ROW), &ui.t("menu.character.hair"), &styles, &mut i) {
+        a.hair = HairStyle::ALL[i];
+    }
+    // Natural colours, then the colour finely.
+    let mut colours: Vec<String> = HAIR_COLORS.iter().map(|(k, _)| ui.t(k)).collect();
+    let matching = HAIR_COLORS.iter().position(|(_, c)| *c == a.hair_color);
+    colours.push(ui.t("character.hair_color.custom"));
+    let mut i = matching.unwrap_or(HAIR_COLORS.len());
+    if ui.cycle(
+        c.row(ROW),
+        &ui.t("menu.character.hair_color"),
+        &colours,
+        &mut i,
+    ) && i < HAIR_COLORS.len()
+    {
+        a.hair_color = HAIR_COLORS[i].1;
+    }
+    let [mut h, mut s, mut l] = to_hsl(a.hair_color);
+    let text = format!("{h:.0}°");
+    let mut fine = ui.slider(
+        c.row(ROW),
+        &ui.t("menu.character.hue"),
+        &mut h,
+        0.0,
+        360.0,
+        &text,
+    );
+    let text = format!("{:.0}%", s * 100.0);
+    fine |= ui.slider(
+        c.row(ROW),
+        &ui.t("menu.character.saturation"),
+        &mut s,
+        0.0,
+        1.0,
+        &text,
+    );
+    let text = format!("{:.0}%", l * 100.0);
+    fine |= ui.slider(
+        c.row(ROW),
+        &ui.t("menu.character.lightness"),
+        &mut l,
+        0.02,
+        0.95,
+        &text,
+    );
+    if fine {
+        a.hair_color = from_hsl([h, s, l]);
+    }
+    let facial: Vec<String> = FacialHair::ALL.iter().map(|f| ui.t(f.key())).collect();
+    let mut i = FacialHair::ALL
+        .iter()
+        .position(|f| *f == a.facial_hair)
+        .unwrap_or(0);
+    if ui.cycle(
+        c.row(ROW),
+        &ui.t("menu.character.facial_hair"),
+        &facial,
+        &mut i,
+    ) {
+        a.facial_hair = FacialHair::ALL[i];
+    }
+    let eyes: Vec<String> = EyeColor::ALL.iter().map(|e| ui.t(e.key())).collect();
+    let mut i = EyeColor::ALL.iter().position(|e| *e == a.eyes).unwrap_or(0);
+    if ui.cycle(c.row(ROW), &ui.t("menu.character.eyes"), &eyes, &mut i) {
+        a.eyes = EyeColor::ALL[i];
+    }
+    let cloths = [Loincloth::Hide, Loincloth::PlantFibre];
+    let cloth_names: Vec<String> = ["character.loincloth.hide", "character.loincloth.fibre"]
+        .iter()
+        .map(|k| ui.t(k))
+        .collect();
+    let mut i = cloths.iter().position(|x| *x == a.loincloth).unwrap_or(0);
+    if ui.cycle(
+        c.row(ROW),
+        &ui.t("menu.character.loincloth"),
+        &cloth_names,
+        &mut i,
+    ) {
+        a.loincloth = cloths[i];
+    }
+    if *a != before {
+        changed = true;
+    }
+    // The person between, turned by dragging across them.
+    let px = list_w + 16.0;
+    let pw = (size.0 - cw - 16.0 - px).max(40.0);
+    let rect = Rect::new(px, 24.0, pw, (size.1 - 24.0 - 30.0).max(40.0));
+    match ui.input.pointer {
+        Some(p) if ui.input.down && (drag.is_some() || rect.contains(p)) => {
+            if let Some(last) = *drag {
+                *yaw += (p.0 - last) * 0.03;
+            }
+            *drag = Some(p.0);
+        }
+        _ => *drag = None,
+    }
+    let lights: Vec<String> = PreviewLight::ALL.iter().map(|l| ui.t(l.key())).collect();
+    let lr = Rect::new((px + pw / 2.0 - 90.0).round(), size.1 - 26.0, 180.0, ROW);
+    ui.cycle(lr, &ui.t("menu.character.light"), &lights, light);
+    let preview = Preview {
+        rect,
+        appearance: profiles.current().clone(),
+        yaw: *yaw,
+        light: PreviewLight::ALL[(*light).min(PreviewLight::ALL.len() - 1)],
+    };
+    (preview, changed, done)
 }
 
 /// A world's folder from its name.

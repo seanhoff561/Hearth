@@ -17,6 +17,7 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
         planet: hearth_math::PlanetSize::Tiny,
         cache_dir: None,
         saves_dir: Some(dir.to_path_buf()),
+        appearance: hearth_character::Appearance::default(),
     }
 }
 

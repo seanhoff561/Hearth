@@ -53,6 +53,8 @@ pub struct WorldSpec {
     pub cache_dir: Option<PathBuf>,
     /// Where worlds are saved; `None` runs without saving.
     pub saves_dir: Option<PathBuf>,
+    /// Who the player is in a new world (a saved world keeps its own person).
+    pub appearance: hearth_character::Appearance,
 }
 
 /// How much terrain to keep around the player (cubes).
@@ -67,6 +69,9 @@ pub struct View {
 struct PlayerSave {
     format: u32,
     player: Player,
+    /// How the player looks (saves before it take the default person).
+    #[serde(default)]
+    appearance: hearth_character::Appearance,
 }
 
 /// Handle to the server thread; it saves and stops when dropped.
@@ -244,7 +249,12 @@ fn body_view(cfg: &BodyConfig, p: &Player, exposure: Exposure) -> BodyView {
 }
 
 /// Saves the player and the clock.
-fn save(save: &mut Option<Save>, player: &Player, ticks: u64) {
+fn save(
+    save: &mut Option<Save>,
+    player: &Player,
+    appearance: &hearth_character::Appearance,
+    ticks: u64,
+) {
     let Some(s) = save else {
         return;
     };
@@ -253,6 +263,7 @@ fn save(save: &mut Option<Save>, player: &Player, ticks: u64) {
     let player = PlayerSave {
         format: PLAYER_FORMAT,
         player: player.clone(),
+        appearance: appearance.clone(),
     };
     if let Err(e) = s
         .dir
@@ -313,17 +324,32 @@ fn run(
     );
     let env = EnvSampler::new(lw.grid(), calendar);
 
-    let mut player = save_state
-        .as_ref()
-        .and_then(|s| match s.dir.read_json::<PlayerSave>("player.json") {
-            Ok(p) => p.map(|p| p.player),
-            Err(e) => {
-                log::error!("player.json unreadable ({e}); starting anew");
-                None
-            }
-        })
-        .unwrap_or_else(|| Player::new(&cfg, first_spawn, seed ^ 0x5eed));
-    let worn = Worn::of(content.garments.get("hearth:loincloth"));
+    let saved =
+        save_state
+            .as_ref()
+            .and_then(|s| match s.dir.read_json::<PlayerSave>("player.json") {
+                Ok(p) => p,
+                Err(e) => {
+                    log::error!("player.json unreadable ({e}); starting anew");
+                    None
+                }
+            });
+    let (mut player, appearance) = match saved {
+        Some(p) => (p.player, p.appearance.sanitized()),
+        None => (
+            Player::new(&cfg, first_spawn, seed ^ 0x5eed),
+            spec.appearance.clone().sanitized(),
+        ),
+    };
+    // Everyone starts in a loincloth; a female body with a band across the chest too (D70).
+    let female = appearance.body == hearth_character::BodyType::Female;
+    let worn = Worn::of(
+        content.garments.get("hearth:loincloth").into_iter().chain(
+            female
+                .then(|| content.garments.get("hearth:chest_band"))
+                .flatten(),
+        ),
+    );
 
     let lod = Arc::new(hearth_lod::LodGen::new(
         &lw.reg,
@@ -341,6 +367,7 @@ fn run(
             calendar,
             ticks,
             player: player.mover,
+            appearance: appearance.clone(),
         })))
         .is_err()
     {
@@ -405,7 +432,7 @@ fn run(
                     };
                 }
                 Ok(ToServer::Quit) | Err(TryRecvError::Disconnected) => {
-                    save(&mut save_state, &player, ticks);
+                    save(&mut save_state, &player, &appearance, ticks);
                     let _ = tx.send(ToClient::Saved);
                     return Ok(());
                 }
@@ -462,7 +489,7 @@ fn run(
                     .blocks_changed(&mut lw, &models, opts, &changed, tx)
                     .is_err()
             {
-                save(&mut save_state, &player, ticks);
+                save(&mut save_state, &player, &appearance, ticks);
                 return Ok(());
             }
             if tx.send(ToClient::Clock(ticks)).is_err()
@@ -470,12 +497,12 @@ fn run(
                     .send(ToClient::Body(Box::new(body_view(&cfg, &player, e))))
                     .is_err()
             {
-                save(&mut save_state, &player, ticks);
+                save(&mut save_state, &player, &appearance, ticks);
                 return Ok(());
             }
             if since_save >= AUTOSAVE_TICKS {
                 since_save = 0;
-                save(&mut save_state, &player, ticks);
+                save(&mut save_state, &player, &appearance, ticks);
                 let _ = tx.send(ToClient::Saved);
             }
             next_tick += Duration::from_secs_f64(TICK_S);
@@ -513,7 +540,7 @@ fn run(
                 std::thread::sleep(wait.min(Duration::from_millis(5)));
             }
             Err(_) => {
-                save(&mut save_state, &player, ticks);
+                save(&mut save_state, &player, &appearance, ticks);
                 return Ok(());
             }
         }
