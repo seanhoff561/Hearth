@@ -2,10 +2,11 @@
 # Performance regression gate, run at the end of every milestone (docs/perf-audit.md, D59).
 #
 # Builds this working tree and the baseline commit named in perf/baseline (in a git worktree
-# under bench-out/gate), runs the quick benchmark scenes on both, alternating, and compares the
-# medians: if this tree's average FPS or 1 % lows fall more than 5 % below the baseline's in
-# any scene, the gate fails. Fix the regression, or justify it in DECISIONS.md and move the
-# baseline with --accept (on a clean, committed tree; then commit perf/baseline).
+# under bench-out/gate), runs the quick benchmark scenes on both, alternating (and which goes
+# first alternating by round), and compares the medians: if this tree's average FPS or 1 %
+# lows fall more than 5 % below the baseline's in any scene, the gate fails. Fix the
+# regression, or justify it in DECISIONS.md and move the baseline with --accept (on a clean,
+# committed tree; then commit perf/baseline).
 #
 # Usage: scripts/perf-gate.sh [--rounds N] [--frames N] [--gate PCT] [--accept]
 set -euo pipefail
@@ -73,17 +74,29 @@ bench() {
   shift
   "$exe" bench --scenes quick --frames "$FRAMES" --report none "$@"
 }
-for i in $(seq 1 "$ROUNDS"); do
-  echo "==> round $i of $ROUNDS (logs in bench-out/gate)"
-  if ! (cd "$WT" && bench "$OLD" --cache "$OUT/cache-base" --json "$OUT/base-$i.json") \
-    > "$OUT/base-$i.log" 2>&1; then
-    tail -n 5 "$OUT/base-$i.log"
+run_base() {
+  if ! (cd "$WT" && bench "$OLD" --cache "$OUT/cache-base" --json "$OUT/base-$1.json") \
+    > "$OUT/base-$1.log" 2>&1; then
+    tail -n 5 "$OUT/base-$1.log"
     exit 2
   fi
-  if ! bench "$NEW" --cache "$OUT/cache-new" --json "$OUT/new-$i.json" \
-    > "$OUT/new-$i.log" 2>&1; then
-    tail -n 5 "$OUT/new-$i.log"
+}
+run_new() {
+  if ! bench "$NEW" --cache "$OUT/cache-new" --json "$OUT/new-$1.json" \
+    > "$OUT/new-$1.log" 2>&1; then
+    tail -n 5 "$OUT/new-$1.log"
     exit 2
+  fi
+}
+# Which build runs first alternates by round: the second of a pair can run slower (D74).
+for i in $(seq 1 "$ROUNDS"); do
+  echo "==> round $i of $ROUNDS (logs in bench-out/gate)"
+  if [ $((i % 2)) = 1 ]; then
+    run_base "$i"
+    run_new "$i"
+  else
+    run_new "$i"
+    run_base "$i"
   fi
 done
 

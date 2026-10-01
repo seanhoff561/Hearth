@@ -717,3 +717,13 @@ were and not shown. Storing whole edited cubes in the region files would bake th
 snow and river levels into them; the overlay keeps generation, cover and change apart. When
 building (V2-8) makes edits many, the list moves into the region files as a per-cube overlay,
 and the LOD takes them in with V2-6.
+
+## D74 — The performance gate alternates which build runs first
+At the end of V2-5 the gate failed twice on one measure, the cave scene's 1 % lows (−5.8 % and
+−5.9 %; its average FPS −2.7 % and −4.0 %), with the same geometry and draws in both builds
+and no difference in the GPU passes beyond noise. Two A/B runs cleared V2-5. Its own build with
+and without its new textures (56 more layers in the texture array) ran the cave alike (2185
+against 2185 FPS, lows −0.2 %). The baseline against V2-5 with V2-5 run first in every pair
+put V2-5 ahead (+0.6 % average, +1.3 % lows). The gate had always run the baseline first, so
+any drift within a pair (the GPU warming, clocks settling) fell on one side. It now alternates
+which build runs first, round by round.
