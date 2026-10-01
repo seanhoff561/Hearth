@@ -273,5 +273,15 @@
   "key.sleep": "Lie down / sleep",
   "key.body_panel": "Body",
   "body.asleep": "Asleep",
-  "body.lying": "Lying down: sleep comes when you are tired (lie down again to get up)"
+  "body.lying": "Lying down: sleep comes when you are tired (lie down again to get up)",
+  "subtitles.stomach": "Stomach rumbling",
+  "subtitles.swallow": "Dry swallow",
+  "hud.food": "Food",
+  "hud.water": "Water",
+  "hud.warmth": "Warmth",
+  "hud.rest": "Rest",
+  "hud.stamina": "Breath",
+  "hud.blood": "Blood",
+  "menu.accessibility.guided_hud": "Guided HUD (bars)",
+  "menu.accessibility.reduce_motion": "Reduce motion"
 }

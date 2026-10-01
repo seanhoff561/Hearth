@@ -23,6 +23,8 @@ pub struct Ambience {
     pub enclosed: f32,
     /// The ears under water.
     pub underwater: bool,
+    /// 0–1: so weak the world sounds far away (blood loss, fainting).
+    pub weak: f32,
     /// The heart (beats a minute) and how loud it is heard (0 not at all, 1 pounding).
     pub heart_bpm: f32,
     pub heart: f32,

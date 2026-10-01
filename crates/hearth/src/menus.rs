@@ -752,6 +752,20 @@ impl Menus {
                     a.text_background_opacity = op;
                     out.push(MenuAction::OptionsChanged);
                 }
+                if ui.toggle(
+                    c.row(ROW),
+                    &ui.t("menu.accessibility.guided_hud"),
+                    &mut a.guided_hud,
+                ) {
+                    out.push(MenuAction::OptionsChanged);
+                }
+                if ui.toggle(
+                    c.row(ROW),
+                    &ui.t("menu.accessibility.reduce_motion"),
+                    &mut a.reduce_motion,
+                ) {
+                    out.push(MenuAction::OptionsChanged);
+                }
                 c.space(8.0);
                 if ui.button(c.row(ROW), &ui.t("menu.done")) {
                     pop = true;

@@ -152,7 +152,12 @@ impl Mixer {
             }
             Command::Ambience(a) => {
                 self.beds.set(&a);
-                self.muffle.target = if a.underwater { 1.0 } else { 0.0 };
+                // Water over the ears muffles the world; so does weakness, partly.
+                self.muffle.target = if a.underwater {
+                    1.0
+                } else {
+                    0.65 * a.weak.clamp(0.0, 1.0)
+                };
                 self.enclosed.target = a.enclosed.clamp(0.0, 1.0);
                 self.world.target = if a.paused { 0.0 } else { 1.0 };
                 self.paused = a.paused;

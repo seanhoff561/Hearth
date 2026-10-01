@@ -17,6 +17,10 @@ struct Params {
     inscatter: vec4<f32>,
     // Clip space to camera-relative world space.
     inv_view_proj: mat4x4<f32>,
+    // The body's senses: x drained colour, y edges darkened, z light lost, w the cold's blue.
+    senses: vec4<f32>,
+    // x heat shimmer, y seconds, z redness of the darkened edges.
+    senses2: vec4<f32>,
 };
 
 struct Meter {
@@ -106,18 +110,41 @@ fn underwater(c: vec3<f32>, p: vec2<i32>) -> vec3<f32> {
     return c * t + P.inscatter.rgb * (1.0 - t);
 }
 
-// The HDR texel at `p`, exposed, night-shifted and tonemapped, in perceptual (sRGB) values.
-fn graded(p: vec2<i32>) -> vec3<f32> {
+// The HDR texel at `p0`, exposed, night-shifted, seen through the body's senses and
+// tonemapped, in perceptual (sRGB) values.
+fn graded(p0: vec2<i32>) -> vec3<f32> {
+    let size = vec2<i32>(textureDimensions(hdr));
+    var p = p0;
+    let heat = P.senses2.x;
+    if heat > 0.0 {
+        // Hot air wavers.
+        let t = P.senses2.y;
+        let wob = heat * 2.5 * sin(f32(p.y) * 0.045 + t * 3.5) * sin(f32(p.x) * 0.013 + t * 1.7);
+        p = clamp(p + vec2<i32>(i32(round(wob)), 0), vec2<i32>(0), size - 1);
+    }
     var c = textureLoad(hdr, p, 0).rgb;
     if P.water.x > 0.0 {
         c = underwater(c, p);
     }
     c = c * P.p.x * meter.scale;
     let night = P.p.y;
+    let lum = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
     if night > 0.0 {
-        let lum = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
         let scotopic = vec3<f32>(lum) * vec3<f32>(0.75, 0.88, 1.15);
         c = mix(c, scotopic, night * 0.75);
+    }
+    // Exhaustion and weakness drain colour, the cold greys it blue, fainting dims it, pain and
+    // blood loss close the edges in.
+    let s = P.senses;
+    if s.x + s.y + s.z + s.w > 0.0 {
+        c = mix(c, vec3<f32>(lum), s.x);
+        c = mix(c, vec3<f32>(lum) * vec3<f32>(0.8, 0.92, 1.12), s.w * 0.6);
+        c = c * (1.0 - 0.8 * s.z);
+        let uv = (vec2<f32>(p0) + 0.5) / vec2<f32>(size);
+        let d = length((uv - 0.5) * vec2<f32>(f32(size.x) / f32(size.y), 1.0));
+        let v = smoothstep(0.35, 0.95, d) * s.y;
+        c = mix(c, c * vec3<f32>(1.0, 0.35, 0.3), P.senses2.z * v);
+        c = c * (1.0 - v);
     }
     return to_srgb(aces(c));
 }

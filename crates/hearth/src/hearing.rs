@@ -23,6 +23,8 @@ pub struct Rhythms {
     pub breaths_per_min: f32,
     pub breath: f32,
     pub shiver: f32,
+    /// 0–1: so weak the world sounds far away.
+    pub weak: f32,
 }
 
 impl Default for Rhythms {
@@ -33,6 +35,7 @@ impl Default for Rhythms {
             breaths_per_min: 12.0,
             breath: 0.0,
             shiver: 0.0,
+            weak: 0.0,
         }
     }
 }
@@ -60,6 +63,11 @@ pub struct Hearing {
     pub rhythms: Rhythms,
     /// Captions (language keys) and the seconds left to show each.
     captions: Vec<(&'static str, f64)>,
+    /// Seconds to the next rumble of an empty stomach and dry swallow, and the state of the
+    /// generator spacing them.
+    growl_in: f64,
+    swallow_in: f64,
+    luck: u32,
 }
 
 impl Hearing {
@@ -71,6 +79,17 @@ impl Hearing {
             pan,
         });
         self.caption(caption);
+    }
+
+    /// A random time between `lo` and `hi` (s), so cues don't come like clockwork.
+    fn between(&mut self, lo: f64, hi: f64) -> f64 {
+        if self.luck == 0 {
+            self.luck = 0x9e37_79b9;
+        }
+        self.luck ^= self.luck << 13;
+        self.luck ^= self.luck >> 17;
+        self.luck ^= self.luck << 5;
+        lo + (hi - lo) * (self.luck as f64 / u32::MAX as f64)
     }
 
     fn caption(&mut self, key: &'static str) {
@@ -266,6 +285,31 @@ impl Hearing {
         let target = work.max(tired * 0.9);
         let tau = if target > self.effort { 8.0 } else { 25.0 };
         self.effort += (target - self.effort) * (1.0 - (-dt / tau).exp());
+        // An empty stomach rumbles now and then; a dry throat swallows.
+        if s.hunger >= hearth_body::Hunger::Hungry && !b.asleep {
+            self.growl_in -= dt;
+            if self.growl_in <= 0.0 {
+                let starving = s.hunger >= hearth_body::Hunger::VeryHungry;
+                self.growl_in = if starving {
+                    self.between(25.0, 60.0)
+                } else {
+                    self.between(40.0, 120.0)
+                };
+                let force = if starving { 1.0 } else { 0.6 };
+                self.play(Sound::Stomach { force }, 0.0, "subtitles.stomach");
+            }
+        } else {
+            self.growl_in = self.growl_in.max(20.0);
+        }
+        if s.thirst >= hearth_body::Thirst::Thirsty && !b.asleep {
+            self.swallow_in -= dt;
+            if self.swallow_in <= 0.0 {
+                self.swallow_in = self.between(45.0, 120.0);
+                self.play(Sound::Swallow, 0.0, "subtitles.swallow");
+            }
+        } else {
+            self.swallow_in = self.swallow_in.max(20.0);
+        }
         let core = s.core_c as f64;
         // The heart quickens with work, blood lost, fever, pain and fright, and slows as the
         // core cools.
@@ -299,6 +343,7 @@ impl Hearing {
             breaths_per_min: (12.0 + 30.0 * effort + 20.0 * self.shock as f32).min(50.0),
             breath,
             shiver: s.effects.shivering,
+            weak: ramp(s.blood_lost, 0.2, 0.38).max(0.8 * (1.0 - s.effects.vision)),
         };
         if heart > 0.3 {
             self.caption("subtitles.heart");
@@ -355,6 +400,7 @@ impl Hearing {
             buried: if sheltered { self.buried } else { 0.0 },
             enclosed: self.enclosed,
             underwater,
+            weak: r.weak,
             heart_bpm: r.heart_bpm,
             heart: r.heart,
             breaths_per_min: r.breaths_per_min,

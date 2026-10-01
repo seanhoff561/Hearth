@@ -124,6 +124,8 @@ pub struct SceneRenderer {
     pub precip: PrecipRenderer,
     /// Bodies (the player's own, later people and animals), drawn with the opaque terrain.
     pub figures: FigureRenderer,
+    /// The player's body's senses on the image.
+    pub senses: crate::post::Senses,
     pub post: PostProcess,
     /// Adapted illuminance (natural log of lux).
     adapted: Option<f32>,
@@ -162,6 +164,7 @@ impl SceneRenderer {
         let figures = FigureRenderer::new(ctx, terrain.globals_bind().0);
         Self {
             figures,
+            senses: crate::post::Senses::default(),
             post: PostProcess::new(ctx, output_format),
             precip: PrecipRenderer::new(ctx),
             sky,
@@ -453,6 +456,7 @@ impl SceneRenderer {
             depth,
             self.underwater,
             self.inv_view_proj,
+            &self.senses,
             timer.as_mut(),
         );
         if let Some(t) = &mut timer {

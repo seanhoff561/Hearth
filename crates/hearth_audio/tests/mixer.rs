@@ -81,6 +81,12 @@ fn every_sound() -> Vec<(String, Sound, Bus)> {
         },
         Bus::Players,
     ));
+    all.push((
+        "stomach".into(),
+        Sound::Stomach { force: 1.0 },
+        Bus::Players,
+    ));
+    all.push(("swallow".into(), Sound::Swallow, Bus::Players));
     all.push(("click".into(), Sound::Click, Bus::Ui));
     all
 }

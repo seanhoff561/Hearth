@@ -38,6 +38,29 @@ struct ToneParams {
     inscatter: [f32; 4],
     /// Clip space to camera-relative world space.
     inv_view_proj: [[f32; 4]; 4],
+    /// The body's senses: x drained colour, y edges darkened, z light lost, w the cold's blue.
+    senses: [f32; 4],
+    /// x heat shimmer, y seconds, z redness of the darkened edges.
+    senses2: [f32; 4],
+}
+
+/// The body's senses on the image (all 0 for none): the world as someone exhausted, hurt,
+/// fainting, chilled or overheated sees it (v2 §9.9).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Senses {
+    /// Colour drained (0–1).
+    pub desaturate: f32,
+    /// Darkening at the edges (0–1), and how red it is (0–1).
+    pub vignette: f32,
+    pub red: f32,
+    /// Light lost (0–1).
+    pub dim: f32,
+    /// The cold's blue-grey (0–1).
+    pub cold: f32,
+    /// Heat shimmer (0–1).
+    pub heat: f32,
+    /// Seconds, for the shimmer.
+    pub time: f32,
 }
 
 /// The camera under water: the surface above it (blocks) and the light the water scatters
@@ -390,6 +413,7 @@ impl PostProcess {
         depth: &wgpu::TextureView,
         underwater: Option<Underwater>,
         inv_view_proj: glam::Mat4,
+        senses: &Senses,
         mut timer: Option<&mut GpuTimer>,
     ) {
         let mut mark = |enc: &mut wgpu::CommandEncoder, label: &'static str| {
@@ -416,6 +440,18 @@ impl PostProcess {
                 ],
                 inscatter: inscatter.extend(0.0).to_array(),
                 inv_view_proj: inv_view_proj.to_cols_array_2d(),
+                senses: [
+                    senses.desaturate.clamp(0.0, 1.0),
+                    senses.vignette.clamp(0.0, 1.0),
+                    senses.dim.clamp(0.0, 1.0),
+                    senses.cold.clamp(0.0, 1.0),
+                ],
+                senses2: [
+                    senses.heat.clamp(0.0, 1.0),
+                    senses.time,
+                    senses.red.clamp(0.0, 1.0),
+                    0.0,
+                ],
             }),
         );
         if self.depth_bind.as_ref().is_none_or(|(v, _)| v != depth) {

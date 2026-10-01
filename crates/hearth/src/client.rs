@@ -133,6 +133,12 @@ pub struct Client {
     eyes_shut: f32,
     /// Why the player last woke, and how long ago (s).
     woke: Option<(hearth_body::Wake, f64)>,
+    /// Where the heart and the breath are in their cycles (for the pulse at the edges of
+    /// sight and the breath's fog).
+    heart_phase: f64,
+    breath_phase: f64,
+    reduce_motion: bool,
+    guided_hud: bool,
 }
 
 impl Client {
@@ -204,6 +210,86 @@ impl Client {
             figure_boxes: Vec::new(),
             eyes_shut: 0.0,
             woke: None,
+            heart_phase: 0.0,
+            breath_phase: 0.0,
+            reduce_motion: options.accessibility.reduce_motion,
+            guided_hud: options.accessibility.guided_hud,
+        }
+    }
+
+    /// The body's senses on the image (v2 §9.9): exhaustion, thirst and weakness drain colour,
+    /// fainting dims, pain and blood loss close in the edges with the pulse, cold greys the
+    /// world blue, heat makes it waver.
+    fn senses(&self) -> hearth_render::post::Senses {
+        use hearth_body::{Hunger, Thirst, Tiredness, Warmth};
+        let time = self.clock_s as f32;
+        let Some(b) = &self.body else {
+            return hearth_render::post::Senses::default();
+        };
+        if b.dead.is_some() {
+            return hearth_render::post::Senses {
+                desaturate: 0.85,
+                vignette: 0.6,
+                red: 0.2,
+                dim: 0.35,
+                time,
+                ..Default::default()
+            };
+        }
+        let s = &b.status;
+        let fx = &s.effects;
+        let ramp = |x: f32, lo: f32, hi: f32| ((x - lo) / (hi - lo)).clamp(0.0, 1.0);
+        let sight = (1.0 - fx.vision).clamp(0.0, 1.0);
+        let tired = match s.tiredness {
+            Tiredness::Exhausted => 0.55,
+            Tiredness::VeryTired => 0.25,
+            _ => 0.0,
+        };
+        let dry = match s.thirst {
+            Thirst::Dying => 0.5,
+            Thirst::Parched => 0.25,
+            _ => 0.0,
+        };
+        let starving = if s.hunger == Hunger::Starving {
+            0.2
+        } else {
+            0.0
+        };
+        let pulse = if self.reduce_motion {
+            0.0
+        } else {
+            (-(self.heart_phase.fract() as f32) * 8.0).exp()
+        };
+        let hurt = (ramp(s.blood_lost, 0.08, 0.35) + 0.5 * fx.pain).min(1.0);
+        let cold = match s.warmth {
+            Warmth::Freezing => 0.8,
+            Warmth::Hypothermic => 0.55,
+            Warmth::Cold => 0.25,
+            Warmth::Chilly => 0.08,
+            _ => 0.0,
+        };
+        let heat = if self.reduce_motion {
+            0.0
+        } else {
+            match s.warmth {
+                Warmth::Overheating => 0.8,
+                Warmth::Hot => 0.3,
+                _ => 0.0,
+            }
+        };
+        hearth_render::post::Senses {
+            desaturate: (tired
+                + dry
+                + starving
+                + 0.8 * sight
+                + 0.5 * ramp(s.blood_lost, 0.1, 0.35))
+            .min(0.9),
+            vignette: hurt * (0.55 + 0.25 * pulse),
+            red: ramp(s.blood_lost, 0.05, 0.3),
+            dim: (0.6 * sight).min(0.8),
+            cold,
+            heat,
+            time,
         }
     }
 
@@ -233,6 +319,14 @@ impl Client {
     /// (stopped short of anything solid).
     pub fn view_camera(&self) -> Camera {
         let mut cam = self.camera;
+        // A shivering body shakes the view a little.
+        let shiver = self.hearing.rhythms.shiver;
+        if self.mode == CameraMode::Body && shiver > 0.25 && !self.reduce_motion {
+            let t = self.clock_s;
+            let a = (shiver - 0.25) / 0.75;
+            cam.yaw += ((t * 41.0).sin() * 0.3 * a as f64) as f32;
+            cam.pitch += ((t * 53.0).sin() * 0.25 * a as f64) as f32;
+        }
         if self.mode != CameraMode::Body || self.perspective == Perspective::First {
             return cam;
         }
@@ -400,6 +494,8 @@ impl Client {
     /// Takes changed options: the view, distances and detail.
     pub fn apply_options(&mut self, options: &Options) {
         self.captions = options.sound.subtitles;
+        self.reduce_motion = options.accessibility.reduce_motion;
+        self.guided_hud = options.accessibility.guided_hud;
         let v = &options.video;
         self.view_bobbing = v.view_bobbing;
         self.camera.fov_y = v.fov;
@@ -542,6 +638,9 @@ impl Client {
         if let Some((_, t)) = &mut self.woke {
             *t += dt;
         }
+        let r = self.hearing.rhythms;
+        self.heart_phase += dt * r.heart_bpm as f64 / 60.0;
+        self.breath_phase += dt * r.breaths_per_min as f64 / 60.0;
         if let Some((dx, dy)) = look {
             let f = sensitivity as f64 * 0.6 + 0.2;
             let deg_per_count = f * f * f * 8.0 * 0.15;
@@ -838,6 +937,7 @@ impl Client {
         }
         let ticks = self.now_ticks();
         let view = self.view_camera();
+        let senses = self.senses();
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -906,6 +1006,7 @@ impl Client {
             );
         }
         scene.figures.set(ctx, &self.figure_boxes);
+        scene.senses = senses;
         scene.prepare(ctx, &view, targets.size, &e, dt);
         scene.render(ctx, enc, targets.color, targets.depth, targets.size);
     }
@@ -931,6 +1032,17 @@ impl Client {
                     Rgba::rgb(240, 220, 200),
                 );
             }
+        }
+        if let Some(b) = &self.body
+            && b.dead.is_none()
+            && !b.asleep
+            && self.mode == CameraMode::Body
+            && self.perspective == Perspective::First
+        {
+            self.draw_breath(ui, b);
+        }
+        if self.guided_hud {
+            self.draw_guided(ui, veil);
         }
         // Eyelids: the world goes dark asleep or fainting.
         if self.eyes_shut > 0.01 {
@@ -978,6 +1090,119 @@ impl Client {
             for (k, line) in lines.iter().enumerate() {
                 ui.label(3.0, 3.0 + k as f32 * lh, line, Rgba::WHITE);
             }
+        }
+    }
+
+    /// Breath fog in cold air: puffs rising in front of the eyes as the breath goes out, thicker
+    /// the colder and damper the air.
+    fn draw_breath(&self, ui: &mut Ui<'_>, b: &BodyView) {
+        let e = &b.exposure;
+        if e.immersion > 0.8 {
+            return;
+        }
+        let cold = ((7.0 - e.air_c) / 14.0).clamp(0.0, 1.0) * (0.4 + 0.6 * e.humidity);
+        let p = self.breath_phase.fract() as f32;
+        if cold < 0.02 || !(0.45..0.95).contains(&p) {
+            return;
+        }
+        let (w, h) = ui.size;
+        let u = (p - 0.45) / 0.5;
+        let env = (std::f32::consts::PI * u).sin();
+        for k in 0..4 {
+            let kf = k as f32;
+            let size = 10.0 + u * 26.0 + kf * 4.0;
+            let x = w / 2.0 + (kf - 1.5) * (6.0 + u * 18.0) - size / 2.0;
+            let y = h * (0.98 - 0.18 * u) - kf * 3.0 - size * 0.3;
+            let a = (cold * env * 0.35 * (1.0 - kf * 0.15) * 255.0) as u8;
+            ui.draw
+                .rect(x, y, size, size * 0.6, Rgba([232, 236, 240, a]));
+        }
+    }
+
+    /// The Guided HUD: compact bars for what the sensations say.
+    fn draw_guided(&self, ui: &mut Ui<'_>, veil: u8) {
+        use hearth_body::{Hunger, Thirst, Tiredness, Warmth};
+        let Some(b) = &self.body else {
+            return;
+        };
+        if b.dead.is_some() {
+            return;
+        }
+        let s = &b.status;
+        let food = match s.hunger {
+            Hunger::Stuffed => 1.0,
+            Hunger::Full => 0.9,
+            Hunger::Satisfied => 0.75,
+            Hunger::Peckish => 0.6,
+            Hunger::Hungry => 0.4,
+            Hunger::VeryHungry => 0.2,
+            Hunger::Starving => 0.05,
+        };
+        let water = match s.thirst {
+            Thirst::Sated => 1.0,
+            Thirst::Fine => 0.8,
+            Thirst::Thirsty => 0.5,
+            Thirst::VeryThirsty => 0.3,
+            Thirst::Parched => 0.15,
+            Thirst::Dying => 0.03,
+        };
+        let rest = match s.tiredness {
+            Tiredness::Rested => 1.0,
+            Tiredness::Awake => 0.75,
+            Tiredness::Tired => 0.5,
+            Tiredness::VeryTired => 0.3,
+            Tiredness::Exhausted => 0.1,
+        };
+        // Warmth: full when comfortable, falling either way, blue for cold and red for heat.
+        let steps = [
+            Warmth::Freezing,
+            Warmth::Hypothermic,
+            Warmth::Cold,
+            Warmth::Chilly,
+            Warmth::Comfortable,
+            Warmth::Warm,
+            Warmth::Hot,
+            Warmth::Overheating,
+        ];
+        let i = steps.iter().position(|w| *w == s.warmth).unwrap_or(4) as f32;
+        let warmth = 1.0 - (i - 4.0).abs() / 4.0;
+        let warmth_color = if i < 4.0 {
+            Rgba::rgb(110, 170, 240)
+        } else if i > 4.0 {
+            Rgba::rgb(235, 110, 70)
+        } else {
+            Rgba::rgb(120, 200, 110)
+        };
+        let bars = [
+            ("hud.food", food, Rgba::rgb(222, 150, 60)),
+            ("hud.water", water, Rgba::rgb(80, 150, 230)),
+            ("hud.warmth", warmth, warmth_color),
+            ("hud.rest", rest, Rgba::rgb(160, 120, 210)),
+            ("hud.stamina", s.stamina, Rgba::rgb(230, 210, 80)),
+            (
+                "hud.blood",
+                (1.0 - s.blood_lost / 0.4).clamp(0.0, 1.0),
+                Rgba::rgb(200, 50, 50),
+            ),
+        ];
+        let (_, h) = ui.size;
+        let row = 9.0;
+        let top = h - 4.0 - bars.len() as f32 * row;
+        ui.draw.rect(
+            2.0,
+            top - 2.0,
+            104.0,
+            bars.len() as f32 * row + 3.0,
+            Rgba([0, 0, 0, veil]),
+        );
+        for (k, (key, v, color)) in bars.iter().enumerate() {
+            let y = top + k as f32 * row;
+            let label = ui.t(key);
+            ui.label(4.0, y, &label, Rgba([220, 220, 225, 230]));
+            ui.draw
+                .rect(50.0, y + 2.0, 52.0, 4.0, Rgba([40, 40, 46, 220]));
+            ui.draw
+                .rect(50.0, y + 2.0, 52.0 * v.clamp(0.0, 1.0), 4.0, *color);
         }
     }
 

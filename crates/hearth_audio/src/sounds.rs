@@ -73,6 +73,10 @@ pub enum Sound {
     Gasp { force: f32 },
     /// A blow to the body; a broken bone cracks.
     Hurt { force: f32, fracture: bool },
+    /// An empty stomach rumbling.
+    Stomach { force: f32 },
+    /// A dry swallow.
+    Swallow,
     /// The interface: a press.
     Click,
 }
@@ -80,7 +84,10 @@ pub enum Sound {
 impl Sound {
     /// Heard inside the head: not muffled by water, no echo.
     pub fn inner(&self) -> bool {
-        matches!(self, Sound::Gasp { .. } | Sound::Hurt { .. })
+        matches!(
+            self,
+            Sound::Gasp { .. } | Sound::Hurt { .. } | Sound::Stomach { .. } | Sound::Swallow
+        )
     }
 }
 
@@ -349,6 +356,21 @@ fn build(sound: Sound, b: &mut Build) -> f32 {
                 b.tone(1250.0, 900.0, 0.01, sh(0.012, 0.0005, 0.012), 0.05);
             }
             1.2
+        }
+        Sound::Stomach { force } => {
+            // A low churning with gurgles through it.
+            let f = force.clamp(0.2, 1.2);
+            b.noise(Low, 160.0, 0.9, sh(0.0, 0.2, 0.28), 0.02 * f);
+            b.crackle(Band, 320.0, 3.0, 40.0, 0.02, sh(0.1, 0.15, 0.3), 0.03 * f);
+            b.tone(110.0, 70.0, 0.4, sh(0.15, 0.1, 0.25), 0.035 * f);
+            b.tone(180.0, 260.0, 0.1, sh(0.5, 0.02, 0.08), 0.012 * f);
+            2.0
+        }
+        Sound::Swallow => {
+            b.noise(Band, 1100.0, 2.0, sh(0.0, 0.01, 0.04), 0.03);
+            b.tone(260.0, 150.0, 0.05, sh(0.05, 0.005, 0.07), 0.05);
+            b.noise(Low, 300.0, 0.7, sh(0.06, 0.01, 0.06), 0.03);
+            1.0
         }
         Sound::Click => {
             b.tone(1900.0, 1700.0, 0.01, sh(0.0, 0.0008, 0.007), 0.1);

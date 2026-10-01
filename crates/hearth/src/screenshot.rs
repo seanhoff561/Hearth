@@ -76,6 +76,8 @@ pub struct ShotSpec {
     /// See through the eyes of a person standing on the ground below the camera (their body
     /// drawn as in first person).
     pub body: bool,
+    /// The body's senses on the image: `hurt`, `cold`, `hot`, `exhausted` or `faint`.
+    pub senses: Option<String>,
 }
 
 impl Default for ShotSpec {
@@ -110,6 +112,7 @@ impl Default for ShotSpec {
             globe: None,
             person: None,
             body: false,
+            senses: None,
         }
     }
 }
@@ -170,6 +173,7 @@ impl ShotSpec {
                 "globe" => spec.globe = Some(v.parse()?),
                 "person" => spec.person = Some(v.parse()?),
                 "body" => spec.body = v.parse()?,
+                "senses" => spec.senses = Some(v.to_owned()),
                 other => anyhow::bail!("unknown screenshot key {other:?}"),
             }
         }
@@ -521,6 +525,38 @@ pub fn render_shot(
             &mut boxes,
         );
         scene.figures.set(ctx, &boxes);
+    }
+    if let Some(name) = &spec.senses {
+        use hearth_render::post::Senses;
+        scene.senses = match name.as_str() {
+            "hurt" => Senses {
+                vignette: 0.75,
+                red: 0.6,
+                desaturate: 0.3,
+                ..Senses::default()
+            },
+            "cold" => Senses {
+                cold: 0.6,
+                desaturate: 0.1,
+                ..Senses::default()
+            },
+            "hot" => Senses {
+                heat: 0.8,
+                time: 1.3,
+                ..Senses::default()
+            },
+            "exhausted" => Senses {
+                desaturate: 0.6,
+                ..Senses::default()
+            },
+            "faint" => Senses {
+                desaturate: 0.7,
+                dim: 0.5,
+                vignette: 0.5,
+                ..Senses::default()
+            },
+            other => anyhow::bail!("unknown senses {other:?}"),
+        };
     }
     let target = OffscreenTarget::new(ctx, spec.width, spec.height);
     let size = (spec.width, spec.height);

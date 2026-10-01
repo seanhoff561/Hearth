@@ -778,6 +778,9 @@ pub struct AccessibilityOptions {
     pub hide_lightning_flashes: bool,
     /// Scale of the damage tilt (0–1).
     pub damage_tilt: f32,
+    /// Compact bars for food, water, warmth, rest, stamina and blood (v2 §9.9's "Guided" HUD)
+    /// besides the body's sensations.
+    pub guided_hud: bool,
 }
 
 impl Default for AccessibilityOptions {
@@ -789,6 +792,7 @@ impl Default for AccessibilityOptions {
             darkness_pulsing: 1.0,
             hide_lightning_flashes: false,
             damage_tilt: 1.0,
+            guided_hud: false,
         }
     }
 }
