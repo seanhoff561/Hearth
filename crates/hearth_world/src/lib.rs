@@ -7,6 +7,7 @@
 //! * [`cube`] — a 16³ cube.
 //! * [`storage`] — the loaded world: wrap-aware cube map and column heightmaps.
 //! * [`query`] — raycasts against real block shapes and collision box gathering.
+//! * [`water`] — finite, conserved water the player moves, and its quality.
 
 pub mod block;
 pub mod cube;
@@ -17,6 +18,7 @@ pub mod palette;
 pub mod query;
 pub mod shape;
 pub mod storage;
+pub mod water;
 
 pub use block::{
     Block, BlockDef, BlockError, BlockId, BlockRegistry, BlockStateId, RenderKind, RenderLayer,
@@ -29,3 +31,4 @@ pub use palette::{PaletteError, PalettedBlocks};
 pub use query::{BlockHit, FluidMode, collides, collision_boxes, raycast_blocks};
 pub use shape::{Shape, ShapeId, ShapeKind};
 pub use storage::{Column, CubeMap, NO_HEIGHT};
+pub use water::{Ground, WaterBudget, WaterEnv, WaterSim};

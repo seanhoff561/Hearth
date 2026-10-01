@@ -1,4 +1,5 @@
 {
+  "salt_crust": {"template": "carpet", "hardness": 0.3, "resistance": 0.3, "replaceable": true, "sound": "sand", "flammable": false, "behavior": "salt_crust", "map_color": "#f2f0e6"},
   "cobblestone": {"template": "rock", "hardness": 2.0},
   "mossy_cobblestone": {"template": "rock", "hardness": 2.0, "map_color": "#6a7a5a"},
   "grass_block": {"template": "soil", "properties": ["snowy:bool"], "hardness": 0.6, "resistance": 0.6, "sound": "grass", "tint": "grass", "random_ticks": true, "behavior": "grass_spread", "map_color": "#7fb238"},
@@ -9,5 +10,5 @@
   "ice": {"hardness": 0.5, "resistance": 0.5, "friction": 0.98, "opaque": false, "layer": "translucent", "light_opacity": 1, "random_ticks": true, "sound": "glass", "behavior": "ice", "map_color": "#a0a0ff"},
   "coral_block": {"template": "rock", "hardness": 1.0, "resistance": 3.0, "map_color": "#d86a7a"},
   "packed_ice": {"hardness": 0.5, "resistance": 0.5, "friction": 0.98, "sound": "glass", "map_color": "#a0a0ff"},
-  "water": {"properties": ["level:0..15"], "hardness": 100.0, "resistance": 100.0, "shape": "empty", "collision": false, "opaque": false, "render": "fluid", "layer": "translucent", "light_opacity": 2, "replaceable": true, "fluid": "water", "tint": "water", "sound": "none", "item": false, "behavior": "water", "map_color": "#4040ff"}
+  "water": {"properties": ["level:0..8"], "hardness": 100.0, "resistance": 100.0, "shape": "empty", "collision": false, "opaque": false, "render": "fluid", "layer": "translucent", "light_opacity": 2, "replaceable": true, "fluid": "water", "tint": "water", "sound": "none", "item": false, "behavior": "water", "map_color": "#4040ff"}
 }

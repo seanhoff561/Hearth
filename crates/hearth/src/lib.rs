@@ -14,5 +14,6 @@ pub mod scene;
 pub mod screenshot;
 pub mod season_cover;
 pub mod streamer;
+pub mod water_env;
 
 pub use app::{LaunchConfig, resolve_dirs, run};

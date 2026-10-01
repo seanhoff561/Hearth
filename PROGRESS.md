@@ -251,6 +251,22 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
   floods/low water/dry beds restored block for block, and a year on a generated world (a
   reach floods and falls and returns to the same blocks). `bench deposits --rivers`,
   `tools/shots/v22_rivers.shots` (snowmelt flood, summer, winter low; savanna wet and dry).
+- (d, part 2b) Finite water (D61, `hearth_world::water`): natural water stays a sustained,
+  never-simulated reservoir that feeds what opens beside or under it and drains what comes
+  down onto it; finite water is integer litres with salinity, germ risk and temperature per
+  block, shown in eighths (`water[level=1..8]`; level 0 = natural). It falls, evens out with
+  lower neighbours, and at rest levels per connected body (connected wells, flat ponds,
+  channels at their river's level); wells fill by seepage below the water table (rate by rock
+  permeability); water mixes, evaporates by the mass-transfer law (`water_env`) leaving salt as
+  `salt_crust` blocks with their kilograms (dissolved again by water), takes the air's
+  temperature and grows germs when still and warm. `pour`/`take`/`block_changed`/`restore`
+  for the world loop of V2-3; `hearth::water_env::WorldWater` gives it the world. Coastal
+  salt pans (sabkhas) on hot desert coasts. Tests: levelling and conservation, downhill flow,
+  connected vessels, a channel fed from the sea and water draining into it, a well filling to
+  the table and refilling, mixing/evaporation/crust/dissolving, displacement and spilling,
+  taking from finite and natural water; in a generated world a channel from a river fills to
+  its level with river water and a well fills to the table (`tests/finite_water.rs`); salt
+  pans only on hot dry coasts with rock-salt crusts (`tests/coasts.rs`).
 
 ## Next steps
 0. **Done — the interjected rendering performance audit** (`docs/perf-audit.md`: table,
@@ -269,10 +285,9 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
    empty region beyond the full-detail area (no underwater light/fog, no LOD sea floor —
    V2-2e); the preview passes no firelight to the eye's adaptation (torch-lit caves at night
    would be overexposed in the preview — the benchmark passes it). **Resume at 1.**
-1. (d, part 2b) Finite conserved player-moved water with levelling and flow (v1 M5 fluids)
-   and per-block quality; coastal salt pans.
-2. (e) Water rendering (v1 M7) and ice.
-3. (f) Minimal spawn picker; `worldmap` soil layer; V2-2 acceptance review and commit.
+1. (e) Water rendering (v1 M7) and ice.
+2. (f) Minimal spawn picker; `worldmap` soil layer; V2-2 acceptance review, the performance
+   gate (`scripts/perf-gate.sh`), and commit.
 
 ## Known issues
 - In this environment presents never block (FIFO on both Vulkan and DX12 ran at ~1.5–2k FPS

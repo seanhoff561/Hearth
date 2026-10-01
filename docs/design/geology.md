@@ -201,12 +201,48 @@ rivers (under 8 blocks) stop below 0.15× their mean and any river below 0.02×.
 river mouths up. Drowned plants (and water plants left dry) are remembered and come back, and
 everything returns to the mean level when the cover is refreshed.
 
+## Finite water (D61)
+`hearth_world::water::WaterSim`. **Natural water** — the sea, lakes, rivers, springs, flooded
+caves (`water[level=0]`, and plants standing in it) — is a sustained reservoir that the
+hydrology holds at its level, and is never simulated. **Finite water** is what the player moves:
+each block of it holds 1–1000 litres with its quality (salinity, germ risk, temperature), kept
+by the simulation, and shows its volume in eighths (`water[level=1..8]`). Every tick (about ten
+a second) it falls; spreads by evening out with each lower neighbour in turn (half of each
+difference, the order alternating so it spreads alike every way, films under 5 mm staying
+put); and natural water feeds the open blocks beside it at its height or under it (a channel
+dug from a river fills to the river's level with the river's water; a pit dug under a lake bed
+floods) and takes in water that comes down onto it (a channel drains into the sea). Evening out
+stops at steps of a litre, which add up along a channel, and cannot pass through full water,
+so once the water is at rest each connected body takes one level: its water fills its blocks,
+and the open blocks right over them, from the bottom up, each level shared evenly — connected
+wells reach the same height, a pond is flat — or, touching natural water, stands at its
+surface. Only blocks that changed and their neighbours are looked at, so water at rest costs
+nothing; volumes are integer litres, so water is conserved exactly (the budget counts what the
+reservoirs fed and drained, the air took, the player poured and took, and what a block put in
+its place spilled). Over days (`weather`): neighbouring water mixes (halfway in half a day);
+**groundwater** seeps into holes below the water table at the rate the rock allows (tight rock
+10 L a day per block of hole, fair 300, sandstone and gravel 1500, karst 4000 — what hand-dug
+wells yield), so a well fills to the table with groundwater; water under the open sky
+**evaporates** by warmth and the air's drying power (`water_env::open_water_evaporation`: about
+10 mm a day in hot, dry, windy weather, 1–2 mm in mild humid weather, under 1 mm in cool damp
+weather), keeping its salt — past saturation
+(360 g/L), and all of it once the water is gone, the salt is left as a **salt crust** (a thin
+`salt_crust` block holding its kilograms; water poured back dissolves it); water takes the air's
+temperature (a full block in about a day); and water still for half a day grows germs toward a
+level that rises with warmth. `hearth::water_env::WorldWater` gives the simulation the world:
+natural water's quality from `Hydrology::quality`, the water table, seepage by rock, and the
+weather's evaporation.
+
 ## Coasts (D49, D50)
 A slow noise and every river mouth mark **sheltered** coasts (bays, estuaries, lagoons; about
 40 % of them). Low sheltered coasts (under 1.5 blocks, slope under 5 %) are **mangrove** in the
 tropics (air above 20 °C, sea above 22 °C) — dense trees on arching prop roots standing in up to
 two blocks of water — and **salt marsh** elsewhere (cordgrass on mud); their shallows are
-**mudflats**. **Coral reefs** grow in warm (above 21 °C), clear (not near river mouths or in
+**mudflats**. On hot desert coasts (and hot steppe drier than 350 mm) the low sheltered flats
+are **coastal salt pans** (sabkhas, as on the Persian Gulf, in Baja California and at Shark
+Bay): the sea floods them now and then and evaporates, leaving a crust of rock salt over mud —
+a source of salt for the coasts of dry lands, and the place to make more by flooding pans
+(finite water evaporates to a salt crust). **Coral reefs** grow in warm (above 21 °C), clear (not near river mouths or in
 muddy bays), shallow sea: fringing reefs 50–160 blocks out from the shore, barrier reefs
 300–600 blocks out with a lagoon behind, and atolls ringing the drowned hotspot volcanoes; the
 reef raises the floor to 1–3.5 blocks below the surface (coral heads and grooves), living
@@ -247,8 +283,11 @@ sulfur bodies (V2-2d).
   river network to their source body.
 - Frequencies are per km² of suitable ground at game scale (D42), not Earth's densities.
 - The water table is a static field: no seasonal rise and fall, no perched tables, no
-  confined aquifers or artesian pressure; brooks are static channels until the fluid
-  simulation arrives.
+  confined aquifers or artesian pressure; brooks are natural water (static channels).
+- Finite water levels out only through connected water at rest (no flow pressure while it
+  moves), does not soak into the ground, freeze or wash soil away, and leaves waterlogging of
+  slabs and fences for later; the world loop (V2-3) must tell it about blocks the seasonal
+  cover changes next to finite water.
 - No tides yet: the "intertidal" is a band a block or two either side of sea level.
 - Sheltered coasts come from noise and river mouths, not from the coastline's shape.
 - The Köppen classes of the planet are coarse (e.g. one "Dfb" for all humid continental), so

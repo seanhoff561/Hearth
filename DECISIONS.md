@@ -507,3 +507,25 @@ passes every frame now runs, dithering and the LOD occlusion cull. Both are kept
 show or save elsewhere: the rough land's detail is the point of D57, dithering removed visible
 banding, and the cull halved the cave's GPU time. This end state is the performance gate's
 baseline.
+
+## D61 — Finite water: litres and quality per block beside sustained reservoirs
+v2 asks that oceans, rivers and lakes be sustained reservoirs while water the player moves is
+finite, conserved, levelling and flowing downhill, with its quality per block. The reference
+game's model (infinite sources, flow levels that are not volumes) cannot conserve anything, and
+block states alone cannot either: containers hold litres (a pot, a bucket), a block a cubic
+metre. So natural water stays as generated (`water[level=0]`, never simulated) and acts as a
+constant-head boundary — it fills what opens beside it at its height or under it and takes what
+comes down onto it — and finite water is a table of integer litres and qualities per block in
+`WaterSim` (the truth), shown by the blocks in eighths (`water[level=1..8]`; the property shrank
+from 0..15 and level 0 now means natural). Flow is a cellular automaton over the blocks that
+changed: fall, then pairwise evening out (half the difference, in turn — the snapshot version
+with a fifth of each difference oscillated once small differences were rounded up), then the
+reservoirs; integer transfers make conservation exact. Because pairwise evening out stops at
+one-litre steps (which add up along a channel) and cannot carry pressure through full water,
+water at rest is levelled per connected body, rising at most a block a pass. Wells fill by
+seepage below the static water table at a rate set by the rock's permeability; evaporation
+(a warmth term plus the mass-transfer law, calibrated to desert lakes at about 10 mm a day — the
+textbook mass-transfer coefficients alone gave 26) leaves salt as crusts the player can harvest,
+which makes salt pans work. Coastal salt pans (sabkhas) appear on hot desert coasts, using the Köppen class
+rather than a rainfall threshold: the planet's driest sheltered coasts get 230–270 mm a year,
+and a fixed 250 mm cut kept all but a handful away.

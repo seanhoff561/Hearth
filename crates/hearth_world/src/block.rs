@@ -149,7 +149,8 @@ pub struct BlockDef {
     pub replaceable: bool,
     /// Adds a `waterlogged:bool` property automatically.
     pub waterloggable: bool,
-    /// This block *is* a fluid (e.g. `water`, with a `level:0..15` property).
+    /// This block *is* a fluid (`water`, with a `level:0..8` property: 0 for natural water,
+    /// 1–8 eighths of a block for finite water, `crate::water`).
     pub fluid: Option<String>,
     /// Always contains water (seagrass, kelp): like a permanently waterlogged block.
     pub water_filled: bool,
@@ -564,11 +565,10 @@ impl BlockRegistry {
             let waterlogged = props.flag("waterlogged") || def.water_filled;
             let is_fluid = def.fluid.is_some();
             let fluid_amount = if is_fluid {
-                let level = props.int("level").clamp(0, 15);
-                if level == 0 || level >= 8 {
-                    8
-                } else {
-                    (8 - level) as u8
+                // Natural water (level 0) is a full block; finite water shows its eighths.
+                match props.int("level").clamp(0, 8) {
+                    0 => 8,
+                    level => level as u8,
                 }
             } else if waterlogged {
                 8
@@ -898,7 +898,7 @@ pub(crate) mod tests {
             (
                 rl("water"),
                 BlockDef {
-                    properties: vec!["level:0..15".into()],
+                    properties: vec!["level:0..8".into()],
                     fluid: Some("water".into()),
                     collision: false,
                     opaque: false,
@@ -1001,8 +1001,8 @@ pub(crate) mod tests {
         assert_eq!(r.light_emission(unlit), 0);
         let water = r.water_source();
         assert_eq!(r.fluid_amount(water), 8);
-        let flowing = r.parse_state("water[level=3]").unwrap();
-        assert_eq!(r.fluid_amount(flowing), 5);
+        let finite = r.parse_state("water[level=3]").unwrap();
+        assert_eq!(r.fluid_amount(finite), 3);
         assert_eq!(r.light_opacity(water), 2);
     }
 

@@ -303,8 +303,16 @@ pub fn select(i: &BiomeInputs) -> Biome {
             Biome::AlpineMeadow
         };
     }
-    // Low sheltered coasts: mangrove forest in the tropics, salt marsh elsewhere.
+    // Low sheltered coasts. On hot dry coasts the sea floods the flats only now and then and
+    // evaporates there, leaving salt: coastal salt pans (sabkhas, as on the Persian Gulf, in
+    // Baja California and at Shark Bay). Elsewhere mangrove forest in the tropics, salt marsh
+    // beyond.
     if i.near_ocean && i.height < 1.5 && i.slope < 0.05 && i.shelter > 0.5 && i.temperature > -4.0 {
+        let hot_dry = i.climate == ClimateClass::HotDesert
+            || (i.climate == ClimateClass::HotSteppe && i.precipitation < 350.0);
+        if hot_dry {
+            return Biome::SaltFlat;
+        }
         return if tropical_coast {
             Biome::Mangrove
         } else {
@@ -558,6 +566,32 @@ mod tests {
         assert_eq!(select(&o), Biome::DeepOcean);
         o.height = -2600.0;
         assert_eq!(select(&o), Biome::Trench);
+    }
+
+    #[test]
+    fn low_sheltered_coasts_by_climate() {
+        let mut c = inputs(ClimateClass::HotDesert);
+        c.near_ocean = true;
+        c.water = 0.0;
+        c.height = 0.8;
+        c.slope = 0.01;
+        c.shelter = 0.8;
+        c.temperature = 26.0;
+        c.precipitation = 90.0;
+        c.sea_temperature = 27.0;
+        assert_eq!(select(&c), Biome::SaltFlat, "a hot dry coast: salt pans");
+        c.climate = ClimateClass::TropicalSavanna;
+        c.precipitation = 1800.0;
+        assert_eq!(select(&c), Biome::Mangrove, "a hot wet coast");
+        c.climate = ClimateClass::Oceanic;
+        c.temperature = 12.0;
+        c.sea_temperature = 14.0;
+        assert_eq!(select(&c), Biome::SaltMarsh, "a temperate coast");
+        c.climate = ClimateClass::ColdDesert;
+        c.precipitation = 150.0;
+        assert_eq!(select(&c), Biome::SaltMarsh, "cold and dry: no salt pans");
+        c.shelter = 0.2;
+        assert_ne!(select(&c), Biome::SaltMarsh, "an open coast has beaches");
     }
 
     #[test]

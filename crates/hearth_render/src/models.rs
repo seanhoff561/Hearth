@@ -609,6 +609,9 @@ fn bake_model(
                 } else if name == "moss_carpet" {
                     let t = ctx.tex("moss_carpet");
                     Box::new(move |_| t)
+                } else if name == "salt_crust" {
+                    let t = ctx.tex("rock_salt");
+                    Box::new(move |_| t)
                 } else if name == "cactus" {
                     layer = RenderLayer::Cutout;
                     Box::new(side_top_bottom(

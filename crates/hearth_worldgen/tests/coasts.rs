@@ -1,11 +1,12 @@
 //! Coasts (v2 §5.5): coral reefs only in warm, clear, shallow sea; mangroves on low sheltered
-//! tropical coasts and salt marsh on those of cooler climates; mud in sheltered shallows; kelp
-//! and seaweed in cool water.
+//! tropical coasts, salt marsh on those of cooler climates and salt pans on hot desert coasts;
+//! mud in sheltered shallows; kelp and seaweed in cool water.
 
 use std::sync::{Arc, OnceLock};
 
 use hearth_content::Content;
 use hearth_math::{CubePos, LocalPos, PlanetSize};
+use hearth_worldgen::planet::climate::ClimateClass;
 use hearth_worldgen::region::biome::Biome;
 use hearth_worldgen::{PlanetGrid, Surface, Terrain, WorldGenSettings, WorldGenerator};
 use rayon::prelude::*;
@@ -71,6 +72,39 @@ fn reefs_grow_in_warm_clear_shallow_sea() {
         "{} reefs of {warm_shallow} warm shallows",
         reefs.len()
     );
+}
+
+#[test]
+fn coastal_salt_pans_lie_on_hot_dry_coasts() {
+    let cols = lattice(23);
+    let pans: Vec<_> = cols
+        .iter()
+        .filter(|c| c.2.biome == Biome::SaltFlat && c.2.height < 1.5)
+        .collect();
+    assert!(pans.len() > 10, "{} coastal salt pan columns", pans.len());
+    for (x, z, s) in &pans {
+        assert!(
+            s.climate == ClimateClass::HotDesert
+                || (s.climate == ClimateClass::HotSteppe && s.precipitation < 350.0),
+            "salt pans in a {:?} climate at {x},{z}",
+            s.climate
+        );
+        assert_eq!(s.surface, Surface::Calcite, "a salt crust at {x},{z}");
+    }
+    // The crust is rock salt in the generated world.
+    let wg = generator();
+    let reg = hearth_world::datapack::load_builtin_registry().expect("base pack");
+    let salt = reg.parse_state("rock_salt").expect("rock salt");
+    let found = pans.iter().take(20).any(|(x, z, s)| {
+        let y = s.height_i() - 1;
+        let cube = wg.generate_cube(CubePos::new(x >> 4, y >> 4, z >> 4));
+        cube.get(LocalPos::new(
+            (x & 15) as u8,
+            (y & 15) as u8,
+            (z & 15) as u8,
+        )) == salt
+    });
+    assert!(found, "no salt crust at the salt pan columns");
 }
 
 #[test]

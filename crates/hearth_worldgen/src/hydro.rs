@@ -110,8 +110,10 @@ pub struct WaterQuality {
 
 /// Groundwater and springs of one world.
 pub struct Hydrology {
-    /// Share of the relief above the drainage base the water table follows, by rock.
+    /// Share of the relief above the drainage base the water table follows, and how readily
+    /// groundwater flows, by rock.
     follow: FxHashMap<BlockStateId, f32>,
+    permeability: FxHashMap<BlockStateId, Permeability>,
     /// Drainage base and smoothed land per tile.
     bases: Cache<(i32, i32), (f32, f32)>,
     springs: Cache<(i32, i32), Vec<Spring>>,
@@ -145,15 +147,18 @@ impl Hydrology {
     pub fn new(content: &Content, reg: &BlockRegistry, seed: u64, circumference: i32) -> Self {
         use hearth_content::schema::Entry;
         let mut follow = FxHashMap::default();
+        let mut permeability = FxHashMap::default();
         for r in content.rocks.iter() {
             let id = r.id();
             let path = id.split_once(':').map_or(id, |(_, p)| p);
             if let Ok(state) = reg.parse_state(path) {
                 follow.insert(state, follow_of(r.permeability));
+                permeability.insert(state, r.permeability);
             }
         }
         Self {
             follow,
+            permeability,
             bases: Cache::new(4096),
             springs: Cache::new(512),
             cells_around: (circumference / CELL).max(1),
@@ -450,6 +455,21 @@ impl Hydrology {
             }
         }
         None
+    }
+
+    /// How fast groundwater seeps into a hole dug below the water table (litres a day for a
+    /// block of hole), by the permeability of the rock around it: a few litres in tight
+    /// crystalline rock or clay, a cubic metre or more in sandstone and gravel, several in
+    /// karst — what hand-dug wells yield.
+    pub fn seepage(&self, wg: &WorldGenerator, x: i32, y: i32, z: i32) -> f32 {
+        let rock = wg.geology.column(x, z).rock_at(y);
+        match self.permeability.get(&rock).copied().unwrap_or_default() {
+            Permeability::Tight => 10.0,
+            Permeability::Poor => 60.0,
+            Permeability::Fair => 300.0,
+            Permeability::Good => 1500.0,
+            Permeability::Karst => 4000.0,
+        }
     }
 
     /// The quality of the natural water at a block: the sea, a lake, a stream, a spring, or the
