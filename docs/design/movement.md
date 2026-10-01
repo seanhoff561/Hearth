@@ -1,7 +1,7 @@
 # Movement
 
-*Status: implemented headless (V2-3 part b, `hearth_physics`, `hearth_player`, D67); the world
-loop that drives it from input comes with V2-3 part c.*
+*Status: implemented (V2-3 part b, `hearth_physics`, `hearth_player`, D67); driven from input
+by the client every frame (V2-3 part c, `world-loop.md`).*
 
 ## Purpose
 How a body moves through the block world (v2 §9.2): human speeds, realistic jumps, climbing

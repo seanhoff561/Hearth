@@ -305,6 +305,15 @@ V2-3 — player: character, body & physiology. Done so far:
   (`Body::land`); the player joining body and mover (effects → ability, motion → activity and
   immersion, drowning, limp bodies sink). Blocks gained `cushion`; treading water (3.5 METs).
   Tests: eleven of movement, five of the living player, falls by height.
+- (c) The world loop (D68, `docs/design/world-loop.md`): `hearth_protocol`; the integrated
+  server (`server.rs`, replacing the streamer) at 20 TPS owning the world, the clock, the
+  player's body in the exposure where they stand (weather, sun, night sky, shelter, water) and
+  the finite water (ticked, restored in cubes that load again, woken by the seasonal cover),
+  streaming cubes with their blocks and meshes, saving `level.json` and `player.json` every
+  five minutes and on stop; the client (`client.rs`, replacing the preview) mirroring cubes,
+  moving the player every frame and reporting at 20 Hz, first-person camera, free camera
+  (F3+N), crawl key (C), double-tap sprint, respawn after death, `--world NAME`. The first
+  spawn is warm-temperate. Test: a world lives, saves and comes back (`tests/server.rs`).
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -315,11 +324,7 @@ V2-3 — player: character, body & physiology. Done so far:
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
 1. V2-3 — Player: character, body & physiology (PLAN.md). Done: (a) the body, (b)
-   movement. Next: (c) the
-   world loop: `hearth_protocol`, an integrated server thread at 20 TPS owning the world, the
-   player's body (exposure from weather, water, sun and shelter) and the finite water
-   (`WaterSim::pour`/`take`/`block_changed`, the seasonal cover's changes next to it), the
-   client mirroring it, player saves; (d) UI: text rendering with a clean-room font, the
+   movement, (c) the world loop. Next: (d) UI: text rendering with a clean-room font, the
    screens framework, options, localisation, controller, audio; (e) the character creator,
    profiles, rig, first-person body and animations; (f) the diegetic HUD, Body panel (B),
    Guided HUD, sleep with time acceleration, death and respawn rules, the acceptance review

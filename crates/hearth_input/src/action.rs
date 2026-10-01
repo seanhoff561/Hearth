@@ -118,10 +118,10 @@ pub mod builtin {
         DEBUG_RELOAD_RESOURCES = 37; DEBUG_ADVANCED_TOOLTIPS = 38; DEBUG_PAUSE_NO_MENU = 39;
         DEBUG_FRAME_GRAPH = 40; DEBUG_PROFILER = 41;
         DEBUG_TIME_FORWARD = 42; DEBUG_TIME_BACK = 43; DEBUG_SEASON_FORWARD = 44;
-        DEBUG_TIME_WARP = 45;
+        DEBUG_TIME_WARP = 45; CRAWL = 46; DEBUG_FREE_CAMERA = 47;
     }
     /// Number of built-in actions.
-    pub const COUNT: usize = 46;
+    pub const COUNT: usize = 48;
 
     /// Hotbar actions in slot order.
     pub const HOTBAR: [ActionId; 9] = [
@@ -225,6 +225,8 @@ impl ActionRegistry {
         add("key.debug.time_back", C::Debug, dbg, k(Key::Left), H);
         add("key.debug.season_forward", C::Debug, dbg, k(Key::Up), H);
         add("key.debug.time_warp", C::Debug, dbg, k(Key::W), H);
+        add("key.crawl", C::Movement, g, k(Key::C), T);
+        add("key.debug.free_camera", C::Debug, dbg, k(Key::N), H);
         debug_assert_eq!(r.defs.len(), builtin::COUNT);
         r
     }

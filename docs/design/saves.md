@@ -10,6 +10,7 @@ Worlds must survive constant content and format changes (v2 §3.5).
 saves/<world>/
   level.json      WorldMeta: format, name, versions, times, settings, clock,
                   block state palette, enabled data packs
+  player.json     the player: format (1), body (hearth_body) and mover (hearth_physics)
   region/         r.<x>.<y>.<z>.hrg, 8×8×8 cubes per file
 ```
 - **Format version** (`meta::FORMAT`, currently 3). Format 1 (v1) is refused with a clear
@@ -32,6 +33,11 @@ Fixture worlds in `crates/hearth_save/tests/fixtures`: a format-2 world (with `c
 removed in V2-0) that migrates to format 3 and keeps the ore as a placeholder through a
 save/reload cycle; a format-1 world that is refused.
 
+- **JSON files of a world** (`WorldDir::write_json`, `read_json`): written atomically with a
+  backup of the previous one; the server saves `level.json` and `player.json` every five
+  minutes and when it stops (V2-3, `world-loop.md`).
+
 ## Future
-Player, entity, ecology-cell and structure files as those systems arrive, each versioned;
-region compaction; world backups before migrations.
+Entity, ecology-cell and structure files as those systems arrive, each versioned; changed
+cubes into the region files once players change blocks; region compaction; world backups
+before migrations.

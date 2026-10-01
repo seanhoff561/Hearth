@@ -629,3 +629,17 @@ that cannot act goes limp and sinks, so a swimmer chilled to unconsciousness dro
 cold-water deaths go. Two physiological corrections came with it: shivering and work share one
 ceiling of heat production (4.5 METs), and work thins the shell's insulation (K × (1 + 0.15 ×
 METs above rest)), so treading water in cold water cools rather than holding warm.
+
+## D68 — An integrated server owns the world and the body; the client moves the player
+The preview became a game: a server thread at 20 TPS owns the world (generation, light, cover,
+finite water), the clock and the player's body, and a client renders, mirrors the cubes it is
+sent and moves the player itself every frame against that mirror, reporting twenty times a
+second. Movement on the client keeps it as responsive as the frame rate (no round trip); the
+body on the server lives in the weather, water and shelter of the world it owns. In process the
+messages carry shared data (each cube's blocks with its mesh) rather than serialised bytes, and
+the server meshes as the streamer did; a network transport will serialise cubes and mesh on the
+client (`hearth_protocol` says so). The first spawn moved from temperate (35–55°, including
+cold humid-continental climates) to warm-temperate lowland (25–45°, subtropical, mediterranean
+or oceanic): the character starts in a loincloth, and the first spawn found before put them at
+53°S on a cold spring morning, losing heat from the first minute with no clothes or fire to be
+had yet. `player.json` (format 1) holds the body and the mover.

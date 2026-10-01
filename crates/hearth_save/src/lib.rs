@@ -107,6 +107,36 @@ impl WorldDir {
         Ok((dir, meta, report))
     }
 
+    /// Writes a JSON file of the world (`player.json`...) atomically, keeping a backup of the
+    /// old one.
+    pub fn write_json<T: serde::Serialize>(&self, name: &str, value: &T) -> Result<(), SaveError> {
+        let path = self.root.join(name);
+        let tmp = path.with_extension("json.tmp");
+        let text =
+            serde_json::to_string_pretty(value).map_err(|e| SaveError::Corrupt(e.to_string()))?;
+        std::fs::write(&tmp, text)?;
+        if path.exists() {
+            let _ = std::fs::copy(&path, path.with_extension("json.bak"));
+        }
+        std::fs::rename(&tmp, &path)?;
+        Ok(())
+    }
+
+    /// Reads a JSON file of the world, `None` when it does not exist.
+    pub fn read_json<T: serde::de::DeserializeOwned>(
+        &self,
+        name: &str,
+    ) -> Result<Option<T>, SaveError> {
+        let path = self.root.join(name);
+        if !path.exists() {
+            return Ok(None);
+        }
+        let text = std::fs::read_to_string(&path)?;
+        serde_json::from_str(&text)
+            .map(Some)
+            .map_err(|e| SaveError::Corrupt(format!("{name}: {e}")))
+    }
+
     /// Writes `level.json` atomically (temp file + rename), keeping a backup of the old one.
     pub fn save_meta(&self, meta: &WorldMeta) -> Result<(), SaveError> {
         let path = self.level_file();

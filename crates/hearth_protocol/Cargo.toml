@@ -1,0 +1,22 @@
+[package]
+name = "hearth_protocol"
+description = "Messages between the game's client and its integrated server."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_math.workspace = true
+hearth_world.workspace = true
+hearth_worldgen.workspace = true
+hearth_render.workspace = true
+hearth_lod.workspace = true
+hearth_body.workspace = true
+hearth_physics.workspace = true
+hearth_env.workspace = true
+glam.workspace = true
+
+[lints]
+workspace = true

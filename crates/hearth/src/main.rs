@@ -18,7 +18,8 @@ COMMANDS:
 
 OPTIONS:
     --game-dir <PATH>          Use PATH as the game directory (options, saves, screenshots)
-    --seed <N>                 Seed of the preview world (default 1)
+    --world <NAME>             World to play: its save folder (default: default)
+    --seed <N>                 Seed of a new world (default 1)
     --screenshot <SPEC>        Render a shot headlessly and exit (repeatable). SPEC is
                                comma-separated key=value: seed, planet, res, x, y, z, lat,
                                above, yaw, pitch, fov, w, h, dist, season, yf, hour, clouds,
@@ -90,6 +91,10 @@ fn main() {
                 None => fail("--screenshot-list needs a file"),
             },
             "--software" => software = true,
+            "--world" => match args.next() {
+                Some(name) => config.world = Some(name),
+                None => fail("--world needs a name"),
+            },
             "--seed" => match args.next().and_then(|s| s.parse::<u64>().ok()) {
                 Some(seed) => config.seed = Some(seed),
                 None => fail("--seed needs a number"),

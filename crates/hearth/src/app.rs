@@ -15,9 +15,9 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
+use crate::client::Client;
 use crate::content_state::ContentState;
 use crate::frame_limiter::FrameLimiter;
-use crate::preview::Preview;
 
 /// Command-line configuration of a run.
 #[derive(Debug, Clone, Default)]
@@ -25,14 +25,16 @@ pub struct LaunchConfig {
     pub dirs: Option<GameDirs>,
     /// Exit cleanly (saving options) after this long; used by automated smoke tests.
     pub quit_after: Option<Duration>,
-    /// Seed of the preview world.
+    /// Seed of a new world.
     pub seed: Option<u64>,
+    /// Name of the world to play (its save folder); `default` when not given.
+    pub world: Option<String>,
 }
 
 struct Running {
     window: Arc<Window>,
     renderer: Renderer,
-    preview: Preview,
+    client: Client,
     /// Mouse captured for looking around.
     captured: bool,
     last_frame: Instant,
@@ -57,11 +59,13 @@ pub struct App {
     quit_after: Option<Duration>,
     frames_rendered: u64,
     seed: u64,
+    /// Name of the world being played.
+    world: String,
     content: ContentState,
 }
 
 impl App {
-    pub fn new(dirs: GameDirs, quit_after: Option<Duration>, seed: u64) -> Self {
+    pub fn new(dirs: GameDirs, quit_after: Option<Duration>, seed: u64, world: String) -> Self {
         if let Err(e) = dirs.ensure_created() {
             log::warn!(
                 "could not create game directory {}: {e}",
@@ -96,6 +100,7 @@ impl App {
             quit_after,
             frames_rendered: 0,
             seed,
+            world,
             content: ContentState::load(vec![crate::scene::data_pack_dir()]),
         }
     }
@@ -202,7 +207,7 @@ impl App {
         let globe_open = self
             .running
             .as_ref()
-            .is_some_and(|run| run.preview.globe.open);
+            .is_some_and(|run| run.client.globe.open);
         if pressed {
             let activated: Vec<_> = self.input.press(key, &self.bindings).to_vec();
             let mut release_mouse = false;
@@ -213,12 +218,12 @@ impl App {
                 } else if action == builtin::PAUSE {
                     self.set_captured(false);
                     if let Some(run) = &mut self.running {
-                        run.preview.globe.close();
+                        run.client.globe.close();
                     }
                 } else if action == builtin::DEBUG_RELOAD_RESOURCES {
                     self.content.reload();
                 } else if let Some(run) = &mut self.running {
-                    let p = &mut run.preview;
+                    let p = &mut run.client;
                     if action == builtin::WORLD_MAP {
                         release_mouse |= p.toggle_globe();
                     } else if action == builtin::DEBUG_TIME_FORWARD {
@@ -229,11 +234,16 @@ impl App {
                         p.skip_hours(24.0 * p.calendar.days_per_season as f64);
                     } else if action == builtin::DEBUG_TIME_WARP {
                         // Off → one game hour per real second → off.
-                        p.time_warp = if p.time_warp > 0.0 {
+                        let warp = if p.time_warp > 0.0 {
                             0.0
                         } else {
                             p.calendar.ticks_per_day() / 24.0
                         };
+                        p.set_time_warp(warp);
+                    } else if action == builtin::DEBUG_FREE_CAMERA {
+                        p.toggle_free_camera();
+                    } else if action == builtin::JUMP && p.dead() {
+                        p.respawn();
                     }
                 }
             }
@@ -243,7 +253,7 @@ impl App {
             if key == InputKey::Mouse(MouseButton::Left) {
                 if globe_open {
                     if let Some(run) = &mut self.running {
-                        run.preview.globe_button(true);
+                        run.client.globe_button(true);
                     }
                 } else {
                     self.set_captured(true);
@@ -255,7 +265,7 @@ impl App {
                 && globe_open
                 && let Some(run) = &mut self.running
             {
-                run.preview.globe_button(false);
+                run.client.globe_button(false);
             }
         }
     }
@@ -290,28 +300,28 @@ impl App {
             let dt = (now - run.last_frame).as_secs_f64().min(0.25);
             run.last_frame = now;
             let look = run.captured.then(|| self.input.mouse_delta());
-            run.preview.pump(&run.renderer.ctx);
-            run.preview.update(dt, &mut self.input, look, sensitivity);
-            let preview = &mut run.preview;
+            run.client.pump(&run.renderer.ctx);
+            run.client.update(dt, &mut self.input, look, sensitivity);
+            let client = &mut run.client;
             if run
                 .renderer
-                .render_with(|ctx, enc, targets| preview.render(ctx, enc, targets, dt as f32))
+                .render_with(|ctx, enc, targets| client.render(ctx, enc, targets, dt as f32))
             {
                 self.frames_rendered += 1;
                 run.title_frames += 1;
             }
             let elapsed = run.title_timer.elapsed().as_secs_f64();
             // The globe describes the place under the cursor: keep up with it.
-            let period = if run.preview.globe.open { 0.1 } else { 0.5 };
+            let period = if run.client.globe.open { 0.1 } else { 0.5 };
             if elapsed >= period {
                 let fps = run.title_frames as f64 / elapsed;
                 run.window.set_title(&format!(
                     "{} | {}",
                     hearth_core::window_title(),
-                    run.preview.title_status(fps)
+                    run.client.title_status(fps)
                 ));
                 if run.log_timer.elapsed().as_secs() >= 5 {
-                    log::info!("{}", run.preview.title_status(fps));
+                    log::info!("{}", run.client.title_status(fps));
                     run.log_timer = Instant::now();
                 }
                 run.title_timer = Instant::now();
@@ -357,8 +367,13 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        let preview = Preview::new(
-            Preview::default_world(self.seed, Some(self.dirs.cache())),
+        let client = Client::new(
+            Client::default_world(
+                &self.world,
+                self.seed,
+                Some(self.dirs.cache()),
+                Some(self.dirs.saves()),
+            ),
             &self.options,
             renderer.color_format(),
             self.content.content.as_deref(),
@@ -366,7 +381,7 @@ impl ApplicationHandler for App {
         self.running = Some(Running {
             window,
             renderer,
-            preview,
+            client,
             captured: false,
             last_frame: Instant::now(),
             title_timer: Instant::now(),
@@ -412,7 +427,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(run) = &mut self.running {
-                    run.preview
+                    run.client
                         .globe
                         .cursor_moved(glam::Vec2::new(position.x as f32, position.y as f32));
                 }
@@ -482,7 +497,12 @@ pub fn run(config: LaunchConfig) -> anyhow::Result<()> {
     let dirs = resolve_dirs(config.dirs);
     log::info!("game directory: {}", dirs.root.display());
     let event_loop = EventLoop::new()?;
-    let mut app = App::new(dirs, config.quit_after, config.seed.unwrap_or(1));
+    let mut app = App::new(
+        dirs,
+        config.quit_after,
+        config.seed.unwrap_or(1),
+        config.world.unwrap_or_else(|| "default".into()),
+    );
     event_loop.run_app(&mut app)?;
     if let Some(err) = app.fatal_error() {
         anyhow::bail!("{err}");

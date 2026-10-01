@@ -719,8 +719,9 @@ impl Terrain {
         (base * capacity.max(0.25) * alpine * steep * core).clamp(0.0, 1.0)
     }
 
-    /// Finds a spawn point: temperate mid-latitude lowland near a coast or river (or anywhere on
-    /// land for `random`). Deterministic.
+    /// Finds a spawn point: warm-temperate lowland (subtropical, mediterranean or oceanic
+    /// climate, 25–45° from the equator) near a coast or river, where a body in a loincloth can
+    /// live through the first nights (or anywhere on land for `random`). Deterministic.
     pub fn find_spawn(&self, random: bool) -> (i32, i32) {
         let g = &*self.grid;
         let n = g.n();
@@ -736,20 +737,19 @@ impl Terrain {
                 continue;
             }
             let class = g.climate_at(idx);
-            let temperate = matches!(
+            let warm = matches!(
                 class,
-                ClimateClass::Oceanic
-                    | ClimateClass::HumidContinental
-                    | ClimateClass::HumidSubtropical
-                    | ClimateClass::Mediterranean
+                ClimateClass::HumidSubtropical | ClimateClass::Mediterranean
             );
-            if !random && (!(35.0..=55.0).contains(&lat) || !temperate) {
+            let temperate = warm || class == ClimateClass::Oceanic;
+            if !random && (!(25.0..=45.0).contains(&lat) || !temperate) {
                 continue;
             }
             let coast = g.field_at(&g.coast, idx);
             let river = g.flags[idx] & flags::RIVER != 0;
             let near_water = coast < 0.02 || river;
-            let score = if near_water { 2.0 } else { 1.0 } - e / 1000.0
+            let score = if near_water { 2.0 } else { 1.0 } + if warm { 0.5 } else { 0.0 }
+                - e / 1000.0
                 + if g.province[idx] == province::OROGEN {
                     -1.0
                 } else {
@@ -930,12 +930,14 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn spawn_is_on_temperate_land() {
+    fn spawn_is_on_warm_temperate_land() {
         let t = test_terrain();
         let (x, z) = t.find_spawn(false);
         let s = t.sample(x, z);
         assert!(!s.is_underwater() && s.height > 0.0, "{s:?}");
         let lat = t.planet().latitude_deg(z as f64).abs();
-        assert!((33.0..=57.0).contains(&lat), "spawn latitude {lat}");
+        assert!((23.0..=47.0).contains(&lat), "spawn latitude {lat}");
+        // A spring morning there is no deadly cold for a body in a loincloth.
+        assert!(s.temperature > 10.0, "mean temperature {}", s.temperature);
     }
 }

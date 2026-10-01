@@ -16,7 +16,8 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Calendar, seasons and weather | [seasons.md](seasons.md) | implemented (V2-1) |
 | Geology, soils, hydrology, resources | [geology.md](geology.md) | implemented (V2-2) |
 | Body and physiology | [physiology.md](physiology.md) | implemented (V2-3a; the player's world loop in progress) |
-| Movement (collision, gaits, climbing, swimming, falls) | [movement.md](movement.md) | implemented headless (V2-3b) |
+| Movement (collision, gaits, climbing, swimming, falls) | [movement.md](movement.md) | implemented (V2-3b) |
+| The world loop (server, client, protocol) | [world-loop.md](world-loop.md) | implemented in process (V2-3c) |
 | Inventory, carrying, clothing | [inventory.md](inventory.md) | planned (V2-4) |
 | Processes and the knowledge graph | [knowledge-and-processes.md](knowledge-and-processes.md) | partial (data V2-0; engine V2-5) |
 | Flora | [flora.md](flora.md) | planned (V2-6) |

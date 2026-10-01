@@ -808,13 +808,18 @@ dependencies = [
  "directories",
  "env_logger",
  "glam",
+ "hearth_body",
  "hearth_content",
  "hearth_core",
  "hearth_env",
  "hearth_input",
  "hearth_lod",
  "hearth_math",
+ "hearth_physics",
+ "hearth_player",
+ "hearth_protocol",
  "hearth_render",
+ "hearth_save",
  "hearth_texgen",
  "hearth_world",
  "hearth_worldgen",
@@ -931,6 +936,21 @@ dependencies = [
  "hearth_content",
  "hearth_physics",
  "serde",
+]
+
+[[package]]
+name = "hearth_protocol"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hearth_body",
+ "hearth_env",
+ "hearth_lod",
+ "hearth_math",
+ "hearth_physics",
+ "hearth_render",
+ "hearth_world",
+ "hearth_worldgen",
 ]
 
 [[package]]
