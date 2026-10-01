@@ -527,3 +527,19 @@ Medians of three runs each; 1 % lows as the gate judges them. V2-4 (things, carr
 the inventory) adds nothing to the benchmark's scenes; the differences are run-to-run noise.
 Gate passed; the baseline moves to the end of V2-4.
 
+
+## End of V2-5 — the performance gate: 96e9bb4 (end of V2-4) against 59a1a6a (end of V2-5), alternating, the first build alternating by round, three rounds each, NVIDIA GeForce RTX 4060 Laptop GPU (Vulkan), 1920x1080, preset Fancy
+
+| Scene | Avg FPS | 1% low FPS (1st percentile) | GPU ms | Triangles |
+|---|---:|---:|---:|---:|
+| lowland_forest | 747 → 749 (+0.2 %) | 685 → 679 (-0.9 %) | 1.29 → 1.31 | 1.27 → 1.27 M |
+| peak_lod512 | 775 → 765 (-1.4 %) | 553 → 559 (+1.1 %) | 1.26 → 1.26 | 1.93 → 1.93 M |
+| cave_torches | 2176 → 2222 (+2.2 %) | 1431 → 1381 (-3.5 %) | 0.43 → 0.42 | 1.22 → 1.22 M |
+
+Medians of three runs each; 1 % lows as the gate judges them. V2-5 (making and knowing) adds
+nothing to the benchmark's scenes but 56 layers to the texture array (its blocks' textures and
+the flames' and embers' frames; +0.07 MiB of VRAM). Two earlier runs of the gate, with the
+baseline always first in each pair, failed the cave's 1 % lows (-5.8 %, -5.9 %); an A/B of
+this build with and without the new textures (2185 vs 2185 FPS, lows -0.2 %) and one with this
+build first in every pair (+0.6 % average, +1.3 % lows) showed no regression, and the gate now
+alternates which build runs first (D74). Gate passed; the baseline moves to the end of V2-5.
