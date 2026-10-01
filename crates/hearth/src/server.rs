@@ -31,6 +31,7 @@ use rustc_hash::FxHashSet;
 
 use crate::environment::{EnvOverrides, EnvSampler};
 use crate::scene::LocalWorld;
+use crate::workshop::{Here, Workshop, WorkshopSave};
 
 /// Cubes generated per batch (bounded so nearby terrain appears quickly while moving).
 const BATCH: usize = 192;
@@ -57,6 +58,8 @@ pub struct WorldSpec {
     pub appearance: hearth_character::Appearance,
     /// What death means in a new world (a saved world keeps its own rules).
     pub death_rules: hearth_save::DeathRules,
+    /// How knowledge is gained in a new world.
+    pub knowledge: hearth_save::KnowledgeMode,
 }
 
 /// How much terrain to keep around the player (cubes).
@@ -150,6 +153,7 @@ fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> 
     let mut settings = WorldSettings::new(planet);
     settings.life = hearth_save::LifeSettings::from_content(&lw.content.time);
     settings.life.death_rules = spec.death_rules;
+    settings.life.knowledge_mode = spec.knowledge;
     let meta = WorldMeta::new(&spec.name, settings, lw.reg.state_names());
     let dir = WorldDir::create(saves, &meta)?;
     log::info!("created world {:?} in {}", spec.name, dir.root.display());
@@ -163,7 +167,7 @@ fn within_reach(player: &Player, at: DVec3) -> bool {
 }
 
 /// Where a thing put down at `at` comes to rest: on the first solid surface below it.
-fn rest_on(lw: &LocalWorld, at: DVec3) -> DVec3 {
+pub(crate) fn rest_on(lw: &LocalWorld, at: DVec3) -> DVec3 {
     let x = at.x.floor() as i32;
     let z = at.z.floor() as i32;
     let top = (at.y + 1.5).floor() as i32;
@@ -181,23 +185,6 @@ fn rest_on(lw: &LocalWorld, at: DVec3) -> DVec3 {
         }
     }
     at
-}
-
-/// What gathering a block by hand gives (loose stones: three cobbles of their rock).
-fn gathered_from(
-    lw: &LocalWorld,
-    items: &hearth_items::Items,
-    pos: BlockPos,
-) -> Option<(hearth_items::Stack, usize)> {
-    let state = lw.map.block(pos)?;
-    let block = lw.reg.block_of(state);
-    if !block.name.path().ends_with("_cobbles") {
-        return None;
-    }
-    let material = block.def.material.as_deref()?;
-    let id = hearth_content::generate::generated_id("hearth:cobble", material);
-    items.get(&id)?;
-    Some((hearth_items::Stack::one(&id), 3))
 }
 
 /// How hard the ground underfoot drags at a load pulled over it (sliding friction): snow and
@@ -330,12 +317,13 @@ fn body_view(
     }
 }
 
-/// Saves the player and the clock.
+/// Saves the player, the clock, the things lying about and what is built.
 fn save(
     save: &mut Option<Save>,
     player: &Player,
     appearance: &hearth_character::Appearance,
     world_items: &hearth_items::WorldItems,
+    workshop: &Workshop,
     ticks: u64,
 ) {
     let Some(s) = save else {
@@ -353,6 +341,7 @@ fn save(
         .save_meta(&s.meta)
         .and_then(|()| s.dir.write_json("player.json", &player))
         .and_then(|()| s.dir.write_json("items.json", world_items))
+        .and_then(|()| s.dir.write_json("crafts.json", &workshop.save()))
     {
         log::error!("could not save the world: {e}");
     } else {
@@ -386,7 +375,12 @@ fn run(
     let content = lw.content.clone();
     let (life, mut ticks) = match &save_state {
         Some(s) => (s.meta.settings.life.clone(), s.meta.clock.ticks),
-        None => (hearth_save::LifeSettings::from_content(&content.time), 0),
+        None => {
+            let mut life = hearth_save::LifeSettings::from_content(&content.time);
+            life.death_rules = spec.death_rules;
+            life.knowledge_mode = spec.knowledge;
+            (life, 0)
+        }
     };
     let scales = TimeScales::new(life.day_length_min, life.days_per_season, &content.time);
     let balance = Balance::resolve(&content, &life.realism.preset, &life.realism.overrides);
@@ -476,6 +470,25 @@ fn run(
             .flatten()
     });
     let mut death_told = player.body.dead.is_some();
+    // Making and knowing: how knowledge is gained here, the stations and fires standing.
+    let mode = match life.knowledge_mode {
+        hearth_save::KnowledgeMode::Discovery => hearth_craft::Mode::Discovery,
+        hearth_save::KnowledgeMode::Guided => hearth_craft::Mode::Guided,
+        hearth_save::KnowledgeMode::Open => hearth_craft::Mode::Open,
+    };
+    let workshop_save: Option<WorkshopSave> = save_state
+        .as_ref()
+        .and_then(|s| s.dir.read_json("crafts.json").ok().flatten());
+    let mut workshop = Workshop::new(&content, &items, mode, workshop_save, seed, ticks);
+    if mode == hearth_craft::Mode::Open {
+        player.knowledge.known = hearth_craft::KnowledgeState::open(&workshop.graph, ticks).known;
+    }
+    let authentic = life.realism.preset == "authentic";
+    // Messages the workshop has for the client.
+    let mut outbox: Vec<ToClient> = Vec::new();
+    // Game ticks the last server tick moved the clock by.
+    let mut advanced = 1.0f64;
+    let mut work_warp = 0.0f64;
 
     let lod = Arc::new(hearth_lod::LodGen::new(
         &lw.reg,
@@ -496,6 +509,10 @@ fn run(
             appearance: appearance.clone(),
             death_rules,
             items: items.clone(),
+            content: content.clone(),
+            crafts: workshop.crafts.clone(),
+            graph: workshop.graph.clone(),
+            knowledge_mode: mode,
             ended,
         })))
         .is_err()
@@ -512,8 +529,29 @@ fn run(
     let mut sleep_warp = 0.0f64;
     let mut warp_carry = 0.0f64;
     let mut paused = false;
+    // Ticks as fast as they go rather than twenty a second (tests and bots).
+    let mut fast = false;
     let mut next_tick = Instant::now();
     let mut since_save = 0u64;
+    macro_rules! here {
+        () => {
+            Here {
+                lw: &mut lw,
+                items: &items,
+                cfg: &cfg,
+                env: &env,
+                scales: &scales,
+                moment: calendar.at(ticks),
+                ticks,
+                ticks_per_day: calendar.ticks_per_day(),
+                player: &mut player,
+                world_items: &mut world_items,
+                changed: &mut gathered,
+                out: &mut outbox,
+                items_changed: &mut items_changed,
+            }
+        };
+    }
     loop {
         // Messages from the client.
         loop {
@@ -575,7 +613,14 @@ fn run(
                                 world_items.add(stack, rest_on(&lw, spot).to_array(), a as f32);
                             }
                             items_changed = true;
+                            let knew = std::mem::take(&mut player.knowledge);
+                            workshop.stop(&mut here!());
                             player = Player::new(&cfg, at, seed ^ ticks);
+                            player.knowledge = match death_rules {
+                                hearth_save::DeathRules::Hardy => knew,
+                                _ => knew.passed_on(&workshop.graph, ticks),
+                            };
+                            workshop.knowledge_changed = true;
                             player.life = hearth_player::Life::begin(at, ticks);
                             player.carry = outfit(&appearance);
                             worn = dress_carry(&player.carry);
@@ -599,12 +644,18 @@ fn run(
                             Ok(()) => None,
                             Err(stack) => player.carry.drag(&items, stack, body_kg).err(),
                         };
+                        let full = back.as_ref().is_some_and(|(s, _)| {
+                            s.mass(&items) < hearth_items::carry::ONE_HAND_KG
+                        });
                         if let Some((stack, _)) = back {
                             world_items
                                 .items
                                 .push(hearth_items::WorldItem { stack, ..w });
                         }
                         items_changed = true;
+                        if full {
+                            workshop.hands_full(&mut here!());
+                        }
                     }
                 }
                 Ok(ToServer::Drag(id)) => {
@@ -647,25 +698,16 @@ fn run(
                         items_changed = true;
                     }
                 }
-                Ok(ToServer::Gather(pos)) => {
-                    let center =
-                        DVec3::new(pos.x as f64 + 0.5, pos.y as f64 + 0.3, pos.z as f64 + 0.5);
-                    if player.can_act(&cfg)
-                        && within_reach(&player, center)
-                        && let Some((stack, count)) = gathered_from(&lw, &items, pos)
-                    {
-                        let air = lw.reg.default_state("hearth:air");
-                        lw.map.set_block(pos, air, &lw.reg);
-                        gathered.push(pos);
-                        let body_kg = cfg.mass_kg as f32;
-                        for _ in 0..count {
-                            if let Err(s) = player.carry.stow(&items, stack.clone(), body_kg) {
-                                // What cannot be carried lies where it was.
-                                world_items.add(s, rest_on(&lw, center).to_array(), 0.0);
-                            }
-                        }
-                        items_changed = true;
-                    }
+                Ok(ToServer::Act { process, aim, hand }) => {
+                    workshop.act(&mut here!(), &process, aim, hand);
+                }
+                Ok(ToServer::StopWork) => workshop.stop(&mut here!()),
+                Ok(ToServer::Look(aim)) => workshop.look(&mut here!(), aim),
+                Ok(ToServer::Eat(path)) => workshop.eat(&mut here!(), &path),
+                Ok(ToServer::Drink(from)) => workshop.drink(&mut here!(), &from),
+                Ok(ToServer::Fill { skin, aim }) => workshop.fill(&mut here!(), &skin, aim),
+                Ok(ToServer::Throw { dir, speed }) => {
+                    workshop.throw(&mut here!(), dir, speed);
                 }
                 Ok(ToServer::Give(stack)) => {
                     let body_kg = cfg.mass_kg as f32;
@@ -694,6 +736,7 @@ fn run(
                 }
                 Ok(ToServer::TimeWarp(w)) => warp = w.max(0.0),
                 Ok(ToServer::Pause(p)) => paused = p,
+                Ok(ToServer::Fast(f)) => fast = f,
                 Ok(ToServer::View { radius, vertical }) => {
                     view = View {
                         radius: radius.clamp(1, 64),
@@ -701,21 +744,37 @@ fn run(
                     };
                 }
                 Ok(ToServer::Quit) | Err(TryRecvError::Disconnected) => {
-                    save(&mut save_state, &player, &appearance, &world_items, ticks);
+                    save(
+                        &mut save_state,
+                        &player,
+                        &appearance,
+                        &world_items,
+                        &workshop,
+                        ticks,
+                    );
                     let _ = tx.send(ToClient::Saved);
                     return Ok(());
                 }
                 Err(TryRecvError::Empty) => break,
             }
         }
+        for m in outbox.drain(..) {
+            let _ = tx.send(m);
+        }
 
         // The tick (none while paused: the world stands still, the terrain still streams).
         if paused {
             next_tick = Instant::now() + Duration::from_secs_f64(TICK_S);
-        } else if Instant::now() >= next_tick {
+        } else if fast || Instant::now() >= next_tick {
+            workshop.tick(&mut here!(), advanced);
             let moment = calendar.at(ticks);
             let immersion = last_moved.map_or(0.0, |m| m.immersion);
-            let e = exposure(&env, &lw, &moment, &player.mover, immersion);
+            let mut e = exposure(&env, &lw, &moment, &player.mover, immersion);
+            // Fires warm those beside them; bedding keeps the ground's cold off a sleeper.
+            e.radiant_w_m2 += workshop.radiant_w_m2(player.mover.pos + DVec3::new(0.0, 0.9, 0.0));
+            if player.lying || player.asleep {
+                e.ground_clo = e.ground_clo.max(workshop.bedding_clo(player.mover.pos));
+            }
             let report = last_moved.as_ref().map(report_of).unwrap_or_default();
             if player.body.dead.is_none() {
                 let load = player.carry.load(&items, cfg.mass_kg as f32);
@@ -724,10 +783,14 @@ fn run(
                 if player.asleep || player.lying {
                     activity.posture = Posture::Lying;
                 }
+                // Work has its own cost.
+                if let Some(mets) = workshop.work_mets() {
+                    activity.met = activity.met.max(mets);
+                }
                 // Warped time passes for the body too.
                 player.body.step(
                     &cfg,
-                    TICK_S * (1.0 + (warp + sleep_warp) / 20.0),
+                    TICK_S * (1.0 + (warp + sleep_warp + work_warp) / 20.0),
                     &e,
                     &worn,
                     &activity,
@@ -761,6 +824,12 @@ fn run(
                         walked_km: player.life.walked_m / 1000.0,
                         farthest_km: player.life.farthest_m / 1000.0,
                         cause,
+                        discovered: player
+                            .knowledge
+                            .known
+                            .keys()
+                            .filter_map(|k| workshop.graph.node(k).map(|n| n.name.clone()))
+                            .collect(),
                     };
                     if let Some(s) = &mut save_state {
                         s.meta.ended = true;
@@ -768,14 +837,36 @@ fn run(
                             log::error!("could not write the life's tale: {e}");
                         }
                     }
-                    save(&mut save_state, &player, &appearance, &world_items, ticks);
+                    save(
+                        &mut save_state,
+                        &player,
+                        &appearance,
+                        &world_items,
+                        &workshop,
+                        ticks,
+                    );
                     let _ = tx.send(ToClient::Ended(summary));
                 }
             }
-            warp_carry += (warp + sleep_warp) * TICK_S;
+            // Long work speeds the world up as sleep does (no more than a minute or so of
+            // waiting for any task).
+            let work_target = 20.0 * workshop.work_warp();
+            work_warp += (work_target - work_warp) * (1.0 - (-TICK_S / 1.0).exp());
+            if work_warp < 1.0 && work_target == 0.0 {
+                work_warp = 0.0;
+            }
+            warp_carry += (warp + sleep_warp + work_warp) * TICK_S;
             let extra = warp_carry.floor();
             warp_carry -= extra;
             ticks += 1 + extra as u64;
+            advanced = 1.0 + extra;
+            // Skills unused for long slip (Authentic), once a game day.
+            let day = calendar.ticks_per_day().max(1.0) as u64;
+            if authentic && (ticks / day) != ((ticks - 1 - extra as u64) / day) {
+                player
+                    .knowledge
+                    .slip_skills(ticks, calendar.ticks_per_day());
+            }
             since_save += 1;
             // The finite water moves ten times a second; its slow changes every five game
             // minutes.
@@ -800,7 +891,14 @@ fn run(
                     .blocks_changed(&mut lw, &models, opts, &changed, tx)
                     .is_err()
             {
-                save(&mut save_state, &player, &appearance, &world_items, ticks);
+                save(
+                    &mut save_state,
+                    &player,
+                    &appearance,
+                    &world_items,
+                    &workshop,
+                    ticks,
+                );
                 return Ok(());
             }
             // The things lying near the player: told when they change or the player goes far.
@@ -819,6 +917,13 @@ fn run(
                     .collect();
                 let _ = tx.send(ToClient::Items(near));
             }
+            if workshop.knowledge_changed {
+                workshop.knowledge_changed = false;
+                let _ = tx.send(ToClient::Knowledge(Box::new(player.knowledge.clone())));
+            }
+            for m in outbox.drain(..) {
+                let _ = tx.send(m);
+            }
             if carry_sent.as_ref() != Some(&player.carry) {
                 carry_sent = Some(player.carry.clone());
                 let _ = tx.send(ToClient::Carried(player.carry.clone()));
@@ -829,18 +934,32 @@ fn run(
                         &cfg,
                         &player,
                         e,
-                        20.0 + warp + sleep_warp,
+                        20.0 + warp + sleep_warp + work_warp,
                         &items,
                         drag_friction(&lw, player.mover.pos),
                     ))))
                     .is_err()
             {
-                save(&mut save_state, &player, &appearance, &world_items, ticks);
+                save(
+                    &mut save_state,
+                    &player,
+                    &appearance,
+                    &world_items,
+                    &workshop,
+                    ticks,
+                );
                 return Ok(());
             }
             if since_save >= AUTOSAVE_TICKS {
                 since_save = 0;
-                save(&mut save_state, &player, &appearance, &world_items, ticks);
+                save(
+                    &mut save_state,
+                    &player,
+                    &appearance,
+                    &world_items,
+                    &workshop,
+                    ticks,
+                );
                 let _ = tx.send(ToClient::Saved);
             }
             next_tick += Duration::from_secs_f64(TICK_S);
@@ -848,7 +967,10 @@ fn run(
                 // Far behind (a long batch, a breakpoint): don't run the missed ticks at once.
                 next_tick = Instant::now();
             }
-            continue;
+            // Running fast (tests), the terrain streams between every tick.
+            if !fast {
+                continue;
+            }
         }
 
         // Terrain around the player between ticks.
@@ -874,11 +996,20 @@ fn run(
                 }
             }
             Ok((false, _)) => {
-                let wait = next_tick.saturating_duration_since(Instant::now());
-                std::thread::sleep(wait.min(Duration::from_millis(5)));
+                if !fast {
+                    let wait = next_tick.saturating_duration_since(Instant::now());
+                    std::thread::sleep(wait.min(Duration::from_millis(5)));
+                }
             }
             Err(_) => {
-                save(&mut save_state, &player, &appearance, &world_items, ticks);
+                save(
+                    &mut save_state,
+                    &player,
+                    &appearance,
+                    &world_items,
+                    &workshop,
+                    ticks,
+                );
                 return Ok(());
             }
         }

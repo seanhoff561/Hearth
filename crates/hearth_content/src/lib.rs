@@ -14,6 +14,7 @@ pub mod lint;
 pub mod schema;
 pub mod source;
 pub mod time;
+pub mod triggers;
 pub mod validate;
 
 pub use balance::Balance;

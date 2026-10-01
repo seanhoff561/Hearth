@@ -37,6 +37,12 @@ entry! {
         #[serde(default)]
         pub knowledge: Option<IdRef>,
         pub build: Duration,
+        /// The block that stands for it in the world.
+        #[serde(default)]
+        pub block: Option<IdRef>,
+        /// What laying it out is called ("lay a fire").
+        #[serde(default)]
+        pub action: Option<String>,
     }
 }
 

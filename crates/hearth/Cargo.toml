@@ -31,6 +31,7 @@ hearth_ui.workspace = true
 hearth_audio.workspace = true
 hearth_character.workspace = true
 hearth_items.workspace = true
+hearth_craft.workspace = true
 bytemuck.workspace = true
 anyhow.workspace = true
 png.workspace = true

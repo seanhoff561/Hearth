@@ -254,6 +254,8 @@ mod tests {
         assert_eq!(b.get(builtin::INTERACT), Some(Binding::key(Key::E)));
         assert_eq!(b.get(builtin::DRAG), Some(Binding::key(Key::F)));
         assert_eq!(b.get(builtin::RADIAL), Some(Binding::key(Key::Q)));
+        assert_eq!(b.get(builtin::THROW), Some(Binding::key(Key::R)));
+        assert_eq!(b.get(builtin::JOURNAL), Some(Binding::key(Key::J)));
         assert_eq!(b.get(builtin::BODY_PANEL), Some(Binding::key(Key::B)));
         assert_eq!(
             b.get(builtin::SWAP_OFFHAND),

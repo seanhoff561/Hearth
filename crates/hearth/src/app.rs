@@ -373,7 +373,11 @@ impl App {
                     };
                     let inventory_key = self.bindings.get(builtin::INVENTORY)
                         == Some(hearth_input::Binding::key(k));
-                    if inventory_key && run.menus.inventory_open() {
+                    let journal_key =
+                        self.bindings.get(builtin::JOURNAL) == Some(hearth_input::Binding::key(k));
+                    if (inventory_key && run.menus.inventory_open())
+                        || (journal_key && run.menus.journal_open())
+                    {
                         run.menus.close_all();
                     } else if let Some(n) = nav {
                         run.interface.key(n);
@@ -446,6 +450,9 @@ impl App {
                             turned: false,
                         });
                         release_mouse = true;
+                    } else if action == builtin::JOURNAL && p.crafting.is_some() {
+                        run.menus.open(Screen::Journal { tab: 0, scroll: 0 });
+                        release_mouse = true;
                     }
                 }
             }
@@ -473,7 +480,13 @@ impl App {
     }
 
     /// Starts playing a world.
-    fn play(&mut self, folder: &str, seed: u64, death_rules: hearth_save::DeathRules) {
+    fn play(
+        &mut self,
+        folder: &str,
+        seed: u64,
+        death_rules: hearth_save::DeathRules,
+        knowledge: hearth_save::KnowledgeMode,
+    ) {
         let Some(run) = &mut self.running else {
             return;
         };
@@ -486,6 +499,7 @@ impl App {
                 Some(self.dirs.saves()),
                 self.profiles.current().clone(),
                 death_rules,
+                knowledge,
             ),
             &self.options,
             run.renderer.color_format(),
@@ -504,7 +518,16 @@ impl App {
                     folder,
                     seed,
                     death_rules,
-                } => self.play(&folder, seed, death_rules),
+                    knowledge,
+                } => self.play(&folder, seed, death_rules, knowledge),
+                MenuAction::Knapped { process, aim, hand } => {
+                    if let Some(run) = &mut self.running
+                        && let Some(c) = &mut run.client
+                    {
+                        c.act_by_hand(process, aim, hand);
+                    }
+                    self.set_captured(true);
+                }
                 MenuAction::Shift { from, count, to } => {
                     if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
                         c.shift(from, count, to);
@@ -684,6 +707,15 @@ impl App {
                         &pad,
                         pad_sensitivity,
                     );
+                    // Knapping by hand opens its screen.
+                    if let Some(k) = c.knap_request.take() {
+                        run.menus.open(Screen::Knapping(Box::new(k)));
+                        if run.captured {
+                            run.captured = false;
+                            let _ = run.window.set_cursor_grab(CursorGrabMode::None);
+                            run.window.set_cursor_visible(true);
+                        }
+                    }
                 }
             }
             let client = &mut run.client;
@@ -720,6 +752,7 @@ impl App {
                         profiles,
                         death: client.as_ref().and_then(|c| c.death_info(ui.lang)),
                         inventory: client.as_ref().and_then(|c| c.inventory_view()),
+                        journal: client.as_ref().and_then(|c| c.journal_view()),
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
@@ -862,7 +895,12 @@ impl ApplicationHandler for App {
             self.audio_devices.len()
         );
         if let Some(world) = self.world.clone() {
-            self.play(&world, self.seed, hearth_save::DeathRules::default());
+            self.play(
+                &world,
+                self.seed,
+                hearth_save::DeathRules::default(),
+                hearth_save::KnowledgeMode::default(),
+            );
         }
         self.apply_display_mode();
         event_loop.set_control_flow(ControlFlow::Poll);

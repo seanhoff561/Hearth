@@ -52,6 +52,7 @@ impl ContentState {
                 c,
                 &LintContext {
                     biomes: Some(Biome::ALL.iter().map(|b| b.name().to_owned()).collect()),
+                    blocks: world_blocks(&self.packs),
                 },
             ));
         }
@@ -97,5 +98,20 @@ impl ContentState {
             ),
         }
         report
+    }
+}
+
+/// The world's blocks (name, material) for the lint, if the block definitions load.
+pub fn world_blocks(packs: &[std::path::PathBuf]) -> Option<Vec<(String, Option<String>)>> {
+    match hearth_world::datapack::load_block_defs(packs) {
+        Ok(defs) => Some(
+            defs.into_iter()
+                .map(|(id, def)| (id.to_string(), def.material))
+                .collect(),
+        ),
+        Err(e) => {
+            log::warn!("block definitions unreadable for the lint: {e}");
+            None
+        }
     }
 }

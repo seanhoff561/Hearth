@@ -1,0 +1,1679 @@
+//! Doing things in the world (V2-5, v2 §11): the server's side of the process engine.
+//!
+//! * **Work**: a process started on what the player looks at goes on, tick by tick on the
+//!   world's clock, while they stay; done, its outcome is applied: what it used is taken from
+//!   where it was, what it made is stowed (or put down), tools wear, the target is dug, picked or
+//!   lit, and what the doing taught is heard by the player's knowledge.
+//! * **Unattended work** (meat on the rack, acorns in a stream) waits where it was set up and
+//!   goes on while its conditions hold.
+//! * **Workstations** stand as blocks; hearths and lamps keep their fires
+//!   (`hearth_craft::fire`): light, warmth for those beside them, a place to cook.
+//! * **Natural fires**: lightning in a storm now and then sets a tree burning for hours.
+//! * **Kills**: until animals live in the world (V2-7), a predator's kill turns up nearby every
+//!   day or two to be scavenged; ravens circling show where.
+//! * Things carried and lying **go off**, and embers burn down.
+//! * **Digging**: loose earth dug out falls in a spoil pile beside the hole and slumps to its
+//!   angle of repose (a block's step of two slides down).
+
+use std::sync::Arc;
+
+use glam::DVec3;
+use hearth_body::BodyConfig;
+use hearth_content::Content;
+use hearth_content::schema::process::Effect;
+use hearth_content::schema::station::Capability;
+use hearth_content::time::TimeScales;
+use hearth_content::triggers::{self, block_keys, item_keys, with_verb};
+use hearth_craft::engine::{finish_batch, perform_by, plan};
+use hearth_craft::food::{bite_of, decay_per_hour, keeps_days};
+use hearth_craft::{
+    Aimed, Bench, Crafts, Event, Fire, FireSeen, FireState, Fuel, Graph, Lack, Mode, Outcome, Plan,
+    Source, Surroundings,
+};
+use hearth_env::Moment;
+use hearth_items::{Hand, Items, Path, Root, Stack, WorldItems};
+use hearth_math::BlockPos;
+use hearth_math::hash::Rng;
+use hearth_player::Player;
+use hearth_protocol::{Acted, AimAt, DrinkFrom, ToClient, WorkView};
+use hearth_world::BlockStateId;
+use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
+
+use crate::environment::EnvSampler;
+use crate::scene::LocalWorld;
+
+/// How far things lying about are within reach of the work (m).
+const REACH_M: f64 = 2.5;
+/// A natural fire's id among the stations.
+const WILDFIRE: &str = "wildfire";
+
+/// A workstation standing in the world, with its fire.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Station {
+    pub pos: BlockPos,
+    pub id: String,
+    #[serde(default)]
+    pub fire: Option<Fire>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct Harvest {
+    pos: BlockPos,
+    process: String,
+    year: i64,
+    count: u8,
+}
+
+/// What `crafts.json` holds.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorkshopSave {
+    #[serde(default)]
+    stations: Vec<Station>,
+    #[serde(default)]
+    wildfires: Vec<Station>,
+    #[serde(default)]
+    harvests: Vec<Harvest>,
+    #[serde(default)]
+    depleted: Vec<(BlockPos, f32)>,
+    #[serde(default)]
+    next_kill_tick: u64,
+}
+
+/// Work in hand.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Work {
+    pub recipe: usize,
+    pub aim: AimAt,
+    /// Game ticks done and needed.
+    pub ticks: f64,
+    pub needed: f64,
+    /// Where the player stood when it began.
+    pub at: DVec3,
+    /// The quality the player's own hands reached, when they did it by hand.
+    pub hand: Option<f32>,
+}
+
+/// The world the workshop acts in, for one call.
+pub struct Here<'a> {
+    pub lw: &'a mut LocalWorld,
+    pub items: &'a Items,
+    pub cfg: &'a BodyConfig,
+    pub env: &'a EnvSampler,
+    pub scales: &'a TimeScales,
+    pub moment: Moment,
+    pub ticks: u64,
+    pub ticks_per_day: f64,
+    pub player: &'a mut Player,
+    pub world_items: &'a mut WorldItems,
+    /// Blocks changed, for meshing and lighting.
+    pub changed: &'a mut Vec<BlockPos>,
+    pub out: &'a mut Vec<ToClient>,
+    /// The things lying about changed.
+    pub items_changed: &'a mut bool,
+}
+
+/// Making things in the world.
+pub struct Workshop {
+    pub crafts: Arc<Crafts>,
+    pub graph: Arc<Graph>,
+    pub mode: Mode,
+    pub stations: Vec<Station>,
+    pub wildfires: Vec<Station>,
+    harvests: FxHashMap<(BlockPos, String), (i64, u8)>,
+    depleted: FxHashMap<BlockPos, f32>,
+    next_kill_tick: u64,
+    pub work: Option<Work>,
+    rng: Rng,
+    /// Triggers of sight lately heard, and when (they are not heard again for a while).
+    heard_at: FxHashMap<String, u64>,
+    /// The tick the world was last brought up to date to.
+    last_update: u64,
+    /// The player's knowledge changed since it was last sent.
+    pub knowledge_changed: bool,
+}
+
+/// An action's outcome in words, as the client is told it.
+fn acted(process: &str, done: bool, words: impl Into<String>) -> ToClient {
+    ToClient::Acted(Acted {
+        process: process.to_owned(),
+        done,
+        words: words.into(),
+    })
+}
+
+fn lack_words(l: &Lack) -> String {
+    match l {
+        Lack::Knowledge => "You do not know how.".into(),
+        Lack::Target => "Not here.".into(),
+        Lack::Tool(p) => format!("You need something in hand for {p}."),
+        Lack::Input(w) => format!("You need {w}."),
+        Lack::Condition(c) => format!("It needs {c}."),
+    }
+}
+
+fn center(p: BlockPos) -> DVec3 {
+    DVec3::new(p.x as f64 + 0.5, p.y as f64 + 0.5, p.z as f64 + 0.5)
+}
+
+impl Workshop {
+    pub fn new(
+        content: &Content,
+        items: &Items,
+        mode: Mode,
+        save: Option<WorkshopSave>,
+        seed: u64,
+        ticks: u64,
+    ) -> Self {
+        let save = save.unwrap_or_default();
+        Self {
+            crafts: Arc::new(Crafts::from_content(content, items)),
+            graph: Arc::new(Graph::from_content(content)),
+            mode,
+            stations: save.stations,
+            wildfires: save.wildfires,
+            harvests: save
+                .harvests
+                .into_iter()
+                .map(|h| ((h.pos, h.process), (h.year, h.count)))
+                .collect(),
+            depleted: save.depleted.into_iter().collect(),
+            next_kill_tick: save.next_kill_tick,
+            work: None,
+            rng: Rng::new(seed ^ 0xc4af7),
+            heard_at: FxHashMap::default(),
+            last_update: ticks,
+            knowledge_changed: true,
+        }
+    }
+
+    pub fn save(&self) -> WorkshopSave {
+        let mut harvests: Vec<Harvest> = self
+            .harvests
+            .iter()
+            .map(|((pos, process), (year, count))| Harvest {
+                pos: *pos,
+                process: process.clone(),
+                year: *year,
+                count: *count,
+            })
+            .collect();
+        harvests.sort_by(|a, b| (a.pos, &a.process).cmp(&(b.pos, &b.process)));
+        let mut depleted: Vec<(BlockPos, f32)> =
+            self.depleted.iter().map(|(p, kg)| (*p, *kg)).collect();
+        depleted.sort_by_key(|(p, _)| *p);
+        WorkshopSave {
+            stations: self.stations.clone(),
+            wildfires: self.wildfires.clone(),
+            harvests,
+            depleted,
+            next_kill_tick: self.next_kill_tick,
+        }
+    }
+
+    pub fn station_at(&self, pos: BlockPos) -> Option<&Station> {
+        self.stations.iter().find(|s| s.pos == pos)
+    }
+
+    fn fire_seen(f: &Fire) -> FireSeen {
+        FireSeen {
+            lit: f.lit(),
+            temp_c: f.temp_c,
+        }
+    }
+
+    /// What the player looks at, as a process sees it.
+    pub fn aimed(&self, h: &Here, aim: AimAt) -> Option<Aimed> {
+        match aim {
+            AimAt::Nothing => None,
+            AimAt::Thing(id) => h.world_items.get(id).map(|_| Aimed::Thing(id)),
+            AimAt::Block { pos, top } => {
+                if let Some(st) = self.station_at(pos) {
+                    return Some(Aimed::Station {
+                        id: st.id.clone(),
+                        fire: st.fire.as_ref().map(Self::fire_seen),
+                    });
+                }
+                if let Some(w) = self.wildfires.iter().find(|w| w.pos == pos) {
+                    return w.fire.as_ref().map(|f| Aimed::Fire(Self::fire_seen(f)));
+                }
+                let state = h.lw.map.block(pos)?;
+                let reg = &h.lw.reg;
+                let block = reg.block_of(state);
+                if block.def.fluid.is_some() || reg.get(state, "waterlogged") == Some("true") {
+                    return Some(Aimed::Water);
+                }
+                let solid = !reg.collision_shape(state).is_empty();
+                let above = h.lw.map.block(pos.up());
+                let open = above.is_none_or(|a| {
+                    a.is_air()
+                        || reg.block_of(a).def.replaceable && reg.block_of(a).def.fluid.is_none()
+                });
+                Some(Aimed::Block {
+                    name: block.name.to_string(),
+                    material: block.def.material.clone(),
+                    ground: top && solid && open,
+                })
+            }
+        }
+    }
+
+    /// Where the aim points, for things lying within reach of the work.
+    fn aim_point(&self, h: &Here, aim: AimAt) -> DVec3 {
+        match aim {
+            AimAt::Block { pos, .. } => center(pos),
+            AimAt::Thing(id) => h
+                .world_items
+                .get(id)
+                .map_or(h.player.mover.pos, |w| DVec3::from_array(w.pos)),
+            AimAt::Nothing => h.player.mover.pos,
+        }
+    }
+
+    /// The weather and place at a point, as work there feels it.
+    pub fn around(&self, h: &Here, at: DVec3) -> Surroundings {
+        let w = h.env.weather_at(&h.moment, at);
+        let (x, z) = (at.x.floor() as i32, at.z.floor() as i32);
+        let covered =
+            h.lw.map
+                .sky_top(x, z)
+                .is_some_and(|top| top as f64 > at.y + 1.0);
+        let mut water_near = false;
+        let base = BlockPos::containing(at);
+        'scan: for dy in -2..=1 {
+            for dz in -2..=2 {
+                for dx in -2..=2 {
+                    let p = BlockPos::new(base.x + dx, base.y + dy, base.z + dz);
+                    if h.lw
+                        .map
+                        .block(p)
+                        .is_some_and(|s| h.lw.reg.block_of(s).def.fluid.is_some())
+                    {
+                        water_near = true;
+                        break 'scan;
+                    }
+                }
+            }
+        }
+        let mut near = Vec::new();
+        if self
+            .wildfires
+            .iter()
+            .any(|f| f.fire.as_ref().is_some_and(Fire::lit) && (center(f.pos) - at).length() < 30.0)
+        {
+            near.push(WILDFIRE.to_owned());
+        }
+        let southern = h.env.planet.latitude(at.z) < 0.0;
+        Surroundings {
+            raining: w.precip_mm_h > 0.1 && !covered,
+            humidity: w.humidity as f32,
+            daylight: h.env.sun_up(&h.moment, at),
+            air_c: w.temperature_c as f32,
+            sheltered: covered,
+            water_near,
+            near,
+            season: Some(h.moment.season(southern)),
+        }
+    }
+
+    /// The skill a recipe practises, and how practised it is.
+    fn skill_of(&self, h: &Here, r: usize) -> (Option<String>, f32) {
+        let def = &self.crafts.recipes[r].def;
+        let name = def.skill.clone().or_else(|| {
+            def.knowledge
+                .as_ref()
+                .and_then(|k| self.graph.node(k.as_str()))
+                .and_then(|n| n.skill.clone())
+        });
+        let level = name.as_deref().map_or(0.0, |n| h.player.knowledge.skill(n));
+        (name, level)
+    }
+
+    fn may_attempt(&self, h: &Here, r: usize) -> bool {
+        self.mode == Mode::Open
+            || h.player.knowledge.may_attempt(
+                self.crafts.recipes[r]
+                    .def
+                    .knowledge
+                    .as_ref()
+                    .map(|k| k.as_str()),
+            )
+    }
+
+    /// Plans recipe `r` on what is aimed at, with what is at hand now.
+    fn plan_now(&self, h: &Here, r: usize, aim: AimAt) -> Result<Plan, Lack> {
+        let aimed = self.aimed(h, aim);
+        let at = self.aim_point(h, aim);
+        let around = self.around(h, at);
+        let feet = h.player.mover.pos;
+        let lying = h.world_items.items.iter().filter(|w| {
+            let p = DVec3::from_array(w.pos);
+            w.work.is_none() && ((p - feet).length() < REACH_M || (p - at).length() < 1.5)
+        });
+        let bench = Bench::new(
+            &h.lw.content,
+            h.items,
+            &h.player.carry,
+            lying.map(|w| (w.id, &w.stack)),
+            aimed,
+            around,
+        );
+        let (_, skill) = self.skill_of(h, r);
+        plan(&self.crafts, r, &bench, skill)
+    }
+
+    /// How many times a block has yielded a process this year.
+    fn harvested(&self, pos: BlockPos, process: &str, year: i64) -> u8 {
+        match self.harvests.get(&(pos, process.to_owned())) {
+            Some((y, n)) if *y == year => *n,
+            _ => 0,
+        }
+    }
+
+    /// Starts the player doing a process.
+    pub fn act(&mut self, h: &mut Here, process: &str, aim: AimAt, hand: Option<f32>) {
+        let Some(r) = self.crafts.index_of(process) else {
+            return;
+        };
+        if !h.player.can_act(h.cfg) || h.player.asleep {
+            return;
+        }
+        if !self.may_attempt(h, r) {
+            h.out.push(acted(process, false, "You do not know how."));
+            return;
+        }
+        let def = &self.crafts.recipes[r].def;
+        if let (Some(limit), AimAt::Block { pos, .. }) = (def.harvests, aim)
+            && self.harvested(pos, process, h.moment.year) >= limit
+        {
+            h.out.push(acted(
+                process,
+                false,
+                "There is no more to take here this year.",
+            ));
+            return;
+        }
+        if let AimAt::Block { pos, .. } = aim
+            && (center(pos) - (h.player.mover.pos + DVec3::new(0.0, 1.6, 0.0))).length() > 4.0
+        {
+            return;
+        }
+        let p = match self.plan_now(h, r, aim) {
+            Ok(p) => p,
+            Err(l) => {
+                h.out.push(acted(process, false, lack_words(&l)));
+                return;
+            }
+        };
+        let def = &self.crafts.recipes[r].def;
+        if !def.attended {
+            self.set_up(h, r, &p, aim);
+            return;
+        }
+        let needed =
+            h.scales.play_seconds(p.hours as f64, p.scale) * hearth_content::time::TICKS_PER_SECOND;
+        self.work = Some(Work {
+            recipe: r,
+            aim,
+            ticks: 0.0,
+            needed: needed.max(1.0),
+            at: h.player.mover.pos,
+            hand: hand.map(|q| q.clamp(0.0, 1.0)),
+        });
+        h.out
+            .push(ToClient::Work(Some(self.work_view(0.0, needed / 20.0))));
+    }
+
+    fn work_view(&self, done: f32, play_s_left: f64) -> WorkView {
+        let r = self.work.as_ref().map_or(0, |w| w.recipe);
+        let def = &self.crafts.recipes[r].def;
+        WorkView {
+            process: def.id.clone(),
+            action: def.action.clone(),
+            done,
+            play_s_left,
+        }
+    }
+
+    /// Stops the work in hand.
+    pub fn stop(&mut self, h: &mut Here) {
+        if self.work.take().is_some() {
+            h.out.push(ToClient::Work(None));
+        }
+    }
+
+    /// How much faster the world goes while the player works at a long task: up to twenty
+    /// times, so that any work takes at most a minute or so of waiting.
+    pub fn work_warp(&self) -> f64 {
+        match &self.work {
+            Some(w) => ((w.needed - w.ticks) / 20.0 / 30.0).clamp(0.0, 19.0),
+            None => 0.0,
+        }
+    }
+
+    /// The METs of the work in hand, if any.
+    pub fn work_mets(&self) -> Option<f32> {
+        self.work
+            .as_ref()
+            .map(|w| self.crafts.recipes[w.recipe].def.mets)
+    }
+
+    /// Lives the world on by `advanced` game ticks: the work in hand, fires, unattended work,
+    /// things going off, storms and kills.
+    pub fn tick(&mut self, h: &mut Here, advanced: f64) {
+        if let Some(w) = &mut self.work {
+            let moved = (h.player.mover.pos - w.at).length() > 1.2;
+            if h.player.body.dead.is_some() || h.player.asleep || h.player.lying || moved {
+                self.work = None;
+                h.out.push(ToClient::Work(None));
+                if moved {
+                    h.out
+                        .push(acted("", false, "You leave the work unfinished."));
+                }
+            } else {
+                w.ticks += advanced;
+                if w.ticks >= w.needed {
+                    let w = self.work.take().expect("work");
+                    h.out.push(ToClient::Work(None));
+                    self.finish(h, w.recipe, w.aim, w.hand);
+                } else {
+                    let (done, left) = (w.ticks / w.needed, (w.needed - w.ticks) / 20.0);
+                    h.out
+                        .push(ToClient::Work(Some(self.work_view(done as f32, left))));
+                }
+            }
+        }
+        // The world, a game minute at a time.
+        let minute = (h.ticks_per_day / 1440.0).max(1.0);
+        while (h.ticks.saturating_sub(self.last_update)) as f64 >= minute {
+            self.last_update += minute as u64;
+            self.minute(h, 1.0 / 60.0);
+        }
+    }
+
+    /// Finishes attended work: plans it again with what is at hand now and does it.
+    fn finish(&mut self, h: &mut Here, r: usize, aim: AimAt, hand: Option<f32>) {
+        let id = self.crafts.recipes[r].def.id.clone();
+        let p = match self.plan_now(h, r, aim) {
+            Ok(p) => p,
+            Err(l) => {
+                h.out.push(acted(&id, false, lack_words(&l)));
+                return;
+            }
+        };
+        let (skill_name, skill) = self.skill_of(h, r);
+        let outcome = {
+            let aimed = self.aimed(h, aim);
+            let at = self.aim_point(h, aim);
+            let around = self.around(h, at);
+            let feet = h.player.mover.pos;
+            let lying = h.world_items.items.iter().filter(|w| {
+                let p = DVec3::from_array(w.pos);
+                w.work.is_none() && ((p - feet).length() < REACH_M || (p - at).length() < 1.5)
+            });
+            let bench = Bench::new(
+                &h.lw.content,
+                h.items,
+                &h.player.carry,
+                lying.map(|w| (w.id, &w.stack)),
+                aimed,
+                around,
+            );
+            perform_by(&self.crafts, &p, &bench, skill, &mut self.rng, hand)
+        };
+        self.apply(h, r, &p, outcome, aim, skill_name);
+    }
+
+    /// Takes `n` of the thing at a source; what was taken.
+    fn take(h: &mut Here, s: &Source, n: u16) -> Option<Stack> {
+        match s {
+            Source::Carried(path) => h.player.carry.take(h.items, path, Some(n)),
+            Source::Lying(id) => {
+                *h.items_changed = true;
+                let w = h.world_items.get_mut(*id)?;
+                if w.stack.count > n {
+                    w.stack.count -= n;
+                    let mut part = w.stack.clone();
+                    part.count = n;
+                    part.inside = None;
+                    Some(part)
+                } else {
+                    h.world_items.take(*id).map(|w| w.stack)
+                }
+            }
+        }
+    }
+
+    fn stack_mut<'a>(h: &'a mut Here, s: &Source) -> Option<&'a mut Stack> {
+        match s {
+            Source::Carried(path) => h.player.carry.get_mut(path),
+            Source::Lying(id) => h.world_items.get_mut(*id).map(|w| &mut w.stack),
+        }
+    }
+
+    /// Takes everything a plan used, deepest first so that places in containers keep their
+    /// numbers; what was taken.
+    fn take_all(h: &mut Here, used: &[(Source, u16)]) -> Vec<Stack> {
+        let mut order: Vec<&(Source, u16)> = used.iter().collect();
+        order.sort_by(|a, b| match (&a.0, &b.0) {
+            (Source::Carried(x), Source::Carried(y)) => {
+                (y.inside.len(), &y.inside).cmp(&(x.inside.len(), &x.inside))
+            }
+            _ => std::cmp::Ordering::Equal,
+        });
+        order
+            .into_iter()
+            .filter_map(|(s, n)| Self::take(h, s, *n))
+            .collect()
+    }
+
+    /// Hears triggers: discoveries and hunches are told.
+    fn hear(&mut self, h: &mut Here, triggers: &[String]) {
+        for t in triggers {
+            let events = h
+                .player
+                .knowledge
+                .observe(&self.graph, t, h.ticks, self.mode);
+            self.tell(h, events);
+        }
+        self.knowledge_changed = true;
+    }
+
+    fn tell(&mut self, h: &mut Here, events: Vec<Event>) {
+        for e in events {
+            let (id, discovered) = match e {
+                Event::Learned(id) => (id, true),
+                Event::Hunch(id) => (id, false),
+            };
+            let name = self
+                .graph
+                .node(&id)
+                .map_or_else(|| id.clone(), |n| n.name.clone());
+            let text = h
+                .player
+                .knowledge
+                .journal
+                .iter()
+                .rev()
+                .find(|n| n.node.as_deref() == Some(id.as_str()))
+                .map_or_else(String::new, |n| n.text.clone());
+            h.out.push(ToClient::Learned {
+                name,
+                discovered,
+                text,
+            });
+            if discovered {
+                // A new technique may suggest others.
+                let more = h.player.knowledge.inferences(&self.graph, Some(&id));
+                for t in more {
+                    let ev = h
+                        .player
+                        .knowledge
+                        .observe(&self.graph, &t, h.ticks, self.mode);
+                    self.tell(h, ev);
+                }
+            }
+        }
+        self.knowledge_changed = true;
+    }
+
+    /// Hears a trigger of sight, once in a while.
+    fn hear_now_and_then(&mut self, h: &mut Here, trigger: String, every_ticks: u64) {
+        let fresh = self
+            .heard_at
+            .get(&trigger)
+            .is_none_or(|&t| h.ticks.saturating_sub(t) >= every_ticks);
+        if fresh {
+            self.heard_at.insert(trigger.clone(), h.ticks);
+            self.hear(h, &[trigger]);
+        }
+    }
+
+    /// Puts what was made into the player's hands and containers, or down at their feet.
+    fn give(h: &mut Here, mut stacks: Vec<Stack>) {
+        let body_kg = h.cfg.mass_kg as f32;
+        for s in stacks.iter_mut() {
+            if let Some(g) = h.items.get(&s.id).and_then(|k| k.property("glow_h")) {
+                s.glow_h = g;
+            }
+        }
+        for s in stacks {
+            if let Err(s) = h.player.carry.stow(h.items, s, body_kg) {
+                let at = h.player.mover.pos + DVec3::new(0.3, 0.2, 0.3);
+                h.world_items.add(s, at.to_array(), 0.0);
+                *h.items_changed = true;
+            }
+        }
+    }
+
+    /// Applies a process's outcome to the world and the player.
+    fn apply(
+        &mut self,
+        h: &mut Here,
+        r: usize,
+        p: &Plan,
+        o: Outcome,
+        aim: AimAt,
+        skill_name: Option<String>,
+    ) {
+        let def = self.crafts.recipes[r].def.clone();
+        let builds = self.crafts.recipes[r].builds.clone();
+        // Practice, whatever came of it; and what it taught.
+        if let Some((s, hours)) = &o.practice {
+            h.player.knowledge.practice(s, *hours, h.ticks);
+        } else if let Some(s) = &skill_name {
+            h.player.knowledge.practice(s, p.hours, h.ticks);
+        }
+        if let Some(k) = &def.knowledge {
+            let ev = h
+                .player
+                .knowledge
+                .practised(&self.graph, k.as_str(), h.ticks);
+            self.tell(h, ev);
+        }
+        self.hear(h, &o.triggers);
+        if let Some(k) = &def.knowledge {
+            let more = h.player.knowledge.inferences(&self.graph, Some(k.as_str()));
+            self.hear(h, &more);
+        }
+        // Tools wear; one worn through breaks.
+        let mut broken = Vec::new();
+        for (s, wear) in &o.wear {
+            if let Some(stack) = Self::stack_mut(h, s) {
+                stack.condition = (stack.condition - wear).max(0.0);
+                if stack.condition <= 0.0 {
+                    broken.push(s.clone());
+                }
+            }
+        }
+        for s in broken {
+            if let Some(gone) = Self::take(h, &s, 1) {
+                let name = h
+                    .items
+                    .get(&gone.id)
+                    .map_or(gone.id.clone(), |k| k.name.clone());
+                h.out
+                    .push(acted(&def.id, false, format!("Your {name} is worn out.")));
+            }
+        }
+        if let Some(injury) = &o.injury {
+            use hearth_content::schema::body::BodyRegion;
+            let side = if self.rng.chance(0.5) {
+                hearth_body::Side::Left
+            } else {
+                hearth_body::Side::Right
+            };
+            h.player
+                .body
+                .injure(h.cfg, injury, BodyRegion::Hand, side, 0.25);
+        }
+        let taken = Self::take_all(h, &o.used);
+        if !o.done {
+            if !o.made.is_empty() {
+                Self::give(h, o.made);
+            }
+            let words = o
+                .failure
+                .clone()
+                .unwrap_or_else(|| "It does not work.".into());
+            h.out.push(acted(&def.id, false, words));
+            return;
+        }
+        // What it does to its target.
+        match (o.effect, aim) {
+            (Effect::Remove, AimAt::Block { pos, .. }) => {
+                self.set_block(h, pos, BlockStateId::AIR);
+                self.slump_around(h, pos);
+            }
+            (Effect::Excavate, AimAt::Block { pos, .. }) => self.excavate(h, pos),
+            (Effect::Deplete, AimAt::Block { pos, .. }) => {
+                let made_kg: f32 = o.made.iter().map(|s| s.mass(h.items)).sum();
+                let kg = self.depleted.entry(pos).or_default();
+                *kg += made_kg;
+                let block_kg =
+                    h.lw.map
+                        .block(pos)
+                        .and_then(|s| h.lw.reg.block_of(s).def.material.clone())
+                        .and_then(|m| h.lw.content.materials.get(&m).map(|m| m.density_kg_m3))
+                        .unwrap_or(1500.0);
+                if *kg >= block_kg {
+                    self.depleted.remove(&pos);
+                    self.set_block(h, pos, BlockStateId::AIR);
+                    self.slump_around(h, pos);
+                }
+            }
+            (Effect::Ignite, AimAt::Block { pos, .. }) => {
+                if let Some(st) = self.stations.iter_mut().find(|s| s.pos == pos)
+                    && let Some(f) = st.fire.as_mut()
+                    && !f.ignite()
+                {
+                    h.out
+                        .push(acted(&def.id, false, "The fuel is too wet to catch."));
+                }
+                self.show_station(h, pos);
+            }
+            (Effect::Feed, AimAt::Block { pos, .. }) => {
+                let fuel: Vec<Fuel> = taken
+                    .iter()
+                    .map(|s| fuel_of(&h.lw.content, h.items, s))
+                    .collect();
+                if let Some(st) = self.stations.iter_mut().find(|s| s.pos == pos)
+                    && let Some(f) = st.fire.as_mut()
+                {
+                    for x in fuel {
+                        f.feed(x);
+                    }
+                }
+                self.show_station(h, pos);
+            }
+            (Effect::Bank, AimAt::Block { pos, .. }) => {
+                if let Some(st) = self.stations.iter_mut().find(|s| s.pos == pos)
+                    && let Some(f) = st.fire.as_mut()
+                {
+                    f.bank();
+                }
+                self.show_station(h, pos);
+            }
+            (Effect::Mend, _) => {
+                if let Some(s) = p.keeps.first()
+                    && let Some(stack) = Self::stack_mut(h, s)
+                {
+                    stack.condition = 1.0;
+                    stack.quality = (stack.quality - 0.02).max(0.05);
+                }
+            }
+            _ => {}
+        }
+        if let (Some(limit), AimAt::Block { pos, .. }) = (def.harvests, aim)
+            && limit > 0
+        {
+            let year = h.moment.year;
+            let e = self
+                .harvests
+                .entry((pos, def.id.clone()))
+                .or_insert((year, 0));
+            if e.0 != year {
+                *e = (year, 0);
+            }
+            e.1 = e.1.saturating_add(1);
+        }
+        // A workstation laid out.
+        if let (Some(station), AimAt::Block { pos, .. }) = (builds, aim) {
+            self.build(h, &station, pos.up(), &taken);
+        }
+        // Firsts go in the journal.
+        for s in &o.made {
+            if let Some(k) = h.items.get(&s.id)
+                && (k.form.is_some() || k.wear.is_some())
+                && !k.has_tag("bulk")
+                && h.player
+                    .knowledge
+                    .first_made(&k.id, &k.name.to_lowercase(), h.ticks)
+            {
+                self.knowledge_changed = true;
+            }
+        }
+        let words = made_words(h.items, &o.made, &def.name);
+        Self::give(h, o.made);
+        h.out.push(acted(&def.id, true, words));
+    }
+
+    /// Sets up unattended work: its inputs go where it is done and wait.
+    fn set_up(&mut self, h: &mut Here, r: usize, p: &Plan, aim: AimAt) {
+        let def = self.crafts.recipes[r].def.clone();
+        let taken = Self::take_all(h, &p.uses);
+        let at = match aim {
+            AimAt::Block { pos, .. } => {
+                let c = center(pos);
+                if self.station_at(pos).is_some() {
+                    DVec3::new(c.x, pos.y as f64 + 0.55, c.z)
+                } else {
+                    DVec3::new(c.x, pos.y as f64 + 0.1, c.z)
+                }
+            }
+            _ => h.player.mover.pos,
+        };
+        // One batch of everything used (a stack of meat cuts).
+        let mut batch: Option<Stack> = None;
+        for s in taken {
+            match &mut batch {
+                Some(b) if b.id == s.id => b.count += s.count,
+                Some(_) => Self::give(h, vec![s]),
+                None => batch = Some(s),
+            }
+        }
+        if let Some(b) = batch {
+            let id = h.world_items.add(b, at.to_array(), 0.0);
+            if let Some(w) = h.world_items.get_mut(id) {
+                w.work = Some(hearth_items::Batch {
+                    process: def.id.clone(),
+                    hours: 0.0,
+                    wet_hours: 0.0,
+                });
+            }
+            *h.items_changed = true;
+            let triggers = vec![format!("do:{}", triggers::key(&def.id))];
+            self.hear(h, &triggers);
+            h.out.push(acted(
+                &def.id,
+                true,
+                format!("{}: left to its work.", def.name),
+            ));
+        }
+    }
+
+    /// Lays out a workstation at `at`.
+    fn build(&mut self, h: &mut Here, station: &str, at: BlockPos, parts: &[Stack]) {
+        let content = h.lw.content.clone();
+        let Some(w) = content.workstations.get(station) else {
+            return;
+        };
+        let Some(block) = &w.block else {
+            return;
+        };
+        let Ok(state) = h.lw.reg.parse_state(block.as_str()) else {
+            return;
+        };
+        let max_c = w
+            .provides
+            .iter()
+            .find_map(|c| match c {
+                Capability::MaxTempC(t) => Some(*t),
+                _ => None,
+            })
+            .unwrap_or(0.0);
+        let fire = if station.ends_with("fat_lamp") {
+            let fat: f32 = parts
+                .iter()
+                .filter(|s| h.items.get(&s.id).is_some_and(|k| k.has_tag("fat")))
+                .map(|s| s.mass(h.items))
+                .sum();
+            Some(Fire::lamp(max_c, fat))
+        } else if max_c > 0.0 {
+            let fuel = parts
+                .iter()
+                .map(|s| fuel_of(&content, h.items, s))
+                .collect();
+            Some(Fire::laid(max_c, fuel))
+        } else {
+            None
+        };
+        self.set_block(h, at, state);
+        self.stations.retain(|s| s.pos != at);
+        self.stations.push(Station {
+            pos: at,
+            id: station.to_owned(),
+            fire,
+        });
+        self.show_station(h, at);
+    }
+
+    /// Shows a station's fire in its block's state.
+    fn show_station(&mut self, h: &mut Here, pos: BlockPos) {
+        let Some(st) = self.stations.iter().find(|s| s.pos == pos) else {
+            return;
+        };
+        let Some(state) = h.lw.map.block(pos) else {
+            return;
+        };
+        let reg = h.lw.reg.clone();
+        let fire = st.fire.as_ref().map_or(FireState::Out, Fire::state);
+        let mut next = reg.with_or_same(state, "fire", fire.name());
+        next = reg.with_or_same(next, "lit", if fire.lit() { "true" } else { "false" });
+        if next != state {
+            self.set_block(h, pos, next);
+        }
+    }
+
+    fn set_block(&mut self, h: &mut Here, pos: BlockPos, state: BlockStateId) {
+        let reg = h.lw.reg.clone();
+        h.lw.map.set_block(pos, state, &reg);
+        h.changed.push(pos);
+        if state.is_air() {
+            self.stations.retain(|s| s.pos != pos);
+        }
+    }
+
+    fn open(h: &Here, p: BlockPos) -> bool {
+        h.lw.map.block(p).is_some_and(|s| {
+            s.is_air() || {
+                let d = &h.lw.reg.block_of(s).def;
+                d.replaceable && d.fluid.is_none()
+            }
+        })
+    }
+
+    fn loose(h: &Here, p: BlockPos) -> bool {
+        h.lw.map.block(p).is_some_and(|s| {
+            let b = h.lw.reg.block_of(s);
+            b.name.path() == "spoil"
+                || b.def
+                    .material
+                    .as_deref()
+                    .and_then(|m| h.lw.content.materials.get(m))
+                    .is_some_and(|m| m.tags.iter().any(|t| t == "falls"))
+        })
+    }
+
+    /// Digs out a block: snow packs away, earth falls in a spoil pile beside the hole.
+    fn excavate(&mut self, h: &mut Here, pos: BlockPos) {
+        let Some(state) = h.lw.map.block(pos) else {
+            return;
+        };
+        let block = h.lw.reg.block_of(state);
+        let snow = block.def.material.as_deref().is_some_and(|m| {
+            h.lw.content.materials.get(m).is_some_and(|m| {
+                m.category == hearth_content::schema::material::MaterialCategory::Snow
+            })
+        });
+        let spoil = if Self::loose(h, pos) {
+            Some(state)
+        } else if snow {
+            None
+        } else {
+            h.lw.reg.parse_state("hearth:spoil").ok()
+        };
+        self.set_block(h, pos, BlockStateId::AIR);
+        if let Some(sp) = spoil {
+            // The lowest place beside the hole, away from where the player stands.
+            let feet = h.player.mover.pos;
+            let mut best: Option<(i32, f64, BlockPos)> = None;
+            for d in [[1, 0], [-1, 0], [0, 1], [0, -1]] {
+                let mut p = BlockPos::new(pos.x + d[0], pos.y, pos.z + d[1]);
+                let mut ok = false;
+                for _ in 0..6 {
+                    if Self::open(h, p) {
+                        if Self::open(h, p.down()) && p.down() != pos {
+                            p = p.down();
+                            continue;
+                        }
+                        ok = true;
+                        break;
+                    }
+                    p = p.up();
+                }
+                if !ok || p.down() == pos {
+                    continue;
+                }
+                let away = -(center(p) - feet).length();
+                if best.is_none_or(|(y, a, _)| (p.y, away) < (y, a)) {
+                    best = Some((p.y, away, p));
+                }
+            }
+            if let Some((_, _, p)) = best {
+                self.set_block(h, p, sp);
+                self.slump(h, p);
+            }
+        }
+        self.slump_around(h, pos);
+    }
+
+    /// Loose blocks next to and above an opened place slump into it.
+    fn slump_around(&mut self, h: &mut Here, pos: BlockPos) {
+        for p in [
+            pos.up(),
+            BlockPos::new(pos.x + 1, pos.y + 1, pos.z),
+            BlockPos::new(pos.x - 1, pos.y + 1, pos.z),
+            BlockPos::new(pos.x, pos.y + 1, pos.z + 1),
+            BlockPos::new(pos.x, pos.y + 1, pos.z - 1),
+        ] {
+            if Self::loose(h, p) {
+                self.slump(h, p);
+            }
+        }
+    }
+
+    /// A loose block falls and slides down any step of two until it rests: piles stand at
+    /// their angle of repose (a block's 45°, near the 35–40° of loose earth and gravel).
+    fn slump(&mut self, h: &mut Here, mut p: BlockPos) {
+        for _ in 0..24 {
+            let Some(state) = h.lw.map.block(p) else {
+                return;
+            };
+            if Self::open(h, p.down()) {
+                self.set_block(h, p, BlockStateId::AIR);
+                p = p.down();
+                self.set_block(h, p, state);
+                continue;
+            }
+            let start = (self.rng.next_u32() % 4) as usize;
+            let dirs = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+            let mut moved = false;
+            for k in 0..4 {
+                let d = dirs[(start + k) % 4];
+                let side = BlockPos::new(p.x + d[0], p.y, p.z + d[1]);
+                if Self::open(h, side) && Self::open(h, side.down()) {
+                    self.set_block(h, p, BlockStateId::AIR);
+                    let above = p.up();
+                    p = side.down();
+                    self.set_block(h, p, state);
+                    if Self::loose(h, above) {
+                        self.slump(h, above);
+                    }
+                    moved = true;
+                    break;
+                }
+            }
+            if !moved {
+                return;
+            }
+        }
+    }
+
+    /// Radiant heat from fires near a point (W/m²).
+    pub fn radiant_w_m2(&self, at: DVec3) -> f32 {
+        self.stations
+            .iter()
+            .chain(&self.wildfires)
+            .filter_map(|s| {
+                let f = s.fire.as_ref()?;
+                let d = (center(s.pos) - at).length() as f32;
+                (d < 12.0).then(|| f.radiant_w_m2(d))
+            })
+            .sum()
+    }
+
+    /// The bedding under someone lying at `feet` (insulation from the ground, clo).
+    pub fn bedding_clo(&self, feet: DVec3) -> f32 {
+        let p = BlockPos::containing(feet + DVec3::new(0.0, 0.05, 0.0));
+        match self
+            .station_at(p)
+            .map(|s| triggers::key(&s.id).to_owned())
+            .as_deref()
+        {
+            Some("fur_bed") => 1.5,
+            Some("grass_bed") => 0.8,
+            _ => 0.0,
+        }
+    }
+
+    /// What sight teaches: the keys of what the player looks at.
+    pub fn look(&mut self, h: &mut Here, aim: AimAt) {
+        let keys = match aim {
+            AimAt::Block { pos, .. } => {
+                if self.wildfires.iter().any(|w| w.pos == pos) {
+                    vec![WILDFIRE.to_owned(), "fire".to_owned()]
+                } else {
+                    let Some(state) = h.lw.map.block(pos) else {
+                        return;
+                    };
+                    let b = h.lw.reg.block_of(state);
+                    let m = b
+                        .def
+                        .material
+                        .as_deref()
+                        .and_then(|m| h.lw.content.materials.get(m));
+                    block_keys(&b.name.to_string(), m)
+                }
+            }
+            AimAt::Thing(id) => {
+                let Some(w) = h.world_items.get(id) else {
+                    return;
+                };
+                match h.lw.content.items.get(&w.stack.id) {
+                    Some(d) => item_keys(d, &h.lw.content),
+                    None => return,
+                }
+            }
+            AimAt::Nothing => return,
+        };
+        let hour = (h.ticks_per_day / 24.0) as u64;
+        for t in with_verb("see", &keys) {
+            self.hear_now_and_then(h, t, hour);
+        }
+    }
+
+    /// Eats one of the food carried at a path.
+    pub fn eat(&mut self, h: &mut Here, path: &Path) {
+        let Some(stack) = h.player.carry.get(path) else {
+            return;
+        };
+        let Some(kind) = h.items.get(&stack.id) else {
+            return;
+        };
+        let Some(bite) = bite_of(&h.lw.content, kind, stack) else {
+            h.out.push(acted("eat", false, "That is not food."));
+            return;
+        };
+        let name = kind.name.clone();
+        let food = hearth_body::Food {
+            kcal: bite.kcal as f64,
+            protein_g: bite.protein_g as f64,
+            fat_g: bite.fat_g as f64,
+            carb_g: bite.carb_g as f64,
+            water_l: bite.water_l as f64,
+            volume_l: bite.volume_l as f64,
+            fresh_days: bite.fresh_days as f64,
+        };
+        match h.player.body.eat(h.cfg, &food) {
+            Ok(()) => {
+                h.player.carry.take(h.items, path, Some(1));
+                for (cause, chance) in &bite.risks {
+                    h.player.body.expose(h.cfg, cause, *chance as f64);
+                }
+                let keys =
+                    h.lw.content
+                        .items
+                        .get(&kind.id)
+                        .map(|d| item_keys(d, &h.lw.content))
+                        .unwrap_or_default();
+                let t: Vec<String> = with_verb("eat", &keys).collect();
+                self.hear(h, &t);
+                h.out.push(acted(
+                    "eat",
+                    true,
+                    format!("You eat the {}.", name.to_lowercase()),
+                ));
+            }
+            Err(hearth_body::Refusal::Full) => h.out.push(acted("eat", false, "You are full.")),
+            Err(_) => h.out.push(acted("eat", false, "You cannot eat now.")),
+        }
+    }
+
+    /// Drinks a mouthful (a quarter litre).
+    pub fn drink(&mut self, h: &mut Here, from: &DrinkFrom) {
+        match from {
+            DrinkFrom::Water(AimAt::Block { pos, .. }) => {
+                if !matches!(
+                    self.aimed(
+                        h,
+                        AimAt::Block {
+                            pos: *pos,
+                            top: false
+                        }
+                    ),
+                    Some(Aimed::Water)
+                ) || (center(*pos) - h.player.mover.pos).length() > 3.5
+                {
+                    return;
+                }
+                let w = h.env.weather_at(&h.moment, center(*pos));
+                let q = crate::water_env::WorldWater {
+                    generator: &h.lw.generator,
+                    air_c: w.temperature_c as f32,
+                    humidity: w.humidity as f32,
+                    wind_m_s: w.wind_speed_m_s as f32,
+                }
+                .quality_at(*pos);
+                let l =
+                    h.player
+                        .body
+                        .drink(h.cfg, 0.25, q.salinity_g_l as f64, q.pathogen_risk as f64);
+                let words = if l <= 0.0 {
+                    "You cannot drink more."
+                } else if q.salinity_g_l > 5.0 {
+                    "The water is salty."
+                } else {
+                    "You drink."
+                };
+                h.out.push(acted("drink", l > 0.0, words));
+            }
+            DrinkFrom::Skin(path) => {
+                let Some(skin) = h.player.carry.get_mut(path) else {
+                    return;
+                };
+                let l = skin.liquid_l.min(0.25);
+                if l <= 0.0 {
+                    h.out.push(acted("drink", false, "The skin is empty."));
+                    return;
+                }
+                skin.liquid_l -= l;
+                let drunk = h.player.body.drink(h.cfg, l as f64, 0.2, 0.01);
+                if let Some(skin) = h.player.carry.get_mut(path) {
+                    skin.liquid_l += (l as f64 - drunk).max(0.0) as f32;
+                }
+                h.out
+                    .push(acted("drink", drunk > 0.0, "You drink from the skin."));
+            }
+            DrinkFrom::Water(_) => {}
+        }
+    }
+
+    /// Fills a carried water skin from water looked at.
+    pub fn fill(&mut self, h: &mut Here, skin: &Path, aim: AimAt) {
+        if !matches!(self.aimed(h, aim), Some(Aimed::Water)) {
+            return;
+        }
+        let Some(stack) = h.player.carry.get(skin) else {
+            return;
+        };
+        let Some(cap) = h
+            .items
+            .get(&stack.id)
+            .and_then(|k| k.container)
+            .map(|c| c.liquid_l)
+        else {
+            return;
+        };
+        if cap <= 0.0 {
+            return;
+        }
+        if let Some(s) = h.player.carry.get_mut(skin) {
+            s.liquid_l = cap;
+        }
+        h.out.push(acted("fill", true, "You fill the skin."));
+    }
+
+    /// Throws what is in the right hand: it flies and lands as a thing lying in the world.
+    pub fn throw(&mut self, h: &mut Here, dir: DVec3, speed: f64) {
+        if !h.player.can_act(h.cfg) {
+            return;
+        }
+        let Some(stack) = h
+            .player
+            .carry
+            .take(h.items, &Path::at(Root::Hand(Hand::Right)), Some(1))
+        else {
+            return;
+        };
+        let mass = stack.mass(h.items).max(0.05) as f64;
+        // A strong overarm throw: about 20 m/s for a stone, slower for heavy things.
+        let v0 = speed.clamp(0.0, 25.0) * (0.6 / mass).sqrt().clamp(0.3, 1.0);
+        let mut v = dir.normalize_or_zero() * v0;
+        let mut p = h.player.mover.pos + DVec3::new(0.0, 1.5, 0.0);
+        let dt = 0.02;
+        let reg = h.lw.reg.clone();
+        for _ in 0..800 {
+            let next = p + v * dt;
+            let b = BlockPos::containing(next);
+            let solid =
+                h.lw.map
+                    .block(b)
+                    .is_some_and(|s| !reg.collision_shape(s).is_empty());
+            if solid {
+                break;
+            }
+            p = next;
+            v.y -= 9.81 * dt;
+            if h.lw.map.block(b).is_none() {
+                break;
+            }
+        }
+        let rest = crate::server::rest_on(h.lw, p);
+        let keys =
+            h.lw.content
+                .items
+                .get(&stack.id)
+                .map(|d| item_keys(d, &h.lw.content))
+                .unwrap_or_default();
+        h.world_items.add(stack, rest.to_array(), 0.0);
+        *h.items_changed = true;
+        let t: Vec<String> = with_verb("throw", &keys).collect();
+        self.hear(h, &t);
+    }
+
+    /// Reaching for a thing with full hands and nowhere to put it.
+    pub fn hands_full(&mut self, h: &mut Here) {
+        self.hear(h, &[triggers::CARRY_FULL_HANDS.to_owned()]);
+    }
+
+    /// A game minute: fires burn, unattended work goes on, things go off, storms and kills.
+    fn minute(&mut self, h: &mut Here, dt_h: f32) {
+        let feet = h.player.mover.pos;
+        let w = h.env.weather_at(&h.moment, feet);
+        let air_c = w.temperature_c as f32;
+        let rain = w.precip_mm_h as f32;
+        let wind = w.wind_speed_m_s as f32;
+        // Fires.
+        let mut shown = Vec::new();
+        for st in self.stations.iter_mut().chain(self.wildfires.iter_mut()) {
+            let Some(f) = st.fire.as_mut() else {
+                continue;
+            };
+            let before = f.state();
+            let covered =
+                h.lw.map
+                    .sky_top(st.pos.x, st.pos.z)
+                    .is_some_and(|top| top > st.pos.y + 1);
+            f.step(dt_h, air_c, if covered { 0.0 } else { rain }, wind);
+            if f.state() != before {
+                shown.push(st.pos);
+            }
+        }
+        for pos in shown {
+            if self.wildfires.iter().any(|w| w.pos == pos) {
+                // A natural fire burnt out leaves nothing standing in the flames.
+                let out = self
+                    .wildfires
+                    .iter()
+                    .any(|w| w.pos == pos && w.fire.as_ref().is_none_or(|f| !f.lit()));
+                if out {
+                    self.set_block(h, pos, BlockStateId::AIR);
+                    self.wildfires.retain(|w| w.pos != pos);
+                }
+            } else {
+                self.show_station(h, pos);
+            }
+        }
+        // A burning tree within sight teaches what fire is.
+        let seen_fire = self.wildfires.iter().any(|w| {
+            w.fire.as_ref().is_some_and(Fire::lit) && (center(w.pos) - feet).length() < 64.0
+        });
+        if seen_fire {
+            let every = (h.ticks_per_day / 72.0) as u64;
+            self.hear_now_and_then(h, triggers::SEE_WILDFIRE.to_owned(), every);
+        }
+        // Sleeping on a hide.
+        if h.player.asleep {
+            let on_hide = self.bedding_clo(feet) >= 1.0
+                || h.world_items.items.iter().any(|w| {
+                    (DVec3::from_array(w.pos) - feet).length() < 1.5
+                        && h.items.get(&w.stack.id).is_some_and(|k| k.has_tag("hide"))
+                });
+            if on_hide {
+                let every = (h.ticks_per_day / 4.0) as u64;
+                self.hear_now_and_then(h, triggers::SLEEP_ON_HIDE.to_owned(), every);
+            }
+        }
+        self.batches(h, dt_h, air_c);
+        self.go_off(h, dt_h, air_c);
+        self.storm(h, &w);
+        self.kills(h);
+    }
+
+    /// Unattended work goes on while its conditions hold.
+    fn batches(&mut self, h: &mut Here, dt_h: f32, air_c: f32) {
+        let mut done = Vec::new();
+        for wi in h.world_items.items.iter_mut() {
+            let Some(work) = wi.work.as_mut() else {
+                continue;
+            };
+            let Some(r) = self.crafts.index_of(&work.process) else {
+                wi.work = None;
+                continue;
+            };
+            let def = &self.crafts.recipes[r].def;
+            let pos = DVec3::from_array(wi.pos);
+            let block = BlockPos::containing(pos);
+            let covered =
+                h.lw.map
+                    .sky_top(block.x, block.z)
+                    .is_some_and(|top| top > block.y + 1);
+            let raining = !covered && h.env.weather_at(&h.moment, pos).precip_mm_h > 0.1;
+            let in_water =
+                h.lw.map
+                    .block(block)
+                    .is_some_and(|s| h.lw.reg.block_of(s).def.fluid.is_some());
+            let at_station = def.station.as_ref().is_none_or(|s| {
+                self.stations
+                    .iter()
+                    .any(|st| st.id == s.as_str() && st.pos == block)
+            });
+            use hearth_content::schema::process::Condition;
+            let ok = at_station
+                && def.conditions.iter().all(|c| match c {
+                    Condition::Dry => !raining,
+                    Condition::Water => in_water,
+                    Condition::ColdBelowC(t) => air_c < *t,
+                    _ => true,
+                });
+            if ok {
+                work.hours += dt_h;
+            }
+            if raining {
+                work.wet_hours += dt_h;
+            }
+            if work.hours >= def.duration.hours {
+                done.push(wi.id);
+            }
+        }
+        for id in done {
+            let Some(wi) = h.world_items.take(id) else {
+                continue;
+            };
+            let work = wi.work.clone().expect("work");
+            let Some(r) = self.crafts.index_of(&work.process) else {
+                continue;
+            };
+            let wet = work.wet_hours / (work.hours + work.wet_hours).max(0.01);
+            match finish_batch(
+                &self.crafts,
+                r,
+                &wi.stack,
+                wet,
+                &h.lw.content,
+                h.items,
+                &mut self.rng,
+            ) {
+                Ok(made) => {
+                    for (k, s) in made.into_iter().enumerate() {
+                        let p = [wi.pos[0] + 0.1 * k as f64, wi.pos[1], wi.pos[2]];
+                        h.world_items.add(s, p, wi.yaw);
+                    }
+                }
+                Err(why) => {
+                    let name = self.crafts.recipes[r].def.name.clone();
+                    h.out
+                        .push(acted(&work.process, false, format!("{name}: {why}")));
+                }
+            }
+            *h.items_changed = true;
+        }
+    }
+
+    /// Food and carcasses go off; embers burn down.
+    fn go_off(&mut self, h: &mut Here, dt_h: f32, air_c: f32) {
+        let content = h.lw.content.clone();
+        let items = h.items;
+        let age = |s: &mut Stack, temp: f32, drying: bool| {
+            if let Some(kind) = items.get(&s.id)
+                && let Some(keeps) = keeps_days(&content, kind)
+            {
+                let rate = decay_per_hour(keeps, temp, s.wet);
+                s.decay = (s.decay + rate * dt_h * if drying { 0.25 } else { 1.0 }).min(1.6);
+            }
+            if s.glow_h > 0.0 {
+                s.glow_h = (s.glow_h - dt_h).max(-1.0);
+            }
+        };
+        h.player.carry.for_each_mut(&mut |s| age(s, air_c, false));
+        h.player.carry.retain(&mut |s| {
+            !(s.glow_h < 0.0
+                && items
+                    .get(&s.id)
+                    .is_some_and(|k| k.property("glow_h").is_some()))
+        });
+        let before = h.world_items.items.len();
+        for wi in h.world_items.items.iter_mut() {
+            let drying = wi.work.is_some();
+            age(&mut wi.stack, air_c, drying);
+        }
+        h.world_items.items.retain(|wi| {
+            let cold = wi.stack.glow_h < 0.0
+                && items
+                    .get(&wi.stack.id)
+                    .is_some_and(|k| k.property("glow_h").is_some());
+            // A carcass long rotten is gone to the scavengers.
+            let rotted = wi.stack.decay >= 1.5
+                && items
+                    .get(&wi.stack.id)
+                    .is_some_and(|k| k.has_tag("carcass"));
+            !cold && !rotted
+        });
+        if h.world_items.items.len() != before {
+            *h.items_changed = true;
+        }
+    }
+
+    /// Lightning now and then sets a tree burning.
+    fn storm(&mut self, h: &mut Here, w: &hearth_env::WeatherState) {
+        if w.thunder <= 0.0 {
+            return;
+        }
+        // Few strikes light anything; rain puts most out at once.
+        let p = w.thunder * 0.2 * (1.0 - (w.precip_mm_h / 10.0).min(0.8));
+        if !self.rng.chance(p) {
+            return;
+        }
+        let feet = h.player.mover.pos;
+        for _ in 0..16 {
+            let a = self.rng.range_f64(0.0, std::f64::consts::TAU);
+            let d = self.rng.range_f64(30.0, 150.0);
+            let (x, z) = (
+                (feet.x + a.cos() * d).floor() as i32,
+                (feet.z + a.sin() * d).floor() as i32,
+            );
+            let Some(top) = h.lw.map.sky_top(x, z) else {
+                continue;
+            };
+            let at = BlockPos::new(x, top, z);
+            let Some(state) = h.lw.map.block(at) else {
+                continue;
+            };
+            let wood =
+                h.lw.reg
+                    .block_of(state)
+                    .def
+                    .material
+                    .as_deref()
+                    .is_some_and(|m| {
+                        h.lw.content.materials.get(m).is_some_and(|m| {
+                            m.category == hearth_content::schema::material::MaterialCategory::Wood
+                        })
+                    });
+            let above = at.up();
+            if !wood || !Self::open(h, above) {
+                continue;
+            }
+            let Ok(flames) = h.lw.reg.parse_state("hearth:flames") else {
+                return;
+            };
+            let mut fire = Fire::laid(
+                900.0,
+                vec![
+                    Fuel {
+                        kg: 30.0,
+                        mj_kg: 18.0,
+                        thick_m: 0.3,
+                        wet: 0.0,
+                    };
+                    3
+                ],
+            );
+            fire.ignite();
+            fire.involved = 1.0;
+            self.set_block(h, above, flames);
+            self.wildfires.push(Station {
+                pos: above,
+                id: WILDFIRE.to_owned(),
+                fire: Some(fire),
+            });
+            h.out.push(acted(
+                "",
+                true,
+                "Lightning strikes close by. Smoke rises from a tree.",
+            ));
+            return;
+        }
+    }
+
+    /// A predator's kill turns up nearby now and then (until animals live in the world).
+    fn kills(&mut self, h: &mut Here) {
+        if h.ticks < self.next_kill_tick {
+            return;
+        }
+        let days = self.rng.range_f64(1.0, 2.5);
+        self.next_kill_tick = h.ticks + (days * h.ticks_per_day) as u64;
+        let feet = h.player.mover.pos;
+        let near = h
+            .world_items
+            .items
+            .iter()
+            .filter(|w| {
+                (DVec3::from_array(w.pos) - feet).length() < 250.0
+                    && h.items
+                        .get(&w.stack.id)
+                        .is_some_and(|k| k.has_tag("carcass"))
+            })
+            .count();
+        if near >= 2 {
+            return;
+        }
+        let Some(kind) = h.items.iter().find(|k| k.has_tag("carcass")) else {
+            return;
+        };
+        for _ in 0..16 {
+            let a = self.rng.range_f64(0.0, std::f64::consts::TAU);
+            let d = self.rng.range_f64(30.0, 120.0);
+            let (x, z) = (feet.x + a.cos() * d, feet.z + a.sin() * d);
+            let s = h.lw.terrain().sample(x.floor() as i32, z.floor() as i32);
+            if s.water > s.height {
+                continue;
+            }
+            let at = DVec3::new(x, s.height as f64 + 1.0, z);
+            let id = kind.id.clone();
+            h.world_items.add(
+                Stack::one(&id),
+                crate::server::rest_on(h.lw, at).to_array(),
+                a as f32,
+            );
+            *h.items_changed = true;
+            let dir = compass(a.cos(), a.sin());
+            h.out.push(acted(
+                "",
+                true,
+                format!("Ravens are circling to the {dir}."),
+            ));
+            return;
+        }
+    }
+}
+
+/// A direction in words, from a step east (`dx`) and south (`dz`).
+fn compass(dx: f64, dz: f64) -> &'static str {
+    let a = dx.atan2(-dz).rem_euclid(std::f64::consts::TAU);
+    const NAMES: [&str; 8] = [
+        "north",
+        "north-east",
+        "east",
+        "south-east",
+        "south",
+        "south-west",
+        "west",
+        "north-west",
+    ];
+    NAMES[((a / std::f64::consts::TAU * 8.0).round() as usize) % 8]
+}
+
+/// What burns of a thing laid on a fire.
+fn fuel_of(c: &Content, items: &Items, s: &Stack) -> Fuel {
+    let kind = items.get(&s.id);
+    let mj = kind
+        .and_then(|k| k.material.as_deref())
+        .and_then(|m| c.materials.get(m))
+        .and_then(|m| m.fuel_mj_kg)
+        .unwrap_or(17.0);
+    let thick = kind.map_or(0.02, |k| {
+        let d = k.size_m.iter().copied().fold(f32::INFINITY, f32::min);
+        if k.has_tag("tinder") {
+            0.002
+        } else {
+            d.max(0.002)
+        }
+    });
+    Fuel {
+        kg: s.mass(items),
+        mj_kg: mj,
+        thick_m: thick,
+        wet: s.wet,
+    }
+}
+
+/// What was made, in words.
+fn made_words(items: &Items, made: &[Stack], name: &str) -> String {
+    if made.is_empty() {
+        return format!("{name}: done.");
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for s in made {
+        let n = items
+            .get(&s.id)
+            .map_or(s.id.clone(), |k| k.name.to_lowercase());
+        if s.count > 1 {
+            parts.push(format!("{} {n}", s.count));
+        } else {
+            parts.push(n);
+        }
+    }
+    format!("{name}: {}.", parts.join(", "))
+}

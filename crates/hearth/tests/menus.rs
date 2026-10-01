@@ -49,6 +49,7 @@ fn render(
                     summary: None,
                 }),
                 inventory: None,
+                journal: None,
             };
             actions = menus.ui(ui, &mut cx);
         },
@@ -88,6 +89,7 @@ fn the_screens_draw_and_answer() {
                 name: "Hearthstead".into(),
                 seed: String::new(),
                 death: 0,
+                knowledge: 0,
             },
         ),
         ("options", Screen::Options),

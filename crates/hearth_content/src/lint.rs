@@ -14,7 +14,7 @@ use crate::schema::fauna::Social;
 use crate::schema::flora::Edibility;
 use crate::schema::knowledge::{Knowledge, Need};
 use crate::schema::material::MaterialCategory;
-use crate::schema::process::{Input, Match, Output, Process};
+use crate::schema::process::{BlockMatch, Input, Match, Output, Process, Target};
 use crate::schema::{Entry, Status};
 use crate::time::TimeScales;
 
@@ -23,6 +23,9 @@ use crate::time::TimeScales;
 pub struct LintContext {
     /// Valid biome names; `None` skips the biome check.
     pub biomes: Option<Vec<String>>,
+    /// The world's blocks (name, material), for block targets and sight; `None` takes every
+    /// block target and sight as possible.
+    pub blocks: Option<Vec<(String, Option<String>)>>,
 }
 
 /// Results of the reachability analysis, useful beyond the lint (graphs, tests).
@@ -37,6 +40,8 @@ pub struct Reach {
     pub producer: FxHashMap<String, String>,
     /// Fixpoint order of processes.
     pub order: Vec<String>,
+    /// Discovery triggers something obtainable emits.
+    pub triggers: FxHashSet<String>,
 }
 
 /// Rolled-up cost of reaching a knowledge node from nothing.
@@ -52,6 +57,8 @@ pub struct Effort {
     pub play_minutes: f64,
     /// Natural materials gathered (kg, items counted by their mass).
     pub gathered_kg: f64,
+    /// The node is implemented (planned eras are still partly authored).
+    pub implemented: bool,
 }
 
 struct Refs<'a> {
@@ -92,6 +99,10 @@ impl Refs<'_> {
                 }
             }
             Match::Material(r) => self.material(r, o, from),
+            Match::Garment(g) => {
+                let t = &self.c.garments;
+                self.check(t, "garment", g, o, from);
+            }
             Match::Tag(t) => {
                 let known = self.c.items.iter().any(|i| i.tags.contains(t))
                     || self.c.materials.iter().any(|m| m.tags.contains(t));
@@ -283,7 +294,12 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
                 );
             }
         }
-        if e.outputs.is_empty() {
+        // Experiments teach, and some processes act on their target (dig, light, feed, mend)
+        // rather than make things.
+        let acts = e.effect != crate::schema::process::Effect::Keep
+            || e.verb.is_some()
+            || !e.teaches.is_empty();
+        if e.outputs.is_empty() && !acts {
             r.report.error(
                 "no-output",
                 Some(o.file.clone()),
@@ -505,20 +521,7 @@ fn natural_materials(c: &Content) -> FxHashSet<String> {
 }
 
 fn item_matches(m: &Match, item: &ItemDef, c: &Content) -> bool {
-    match m {
-        Match::Item(r) => item.id == r.as_str(),
-        Match::Form { form, materials } => {
-            item.form.as_deref() == Some(form.as_str())
-                && materials.as_ref().is_none_or(|f| {
-                    item.material
-                        .as_deref()
-                        .and_then(|mid| c.materials.get(mid).map(|mat| f.matches(mid, mat)))
-                        .unwrap_or(false)
-                })
-        }
-        Match::Material(r) => item.material.as_deref() == Some(r.as_str()),
-        Match::Tag(t) => item.tags.contains(t),
-    }
+    crate::triggers::item_matches(m, item, c)
 }
 
 fn satisfied(m: &Match, reach: &Reach, c: &Content) -> bool {
@@ -545,6 +548,33 @@ fn inputs_ok(inputs: &[Input], reach: &Reach, c: &Content) -> bool {
     inputs.iter().all(|i| satisfied(&i.item, reach, c))
 }
 
+/// The materials a process's outputs may be made of when they do not say: those of the
+/// obtainable things matching its first input, or of the blocks its target accepts.
+fn materials_in_play(p: &Process, reach: &Reach, c: &Content) -> Vec<String> {
+    let mut mats = Vec::new();
+    if let Some(first) = p.inputs.first() {
+        for id in reach.items.iter() {
+            if let Some(d) = c.items.get(id)
+                && item_matches(&first.item, d, c)
+                && let Some(m) = &d.material
+            {
+                mats.push(m.clone());
+            }
+        }
+        if let Match::Material(m) = &first.item {
+            mats.push(m.to_string());
+        }
+    } else if let Some(Target::Block(BlockMatch::Material(f))) = &p.target {
+        mats.extend(
+            c.materials
+                .iter()
+                .filter(|m| f.matches(m.id(), m))
+                .map(|m| m.id().to_owned()),
+        );
+    }
+    mats
+}
+
 /// Adds what `out` produces; `Form` outputs without a material filter inherit the materials
 /// of the obtainable items matching the first input (a flake is struck from a core of the
 /// same stone).
@@ -566,33 +596,25 @@ fn produce(out: &Output, p: &Process, reach: &mut Reach, c: &Content, new: &mut 
             }
         }
         Match::Form { form, materials } => {
-            let mut mats: Vec<String> = Vec::new();
-            match materials {
-                Some(f) => {
-                    for m in c.materials.iter() {
-                        if f.matches(m.id(), m) {
-                            mats.push(m.id().to_owned());
-                        }
-                    }
-                }
-                None => {
-                    if let Some(first) = p.inputs.first() {
-                        for id in reach.items.iter() {
-                            if let Some(d) = c.items.get(id)
-                                && item_matches(&first.item, d, c)
-                                && let Some(m) = &d.material
-                            {
-                                mats.push(m.clone());
-                            }
-                        }
-                        if let Match::Material(m) = &first.item {
-                            mats.push(m.to_string());
-                        }
-                    }
-                }
-            }
+            let mats = match materials {
+                Some(f) => c
+                    .materials
+                    .iter()
+                    .filter(|m| f.matches(m.id(), m))
+                    .map(|m| m.id().to_owned())
+                    .collect(),
+                None => materials_in_play(p, reach, c),
+            };
             for m in mats {
                 let id = crate::generate::generated_id(form.as_str(), &m);
+                if c.items.get(&id).is_some() {
+                    add(id, reach);
+                }
+            }
+        }
+        Match::Garment(g) => {
+            for m in materials_in_play(p, reach, c) {
+                let id = crate::generate::generated_id(g.as_str(), &m);
                 if c.items.get(&id).is_some() {
                     add(id, reach);
                 }
@@ -606,10 +628,46 @@ fn produce(out: &Output, p: &Process, reach: &mut Reach, c: &Content, new: &mut 
 /// then everything executable processes produce, stations that can be built and knowledge
 /// that can be reached.
 pub fn reachability(c: &Content) -> Reach {
+    reachability_in(c, None)
+}
+
+/// Whether a discovery route's trigger is emitted by something obtainable.
+fn heard(
+    k: &Knowledge,
+    route: &crate::schema::knowledge::Discovery,
+    reach: &Reach,
+    blocks: Option<&[(String, Option<String>)]>,
+) -> bool {
+    use crate::schema::knowledge::Route;
+    let t = route.trigger.as_str();
+    if route.route == Route::Inference {
+        // Inferred from known prerequisites: the trigger names the node itself.
+        return !k.requires.is_empty() && t == format!("infer:{}", crate::triggers::key(k.id()));
+    }
+    if reach.triggers.contains(t) {
+        return true;
+    }
+    // Sight of a world's block when the blocks are not known.
+    blocks.is_none() && t.starts_with("see:")
+}
+
+/// [`reachability`] in a world with these blocks (none: any block target and sight count).
+pub fn reachability_in(c: &Content, blocks: Option<&[(String, Option<String>)]>) -> Reach {
     let mut reach = Reach {
         materials: natural_materials(c),
         ..Reach::default()
     };
+    reach
+        .triggers
+        .extend(crate::triggers::SYSTEM.iter().map(|s| (*s).to_owned()));
+    // Sight of the world's blocks.
+    for (name, mat) in blocks.unwrap_or(&[]) {
+        let material = mat.as_deref().and_then(|m| c.materials.get(m));
+        reach.triggers.extend(crate::triggers::with_verb(
+            "see",
+            &crate::triggers::block_keys(name, material),
+        ));
+    }
     for it in c.items.iter() {
         let gatherable_form = it
             .form
@@ -626,9 +684,38 @@ pub fn reachability(c: &Content) -> Reach {
     }
     loop {
         let mut changed = false;
+        // A material that can be had can be had by the handful, the cut, the lump.
+        for it in c.items.iter() {
+            if it.tags.iter().any(|t| t == "bulk")
+                && it
+                    .material
+                    .as_deref()
+                    .is_some_and(|m| reach.materials.contains(m))
+                && reach.items.insert(it.id.clone())
+            {
+                changed = true;
+            }
+        }
+        // Whatever can be had can be seen lying about, and thrown.
+        let mut seen = Vec::new();
+        for id in reach.items.iter() {
+            if let Some(it) = c.items.get(id) {
+                let keys = crate::triggers::item_keys(it, c);
+                seen.extend(crate::triggers::with_verb("see", &keys));
+                seen.extend(crate::triggers::with_verb("throw", &keys));
+            }
+        }
+        reach.triggers.extend(seen);
         for w in c.workstations.iter() {
-            if !reach.stations.contains(w.id()) && inputs_ok(&w.parts, &reach, c) {
+            let known = w
+                .knowledge
+                .as_ref()
+                .is_none_or(|k| reach.knowledge.contains(k.as_str()));
+            if !reach.stations.contains(w.id()) && known && inputs_ok(&w.parts, &reach, c) {
                 reach.stations.insert(w.id().to_owned());
+                reach
+                    .triggers
+                    .insert(format!("do:build_{}", crate::triggers::key(w.id())));
                 changed = true;
             }
         }
@@ -646,7 +733,11 @@ pub fn reachability(c: &Content) -> Reach {
                 Need::Station(s) => reach.stations.contains(s.as_str()),
                 Need::Environment(_) => true,
             });
-            if prereqs && needs {
+            // Planned nodes are checked for their prerequisites only: the systems that will emit
+            // their triggers may not exist yet.
+            let discovered = k.status == Status::Planned
+                || k.discovery.iter().any(|r| heard(k, r, &reach, blocks));
+            if prereqs && needs && discovered {
                 reach.knowledge.insert(k.id().to_owned());
                 changed = true;
             }
@@ -671,7 +762,17 @@ pub fn reachability(c: &Content) -> Reach {
                         .is_some_and(|v| v >= t.min)
                 })
             });
-            if known && station && tools && inputs_ok(&p.inputs, &reach, c) {
+            let target = match &p.target {
+                Some(Target::Thing(m)) => satisfied(m, &reach, c),
+                Some(Target::Block(b)) => blocks.is_none_or(|list| {
+                    list.iter().any(|(name, mat)| {
+                        let m = mat.as_deref().and_then(|m| c.materials.get(m));
+                        crate::triggers::block_matches(b, name, m)
+                    })
+                }),
+                _ => true,
+            };
+            if known && station && tools && target && inputs_ok(&p.inputs, &reach, c) {
                 reach.processes.insert(p.id().to_owned());
                 reach.order.push(p.id().to_owned());
                 let mut new = Vec::new();
@@ -680,6 +781,30 @@ pub fn reachability(c: &Content) -> Reach {
                 }
                 changed = true;
             }
+        }
+        // What doing the processes that can be done teaches, with everything that can be
+        // had now (things become obtainable after the processes that use them).
+        let mut heard_now = FxHashSet::default();
+        {
+            let items = &reach.items;
+            let materials = &reach.materials;
+            let usable = crate::triggers::Usable {
+                item: &|id| items.contains(id),
+                material: &|id| materials.contains(id),
+                blocks,
+            };
+            for p in c
+                .processes
+                .iter()
+                .filter(|p| reach.processes.contains(p.id()))
+            {
+                crate::triggers::process_triggers(p, c, &usable, &mut heard_now);
+            }
+        }
+        let before = reach.triggers.len();
+        reach.triggers.extend(heard_now);
+        if reach.triggers.len() != before {
+            changed = true;
         }
         if !changed {
             break;
@@ -903,6 +1028,7 @@ pub fn effort(c: &Content, reach: &Reach) -> Vec<Effort> {
             real_hours,
             play_minutes: play_s / 60.0,
             gathered_kg: gathered,
+            implemented: k.status == Status::Implemented,
         });
         knowledge_sets.insert(k.id().to_owned(), set);
     }
@@ -916,6 +1042,9 @@ fn effort_report(efforts: &[Effort], report: &mut Report) {
     }
     let mut last_mean = -1.0;
     for (era, list) in &by_era {
+        // Eras whose nodes are all planned have few processes yet; they are reported, not
+        // ordered.
+        let planned = list.iter().all(|e| !e.implemented);
         let n = list.len() as f64;
         let steps = list.iter().map(|e| e.steps as f64).sum::<f64>() / n;
         let hours = list.iter().map(|e| e.real_hours).sum::<f64>() / n;
@@ -924,11 +1053,15 @@ fn effort_report(efforts: &[Effort], report: &mut Report) {
         report.info(
             "effort",
             format!(
-                "era {era}: {} reachable nodes, mean {steps:.1} steps, {hours:.1} h of real work \
+                "era {era}{}: {} reachable nodes, mean {steps:.1} steps, {hours:.1} h of real work \
                  ({play:.1} min of play), {kg:.1} kg gathered from scratch",
+                if planned { " (planned)" } else { "" },
                 list.len()
             ),
         );
+        if planned {
+            continue;
+        }
         if steps < last_mean {
             report.warning(
                 "effort-order",
@@ -947,7 +1080,7 @@ pub fn lint(c: &Content, ctx: &LintContext) -> Report {
     crate::validate::validate(c, &mut report);
     refs(c, &mut report, ctx);
     knowledge_graph(c, &mut report);
-    let reach = reachability(c);
+    let reach = reachability_in(c, ctx.blocks.as_deref());
     reachability_report(c, &reach, &mut report);
     food_webs(c, &mut report);
     effort_report(&effort(c, &reach), &mut report);

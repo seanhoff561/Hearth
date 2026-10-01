@@ -888,6 +888,8 @@ pub fn textures() -> Vec<TexEntry> {
         }
         v.push(TexEntry::still(&format!("block/destroy_stage_{stage}"), t));
     }
+    // What people gather from and make.
+    v.extend(crate::craft::textures());
     // Missing-texture placeholder (magenta/black checker) for unknown blocks.
     v.push(TexEntry::still(
         "block/missing",

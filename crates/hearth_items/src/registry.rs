@@ -10,6 +10,8 @@ use rustc_hash::FxHashMap;
 pub struct ItemKind {
     pub id: String,
     pub name: String,
+    /// The form it is made in (`hearth:flake`), for generated things.
+    pub form: Option<String>,
     pub material: Option<String>,
     pub mass_kg: f32,
     pub volume_l: f32,
@@ -85,6 +87,7 @@ impl Items {
             .map(|d| ItemKind {
                 id: d.id.clone(),
                 name: d.name.clone(),
+                form: d.form.clone(),
                 material: d.material.clone(),
                 mass_kg: d.mass_kg,
                 volume_l: d.volume_l,

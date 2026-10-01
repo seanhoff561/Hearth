@@ -162,7 +162,10 @@ impl Container {
                     u16::MAX
                 };
                 let n = (per_cell - p.stack.count).min(stack.count).min(by_weight);
-                self.items[i].stack.count += n;
+                let mut part = stack.clone();
+                part.count = n;
+                part.inside = None;
+                self.items[i].stack.absorb(part);
                 stack.count -= n;
             }
             if stack.count == 0 {

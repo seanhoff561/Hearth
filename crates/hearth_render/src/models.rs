@@ -287,6 +287,34 @@ fn cross(tex: FaceTex, waving: bool) -> Vec<ModelQuad> {
     vec![quad(a, a, b, b), quad(a, b, b, a)]
 }
 
+/// Two diagonal quads filling the box from `min` to `max`, the whole texture stretched over
+/// each (flames in a hearth, a lamp's flame).
+fn cross_box(tex: FaceTex, min: Vec3, max: Vec3) -> Vec<ModelQuad> {
+    let quad = |x0: f32, z0: f32, x1: f32, z1: f32| ModelQuad {
+        pos: [
+            Vec3::new(x0, min.y, z0),
+            Vec3::new(x1, min.y, z1),
+            Vec3::new(x1, max.y, z1),
+            Vec3::new(x0, max.y, z0),
+        ],
+        uv: [
+            Vec2::new(0.0, 16.0),
+            Vec2::new(16.0, 16.0),
+            Vec2::new(16.0, 0.0),
+            Vec2::new(0.0, 0.0),
+        ],
+        tex,
+        dir: None,
+        cull: None,
+        shade: false,
+        waving: false,
+    };
+    vec![
+        quad(min.x, min.z, max.x, max.z),
+        quad(min.x, max.z, max.x, min.z),
+    ]
+}
+
 fn cube_model(
     name: &str,
     s: BlockStateId,
@@ -569,6 +597,93 @@ fn bake_model(
         "sugar_cane" => {
             let tex = ctx.own(&cross_texture(name, s, reg));
             quads = cross(tex, true);
+            layer = RenderLayer::Cutout;
+        }
+        "campfire" => {
+            // A ring of stones; logs laid in it, or a mound of ash with coals; flames by how
+            // well it burns.
+            let px = |v: f32| v / 16.0;
+            let stones = ctx.tex("campfire_stones");
+            for [x0, z0, x1, z1, h] in [
+                [1.0, 6.0, 4.0, 10.0, 3.0],
+                [12.0, 6.0, 15.0, 10.0, 3.0],
+                [6.0, 1.0, 10.0, 4.0, 3.0],
+                [6.0, 12.0, 10.0, 15.0, 3.0],
+                [2.0, 2.0, 5.0, 5.0, 2.0],
+                [11.0, 11.0, 14.0, 14.0, 2.0],
+                [11.0, 2.0, 14.0, 5.0, 2.0],
+                [2.0, 11.0, 5.0, 14.0, 2.0],
+            ] {
+                box_quads(
+                    Vec3::new(px(x0), 0.0, px(z0)),
+                    Vec3::new(px(x1), px(h), px(z1)),
+                    |_| stones,
+                    true,
+                    &mut quads,
+                );
+            }
+            let fire = prop(reg, s, "fire").unwrap_or("out");
+            if matches!(fire, "out" | "low" | "high") {
+                let logs = ctx.tex("campfire_logs");
+                for (a, b) in [
+                    (
+                        Vec3::new(px(4.0), px(0.5), px(7.0)),
+                        Vec3::new(px(12.0), px(2.5), px(9.0)),
+                    ),
+                    (
+                        Vec3::new(px(7.0), px(1.5), px(4.0)),
+                        Vec3::new(px(9.0), px(3.5), px(12.0)),
+                    ),
+                ] {
+                    box_quads(a, b, |_| logs, true, &mut quads);
+                }
+            } else {
+                let ash = ctx.tex("campfire_ash");
+                let top = if fire == "embers" {
+                    ctx.tex("embers")
+                } else {
+                    ash
+                };
+                box_quads(
+                    Vec3::new(px(5.0), 0.0, px(5.0)),
+                    Vec3::new(px(11.0), px(1.5), px(11.0)),
+                    move |d| if d == Direction::Up { top } else { ash },
+                    true,
+                    &mut quads,
+                );
+            }
+            let flame_h = match fire {
+                "low" => 0.55,
+                "high" => 0.95,
+                _ => 0.0,
+            };
+            if flame_h > 0.0 {
+                quads.extend(cross_box(
+                    ctx.tex("flames"),
+                    Vec3::new(0.2, px(1.5), 0.2),
+                    Vec3::new(0.8, px(1.5) + flame_h, 0.8),
+                ));
+            }
+            layer = RenderLayer::Cutout;
+        }
+        "fat_lamp" => {
+            let px = |v: f32| v / 16.0;
+            let stone = ctx.tex("fat_lamp");
+            let side = ctx.tex("campfire_stones");
+            box_quads(
+                Vec3::new(px(5.0), 0.0, px(5.0)),
+                Vec3::new(px(11.0), px(3.0), px(11.0)),
+                move |d| if d == Direction::Up { stone } else { side },
+                true,
+                &mut quads,
+            );
+            if prop(reg, s, "lit") == Some("true") {
+                quads.extend(cross_box(
+                    ctx.tex("flames"),
+                    Vec3::new(px(6.5), px(3.0), px(6.5)),
+                    Vec3::new(px(9.5), px(8.0), px(9.5)),
+                ));
+            }
             layer = RenderLayer::Cutout;
         }
         _ => {

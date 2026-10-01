@@ -61,9 +61,18 @@ pub enum Screen {
         seed: String,
         /// Which of the death rules (Legacy, Permadeath, Hardy).
         death: usize,
+        /// How knowledge is gained (Discovery, Guided, Open).
+        knowledge: usize,
     },
     /// After death: what the world's rules allow.
     Death,
+    /// The journal (J): the tab open and how far it is scrolled.
+    Journal {
+        tab: u8,
+        scroll: i32,
+    },
+    /// Knapping a stone by hand.
+    Knapping(Box<crate::knapping_ui::KnapScreen>),
     /// What the player carries (Tab): a thing lifted onto the pointer, and whether it is turned.
     Inventory {
         lifted: Option<crate::inventory_ui::Lifted>,
@@ -105,9 +114,16 @@ pub enum MenuAction {
         folder: String,
         seed: u64,
         death_rules: hearth_save::DeathRules,
+        knowledge: hearth_save::KnowledgeMode,
     },
     /// Live on after death (as this person, under Legacy).
     LiveOn(Option<Appearance>),
+    /// Knapping is over: do the process, by hand (with the quality reached) or as usual.
+    Knapped {
+        process: String,
+        aim: hearth_protocol::AimAt,
+        hand: Option<f32>,
+    },
     /// Move a carried thing.
     Shift {
         from: hearth_items::Path,
@@ -143,6 +159,8 @@ pub struct MenuContext<'a> {
     pub death: Option<DeathInfo>,
     /// What the player carries, in a world.
     pub inventory: Option<crate::inventory_ui::InventoryView<'a>>,
+    /// What the player knows, in a world.
+    pub journal: Option<crate::journal_ui::JournalView<'a>>,
 }
 
 /// What the death screen says.
@@ -153,6 +171,12 @@ pub struct DeathInfo {
     /// The life's tale, when it ended the world.
     pub summary: Option<Vec<String>>,
 }
+
+const KNOWLEDGE_MODES: [hearth_save::KnowledgeMode; 3] = [
+    hearth_save::KnowledgeMode::Discovery,
+    hearth_save::KnowledgeMode::Guided,
+    hearth_save::KnowledgeMode::Open,
+];
 
 const DEATH_RULES: [hearth_save::DeathRules; 3] = [
     hearth_save::DeathRules::Legacy,
@@ -228,6 +252,10 @@ impl Menus {
     /// Whether the inventory is the screen shown.
     pub fn inventory_open(&self) -> bool {
         matches!(self.stack.last(), Some(Screen::Inventory { .. }))
+    }
+
+    pub fn journal_open(&self) -> bool {
+        matches!(self.stack.last(), Some(Screen::Journal { .. }))
     }
 
     /// Whether the controls screen is waiting for a key.
@@ -342,6 +370,7 @@ impl Menus {
                             folder: entries[i].folder.clone(),
                             seed: 0,
                             death_rules: Default::default(),
+                            knowledge: Default::default(),
                         });
                     }
                     *selected = Some(i);
@@ -358,6 +387,7 @@ impl Menus {
                         folder: entries[i].folder.clone(),
                         seed: 0,
                         death_rules: Default::default(),
+                        knowledge: Default::default(),
                     });
                 }
                 if ui.button(b, &ui.t("menu.worlds.new")) {
@@ -365,13 +395,19 @@ impl Menus {
                         name: String::new(),
                         seed: String::new(),
                         death: 0,
+                        knowledge: 0,
                     });
                 }
                 if ui.button(d, &ui.t("menu.back")) {
                     pop = true;
                 }
             }
-            Screen::NewWorld { name, seed, death } => {
+            Screen::NewWorld {
+                name,
+                seed,
+                death,
+                knowledge,
+            } => {
                 ui.title(30.0, &ui.t("menu.new_world.title"));
                 let mut c = Column::new(x, 60.0, W);
                 ui.label(x, c.y, &ui.t("menu.new_world.name"), theme::DIM);
@@ -402,6 +438,20 @@ impl Menus {
                     .map(|k| ui.t(k))
                     .collect();
                 ui.cycle(c.row(ROW), &ui.t("menu.new_world.death"), &rules, death);
+                let modes: Vec<String> = [
+                    "menu.knowledge.discovery",
+                    "menu.knowledge.guided",
+                    "menu.knowledge.open",
+                ]
+                .iter()
+                .map(|k| ui.t(k))
+                .collect();
+                ui.cycle(
+                    c.row(ROW),
+                    &ui.t("menu.new_world.knowledge"),
+                    &modes,
+                    knowledge,
+                );
                 c.space(10.0);
                 let folder = folder_name(name);
                 let exists = cx.saves.join(&folder).join("level.json").exists();
@@ -414,6 +464,7 @@ impl Menus {
                         folder,
                         seed: parse_seed(seed),
                         death_rules: DEATH_RULES[(*death).min(DEATH_RULES.len() - 1)],
+                        knowledge: KNOWLEDGE_MODES[(*knowledge).min(KNOWLEDGE_MODES.len() - 1)],
                     });
                 }
                 if ui.button(c.row(ROW), &ui.t("menu.back")) {
@@ -795,6 +846,30 @@ impl Menus {
             Screen::Death => {
                 death_screen(ui, cx, &mut out, &mut push);
             }
+            Screen::Knapping(k) => {
+                if let Some(done) = crate::knapping_ui::knapping_screen(ui, k) {
+                    use crate::knapping_ui::KnapDone;
+                    let hand = match done {
+                        KnapDone::Finished(q) => Some(Some(q)),
+                        KnapDone::Habit => Some(None),
+                        KnapDone::Leave => None,
+                    };
+                    if let Some(hand) = hand {
+                        out.push(MenuAction::Knapped {
+                            process: k.process.clone(),
+                            aim: k.aim,
+                            hand,
+                        });
+                    }
+                    pop = true;
+                }
+            }
+            Screen::Journal { tab, scroll } => match &cx.journal {
+                Some(view) => {
+                    pop |= crate::journal_ui::journal_screen(ui, view, tab, scroll);
+                }
+                None => pop = true,
+            },
             Screen::Inventory { lifted, turned } => match &cx.inventory {
                 Some(view) => {
                     crate::inventory_ui::inventory_screen(ui, view, lifted, turned, &mut out);

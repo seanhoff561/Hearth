@@ -454,6 +454,84 @@ impl Carry {
         Some(s)
     }
 
+    /// The thing at a path, to change it (wear an edge, let it go off).
+    pub fn get_mut(&mut self, p: &Path) -> Option<&mut Stack> {
+        let mut s = self.root_mut(p.root)?;
+        for &i in &p.inside {
+            s = &mut s.inside.as_mut()?.items.get_mut(i)?.stack;
+        }
+        Some(s)
+    }
+
+    /// Every carried thing, in containers too (garments worn included).
+    pub fn for_each_mut(&mut self, f: &mut dyn FnMut(&mut Stack)) {
+        fn walk(s: &mut Stack, f: &mut dyn FnMut(&mut Stack)) {
+            f(s);
+            if let Some(c) = s.inside.as_mut() {
+                for p in &mut c.items {
+                    walk(&mut p.stack, f);
+                }
+            }
+        }
+        for s in [
+            &mut self.left,
+            &mut self.right,
+            &mut self.back,
+            &mut self.dragging,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            walk(s, f);
+        }
+        for w in &mut self.worn {
+            walk(&mut w.stack, f);
+            for s in w.hung.iter_mut().flatten() {
+                walk(s, f);
+            }
+        }
+    }
+
+    /// Drops every carried thing (in containers too) for which `keep` is false: an ember gone
+    /// cold, a rotted carcass.
+    pub fn retain(&mut self, keep: &mut dyn FnMut(&Stack) -> bool) {
+        fn inner(s: &mut Stack, keep: &mut dyn FnMut(&Stack) -> bool) {
+            if let Some(c) = s.inside.as_mut() {
+                c.items.retain(|p| keep(&p.stack));
+                for p in &mut c.items {
+                    inner(&mut p.stack, keep);
+                }
+            }
+        }
+        for slot in [
+            &mut self.left,
+            &mut self.right,
+            &mut self.back,
+            &mut self.dragging,
+        ] {
+            if slot.as_ref().is_some_and(|s| !keep(s)) {
+                *slot = None;
+            }
+            if let Some(s) = slot.as_mut() {
+                inner(s, keep);
+            }
+        }
+        if self.right.is_none() {
+            self.both = false;
+        }
+        for w in &mut self.worn {
+            for h in &mut w.hung {
+                if h.as_ref().is_some_and(|s| !keep(s)) {
+                    *h = None;
+                }
+                if let Some(s) = h.as_mut() {
+                    inner(s, keep);
+                }
+            }
+            inner(&mut w.stack, keep);
+        }
+    }
+
     /// The container at a path, opened, with its spec.
     pub fn container_mut(
         &mut self,

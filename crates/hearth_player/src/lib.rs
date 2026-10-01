@@ -76,6 +76,9 @@ pub struct Player {
     /// What the player carries and wears.
     #[serde(default)]
     pub carry: hearth_items::Carry,
+    /// What the player knows: discoveries, insight, skills, the journal.
+    #[serde(default)]
+    pub knowledge: hearth_craft::KnowledgeState,
 }
 
 impl Player {
@@ -88,6 +91,7 @@ impl Player {
             drowsy_s: 0.0,
             life: Life::begin(feet, 0),
             carry: hearth_items::Carry::default(),
+            knowledge: hearth_craft::KnowledgeState::default(),
         }
     }
 

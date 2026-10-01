@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::material::MaterialFilter;
-use super::{Duration, Range, entry};
+use super::{Duration, Range, Season, entry};
 use crate::IdRef;
 
 /// What an input or output slot accepts.
@@ -22,6 +22,59 @@ pub enum Match {
     Material(IdRef),
     /// Any item carrying a tag.
     Tag(String),
+    /// A garment (`hide_cape`), of the material in play.
+    Garment(IdRef),
+}
+
+/// What a process is done to in the world: what the person looks at while doing it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Target {
+    /// A block, by id or by what it is made of.
+    Block(BlockMatch),
+    /// A thing lying in the world (an anvil stone, a carcass); when it matches an input it is
+    /// that input.
+    Thing(Match),
+    /// Water to hand: a pool, a stream, the sea's edge.
+    Water,
+    /// A fire burning in the world (a lit hearth, a natural fire).
+    Fire,
+    /// The open top of solid ground, to build or lay something on.
+    Ground,
+}
+
+/// Which blocks a target accepts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum BlockMatch {
+    /// One block, any of its states (`oak_log`).
+    Id(IdRef),
+    /// Blocks made of a material the filter accepts (any clay, a birch log).
+    Material(MaterialFilter),
+    /// Blocks whose name ends in this (`_cobbles`: loose stones of any rock).
+    Suffix(String),
+    /// Blocks any of these accept (soils, and the turf over them).
+    Any(Vec<BlockMatch>),
+}
+
+/// What doing a process does to its target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Effect {
+    /// It stays as it was (fruit picked, bark peeled, a stone struck).
+    #[default]
+    Keep,
+    /// It is gone (a plant pulled up, deadwood broken off, a carcass butchered).
+    Remove,
+    /// Dug out: the block goes and its loose earth falls in a spoil pile beside the hole.
+    Excavate,
+    /// Taken a little at a time: the block goes once its whole mass has been taken.
+    Deplete,
+    /// A laid fire is lit.
+    Ignite,
+    /// What is used up feeds the fire.
+    Feed,
+    /// The fire is banked: covered so it smoulders for hours.
+    Bank,
+    /// The first input, kept, is mended: its edge, point or binding made good again.
+    Mend,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -60,6 +113,8 @@ pub enum Condition {
     Sheltered,
     /// Next to a named feature of the world ("river", "cliff", "clay bank").
     Near(String),
+    /// Only in these seasons (fruit, nuts, fibre stems ripe).
+    Season(Vec<Season>),
 }
 
 /// Quality of the output: base plus skill and tool influences, clamped 0–1.
@@ -113,6 +168,17 @@ entry! {
         pub name: String,
         /// Verb phrase offered as a contextual action ("strike off a flake").
         pub action: String,
+        /// The kind of doing (`strike`, `cut`, `scrape`, `heat`, `twist`, `dig`): doing it emits
+        /// the discovery trigger `verb:key` for each thing used and the target, for every key
+        /// they answer to (their form, material, and the tags of both).
+        #[serde(default)]
+        pub verb: Option<String>,
+        /// What is looked at while doing it (none: things in hand).
+        #[serde(default)]
+        pub target: Option<Target>,
+        /// What it does to the target.
+        #[serde(default)]
+        pub effect: Effect,
         pub inputs: Vec<Input>,
         #[serde(default)]
         pub tools: Vec<ToolReq>,
@@ -132,5 +198,27 @@ entry! {
         pub byproducts: Vec<Output>,
         #[serde(default)]
         pub failures: Vec<Failure>,
+        /// Further discovery triggers doing it emits.
+        #[serde(default)]
+        pub teaches: Vec<String>,
+        /// The person works at it throughout (holding the action); otherwise it is set up and
+        /// left (drying, soaking), and the work waits where it was put until it is done.
+        #[serde(default = "yes")]
+        pub attended: bool,
+        /// How hard the work is (METs: 1.5 sitting at handwork, 3 light work, 6 hard digging).
+        #[serde(default = "light_work")]
+        pub mets: f32,
+        /// How much of the tool's condition one doing wears away (an edge dulled, a point
+        /// blunted).
+        #[serde(default)]
+        pub wear: f32,
+        /// How many times a year one block yields it (a tree's dead branches, a bush's
+        /// berries); none: as often as wanted.
+        #[serde(default)]
+        pub harvests: Option<u8>,
     }
+}
+
+fn light_work() -> f32 {
+    2.5
 }

@@ -117,6 +117,12 @@ fn match_node(g: &mut Graph, c: &Content, m: &Match) -> usize {
             g.node(r.as_str(), &label, Kind::Material, false)
         }
         Match::Tag(t) => g.node(&format!("#{t}"), &format!("any {t}"), Kind::Item, false),
+        Match::Garment(r) => {
+            let label = c.garments.get(r.as_str()).map_or(r.path().to_owned(), |g| {
+                g.name.replace("{material}", "any").trim().to_owned()
+            });
+            g.node(r.as_str(), &label, Kind::Item, false)
+        }
     }
 }
 

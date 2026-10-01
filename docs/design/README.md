@@ -22,7 +22,9 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | The player's person (appearance, rig, movement, views) | [character.md](character.md) | implemented (V2-3e) |
 | What the body tells the player (senses, Body panel, Guided HUD) | [hud.md](hud.md) | implemented (V2-3f) |
 | Inventory, carrying, clothing | [inventory.md](inventory.md) | implemented (V2-4) |
-| Processes and the knowledge graph | [knowledge-and-processes.md](knowledge-and-processes.md) | partial (data V2-0; engine V2-5) |
+| Processes and the knowledge graph (crafting, discovery, skills, journal, knapping) | [knowledge-and-processes.md](knowledge-and-processes.md) | implemented for Eras 0–2 (V2-5) |
+| Fire, cooking, preservation and food | [fire-and-food.md](fire-and-food.md) | implemented (V2-5) |
+| Gathering by hand and digging | [gathering.md](gathering.md) | implemented (V2-5) |
 | Flora | [flora.md](flora.md) | planned (V2-6) |
 | Fauna and ecosystems | [fauna.md](fauna.md) | planned (V2-7) |
 | Building and structure | [building.md](building.md) | planned (V2-8) |

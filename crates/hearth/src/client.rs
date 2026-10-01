@@ -12,7 +12,7 @@ use hearth_env::Calendar;
 use hearth_input::{InputState, builtin};
 use hearth_math::Planet;
 use hearth_physics::{Ability, BlockWorld, Gait, Intent, Motion, Mover, Stance};
-use hearth_protocol::{BodyView, Moved, ToClient, ToServer};
+use hearth_protocol::{AimAt, BodyView, Moved, ToClient, ToServer};
 use hearth_render::atlas::TextureArray;
 use hearth_render::camera::Camera;
 use hearth_render::scene::SceneRenderer;
@@ -20,6 +20,7 @@ use hearth_render::{FrameTargets, GpuContext};
 use hearth_ui::{Lang, Rgba, Ui};
 use hearth_world::{BlockRegistry, CubeMap};
 
+use crate::crafting_ui::{Crafting, Do, News, Seen};
 use crate::environment::{EnvOverrides, EnvSampler};
 use crate::globe::GlobePicker;
 use crate::lod_stream::LodStream;
@@ -48,10 +49,13 @@ pub enum Perspective {
 pub enum Aim {
     /// A thing lying in the world.
     Item(u64),
-    /// Loose stones to gather.
-    Gather(hearth_math::BlockPos),
-    /// The ground, where a thing put down would go.
-    Ground(DVec3),
+    /// A block (a plant, water, a hearth, the ground): where, whether its top face is looked
+    /// at, and the point the eyes rest on.
+    Block {
+        pos: hearth_math::BlockPos,
+        top: bool,
+        at: DVec3,
+    },
 }
 
 /// How far the hands reach from the eyes (m).
@@ -199,6 +203,10 @@ pub struct Client {
     drawn_from: Option<hearth_items::Root>,
     /// The quick-choice wheel (hold Q): open, and where the pointer leans.
     pub radial: Option<DVec2>,
+    /// Making and knowing: what can be done, the work under way, what is known.
+    pub crafting: Option<Crafting>,
+    /// Knapping by hand asked for (the app opens its screen).
+    pub knap_request: Option<crate::knapping_ui::KnapScreen>,
 }
 
 impl Client {
@@ -287,6 +295,8 @@ impl Client {
             drawing: None,
             drawn_from: None,
             radial: None,
+            crafting: None,
+            knap_request: None,
         }
     }
 
@@ -357,7 +367,8 @@ impl Client {
         Some(((angle / std::f64::consts::TAU * n as f64 + 0.5) as usize) % n)
     }
 
-    /// What the eyes rest on within reach: a thing lying there, loose stones, or the ground.
+    /// What the eyes rest on within reach: a thing lying there, or a block (plants and water
+    /// included).
     fn find_aim(&self) -> Option<Aim> {
         let w = self.world.as_ref()?;
         let items = self.items.as_ref()?;
@@ -384,28 +395,204 @@ impl Client {
             }
         }
         let mut t = 0.0;
+        let mut prev = eye;
         while t <= REACH_M {
             let p = eye + dir * t;
             let bp = hearth_math::BlockPos::containing(p);
             if let Some(s) = w.mirror.block(bp)
                 && !s.is_air()
             {
-                if w.reg.block_of(s).name.path().ends_with("_cobbles") {
+                let local = p - DVec3::new(bp.x as f64, bp.y as f64, bp.z as f64);
+                let def = &w.reg.block_of(s).def;
+                let shape = w.reg.outline_shape(s);
+                let hit_box = shape.boxes.iter().find(|b| {
+                    local.x >= b.min.x
+                        && local.x <= b.max.x
+                        && local.y >= b.min.y
+                        && local.y <= b.max.y
+                        && local.z >= b.min.z
+                        && local.z <= b.max.z
+                });
+                let top_y = match (def.fluid.is_some(), hit_box) {
+                    (true, _) => Some(0.85),
+                    (false, Some(b)) => Some(b.max.y),
+                    _ => None,
+                };
+                if let Some(top_y) = top_y {
                     if best.as_ref().is_none_or(|b| t < b.0) {
-                        best = Some((t, Aim::Gather(bp)));
-                    }
-                    break;
-                }
-                if !w.reg.collision_shape(s).is_empty() {
-                    if best.is_none() {
-                        best = Some((t, Aim::Ground(p)));
+                        let top = prev.y >= bp.y as f64 + top_y - 1e-3;
+                        best = Some((
+                            t,
+                            Aim::Block {
+                                pos: bp,
+                                top,
+                                at: p,
+                            },
+                        ));
                     }
                     break;
                 }
             }
-            t += 0.05;
+            prev = p;
+            t += 0.03;
         }
         best.map(|(_, a)| a)
+    }
+
+    /// What the server is told the player looks at.
+    pub fn aim_at(&self) -> AimAt {
+        match self.aim {
+            Some(Aim::Item(id)) => AimAt::Thing(id),
+            Some(Aim::Block { pos, top, .. }) => AimAt::Block { pos, top },
+            None => AimAt::Nothing,
+        }
+    }
+
+    /// The weather and place where the player is, as the client sees them.
+    fn surroundings(&self) -> hearth_craft::Surroundings {
+        let e = self.body.as_ref().map(|b| &b.exposure);
+        let moment = self.calendar.at(self.ticks);
+        let feet = self.mover.pos;
+        let mut water_near = false;
+        let mut sheltered = false;
+        if let Some(w) = &self.world {
+            let base = hearth_math::BlockPos::containing(feet);
+            'scan: for dy in -2..=1 {
+                for dz in -2..=2 {
+                    for dx in -2..=2 {
+                        let p = hearth_math::BlockPos::new(base.x + dx, base.y + dy, base.z + dz);
+                        if w.mirror
+                            .block(p)
+                            .is_some_and(|s| w.reg.block_of(s).def.fluid.is_some())
+                        {
+                            water_near = true;
+                            break 'scan;
+                        }
+                    }
+                }
+            }
+            sheltered = w
+                .mirror
+                .sky_top(base.x, base.z)
+                .is_some_and(|top| top as f64 > feet.y + 2.0);
+        }
+        let southern = self
+            .world
+            .as_ref()
+            .is_some_and(|w| w.planet.latitude(feet.z) < 0.0);
+        hearth_craft::Surroundings {
+            raining: e.is_some_and(|e| e.rain_mm_h > 0.1),
+            humidity: e.map_or(0.5, |e| e.humidity),
+            daylight: self
+                .env
+                .as_ref()
+                .is_some_and(|env| env.sun_up(&moment, feet)),
+            air_c: e.map_or(15.0, |e| e.air_c),
+            sheltered,
+            water_near,
+            near: Vec::new(),
+            season: Some(moment.season(southern)),
+        }
+    }
+
+    /// Draws up the list of what can be done, a few times a second.
+    fn refresh_offers(&mut self) {
+        if !self.crafting.as_mut().is_some_and(|c| c.due()) {
+            return;
+        }
+        let around = self.surroundings();
+        let aim = self.aim_at();
+        let day_s = self.calendar.ticks_per_day() / 20.0;
+        let year_s = day_s * 4.0 * self.calendar.days_per_season as f64;
+        let (Some(w), Some(items), Some(c)) = (&self.world, &self.items, &mut self.crafting) else {
+            return;
+        };
+        let seen = Seen {
+            reg: &w.reg,
+            mirror: &w.mirror,
+            items,
+            carry: &self.carry,
+            world_items: &self.world_items,
+            aim,
+            feet: self.mover.pos,
+            around,
+            day_s,
+            year_s,
+        };
+        c.refresh(&seen);
+    }
+
+    /// Does what was chosen.
+    fn act(&mut self, d: Do) {
+        let aim = self.aim_at();
+        let m = match d {
+            Do::Process(process) => ToServer::Act {
+                process,
+                aim,
+                hand: None,
+            },
+            Do::Eat(p) => ToServer::Eat(p),
+            Do::Drink(f) => ToServer::Drink(f),
+            Do::Fill(skin) => ToServer::Fill { skin, aim },
+        };
+        self.server.send(m);
+    }
+
+    /// Knapping done by hand (or left to habit) does its process.
+    pub fn act_by_hand(&mut self, process: String, aim: AimAt, hand: Option<f32>) {
+        self.server.send(ToServer::Act { process, aim, hand });
+    }
+
+    /// The chosen offer, done: knapping a shape opens the stone to knap by hand.
+    fn act_chosen(&mut self) {
+        let Some(c) = &self.crafting else {
+            return;
+        };
+        let Some(offer) = c.chosen().cloned() else {
+            return;
+        };
+        let Some(Do::Process(id)) = offer.act.clone() else {
+            if let Some(d) = offer.act {
+                self.act(d);
+            }
+            return;
+        };
+        if let Some(shape) = hearth_craft::knap::Knap::shape_of(&id) {
+            let content = c.content.clone();
+            let mat = offer
+                .material
+                .as_deref()
+                .and_then(|m| content.materials.get(m));
+            let knapping = mat.and_then(|m| m.knapping).unwrap_or(0.3);
+            let skill = c.knowledge.skill("knapping");
+            let color = mat.map_or([150, 150, 150], |m| m.appearance.color.0);
+            let seed = self.ticks ^ (self.mover.pos.x.to_bits() >> 7);
+            let title = c
+                .crafts
+                .get(&id)
+                .map_or_else(|| id.clone(), |r| r.def.name.clone());
+            self.knap_request = Some(crate::knapping_ui::KnapScreen {
+                knap: hearth_craft::knap::Knap::new(shape, knapping * (0.7 + 0.3 * skill), seed),
+                process: id,
+                aim: self.aim_at(),
+                title,
+                color,
+                press: None,
+            });
+            return;
+        }
+        self.act(Do::Process(id));
+    }
+
+    /// What the journal shows.
+    pub fn journal_view(&self) -> Option<crate::journal_ui::JournalView<'_>> {
+        let c = self.crafting.as_ref()?;
+        Some(crate::journal_ui::JournalView {
+            knowledge: &c.knowledge,
+            graph: &c.graph,
+            mode: c.mode,
+            ticks_per_day: self.calendar.ticks_per_day(),
+        })
     }
 
     /// The hand that puts down or uses things first: the right, else the left.
@@ -420,7 +607,7 @@ impl Client {
     }
 
     /// The things the hands do this frame: pick up, gather, put down, drag and let go.
-    fn handle_things(&mut self, input: &InputState, dt: f64) {
+    fn handle_things(&mut self, input: &mut InputState, dt: f64) {
         self.aim = self.find_aim();
         for (n, key) in builtin::HOTBAR.iter().take(QUICK_SLOTS).enumerate() {
             if input.was_pressed(*key) {
@@ -428,11 +615,47 @@ impl Client {
             }
         }
         self.reach(dt);
+        self.refresh_offers();
+        let aim = self.aim_at();
+        let working = self.crafting.as_ref().is_some_and(|c| c.work.is_some());
+        if let Some(c) = &mut self.crafting {
+            if c.age(dt, aim) {
+                c.told_look = aim;
+                self.server.send(ToServer::Look(aim));
+            }
+            let steps = input.take_scroll_steps(1.0, true);
+            if steps != 0 && !working {
+                c.choose(steps);
+            }
+        }
+        // The primary action does what is chosen, or stops the work under way.
+        if input.was_pressed(builtin::ATTACK) && self.radial.is_none() {
+            if working {
+                self.server.send(ToServer::StopWork);
+            } else {
+                self.act_chosen();
+            }
+        }
         if input.was_pressed(builtin::INTERACT) {
             match self.aim {
                 Some(Aim::Item(id)) => self.server.send(ToServer::PickUp(id)),
-                Some(Aim::Gather(p)) => self.server.send(ToServer::Gather(p)),
-                _ => {}
+                Some(Aim::Block { .. }) => {
+                    if let Some(d) = self.crafting.as_ref().and_then(|c| c.first_act()) {
+                        self.act(d);
+                    }
+                }
+                None => {}
+            }
+        }
+        // A throw: wound up while the key is held, let fly when it is let go.
+        if let Some(c) = &mut self.crafting {
+            if input.is_active(builtin::THROW) && self.carry.right.is_some() {
+                *c.charge.get_or_insert(0.0) += dt;
+            } else if let Some(charge) = c.charge.take() {
+                let dir = (self.camera.forward().as_dvec3() + DVec3::new(0.0, 0.12, 0.0))
+                    .normalize_or_zero();
+                let speed = 6.0 + 16.0 * charge.min(1.0);
+                self.server.send(ToServer::Throw { dir, speed });
             }
         }
         let all = input.was_pressed(builtin::DROP_STACK);
@@ -441,7 +664,7 @@ impl Client {
         {
             let (sy, cy) = (self.camera.yaw as f64).to_radians().sin_cos();
             let at = match self.aim {
-                Some(Aim::Ground(p)) => p,
+                Some(Aim::Block { top: true, at, .. }) => at,
                 _ => self.mover.pos + DVec3::new(-sy * 0.6, 0.5, cy * 0.6),
             };
             let count = self
@@ -629,8 +852,20 @@ impl Client {
                 };
                 Some(l.format(key, &[("name", &name)]))
             }
-            Aim::Gather(_) => Some(l.get("aim.gather").to_owned()),
-            Aim::Ground(_) => None,
+            Aim::Block { pos, .. } => {
+                let w = self.world.as_ref()?;
+                let s = w.mirror.block(pos)?;
+                let b = w.reg.block_of(s);
+                if b.def.fluid.is_some() {
+                    return Some(l.get("aim.water").to_owned());
+                }
+                // Plain ground says nothing; what can be worked says what it is.
+                let offers = self
+                    .crafting
+                    .as_ref()
+                    .is_some_and(|c| c.offers.iter().any(|o| o.act.is_some()));
+                offers.then(|| b.name.path().replace('_', " "))
+            }
         }
     }
 
@@ -992,6 +1227,7 @@ impl Client {
         saves_dir: Option<std::path::PathBuf>,
         appearance: hearth_character::Appearance,
         death_rules: hearth_save::DeathRules,
+        knowledge: hearth_save::KnowledgeMode,
     ) -> WorldSpec {
         WorldSpec {
             name: name.to_owned(),
@@ -1001,6 +1237,7 @@ impl Client {
             saves_dir,
             appearance,
             death_rules,
+            knowledge,
         }
     }
 
@@ -1312,6 +1549,12 @@ impl Client {
                     self.death_rules = r.death_rules;
                     self.ended = r.ended;
                     self.items = Some(r.items);
+                    self.crafting = Some(Crafting::new(
+                        r.content,
+                        r.crafts,
+                        r.graph,
+                        r.knowledge_mode,
+                    ));
                     self.pose = None;
                     self.world = Some(World {
                         planet,
@@ -1372,6 +1615,35 @@ impl Client {
                     self.redress();
                 }
                 ToClient::Items(v) => self.world_items = v,
+                ToClient::Knowledge(k) => {
+                    if let Some(c) = &mut self.crafting {
+                        c.knowledge = *k;
+                    }
+                }
+                ToClient::Work(w) => {
+                    if let Some(c) = &mut self.crafting {
+                        c.work = w;
+                    }
+                }
+                ToClient::Acted(a) => {
+                    if let Some(c) = &mut self.crafting {
+                        let kind = if a.done { News::Done } else { News::Failed };
+                        c.tell(a.words, kind);
+                    }
+                }
+                ToClient::Learned {
+                    name,
+                    discovered,
+                    text,
+                } => {
+                    if let Some(c) = &mut self.crafting {
+                        if discovered {
+                            c.tell(format!("Learned: {name}"), News::Learned);
+                        } else if !text.is_empty() {
+                            c.tell(text, News::Hunch);
+                        }
+                    }
+                }
                 ToClient::Placed(m) => {
                     self.mover = m;
                     self.eye_y = m.eye().y;
@@ -1554,6 +1826,13 @@ impl Client {
                     Rgba([235, 235, 230, 220]),
                 );
             }
+        }
+        if self.mode == CameraMode::Body
+            && !self.dead()
+            && !self.body_panel
+            && let Some(c) = &self.crafting
+        {
+            c.draw(ui, veil);
         }
         // Eyelids: the world goes dark asleep or fainting.
         if self.eyes_shut > 0.01 {

@@ -65,6 +65,24 @@ impl EnvSampler {
         m.local_time(self.planet.solar_time_offset(x))
     }
 
+    /// The weather at a place (without the sky's light).
+    pub fn weather_at(&self, m: &Moment, at: DVec3) -> WeatherState {
+        let local = self.local_time(m, at.x);
+        let normals = Normals::sample(&self.grid, at.x, at.z);
+        self.weather
+            .sample(&normals, at.x, at.z, m.days, m.year_frac, local)
+    }
+
+    /// Whether the sun is up at a place.
+    pub fn sun_up(&self, m: &Moment, at: DVec3) -> bool {
+        let lat = self.planet.latitude_deg(at.z);
+        let local = self.local_time(m, at.x);
+        astro::sun(lat, m.year_frac, local, self.calendar.axial_tilt_deg)
+            .dir
+            .y
+            > 0.0
+    }
+
     pub fn sample(
         &self,
         m: &Moment,

@@ -54,20 +54,84 @@ pub enum ToServer {
     Drag(u64),
     /// Let go of what is dragged, where it is now.
     LetGo(DVec3),
-    /// Gather loose stones (or what a block yields by hand).
-    Gather(hearth_math::BlockPos),
+    /// Do a process (its content id) to what is looked at; attended work goes on until it is
+    /// done or stopped. `hand` is the quality the player's own hands reached (knapping by hand;
+    /// 0: the piece snapped), if they did it so.
+    Act {
+        process: String,
+        aim: AimAt,
+        hand: Option<f32>,
+    },
+    /// Stop the work in hand.
+    StopWork,
+    /// What the player looks at now (for what sight teaches).
+    Look(AimAt),
+    /// Eat one of the carried food at a path.
+    Eat(hearth_items::Path),
+    /// Drink from water looked at, or from a carried water skin.
+    Drink(DrinkFrom),
+    /// Fill a carried water skin from water looked at.
+    Fill {
+        skin: hearth_items::Path,
+        aim: AimAt,
+    },
+    /// Throw what is held in the right hand along a direction at a speed (m/s).
+    Throw { dir: DVec3, speed: f64 },
     /// Development and tests: put a thing in the player's hands or containers (or a drag).
     Give(hearth_items::Stack),
     /// Debug: move the clock on (or back) by game hours.
     SkipHours(f64),
     /// Debug: extra ticks per second of play (0 for none).
     TimeWarp(f64),
+    /// Tests and bots: run the world's ticks as fast as they go (true) or twenty a second.
+    Fast(bool),
     /// Stop the clock and the body (a single-player menu is open), or go on.
     Pause(bool),
     /// How much terrain to keep around the player (cubes).
     View { radius: i32, vertical: i32 },
     /// Save and stop.
     Quit,
+}
+
+/// What the player looks at, as the server is told it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AimAt {
+    Nothing,
+    /// A block; `top` when its top face is the one looked at.
+    Block {
+        pos: hearth_math::BlockPos,
+        top: bool,
+    },
+    /// A thing lying in the world.
+    Thing(u64),
+}
+
+/// Where a drink comes from.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DrinkFrom {
+    Water(AimAt),
+    Skin(hearth_items::Path),
+}
+
+/// Work being done, as the client shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkView {
+    /// The process (content id) and its words.
+    pub process: String,
+    pub action: String,
+    /// 0–1 done.
+    pub done: f32,
+    /// Seconds of play left at the present pace.
+    pub play_s_left: f64,
+}
+
+/// What came of something done.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Acted {
+    pub process: String,
+    pub done: bool,
+    /// In words: what was made, or how it failed.
+    pub words: String,
 }
 
 /// A report of the player's movement.
@@ -105,6 +169,12 @@ pub struct Ready {
     pub death_rules: hearth_save::DeathRules,
     /// The kinds of things.
     pub items: Arc<hearth_items::Items>,
+    /// The game data, and the processes and knowledge the client lists from it.
+    pub content: Arc<hearth_content::Content>,
+    pub crafts: Arc<hearth_craft::Crafts>,
+    pub graph: Arc<hearth_craft::Graph>,
+    /// How knowledge is gained in this world.
+    pub knowledge_mode: hearth_craft::Mode,
     /// The world ended (permadeath), and the life it ended with.
     pub ended: Option<LifeSummary>,
 }
@@ -118,6 +188,9 @@ pub struct LifeSummary {
     pub walked_km: f64,
     pub farthest_km: f64,
     pub cause: hearth_body::Death,
+    /// What they learned (the names of the techniques).
+    #[serde(default)]
+    pub discovered: Vec<String>,
 }
 
 /// The player's body as the client shows it and lets it move.
@@ -165,4 +238,16 @@ pub enum ToClient {
     Items(Vec<hearth_items::WorldItem>),
     /// The world ended with its character's death (permadeath).
     Ended(LifeSummary),
+    /// What the player knows, when it changed.
+    Knowledge(Box<hearth_craft::KnowledgeState>),
+    /// The work in hand, each tick it goes on (none: stopped or done).
+    Work(Option<WorkView>),
+    /// What came of a process, a meal or a drink.
+    Acted(Acted),
+    /// Something learned (true) or a hunch (false): the node's name and the journal's words.
+    Learned {
+        name: String,
+        discovered: bool,
+        text: String,
+    },
 }

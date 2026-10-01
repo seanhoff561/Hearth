@@ -4,8 +4,23 @@
     entries: [
         (
             id: "small_carcass", status: Implemented, name: "small game carcass", mass_kg: 15, volume_l: 16, footprint: (3, 2),
+            properties: [("keeps_days", 2.0)],
             tags: ["carcass", "natural"],
             notes: "Scavenged or hunted small game (a roe deer kid, a hare's larger cousins). Replaced by per-species carcasses in V2-7.",
+        ),
+        (
+            id: "ember", status: Implemented, name: "ember in tinder fungus", material: "tinder_fungus",
+            mass_kg: 0.06, volume_l: 0.2, footprint: (1, 1),
+            properties: [("glow_h", 6.0)],
+            tags: ["fire_source"],
+            notes: "A glowing coal nursed in the spongy layer of hoof fungus smoulders for hours.",
+        ),
+        (
+            id: "firebrand", status: Implemented, name: "burning stick", material: "oak_wood",
+            mass_kg: 0.35, volume_l: 0.5, footprint: (1, 3), size_m: Some((1.0, 0.025, 0.025)),
+            properties: [("glow_h", 0.25)],
+            tags: ["fire_source"],
+            notes: "Flames a few minutes, glows a quarter of an hour.",
         ),
     ],
 )

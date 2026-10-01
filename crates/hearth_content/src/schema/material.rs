@@ -108,6 +108,34 @@ pub struct Appearance {
     pub roughness: Option<f32>,
 }
 
+/// What a kilogram of a food gives: grams of protein, fat and carbohydrate, its water, the
+/// fresh-food vitamins in it, and what eating it as it is risks.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Nutrition {
+    #[serde(default)]
+    pub protein_g: f32,
+    #[serde(default)]
+    pub fat_g: f32,
+    #[serde(default)]
+    pub carb_g: f32,
+    /// Water (kg per kg).
+    #[serde(default)]
+    pub water: f32,
+    /// Days of fresh-food vitamins a kilogram supplies (greens, berries, organ meat).
+    #[serde(default)]
+    pub fresh_days: f32,
+    /// The cause of illness eating it risks (`raw_meat`), with the chance for a kilogram.
+    #[serde(default)]
+    pub risk: Option<(String, f32)>,
+}
+
+impl Nutrition {
+    /// Food energy (kcal per kg) from the macronutrients.
+    pub fn kcal(&self) -> f32 {
+        4.0 * self.protein_g + 9.0 * self.fat_g + 4.0 * self.carb_g
+    }
+}
+
 entry! {
     /// A physical material with real properties.
     pub struct Material in "materials", schema 1, name name {
@@ -145,6 +173,12 @@ entry! {
         /// Food energy for edible materials.
         #[serde(default)]
         pub kcal_per_kg: Option<f32>,
+        /// What it gives as food (its energy agrees with `kcal_per_kg`).
+        #[serde(default)]
+        pub nutrition: Option<Nutrition>,
+        /// How many days it keeps at 20 °C before it spoils; none: it does not spoil.
+        #[serde(default)]
+        pub keeps_days: Option<f32>,
         pub appearance: Appearance,
     }
 }

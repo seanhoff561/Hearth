@@ -23,6 +23,20 @@ pub struct WorldItem {
     pub pos: [f64; 3],
     #[serde(default)]
     pub yaw: f32,
+    /// Work left to itself here (meat drying on a rack, acorns soaking).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<Batch>,
+}
+
+/// Unattended work: a process (content id) under way, the hours it has had of the conditions
+/// it needs, and the hours it spent wet.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Batch {
+    pub process: String,
+    #[serde(default)]
+    pub hours: f32,
+    #[serde(default)]
+    pub wet_hours: f32,
 }
 
 /// The things lying in a world.
@@ -42,8 +56,13 @@ impl WorldItems {
             stack,
             pos,
             yaw,
+            work: None,
         });
         id
+    }
+
+    pub fn get_mut(&mut self, id: u64) -> Option<&mut WorldItem> {
+        self.items.iter_mut().find(|w| w.id == id)
     }
 
     pub fn take(&mut self, id: u64) -> Option<WorldItem> {

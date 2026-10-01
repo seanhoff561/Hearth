@@ -82,6 +82,7 @@ pub fn run(args: &[String]) -> i32 {
         "lint" => {
             let ctx = LintContext {
                 biomes: Some(Biome::ALL.iter().map(|b| b.name().to_owned()).collect()),
+                blocks: crate::content_state::world_blocks(&packs),
             };
             let mut report = load_report;
             report.extend(lint(&content, &ctx));

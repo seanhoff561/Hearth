@@ -4,6 +4,7 @@
 //! third-party assets. The generator is deterministic: every build produces identical images.
 
 pub mod blocks;
+pub mod craft;
 pub mod material;
 pub mod paint;
 

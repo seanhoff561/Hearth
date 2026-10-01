@@ -55,6 +55,13 @@ pub fn open_water_evaporation(air_c: f32, humidity: f32, wind_m_s: f32) -> f32 {
     0.06 * air_c + (0.06 + 0.04 * wind_m_s.max(0.0)) * deficit_hpa
 }
 
+impl WorldWater<'_> {
+    /// The natural water's quality at a block (fresh where nothing is known).
+    pub fn quality_at(&self, p: BlockPos) -> Quality {
+        self.natural(p)
+    }
+}
+
 impl WaterEnv for WorldWater<'_> {
     fn natural(&self, p: BlockPos) -> Quality {
         let wg = self.generator;

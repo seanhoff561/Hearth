@@ -19,6 +19,7 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
         saves_dir: Some(dir.to_path_buf()),
         appearance: hearth_character::Appearance::default(),
         death_rules: hearth_save::DeathRules::default(),
+        knowledge: hearth_save::KnowledgeMode::default(),
     }
 }
 

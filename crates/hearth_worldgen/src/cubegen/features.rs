@@ -145,6 +145,9 @@ fn is_plant(b: &GenBlocks, s: BlockStateId) -> bool {
         || s == b.fern
         || s == b.short_dry_grass
         || s == b.dead_bush
+        || s == b.nettle
+        || s == b.bramble
+        || b.hazel.contains(&s)
         || b.tall_grass.contains(&s)
         || b.large_fern.contains(&s)
         || b.tall_dry_grass.contains(&s)
@@ -506,6 +509,13 @@ impl FeatureGen {
                         tall(w, b.tall_grass);
                     } else if forest && r < 0.43 {
                         w.put(x, top, z, b.fern);
+                    } else if forest && r < 0.445 {
+                        tall(w, b.hazel);
+                    } else if (forest || s.river.is_some()) && r < 0.455 {
+                        w.put(x, top, z, b.bramble);
+                    } else if (forest || s.river.is_some()) && flower_n > 0.1 && r < 0.475 {
+                        // Nettles in patches on rich ground.
+                        w.put(x, top, z, b.nettle);
                     } else if forest && r > 0.997 {
                         w.put(
                             x,

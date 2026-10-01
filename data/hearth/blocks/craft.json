@@ -1,0 +1,43 @@
+{
+  "nettle": {"template": "plant", "map_color": "#3f6b2e"},
+  "bramble": {"template": "plant", "shape": {"boxes": [[1, 0, 1, 15, 14, 15]]}, "map_color": "#2f5a2a", "speed_factor": 0.6},
+  "hazel": {"template": "tall_plant", "replaceable": false, "material": "hearth:hazel_wood", "map_color": "#4f7a32"},
+  "campfire": {
+    "properties": ["fire:out,banked,embers,low,high"],
+    "hardness": 0.5, "resistance": 0.5,
+    "shape": {"boxes": [[1, 0, 1, 15, 3, 15]]}, "collision": false,
+    "opaque": false, "render": "model", "layer": "cutout",
+    "emission_when": {"property": "fire", "values": {"embers": 5, "low": 12, "high": 15}},
+    "sound": "stone", "map_color": "#5a5550"
+  },
+  "flames": {
+    "hardness": 0.0, "resistance": 0.0, "shape": {"boxes": [[0, 0, 0, 16, 14, 16]]}, "collision": false,
+    "opaque": false, "render": "cross", "layer": "cutout", "emission": 15,
+    "sound": "none", "map_color": "#ff8a20"
+  },
+  "drying_rack": {
+    "hardness": 0.5, "resistance": 0.5,
+    "shape": {"boxes": [[1, 0, 7, 3, 15, 9], [13, 0, 7, 15, 15, 9], [0, 13, 7, 16, 15, 9]]},
+    "opaque": false, "render": "model", "layer": "cutout",
+    "sound": "wood", "flammable": true, "map_color": "#8f7748"
+  },
+  "fat_lamp": {
+    "properties": ["lit:bool"],
+    "hardness": 0.2, "resistance": 0.2,
+    "shape": {"boxes": [[5, 0, 5, 11, 3, 11]]}, "collision": false,
+    "opaque": false, "render": "model", "layer": "cutout",
+    "emission_when": {"property": "lit", "values": {"true": 10}},
+    "sound": "stone", "map_color": "#8a8580"
+  },
+  "grass_bed": {
+    "hardness": 0.1, "resistance": 0.1, "shape": {"boxes": [[0, 0, 0, 16, 3, 16]]},
+    "opaque": false, "render": "model", "cushion": 0.4,
+    "sound": "grass", "flammable": true, "map_color": "#c8b26b"
+  },
+  "fur_bed": {
+    "hardness": 0.1, "resistance": 0.1, "shape": {"boxes": [[0, 0, 0, 16, 4, 16]]},
+    "opaque": false, "render": "model", "cushion": 0.5,
+    "sound": "wool", "flammable": true, "map_color": "#9a7a56"
+  },
+  "spoil": {"template": "falling_soil", "material": "hearth:loam", "map_color": "#7a5a3c"}
+}

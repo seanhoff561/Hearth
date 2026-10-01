@@ -685,3 +685,24 @@ path and all or nothing, and the server keeps the truth (the client shows a move
 takes the server's word). The v2 §10.6 controls replace v1's (crouch C, prone Z, inventory
 Tab, drop G, interact E, drag F, quick choice Q); lying down to sleep moved to X.
 
+## D72 — Making and knowing: one process engine, discovery by a trigger vocabulary
+Everything made is made by a process from the data, run by one pure engine
+(`hearth_craft`): the server applies its outcomes and the client lists what is possible from
+the same code, and later hominins and simulated humans will run the same processes. A process
+names its target in the world (a block by id, material or suffix, a thing lying, water, a fire,
+open ground) and what it does to it, so gathering, digging, cooking at a fire and lighting a
+laid fire are all processes. Bulk materials are carried in units of a bulk form (a cut, a
+handful, a lump, a hide) so they fit the inventory's grids, and processes count kilograms in
+those units. Knowledge is gained only through triggers the game emits, named `verb:key` after
+what was done to what (its form, material and their tags), plus `do:`, `use:`, `see:`,
+`throw:`, `infer:` and a few systems' own. The content's routes listen for them, and the lint
+proves every implemented node can be heard from a fresh start, with the world's real blocks.
+Anyone can try the experiments that teach (knocking stones, hacking at a carcass, rolling
+fibre, holding things in a fire); techniques then open the efficient versions, so learning
+happens by doing, not by unlocking. Under Legacy death, knowledge passes on as legends that one
+attempt brings back, skills do not. Three stand-ins hold until their systems exist, each
+replaced later: a predator's kill turning up nearby every day or two (fauna, V2-7); lightning
+setting single trees burning (wildfire, V2-6); nettle, hazel and bramble blocks placed in the
+temperate woods (flora, V2-6). Seven Era 0–2 nodes stay planned until their systems arrive
+(shelters and painting with building, fish weirs, rafts, wolves, fletching).
+

@@ -18,6 +18,22 @@ fn is_zero(v: &f32) -> bool {
     *v == 0.0
 }
 
+fn whole() -> f32 {
+    1.0
+}
+
+fn is_whole(v: &f32) -> bool {
+    *v == 1.0
+}
+
+fn middling() -> f32 {
+    0.5
+}
+
+fn is_middling(v: &f32) -> bool {
+    *v == 0.5
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stack {
     pub id: String,
@@ -32,6 +48,18 @@ pub struct Stack {
     /// 0–1 how wet it is.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub wet: f32,
+    /// 0–1 how well it was made (0.5 for what nature gives); it scales what a tool does.
+    #[serde(default = "middling", skip_serializing_if = "is_middling")]
+    pub quality: f32,
+    /// 0–1 what is left of its edge, point or binding (1 as made).
+    #[serde(default = "whole", skip_serializing_if = "is_whole")]
+    pub condition: f32,
+    /// 0–1 how far it has gone off (1 spoiled).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub decay: f32,
+    /// Hours an ember has left to glow.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub glow_h: f32,
 }
 
 impl Stack {
@@ -46,7 +74,26 @@ impl Stack {
             inside: None,
             liquid_l: 0.0,
             wet: 0.0,
+            quality: 0.5,
+            condition: 1.0,
+            decay: 0.0,
+            glow_h: 0.0,
         }
+    }
+
+    /// Made at a quality.
+    pub fn made(id: &str, count: u16, quality: f32) -> Self {
+        Self {
+            quality: quality.clamp(0.0, 1.0),
+            ..Self::of(id, count)
+        }
+    }
+
+    /// A property of its kind as this one has it: what its making and wear leave of it (a
+    /// fine, fresh edge cuts best).
+    pub fn property(&self, items: &Items, name: &str) -> Option<f32> {
+        let base = self.kind(items)?.property(name)?;
+        Some(base * (0.7 + 0.6 * self.quality) * (0.4 + 0.6 * self.condition.clamp(0.0, 1.0)))
     }
 
     pub fn kind<'a>(&self, items: &'a Items) -> Option<&'a ItemKind> {
@@ -73,12 +120,28 @@ impl Stack {
         self.inside.as_deref()
     }
 
-    /// Whether two stacks may merge into one (same kind, nothing inside either).
+    /// Whether two stacks may merge into one (same kind, nothing inside either, made and worn
+    /// alike, gone off about as far, no embers).
     pub fn joins(&self, other: &Stack) -> bool {
         self.id == other.id
             && self.inside.as_ref().is_none_or(|c| c.items.is_empty())
             && other.inside.as_ref().is_none_or(|c| c.items.is_empty())
             && self.liquid_l == 0.0
             && other.liquid_l == 0.0
+            && (self.quality - other.quality).abs() < 0.05
+            && (self.condition - other.condition).abs() < 0.05
+            && (self.decay - other.decay).abs() < 0.1
+            && self.glow_h == 0.0
+            && other.glow_h == 0.0
+    }
+
+    /// Takes `other` (which [`Stack::joins`] this) into this stack: counts add, wetness and
+    /// decay average by count.
+    pub fn absorb(&mut self, other: Stack) {
+        let (a, b) = (self.count as f32, other.count as f32);
+        let mix = |x: f32, y: f32| (x * a + y * b) / (a + b).max(1.0);
+        self.wet = mix(self.wet, other.wet);
+        self.decay = mix(self.decay, other.decay);
+        self.count = self.count.saturating_add(other.count);
     }
 }

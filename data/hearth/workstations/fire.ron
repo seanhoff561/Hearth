@@ -1,19 +1,41 @@
-// Workstations are physical builds in the world (v2 §11.3).
+// Workstations are physical builds in the world (v2 §11.3): laid out by a building process
+// (`build_<id>`, made from `parts`), they stand as a block and the processes that name them are
+// done at them.
 (
     schema: 1,
     entries: [
         (
-            id: "campfire", name: "Campfire",
-            parts: [(item: Tag("firewood"), amount: 4.0), (item: Material("ember"), amount: 0.01)],
+            id: "campfire", status: Implemented, name: "Campfire", action: "lay a fire",
+            parts: [(item: Tag("fuelwood"), amount: 4), (item: Tag("tinder"), amount: 2)],
             provides: [MaxTempC(800), Smoke, Drying],
-            knowledge: "fire_keeping", build: (hours: 0.25),
-            notes: "Needs a living ember: carried from a wildfire, or later drilled by friction.",
+            knowledge: "fire_keeping", build: (hours: 0.1), block: "campfire",
+            notes: "Laid with tinder under the wood; lit with a carried ember or a burning stick, later by friction.",
         ),
         (
-            id: "drying_rack", name: "Drying rack",
+            id: "drying_rack", status: Implemented, name: "Drying rack", action: "lash up a drying rack",
             parts: [(item: Form(form: "pole"), amount: 4), (item: Form(form: "cord"), amount: 4)],
             provides: [Drying, Smoke],
-            knowledge: "drying_and_smoking", build: (hours: 1.5),
+            knowledge: "drying_and_smoking", build: (hours: 1.5), block: "drying_rack",
+        ),
+        (
+            id: "fat_lamp", status: Implemented, name: "Fat lamp", action: "set a wick in a hollow stone of fat",
+            parts: [(item: Form(form: "cobble"), amount: 1), (item: Material("animal_fat"), amount: 0.1), (item: Material("dry_grass"), amount: 0.02)],
+            provides: [MaxTempC(300)],
+            knowledge: "fat_lamp", build: (hours: 0.3), block: "fat_lamp",
+            notes: "A wick of grass or moss in fat: a small steady flame for many hours.",
+        ),
+        (
+            id: "grass_bed", status: Implemented, name: "Grass bed", action: "heap up a bed of dry grass",
+            parts: [(item: Material("dry_grass"), amount: 1.5)],
+            provides: [],
+            build: (hours: 0.2), block: "grass_bed",
+            notes: "Bedding keeps the ground's cold from the sleeper (as at Border Cave, 200,000 years ago).",
+        ),
+        (
+            id: "fur_bed", status: Implemented, name: "Fur bed", action: "lay hides over a heap of grass",
+            parts: [(item: Material("scraped_hide"), amount: 2.0), (item: Material("dry_grass"), amount: 1.0)],
+            provides: [],
+            knowledge: "fur_bedding", build: (hours: 0.3), block: "fur_bed",
         ),
     ],
 )

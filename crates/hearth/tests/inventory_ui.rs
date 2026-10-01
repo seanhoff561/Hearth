@@ -131,6 +131,7 @@ fn the_inventory_moves_things_where_they_are_put() {
                         items: &items,
                         body_kg,
                     }),
+                    journal: None,
                 };
                 actions = menus.ui(ui, &mut cx);
             },

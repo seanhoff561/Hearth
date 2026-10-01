@@ -62,6 +62,11 @@ pub struct GenBlocks {
     pub short_dry_grass: BlockStateId,
     pub tall_dry_grass: [BlockStateId; 2],
     pub dead_bush: BlockStateId,
+    /// Useful plants of the temperate woods (stand-ins until the flora framework): nettle
+    /// patches, hazel bushes (two blocks tall), brambles.
+    pub nettle: BlockStateId,
+    pub hazel: [BlockStateId; 2],
+    pub bramble: BlockStateId,
     pub flowers_meadow: [BlockStateId; 5],
     pub flowers_forest: [BlockStateId; 2],
     pub flowers_alpine: [BlockStateId; 2],
@@ -116,10 +121,12 @@ impl GenBlocks {
         for (i, l) in snow_layers.iter_mut().enumerate() {
             *l = s(&format!("snow[layers={}]", i + 1))?;
         }
+        // Terrain: opaque blocks of a material (wood is a material too, but it burns).
         let rock: Vec<bool> = (0..reg.state_count())
             .map(|i| {
                 let st = BlockStateId(i as u16);
-                reg.block_of(st).def.material.is_some() && reg.is_opaque(st)
+                let def = &reg.block_of(st).def;
+                def.material.is_some() && !def.flammable && reg.is_opaque(st)
             })
             .collect();
         let carvable = rock.clone();
@@ -172,6 +179,9 @@ impl GenBlocks {
             short_dry_grass: s("short_dry_grass")?,
             tall_dry_grass: pair("tall_dry_grass")?,
             dead_bush: s("dead_bush")?,
+            nettle: s("nettle")?,
+            hazel: pair("hazel")?,
+            bramble: s("bramble")?,
             flowers_meadow: [
                 s("dandelion")?,
                 s("poppy")?,
