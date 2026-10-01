@@ -234,6 +234,8 @@ pub struct BenchOptions {
     pub lod_error: f64,
     /// Rendered size relative to the output (FSR 1 upscaling below 1).
     pub render_scale: f32,
+    /// Water shading quality, when not the preset's.
+    pub water: Option<hearth_core::options::Quality>,
 }
 
 impl Default for BenchOptions {
@@ -257,6 +259,7 @@ impl Default for BenchOptions {
             software: false,
             lod_error: VideoOptions::default().lod_error_px(),
             render_scale: VideoOptions::default().render_scale,
+            water: None,
         }
     }
 }
@@ -292,6 +295,7 @@ OPTIONS:
                                  preset's, 2; 0 = the distance rule alone)
     --render-scale S             Render at S times the size (0.5-2, default 1): upscaled
                                  with FSR 1 below 1, filtered down above
+    --water low|medium|high      Water shading quality (default: the preset's, medium)
     --software                   Use the software adapter";
 
 impl BenchOptions {
@@ -342,6 +346,15 @@ impl BenchOptions {
                 "--software" => o.software = true,
                 "--lod-error" => o.lod_error = val()?.parse::<f64>()?.max(0.0),
                 "--render-scale" => o.render_scale = val()?.parse::<f32>()?.clamp(0.5, 2.0),
+                "--water" => {
+                    use hearth_core::options::Quality;
+                    o.water = Some(match val()?.as_str() {
+                        "low" => Quality::Low,
+                        "medium" => Quality::Medium,
+                        "high" => Quality::High,
+                        other => anyhow::bail!("--water low|medium|high, not {other:?}"),
+                    });
+                }
                 other => anyhow::bail!("unknown argument {other:?}"),
             }
         }
@@ -623,7 +636,7 @@ fn run_scene(
     scene.terrain.render_distance = rd;
     scene.terrain.vertical_distance = video.vertical_render_distance as i32;
     scene.render_scale = opts.render_scale;
-    scene.terrain.water.quality = video.shader.water.into();
+    scene.terrain.water.quality = opts.water.unwrap_or(video.shader.water).into();
     for m in &meshes {
         scene.terrain.upload(ctx, m);
     }
@@ -1489,6 +1502,9 @@ fn preset_label(video: &VideoOptions, opts: &BenchOptions) -> String {
     }
     if opts.render_scale != video.render_scale {
         let _ = write!(s, ", render scale {}", opts.render_scale);
+    }
+    if let Some(w) = opts.water.filter(|w| *w != video.shader.water) {
+        let _ = write!(s, ", water {w:?}");
     }
     s
 }

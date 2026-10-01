@@ -102,11 +102,11 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 ### Shaders and effects
 | Optimization | Status | Evidence / impact |
 |---|---|---|
-| Volumetric fog, clouds, SSR at reduced resolution with depth-aware upsampling and temporal accumulation | n/a | None of these effects exists yet (clouds are one textured layer in the sky pass). |
+| Volumetric fog, clouds, SSR at reduced resolution with depth-aware upsampling and temporal accumulation | n/a for fog and clouds; SSR at full resolution | No volumetric fog or clouds yet (clouds are one textured layer in the sky pass). SSR runs only at High, in the water shader, on water pixels; temporal accumulation waits for TAA's motion vectors (V2-6). |
 | Atmosphere via LUTs | done | Transmittance and multiple scattering once (re-made when the haze changes by 5 %), a 256×128 sky view per frame (0.045 ms). Aerial perspective is integrated in closed form per fragment and looks up the sky view — no froxel volume is needed. |
 | Shadow cascades (tight, texel-snapped, far cascades cached round-robin on LOD geometry) | n/a | No shadow maps yet (V2-16). |
 | Water normals from tiling textures | done (D62) | One 256² mipmapped wave-slope texture sampled twice near (once far) instead of summing waves per pixel. |
-| Hi-Z ray-marched SSR with sky fallback | n/a | No SSR. |
+| Hi-Z ray-marched SSR with sky fallback | done (D64) — linear march | Water reflections at shader quality High: 20 steps along the reflected ray (reverse-Z depth linear in screen space) with bisection, the sky as fallback. A Hi-Z traversal is **not worth it**: the march costs 0.09 ms (forest) to 0.21 ms (coast) at High only, and a pyramid of the full scene would cost about 0.05 ms to build every frame. |
 | Dual-filter bloom | n/a | No bloom yet (the option exists). |
 | One-pass histogram auto-exposure | done | `meter.wgsl`: one 256-thread dispatch, a workgroup histogram of 64×36 samples (0.02 ms). |
 | Tonemap, grading, vignette, dithering in one final pass | done (result 6) | One pass for exposure, the night shift, ACES and dithering in sRGB space (0.055 ms); no grading or vignette yet. |

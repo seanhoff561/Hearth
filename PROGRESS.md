@@ -290,8 +290,8 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
    copy absorbed by depth, shore foam, Snell's window from below; distant water baked and shaded
    to match; tiers by `shader.water`; (e, part 2) under water (D63): light by real depth with
    caustics from a map of water surfaces around the camera, the view through the water when
-   the camera is in it. Next: (e, part 3) screen-space reflections (High, maybe Medium at half
-   resolution: far lake water now mirrors only the sky); (e, part 4) ice.
+   the camera is in it; (e, part 3) screen-space reflections at High (D64; `hearth bench
+   --water low|medium|high`). Next: (e, part 4) ice.
 2. (f) Minimal spawn picker; `worldmap` soil layer; V2-2 acceptance review, the performance
    gate (`scripts/perf-gate.sh`), and commit.
 

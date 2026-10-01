@@ -409,9 +409,13 @@ impl SceneRenderer {
         // translucent is drawn), and its depth (read-only in the pass).
         let reads = self.terrain.water.reads_scene();
         if reads
-            && let Some(rect) = self.terrain.stats.translucent_rect
+            && let Some(mut rect) = self.terrain.stats.translucent_rect
             && let Some(color) = self.post.hdr_texture()
         {
+            // Screen-space reflections come from above the water on screen: copy up to the top.
+            if self.terrain.water.quality == crate::water::WaterQuality::High {
+                rect[1] = 0.0;
+            }
             self.terrain.water.copy_scene(enc, color, rect);
         }
         let water = self.terrain.water.bind(ctx, depth).clone();

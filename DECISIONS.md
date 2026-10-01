@@ -561,3 +561,14 @@ world, so the camera is under water when it is below the surface of its column i
 then the tonemap pass applies the view through the water (the depth gives the distance; the
 surface overhead clips it), with the eye adapting to the light at the camera's depth. Measured
 against the surfaces commit: −0.8 to −2.3 % in the open scenes, −4.4 % under water.
+
+## D64 — Screen-space reflections on water only at High
+SSR in the water shader makes a lake mirror its treeline. Measured at Medium (the default):
+10 steps on every reflection that shows cost 0.07 ms in the forest and 0.13 ms on the coast;
+8 steps on grazing views only, 0.04 and 0.10 ms. On the coast the rays find only sky (the
+fallback already shows it), so the cost bought almost nothing, and in the forest the gain is
+subtle and flickers a little on ripples without temporal smoothing (TAA, V2-6). So SSR is a High
+(Fabulous) feature: 20 steps, −8.6 % average FPS in the forest and −17 % on the coast against
+Medium; Medium keeps the sky's reflection and copies only the water's part of the screen.
+Hits right by the reflection (lily pads on the water) are ignored, and rays are traced on a
+surface calmer than the ripples.

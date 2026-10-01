@@ -80,7 +80,13 @@ block for red, green, blue in clear water, more in green and brown water by the 
 light the water scatters back (6 % of its tint) taking its place — turquoise over sand, navy
 over the deep; and foam where the water thins against the shore, in patches that drift with the
 waves. Low draws a translucent surface with the same reflections and glitter but no refraction
-(no copy). From below, the world above shows through Snell's window and the water below is
+(no copy). High adds **screen-space reflections**: the reflected ray (of a surface calmer than
+the ripples, which blur reflections on real water) marched across the depth buffer in 20 steps,
+denser near the water (reverse-Z depth is linear in screen space), refined by bisection where
+it passes behind a surface, ignoring things lying on the water right by it (lily pads) and
+fading toward the screen's edges, the ray's end and where it passes well behind what it met;
+the shores, trees and hills it finds replace the sky's reflection, which remains the fallback
+(the copy then reaches the top of the screen). From below, the world above shows through Snell's window and the water below is
 reflected outside it (past 48.6°). **Distant water** (LOD) gets the same Fresnel, sky and
 glitter over the swell, on a colour the column is given the same way (its bed through 1.5 times
 its depth of water and the scattered light), so near and far water meet without a seam and the
@@ -169,8 +175,9 @@ box in `precip.rs`.
 - LOD tiles are heightfields (no overhangs), are not cached on disk, do not yet reflect edits
   to the world, are occluded by the near terrain but not by nearer LOD tiles, and have no VRAM
   budget. No TAA.
-- Water: no screen-space reflections yet (the sky is reflected, not the land), waves follow
-  the wind and not a river's flow; under water no god rays, bubbles or muffled sound, one kind
+- Water: screen-space reflections only at High (Medium reflects the sky, also where trees
+  stand over far water), without temporal smoothing they flicker a little on ripples; waves
+  follow the wind and not a river's flow; under water no god rays, bubbles or muffled sound, one kind
   of water (clear sea) for the view through it, and flooded caves under land are not
   recognised (their columns' tops are dry).
 - Clouds are a single textured layer (no volumetric clouds, no cloud shadows on the ground).

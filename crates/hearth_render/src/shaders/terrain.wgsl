@@ -337,6 +337,63 @@ fn water_light(in: VsOut) -> vec3<f32> {
         + g.block_light.rgb * light_curve(in.light.y);
 }
 
+// Screen-space reflection: the reflected ray from `world` along `r`, marched across the depth
+// buffer in `steps` steps (denser near the start; reverse-Z depth is linear in screen space) and
+// refined where it passes behind a surface; the scene there (rgb) and how far to trust it (a,
+// fading toward the screen's edges, the ray's end, and where the ray passes well behind what it
+// met), or nothing where the ray leaves the screen or meets only sky.
+fn water_ssr(world: vec3<f32>, r: vec3<f32>, steps: u32) -> vec4<f32> {
+    let near = water.screen.z;
+    let size = vec2<f32>(textureDimensions(scene_depth));
+    var len = 600.0;
+    let c0 = g.view_proj * vec4<f32>(world, 1.0);
+    var c1 = g.view_proj * vec4<f32>(world + r * len, 1.0);
+    // A ray heading toward the camera stops short of the near plane.
+    if c1.w < near * 4.0 {
+        len *= clamp((c0.w - near * 4.0) / max(c0.w - c1.w, 1e-4), 0.0, 1.0);
+        c1 = g.view_proj * vec4<f32>(world + r * len, 1.0);
+    }
+    let s0 = (c0.xy / c0.w * vec2<f32>(0.5, -0.5) + 0.5) * size;
+    let s1 = (c1.xy / c1.w * vec2<f32>(0.5, -0.5) + 0.5) * size;
+    let z0 = c0.z / c0.w;
+    let z1 = c1.z / c1.w;
+    var prev = 0.0;
+    for (var i = 1u; i <= steps; i++) {
+        let t = pow(f32(i) / f32(steps), 1.8);
+        let s = mix(s0, s1, t);
+        if any(s < vec2<f32>(0.0)) || any(s >= size) {
+            return vec4<f32>(0.0);
+        }
+        let z = mix(z0, z1, t);
+        if z < textureLoad(scene_depth, vec2<i32>(s), 0) {
+            var lo = prev;
+            var hi = t;
+            for (var j = 0; j < 4; j++) {
+                let m = 0.5 * (lo + hi);
+                if mix(z0, z1, m) < textureLoad(scene_depth, vec2<i32>(mix(s0, s1, m)), 0) {
+                    hi = m;
+                } else {
+                    lo = m;
+                }
+            }
+            let sh = mix(s0, s1, hi);
+            let w_ray = near / max(mix(z0, z1, hi), 1e-9);
+            let w_hit = near / max(textureLoad(scene_depth, vec2<i32>(sh), 0), 1e-9);
+            // Things lying on the water right by the reflection (lily pads) are not reflected.
+            if abs(w_hit - c0.w) < 2.0 {
+                return vec4<f32>(0.0);
+            }
+            let thick = 1.0 + 0.1 * w_hit;
+            let edge = min(min(sh.x, size.x - sh.x), min(sh.y, size.y - sh.y)) / (0.08 * size.y);
+            let fade = clamp(edge, 0.0, 1.0) * (1.0 - smoothstep(0.7, 1.0, hi))
+                * (1.0 - smoothstep(thick, 3.0 * thick, w_ray - w_hit));
+            return vec4<f32>(textureLoad(scene_color, vec2<i32>(sh), 0).rgb, fade);
+        }
+        prev = t;
+    }
+    return vec4<f32>(0.0);
+}
+
 // Water: Fresnel reflection of the sky and the sun's glitter on wind-driven waves over the
 // scene behind (refracted, absorbed by the water's depth) at Medium and High; a translucent
 // surface over it at Low; foam where the water thins against the shore. From below: the world
@@ -379,7 +436,17 @@ fn water_shade(in: VsOut, gx: vec3<f32>, gy: vec3<f32>) -> vec4<f32> {
         let above = textureLoad(scene_color, vec2<i32>(q), 0).rgb;
         return vec4<f32>(mix(above, deep, water_fresnel(cos_t)), 1.0);
     }
-    let sky = water_sky(reflect(-view, n));
+    var r = reflect(-view, n);
+    r.y = abs(r.y);
+    var sky = water_sky(r);
+    if tier >= 2u && fresnel > 0.04 {
+        // What the screen shows where the reflection goes: the shore, the trees, the hills,
+        // marched with a calmer surface than the ripples (they blur it on real water).
+        var rc = reflect(-view, normalize(mix(n, vec3<f32>(0.0, 1.0, 0.0), 0.85)));
+        rc.y = abs(rc.y);
+        let found = water_ssr(world, rc, 20u);
+        sky = mix(sky, found.rgb, found.a);
+    }
     let spec = water_glitter(n, view, dist, smoothstep(0.8, 1.0, in.light.x));
     if tier == 0u {
         let alpha = clamp(0.65 + 0.35 * fresnel + dist * 0.002, 0.65, 0.95);
