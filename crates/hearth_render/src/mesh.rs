@@ -510,6 +510,7 @@ impl Mesher<'_> {
                             all_air = false;
                             let li = if *layer == RenderLayer::Opaque { 0 } else { 1 };
                             let limb = self.models.is_limb(s);
+                            let px = self.models.limb_thickness(s);
                             for q in quads.iter() {
                                 if let Some(c) = q.cull {
                                     let o = c.offset();
@@ -518,10 +519,15 @@ impl Mesher<'_> {
                                         continue;
                                     }
                                 }
-                                // A limb's faces toward foliage are inside the crown.
+                                // A limb's faces toward foliage are inside the crown, and its end
+                                // against a limb at least as thick joined to it inside that limb.
                                 if limb && let Some(d) = q.dir {
                                     let o = d.offset();
-                                    if self.models.is_foliage(inp.at(x + o.x, y + o.y, z + o.z)) {
+                                    let nb = inp.at(x + o.x, y + o.y, z + o.z);
+                                    if self.models.is_foliage(nb)
+                                        || (q.cull == Some(d)
+                                            && self.models.covers_limb_end(nb, d.opposite(), px))
+                                    {
                                         continue;
                                     }
                                 }
@@ -1123,6 +1129,48 @@ mod tests {
             covered + 10 * 4 <= open,
             "{covered} quads for the limb in the crown, {open} bare"
         );
+    }
+
+    #[test]
+    fn a_limb_ends_inside_a_limb_at_least_as_thick() {
+        let (reg, models) = setup();
+        let state = |px: u32| {
+            reg.parse_state(&format!(
+                "hearth:oak_branch[thickness={px},east=true,west=true]"
+            ))
+            .unwrap()
+        };
+        // Along x through y = z = 6, from x = 2: `a` blocks of one thickness, then `b` of another.
+        let count = |(a, pa): (i32, u32), (b, pb): (i32, u32)| {
+            let (sa, sb) = (state(pa), state(pb));
+            let map = world_with(&reg, |x, y, z| {
+                if (y, z) != (6, 6) {
+                    BlockStateId::AIR
+                } else if (2..2 + a).contains(&x) {
+                    sa
+                } else if (2 + a..2 + a + b).contains(&x) {
+                    sb
+                } else {
+                    BlockStateId::AIR
+                }
+            });
+            let mesher = Mesher {
+                reg: &reg,
+                models: &models,
+                opts: MeshOptions::default(),
+            };
+            let mesh = mesher.mesh(&MeshInput::gather(
+                &map,
+                CubePos::new(0, 0, 0),
+                ColumnTints::default(),
+            ));
+            mesh.model_counts.iter().sum::<u32>()
+        };
+        // Ten blocks of one limb: four sides each and the two far ends.
+        assert_eq!(count((10, 4), (0, 4)), 10 * 4 + 2);
+        // A thick limb thinning: the thin one's end lies inside the thick, the thick one's shows
+        // about it.
+        assert_eq!(count((5, 8), (5, 4)), 10 * 4 + 2 + 1);
     }
 
     #[test]

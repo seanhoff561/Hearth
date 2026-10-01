@@ -102,6 +102,8 @@ pub struct BlockModels {
     occludes: Vec<u8>,
     /// Per state: 1 a tree's limb, 2 foliage, 0 anything else.
     tree_part: Vec<u8>,
+    /// Per limb state: its thickness in pixels (bits 8..16) and the sides it joins (bits 0..6).
+    limbs: Vec<u16>,
     /// Average (linear-ish sRGB) colour for LOD and particles.
     pub colors: Vec<[u8; 4]>,
 }
@@ -131,6 +133,20 @@ impl BlockModels {
         self.tree_part[s.0 as usize] == 2
     }
 
+    /// A limb's thickness in pixels (0 for anything else).
+    #[inline]
+    pub fn limb_thickness(&self, s: BlockStateId) -> u8 {
+        (self.limbs[s.0 as usize] >> 8) as u8
+    }
+
+    /// Whether `s` is a limb joined toward `d` at least `px` thick: the end of a limb `px` thick
+    /// that meets it from that side lies inside it.
+    #[inline]
+    pub fn covers_limb_end(&self, s: BlockStateId, d: Direction, px: u8) -> bool {
+        let l = self.limbs[s.0 as usize];
+        l & (1 << d.index()) != 0 && (l >> 8) as u8 >= px
+    }
+
     pub fn len(&self) -> usize {
         self.models.len()
     }
@@ -145,6 +161,7 @@ impl BlockModels {
         let mut models = Vec::with_capacity(n);
         let mut occludes = Vec::with_capacity(n);
         let mut tree_part = Vec::with_capacity(n);
+        let mut limbs = Vec::with_capacity(n);
         let mut colors = Vec::with_capacity(n);
         for i in 0..n {
             let s = BlockStateId(i as u16);
@@ -168,6 +185,17 @@ impl BlockModels {
             } else {
                 0
             });
+            limbs.push(if path.ends_with("_branch") {
+                let px = prop(reg, s, "thickness")
+                    .and_then(|v| v.parse::<u16>().ok())
+                    .unwrap_or(4);
+                Direction::ALL
+                    .iter()
+                    .filter(|d| prop(reg, s, d.name()) == Some("true"))
+                    .fold(px << 8, |m, d| m | (1 << d.index()))
+            } else {
+                0
+            });
             models.push(model);
             occludes.push(occ);
         }
@@ -175,6 +203,7 @@ impl BlockModels {
             models,
             occludes,
             tree_part,
+            limbs,
             colors,
         }
     }
