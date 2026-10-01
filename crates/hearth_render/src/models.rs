@@ -26,6 +26,7 @@ pub enum Tint {
     Birch = 4,
     Spruce = 5,
     DryGrass = 6,
+    FoliageRed = 7,
 }
 
 impl From<TintKind> for Tint {
@@ -38,6 +39,7 @@ impl From<TintKind> for Tint {
             TintKind::Birch => Tint::Birch,
             TintKind::Spruce => Tint::Spruce,
             TintKind::DryGrass => Tint::DryGrass,
+            TintKind::FoliageRed => Tint::FoliageRed,
         }
     }
 }
@@ -379,6 +381,9 @@ fn cube_model(
     } else if name.ends_with("_log") {
         let axis = prop(reg, s, "axis").unwrap_or("y");
         axis_faces(ctx.tex(name), ctx.tex(&format!("{name}_top")), axis)
+    } else if name.ends_with("_branch") {
+        let bark = ctx.tex(&name.replace("_branch", "_log"));
+        all(bark)
     } else if name.ends_with("_wood") {
         let log = name.replace("_wood", "_log");
         let axis = prop(reg, s, "axis").unwrap_or("y");
@@ -392,6 +397,86 @@ fn cube_model(
         faces,
         layer: block.def.layer,
         waving: name.ends_with("_leaves"),
+    }
+}
+
+/// A tree's limb `thickness` px through: a bar along each axis it runs straight through,
+/// arms to the faces it joins on one side only (one of them reaching across the middle when no
+/// bar does), and no face drawn where another part covers it.
+fn branch_quads(
+    thickness: f32,
+    joined: impl Fn(Direction) -> bool,
+    tex: FaceTex,
+    out: &mut Vec<ModelQuad>,
+) {
+    let (a, b) = (0.5 - thickness / 32.0, 0.5 + thickness / 32.0);
+    // Per axis (x, y, z): the directions toward −1 and +1.
+    let axes = [
+        (Direction::West, Direction::East),
+        (Direction::Down, Direction::Up),
+        (Direction::North, Direction::South),
+    ];
+    let span = |axis: usize, lo: f32, hi: f32| {
+        let mut mn = Vec3::splat(a);
+        let mut mx = Vec3::splat(b);
+        mn[axis] = lo;
+        mx[axis] = hi;
+        (mn, mx)
+    };
+    let mut boxes: Vec<(Vec3, Vec3)> = Vec::with_capacity(4);
+    for (axis, (neg, pos)) in axes.iter().enumerate() {
+        if joined(*neg) && joined(*pos) {
+            boxes.push(span(axis, 0.0, 1.0));
+        }
+    }
+    let mut middle = !boxes.is_empty();
+    for (axis, (neg, pos)) in axes.iter().enumerate() {
+        let (n, p) = (joined(*neg), joined(*pos));
+        if n && !p {
+            boxes.push(span(axis, 0.0, if middle { a } else { b }));
+            middle = true;
+        } else if p && !n {
+            boxes.push(span(axis, if middle { b } else { a }, 1.0));
+            middle = true;
+        }
+    }
+    if !middle {
+        boxes.push((Vec3::splat(a), Vec3::splat(b)));
+    }
+    let eps = 1e-4;
+    for (i, (mn, mx)) in boxes.iter().enumerate() {
+        for d in Direction::ALL {
+            let (p, uv) = face_corners(*mn, *mx, d);
+            // Hidden when the face lies wholly against another part.
+            let n = d.normal();
+            let covered = boxes.iter().enumerate().any(|(j, (on, ox))| {
+                j != i
+                    && p.iter().all(|c| {
+                        let q = *c + n * eps;
+                        (0..3).all(|k| q[k] >= on[k] - eps && q[k] <= ox[k] + eps)
+                    })
+            });
+            if covered {
+                continue;
+            }
+            let on_boundary = match d {
+                Direction::Down => mn.y <= 0.0,
+                Direction::Up => mx.y >= 1.0,
+                Direction::North => mn.z <= 0.0,
+                Direction::South => mx.z >= 1.0,
+                Direction::West => mn.x <= 0.0,
+                Direction::East => mx.x >= 1.0,
+            };
+            out.push(ModelQuad {
+                pos: p,
+                uv,
+                tex,
+                dir: Some(d),
+                cull: on_boundary.then_some(d),
+                shade: true,
+                waving: false,
+            });
+        }
     }
 }
 
@@ -599,6 +684,15 @@ fn bake_model(
             quads = cross(tex, true);
             layer = RenderLayer::Cutout;
         }
+        n if n.ends_with("_branch") => {
+            let t = prop(reg, s, "thickness")
+                .and_then(|v| v.parse::<f32>().ok())
+                .unwrap_or(4.0);
+            let joined = |d: Direction| prop(reg, s, d.name()) == Some("true");
+            let bark = ctx.tex(&n.replace("_branch", "_log"));
+            branch_quads(t, joined, bark, &mut quads);
+            layer = RenderLayer::Cutout;
+        }
         "campfire" => {
             // A ring of stones; logs laid in it, or a mound of ash with coals; flames by how
             // well it burns.
@@ -726,6 +820,9 @@ fn bake_model(
                     Box::new(move |_| t)
                 } else if name == "salt_crust" {
                     let t = ctx.tex("rock_salt");
+                    Box::new(move |_| t)
+                } else if name.ends_with("_branch") {
+                    let t = ctx.tex(&name.replace("_branch", "_log"));
                     Box::new(move |_| t)
                 } else if name == "cactus" {
                     layer = RenderLayer::Cutout;

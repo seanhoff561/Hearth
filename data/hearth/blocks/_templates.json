@@ -10,5 +10,7 @@
   "tall_plant": {"template": "plant", "properties": ["half:lower,upper"], "shape": {"boxes": [[2, 0, 2, 14, 16, 14]]}, "behavior": "tall_plant"},
   "flower": {"template": "plant", "replaceable": false, "shape": {"boxes": [[5, 0, 5, 11, 10, 11]]}},
   "carpet": {"hardness": 0.1, "resistance": 0.1, "shape": "carpet", "opaque": false, "render": "model", "sound": "wool", "flammable": true, "behavior": "carpet"},
-  "loose_stones": {"hardness": 0.2, "resistance": 0.2, "shape": {"boxes": [[2, 0, 2, 7, 3, 6], [9, 0, 8, 14, 4, 13], [3, 0, 10, 7, 2, 14]]}, "collision": false, "opaque": false, "render": "model", "replaceable": true, "sound": "stone", "map_color": "#808080"}
+  "loose_stones": {"hardness": 0.2, "resistance": 0.2, "shape": {"boxes": [[2, 0, 2, 7, 3, 6], [9, 0, 8, 14, 4, 13], [3, 0, 10, 7, 2, 14]]}, "collision": false, "opaque": false, "render": "model", "replaceable": true, "sound": "stone", "map_color": "#808080"},
+  "branch": {"properties": ["thickness:2,4,8,12", "north:bool", "south:bool", "east:bool", "west:bool", "up:bool", "down:bool"], "defaults": {"thickness": "4"}, "shape": "branch", "render": "model", "hardness": 1.5, "resistance": 1.5, "opaque": false, "light_opacity": 0, "layer": "cutout", "sound": "wood", "flammable": true, "climbable": false, "map_color": "#6f5a40"},
+  "foliage": {"hardness": 0.2, "resistance": 0.2, "collision": false, "opaque": false, "layer": "cutout", "light_opacity": 1, "cushion": 0.3, "drag": 0.5, "sound": "grass", "tint": "foliage", "flammable": true, "map_color": "#007c00"}
 }

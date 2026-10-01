@@ -107,6 +107,8 @@ pub enum TintKind {
     Birch,
     Spruce,
     DryGrass,
+    /// Deciduous foliage that turns red in autumn (maples, cherry, hawthorn).
+    FoliageRed,
 }
 
 /// Emission that depends on a property value, e.g. a lit furnace.
@@ -146,6 +148,8 @@ pub struct BlockDef {
     pub jump_factor: f32,
     /// 0–1: how much a fall onto the block is softened (deep snow, leaves).
     pub cushion: f32,
+    /// 0–1: how much moving through the block slows a body (dense foliage about a half).
+    pub drag: f32,
     pub random_ticks: bool,
     /// Can be replaced by placing another block into it (air, grass, water, snow layer 1).
     pub replaceable: bool,
@@ -193,6 +197,7 @@ impl Default for BlockDef {
             speed_factor: 1.0,
             jump_factor: 1.0,
             cushion: 0.0,
+            drag: 0.0,
             random_ticks: false,
             replaceable: false,
             waterloggable: false,

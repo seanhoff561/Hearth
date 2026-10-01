@@ -126,7 +126,7 @@ fn leaf_cover(v: u32, yf: f32) -> f32 {
     return leaf;
 }
 
-fn deciduous_tint(v: u32, birch: bool, yf: f32) -> vec3<f32> {
+fn deciduous_tint(v: u32, variant: u32, yf: f32) -> vec3<f32> {
     let c = decode_climate(v);
     let t = season_temp(c, yf);
     let rising = season_temp(c, yf + 0.02) > t;
@@ -137,9 +137,13 @@ fn deciduous_tint(v: u32, birch: bool, yf: f32) -> vec3<f32> {
     }
     var base = summer_color(c, true);
     var autumn = vec3<f32>(0.70, 0.45, 0.16);
-    if birch {
+    if variant == 1u {
+        // Yellow in autumn (birch).
         base = vec3<f32>(0.50, 0.65, 0.33);
         autumn = vec3<f32>(0.88, 0.72, 0.22);
+    } else if variant == 2u {
+        // Red in autumn (maples, cherry, hawthorn).
+        autumn = vec3<f32>(0.80, 0.24, 0.10);
     }
     return mix(DEAD_LEAVES, mix(autumn, base, green), sqrt(clamp(leaf, 0.0, 1.0)));
 }
@@ -164,7 +168,7 @@ fn resolve_tint(kind: u32, v: u32) -> vec3<f32> {
     let yf = g.camera.w;
     switch kind & 3u {
         case 1u: { return srgb_to_linear(grass_tint(v, yf)); }
-        case 2u: { return srgb_to_linear(deciduous_tint(v, (kind >> 2u) == 1u, yf)); }
+        case 2u: { return srgb_to_linear(deciduous_tint(v, (kind >> 2u) & 3u, yf)); }
         case 3u: { return srgb_to_linear(evergreen_tint(v, yf)); }
         default: { return unpack_rgb(v); }
     }

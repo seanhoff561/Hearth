@@ -76,6 +76,9 @@ pub struct ShotSpec {
     /// Blocks set on the ground in front of the camera: (block state, metres ahead, metres to
     /// the right, blocks up).
     pub place: Vec<(String, f64, f64, i32)>,
+    /// Trees grown on the ground in front of the camera: (species, stage, variant, metres
+    /// ahead, metres to the right).
+    pub trees: Vec<(String, String, u8, f64, f64)>,
     /// See through the eyes of a person standing on the ground below the camera (their body
     /// drawn as in first person).
     pub body: bool,
@@ -115,6 +118,7 @@ impl Default for ShotSpec {
             globe: None,
             person: None,
             place: Vec::new(),
+            trees: Vec::new(),
             body: false,
             senses: None,
         }
@@ -185,6 +189,19 @@ impl ShotSpec {
                     let right = n.next().unwrap_or("0").parse()?;
                     let up = n.next().unwrap_or("0").parse()?;
                     spec.place.push((state.to_owned(), ahead, right, up));
+                }
+                // `tree=english_oak:mature:2@12:-6` (species, stage, variant @ ahead:right),
+                // repeatable.
+                "tree" => {
+                    let (what, at) = v.split_once('@').unwrap_or((v, "8"));
+                    let mut w = what.split(':');
+                    let species = w.next().unwrap_or("english_oak").to_owned();
+                    let stage = w.next().unwrap_or("mature").to_owned();
+                    let variant = w.next().unwrap_or("0").parse()?;
+                    let mut n = at.split(':');
+                    let ahead = n.next().unwrap_or("8").parse()?;
+                    let right = n.next().unwrap_or("0").parse()?;
+                    spec.trees.push((species, stage, variant, ahead, right));
                 }
                 "body" => spec.body = v.parse()?,
                 "senses" => spec.senses = Some(v.to_owned()),
@@ -368,6 +385,51 @@ pub fn render_shot(
         let reg = lw.reg.clone();
         lw.map.set_block(pos, s, &reg);
         lw.light.block_changed(&mut lw.map, &reg, pos);
+    }
+    // Trees grown in front of the camera, their feet on the ground.
+    if !spec.trees.is_empty() {
+        let forest = hearth_worldgen::trees::Forest::new(&lw.reg, &lw.content);
+        for (species, stage, variant, ahead, right) in &spec.trees {
+            let i = forest
+                .templates
+                .index_of(species)
+                .ok_or_else(|| anyhow::anyhow!("tree={species}: no such tree species"))?;
+            let stage = hearth_flora::Stage::from_name(stage)
+                .ok_or_else(|| anyhow::anyhow!("tree: unknown stage {stage}"))?;
+            let t = forest.templates.get(i, stage, *variant);
+            let f = camera.forward().as_dvec3();
+            let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+            let side = DVec3::new(-flat.z, 0.0, flat.x);
+            let (px, pz) = (
+                camera.pos.x + flat.x * ahead + side.x * right,
+                camera.pos.z + flat.z * ahead + side.z * right,
+            );
+            let foot =
+                hearth_math::BlockPos::containing(DVec3::new(px, lw.surface_y(px, pz) + 0.5, pz));
+            let reg = lw.reg.clone();
+            for (c, part) in &t.blocks {
+                let p = hearth_math::BlockPos::new(
+                    foot.x + c[0] as i32,
+                    foot.y + c[1] as i32,
+                    foot.z + c[2] as i32,
+                );
+                // Over air and plants only (roots go into the ground under the foot).
+                let open = lw
+                    .map
+                    .block(p)
+                    .is_none_or(|s| s.is_air() || reg.block_of(s).def.replaceable || c[1] < 0);
+                if open {
+                    lw.map.set_block(p, forest.blocks[i].state(*part), &reg);
+                    lw.light.block_changed(&mut lw.map, &reg, p);
+                }
+            }
+            log::info!(
+                "  tree {species} {stage:?} {variant}: {:.1} m tall, {:.2} m through, {} blocks",
+                t.height_m,
+                t.diameter_m,
+                t.blocks.len()
+            );
+        }
     }
     let models = BlockModels::build(&lw.reg, atlas);
     let meshes = lw.mesh(&models, &positions, MeshOptions::default());

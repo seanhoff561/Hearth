@@ -1075,11 +1075,45 @@ fn effort_report(efforts: &[Effort], report: &mut Report) {
 }
 
 /// Runs every check.
+/// Every tree's growth form names blocks the world has.
+fn tree_blocks(c: &Content, blocks: &[(String, Option<String>)], report: &mut Report) {
+    let known = |id: &str| {
+        let full = if id.contains(':') {
+            id.to_owned()
+        } else {
+            format!("hearth:{id}")
+        };
+        blocks.iter().any(|(b, _)| *b == full)
+    };
+    for (p, o) in c.plants.iter_with_origin() {
+        let Some(t) = &p.tree else {
+            continue;
+        };
+        for (what, id) in [
+            ("log", &t.log),
+            ("branch", &t.branch),
+            ("leaves", &t.leaves),
+        ] {
+            if !known(id.as_str()) {
+                report.error(
+                    "unknown-ref",
+                    Some(o.file.clone()),
+                    o.line,
+                    format!("`{}` grows its {what} as unknown block `{id}`", p.id()),
+                );
+            }
+        }
+    }
+}
+
 pub fn lint(c: &Content, ctx: &LintContext) -> Report {
     let mut report = Report::default();
     crate::validate::validate(c, &mut report);
     refs(c, &mut report, ctx);
     knowledge_graph(c, &mut report);
+    if let Some(blocks) = &ctx.blocks {
+        tree_blocks(c, blocks, &mut report);
+    }
     let reach = reachability_in(c, ctx.blocks.as_deref());
     reachability_report(c, &reach, &mut report);
     food_webs(c, &mut report);

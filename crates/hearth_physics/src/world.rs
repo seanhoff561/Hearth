@@ -38,6 +38,10 @@ pub trait Terrain {
     fn ground(&self, pos: BlockPos) -> Ground;
     /// Whether a block can be climbed like a ladder (vines, rope ladders).
     fn climbable(&self, pos: BlockPos) -> bool;
+    /// 0–1: how much moving through a block slows a body (foliage, brush).
+    fn drag(&self, _pos: BlockPos) -> f64 {
+        0.0
+    }
     /// The canonical X of a position (the world wraps east–west).
     fn wrap_x(&self, x: f64) -> f64 {
         x
@@ -115,6 +119,12 @@ impl Terrain for BlockWorld<'_> {
         self.map
             .block(pos)
             .is_some_and(|s| self.reg.has(s, StateFlags::CLIMBABLE))
+    }
+
+    fn drag(&self, pos: BlockPos) -> f64 {
+        self.map
+            .block(pos)
+            .map_or(0.0, |s| self.reg.block_of(s).def.drag as f64)
     }
 
     fn wrap_x(&self, x: f64) -> f64 {

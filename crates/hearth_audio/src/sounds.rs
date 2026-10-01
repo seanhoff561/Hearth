@@ -77,6 +77,8 @@ pub enum Sound {
     Stomach { force: f32 },
     /// A dry swallow.
     Swallow,
+    /// Pushing through foliage or brush; `force` by how dense and how fast.
+    Rustle { force: f32 },
     /// The interface: a press.
     Click,
 }
@@ -370,6 +372,22 @@ fn build(sound: Sound, b: &mut Build) -> f32 {
             b.noise(Band, 1100.0, 2.0, sh(0.0, 0.01, 0.04), 0.03);
             b.tone(260.0, 150.0, 0.05, sh(0.05, 0.005, 0.07), 0.05);
             b.noise(Low, 300.0, 0.7, sh(0.06, 0.01, 0.06), 0.03);
+            1.0
+        }
+        Sound::Rustle { force } => {
+            // Leaves brushing past: a soft swish of high noise with crisp crackle in it.
+            let g = force.clamp(0.1, 1.0);
+            b.noise(Band, 2600.0, 0.6, sh(0.0, 0.05, 0.25), 0.03 * g);
+            b.noise(High, 5200.0, 0.8, sh(0.02, 0.04, 0.2), 0.015 * g);
+            b.crackle(
+                High,
+                4200.0,
+                0.8,
+                500.0,
+                0.002,
+                sh(0.0, 0.03, 0.22),
+                0.012 * g,
+            );
             1.0
         }
         Sound::Click => {

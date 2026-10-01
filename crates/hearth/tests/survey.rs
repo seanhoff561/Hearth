@@ -13,9 +13,10 @@ fn what_lies_about_the_spawn() {
         let dir = temp(&format!("survey-{seed}"));
         let w = World::start(&dir, hearth_save::KnowledgeMode::Discovery, seed);
         let mut counts: FxHashMap<String, usize> = FxHashMap::default();
-        for p in w.find(40, |name, _| {
+        for p in w.find(44, |name, _| {
             name.ends_with("_cobbles")
                 || name.ends_with("_log")
+                || name.ends_with("_leaves")
                 || matches!(
                     name,
                     "nettle"

@@ -18,8 +18,8 @@ use crate::region::{ColumnSample, Surface};
 
 /// Size of the tree placement grid cells.
 const TREE_CELL: i32 = 5;
-/// Horizontal reach of the widest tree from its origin.
-const TREE_REACH: i32 = 11;
+/// Horizontal reach of the widest tree from its origin (an ancient oak's crown).
+const TREE_REACH: i32 = 22;
 /// Grid for fallen logs and boulders.
 const DEBRIS_CELL: i32 = 12;
 
@@ -29,6 +29,39 @@ pub struct FeatureGen {
     seed: u64,
     cliff: Perlin,
     flower_patch: Perlin,
+    /// The age of the stands across the land.
+    stands: Perlin,
+}
+
+/// A tree of a real species where the generator grows one.
+#[derive(Debug, Clone)]
+pub struct PlacedTree {
+    /// Index into the generator's forest.
+    pub species: usize,
+    pub stage: hearth_flora::Stage,
+    pub template: std::sync::Arc<hearth_flora::TreeTemplate>,
+    pub turn: hearth_flora::Turn,
+    /// The block over the ground the trunk stands in.
+    pub foot: [i32; 3],
+}
+
+impl PlacedTree {
+    /// Its blocks where they stand, as template parts turned with it.
+    pub fn blocks(&self) -> impl Iterator<Item = (hearth_math::BlockPos, hearth_flora::Part)> + '_ {
+        self.template.blocks.iter().map(|(c, part)| {
+            let (dx, dz) = self
+                .turn
+                .apply(c[0] as i32, c[2] as i32, self.template.corner);
+            (
+                hearth_math::BlockPos::new(
+                    self.foot[0] + dx,
+                    self.foot[1] + c[1] as i32,
+                    self.foot[2] + dz,
+                ),
+                self.turn.part(*part),
+            )
+        })
+    }
 }
 
 /// Tree shapes.
@@ -100,6 +133,11 @@ impl Priorities<'_> {
             if let Some(d) = w.leaves.iter().position(|l| *l == s) {
                 return 40 - d as u32; // distance 1 → 40, distance 7 → 34
             }
+        }
+        match b.tree_part.get(s.0 as usize) {
+            Some(1) => return 60,
+            Some(2) => return 40,
+            _ => {}
         }
         if s == b.mossy_cobblestone || s == b.cobblestone || s == b.cactus {
             return 50;
@@ -183,6 +221,15 @@ pub trait TreeSink {
     /// The block already at a position, where the sink knows it (vines hang only into air).
     fn get(&self, x: i32, y: i32, z: i32) -> Option<BlockStateId>;
     fn put(&mut self, x: i32, y: i32, z: i32, s: BlockStateId);
+    /// The sink wants only each column's crown and trunk (the distant terrain): trees grown
+    /// from templates then give `crown` and `trunk` per column instead of every block.
+    fn crowns_only(&self) -> bool {
+        false
+    }
+    /// Foliage over a column from `bottom` to under `top`.
+    fn crown(&mut self, _x: i32, _z: i32, _bottom: i32, _top: i32, _leaves: BlockStateId) {}
+    /// An upright trunk over a column from `bottom` to under `top`.
+    fn trunk(&mut self, _x: i32, _z: i32, _bottom: i32, _top: i32, _log: BlockStateId) {}
 }
 
 /// Writes blocks into the cube using the priority lattice.
@@ -240,6 +287,7 @@ impl FeatureGen {
             seed: derive_seed(seed, "features"),
             cliff: Perlin::new(derive_seed(seed, "cliff3d")),
             flower_patch: Perlin::new(derive_seed(seed, "flowers")),
+            stands: Perlin::new(derive_seed(seed, "stands")),
         }
     }
 
@@ -591,18 +639,16 @@ impl FeatureGen {
         fz: i32,
         sample: &impl Fn(i32, i32) -> ColumnSample,
     ) {
-        let h = hash_2d(self.seed ^ 0x7ee5, fx, fz);
-        let ox = fx * TREE_CELL + (h % TREE_CELL as u64) as i32;
-        let oz = fz * TREE_CELL + ((h >> 8) % TREE_CELL as u64) as i32;
-        // The upper hash bits (the lower ones placed the tree in its cell).
-        let u = unit_f32(h.rotate_left(24));
-        let s = sample(ox, oz);
-        // Trees are denser than one per cell only where density is ~1. Mangroves stand in up
-        // to two blocks of water.
-        let wet =
-            s.is_underwater() && !(s.biome == Biome::Mangrove && s.water_i() - s.height_i() <= 2);
-        if u >= s.tree_density * 0.95 || wet || !soil_ok(&s) || s.slope > 0.95 {
+        let Some((h, ox, oz, s)) = self.cell_site(fx, fz, sample) else {
             return;
+        };
+        match self.species_cell(wg, ox, oz, &s, h) {
+            Some(Some(t)) => {
+                self.place_template(w, wg, &t);
+                return;
+            }
+            Some(None) => return,
+            None => {}
         }
         let kind = self.choose_tree(&s, h);
         let (reach, height) = kind.extent();
@@ -616,6 +662,221 @@ impl FeatureGen {
         }
         let mut rng = Rng::new(hash_3d(self.seed, ox, base, oz));
         self.grow(w, &wg.blocks, kind, ox, base, oz, &mut rng, &s);
+    }
+
+    /// Where a tree cell's tree would stand, if the place takes a tree: its hash, origin and
+    /// column.
+    fn cell_site(
+        &self,
+        fx: i32,
+        fz: i32,
+        sample: &impl Fn(i32, i32) -> ColumnSample,
+    ) -> Option<(u64, i32, i32, ColumnSample)> {
+        let h = hash_2d(self.seed ^ 0x7ee5, fx, fz);
+        let ox = fx * TREE_CELL + (h % TREE_CELL as u64) as i32;
+        let oz = fz * TREE_CELL + ((h >> 8) % TREE_CELL as u64) as i32;
+        // The upper hash bits (the lower ones placed the tree in its cell).
+        let u = unit_f32(h.rotate_left(24));
+        let s = sample(ox, oz);
+        // Trees are denser than one per cell only where density is ~1. Mangroves stand in up
+        // to two blocks of water.
+        let wet =
+            s.is_underwater() && !(s.biome == Biome::Mangrove && s.water_i() - s.height_i() <= 2);
+        if u >= s.tree_density * 0.95 || wet || !soil_ok(&s) || s.slope > 0.95 {
+            return None;
+        }
+        Some((h, ox, oz, s))
+    }
+
+    /// The tree of a real species whose template holds wood at `p`, as the cubes grow it.
+    pub fn tree_at(&self, wg: &WorldGenerator, p: hearth_math::BlockPos) -> Option<PlacedTree> {
+        let planet = wg.planet();
+        let sample = |x: i32, z: i32| wg.terrain.sample(planet.wrap_x(x), z);
+        for fz in
+            (p.z - TREE_REACH).div_euclid(TREE_CELL)..=(p.z + TREE_REACH).div_euclid(TREE_CELL)
+        {
+            for fx in
+                (p.x - TREE_REACH).div_euclid(TREE_CELL)..=(p.x + TREE_REACH).div_euclid(TREE_CELL)
+            {
+                let Some((h, ox, oz, s)) = self.cell_site(fx, fz, &sample) else {
+                    continue;
+                };
+                let Some(Some(t)) = self.species_cell(wg, ox, oz, &s, h) else {
+                    continue;
+                };
+                let rel = [p.x - t.foot[0], p.y - t.foot[1], p.z - t.foot[2]];
+                let wood = t.template.blocks.iter().any(|(c, part)| {
+                    c[1] as i32 == rel[1]
+                        && !matches!(part, hearth_flora::Part::Leaves)
+                        && t.turn.apply(c[0] as i32, c[2] as i32, t.template.corner)
+                            == (rel[0], rel[2])
+                });
+                if wood {
+                    return Some(t);
+                }
+            }
+        }
+        None
+    }
+
+    /// Age (years) of the stand at a place: young woods and old growth in patches a few
+    /// hundred metres across.
+    pub fn stand_age(&self, x: i32, z: i32) -> f32 {
+        let f = 1.0 / 380.0;
+        let n = self.stands.noise2(x as f64 * f, z as f64 * f, 0) as f32;
+        let u = ((n + 1.0) * 0.5).clamp(0.0, 1.0);
+        15.0 + 285.0 * u * u
+    }
+
+    /// What the distant terrain shows where it does not grow each tree: the species most
+    /// likely at a place (by `roll`), the height of its crown's top (blocks) and how much of
+    /// the ground the crowns cover. None where no species fits the climate.
+    pub fn expected_canopy(
+        &self,
+        wg: &WorldGenerator,
+        s: &ColumnSample,
+        x: i32,
+        z: i32,
+        roll: f32,
+    ) -> Option<(usize, i32, f32)> {
+        let forest = &wg.forest;
+        let climate = crate::trees::PlaceClimate {
+            mean_c: s.temperature,
+            warm_c: s.t_warm,
+            cold_c: 2.0 * s.temperature - s.t_warm,
+            precip_mm: s.precipitation,
+            class: s.climate,
+            biome: s.biome,
+            wet: s.biome == Biome::Wetland,
+        };
+        let sp = forest.choose(&climate, 0.0, roll)?;
+        let species = &forest.templates.species[sp];
+        let age = (self.stand_age(x, z) * 0.9).min(species.lifespan_years * 0.9);
+        let h = species.height_at(age).round() as i32;
+        // Crowns are spaced to close where the trees are dense (`species_tree`).
+        let cover = (s.tree_density * 0.95 * 2.0).min(1.0);
+        Some((sp, h.max(2), cover))
+    }
+
+    /// The tree of a real species in a tree cell: None where no species fits the place (the
+    /// old shapes stand there), Some(None) where one fits but no tree stands in the cell.
+    fn species_cell(
+        &self,
+        wg: &WorldGenerator,
+        ox: i32,
+        oz: i32,
+        s: &ColumnSample,
+        h: u64,
+    ) -> Option<Option<PlacedTree>> {
+        let forest = &wg.forest;
+        if forest.niches.is_empty() {
+            return None;
+        }
+        let wet = s.biome == Biome::Wetland
+            || s.river
+                .is_some_and(|r| r.distance < r.width * 0.5 + 14.0 && s.height - r.level < 2.5);
+        let climate = crate::trees::PlaceClimate {
+            mean_c: s.temperature,
+            warm_c: s.t_warm,
+            cold_c: 2.0 * s.temperature - s.t_warm,
+            precip_mm: s.precipitation,
+            class: s.climate,
+            biome: s.biome,
+            wet,
+        };
+        let first = forest.choose(&climate, 0.0, unit_f32(h.rotate_left(40)))?;
+        let stand = self.stand_age(ox, oz);
+        let foot = [ox, s.height_i(), oz];
+        let turn = hearth_flora::Turn::from_hash(h.rotate_left(13));
+        let variant = ((h >> 56) as u8) % hearth_flora::VARIANTS;
+        // Crowns fill the canopy without heaping on each other: a tree stands in its cell as
+        // often as the cell is a share of its crown; where a big tree does not stand, a young
+        // one of the shade-tolerant understory may.
+        let mut sp = first;
+        let species = &forest.templates.species[sp];
+        let age =
+            (stand * (0.5 + 0.8 * unit_f32(h.rotate_left(52)))).min(species.lifespan_years * 0.97);
+        let mut stage = hearth_flora::Stage::of(species, age);
+        for attempt in 0..2 {
+            let template = forest.templates.get(sp, stage, variant);
+            let r = template.reach().max(1) as f32;
+            let cell = (TREE_CELL * TREE_CELL) as f32;
+            let p = if attempt == 0 {
+                (cell / (std::f32::consts::PI * r * r * 0.5)).min(1.0)
+            } else {
+                0.35
+            };
+            if unit_f32(h.rotate_left(17 + attempt * 9)) < p {
+                return Some(Some(PlacedTree {
+                    species: sp,
+                    stage,
+                    template,
+                    turn,
+                    foot,
+                }));
+            }
+            let Some(under) = forest.choose(&climate, 0.85, unit_f32(h.rotate_left(29))) else {
+                return Some(None);
+            };
+            sp = under;
+            stage = if unit_f32(h.rotate_left(33)) < 0.5 {
+                hearth_flora::Stage::Sapling
+            } else {
+                hearth_flora::Stage::Pole
+            };
+        }
+        Some(None)
+    }
+
+    /// Writes a tree from its template, turned, with its foot where it stands.
+    fn place_template<S: TreeSink>(&self, w: &mut S, wg: &WorldGenerator, tree: &PlacedTree) {
+        let t = &tree.template;
+        let turn = tree.turn;
+        let [x, y, z] = tree.foot;
+        let (lo, hi) = w.bounds();
+        let reach = t.reach();
+        if y + t.max[1] < lo[1] || y + t.min[1] > hi[1] {
+            return;
+        }
+        if x + reach < lo[0] || x - reach > hi[0] || z + reach < lo[2] || z - reach > hi[2] {
+            return;
+        }
+        let blocks = &wg.forest.blocks[tree.species];
+        if w.crowns_only() {
+            for c in &t.crowns {
+                let (dx, dz) = turn.apply(c[0] as i32, c[1] as i32, t.corner);
+                w.crown(
+                    x + dx,
+                    z + dz,
+                    y + c[2] as i32,
+                    y + c[3] as i32 + 1,
+                    blocks.leaves,
+                );
+            }
+            for c in &t.trunks {
+                let (dx, dz) = turn.apply(c[0] as i32, c[1] as i32, t.corner);
+                w.trunk(
+                    x + dx,
+                    z + dz,
+                    y + c[2] as i32,
+                    y + c[3] as i32 + 1,
+                    blocks.log[1],
+                );
+            }
+            return;
+        }
+        for (c, part) in &t.blocks {
+            let by = y + c[1] as i32;
+            if by < lo[1] || by > hi[1] {
+                continue;
+            }
+            let (dx, dz) = turn.apply(c[0] as i32, c[2] as i32, t.corner);
+            let (bx, bz) = (x + dx, z + dz);
+            if bx < lo[0] || bx > hi[0] || bz < lo[2] || bz > hi[2] {
+                continue;
+            }
+            w.put(bx, by, bz, blocks.state(turn.part(*part)));
+        }
     }
 
     fn choose_tree(&self, s: &ColumnSample, h: u64) -> TreeKind {

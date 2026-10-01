@@ -177,6 +177,9 @@ pub enum ShapeKind {
     Sunken,
     /// 1.5/16 tall pad.
     LilyPad,
+    /// A tree's limb: `thickness` 2–16 px, joined to its `north/south/east/west/up/down`
+    /// neighbours. Limbs 8 px and thicker are solid; thinner ones are passed through.
+    Branch,
     /// Custom boxes in sixteenths.
     Boxes(Vec<[f64; 6]>),
 }
@@ -195,6 +198,26 @@ pub trait PropertyLookup {
             .and_then(Direction::from_name)
             .unwrap_or(Direction::North)
     }
+}
+
+/// A limb's boxes: the core and an arm to each joined face.
+fn branch_shape(props: &dyn PropertyLookup) -> Shape {
+    let t = props.int("thickness").clamp(1, 16) as f64;
+    let (a, b) = (8.0 - t / 2.0, 8.0 + t / 2.0);
+    let mut boxes = vec![[a, a, a, b, b, b]];
+    for (name, arm) in [
+        ("down", [a, 0.0, a, b, a, b]),
+        ("up", [a, b, a, b, 16.0, b]),
+        ("north", [a, a, 0.0, b, b, a]),
+        ("south", [a, a, b, b, b, 16.0]),
+        ("west", [0.0, a, a, a, b, b]),
+        ("east", [b, a, a, 16.0, b, b]),
+    ] {
+        if props.flag(name) {
+            boxes.push(arm);
+        }
+    }
+    Shape::from_px(&boxes)
 }
 
 /// Computes (collision, outline) shapes for one state.
@@ -301,6 +324,14 @@ pub fn shapes_for(kind: &ShapeKind, props: &dyn PropertyLookup) -> (Shape, Shape
         ShapeKind::Chest => {
             let s = Shape::from_px(&[[1.0, 0.0, 1.0, 15.0, 14.0, 15.0]]);
             (s.clone(), s)
+        }
+        ShapeKind::Branch => {
+            let s = branch_shape(props);
+            if props.int("thickness") >= 8 {
+                (s.clone(), s)
+            } else {
+                (Shape::empty(), s)
+            }
         }
         ShapeKind::Lantern => {
             let s = if props.flag("hanging") {

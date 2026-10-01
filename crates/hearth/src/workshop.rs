@@ -133,6 +133,8 @@ pub struct Workshop {
     pub knowledge_changed: bool,
     /// When salt water was last tasted and spat out (drinking again at once swallows it).
     tasted_salt: Option<u64>,
+    /// Trees falling: where they come to rest, and the tick they get there.
+    falls: Vec<(u64, Vec<(BlockPos, BlockStateId)>)>,
 }
 
 /// An action's outcome in words, as the client is told it.
@@ -152,6 +154,78 @@ fn lack_words(l: &Lack) -> String {
         Lack::Input(w) => format!("You need {w}."),
         Lack::Condition(c) => format!("It needs {c}."),
     }
+}
+
+/// A tree turned a quarter about its stump to lie toward `toward`: each block's place, its state
+/// turned with it (logs lie along the fall, limbs' joins turn), and whether it is a log.
+fn fallen_tree(
+    standing: &[(BlockPos, BlockStateId, hearth_flora::Part)],
+    foot: BlockPos,
+    toward: hearth_math::Direction,
+    blocks: &hearth_worldgen::trees::SpeciesBlocks,
+) -> Vec<(BlockPos, BlockStateId, bool)> {
+    use hearth_flora::Part;
+    use hearth_flora::template::{DOWN, EAST, NORTH, SOUTH, UP, WEST};
+    // Along x or z, toward + or −.
+    let (along_x, sign) = match toward {
+        hearth_math::Direction::East => (true, 1),
+        hearth_math::Direction::West => (true, -1),
+        hearth_math::Direction::South => (false, 1),
+        _ => (false, -1),
+    };
+    // Faces as the tree turns: up goes toward the fall, the fall's way goes down.
+    let (fwd, back) = match toward {
+        hearth_math::Direction::East => (EAST, WEST),
+        hearth_math::Direction::West => (WEST, EAST),
+        hearth_math::Direction::South => (SOUTH, NORTH),
+        _ => (NORTH, SOUTH),
+    };
+    let turn_joins = |j: u8| {
+        let mut n = j & !(UP | DOWN | fwd | back);
+        if j & UP != 0 {
+            n |= fwd;
+        }
+        if j & fwd != 0 {
+            n |= DOWN;
+        }
+        if j & DOWN != 0 {
+            n |= back;
+        }
+        if j & back != 0 {
+            n |= UP;
+        }
+        n
+    };
+    standing
+        .iter()
+        .map(|(p, _, part)| {
+            let (dx, dy, dz) = (p.x - foot.x, p.y - foot.y, p.z - foot.z);
+            let (da, other) = if along_x { (dx, dz) } else { (dz, dx) };
+            // About the stump's middle: (along, up) → (sign·up, −sign·along).
+            let (na, ny) = (sign * dy, -sign * da);
+            let q = if along_x {
+                BlockPos::new(foot.x + na, foot.y + ny, foot.z + other)
+            } else {
+                BlockPos::new(foot.x + other, foot.y + ny, foot.z + na)
+            };
+            let turned = match *part {
+                Part::Log { axis } => Part::Log {
+                    axis: match (axis, along_x) {
+                        (1, true) => 0,
+                        (1, false) => 2,
+                        (0, true) | (2, false) => 1,
+                        (a, _) => a,
+                    },
+                },
+                Part::Branch { thickness, joins } => Part::Branch {
+                    thickness,
+                    joins: turn_joins(joins),
+                },
+                Part::Leaves => Part::Leaves,
+            };
+            (q, blocks.state(turned), matches!(turned, Part::Log { .. }))
+        })
+        .collect()
 }
 
 /// How soon after tasting salt water drinking again swallows it (game ticks: some seconds).
@@ -190,6 +264,7 @@ impl Workshop {
             last_update: ticks,
             knowledge_changed: true,
             tasted_salt: None,
+            falls: Vec::new(),
         }
     }
 
@@ -418,8 +493,37 @@ impl Workshop {
             self.set_up(h, r, &p, aim);
             return;
         }
-        let needed =
-            h.scales.play_seconds(p.hours as f64, p.scale) * hearth_content::time::TICKS_PER_SECOND;
+        // Felling takes time by the trunk's section (the process's time is for 30 cm); only a
+        // standing tree is felled and only a lying trunk is cut into sections.
+        let mut section = 1.0;
+        match (def.effect, aim) {
+            (Effect::Fell, AimAt::Block { pos, .. }) => match self.standing_tree(h, pos) {
+                Some(t) => {
+                    section = (t.template.diameter_m as f64 / 0.3)
+                        .powi(2)
+                        .clamp(0.15, 40.0)
+                }
+                None => {
+                    h.out
+                        .push(acted(process, false, "That is no standing tree to fell."));
+                    return;
+                }
+            },
+            (Effect::Buck, AimAt::Block { pos, .. }) => {
+                let upright =
+                    h.lw.map
+                        .block(pos)
+                        .is_some_and(|s| h.lw.reg.get(s, "axis").is_none_or(|a| a == "y"));
+                if upright {
+                    h.out.push(acted(process, false, "Fell it first."));
+                    return;
+                }
+            }
+            _ => {}
+        }
+        let needed = h.scales.play_seconds(p.hours as f64, p.scale)
+            * hearth_content::time::TICKS_PER_SECOND
+            * section;
         self.work = Some(Work {
             recipe: r,
             aim,
@@ -488,6 +592,20 @@ impl Workshop {
                     let (done, left) = (w.ticks / w.needed, (w.needed - w.ticks) / 20.0);
                     h.out
                         .push(ToClient::Work(Some(self.work_view(done as f32, left))));
+                }
+            }
+        }
+        // Falling trees come to rest.
+        if self.falls.iter().any(|(at, _)| h.ticks >= *at) {
+            let (done, going): (Vec<_>, Vec<_>) = std::mem::take(&mut self.falls)
+                .into_iter()
+                .partition(|(at, _)| h.ticks >= *at);
+            self.falls = going;
+            for (_, blocks) in done {
+                for (p, st) in blocks {
+                    if Self::open(h, p) || Self::foliage(h, p) {
+                        self.set_block(h, p, st);
+                    }
                 }
             }
         }
@@ -782,6 +900,9 @@ impl Workshop {
                 }
                 self.show_station(h, pos);
             }
+            (Effect::Fell, AimAt::Block { pos, .. }) => self.fell(h, pos),
+            (Effect::Lop, AimAt::Block { pos, .. }) => self.lop(h, pos),
+            (Effect::Buck, AimAt::Block { pos, .. }) => self.set_block(h, pos, BlockStateId::AIR),
             (Effect::Mend, _) => {
                 if let Some(s) = p.keeps.first()
                     && let Some(stack) = Self::stack_mut(h, s)
@@ -930,6 +1051,195 @@ impl Workshop {
         next = reg.with_or_same(next, "lit", if fire.lit() { "true" } else { "false" });
         if next != state {
             self.set_block(h, pos, next);
+        }
+    }
+
+    /// The generated tree whose trunk or limb is at `pos`, if it still stands.
+    fn standing_tree(
+        &self,
+        h: &Here,
+        pos: BlockPos,
+    ) -> Option<hearth_worldgen::cubegen::features::PlacedTree> {
+        let wg = h.lw.generator.clone();
+        let t = wg.features().tree_at(&wg, pos)?;
+        let blocks = &wg.forest.blocks[t.species];
+        // Still there: the block aimed at and the foot of the trunk.
+        let here = t
+            .blocks()
+            .find(|(p, _)| *p == pos)
+            .map(|(_, part)| blocks.state(part));
+        let foot = t
+            .blocks()
+            .find(|(p, part)| p.y == t.foot[1] && !matches!(part, hearth_flora::Part::Leaves))
+            .map(|(p, part)| (p, blocks.state(part)));
+        let standing = here.is_some_and(|s| h.lw.map.block(pos) == Some(s))
+            && foot.is_some_and(|(p, s)| h.lw.map.block(p) == Some(s));
+        standing.then_some(t)
+    }
+
+    fn foliage(h: &Here, p: BlockPos) -> bool {
+        h.lw.map
+            .block(p)
+            .is_some_and(|s| h.lw.reg.block_of(s).name.path().ends_with("_leaves"))
+    }
+
+    /// A tree is cut through: it is taken from where it stood (but the stump) and falls away
+    /// from the one who cut it, turning about the stump down onto the ground, where it rests a
+    /// few seconds later; what stood in its way is broken, and anyone under it is hurt.
+    fn fell(&mut self, h: &mut Here, pos: BlockPos) {
+        let Some(t) = self.standing_tree(h, pos) else {
+            return;
+        };
+        let wg = h.lw.generator.clone();
+        let blocks = &wg.forest.blocks[t.species];
+        let foot = BlockPos::new(t.foot[0], t.foot[1], t.foot[2]);
+        // The tree as it stands now (what is already taken stays taken); the stump stays.
+        let standing: Vec<(BlockPos, BlockStateId, hearth_flora::Part)> = t
+            .blocks()
+            .filter_map(|(p, part)| {
+                let st = blocks.state(part);
+                let stump = p.y <= foot.y && !matches!(part, hearth_flora::Part::Leaves);
+                (!stump && h.lw.map.block(p) == Some(st)).then_some((p, st, part))
+            })
+            .collect();
+        if standing.is_empty() {
+            return;
+        }
+        // Away from the cutter, along the nearer axis.
+        let away = center(foot) - h.player.mover.pos;
+        let toward = if away.x.abs() >= away.z.abs() {
+            if away.x >= 0.0 {
+                hearth_math::Direction::East
+            } else {
+                hearth_math::Direction::West
+            }
+        } else if away.z >= 0.0 {
+            hearth_math::Direction::South
+        } else {
+            hearth_math::Direction::North
+        };
+        let fallen = fallen_tree(&standing, foot, toward, blocks);
+        // Lowered or raised until the trunk lies on the ground, not in it.
+        let solid = |h: &Here, p: BlockPos| {
+            h.lw.map.block(p).is_some_and(|s| {
+                !s.is_air()
+                    && !h.lw.reg.block_of(s).def.replaceable
+                    && h.lw.reg.has(s, hearth_world::StateFlags::HAS_COLLISION)
+                    && !standing.iter().any(|(q, _, _)| *q == p)
+            })
+        };
+        let logs: Vec<BlockPos> = fallen
+            .iter()
+            .filter(|(_, _, log)| *log)
+            .map(|(p, _, _)| *p)
+            .collect();
+        let fits = |k: i32| {
+            logs.iter()
+                .all(|p| !solid(h, BlockPos::new(p.x, p.y + k, p.z)))
+        };
+        let rests = |k: i32| {
+            logs.iter()
+                .any(|p| solid(h, BlockPos::new(p.x, p.y + k - 1, p.z)))
+        };
+        let k = (-4..=4)
+            .filter(|k| fits(*k))
+            .min_by_key(|k| (!rests(*k), k.abs()))
+            .unwrap_or(0);
+        // Taken from where it stood.
+        for (p, _, _) in &standing {
+            self.set_block(h, *p, BlockStateId::AIR);
+        }
+        let height = standing
+            .iter()
+            .map(|(p, _, _)| p.y - foot.y)
+            .max()
+            .unwrap_or(1) as f64;
+        let seconds = (0.9 * (height.max(2.0) / 3.0).sqrt()).clamp(1.2, 5.0) as f32;
+        let pivot = center(foot) + toward.normal_f64() * 0.5 + DVec3::new(0.0, -0.5, 0.0);
+        h.out.push(ToClient::TreeFalls {
+            blocks: standing.iter().map(|(p, s, _)| (*p, *s)).collect(),
+            pivot,
+            toward,
+            seconds,
+        });
+        let at = h.ticks + (seconds as f64 * hearth_content::time::TICKS_PER_SECOND) as u64;
+        self.falls.push((
+            at,
+            fallen
+                .into_iter()
+                .map(|(p, s, _)| (BlockPos::new(p.x, p.y + k, p.z), s))
+                .collect(),
+        ));
+        // Anyone in its way: within its length along the fall and its crown across it.
+        let me = h.player.mover.pos - center(foot);
+        let along = me.dot(toward.normal_f64());
+        let across = (me - toward.normal_f64() * along).length();
+        let crown = t.template.reach() as f64 * 0.6;
+        if along > 0.5 && along < height && across < crown.max(1.5) && me.y > -2.0 {
+            let d = t.template.diameter_m;
+            let side = if self.rng.chance(0.5) {
+                hearth_body::Side::Left
+            } else {
+                hearth_body::Side::Right
+            };
+            use hearth_content::schema::body::BodyRegion;
+            let hit = (0.3 + d * 1.5).min(1.0);
+            h.player
+                .body
+                .injure(h.cfg, "bruise", BodyRegion::Chest, side, hit);
+            if d > 0.15 {
+                h.player
+                    .body
+                    .injure(h.cfg, "fracture", BodyRegion::UpperArm, side, hit);
+            }
+            h.out.push(acted("", false, "The tree comes down on you."));
+        }
+    }
+
+    /// A limb is cut off with what grows from it: the limbs joined to it no thicker than it,
+    /// out to their twigs, and the foliage about them.
+    fn lop(&mut self, h: &mut Here, pos: BlockPos) {
+        let thick = |h: &Here, p: BlockPos| {
+            h.lw.map.block(p).and_then(|s| {
+                let b = h.lw.reg.block_of(s);
+                b.name
+                    .path()
+                    .ends_with("_branch")
+                    .then(|| {
+                        h.lw.reg
+                            .get(s, "thickness")
+                            .and_then(|v| v.parse::<u8>().ok())
+                    })
+                    .flatten()
+            })
+        };
+        let Some(t0) = thick(h, pos) else {
+            return;
+        };
+        let mut limb = vec![pos];
+        let mut seen: rustc_hash::FxHashSet<BlockPos> = [pos].into_iter().collect();
+        let mut i = 0;
+        while i < limb.len() && limb.len() < 400 {
+            let p = limb[i];
+            i += 1;
+            for d in hearth_math::Direction::ALL {
+                let q = p.offset(d);
+                if seen.insert(q) && thick(h, q).is_some_and(|t| t <= t0) {
+                    limb.push(q);
+                }
+            }
+        }
+        let mut leaves = Vec::new();
+        for p in &limb {
+            for d in hearth_math::Direction::ALL {
+                let q = p.offset(d);
+                if seen.insert(q) && Self::foliage(h, q) {
+                    leaves.push(q);
+                }
+            }
+        }
+        for p in limb.into_iter().chain(leaves) {
+            self.set_block(h, p, BlockStateId::AIR);
         }
     }
 

@@ -25,6 +25,8 @@ pub struct WoodStates {
 #[derive(Debug, Clone)]
 pub struct GenBlocks {
     pub air: BlockStateId,
+    /// Per state: 1 a tree's wood (log, limb, bark), 2 its foliage, 0 anything else.
+    pub tree_part: Vec<u8>,
     /// Per state: rock made of a material (bedrock and outcrops), anything caves may cut, and
     /// ground plants can grow in.
     rock: Vec<bool>,
@@ -97,12 +99,17 @@ impl GenBlocks {
                 .map_err(|_| MissingBlock(name.to_owned()))
         };
         let wood = |w: &str| -> Result<WoodStates, MissingBlock> {
+            // Leaves by distance where the block keeps one (the old trees), else the one state.
             let mut leaves = [BlockStateId::AIR; 7];
+            let plain = reg.parse_state(&format!("{w}_leaves"));
             for (i, l) in leaves.iter_mut().enumerate() {
-                *l = s(&format!(
+                *l = match s(&format!(
                     "{w}_leaves[distance={},persistent=false,waterlogged=false]",
                     i + 1
-                ))?;
+                )) {
+                    Ok(st) => st,
+                    Err(e) => plain.clone().map_err(|_| e)?,
+                };
             }
             Ok(WoodStates {
                 log_y: s(&format!("{w}_log[axis=y]"))?,
@@ -141,8 +148,23 @@ impl GenBlocks {
                 loose_stone[block.default_state.0 as usize] = true;
             }
         }
+        let mut tree_part = vec![0u8; reg.state_count()];
+        for block in reg.blocks() {
+            let path = block.name.path();
+            let part =
+                if path.ends_with("_log") || path.ends_with("_branch") || path.ends_with("_wood") {
+                    1
+                } else if path.ends_with("_leaves") {
+                    2
+                } else {
+                    0
+                };
+            let first = block.first_state.0 as usize;
+            tree_part[first..first + block.state_count as usize].fill(part);
+        }
         Ok(Self {
             air: BlockStateId::AIR,
+            tree_part,
             rock,
             carvable,
             plantable,

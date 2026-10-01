@@ -40,6 +40,10 @@ struct Bot {
     relighting: bool,
     /// The bed beside the hearth, once heaped up.
     bed: Option<BlockPos>,
+    /// The tree the lightning set burning (while it burns, fire can be carried from it).
+    wildfire: Option<BlockPos>,
+    /// Tending the fire now (gathering wood for it does not tend it again).
+    tending: bool,
 }
 
 fn id(s: &str) -> String {
@@ -176,6 +180,10 @@ impl Bot {
         for (tried, p) in found.into_iter().enumerate() {
             if done >= times || tried > times * 4 + 8 {
                 break;
+            }
+            // The fire is not left to die while gathering.
+            if tried % 3 == 2 {
+                self.tend_fire();
             }
             self.w.put_down_all();
             self.w.go_to_block(p);
@@ -509,9 +517,16 @@ impl Bot {
     /// Keeps the fire: relit when out, revived from embers, a piece laid on as it burns low.
     /// Whether it needed anything.
     fn tend_fire(&mut self) -> bool {
-        if self.hearth.is_none() || self.relighting {
+        if self.hearth.is_none() || self.relighting || self.tending {
             return false;
         }
+        self.tending = true;
+        let tended = self.tend_fire_now();
+        self.tending = false;
+        tended
+    }
+
+    fn tend_fire_now(&mut self) -> bool {
         let since_h = self.w.ticks.saturating_sub(self.fed_at) as f64 / self.w.ticks_per_day * 24.0;
         match self.fire_state().as_deref() {
             Some("out") => self.relight(),
@@ -542,6 +557,29 @@ impl Bot {
                 return;
             }
             if !self.knows("fire_by_friction_hand_drill") {
+                // Fire carried from the burning tree, while it burns.
+                if self
+                    .wildfire
+                    .is_none_or(|f| self.w.block(f).as_deref() != Some("flames"))
+                {
+                    self.wildfire = self.lightning();
+                }
+                if let Some(f) = self.wildfire
+                    && self.firebrand(f)
+                {
+                    let (ok, words) = self.w.act(
+                        "light_fire",
+                        AimAt::Block {
+                            pos: hearth,
+                            top: false,
+                        },
+                    );
+                    self.w.put_down_all();
+                    if !ok {
+                        self.say(&format!("light_fire: {words}"));
+                    }
+                    continue;
+                }
                 self.work("rub_sticks", AimAt::Nothing);
                 if self.knows("fire_by_friction_hand_drill") {
                     self.say("knows fire by hand drill");
@@ -717,6 +755,7 @@ impl Bot {
         self.tend_fire();
         self.warm_up();
         self.drink_up(false);
+        self.eat_up();
         let night = !(6.0..19.5).contains(&self.hour());
         if self.w.ticks < self.upkeep_at && !night {
             return;
@@ -836,6 +875,157 @@ impl Bot {
                 want,
             );
         }
+    }
+
+    /// Resin from conifers seen across the land (dark spruce and pine stands, as on the
+    /// horizon): the nearest are gone to and their trunks tapped.
+    fn resin_afar(&mut self) {
+        let g = self.w.generator.clone();
+        let (cx, cz) = (self.camp.x.floor() as i32, self.camp.z.floor() as i32);
+        let planet = g.planet();
+        let mut seen: Vec<(i64, i32, i32)> = Vec::new();
+        for r in (64..1500).step_by(48) {
+            let n = (r as f64 * std::f64::consts::TAU / 48.0).ceil() as i32;
+            for k in 0..n {
+                let a = k as f64 * std::f64::consts::TAU / n as f64;
+                let (x, z) = (
+                    cx + (a.cos() * r as f64) as i32,
+                    cz + (a.sin() * r as f64) as i32,
+                );
+                let s = g.terrain.sample(planet.wrap_x(x), z);
+                if s.is_underwater() || s.tree_density < 0.3 {
+                    continue;
+                }
+                let Some((sp, _, _)) = g.features().expected_canopy(&g, &s, x, z, 0.5) else {
+                    continue;
+                };
+                let id = &g.forest.templates.species[sp].id;
+                if id.ends_with("spruce") || id.ends_with("pine") {
+                    seen.push(((r as i64).pow(2), x, z));
+                }
+            }
+            if seen.len() >= 6 {
+                break;
+            }
+        }
+        self.say(&format!("{} conifer stands in sight", seen.len()));
+        for (_, x, z) in seen.into_iter().take(6) {
+            self.w.go(x as f64 + 0.5, z as f64 + 0.5);
+            let trunks: Vec<BlockPos> = self
+                .w
+                .find(44, |_, m| {
+                    m.is_some_and(|m| m.ends_with("spruce_wood") || m.ends_with("pine_wood"))
+                })
+                .into_iter()
+                .filter(|p| self.w.stand_by(*p).is_some())
+                .take(6)
+                .collect();
+            for p in trunks {
+                self.w.go_to_block(p);
+                let (ok, _) = self
+                    .w
+                    .act("collect_resin", AimAt::Block { pos: p, top: true });
+                if ok {
+                    // Carried home.
+                    self.home();
+                    self.w.put_down_all();
+                    return;
+                }
+            }
+        }
+        self.home();
+    }
+
+    /// Lightning at a tree 12–30 m from camp (a natural event the test may force): where the
+    /// flames are.
+    fn lightning(&mut self) -> Option<BlockPos> {
+        self.home();
+        let camp = BlockPos::containing(self.camp);
+        let tree = self
+            .w
+            .find(30, |n, _| n.ends_with("_log"))
+            .into_iter()
+            .find(|p| {
+                let (dx, dz) = ((p.x - camp.x) as f64, (p.z - camp.z) as f64);
+                (12.0..30.0).contains(&(dx * dx + dz * dz).sqrt())
+            })?;
+        self.w.server.send(ToServer::Strike {
+            x: tree.x,
+            z: tree.z,
+        });
+        self.w.run(2);
+        let fire = (0..20).find_map(|_| {
+            self.w.run(2);
+            self.w.find(40, |n, _| n == "flames").into_iter().next()
+        });
+        if let Some(f) = fire {
+            self.say(&format!("lightning: fire at {f:?}"));
+        }
+        fire
+    }
+
+    /// Eats when hungry: what is cooked or ready at camp, and meat charred on the fire when
+    /// there is nothing else.
+    fn eat_up(&mut self) {
+        use hearth_body::Hunger;
+        let hungry = |b: &Bot| {
+            b.w.body.as_ref().is_some_and(|b| {
+                matches!(
+                    b.status.hunger,
+                    Hunger::Hungry | Hunger::VeryHungry | Hunger::Starving
+                )
+            })
+        };
+        let ready = |id: &str| {
+            id.ends_with("cooked_meat")
+                || id.ends_with("dried_meat")
+                || id.ends_with("nut_kernel")
+                || id.ends_with("blackberry")
+                || id.ends_with("raspberry")
+                || id.ends_with("wild_strawberry")
+        };
+        for _ in 0..8 {
+            if !hungry(self) {
+                break;
+            }
+            self.home();
+            self.w.put_down_all();
+            let food = self.at_camp(ready).into_iter().next();
+            match food {
+                Some(id) => {
+                    if self.w.pick_up(id) {
+                        self.w
+                            .server
+                            .send(ToServer::Eat(Path::at(Root::Hand(Hand::Right))));
+                        self.w.run(2);
+                    }
+                }
+                None => {
+                    let burning =
+                        matches!(self.fire_state().as_deref(), Some("low") | Some("high"));
+                    if self.count("cut/meat") == 0 || !burning {
+                        break;
+                    }
+                    let Some(hearth) = self.hearth else {
+                        break;
+                    };
+                    if !self
+                        .w
+                        .act(
+                            "char_meat",
+                            AimAt::Block {
+                                pos: hearth,
+                                top: false,
+                            },
+                        )
+                        .0
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+        self.w.put_down_all();
     }
 
     /// Brings a fresh kill lying in the world to camp (dragged).
@@ -1048,6 +1238,8 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         fed_at: 0,
         relighting: false,
         bed: None,
+        wildfire: None,
+        tending: false,
     };
     let content = bot.w.content.clone();
     let items = bot.w.items.clone();
@@ -1118,6 +1310,7 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         })
         .expect("the struck tree burns");
     bot.say(&format!("lightning: fire at {fire:?}"));
+    bot.wildfire = Some(fire);
     for _ in 0..6 {
         if bot.knows("fire_keeping") {
             break;
@@ -1304,7 +1497,20 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         bot.work("whittle_spear", AimAt::Nothing);
     }
     assert!(bot.knows("stone_tipped_spear"), "{:?}", bot.w.learned);
-    bot.gather(48, |n, _| n == "spruce_log", "collect_resin", 2);
+    // Resin from the spruces and pines.
+    let resinous = |_: &str, m: Option<&str>| {
+        m.is_some_and(|m| m.ends_with("spruce_wood") || m.ends_with("pine_wood"))
+    };
+    for _ in 0..3 {
+        if bot.count("pine_resin") > 0 {
+            break;
+        }
+        bot.gather(48, resinous, "collect_resin", 2);
+    }
+    if bot.count("pine_resin") == 0 {
+        bot.resin_afar();
+    }
+    bot.say(&format!("{} resin", bot.count("pine_resin")));
     if bot.count("point/flint") == 0 {
         bot.cobbles(2, &knappable);
         bot.work("test_nodule", AimAt::Nothing);

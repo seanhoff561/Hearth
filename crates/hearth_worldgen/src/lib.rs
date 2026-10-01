@@ -16,6 +16,7 @@ pub mod planet;
 pub mod region;
 pub mod settings;
 pub mod soil;
+pub mod trees;
 
 pub use cubegen::{CubeClass, WorldGenerator};
 pub use planet::PlanetGrid;

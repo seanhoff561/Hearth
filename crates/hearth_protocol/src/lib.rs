@@ -247,6 +247,15 @@ pub enum ToClient {
     Work(Option<WorkView>),
     /// What came of a process, a meal or a drink.
     Acted(Acted),
+    /// A tree falls: its blocks as they stood (gone from the world now), turning down about
+    /// the edge `pivot` toward `toward` over `seconds`; where it comes to rest arrives as block
+    /// changes when the fall is over.
+    TreeFalls {
+        blocks: Vec<(hearth_math::BlockPos, hearth_world::BlockStateId)>,
+        pivot: glam::DVec3,
+        toward: hearth_math::Direction,
+        seconds: f32,
+    },
     /// Something learned (true) or a hunch (false): the node's name and the journal's words.
     Learned {
         name: String,

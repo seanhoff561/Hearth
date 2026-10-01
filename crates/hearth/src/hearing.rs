@@ -215,6 +215,20 @@ impl Hearing {
             pan,
             "subtitles.step",
         );
+        // Foliage brushed past at body height rustles.
+        let body = mover.pos + glam::DVec3::Y * 1.0;
+        let thicket = map
+            .block(hearth_math::BlockPos::containing(body))
+            .map_or(0.0, |s| reg.block_of(s).def.drag);
+        if thicket > 0.05 {
+            self.play(
+                Sound::Rustle {
+                    force: (thicket * (0.5 + 0.5 * force as f32)).min(1.0),
+                },
+                -pan,
+                "subtitles.rustle",
+            );
+        }
         Some(self.foot)
     }
 

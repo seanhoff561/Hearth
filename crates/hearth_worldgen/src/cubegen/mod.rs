@@ -116,6 +116,8 @@ pub struct WorldGenerator {
     pub soils: Soils,
     pub deposits: Deposits,
     pub hydro: Hydrology,
+    /// The tree species and their growth templates.
+    pub forest: Arc<crate::trees::Forest>,
     columns: Cache<ColumnPos, ColumnData>,
     /// Rock columns and soil profiles of 16×16 block columns (index `z * 16 + x`).
     rocks: Cache<ColumnPos, Vec<(RockColumn, Profile)>>,
@@ -168,6 +170,7 @@ impl WorldGenerator {
             soils,
             deposits,
             hydro,
+            forest: Arc::new(crate::trees::Forest::new(reg, content)),
             blocks,
             seed,
             terrain,

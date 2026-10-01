@@ -29,6 +29,7 @@ hearth_audio = { path = "crates/hearth_audio" }
 hearth_character = { path = "crates/hearth_character" }
 hearth_items = { path = "crates/hearth_items" }
 hearth_craft = { path = "crates/hearth_craft" }
+hearth_flora = { path = "crates/hearth_flora" }
 hearth_render = { path = "crates/hearth_render" }
 hearth_lod = { path = "crates/hearth_lod" }
 

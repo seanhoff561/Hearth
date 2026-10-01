@@ -727,3 +727,30 @@ against 2185 FPS, lows −0.2 %). The baseline against V2-5 with V2-5 run first 
 put V2-5 ahead (+0.6 % average, +1.3 % lows). The gate had always run the baseline first, so
 any drift within a pair (the GPU warming, clocks settling) fell on one side. It now alternates
 which build runs first, round by round.
+
+## D75 — Trees are grown from species templates; limbs are joined bars; foliage is passable
+Each temperate species (25, Appendix A's tier 1) has a growth form in the data, and a pure
+growth model (`hearth_flora`) turns species, stage and variant into a tree: Chapman–Richards
+height and a diameter that goes on thickening after the height levels off, eight stages from
+seedling to ancient and dead standing, and a parametric skeleton after Weber and Penn (stems
+that lean and taper, decurrent crowns forking into limbs, branches at the species' angle in
+whorls or a spiral as long as the crown's shape allows, twigs, droop, foliage clusters). Wood
+a metre or more through fills log blocks; thinner wood becomes branch blocks, bars 2, 4, 8 or
+12 px thick joined to their neighbours (256 states per wood), drawn as bars and arms with no
+hidden faces. The tree is grown once per (species, stage, variant) into a template and cached;
+the world places it turned and mirrored as its position's hash says, so eight variants per
+stage look like many trees. A tree is the template of its stage, not a continuous growth: its
+blocks change only between stages. Species are drawn by how well the climate fits their
+envelope (temperature, coldest and warmest months, rain, Köppen class, wet ground), the
+biome's affinity and, for the understory, shade tolerance; stand age varies in patches across
+the land. Crowns are spaced by their size (a tree stands in its 5 m cell as often as the cell
+is a share of its crown), with shade-tolerant saplings and poles between. Where no species
+fits (the tropics, deserts, tundra) the old shapes stand until their species come in V2-10.
+The distant terrain reads each template's per-column crown and trunk summary instead of every
+block, and beyond the levels that grow trees it asks the generator for the likely species and
+the stand's age. Foliage is passable: it slows a body by a quarter to over a half by its
+density and rustles; thick limbs (8 px and up) are solid and stood on, thin ones passed
+through. Felling is a process on any standing tree's trunk: the generator says which tree a
+block belongs to, the tree is taken away but its stump and falls about it away from the cutter,
+coming to rest on the ground after a few seconds (the client draws it turning as boxes), and
+the edits overlay keeps it there.

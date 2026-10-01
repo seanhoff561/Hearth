@@ -145,9 +145,115 @@ pub struct PlantAppearance {
     pub flower: Option<Color>,
     #[serde(default)]
     pub bark: Option<Color>,
-    /// Crown shape keyword for the growth model (spreading, conical, columnar, umbrella...).
+    /// A second bark colour (the birch's black marks, the pine's orange upper bark).
+    #[serde(default)]
+    pub bark2: Option<Color>,
+    /// Crown shape in words (the growth model reads `TreeForm::crown`).
     #[serde(default)]
     pub crown: Option<String>,
+}
+
+/// Crown shapes of the growth model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Crown {
+    /// Broad, with low limbs forking wide (oak, chestnut, walnut).
+    Spreading,
+    /// Egg-shaped (beech, lime, ash, cherry).
+    Ovoid,
+    /// About as wide as tall (field maple, apple, hawthorn).
+    Rounded,
+    /// A spire, widest at the bottom (spruce, alder).
+    Conical,
+    /// Narrow and tall (aspen).
+    Columnar,
+    /// Branches hanging (white willow, silver birch's twigs).
+    Weeping,
+    /// Flat-topped on a long clear stem (old pine).
+    Umbrella,
+    /// Several stems from the ground (hazel, elder, osier).
+    MultiStemmed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum LeafKind {
+    #[default]
+    Broad,
+    Needle,
+    Scale,
+}
+
+/// The colour deciduous foliage turns in autumn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum AutumnColor {
+    #[default]
+    Brown,
+    Yellow,
+    Red,
+}
+
+/// Bark patterns for the procedural textures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum BarkPattern {
+    /// Deep vertical furrows (oak, chestnut in spirals).
+    #[default]
+    Furrowed,
+    /// Smooth and grey (beech, hornbeam).
+    Smooth,
+    /// Papery bands peeling (birch).
+    Peeling,
+    /// Plates and scales (spruce, pine, apple).
+    Scaly,
+    /// Long shallow fissures (willow, lime).
+    Fissured,
+    /// Horizontal bands of lenticels (cherry).
+    Banded,
+    /// Interlacing ridges (ash, elm, walnut).
+    Ridged,
+    /// Thin flakes (yew).
+    Flaky,
+}
+
+/// How a tree or woody shrub grows: the parameters of the growth model (v2 §6.2,
+/// `docs/design/flora.md`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TreeForm {
+    pub crown: Crown,
+    /// Live crown length ÷ height, mature.
+    pub crown_ratio: f32,
+    /// Crown width ÷ height, mature.
+    pub crown_width: f32,
+    /// 0 = forks into limbs (a broad decurrent crown); 1 = one straight leader.
+    pub apical_dominance: f32,
+    /// Branch angle from the stem, degrees.
+    pub branch_angle_deg: f32,
+    /// 0–1 how much branches hang.
+    #[serde(default)]
+    pub droop: f32,
+    /// Branches in whorls (conifers).
+    #[serde(default)]
+    pub whorled: bool,
+    /// Stems from the ground.
+    #[serde(default = "one_stem")]
+    pub stems: u8,
+    /// 0–1 how the foot spreads into roots.
+    #[serde(default)]
+    pub root_flare: f32,
+    #[serde(default)]
+    pub leaf: LeafKind,
+    /// 0–1 how thickly foliage fills its clusters.
+    pub foliage_density: f32,
+    #[serde(default)]
+    pub autumn: AutumnColor,
+    #[serde(default)]
+    pub bark: BarkPattern,
+    /// Blocks: the trunk, the limbs, the foliage.
+    pub log: IdRef,
+    pub branch: IdRef,
+    pub leaves: IdRef,
+}
+
+fn one_stem() -> u8 {
+    1
 }
 
 entry! {
@@ -182,6 +288,9 @@ entry! {
         /// Wood material for trees and woody shrubs.
         #[serde(default)]
         pub wood: Option<IdRef>,
+        /// How a tree or woody shrub grows (the growth model).
+        #[serde(default)]
+        pub tree: Option<TreeForm>,
         #[serde(default)]
         pub parts: Vec<PlantPart>,
         /// 0–1 flammability of the living plant.

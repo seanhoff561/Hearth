@@ -75,6 +75,12 @@ pub enum Effect {
     Bank,
     /// The first input, kept, is mended: its edge, point or binding made good again.
     Mend,
+    /// A standing tree is cut through and falls (its trunk lies along the ground after).
+    Fell,
+    /// A limb is cut off a tree with what grows from it.
+    Lop,
+    /// A lying trunk is cut through: a section comes off.
+    Buck,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

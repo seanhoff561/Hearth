@@ -18,6 +18,8 @@ pub enum Cell {
     Ice,
     Snow,
     Ladder,
+    /// Passable foliage that slows a body by this much (0–1).
+    Foliage(f64),
 }
 
 /// A small world of cells.
@@ -93,5 +95,12 @@ impl Terrain for Grid {
 
     fn climbable(&self, p: BlockPos) -> bool {
         self.at(p) == Some(Cell::Ladder)
+    }
+
+    fn drag(&self, p: BlockPos) -> f64 {
+        match self.at(p) {
+            Some(Cell::Foliage(d)) => d,
+            _ => 0.0,
+        }
     }
 }

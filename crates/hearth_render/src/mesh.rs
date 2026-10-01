@@ -42,6 +42,8 @@ pub const TINT_DECIDUOUS: u32 = 2;
 pub const TINT_EVERGREEN: u32 = 3;
 /// Deciduous variant with yellow autumn colour (birch).
 pub const VARIANT_BIRCH: u32 = 1 << 2;
+/// Deciduous variant with red autumn colour (maples, cherry, hawthorn).
+pub const VARIANT_RED: u32 = 2 << 2;
 /// Dry-season type 3 (arid) in the climate code: grass that is mostly cured.
 const ARID_BITS: u32 = 3 << 21;
 
@@ -67,6 +69,7 @@ impl ColumnTints {
             Tint::DryGrass => (TINT_GRASS, (self.climate[i] & !(3 << 21)) | ARID_BITS),
             Tint::Foliage => (TINT_DECIDUOUS, self.climate[i]),
             Tint::Birch => (TINT_DECIDUOUS | VARIANT_BIRCH, self.climate[i]),
+            Tint::FoliageRed => (TINT_DECIDUOUS | VARIANT_RED, self.climate[i]),
             Tint::Spruce => (TINT_EVERGREEN, self.climate[i]),
         }
     }

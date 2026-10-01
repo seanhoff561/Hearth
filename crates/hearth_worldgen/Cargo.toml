@@ -12,6 +12,7 @@ hearth_core.workspace = true
 hearth_math.workspace = true
 hearth_world.workspace = true
 hearth_content.workspace = true
+hearth_flora.workspace = true
 glam.workspace = true
 serde.workspace = true
 serde_json.workspace = true

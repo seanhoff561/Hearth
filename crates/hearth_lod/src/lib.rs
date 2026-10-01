@@ -551,6 +551,7 @@ const TINT_GRASS: u8 = 1;
 const TINT_DECIDUOUS: u8 = 2;
 const TINT_EVERGREEN: u8 = 3;
 const VARIANT_BIRCH: u8 = 1 << 2;
+const VARIANT_RED: u8 = 2 << 2;
 
 /// Colour (sRGB, packed) and tint kind of every block state's top face: the average of its
 /// texture, which the shader tints like the full-detail face.
@@ -625,6 +626,7 @@ impl BlockColors {
                 TintKind::Grass | TintKind::DryGrass => TINT_GRASS,
                 TintKind::Foliage => TINT_DECIDUOUS,
                 TintKind::Birch => TINT_DECIDUOUS | VARIANT_BIRCH,
+                TintKind::FoliageRed => TINT_DECIDUOUS | VARIANT_RED,
                 TintKind::Spruce => TINT_EVERGREEN,
                 TintKind::None | TintKind::Water => TINT_RGB,
             };
@@ -783,6 +785,33 @@ impl TreeSink for CanopyMap<'_> {
         None
     }
 
+    fn crowns_only(&self) -> bool {
+        true
+    }
+
+    fn crown(&mut self, x: i32, z: i32, bottom: i32, top: i32, leaves: BlockStateId) {
+        let (lx, lz) = (x - self.x0, z - self.z0);
+        if lx < 0 || lz < 0 || lx >= self.w || lz >= self.d {
+            return;
+        }
+        let i = (lz * self.w + lx) as usize;
+        if top > self.top[i] {
+            self.top[i] = top;
+            self.leaf[i] = leaves;
+        }
+        self.bottom[i] = self.bottom[i].min(bottom);
+    }
+
+    fn trunk(&mut self, x: i32, z: i32, bottom: i32, top: i32, log: BlockStateId) {
+        let (lx, lz) = (x - self.x0, z - self.z0);
+        if lx < 0 || lz < 0 || lx >= self.w || lz >= self.d {
+            return;
+        }
+        let e = self.trunks.entry((x, z)).or_insert((bottom, top, log));
+        e.0 = e.0.min(bottom);
+        e.1 = e.1.max(top);
+    }
+
     fn put(&mut self, x: i32, y: i32, z: i32, s: BlockStateId) {
         let (lx, lz) = (x - self.x0, z - self.z0);
         if lx < 0 || lz < 0 || lx >= self.w || lz >= self.d {
@@ -822,6 +851,7 @@ impl LodGen {
             reg.parse_state(&format!(
                 "{w}_leaves[distance=1,persistent=false,waterlogged=false]"
             ))
+            .or_else(|_| reg.parse_state(&format!("{w}_leaves")))
             .unwrap_or(BlockStateId::AIR)
         };
 
@@ -883,7 +913,7 @@ impl LodGen {
                 let mut col = self.column(wg, &s, x, z, &normals, southern);
                 col.crown = match &canopy {
                     Some(map) => map.crown(bx, bz, cs, col.top, &self.colors),
-                    None => self.expected_crown(&s, &mut col, x, z),
+                    None => self.expected_crown(wg, &s, &mut col, x, z),
                 };
                 cols.push(col);
             }
@@ -917,9 +947,36 @@ impl LodGen {
 
     /// Coarse levels: a crown where the trees are expected to close over the ground, at the
     /// usual height of the place's trees; sparser trees darken the ground.
-    fn expected_crown(&self, s: &ColumnSample, col: &mut Col, x: i32, z: i32) -> Option<Crown> {
+    fn expected_crown(
+        &self,
+        wg: &WorldGenerator,
+        s: &ColumnSample,
+        col: &mut Col,
+        x: i32,
+        z: i32,
+    ) -> Option<Crown> {
         if s.tree_density <= 0.0 || (col.water && s.biome != Biome::Mangrove) {
             return None;
+        }
+        // The place's own species where it has them; elsewhere the biome's usual trees.
+        let roll = (hash_2d(0x5bec, x, z) & 0xffff) as f32 / 65535.0;
+        if let Some((sp, height, cover)) = wg.features().expected_canopy(wg, s, x, z, roll) {
+            if cover < FAR_CROWN_COVER {
+                let dim = 1.0 - 0.35 * cover / FAR_CROWN_COVER;
+                let c = col.rgb;
+                let ch = |k: u32| ((((c >> k) & 255) as f32 * dim) as u32) << k;
+                col.rgb = ch(0) | ch(8) | ch(16);
+                return None;
+            }
+            let (rgb, kind) = self.colors.get(wg.forest.blocks[sp].leaves);
+            let jitter = 0.85 + 0.3 * (hash_2d(0x7ee5, x, z) & 1023) as f32 / 1023.0;
+            let h = (height as f32 * jitter).round() as i32;
+            return Some(Crown {
+                bottom: col.top + (h / 3).max(1),
+                top: col.top + h.max(2),
+                rgb,
+                kind,
+            });
         }
         let (leaves, height, area) = canopy(s.biome);
         let cover = (s.tree_density * 0.95 * area / 25.0).min(1.0);

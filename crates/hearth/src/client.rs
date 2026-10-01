@@ -173,6 +173,8 @@ pub struct Client {
     pub perspective: Perspective,
     view_bobbing: bool,
     figure_boxes: Vec<FigureInstance>,
+    /// Trees falling: drawn as boxes turning about their stump until they come to rest.
+    falling: Vec<Falling>,
     /// The eyelids (0 open, 1 shut): shut asleep or unconscious, slow to open on waking.
     eyes_shut: f32,
     /// Why the player last woke, and how long ago (s).
@@ -207,6 +209,22 @@ pub struct Client {
     pub crafting: Option<Crafting>,
     /// Knapping by hand asked for (the app opens its screen).
     pub knap_request: Option<crate::knapping_ui::KnapScreen>,
+}
+
+/// A tree on its way down.
+struct Falling {
+    /// Its blocks: middle, size and colour.
+    parts: Vec<(DVec3, glam::Vec3, [u8; 3])>,
+    pivot: DVec3,
+    axis: DVec3,
+    started: std::time::Instant,
+    seconds: f32,
+}
+
+/// A block's map colour (`#rrggbb`) as RGB.
+fn hearth_lod_color(hex: &str) -> [u8; 3] {
+    let v = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0x6f5a40);
+    [(v >> 16) as u8, (v >> 8) as u8, v as u8]
 }
 
 impl Client {
@@ -276,6 +294,7 @@ impl Client {
             perspective: Perspective::First,
             view_bobbing: options.video.view_bobbing,
             figure_boxes: Vec::new(),
+            falling: Vec::new(),
             eyes_shut: 0.0,
             woke: None,
             heart_phase: 0.0,
@@ -728,6 +747,26 @@ impl Client {
             );
             self.figure_boxes
                 .push(hearth_character::solid(place, k.color, light(p)));
+        }
+        // Falling trees: every block turning about the stump, faster as it goes (it rests when
+        // the server lays it down).
+        self.falling
+            .retain(|f| f.started.elapsed().as_secs_f32() < f.seconds + 1.0);
+        for f in &self.falling {
+            let t = (f.started.elapsed().as_secs_f32() / f.seconds).min(1.0);
+            let angle = std::f64::consts::FRAC_PI_2 * (t * t) as f64;
+            let q = glam::DQuat::from_axis_angle(f.axis, angle);
+            let lit = light(f.pivot + DVec3::Y);
+            for (c, size, color) in &f.parts {
+                let p = f.pivot + q * (*c - f.pivot);
+                let place = Affine3A::from_scale_rotation_translation(
+                    *size,
+                    q.as_quat(),
+                    (p - view).as_vec3(),
+                );
+                self.figure_boxes
+                    .push(hearth_character::solid(place, *color, lit));
+            }
         }
         let (Some(f), Some(pose)) = (&self.figure, &self.pose) else {
             return;
@@ -1623,6 +1662,37 @@ impl Client {
                 ToClient::Work(w) => {
                     if let Some(c) = &mut self.crafting {
                         c.work = w;
+                    }
+                }
+                ToClient::TreeFalls {
+                    blocks,
+                    pivot,
+                    toward,
+                    seconds,
+                } => {
+                    if let Some(w) = &self.world {
+                        let reg = &w.reg;
+                        let parts = blocks
+                            .iter()
+                            .map(|(p, s)| {
+                                let def = &reg.block_of(*s).def;
+                                let color = hearth_lod_color(&def.map_color);
+                                let size = match reg.get(*s, "thickness") {
+                                    Some(t) => t.parse::<f32>().unwrap_or(4.0) / 16.0,
+                                    None if def.collision => 1.0,
+                                    None => 0.9,
+                                };
+                                (p.center(), glam::Vec3::splat(size), color)
+                            })
+                            .collect();
+                        let n = toward.normal_f64();
+                        self.falling.push(Falling {
+                            parts,
+                            pivot,
+                            axis: DVec3::Y.cross(n).normalize(),
+                            started: std::time::Instant::now(),
+                            seconds,
+                        });
                     }
                 }
                 ToClient::Acted(a) => {

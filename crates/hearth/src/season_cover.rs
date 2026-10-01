@@ -484,7 +484,7 @@ fn highest_block(
 fn deciduous(reg: &BlockRegistry, b: BlockStateId) -> bool {
     matches!(
         reg.block_of(b).def.tint,
-        TintKind::Foliage | TintKind::Birch
+        TintKind::Foliage | TintKind::Birch | TintKind::FoliageRed
     )
 }
 
@@ -629,23 +629,11 @@ mod tests {
         // A bare oak: snow falls through to the ground, a quarter thinner.
         put(&mut f, 2, 4, 2, "loam");
         for y in 8..=10 {
-            put(
-                &mut f,
-                2,
-                y,
-                2,
-                "oak_leaves[distance=1,persistent=false,waterlogged=false]",
-            );
+            put(&mut f, 2, y, 2, "oak_leaves");
         }
         // A spruce: a couple of layers on the crown.
         put(&mut f, 5, 4, 5, "loam");
-        put(
-            &mut f,
-            5,
-            10,
-            5,
-            "spruce_leaves[distance=1,persistent=false,waterlogged=false]",
-        );
+        put(&mut f, 5, 10, 5, "spruce_leaves");
         let mut buried = Buried::default();
         let mut edit = Edit::new(&mut f.map, &f.reg);
         cover(&mut edit, &f.states, &mut buried, &target(2, 2, 8));

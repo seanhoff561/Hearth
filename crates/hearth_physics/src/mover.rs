@@ -395,6 +395,21 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
             speed *= 1.0 - 0.75 * submerged.min(0.8);
         }
     }
+    // Pushing through foliage and brush: the densest the body is in slows it.
+    let thicket = {
+        let b = m.bounds();
+        let (lo, hi) = b.block_range();
+        let mut most = 0.0f64;
+        for y in lo.y..=hi.y {
+            for z in lo.z..=hi.z {
+                for x in lo.x..=hi.x {
+                    most = most.max(t.drag(BlockPos::new(x, y, z)));
+                }
+            }
+        }
+        most.clamp(0.0, 0.9)
+    };
+    speed *= 1.0 - thicket;
     if m.scramble_s > 0.0 {
         m.scramble_s -= dt;
         speed *= 0.35;

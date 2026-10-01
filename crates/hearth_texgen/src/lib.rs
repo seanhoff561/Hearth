@@ -7,6 +7,7 @@ pub mod blocks;
 pub mod craft;
 pub mod material;
 pub mod paint;
+pub mod trees;
 
 pub use paint::Tex;
 
@@ -40,7 +41,13 @@ pub fn default_textures() -> Vec<TexEntry> {
 /// The default pack plus textures for the blocks the content generates (which replace any
 /// hand-drawn texture of the same name).
 pub fn textures_for(content: Option<&hearth_content::Content>) -> Vec<TexEntry> {
-    let generated = content.map(material::natural_textures).unwrap_or_default();
+    let generated: Vec<TexEntry> = content
+        .map(|c| {
+            let mut v = material::natural_textures(c);
+            v.extend(trees::textures(c));
+            v
+        })
+        .unwrap_or_default();
     let mut out: Vec<TexEntry> = default_textures()
         .into_iter()
         .filter(|t| !generated.iter().any(|g| g.name == t.name))

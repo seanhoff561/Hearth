@@ -1,5 +1,5 @@
 //! Movement in small block worlds: speeds, jumps, walls, steps and ledges, falls, water, low
-//! tunnels, edges, ice and ladders.
+//! tunnels, edges, ice, ladders and foliage.
 
 use glam::{DVec2, DVec3};
 use hearth_physics::testing::{Cell, Grid};
@@ -338,4 +338,26 @@ fn nothing_falls_through_a_floor() {
     m.vel.y = -60.0;
     step(&g, &mut m, &Intent::default(), &Ability::human(), 0.5);
     assert!(m.pos.y.abs() < 1e-6 && m.on_ground, "{:?}", m.pos);
+}
+
+#[test]
+fn foliage_is_passed_through_slowly() {
+    // A wall of dense foliage two blocks high across the way: walked through, at half pace.
+    let mut g = Grid::floor(40);
+    g.fill((4, 0, -3), (12, 1, 3), Cell::Foliage(0.5));
+    let mut m = settled(&g, 0.5, 0.5);
+    let r = run(
+        &g,
+        &mut m,
+        &go((1.0, 0.0), Gait::Walk),
+        &Ability::human(),
+        22.0,
+    );
+    assert!(m.pos.x > 14.0, "through the foliage: {}", m.pos.x);
+    let slowest = r.iter().map(|x| x.speed).skip(60).fold(f64::MAX, f64::min);
+    assert!((slowest - 0.7).abs() < 0.08, "half pace inside: {slowest}");
+    assert!(
+        (r.last().expect("steps").speed - 1.4).abs() < 0.05,
+        "full pace beyond"
+    );
 }
