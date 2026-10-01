@@ -1,7 +1,7 @@
 //! Camera: position in world space (f64), orientation, reverse-Z infinite perspective, and
 //! camera-relative view matrices (the camera always sits at the origin of render space).
 
-use glam::{DVec3, Mat4, Vec3, Vec4};
+use glam::{DVec3, Mat4, Vec2, Vec3, Vec4};
 
 /// A perspective camera.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -15,6 +15,8 @@ pub struct Camera {
     /// Vertical field of view in degrees.
     pub fov_y: f32,
     pub near: f32,
+    /// Offset of the projection in clip space (temporal anti-aliasing's sub-pixel jitter).
+    pub jitter: Vec2,
 }
 
 impl Default for Camera {
@@ -25,6 +27,7 @@ impl Default for Camera {
             pitch: 0.0,
             fov_y: 70.0,
             near: 0.05,
+            jitter: Vec2::ZERO,
         }
     }
 }
@@ -46,11 +49,16 @@ impl Camera {
 
     /// Reverse-Z infinite perspective projection (depth 1 at the near plane, 0 at infinity).
     pub fn projection(&self, aspect: f32) -> Mat4 {
-        glam::camera::rh::proj::directx::perspective_infinite_reverse(
+        let p = glam::camera::rh::proj::directx::perspective_infinite_reverse(
             self.fov_y.to_radians(),
             aspect.max(1e-3),
             self.near,
-        )
+        );
+        if self.jitter == Vec2::ZERO {
+            p
+        } else {
+            Mat4::from_translation(self.jitter.extend(0.0)) * p
+        }
     }
 
     pub fn view_proj(&self, aspect: f32) -> Mat4 {

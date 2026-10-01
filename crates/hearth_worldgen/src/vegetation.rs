@@ -18,6 +18,8 @@ const BUCKET: i32 = 16;
 pub const EDGE: f32 = 1.15;
 /// The side (m) of the squares a disturbance's exact shape is kept in (a fire's burned ground).
 pub const PATCH: i32 = 4;
+/// Years burned ground lies bare before the first herbs come.
+pub const BARE_YEARS: f32 = 0.4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -16,7 +16,7 @@ use super::{ColumnData, CubeBuf, WorldGenerator};
 use crate::noise::Perlin;
 use crate::region::biome::Biome;
 use crate::region::{ColumnSample, Surface};
-use crate::vegetation::{DisturbanceKind, Vegetation};
+use crate::vegetation::{BARE_YEARS, DisturbanceKind, Vegetation};
 
 /// Size of the tree placement grid cells.
 const TREE_CELL: i32 = 5;
@@ -24,8 +24,6 @@ const TREE_CELL: i32 = 5;
 const TREE_REACH: i32 = 22;
 /// Grid for fallen logs and boulders.
 const DEBRIS_CELL: i32 = 12;
-/// Years burned ground lies bare before the first herbs come.
-const BARE_YEARS: f32 = 0.4;
 /// Years after a clearing before the shrubs come up.
 const SHRUB_YEARS: f32 = 2.0;
 /// Years ground counts as broken after a disturbance.

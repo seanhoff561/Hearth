@@ -14,6 +14,8 @@ hearth_worldgen.workspace = true
 hearth_env.workspace = true
 hearth_texgen.workspace = true
 bytemuck.workspace = true
+log.workspace = true
+zstd.workspace = true
 rustc-hash.workspace = true
 
 [dev-dependencies]

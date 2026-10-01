@@ -806,3 +806,31 @@ GPU-generated puff plumes (one per 32 m square of near fire, one per burning cel
 depth-tested, lit by sky and sun and faded into the haze, so a far fire's column is seen from
 kilometres. Burning blocks are not saved: a fire burning at a save is out on opening, with
 what it burned kept.
+
+## D78 — Distant terrain: vegetation and changes in the tiles, a disk cache, a budget, TAA
+The distant terrain is built on the client from the generator, so what changes the land must
+reach it there: the server sends the vegetation snapshot (cheap: it shares the disturbances)
+when a disturbance is added and as the years turn, and the player's changes as one top per
+changed column (its highest solid block). The tile builder reads both (burned ground drawn
+black for its bare season, the trees as the vegetation has grown them, changes standing over
+the ground) and the streamer builds again the tiles a new disturbance or change reaches,
+drawing the old ones until then; trees in tiles grow by whole years so a year's turn rebuilds
+every tile once, in the background. Built tiles are kept on disk (zstd, one file a tile) with a
+stamp: a fingerprint of the build (two probe tiles near the spawn built and hashed, because
+there is no build number and a change to generation, meshing or colours must invalidate the
+cache) and the vegetation and changes reaching the tile; a tile is read back while its stamp
+holds and rebuilt otherwise. The video-memory budget the options already had now holds: the
+streamer scales the distance rule of the selection down when the tiles outgrow it (the far
+tiles coarsen first) and back when they take under 60 % of it, looking once a second.
+Temporal anti-aliasing jitters the projection itself (every pass sees it), resolves after the
+translucent pass by reprojecting the history through the depth buffer in homogeneous
+coordinates (the sky at infinite depth reprojects by direction alone), clamps it to the
+current 3×3 neighbourhood's mean ± 1.25 deviations in YCoCg, and blends a tenth of the new
+frame (more when the view moved); the result is copied back into the HDR target so metering,
+tonemapping and scaling are untouched. It is opt-in (the Fabulous preset) because it softens
+textures and costs a full-screen pass. FXAA, listed in the options since v1, is not built and
+counts as off. The fly-through benchmark streams near cubes (pre-generated along the path,
+uploaded as they come within reach, at most 256 a frame as the client) and distant tiles
+through the game's own streamer, so what it measures is the game's streaming on the frame
+thread; its slow frames are the tile selection, which is the first thing to move off the
+frame thread.

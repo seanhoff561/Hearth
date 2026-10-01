@@ -610,6 +610,22 @@ impl Menus {
                     v.refresh_preset();
                     changed = true;
                 }
+                {
+                    use hearth_core::options::AntiAliasing;
+                    let modes = [AntiAliasing::Off, AntiAliasing::Taa];
+                    let names = [ui.t("menu.video.aa.off"), ui.t("menu.video.aa.taa")];
+                    let mut ai = usize::from(v.anti_aliasing == AntiAliasing::Taa);
+                    if ui.cycle(
+                        c.row(ROW),
+                        &ui.t("menu.video.anti_aliasing"),
+                        &names,
+                        &mut ai,
+                    ) {
+                        v.anti_aliasing = modes[ai];
+                        v.refresh_preset();
+                        changed = true;
+                    }
+                }
                 let mut fov = v.fov;
                 let text = format!("{}°", fov.round());
                 if ui.slider(

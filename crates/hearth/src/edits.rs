@@ -22,6 +22,8 @@ pub struct Edits {
     by_cube: FxHashMap<CubePos, FxHashMap<BlockPos, BlockStateId>>,
     /// Changes to blocks this content no longer has, kept as saved (they come back with them).
     unknown: Vec<(BlockPos, String)>,
+    /// Counts the changes made (to tell when the distant terrain should hear of them).
+    version: u64,
 }
 
 impl Edits {
@@ -57,12 +59,38 @@ impl Edits {
     /// Records that the block at `p` is now `state`.
     pub fn set(&mut self, p: BlockPos, state: BlockStateId) {
         self.by_cube.entry(p.cube()).or_default().insert(p, state);
+        self.version += 1;
+    }
+
+    /// Counts the changes made so far.
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+
+    /// The changes as the distant terrain shows them: per column (x wrapped by `wrap`), the
+    /// highest solid block placed.
+    pub fn tops(&self, reg: &BlockRegistry, wrap: impl Fn(i32) -> i32) -> hearth_lod::EditTops {
+        let mut tops = hearth_lod::EditTops::default();
+        for m in self.by_cube.values() {
+            for (p, s) in m {
+                if s.is_air() || reg.collision_shape(*s).is_empty() {
+                    continue;
+                }
+                let e = tops.entry((wrap(p.x), p.z)).or_insert((p.y, *s));
+                if p.y > e.0 {
+                    *e = (p.y, *s);
+                }
+            }
+        }
+        tops
     }
 
     /// Forgets any change at `p` (the block is the generator's again).
     pub fn forget(&mut self, p: BlockPos) {
         if let Some(m) = self.by_cube.get_mut(&p.cube()) {
-            m.remove(&p);
+            if m.remove(&p).is_some() {
+                self.version += 1;
+            }
             if m.is_empty() {
                 self.by_cube.remove(&p.cube());
             }

@@ -543,3 +543,53 @@ baseline always first in each pair, failed the cave's 1 % lows (-5.8 %, -5.9 %);
 this build with and without the new textures (2185 vs 2185 FPS, lows -0.2 %) and one with this
 build first in every pair (+0.6 % average, +1.3 % lows) showed no regression, and the gate now
 alternates which build runs first (D74). Gate passed; the baseline moves to the end of V2-5.
+## Run — commit 0ef49c9, NVIDIA GeForce RTX 4060 Laptop GPU (Vulkan), 1920x1080, preset Fancy
+
+| Scene | Avg FPS | 1% low FPS | p99 ms | GPU ms | CPU ms | Draws | Triangles | VRAM MiB | Upload KiB/frame (max) | Allocs/frame (max) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| flythrough | 369.3 | 123.7 | 6.39 | 1.34 | 2.70 | 2359 | 1.60 M | 212 | 185.0 (3165) | 519.4 (2940) |
+
+| GPU ms per pass | flythrough |
+|---|---:|
+| sky tables | 0.043 |
+| cull 0 | 0.017 |
+| terrain 0 | 0.564 |
+| hi-z | 0.055 |
+| cull 1 | 0.010 |
+| terrain 1 | 0.010 |
+| lod cull | 0.014 |
+| lod terrain | 0.385 |
+| sky | 0.123 |
+| water's scene copy | 0.009 |
+| translucent, rain | 0.022 |
+| metering | 0.020 |
+| tonemap | 0.066 |
+
+| CPU ms per system | flythrough |
+|---|---:|
+| environment | 0.012 |
+| lod selection | 1.780 |
+| rain cover map | 0.001 |
+| prepare: terrain | 0.422 |
+| prepare: lod | 0.057 |
+| prepare: sky, rain | 0.001 |
+| encode | 0.033 |
+| submit | 0.388 |
+| wait for gpu | 0.007 |
+
+| Allocations per frame | flythrough |
+|---|---:|
+| environment | 0.003 |
+| lod selection | 145.583 |
+| rain cover map | 0.175 |
+| prepare: terrain | 42.267 |
+| prepare: lod | 0.000 |
+| prepare: sky, rain | 0.000 |
+| encode | 76.560 |
+| submit | 252.836 |
+| wait for gpu | 0.001 |
+
+| Scene | Visible cubes | LOD tiles drawn | Meshing cubes/s | LOD tiles/s | Setup s | SSIM vs golden | Slowest frame | What |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| flythrough | 1812 | 364 | 33006 | 0 | 70.4 | – | 12.17 ms, lod selection 9.17 | 1.2 km at sprint-fly speed (30 m/s) 70 m over the land, terrain streaming |
+

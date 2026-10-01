@@ -174,9 +174,22 @@ running out of the loaded terrain is taken up by the far fire, and a far fire co
 about 200 m of the player lights the near fire at the cell's edge.
 
 ### Distant terrain (engine)
-LOD tiles are cached on disk by seed, content and the vegetation and edits that touch them.
-The edits and vegetation state reach the distant terrain (felled stands, burned land, cleared
-fields). Tiles stay within a VRAM budget, far tiles coarsening first. TAA is an option.
+The server sends the client the vegetation state (when a disturbance is added, and as the
+years turn) and the player's changes as the distant terrain needs them (per changed column,
+its highest solid block). Tiles are built from the generator with both: burned ground lies
+black, cleared and burned land grows back, felled and dead trees are gone, trees grow by
+whole years, and what the player has built stands above the ground. A tile a new disturbance
+or change reaches is built again while the old one is drawn. Tiles are cached on disk beside
+the planet's cache (`lod/<seed>_<circumference>/<level>/<x>_<z>.lod`, zstd), stamped with a
+fingerprint of the build (two probe tiles near the spawn, so a change to generation, meshing
+or colours makes every tile stale) and the vegetation and changes that reach them; a tile
+whose stamp holds is read back instead of built. The tiles stay within the video-memory
+budget (`lod_vram_budget_mb`): over it, the selection's distance rule is scaled down (the far
+tiles coarsen first) until they fit, and scaled back up when they take less than 60 %. The
+season shows in the tiles as near (deciduous crowns by phenology, bare in winter, snow, sea
+ice). Temporal anti-aliasing is an option (Anti-aliasing: Temporal; on in the Fabulous
+preset): the camera is jittered by a Halton (2, 3) sequence of eight, and each frame is
+blended into the reprojected, neighbourhood-clamped history.
 
 ## Parameters
 - Stages by height: seedling < 0.6 m, sapling < 3 m, pole < 0.4 Hmax, young < 0.75 Hmax,
@@ -200,6 +213,27 @@ fields). Tiles stay within a VRAM budget, far tiles coarsening first. TAA is an 
   trunks 40–80 min; wind factor e^(0.22·u·cos θ) downwind, e^(0.5·u·cos θ) upwind; climbing
   ×2.5, going down ×0.35; at most 6,000 blocks burning. Far: 0.15 × fuel × danger² per
   neighbour cell and game hour, at most 200 cells burning.
+
+## Acceptance (V2-6)
+- Species silhouettes at three ages: every species as a sapling, young and old over open
+  grass, e.g. `hearth --screenshot "seed=7,planet=tiny,x=7640,z=2010,above=9,pitch=-9,
+  yaw=90,fov=80,hour=9.5,yf=0.5,dry=true,clear=70@0:50,tree=english_oak:sapling:0@28:-9,
+  tree=english_oak:young:0@45:3,tree=english_oak:old:0@60:28"` (a contact sheet of all 25
+  was made from these).
+- A cleared area goes through succession over simulated years:
+  `crates/hearth/tests/succession.rs` (herbs at once, no shrubs in the first year, shrubs by
+  the third, pioneers by the tenth, a young wood at forty, the shade-tolerant at two hundred)
+  and `crates/hearth_worldgen/tests/succession.rs`; screenshots with `clear=R@YEARS:AHEAD`.
+- Wildfire spreads and burns out plausibly in a dry-season test:
+  `crates/hearth/tests/wildfire.rs` (in the driest month in hot dry air and wind it runs
+  downwind and hardly backs, burns out within hours and stays burned when its terrain is
+  generated again; in damp air it goes nowhere); screenshots with `fire=MINUTES@AHEAD` and
+  `farsmoke=METRES`.
+- The horizon from a peak: `hearth --screenshot "seed=7,planet=standard,x=10506,z=8200,
+  y=422,pitch=3,yaw=150,lod=1024,hour=10,yf=0.45,dry=true,clouds=0.15,taa=true"`.
+- The fly-through benchmark: `hearth bench --scenes flythrough` (1.2 km at 30 m/s, 70 m over
+  the land, near cubes and distant tiles streaming as in the game; its report counts the
+  frames over twice the median).
 
 ## Interactions
 Seasons (phenology tints and leaf cover, snow on crowns), light (shade under foliage), body

@@ -489,6 +489,11 @@ impl LodRenderer {
         self.tiles.len()
     }
 
+    /// Video memory the tiles' quads take (bytes).
+    pub fn bytes(&self) -> u64 {
+        self.pool.alloc.used() as u64 * QUAD_BYTES
+    }
+
     /// Chooses this frame's draws among `show` (the tiles of the current selection): those
     /// uploaded and inside the frustum, placed relative to the camera by the shortest way around,
     /// each drawn as the runs of its quad groups that can face the camera.

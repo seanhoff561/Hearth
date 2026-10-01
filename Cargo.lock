@@ -1074,8 +1074,10 @@ dependencies = [
  "hearth_texgen",
  "hearth_world",
  "hearth_worldgen",
+ "log",
  "rayon",
  "rustc-hash 2.1.3",
+ "zstd",
 ]
 
 [[package]]

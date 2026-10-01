@@ -191,6 +191,8 @@ pub struct Ready {
     pub knowledge_mode: hearth_craft::Mode,
     /// The world ended (permadeath), and the life it ended with.
     pub ended: Option<LifeSummary>,
+    /// Where the distant terrain's tiles of this world are kept on disk, if anywhere.
+    pub lod_cache: Option<std::path::PathBuf>,
 }
 
 /// A life told after it ended (permadeath).
@@ -247,6 +249,11 @@ pub enum ToClient {
     Heights(Box<SkyHeights>, Box<WaterHeights>),
     /// The smoke of the fires burning in the vegetation (empty: none).
     Smoke(Vec<Plume>),
+    /// The vegetation the distant terrain is grown with (when it changes, and as the years
+    /// turn).
+    Vegetation(hearth_worldgen::vegetation::Vegetation),
+    /// The player's changes as the distant terrain shows them (when they change).
+    EditTops(Arc<hearth_lod::EditTops>),
     /// The world clock at the end of a tick.
     Clock(u64),
     Body(Box<BodyView>),

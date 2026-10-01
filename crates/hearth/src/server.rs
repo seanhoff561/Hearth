@@ -557,8 +557,10 @@ fn run(
     let authentic = life.realism.preset == "authentic";
     // Messages the workshop has for the client.
     let mut outbox: Vec<ToClient> = Vec::new();
-    // Whether the client was last told of smoke.
+    // Whether the client was last told of smoke; the vegetation it was last told of.
     let mut smoke_shown = false;
+    let mut veg_told: Option<Vegetation> = None;
+    let mut edits_told: Option<u64> = None;
     // Game ticks the last server tick moved the clock by.
     let mut advanced = 1.0f64;
     let mut work_warp = 0.0f64;
@@ -587,6 +589,10 @@ fn run(
             graph: workshop.graph.clone(),
             knowledge_mode: mode,
             ended,
+            lod_cache: spec.cache_dir.as_ref().map(|d| {
+                d.join("lod")
+                    .join(format!("{seed}_{}", planet.circumference()))
+            }),
         })))
         .is_err()
     {
@@ -866,6 +872,22 @@ fn run(
             next_tick = Instant::now() + Duration::from_secs_f64(TICK_S);
         } else if (lockstep && owed > 0) || (!lockstep && Instant::now() >= next_tick) {
             workshop.tick(&mut here!(), advanced);
+            // The vegetation for the distant terrain: when it changes, and as the years turn.
+            if ticks.is_multiple_of(20)
+                && veg_told.as_ref().is_none_or(|v| {
+                    !v.same_disturbances(&lw.vegetation)
+                        || v.year.floor() != lw.vegetation.year.floor()
+                })
+            {
+                veg_told = Some(lw.vegetation.clone());
+                let _ = tx.send(ToClient::Vegetation(lw.vegetation.clone()));
+            }
+            // The player's changes for the distant terrain, when they change.
+            if ticks.is_multiple_of(20) && edits_told != Some(lw.edits.version()) {
+                edits_told = Some(lw.edits.version());
+                let tops = lw.edits.tops(&lw.reg, |x| planet.wrap_x(x));
+                let _ = tx.send(ToClient::EditTops(Arc::new(tops)));
+            }
             // The smoke over fires in the vegetation, for the client to draw.
             if ticks.is_multiple_of(20) && (workshop.fire_burning() || smoke_shown) {
                 let plumes: Vec<hearth_protocol::Plume> = workshop

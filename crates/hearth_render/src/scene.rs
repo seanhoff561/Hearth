@@ -124,6 +124,10 @@ pub struct SceneRenderer {
     pub precip: PrecipRenderer,
     /// Smoke over fires in the vegetation.
     pub smoke: crate::smoke::SmokeRenderer,
+    /// Temporal anti-aliasing, when on.
+    pub taa: Option<crate::taa::TaaRenderer>,
+    /// This frame's jittered and unjittered view-projections and camera (for TAA).
+    taa_frame: Option<(glam::Mat4, glam::Mat4, glam::DVec3)>,
     /// Bodies (the player's own, later people and animals), drawn with the opaque terrain.
     pub figures: FigureRenderer,
     /// The player's body's senses on the image.
@@ -170,6 +174,8 @@ impl SceneRenderer {
             post: PostProcess::new(ctx, output_format),
             precip: PrecipRenderer::new(ctx),
             smoke: crate::smoke::SmokeRenderer::new(ctx),
+            taa: None,
+            taa_frame: None,
             sky,
             terrain,
             lod,
@@ -205,6 +211,15 @@ impl SceneRenderer {
         self.adapted = None;
     }
 
+    /// Turns temporal anti-aliasing on or off.
+    pub fn set_taa(&mut self, ctx: &GpuContext, on: bool) {
+        match (on, self.taa.is_some()) {
+            (true, false) => self.taa = Some(crate::taa::TaaRenderer::new(ctx)),
+            (false, true) => self.taa = None,
+            _ => {}
+        }
+    }
+
     /// Replaces the map of what covers the sky around the camera (hides rain and snow).
     pub fn set_sky_heights(&mut self, ctx: &GpuContext, h: &SkyHeights) {
         self.precip.set_heights(ctx, h);
@@ -221,6 +236,23 @@ impl SceneRenderer {
         dt: f32,
     ) {
         let size = self.render_size(size);
+        // With TAA, every pass sees the camera jittered by this frame's sub-pixel offset.
+        let unjittered = *camera;
+        let jittered;
+        let camera = match &self.taa {
+            Some(taa) => {
+                let px = taa.jitter_px();
+                jittered = Camera {
+                    jitter: glam::Vec2::new(
+                        px.x * 2.0 / size.0.max(1) as f32,
+                        -px.y * 2.0 / size.1.max(1) as f32,
+                    ),
+                    ..unjittered
+                };
+                &jittered
+            }
+            None => camera,
+        };
         // Under water: how deep the camera is (real metres) below the surface over its column.
         let below = self
             .terrain
@@ -304,6 +336,13 @@ impl SceneRenderer {
         let t1 = std::time::Instant::now();
         let aspect = size.0.max(1) as f32 / size.1.max(1) as f32;
         self.inv_view_proj = camera.view_proj(aspect).inverse();
+        self.taa_frame = self.taa.as_ref().map(|_| {
+            (
+                camera.view_proj(aspect),
+                unjittered.view_proj(aspect),
+                camera.pos,
+            )
+        });
         let hzb = self.terrain.hzb().map(|(_, size, mips)| (size, mips));
         self.lod.prepare(
             ctx,
@@ -463,6 +502,12 @@ impl SceneRenderer {
             self.smoke.draw(&mut pass);
         }
         mark(&mut timer, enc, "translucent, rain");
+        if let (Some(taa), Some((vp, unjittered, cam)), Some(tex)) =
+            (&mut self.taa, self.taa_frame, self.post.hdr_texture())
+        {
+            taa.resolve(ctx, enc, tex, &hdr, depth, render, vp, unjittered, cam);
+            mark(&mut timer, enc, "taa");
+        }
         self.post.meter(ctx, enc, self.meter_dt);
         mark(&mut timer, enc, "metering");
         self.post.render(

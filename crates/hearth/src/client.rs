@@ -146,6 +146,10 @@ pub struct Client {
     lod: Option<LodStream>,
     lod_distance: u32,
     lod_error_px: f64,
+    /// Video memory the distant terrain's tiles may take (MiB).
+    lod_budget_mb: u32,
+    /// Temporal anti-aliasing.
+    taa: bool,
     render_scale: f32,
     water_quality: hearth_render::water::WaterQuality,
     vertical_scale: f32,
@@ -279,6 +283,8 @@ impl Client {
             lod: None,
             lod_distance: options.video.lod_distance,
             lod_error_px: options.video.lod_error_px(),
+            lod_budget_mb: options.video.lod_vram_budget_mb,
+            taa: options.video.anti_aliasing == hearth_core::options::AntiAliasing::Taa,
             render_scale: options.video.render_scale,
             water_quality: options.video.shader.water.into(),
             vertical_scale: 1.0,
@@ -1254,6 +1260,8 @@ impl Client {
         self.water_quality = v.shader.water.into();
         self.lod_distance = v.lod_distance;
         self.lod_error_px = v.lod_error_px();
+        self.lod_budget_mb = v.lod_vram_budget_mb;
+        self.taa = v.anti_aliasing == hearth_core::options::AntiAliasing::Taa;
         let (radius, vertical) = (v.render_distance as i32, v.vertical_render_distance as i32);
         if (radius, vertical) != (self.radius, self.vertical) {
             self.radius = radius;
@@ -1268,6 +1276,7 @@ impl Client {
         }
         if let Some(lod) = &mut self.lod {
             lod.set_settings(self.lod_distance, self.lod_error_px);
+            lod.set_budget(self.lod_budget_mb);
         }
     }
 
@@ -1582,13 +1591,18 @@ impl Client {
                 ToClient::Ready(r) => {
                     let r = *r;
                     let planet = r.planet;
-                    self.lod = Some(LodStream::new(
+                    let mut lod = LodStream::new(
                         r.generator.clone(),
                         r.lod,
                         self.lod_distance,
                         r.vertical_scale as f64,
                         self.lod_error_px,
-                    ));
+                    );
+                    if let Some(dir) = r.lod_cache.clone() {
+                        lod.set_cache(dir);
+                    }
+                    lod.set_budget(self.lod_budget_mb);
+                    self.lod = Some(lod);
                     self.vertical_scale = r.vertical_scale;
                     self.calendar = r.calendar;
                     self.ticks = r.ticks;
@@ -1648,6 +1662,16 @@ impl Client {
                     if let Some(s) = &mut self.scene {
                         s.set_sky_heights(ctx, &h);
                         s.terrain.water.set_heights(ctx, *water);
+                    }
+                }
+                ToClient::EditTops(tops) => {
+                    if let (Some(lod), Some(s)) = (&mut self.lod, &self.scene) {
+                        lod.set_edits(tops, &s.lod);
+                    }
+                }
+                ToClient::Vegetation(v) => {
+                    if let (Some(lod), Some(s)) = (&mut self.lod, &self.scene) {
+                        lod.set_vegetation(v, &s.lod);
                     }
                 }
                 ToClient::Smoke(plumes) => {
@@ -1906,6 +1930,7 @@ impl Client {
         }
         scene.figures.set(ctx, &self.figure_boxes);
         scene.senses = senses;
+        scene.set_taa(ctx, self.taa);
         scene.prepare(ctx, &view, targets.size, &e, dt);
         scene.render(ctx, enc, targets.color, targets.depth, targets.size);
     }

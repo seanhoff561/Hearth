@@ -40,6 +40,7 @@ fn gpu_culling_matches_cpu_culling() {
             pitch,
             fov_y: 70.0,
             near: 0.05,
+            jitter: glam::Vec2::ZERO,
         };
         let positions = world.load_area(camera.pos, 5, 1, None);
         for m in world.mesh(&models, &positions, MeshOptions::default()) {

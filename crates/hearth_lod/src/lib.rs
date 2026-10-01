@@ -31,6 +31,20 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Columns along a tile side.
 pub const TILE: i32 = 32;
+
+pub mod cache;
+
+/// The player's changes as the distant terrain shows them: per changed column (block x, z;
+/// x canonical), the highest solid block placed there and its state.
+pub type EditTops = FxHashMap<(i32, i32), (i32, BlockStateId)>;
+
+/// What the distant terrain is grown from besides the generator: the vegetation and the
+/// player's changes.
+#[derive(Debug, Clone, Default)]
+pub struct LodWorld {
+    pub veg: hearth_worldgen::vegetation::Vegetation,
+    pub edits: std::sync::Arc<EditTops>,
+}
 /// Coarsest level: tiles of 4,096 blocks.
 pub const MAX_LEVEL: u8 = 7;
 /// A tile is split while the camera is within this many tile sizes of it.
@@ -261,10 +275,10 @@ pub fn split_nodes(selection: &[TileKey]) -> FxHashSet<TileKey> {
 /// be more than a few pixels wide (the distance rule), or, with `refine`, built and rough enough
 /// that the steps between its columns stand out on screen by more than the error allowed. A
 /// tile split before stays split a little longer (10 % farther, 70 % of the error).
-fn split(key: TileKey, d: f64, refine: Option<&Refine<'_>>) -> bool {
+fn split(key: TileKey, d: f64, refine: Option<&Refine<'_>>, detail: f64) -> bool {
     let size = key.size() as f64;
     let before = refine.is_some_and(|r| r.split_before.contains(&key));
-    if d < SPLIT * size * if before { 1.1 } else { 1.0 } {
+    if d < SPLIT * detail * size * if before { 1.1 } else { 1.0 } {
         return true;
     }
     let Some(r) = refine else {
@@ -288,7 +302,7 @@ fn split(key: TileKey, d: f64, refine: Option<&Refine<'_>>) -> bool {
 /// Whether `refine` would split a built tile for a camera at (x, z): a tile just built may
 /// call for finer ones.
 pub fn refines(planet: &Planet, cam_x: f64, cam_z: f64, key: TileKey, refine: &Refine<'_>) -> bool {
-    key.level > 0 && split(key, offset(planet, cam_x, cam_z, key).2, Some(refine))
+    key.level > 0 && split(key, offset(planet, cam_x, cam_z, key).2, Some(refine), 1.0)
 }
 
 /// A tile relative to a camera at (x, z), X by the shortest way around: its minimum corner, and
@@ -313,6 +327,20 @@ pub fn select_refined(
     distance: f64,
     near: Option<[f64; 4]>,
     refine: Option<&Refine<'_>>,
+) -> Vec<TileKey> {
+    select_detailed(planet, cam_x, cam_z, distance, near, refine, 1.0)
+}
+
+/// `select_refined` with the distance rule scaled by `detail` (1 as usual; less, coarser:
+/// the far tiles first, as a memory budget wants).
+pub fn select_detailed(
+    planet: &Planet,
+    cam_x: f64,
+    cam_z: f64,
+    distance: f64,
+    near: Option<[f64; 4]>,
+    refine: Option<&Refine<'_>>,
+    detail: f64,
 ) -> Vec<TileKey> {
     let c = planet.circumference() as f64;
     let distance = distance.min(c * 0.5);
@@ -368,7 +396,7 @@ pub fn select_refined(
         let Some(d) = keep(key) else {
             continue;
         };
-        if key.level > 0 && split(key, d, refine) {
+        if key.level > 0 && split(key, d, refine, detail) {
             stack.extend(key.children());
         } else {
             out.push(key);
@@ -843,6 +871,8 @@ pub struct LodGen {
     class: Vec<u8>,
     /// Leaves of the usual trees: oak, birch, spruce, mangrove.
     leaves: [BlockStateId; 4],
+    /// Ground a fire has burned over.
+    burnt: Option<BlockStateId>,
 }
 
 impl LodGen {
@@ -877,21 +907,18 @@ impl LodGen {
             colors: BlockColors::new(reg, textures),
             class,
             leaves: [leaf("oak"), leaf("birch"), leaf("spruce"), leaf("mangrove")],
+            burnt: reg.parse_state("hearth:burnt_ground").ok(),
         }
     }
 
     /// Samples and meshes one tile of the world as it began.
     pub fn build(&self, wg: &WorldGenerator, key: TileKey) -> TileMesh {
-        self.build_in(wg, &hearth_worldgen::vegetation::Vegetation::default(), key)
+        self.build_in(wg, &LodWorld::default(), key)
     }
 
-    /// Samples and meshes one tile as the vegetation has grown.
-    pub fn build_in(
-        &self,
-        wg: &WorldGenerator,
-        veg: &hearth_worldgen::vegetation::Vegetation,
-        key: TileKey,
-    ) -> TileMesh {
+    /// Samples and meshes one tile as the vegetation has grown and the player has changed it.
+    pub fn build_in(&self, wg: &WorldGenerator, world: &LodWorld, key: TileKey) -> TileMesh {
+        let veg = &world.veg;
         let planet = wg.planet();
         let cs = key.column();
         let (mx, mz) = key.min_block();
@@ -920,7 +947,17 @@ impl LodGen {
                 let x = planet.wrap_x(bx + cs / 2);
                 let z = bz + cs / 2;
                 let s = wg.terrain.sample(x, z);
-                let mut col = self.column(wg, &s, x, z, &normals, southern);
+                let mut col = self.column(wg, veg, &s, x, z, &normals, southern);
+                // The player's changes standing above the ground.
+                if let Some((y, state)) = world.edits.get(&(x, z))
+                    && *y + 1 > col.top
+                {
+                    let (rgb, kind) = self.colors.get(*state);
+                    col.top = *y + 1;
+                    col.rgb = rgb;
+                    col.kind = kind;
+                    col.water = false;
+                }
                 col.crown = match &canopy {
                     Some(map) => map.crown(bx, bz, cs, col.top, &self.colors),
                     None => self.expected_crown(wg, veg, &s, &mut col, x, z),
@@ -1009,9 +1046,11 @@ impl LodGen {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn column(
         &self,
         wg: &WorldGenerator,
+        veg: &hearth_worldgen::vegetation::Vegetation,
         s: &ColumnSample,
         x: i32,
         z: i32,
@@ -1076,10 +1115,17 @@ impl LodGen {
         let rock = wg.geology.column(x, z);
         let parent = rock.rock_at(ground - 1 - s.soil_depth as i32);
         let profile = wg.soils.profile(s, parent, x, z);
-        let block = profile
+        let mut block = profile
             .first()
             .copied()
             .unwrap_or_else(|| rock.rock_at(ground - 1));
+        // Ground a fire has lately burned lies black.
+        if let (Some(b), Some((hearth_worldgen::vegetation::DisturbanceKind::Burned, since))) =
+            (self.burnt, veg.ground(x, z))
+            && since < hearth_worldgen::vegetation::BARE_YEARS
+        {
+            block = b;
+        }
         let (rgb, kind) = self.colors.get(block);
         Col {
             top: ground,
@@ -1360,6 +1406,37 @@ mod tests {
     }
 
     #[test]
+    fn a_lower_detail_coarsens_the_far_tiles_first() {
+        let p = planet();
+        let reach = 8192.0;
+        let full = select_detailed(&p, 1000.0, -500.0, reach, None, None, 1.0);
+        let coarse = select_detailed(&p, 1000.0, -500.0, reach, None, None, 0.5);
+        assert!(
+            coarse.len() * 2 < full.len(),
+            "{} tiles at half detail against {}",
+            coarse.len(),
+            full.len()
+        );
+        // Near the camera the finest tiles stay; far off they are coarser than before.
+        let level_at = |sel: &[TileKey], x: f64, z: f64| {
+            sel.iter()
+                .find(|k| {
+                    let (x0, z0) = k.min_block();
+                    let s = k.size() as f64;
+                    (x0 as f64..x0 as f64 + s).contains(&x)
+                        && (z0 as f64..z0 as f64 + s).contains(&z)
+                })
+                .map(|k| k.level)
+        };
+        assert_eq!(level_at(&coarse, 1000.0, -500.0), Some(0));
+        let (far_full, far_coarse) = (
+            level_at(&full, 1000.0 + 6000.0, -500.0).expect("far tile"),
+            level_at(&coarse, 1000.0 + 6000.0, -500.0).expect("far tile"),
+        );
+        assert!(far_coarse > far_full, "{far_coarse} against {far_full}");
+    }
+
+    #[test]
     fn selection_skips_the_full_detail_area_and_wraps() {
         let p = planet();
         let near = [900.0, 400.0, 1100.0, 600.0];
@@ -1619,7 +1696,7 @@ mod tests {
         }
     }
 
-    fn tiny_world() -> (WorldGenerator, BlockRegistry, Vec<TexEntry>) {
+    pub(crate) fn tiny_world() -> (WorldGenerator, BlockRegistry, Vec<TexEntry>) {
         let settings = hearth_worldgen::WorldGenSettings {
             seed: 7,
             planet_size: hearth_math::PlanetSize::Tiny,
@@ -1637,7 +1714,7 @@ mod tests {
     }
 
     /// A patch of flat, dense forest.
-    fn forest(wg: &WorldGenerator) -> (i32, i32) {
+    pub(crate) fn forest(wg: &WorldGenerator) -> (i32, i32) {
         let c = wg.planet().circumference();
         for z in (-3000..3000).step_by(97) {
             for x in (0..c).step_by(89) {

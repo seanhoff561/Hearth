@@ -410,5 +410,8 @@
   "subtitles.rustle": "Leaves rustle",
   "lookalike.umbellifer": "white-flowered umbellifer",
   "lookalike.white_mushroom": "pale mushrooms",
-  "lookalike.dark_berry": "dark berries"
+  "lookalike.dark_berry": "dark berries",
+  "menu.video.anti_aliasing": "Anti-aliasing",
+  "menu.video.aa.off": "Off",
+  "menu.video.aa.taa": "Temporal (TAA)"
 }

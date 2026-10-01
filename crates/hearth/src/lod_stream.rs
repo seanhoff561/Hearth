@@ -15,6 +15,7 @@ use hearth_math::Planet;
 use hearth_render::GpuContext;
 use hearth_render::lod::LodRenderer;
 use hearth_worldgen::WorldGenerator;
+use hearth_worldgen::vegetation::Vegetation;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Tiles being built at once (more wait in the queue, so a moving camera reprioritises).
@@ -25,6 +26,10 @@ const RESELECT: f64 = 16.0;
 const BEHIND_WEIGHT: f64 = 4.0;
 /// Frames between selections called for by rough tiles arriving (a selection costs a little).
 const REFINE_EVERY: u32 = 15;
+/// Frames between looks at the memory budget.
+const BUDGET_EVERY: u32 = 60;
+/// The coarsest the budget makes the selection.
+const MIN_DETAIL: f64 = 0.3;
 
 pub struct LodStream {
     generator: Arc<WorldGenerator>,
@@ -54,6 +59,17 @@ pub struct LodStream {
     /// the distance rule alone).
     px_per_rad: f64,
     max_error_px: f64,
+    /// The vegetation and the player's changes the tiles are grown with.
+    world: hearth_lod::LodWorld,
+    /// Tiles kept on disk.
+    cache: Option<Arc<hearth_lod::cache::TileCache>>,
+    /// Tiles built with an older vegetation, drawn until they are built again.
+    stale: FxHashSet<u64>,
+    /// Video memory the tiles may take (bytes), and the detail the selection keeps to stay
+    /// within it (1 as usual, less coarser), looked at every so many frames.
+    budget: u64,
+    detail: f64,
+    since_budget: u32,
 }
 
 impl LodStream {
@@ -92,6 +108,119 @@ impl LodStream {
             since_select: 0,
             px_per_rad: hearth_lod::px_per_rad(1080, 70.0),
             max_error_px,
+            world: hearth_lod::LodWorld::default(),
+            cache: None,
+            stale: FxHashSet::default(),
+            budget: 1024 << 20,
+            detail: 1.0,
+            since_budget: 0,
+        }
+    }
+
+    /// The video memory the tiles may take (MiB).
+    pub fn set_budget(&mut self, mib: u32) {
+        self.budget = (mib.max(16) as u64) << 20;
+    }
+
+    /// The detail the selection keeps for the memory budget (1 as usual).
+    pub fn detail(&self) -> f64 {
+        self.detail
+    }
+
+    /// Coarsens the selection when the tiles outgrow the budget (the far tiles first), and
+    /// lets it fine again when they are well within it.
+    fn keep_budget(&mut self, renderer: &LodRenderer) {
+        self.since_budget += 1;
+        if self.since_budget < BUDGET_EVERY {
+            return;
+        }
+        self.since_budget = 0;
+        let bytes = renderer.bytes();
+        let before = self.detail;
+        if bytes > self.budget && self.detail > MIN_DETAIL {
+            self.detail = (self.detail * 0.8).max(MIN_DETAIL);
+        } else if (bytes as f64) < 0.6 * self.budget as f64 && self.detail < 1.0 {
+            self.detail = (self.detail / 0.85).min(1.0);
+        }
+        if self.detail != before {
+            log::info!(
+                "distant terrain: {} MiB of tiles for a budget of {} MiB: detail {:.2}",
+                bytes >> 20,
+                self.budget >> 20,
+                self.detail
+            );
+            self.last = None;
+        }
+    }
+
+    /// Keeps the tiles built on disk in `dir` (and reads them back).
+    pub fn set_cache(&mut self, dir: std::path::PathBuf) {
+        self.cache = Some(Arc::new(hearth_lod::cache::TileCache::new(dir)));
+    }
+
+    /// New changes by the player: the tiles holding columns whose top changed are built again.
+    pub fn set_edits(&mut self, edits: Arc<hearth_lod::EditTops>, renderer: &LodRenderer) {
+        let old = std::mem::replace(&mut self.world.edits, edits);
+        let changed: Vec<(i32, i32)> = self
+            .world
+            .edits
+            .iter()
+            .filter(|(p, v)| old.get(p) != Some(v))
+            .map(|(p, _)| *p)
+            .chain(
+                old.keys()
+                    .filter(|p| !self.world.edits.contains_key(p))
+                    .copied(),
+            )
+            .collect();
+        for k in &self.wanted {
+            let (x, z) = k.min_block();
+            let size = k.size();
+            if changed
+                .iter()
+                .any(|(cx, cz)| (x..x + size).contains(cx) && (z..z + size).contains(cz))
+            {
+                self.stale.insert(k.id());
+            }
+        }
+        self.stale.retain(|id| renderer.contains(*id));
+        if !self.stale.is_empty() {
+            self.last = None;
+        }
+    }
+
+    /// New vegetation: the tiles its new disturbances reach are built again, and every tile when
+    /// the year has turned (the trees have grown); the old tiles are drawn until then.
+    pub fn set_vegetation(&mut self, veg: Vegetation, renderer: &LodRenderer) {
+        // Tiles grow trees by whole years.
+        let veg = veg.at_year(veg.year.floor());
+        let old = &self.world.veg;
+        let turned = veg.year != old.year;
+        let added: Vec<hearth_worldgen::vegetation::Disturbance> = veg.added_since(old).to_vec();
+        let fresh = !old.same_disturbances(&veg) && added.is_empty();
+        self.world.veg = veg;
+        if turned || fresh {
+            self.stale.extend(self.wanted.iter().map(|k| k.id()));
+        } else if !added.is_empty() {
+            for k in &self.wanted {
+                let (x, z) = k.min_block();
+                let h = k.size() as f64 * 0.5;
+                let (cx, cz) = (x as f64 + h, z as f64 + h);
+                let touched = added.iter().any(|d| {
+                    let reach = d.radius as f64 * hearth_worldgen::vegetation::EDGE as f64
+                        + h * std::f64::consts::SQRT_2
+                        + 24.0;
+                    self.world.veg.distance(d, cx as i32, cz as i32) as f64 <= reach
+                });
+                if touched {
+                    self.stale.insert(k.id());
+                }
+            }
+        }
+        self.stale.retain(|id| renderer.contains(*id));
+        if !self.stale.is_empty() {
+            // Queued again at the next update.
+            self.last = None;
         }
     }
 
@@ -124,6 +253,7 @@ impl LodStream {
         near: [f64; 4],
         renderer: &mut LodRenderer,
     ) {
+        self.keep_budget(renderer);
         self.since_select = self.since_select.saturating_add(1);
         let refining = self.max_error_px > 0.0;
         // Tiles that arrived rough enough to split call for finer ones.
@@ -165,13 +295,14 @@ impl LodStream {
                 built: &built,
                 split_before: &self.split,
             });
-            self.wanted = hearth_lod::select_refined(
+            self.wanted = hearth_lod::select_detailed(
                 planet,
                 camera.x,
                 camera.z,
                 reach,
                 Some(near),
                 refine.as_ref(),
+                self.detail,
             );
             self.wanted_ids = self.wanted.iter().map(|k| k.id()).collect();
             if refining {
@@ -199,10 +330,14 @@ impl LodStream {
                     d2 * BEHIND_WEIGHT * BEHIND_WEIGHT
                 }
             };
+            let stale = &self.stale;
             self.queue = self
                 .wanted
                 .iter()
-                .filter(|k| !renderer.contains(k.id()) && !self.in_flight.contains(&k.id()))
+                .filter(|k| {
+                    (!renderer.contains(k.id()) || stale.contains(&k.id()))
+                        && !self.in_flight.contains(&k.id())
+                })
                 .copied()
                 .collect();
             self.queue.sort_by(|a, b| dist(b).total_cmp(&dist(a)));
@@ -211,17 +346,31 @@ impl LodStream {
             let Some(key) = self.queue.pop() else {
                 break;
             };
-            if renderer.contains(key.id()) {
+            if renderer.contains(key.id()) && !self.stale.contains(&key.id()) {
                 continue;
             }
             self.in_flight.insert(key.id());
-            let (generator, lod, tx) = (
+            let (generator, lod, tx, world, cache) = (
                 self.generator.clone(),
                 self.lod.clone(),
                 self.done_tx.clone(),
+                self.world.clone(),
+                self.cache.clone(),
             );
             self.pool.spawn(move || {
-                let _ = tx.send(lod.build(&generator, key));
+                // From disk where it was kept as it would be built now; else built (and kept).
+                let mesh = match &cache {
+                    Some(c) => {
+                        let stamp = c.stamp(&lod, &generator, &world, key);
+                        c.load(key, stamp).unwrap_or_else(|| {
+                            let m = lod.build_in(&generator, &world, key);
+                            c.store(&m, stamp);
+                            m
+                        })
+                    }
+                    None => lod.build_in(&generator, &world, key),
+                };
+                let _ = tx.send(mesh);
             });
         }
     }
@@ -235,6 +384,7 @@ impl LodStream {
             };
             let id = mesh.key.id();
             self.in_flight.remove(&id);
+            self.stale.remove(&id);
             if self.wanted_ids.contains(&id) {
                 upload(ctx, renderer, &mesh);
                 uploaded = true;

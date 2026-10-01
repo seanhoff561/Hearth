@@ -15,6 +15,7 @@
 use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use glam::DVec3;
@@ -100,6 +101,12 @@ struct SceneDef {
     hour: f64,
     clouds: Option<f64>,
     precipitation: Option<(Precip, f64)>,
+    /// The terrain streams as in the game while the camera moves (near cubes uploaded as they
+    /// come within reach and dropped behind, distant tiles built and uploaded by the game's
+    /// streamer) instead of everything up front.
+    stream: bool,
+    /// Measured frames, where the scene sets its own (its path's pace at 60 frames a second).
+    frames: Option<usize>,
 }
 
 const FOREST: &[Key] = &[
@@ -115,6 +122,11 @@ const PEAK: &[Key] = &[
 const COAST: &[Key] = &[
     key(176.0, -4580.0, Height::Above(10.0), 90.0, 6.0),
     key(176.0, -4440.0, Height::Above(10.0), 90.0, 6.0),
+];
+/// 1.2 km westward at 70 m over broadleaf land: 40 s at 30 m/s.
+const FLIGHT: &[Key] = &[
+    key(11660.0, -9460.0, Height::Above(70.0), 90.0, 12.0),
+    key(10460.0, -9460.0, Height::Above(70.0), 90.0, 12.0),
 ];
 const UNDERWATER: &[Key] = &[
     key(110.0, -4496.0, Height::At(-5.0), 90.0, 10.0),
@@ -133,6 +145,8 @@ const SCENES: &[SceneDef] = &[
         hour: 12.0,
         clouds: Some(0.3),
         precipitation: Some((Precip::None, 0.0)),
+        stream: false,
+        frames: None,
     },
     SceneDef {
         name: "peak_lod512",
@@ -144,6 +158,8 @@ const SCENES: &[SceneDef] = &[
         hour: 11.0,
         clouds: Some(0.2),
         precipitation: Some((Precip::None, 0.0)),
+        stream: false,
+        frames: None,
     },
     SceneDef {
         name: "peak_lod1024",
@@ -155,6 +171,8 @@ const SCENES: &[SceneDef] = &[
         hour: 11.0,
         clouds: Some(0.2),
         precipitation: Some((Precip::None, 0.0)),
+        stream: false,
+        frames: None,
     },
     SceneDef {
         name: "coast_sunset",
@@ -166,6 +184,8 @@ const SCENES: &[SceneDef] = &[
         hour: 18.9,
         clouds: Some(0.25),
         precipitation: Some((Precip::None, 0.0)),
+        stream: false,
+        frames: None,
     },
     SceneDef {
         name: "underwater",
@@ -177,6 +197,8 @@ const SCENES: &[SceneDef] = &[
         hour: 14.0,
         clouds: Some(0.2),
         precipitation: Some((Precip::None, 0.0)),
+        stream: false,
+        frames: None,
     },
     SceneDef {
         name: "cave_torches",
@@ -191,6 +213,8 @@ const SCENES: &[SceneDef] = &[
         hour: 23.0,
         clouds: Some(0.0),
         precipitation: Some((Precip::None, 0.0)),
+        stream: false,
+        frames: None,
     },
     SceneDef {
         name: "thunderstorm",
@@ -202,8 +226,27 @@ const SCENES: &[SceneDef] = &[
         hour: 16.0,
         clouds: Some(1.0),
         precipitation: Some((Precip::Rain, 16.0)),
+        stream: false,
+        frames: None,
+    },
+    SceneDef {
+        name: "flythrough",
+        about: "1.2 km at sprint-fly speed (30 m/s) 70 m over the land, terrain streaming",
+        seed: 7,
+        path: CameraPath::Keys(FLIGHT),
+        lod: 512,
+        year_frac: 0.4,
+        hour: 13.0,
+        clouds: Some(0.3),
+        precipitation: Some((Precip::None, 0.0)),
+        stream: true,
+        frames: Some(2400),
     },
 ];
+
+/// Near cubes and distant tiles uploaded at most per frame while streaming (as the client).
+const STREAM_UPLOADS: usize = 256;
+const STREAM_LOD_UPLOADS: usize = 24;
 
 /// The scenes of the short set the regression gate runs.
 const QUICK: &[&str] = &["lowland_forest", "peak_lod512", "cave_torches"];
@@ -401,6 +444,9 @@ pub struct SceneResult {
     pub slowest: Vec<(f64, Vec<(String, f64)>)>,
     /// Structural similarity with the golden image (1 = identical), when compared.
     pub ssim: Option<f64>,
+    /// Frames that took more than twice the median (hitches).
+    #[serde(default)]
+    pub spikes: usize,
 }
 
 /// A benchmark run.
@@ -466,7 +512,7 @@ pub fn run_with(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result
         log::warn!("this adapter cannot time passes: GPU times will be missing");
     }
     let mut worlds: FxHashMap<u64, LocalWorld> = FxHashMap::default();
-    let mut assets: Option<(TextureArray, hearth_lod::LodGen, BlockModels)> = None;
+    let mut assets: Option<(TextureArray, Arc<hearth_lod::LodGen>, BlockModels)> = None;
     let mut run = BenchRun {
         label: opts.label.clone(),
         commit: git_commit(),
@@ -494,18 +540,23 @@ pub fn run_with(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result
             let entries = hearth_texgen::textures_for(Some(&lw.content));
             let atlas = TextureArray::from_entries(&entries);
             let models = BlockModels::build(&lw.reg, &atlas);
-            (atlas, hearth_lod::LodGen::new(&lw.reg, &entries), models)
+            (
+                atlas,
+                Arc::new(hearth_lod::LodGen::new(&lw.reg, &entries)),
+                models,
+            )
         });
         let time = lw.content.time.clone();
         lw.map = hearth_world::CubeMap::new(*lw.map.planet());
         let result = run_scene(&ctx, atlas, lod, models, lw, def, opts, &video, &time)?;
         log::info!(
-            "{}: {:.1} FPS avg, {:.1} FPS 1% low, p99 {:.2} ms, GPU {:.2} ms",
+            "{}: {:.1} FPS avg, {:.1} FPS 1% low, p99 {:.2} ms, GPU {:.2} ms, {} frames over              twice the median",
             result.name,
             result.avg_fps,
             result.low1_fps,
             result.p99_ms,
-            result.gpu_ms
+            result.gpu_ms,
+            result.spikes
         );
         run.scenes.push(result);
     }
@@ -571,6 +622,7 @@ impl Path3 {
             pitch,
             fov_y: VideoOptions::default().fov,
             near: 0.05,
+            jitter: glam::Vec2::ZERO,
         }
     }
 
@@ -585,7 +637,7 @@ impl Path3 {
 fn run_scene(
     ctx: &GpuContext,
     atlas: &TextureArray,
-    lodgen: &hearth_lod::LodGen,
+    lodgen: &Arc<hearth_lod::LodGen>,
     models: &BlockModels,
     lw: &mut LocalWorld,
     def: &SceneDef,
@@ -637,10 +689,16 @@ fn run_scene(
     scene.terrain.vertical_distance = video.vertical_render_distance as i32;
     scene.render_scale = opts.render_scale;
     scene.terrain.water.quality = opts.water.unwrap_or(video.shader.water).into();
-    for m in &meshes {
-        scene.terrain.upload(ctx, m);
-    }
-    drop(meshes);
+    // The near terrain: all of it up front, or (streamed) as it comes within reach.
+    let pending = if def.stream {
+        meshes
+    } else {
+        for m in &meshes {
+            scene.terrain.upload(ctx, m);
+        }
+        Vec::new()
+    };
+    let mut near_up: FxHashSet<hearth_math::CubePos> = FxHashSet::default();
     scene.vertical_scale = lw.terrain().vertical_scale();
     let v = scene.vertical_scale as f64;
     // Every LOD tile the path needs, built up front (the game streams them).
@@ -682,24 +740,44 @@ fn run_scene(
     } else {
         1
     };
-    let errors = crate::lod_stream::build_refined(
-        rounds,
-        |errors| {
-            let mut wanted = Vec::new();
-            for p in &samples {
-                wanted.extend(select(*p, errors, &unsplit));
-            }
-            wanted
-        },
-        |keys| {
-            Ok(keys
-                .par_iter()
-                .map(|k| lodgen.build(&lw.generator, *k))
-                .collect())
-        },
-        |t| crate::lod_stream::upload(ctx, &mut scene.lod, t),
-    )?;
+    let errors = if def.stream {
+        Errors::default()
+    } else {
+        crate::lod_stream::build_refined(
+            rounds,
+            |errors| {
+                let mut wanted = Vec::new();
+                for p in &samples {
+                    wanted.extend(select(*p, errors, &unsplit));
+                }
+                wanted
+            },
+            |keys| {
+                Ok(keys
+                    .par_iter()
+                    .map(|k| lodgen.build(&lw.generator, *k))
+                    .collect())
+            },
+            |t| crate::lod_stream::upload(ctx, &mut scene.lod, t),
+        )?
+    };
     let lod_tiles_per_s = errors.len() as f64 / t_lod.elapsed().as_secs_f64().max(1e-9);
+    // Streamed: the game's own streamer builds and uploads the distant tiles as the camera
+    // flies.
+    let mut lod_stream = (def.stream && def.lod > 0).then(|| {
+        let mut ls = crate::lod_stream::LodStream::new(
+            lw.generator.clone(),
+            lodgen.clone(),
+            def.lod,
+            v,
+            opts.lod_error,
+        );
+        ls.set_view(
+            scene.render_size((opts.width, opts.height)).1,
+            VideoOptions::default().fov,
+        );
+        ls
+    });
     // What to draw: the selection, or the built tiles standing in for it.
     let show = |wanted: &[TileKey]| -> Vec<u64> {
         hearth_lod::cover(wanted, |k| errors.contains_key(&k))
@@ -736,10 +814,11 @@ fn run_scene(
             map.sky_top(x, z)
         })
     };
-    let total = opts.warmup + opts.frames;
+    let frames = def.frames.unwrap_or(opts.frames);
+    let total = opts.warmup + frames;
     let mut state = FrameState::default();
     let mut in_flight: VecDeque<wgpu::SubmissionIndex> = VecDeque::new();
-    let mut frame_ms = Vec::with_capacity(opts.frames);
+    let mut frame_ms = Vec::with_capacity(frames);
     let mut sums = Sums::default();
     // What each measured frame spent its time on, to explain the slowest frames.
     let mut sections: Vec<[f64; SECTIONS.len()]> = Vec::with_capacity(opts.frames);
@@ -761,7 +840,7 @@ fn run_scene(
         for f in 0..total {
             let measured = f >= opts.warmup;
             let t = if measured {
-                (f - opts.warmup) as f64 / (opts.frames - 1) as f64
+                (f - opts.warmup) as f64 / (frames - 1) as f64
             } else {
                 0.0
             };
@@ -786,7 +865,50 @@ fn run_scene(
             env.seconds = f as f32 / 60.0;
             let t1 = Instant::now();
             let a1 = crate::alloc_count::thread_allocations();
-            if state
+            if def.stream {
+                // As the game streams: near cubes within reach uploaded (as many a frame as the
+                // client takes), those left behind dropped; the distant tiles by the streamer.
+                let c = hearth_math::CubePos::containing(camera.pos);
+                let (r, vr) = (rd, video.vertical_render_distance as i32);
+                let within = |p: hearth_math::CubePos, m: i32| {
+                    let d = planet.cube_delta(c, p);
+                    d.x.abs() <= r + m && d.z.abs() <= r + m && d.y.abs() <= vr + m
+                };
+                let gone: Vec<hearth_math::CubePos> =
+                    near_up.iter().copied().filter(|p| !within(*p, 2)).collect();
+                for p in gone {
+                    scene.terrain.remove(p);
+                    near_up.remove(&p);
+                }
+                let mut due: Vec<(i64, usize)> = pending
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, m)| !near_up.contains(&m.pos) && within(m.pos, 0))
+                    .map(|(i, m)| {
+                        let d = planet.cube_delta(c, m.pos);
+                        ((d.x * d.x + d.z * d.z + d.y * d.y) as i64, i)
+                    })
+                    .collect();
+                due.sort_unstable();
+                for (_, i) in due.into_iter().take(STREAM_UPLOADS) {
+                    scene.terrain.upload(ctx, &pending[i]);
+                    near_up.insert(pending[i].pos);
+                }
+                if let Some(ls) = &mut lod_stream {
+                    let near = near_of(camera.pos);
+                    ls.update(
+                        &planet,
+                        camera.pos,
+                        camera.forward().as_dvec3(),
+                        near,
+                        &mut scene.lod,
+                    );
+                    ls.pump(ctx, &mut scene.lod, STREAM_LOD_UPLOADS);
+                    scene.lod_show.clear();
+                    scene.lod_show.extend_from_slice(ls.show());
+                    scene.near_area = Some(near);
+                }
+            } else if state
                 .lod_at
                 .is_none_or(|p| p.distance(camera.pos) >= LOD_RESELECT)
             {
@@ -1185,6 +1307,8 @@ impl Sums {
         let total: f64 = frame_ms.iter().sum();
         frame_ms.sort_by(|a, b| a.total_cmp(b));
         let count = frame_ms.len().max(1);
+        let median = frame_ms.get(frame_ms.len() / 2).copied().unwrap_or(0.0);
+        let spikes = frame_ms.iter().filter(|&&ms| ms > 2.0 * median).count();
         let p99 = frame_ms
             .get(((count as f64 * 0.99).ceil() as usize).saturating_sub(1))
             .copied()
@@ -1217,6 +1341,7 @@ impl Sums {
                 0.0
             },
             p99_ms: p99,
+            spikes,
             frame_ms: total / count as f64,
             gpu_passes: self
                 .gpu

@@ -169,6 +169,8 @@ pub struct ShotSpec {
     pub fire: Option<(f64, f64)>,
     /// The smoke of a far fire this many metres ahead (as a burning ecological cell sends up).
     pub far_smoke: Vec<f64>,
+    /// Temporal anti-aliasing (the shot is the last of a run of jittered frames).
+    pub taa: bool,
     /// See through the eyes of a person standing on the ground below the camera (their body
     /// drawn as in first person).
     pub body: bool,
@@ -212,6 +214,7 @@ impl Default for ShotSpec {
             disturb: Vec::new(),
             fire: None,
             far_smoke: Vec::new(),
+            taa: false,
             body: false,
             senses: None,
         }
@@ -317,6 +320,7 @@ impl ShotSpec {
                 }
                 // `farsmoke=4000`: a far fire's smoke 4 km ahead, repeatable.
                 "farsmoke" => spec.far_smoke.push(v.parse()?),
+                "taa" => spec.taa = v.parse()?,
                 "body" => spec.body = v.parse()?,
                 "senses" => spec.senses = Some(v.to_owned()),
                 other => anyhow::bail!("unknown screenshot key {other:?}"),
@@ -455,6 +459,7 @@ pub fn render_shot(
         pitch: spec.pitch,
         fov_y: spec.fov,
         near: 0.05,
+        jitter: glam::Vec2::ZERO,
     };
     // Date and time: season (mid-season in this hemisphere) or year fraction; local hour.
     let planet = *lw.map.planet();
@@ -684,6 +689,10 @@ pub fn render_shot(
     };
     let late = AtomicBool::new(false);
     let mut quads = 0u64;
+    let world = hearth_lod::LodWorld {
+        veg: lw.vegetation.clone(),
+        edits: Default::default(),
+    };
     let errors = crate::lod_stream::build_refined(
         1 + hearth_lod::MAX_EXTRA_LEVELS,
         select,
@@ -695,7 +704,7 @@ pub fn render_shot(
                         late.store(true, Ordering::Relaxed);
                         return None;
                     }
-                    Some(lod.build_in(&lw.generator, &lw.vegetation, *k))
+                    Some(lod.build_in(&lw.generator, &world, *k))
                 })
                 .collect();
             if late.load(Ordering::Relaxed) {
@@ -836,9 +845,12 @@ pub fn render_shot(
         target.read_rgba(ctx)
     };
     // Three frames: with GPU culling the first draws everything in phase 1, the second learns
-    // which cubes are occluded, and the third draws only the survivors in phase 0.
-    frame(&mut scene);
-    frame(&mut scene);
+    // which cubes are occluded, and the third draws only the survivors in phase 0. With TAA,
+    // sixteen more for the jittered frames to settle into one.
+    scene.set_taa(ctx, spec.taa);
+    for _ in 0..if spec.taa { 18 } else { 2 } {
+        frame(&mut scene);
+    }
     let pixels = frame(&mut scene);
     if spec.verify_cull && scene.terrain.uses_gpu_culling() {
         let counts = scene.terrain.read_gpu_draw_counts(ctx).unwrap_or_default();
