@@ -100,6 +100,8 @@ pub struct BlockModels {
     models: Vec<StateModel>,
     /// Bit `d` set: the state's face toward `d` is a full opaque face that hides neighbours.
     occludes: Vec<u8>,
+    /// Per state: 1 a tree's limb, 2 foliage, 0 anything else.
+    tree_part: Vec<u8>,
     /// Average (linear-ish sRGB) colour for LOD and particles.
     pub colors: Vec<[u8; 4]>,
 }
@@ -117,6 +119,18 @@ impl BlockModels {
         self.occludes[s.0 as usize] & (1 << d.index()) != 0
     }
 
+    /// A tree's limb (its faces toward foliage are hidden in the crown).
+    #[inline]
+    pub fn is_limb(&self, s: BlockStateId) -> bool {
+        self.tree_part[s.0 as usize] == 1
+    }
+
+    /// Foliage.
+    #[inline]
+    pub fn is_foliage(&self, s: BlockStateId) -> bool {
+        self.tree_part[s.0 as usize] == 2
+    }
+
     pub fn len(&self) -> usize {
         self.models.len()
     }
@@ -130,6 +144,7 @@ impl BlockModels {
         let n = reg.state_count();
         let mut models = Vec::with_capacity(n);
         let mut occludes = Vec::with_capacity(n);
+        let mut tree_part = Vec::with_capacity(n);
         let mut colors = Vec::with_capacity(n);
         for i in 0..n {
             let s = BlockStateId(i as u16);
@@ -145,12 +160,21 @@ impl BlockModels {
                 }
             }
             colors.push(average_color(&model, atlas, block));
+            let path = block.name.path();
+            tree_part.push(if path.ends_with("_branch") {
+                1
+            } else if matches!(&model, StateModel::Cube(c) if c.waving) {
+                2
+            } else {
+                0
+            });
             models.push(model);
             occludes.push(occ);
         }
         Self {
             models,
             occludes,
+            tree_part,
             colors,
         }
     }

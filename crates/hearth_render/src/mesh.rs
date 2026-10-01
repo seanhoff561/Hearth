@@ -509,11 +509,19 @@ impl Mesher<'_> {
                         StateModel::Quads(quads, layer) => {
                             all_air = false;
                             let li = if *layer == RenderLayer::Opaque { 0 } else { 1 };
+                            let limb = self.models.is_limb(s);
                             for q in quads.iter() {
                                 if let Some(c) = q.cull {
                                     let o = c.offset();
                                     let nb = inp.at(x + o.x, y + o.y, z + o.z);
                                     if self.models.occludes(nb, c.opposite()) {
+                                        continue;
+                                    }
+                                }
+                                // A limb's faces toward foliage are inside the crown.
+                                if limb && let Some(d) = q.dir {
+                                    let o = d.offset();
+                                    if self.models.is_foliage(inp.at(x + o.x, y + o.y, z + o.z)) {
                                         continue;
                                     }
                                 }
@@ -1072,6 +1080,48 @@ mod tests {
         assert!(
             faces <= 6 * 2 * 36,
             "{faces} quads for a 6×6×6 block of foliage"
+        );
+    }
+
+    #[test]
+    fn a_limb_in_the_crown_hides_its_faces_toward_the_foliage() {
+        let (reg, models) = setup();
+        let limb = reg
+            .parse_state("hearth:oak_branch[thickness=4,east=true,west=true]")
+            .unwrap();
+        let leaves = reg.default_state("oak_leaves");
+        // A limb along x through y = z = 6; with `crown`, foliage above, below and to both sides.
+        let count = |crown: bool| {
+            let map = world_with(&reg, |x, y, z| {
+                if !(2..12).contains(&x) {
+                    BlockStateId::AIR
+                } else if (y, z) == (6, 6) {
+                    limb
+                } else if crown && (5..8).contains(&y) && (5..8).contains(&z) {
+                    leaves
+                } else {
+                    BlockStateId::AIR
+                }
+            });
+            let mesher = Mesher {
+                reg: &reg,
+                models: &models,
+                opts: MeshOptions::default(),
+            };
+            let mesh = mesher.mesh(&MeshInput::gather(
+                &map,
+                CubePos::new(0, 0, 0),
+                ColumnTints::default(),
+            ));
+            mesh.model_counts.iter().sum::<u32>()
+        };
+        let open = count(false);
+        let covered = count(true);
+        assert!(open >= 10 * 4, "{open} quads for a bare limb of ten blocks");
+        // Its four sides in each of the ten blocks face foliage.
+        assert!(
+            covered + 10 * 4 <= open,
+            "{covered} quads for the limb in the crown, {open} bare"
         );
     }
 
