@@ -3,8 +3,10 @@
 //! GPU time per pass (timestamp queries), CPU time per system, draw calls, triangles, video
 //! memory, bytes uploaded and heap allocations per frame. Results are appended to
 //! `BENCHMARKS.md` and written as JSON; `--golden DIR` saves a reference image of every scene and
-//! `--compare DIR` checks new images against them (SSIM). With `--baseline FILE`, a scene whose
-//! average FPS or 1 % lows fall more than `--gate` percent below the baseline fails the run.
+//! `--compare DIR` checks new images against them (SSIM). With `--baseline FILE[,FILE…]`, a
+//! scene whose average FPS or 1 % lows fall more than `--gate` percent below the baseline's
+//! median fails the run; `--judge` compares saved runs instead of rendering
+//! (`scripts/perf-gate.sh`, the regression gate at the end of every milestone).
 //!
 //! Frames run as a real frame loop without presentation: at most two frames in flight, the
 //! camera advancing a fixed step along its path each frame (so every run renders the same
@@ -219,9 +221,14 @@ pub struct BenchOptions {
     pub label: String,
     pub golden: Option<PathBuf>,
     pub compare: Option<PathBuf>,
-    pub baseline: Option<PathBuf>,
+    /// Runs (JSON) to gate against, and with `judge`, the runs to judge instead of rendering.
+    pub baseline: Vec<PathBuf>,
+    pub candidate: Vec<PathBuf>,
+    pub judge: bool,
     /// Allowed drop in average FPS or 1 % lows against the baseline (percent).
     pub gate: f64,
+    /// Where worlds are cached: `None` the game's cache, `Some(None)` nowhere.
+    pub cache: Option<Option<PathBuf>>,
     pub software: bool,
     /// Vertical LOD error allowed on screen (pixels; 0: the distance rule alone).
     pub lod_error: f64,
@@ -242,8 +249,11 @@ impl Default for BenchOptions {
             label: String::new(),
             golden: None,
             compare: None,
-            baseline: None,
+            baseline: Vec::new(),
+            candidate: Vec::new(),
+            judge: false,
             gate: 5.0,
+            cache: None,
             software: false,
             lod_error: VideoOptions::default().lod_error_px(),
             render_scale: VideoOptions::default().render_scale,
@@ -271,9 +281,12 @@ OPTIONS:
     --label TEXT                 Name of this run in the report
     --golden DIR                 Save each scene's reference image into DIR
     --compare DIR                Compare each scene's image with DIR's (SSIM, diff images)
-    --baseline FILE              Fail if average FPS or 1 % lows drop more than --gate
-                                 percent below FILE's (a --json output)
+    --baseline FILE[,FILE...]    Fail if average FPS or 1 % lows drop more than --gate
+                                 percent below the median of these runs (--json outputs)
+    --candidate FILE[,FILE...]   With --judge: the runs to compare with --baseline
+    --judge                      Compare saved runs (medians per scene) instead of rendering
     --gate PCT                   Allowed drop (default 5)
+    --cache DIR|none             Where worlds are cached (default: the game's cache)
     --lod-error PX               Vertical LOD error allowed on screen (default: the
                                  preset's, 2; 0 = the distance rule alone)
     --render-scale S             Render at S times the size (0.5-2, default 1): upscaled
@@ -320,7 +333,10 @@ impl BenchOptions {
                 "--label" => o.label = val()?,
                 "--golden" => o.golden = Some(PathBuf::from(val()?)),
                 "--compare" => o.compare = Some(PathBuf::from(val()?)),
-                "--baseline" => o.baseline = Some(PathBuf::from(val()?)),
+                "--baseline" => o.baseline = val()?.split(',').map(PathBuf::from).collect(),
+                "--candidate" => o.candidate = val()?.split(',').map(PathBuf::from).collect(),
+                "--judge" => o.judge = true,
+                "--cache" => o.cache = Some(path(val()?)),
                 "--gate" => o.gate = val()?.parse()?,
                 "--software" => o.software = true,
                 "--lod-error" => o.lod_error = val()?.parse::<f64>()?.max(0.0),
@@ -398,12 +414,22 @@ pub fn run(args: &[String], cache_dir: Option<&Path>) -> i32 {
             return 2;
         }
     };
-    match run_with(&opts, cache_dir) {
+    let result = if opts.judge {
+        load_runs(&opts.baseline)
+            .and_then(|base| Ok(compare(&base, &load_runs(&opts.candidate)?, opts.gate)))
+    } else {
+        let cache = match &opts.cache {
+            Some(c) => c.as_deref(),
+            None => cache_dir,
+        };
+        run_with(&opts, cache)
+    };
+    match result {
         Ok(true) => 0,
         Ok(false) => 1,
         Err(e) => {
             eprintln!("benchmark failed: {e:#}");
-            1
+            2
         }
     }
 }
@@ -480,10 +506,14 @@ pub fn run_with(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result
         }
         std::fs::write(path, serde_json::to_string_pretty(&run)?)?;
     }
-    match &opts.baseline {
-        Some(b) => gate(&run, b, opts.gate),
-        None => Ok(true),
+    if opts.baseline.is_empty() {
+        return Ok(true);
     }
+    Ok(compare(
+        &load_runs(&opts.baseline)?,
+        std::slice::from_ref(&run),
+        opts.gate,
+    ))
 }
 
 fn git_commit() -> String {
@@ -1585,38 +1615,145 @@ fn append_report(path: &Path, text: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Checks a run against a baseline: `Ok(false)` if any scene's average FPS or 1 % lows fell by
-/// more than `pct` percent.
-fn gate(run: &BenchRun, baseline: &Path, pct: f64) -> anyhow::Result<bool> {
-    let base: BenchRun = serde_json::from_str(&std::fs::read_to_string(baseline)?)?;
+/// Reads saved runs (`--json` outputs).
+fn load_runs(paths: &[PathBuf]) -> anyhow::Result<Vec<BenchRun>> {
+    anyhow::ensure!(!paths.is_empty(), "no runs to compare");
+    paths
+        .iter()
+        .map(|p| {
+            let text =
+                std::fs::read_to_string(p).map_err(|e| anyhow::anyhow!("{}: {e}", p.display()))?;
+            serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("{}: {e}", p.display()))
+        })
+        .collect()
+}
+
+fn median(mut v: Vec<f64>) -> f64 {
+    v.sort_by(f64::total_cmp);
+    let n = v.len();
+    if n == 0 {
+        0.0
+    } else if n % 2 == 1 {
+        v[n / 2]
+    } else {
+        (v[n / 2 - 1] + v[n / 2]) * 0.5
+    }
+}
+
+/// Compares a candidate's runs with a baseline's, scene by scene, by each side's median average
+/// FPS and median 1 % lows — medians, because single runs on a laptop vary by 3–10 % and one
+/// driver hitch can halve a run's 1 % lows. False if either falls more than `pct` percent
+/// below the baseline's in any scene. Runs on different GPUs are not compared (true, with a
+/// warning), nor scenes whose definition changed (accept a new baseline).
+fn compare(base: &[BenchRun], new: &[BenchRun], pct: f64) -> bool {
+    let (Some(b0), Some(n0)) = (base.first(), new.first()) else {
+        return true;
+    };
+    if base.iter().chain(new).any(|r| r.adapter != n0.adapter) {
+        eprintln!(
+            "warning: the runs come from different GPUs ({} vs {}); not compared",
+            b0.adapter, n0.adapter
+        );
+        return true;
+    }
+    println!(
+        "{} runs of {} ({}) against {} of {} ({}) on {}, limit -{pct} %:",
+        new.len(),
+        n0.commit,
+        n0.preset,
+        base.len(),
+        b0.commit,
+        b0.preset,
+        n0.adapter
+    );
     let mut ok = true;
-    for r in &run.scenes {
-        let Some(b) = base.scenes.iter().find(|b| b.name == r.name) else {
-            log::warn!("{}: not in the baseline", r.name);
-            continue;
+    for scene in &n0.scenes {
+        let pick = |runs: &[BenchRun]| -> Vec<SceneResult> {
+            runs.iter()
+                .filter_map(|r| r.scenes.iter().find(|s| s.name == scene.name).cloned())
+                .collect()
         };
-        for (what, new, old) in [
-            ("average FPS", r.avg_fps, b.avg_fps),
-            ("1% low FPS", r.low1_fps, b.low1_fps),
+        let (b, n) = (pick(base), pick(new));
+        if b.is_empty() {
+            println!("  {}: not in the baseline", scene.name);
+            continue;
+        }
+        if b[0].about != scene.about {
+            println!(
+                "  {}: the scene changed since the baseline; not compared",
+                scene.name
+            );
+            continue;
+        }
+        for (what, field) in [
+            (
+                "average FPS",
+                (|s: &SceneResult| s.avg_fps) as fn(&SceneResult) -> f64,
+            ),
+            ("1 % low FPS", |s: &SceneResult| s.low1_fps),
         ] {
-            let change = (new / old.max(1e-9) - 1.0) * 100.0;
-            if change < -pct {
+            let old = median(b.iter().map(field).collect());
+            let now = median(n.iter().map(field).collect());
+            let change = (now / old.max(1e-9) - 1.0) * 100.0;
+            let verdict = if change < -pct {
                 ok = false;
-                eprintln!(
-                    "REGRESSION {}: {what} {new:.1} vs {old:.1} ({change:+.1} %, limit -{pct} %)",
-                    r.name
-                );
+                "REGRESSION"
             } else {
-                println!("{}: {what} {new:.1} vs {old:.1} ({change:+.1} %)", r.name);
-            }
+                "ok"
+            };
+            println!(
+                "  {:<16} {what:<12} {now:8.1} vs {old:8.1}  {change:+6.1} %  {verdict}",
+                scene.name
+            );
         }
     }
-    Ok(ok)
+    ok
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_gate_compares_medians_and_skips_other_gpus() {
+        let run = |adapter: &str, fps: f64, low: f64| BenchRun {
+            adapter: adapter.into(),
+            scenes: vec![SceneResult {
+                name: "forest".into(),
+                about: "a flight".into(),
+                avg_fps: fps,
+                low1_fps: low,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let base = [
+            run("gpu", 1000.0, 500.0),
+            run("gpu", 980.0, 200.0),
+            run("gpu", 1020.0, 510.0),
+        ];
+        // One hitch-ridden run does not move the medians (1000, 500).
+        assert!(compare(&base, &[run("gpu", 960.0, 480.0)], 5.0));
+        assert!(
+            !compare(&base, &[run("gpu", 940.0, 500.0)], 5.0),
+            "-6 % average"
+        );
+        assert!(
+            !compare(&base, &[run("gpu", 1000.0, 470.0)], 5.0),
+            "-6 % lows"
+        );
+        assert!(
+            compare(&base, &[run("other", 100.0, 50.0)], 5.0),
+            "another GPU"
+        );
+        let mut changed = run("gpu", 100.0, 50.0);
+        changed.scenes[0].about = "a different flight".into();
+        assert!(
+            compare(&base, &[changed], 5.0),
+            "a changed scene is not compared"
+        );
+        assert_eq!(median(vec![3.0, 1.0, 2.0, 10.0]), 2.5);
+    }
 
     #[test]
     fn ssim_of_identical_and_different_images() {

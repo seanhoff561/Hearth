@@ -475,3 +475,17 @@ the reference laptop the frame is bound by vertices and the CPU rather than by p
 gains only 2–16 % and costs visible fine detail (SSIM 0.79–0.98 against native); it is for
 weaker GPUs and higher resolutions. When TAA lands, a temporal upscaler replaces EASU behind
 the same option.
+
+## D59 — The performance gate builds the baseline and runs both, alternating
+The audit asked for a gate at the end of every milestone: the quick benchmark scenes, failing
+on a drop of more than 5 % in average FPS or 1 % lows, to be fixed or justified here. Stored
+numbers make a poor baseline on a laptop: identical builds differ by 3–10 % from run to run
+with clocks and temperature, more from day to day, and one driver hitch of 40–50 ms halves a
+run's 1 % lows. So `scripts/perf-gate.sh` keeps the baseline as a commit (`perf/baseline`),
+builds it in a git worktree next to the current tree, runs the two alternately (three rounds by
+default, each with its own data packs and world cache), and compares the medians per scene
+(`hearth bench --judge`). It fails when either median falls more than 5 % below the baseline's.
+The baseline moves only on purpose (`--accept`, on a committed tree), so small regressions
+cannot pile up milestone after milestone unnoticed: every accepted regression has an entry
+here. Runs on another GPU are not compared, nor scenes whose definition changed (accept a new
+baseline when a benchmark scene is redefined).

@@ -237,3 +237,10 @@ Results are recorded below as they land.
    0.76–0.99 at 0.5 and 0.79–0.99 at 0.67 (a spatial upscaler cannot rebuild the fine voxel
    texture). Off by default in every preset; worth it on weaker GPUs, at higher resolutions
    and with heavier fragment work later.
+10. **Performance gate** (`scripts/perf-gate.sh`, D59) — at the end of every milestone, the
+   current tree and the baseline commit (`perf/baseline`, built in a worktree under
+   `bench-out/gate`) run the quick scenes (forest, summit at LOD 512, cave) alternately, three
+   rounds by default; `hearth bench --judge` compares the medians per scene and fails on a
+   drop of more than 5 % in average FPS or 1 % lows. A failure is fixed, or justified in
+   `DECISIONS.md` with the baseline moved by `--accept`. Part of every milestone's definition
+   of done (`PLAN.md`).

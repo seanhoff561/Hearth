@@ -4,7 +4,9 @@ The game follows `docs/spec/v2-direction-change.md` (v2), which overrides the or
 spec `docs/spec/v1-build-prompt.md` (v1) where they conflict. `MIGRATION.md` maps every v1
 milestone and subsystem to its fate. Each milestone ends with: design doc(s) in
 `docs/design/` updated, data added, tests, `scripts/check.sh` and `hearth content lint` green,
-`PROGRESS.md` (incl. the Content Status table) updated, and a commit.
+the performance gate `scripts/perf-gate.sh` passed (or a regression over 5 % justified in
+`DECISIONS.md` and the baseline moved with `--accept`, D59), `PROGRESS.md` (incl. the Content
+Status table) updated, and a commit.
 
 Engine work that v1 scheduled but that is not done yet is folded into the first v2 milestone
 that needs it (marked **Engine**), keeping v1's acceptance criteria for it.

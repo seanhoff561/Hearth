@@ -264,18 +264,14 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
    screen-space-error LOD selection (D57; `lod_detail`: Fancy 2 px, Fabulous 1 px, Fast 4 px;
    `hearth bench --lod-error PX` overrides it, 0 = the old distance rule), and (8) LOD quads
    grouped by facing with the groups facing away skipped (won back (7)'s cost), and (9)
-   render scale with FSR 1 (D58; `hearth bench --render-scale S`). A staging belt for
-   per-frame uploads was tried and reverted (no gain). Remaining, in order:
-   - (10) Performance gate `scripts/perf-gate.sh`, run at the end of every milestone: `hearth
-     bench --scenes quick` against a stored baseline, failing on >5 % lower average FPS or
-     1 % lows, recorded or justified in DECISIONS.md. Measured noise: about ±3–10 % between
-     identical runs of one build (laptop clocks), so the gate needs repeated runs (median of
-     3+) and pooled 1 % lows, and the baseline must be recorded per machine (the JSON holds
-     the adapter name; skip with a warning on another GPU). For claims, A/B alternate builds
-     (a `git worktree` of the previous commit in the scratchpad, built with `cargo build
-     --release -p hearth`, run alternately with `bench --report none --json none`).
-   - Then update `docs/perf-audit.md` (final table), DECISIONS (the gate rule), PROGRESS, and
-     resume V2-2 at (d, part 2b) below.
+   render scale with FSR 1 (D58; `hearth bench --render-scale S`), and (10) the performance
+   gate `scripts/perf-gate.sh` (D59: the baseline commit in `perf/baseline` is built in a
+   worktree and run alternately with the current tree; medians; >5 % drop fails), now part of
+   every milestone's definition of done (`PLAN.md`). A staging belt for per-frame uploads was
+   tried and reverted (no gain). Remaining:
+   - Update `docs/perf-audit.md`'s table to its final state, then resume V2-2 at (d, part 2b)
+     below. For one-off claims, A/B alternate builds as the gate does (or `--lod-error` /
+     `--render-scale` within one build).
    Golden images for SSIM checks: `bench-out/p8/golden7` (result 7's look; result 8 matches
    it within SSIM 0.9993 in the open scenes); capture the current look with `hearth bench
    --golden DIR` before comparing new work. Submission hitches of 40–50 ms (driver) make
