@@ -125,6 +125,8 @@ pub struct UiState {
     pub cursor: usize,
     /// Scroll offsets by list id (interface pixels).
     pub scroll: rustc_hash::FxHashMap<u64, f32>,
+    /// Presses since the owner last took them (for the click's sound).
+    pub clicks: u32,
 }
 
 /// Colours of the interface.
@@ -288,7 +290,11 @@ impl<'a> Ui<'a> {
         let color = if enabled { theme::TEXT } else { theme::DIM };
         self.text_centred(&r, label, color);
         let clicked = hot && self.input.released && self.state.active.is_none_or(|a| a == id);
-        enabled && (clicked || (focused && self.input.key(NavKey::Enter)))
+        let pressed = enabled && (clicked || (focused && self.input.key(NavKey::Enter)));
+        if pressed {
+            self.state.clicks += 1;
+        }
+        pressed
     }
 
     /// A slider over `min..=max`; the label shows `text` (the value in words). True when changed.
@@ -497,6 +503,7 @@ impl<'a> Ui<'a> {
             }
             if hot && self.input.released && !self.blocked {
                 clicked = Some(i);
+                self.state.clicks += 1;
             }
             row(self, rr, i, sel);
         }

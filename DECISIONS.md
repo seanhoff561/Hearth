@@ -643,3 +643,16 @@ cold humid-continental climates) to warm-temperate lowland (25–45°, subtropic
 or oceanic): the character starts in a loincloth, and the first spawn found before put them at
 53°S on a cold spring morning, losing heat from the first minute with no clothes or fire to be
 had yet. `player.json` (format 1) holds the body and the mover.
+
+## D69 — Sound made as it plays, with no recordings
+Every sound is synthesised in the mixer from tones, filtered noise and noise in grains, by
+short recipes (`hearth_audio`). Recorded samples would need sourcing and licensing (the project
+is clean-room) and many variants each to avoid repetition. Procedural recipes are varied on
+every play, cost nothing to ship, and follow the simulation continuously: wind with its speed,
+rain with its rate, the heart with the body. The cost is fidelity: a synthesised footstep is
+a plausible footstep, not a recording of one. Recipes can be refined (or samples added through
+content packs) without changing the engine's commands. Output goes through cpal on the device's
+own thread, taking commands over a channel; offline rendering of the same mixer is what the
+tests listen to (`tests/mixer.rs`, which also writes `bench-out/sounds/*.wav`). The heart and
+the breath are the body's state made audible, for the HUD's minimalism (v2 §9.8): you hear a
+pounding heart or a gasp in cold water before a panel says anything.

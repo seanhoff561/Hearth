@@ -40,6 +40,7 @@ fn render(
                 saves,
                 in_game: false,
                 languages: &languages,
+                audio_devices: &[],
             };
             actions = menus.ui(ui, &mut cx);
         },
@@ -82,6 +83,7 @@ fn the_screens_draw_and_answer() {
         ),
         ("options", Screen::Options),
         ("video", Screen::Video),
+        ("sound", Screen::Sound),
         (
             "controls",
             Screen::Controls {

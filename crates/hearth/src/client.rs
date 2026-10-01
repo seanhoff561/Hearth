@@ -102,6 +102,12 @@ pub struct Client {
     /// The debug screen (F3), and the frame rate it shows.
     pub debug_overlay: bool,
     pub fps: f64,
+    /// What the player hears, the wind and rain where they stand (m/s, mm/h of water), whether
+    /// the world is paused, and whether to caption the sounds.
+    pub hearing: crate::hearing::Hearing,
+    weather: (f32, f32),
+    paused: bool,
+    captions: bool,
 }
 
 impl Client {
@@ -161,6 +167,10 @@ impl Client {
             status: "generating planet".into(),
             debug_overlay: false,
             fps: 0.0,
+            hearing: crate::hearing::Hearing::default(),
+            weather: (0.0, 0.0),
+            paused: false,
+            captions: options.sound.subtitles,
         }
     }
 
@@ -171,11 +181,33 @@ impl Client {
 
     /// Pauses the world (a single-player menu) or lets it run.
     pub fn pause(&mut self, paused: bool) {
+        self.paused = paused;
         self.server.send(ToServer::Pause(paused));
+    }
+
+    /// The sounds to play since the last call.
+    pub fn take_sounds(&mut self) -> std::vec::Drain<'_, hearth_audio::Command> {
+        self.hearing.out.drain(..)
+    }
+
+    /// The surroundings to sound now; `dt` ages the captions.
+    pub fn ambience(&mut self, dt: f64) -> hearth_audio::Ambience {
+        let eye = self.camera.pos;
+        let sheltered = self.world.as_ref().is_some_and(|w| {
+            w.mirror
+                .sky_top(eye.x.floor() as i32, eye.z.floor() as i32)
+                .is_some_and(|top| top as f64 >= eye.y)
+        });
+        let underwater =
+            self.mode == CameraMode::Body && self.last_report.is_some_and(|r| r.eyes_under);
+        let paused = self.paused || self.world.is_none();
+        self.hearing
+            .ambience(self.weather, sheltered, underwater, paused, dt)
     }
 
     /// Takes changed options: the view, distances and detail.
     pub fn apply_options(&mut self, options: &Options) {
+        self.captions = options.sound.subtitles;
         let v = &options.video;
         self.camera.fov_y = v.fov;
         self.render_scale = v.render_scale;
@@ -336,6 +368,12 @@ impl Client {
             CameraMode::Free => self.fly(dt, input, wish),
             CameraMode::Body => self.walk(dt, input, wish, pad),
         }
+        self.hearing
+            .body(self.body.as_ref(), self.last_report.as_ref(), dt);
+        if let Some(w) = &self.world {
+            self.hearing
+                .look_around(&w.mirror, &w.reg, self.camera.pos, dt);
+        }
     }
 
     fn fly(&mut self, dt: f64, input: &mut InputState, wish: DVec2) {
@@ -419,7 +457,10 @@ impl Client {
             map: &w.mirror,
             reg: &w.reg,
         };
+        let vy_before = self.mover.vel.y;
         let report = hearth_physics::step(&terrain, &mut self.mover, &intent, &ability, dt);
+        self.hearing
+            .moved(&w.mirror, &w.reg, &self.mover, &report, vy_before, dt);
         self.pending.landed = match (self.pending.landed, report.landed) {
             (Some(a), Some(b)) => Some(a.max(b)),
             (a, b) => a.or(b),
@@ -613,7 +654,14 @@ impl Client {
         };
         env.calendar = self.calendar;
         let moment = self.calendar.at(ticks);
-        let (e, _) = env.sample(&moment, self.camera.pos, 0.0, EnvOverrides::default());
+        let (e, weather) = env.sample(&moment, self.camera.pos, 0.0, EnvOverrides::default());
+        // Rain is heard; snow falls silently.
+        let rain = match weather.precip {
+            hearth_env::weather::Precip::Rain => weather.precip_mm_h,
+            hearth_env::weather::Precip::Sleet => 0.6 * weather.precip_mm_h,
+            _ => 0.0,
+        };
+        self.weather = (weather.wind_speed_m_s as f32, rain as f32);
         scene.vertical_scale = self.vertical_scale;
         match &self.lod {
             Some(lod) if self.lod_distance > 0 => {
@@ -649,6 +697,9 @@ impl Client {
                 );
             }
         }
+        if self.captions {
+            self.draw_captions(ui, veil);
+        }
         if self.debug_overlay {
             let lines = self.debug_lines(ui.lang);
             let width = lines.iter().map(|l| ui.font.width(l)).max().unwrap_or(0) as f32;
@@ -663,6 +714,38 @@ impl Client {
             for (k, line) in lines.iter().enumerate() {
                 ui.label(3.0, 3.0 + k as f32 * lh, line, Rgba::WHITE);
             }
+        }
+    }
+
+    /// The sounds in words, lowest right, fading as they pass.
+    fn draw_captions(&self, ui: &mut Ui<'_>, veil: u8) {
+        let lines: Vec<(String, f32)> = self
+            .hearing
+            .captions()
+            .map(|(key, alpha)| (ui.t(key), alpha))
+            .collect();
+        if lines.is_empty() {
+            return;
+        }
+        let (w, h) = ui.size;
+        let lh = hearth_ui::font::LINE as f32;
+        let width = lines
+            .iter()
+            .map(|(t, _)| ui.font.width(t))
+            .max()
+            .unwrap_or(0) as f32;
+        let top = h - 4.0 - lines.len() as f32 * lh;
+        let left = w - width - 8.0;
+        ui.draw.rect(
+            left - 2.0,
+            top - 2.0,
+            width + 6.0,
+            lines.len() as f32 * lh + 3.0,
+            Rgba([0, 0, 0, veil]),
+        );
+        for (k, (text, alpha)) in lines.iter().enumerate() {
+            let a = (alpha * 255.0) as u8;
+            ui.label(left, top + k as f32 * lh, text, Rgba([255, 255, 255, a]));
         }
     }
 

@@ -72,6 +72,13 @@ pub struct App {
     /// The languages there are words for.
     languages: Vec<String>,
     pads: Gamepads,
+    /// The sound output (none if there is no device), the device asked for, the devices
+    /// there are, and when the output was last checked and last told the surroundings.
+    audio: Option<hearth_audio::Audio>,
+    audio_asked: String,
+    audio_devices: Vec<String>,
+    audio_checked: Instant,
+    ambience_sent: Instant,
 }
 
 impl App {
@@ -119,6 +126,98 @@ impl App {
             content: ContentState::load(vec![crate::scene::data_pack_dir()]),
             languages: Interface::languages(),
             pads: Gamepads::new(),
+            audio: None,
+            audio_asked: String::new(),
+            audio_devices: Vec::new(),
+            audio_checked: Instant::now(),
+            ambience_sent: Instant::now(),
+        }
+    }
+
+    /// Opens the sound output the options name (or the default), with their volumes.
+    fn open_audio(&mut self) {
+        // Close the old stream first: some devices take one at a time.
+        self.audio = None;
+        self.audio_asked = self.options.sound.device.clone();
+        let seed = self.start.elapsed().as_nanos() as u32 ^ 0x5eed;
+        match hearth_audio::Audio::open(&self.options.sound.device, seed) {
+            Ok(a) => self.audio = Some(a),
+            Err(e) => log::warn!("no sound: {e}"),
+        }
+        self.send_volumes();
+    }
+
+    fn send_volumes(&self) {
+        let Some(audio) = &self.audio else { return };
+        let s = &self.options.sound;
+        let mut buses = [1.0; hearth_audio::BUSES];
+        for (bus, v) in [
+            (hearth_audio::Bus::Weather, s.weather),
+            (hearth_audio::Bus::Blocks, s.blocks),
+            (hearth_audio::Bus::Players, s.players),
+            (hearth_audio::Bus::Ambient, s.ambient),
+            (hearth_audio::Bus::Hostile, s.hostile),
+            (hearth_audio::Bus::Friendly, s.friendly),
+            (hearth_audio::Bus::Ui, s.ui),
+            (hearth_audio::Bus::Music, s.music),
+        ] {
+            buses[bus.index()] = v;
+        }
+        audio.send(hearth_audio::Command::Volumes {
+            master: s.master,
+            buses,
+        });
+    }
+
+    /// This frame's sounds: the world's, the interface's clicks, the surroundings (20 times a
+    /// second), and a new output if the device was lost.
+    fn sound(&mut self, dt: f64) {
+        if self.audio_checked.elapsed().as_secs_f64() >= 2.0 {
+            self.audio_checked = Instant::now();
+            if self.audio.as_ref().is_some_and(|a| a.failed()) {
+                log::info!("sound output lost: opening it again");
+                self.open_audio();
+            }
+        }
+        let Some(run) = &mut self.running else {
+            return;
+        };
+        let clicks = std::mem::take(&mut run.interface.state.clicks);
+        let Some(audio) = &self.audio else {
+            if let Some(c) = &mut run.client {
+                c.take_sounds().for_each(drop);
+            }
+            return;
+        };
+        if clicks > 0 {
+            audio.send(hearth_audio::Command::Play {
+                sound: hearth_audio::Sound::Click,
+                bus: hearth_audio::Bus::Ui,
+                gain: 1.0,
+                pan: 0.0,
+            });
+        }
+        let since = self.ambience_sent.elapsed().as_secs_f64();
+        match &mut run.client {
+            Some(c) => {
+                for cmd in c.take_sounds() {
+                    audio.send(cmd);
+                }
+                let ambience = c.ambience(dt);
+                if since >= 0.05 {
+                    self.ambience_sent = Instant::now();
+                    audio.send(hearth_audio::Command::Ambience(ambience));
+                }
+            }
+            None if since >= 0.05 => {
+                self.ambience_sent = Instant::now();
+                audio.send(hearth_audio::Command::Ambience(hearth_audio::Ambience {
+                    heart_bpm: 62.0,
+                    breaths_per_min: 12.0,
+                    ..Default::default()
+                }));
+            }
+            None => {}
         }
     }
 
@@ -403,6 +502,11 @@ impl App {
                         }
                     }
                     self.apply_display_mode();
+                    if self.options.sound.device != self.audio_asked {
+                        self.open_audio();
+                    } else {
+                        self.send_volumes();
+                    }
                     self.save_options();
                 }
             }
@@ -494,10 +598,12 @@ impl App {
         }
         let pad = self.pads.pad;
         let mut actions = Vec::new();
+        let mut frame_dt = 0.0;
         if let Some(run) = &mut self.running {
             let now = Instant::now();
             let dt = (now - run.last_frame).as_secs_f64().min(0.25);
             run.last_frame = now;
+            frame_dt = dt;
             let menu_open = run.menus.is_open();
             let look = run.captured.then(|| {
                 let (dx, dy) = self.input.mouse_delta();
@@ -523,6 +629,7 @@ impl App {
             let bindings = &mut self.bindings;
             let saves = self.dirs.saves();
             let languages = &self.languages;
+            let audio_devices = &self.audio_devices;
             let format = run.renderer.color_format();
             if run.renderer.render_with(|ctx, enc, targets| {
                 match client.as_mut() {
@@ -541,6 +648,7 @@ impl App {
                         saves,
                         in_game: client.is_some(),
                         languages,
+                        audio_devices,
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
@@ -576,6 +684,7 @@ impl App {
                 run.title_frames = 0;
             }
         }
+        self.sound(frame_dt);
         if !actions.is_empty() {
             self.menu_actions(actions);
         }
@@ -630,6 +739,14 @@ impl ApplicationHandler for App {
             title_frames: 0,
             log_timer: Instant::now(),
         });
+        let t = Instant::now();
+        self.open_audio();
+        self.audio_devices = hearth_audio::output_devices();
+        log::info!(
+            "sound opened in {:.0} ms ({} output devices)",
+            t.elapsed().as_secs_f64() * 1000.0,
+            self.audio_devices.len()
+        );
         if let Some(world) = self.world.clone() {
             self.play(&world, self.seed);
         }

@@ -18,6 +18,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Body and physiology | [physiology.md](physiology.md) | implemented (V2-3a; the player's world loop in progress) |
 | Movement (collision, gaits, climbing, swimming, falls) | [movement.md](movement.md) | implemented (V2-3b) |
 | The world loop (server, client, protocol) | [world-loop.md](world-loop.md) | implemented in process (V2-3c) |
+| Sound (procedural sounds, mixer, what the player hears) | [audio.md](audio.md) | implemented (V2-3d) |
 | Inventory, carrying, clothing | [inventory.md](inventory.md) | planned (V2-4) |
 | Processes and the knowledge graph | [knowledge-and-processes.md](knowledge-and-processes.md) | partial (data V2-0; engine V2-5) |
 | Flora | [flora.md](flora.md) | planned (V2-6) |

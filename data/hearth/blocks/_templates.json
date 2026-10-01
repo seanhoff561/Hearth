@@ -1,7 +1,7 @@
 {
   "rock": {"hardness": 1.5, "resistance": 6.0, "sound": "stone", "map_color": "#707070"},
   "hard_rock": {"template": "rock", "hardness": 3.0, "sound": "deepslate", "map_color": "#505055"},
-  "soil": {"hardness": 0.5, "resistance": 0.5, "sound": "gravel", "map_color": "#866043"},
+  "soil": {"hardness": 0.5, "resistance": 0.5, "sound": "soil", "map_color": "#866043"},
   "falling_soil": {"template": "soil", "behavior": "falling"},
   "log": {"properties": ["axis:x,y,z"], "defaults": {"axis": "y"}, "hardness": 2.0, "resistance": 2.0, "sound": "wood", "flammable": true, "map_color": "#8f7748"},
   "leaves": {"properties": ["distance:1..7", "persistent:bool"], "defaults": {"distance": "7"}, "cushion": 0.3, "hardness": 0.2, "resistance": 0.2, "sound": "grass", "opaque": false, "layer": "cutout", "light_opacity": 1, "random_ticks": true, "waterloggable": true, "tint": "foliage", "behavior": "leaves", "flammable": true, "map_color": "#007c00"},

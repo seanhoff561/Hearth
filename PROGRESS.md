@@ -323,6 +323,15 @@ V2-3 — player: character, body & physiology. Done so far:
   `gamepad.rs`): the left stick walks (full lean jogs, click sprints), the right stick looks
   (squared response), South jumps, East crouches, West crawls, Start pauses, Select opens the
   globe; in the menus the D-pad or stick moves the focus, South presses, East goes back.
+  Sound (D69, `docs/design/audio.md`): `hearth_audio`, every sound synthesised as it plays
+  (footsteps on twelve surfaces by gait, landings, splashes, strokes, gasps, hurts, clicks;
+  wind with gusts and whistle, rain under the sky, a roof or rock, the hush under water, the
+  heart and the breath from the body), mixed by the options' categories, muffled under water,
+  echoing when shut in, paused with the world, through cpal; `hearing.rs` turns movement, the
+  ground's sound groups (natural blocks by material), the weather and the body into sounds;
+  the Sound options (volumes, output device, captions) and captions on screen. Tests: the
+  mixer offline (every sound heard and ended, volumes, wind, rain, water, rhythms, echo,
+  limiter), hearing (surfaces, enclosure, footstep pace, splashes); `bench-out/sounds/*.wav`.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -333,8 +342,7 @@ V2-3 — player: character, body & physiology. Done so far:
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
 1. V2-3 — Player: character, body & physiology (PLAN.md). Done: (a) the body, (b)
-   movement, (c) the world loop, (d) the interface and controllers. Next: (d) the audio engine;
-   (e) the character creator,
+   movement, (c) the world loop, (d) the interface, controllers and sound. Next: (e) the character creator,
    profiles, rig, first-person body and animations; (f) the diegetic HUD, Body panel (B),
    Guided HUD, sleep with time acceleration, death and respawn rules, the acceptance review
    and the performance gate.
@@ -363,6 +371,10 @@ V2-3 — player: character, body & physiology. Done so far:
   zoning (oxide cap over sulfide ore) — both with V2-13 prospecting.
 - Fumarole ground is snowed over like any other (warm ground melting snow comes with the
   thermal model, V2-5); the dead-bush sprite reads as a dark wedge from above (V2-6 flora).
+- Sounds are all the player's own or around them: sounds placed in the world (direction,
+  distance, occlusion) come with fauna (V2-7) and the work of the hands (V2-4/V2-5); no
+  music, thunder, fire, flowing water or animal sounds yet (their volume sliders are hidden);
+  the echo has one character, not measured from the cave's size; captions show no direction.
 
 ## Environment notes
 - Rust was installed via rustup in `%USERPROFILE%\.cargo`; shells started before the install

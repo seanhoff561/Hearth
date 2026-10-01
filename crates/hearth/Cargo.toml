@@ -28,6 +28,7 @@ hearth_player.workspace = true
 hearth_protocol.workspace = true
 hearth_save.workspace = true
 hearth_ui.workspace = true
+hearth_audio.workspace = true
 bytemuck.workspace = true
 anyhow.workspace = true
 png.workspace = true

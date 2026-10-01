@@ -11,6 +11,7 @@ pub mod environment;
 pub mod frame_limiter;
 pub mod gamepad;
 pub mod globe;
+pub mod hearing;
 pub mod interface;
 pub mod lod_stream;
 pub mod menus;

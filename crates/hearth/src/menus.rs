@@ -1,6 +1,6 @@
 //! The screens (v1 §11, the minimal set for V2-3; the full flow is V2-15): the title, the worlds
-//! (pick one or make a new one), pause, and the options — video, controls with rebinding,
-//! language, accessibility. Every screen is drawn each frame with the widgets of `hearth_ui`
+//! (pick one or make a new one), pause, and the options — video, sound, controls with
+//! rebinding, language, accessibility. Every screen is drawn each frame with the widgets of `hearth_ui`
 //! and says what the player chose.
 
 use std::path::{Path, PathBuf};
@@ -54,6 +54,7 @@ pub enum Screen {
     Pause,
     Options,
     Video,
+    Sound,
     Controls {
         capturing: Option<ActionId>,
         capture: RebindCapture,
@@ -84,6 +85,8 @@ pub struct MenuContext<'a> {
     pub saves: PathBuf,
     pub in_game: bool,
     pub languages: &'a [String],
+    /// The sound output devices there are.
+    pub audio_devices: &'a [String],
 }
 
 /// The open screens, the top one shown.
@@ -305,6 +308,9 @@ impl Menus {
                 let mut c = Column::new(x, 56.0, W);
                 if ui.button(c.row(ROW), &ui.t("menu.options.video")) {
                     push = Some(Screen::Video);
+                }
+                if ui.button(c.row(ROW), &ui.t("menu.options.sound")) {
+                    push = Some(Screen::Sound);
                 }
                 if ui.button(c.row(ROW), &ui.t("menu.options.controls")) {
                     push = Some(Screen::Controls {
@@ -596,6 +602,60 @@ impl Menus {
                     changed = true;
                 }
                 if ui.button(b, &ui.t("menu.done")) {
+                    pop = true;
+                }
+                if changed {
+                    out.push(MenuAction::OptionsChanged);
+                }
+            }
+            Screen::Sound => {
+                ui.title(30.0, &ui.t("menu.options.sound"));
+                let s = &mut cx.options.sound;
+                let wide = W + 120.0;
+                let mut c = Column::new(((size.0 - wide) / 2.0).round(), 56.0, wide);
+                c.gap = 3.0;
+                let mut changed = false;
+                // The categories that have sounds so far.
+                for (key, value) in [
+                    ("master", &mut s.master),
+                    ("weather", &mut s.weather),
+                    ("players", &mut s.players),
+                    ("ambient", &mut s.ambient),
+                    ("ui", &mut s.ui),
+                ] {
+                    let mut v = *value;
+                    let text = if v <= 0.0 {
+                        ui.t("ui.off")
+                    } else {
+                        format!("{}%", (v * 100.0).round())
+                    };
+                    let label = ui.t(&format!("menu.sound.{key}"));
+                    if ui.slider(c.row(ROW), &label, &mut v, 0.0, 1.0, &text) {
+                        *value = v;
+                        changed = true;
+                    }
+                }
+                let mut names = vec![ui.t("menu.sound.device.default")];
+                names.extend(cx.audio_devices.iter().cloned());
+                let mut i = cx
+                    .audio_devices
+                    .iter()
+                    .position(|d| *d == s.device)
+                    .map_or(0, |p| p + 1);
+                if ui.cycle(c.row(ROW), &ui.t("menu.sound.device"), &names, &mut i) {
+                    s.device = match i {
+                        0 => String::new(),
+                        i => cx.audio_devices[i - 1].clone(),
+                    };
+                    changed = true;
+                }
+                let mut captions = s.subtitles;
+                if ui.toggle(c.row(ROW), &ui.t("menu.sound.subtitles"), &mut captions) {
+                    s.subtitles = captions;
+                    changed = true;
+                }
+                c.space(8.0);
+                if ui.button(c.row(ROW), &ui.t("menu.done")) {
                     pop = true;
                 }
                 if changed {
