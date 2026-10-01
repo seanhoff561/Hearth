@@ -43,7 +43,7 @@
                 (name: "chopping", value: FromMaterial(field: "knapping", scale: 0.9)),
                 (name: "scraping", value: FromMaterial(field: "knapping", scale: 0.6)),
             ],
-            tags: ["tool"],
+            tags: ["tool"], hangs_on: ["belt_loop"],
         ),
         (
             id: "scraper", name: "{material} scraper", materials: (tags: ["knappable"]),
@@ -103,6 +103,43 @@
             size_m: (1.0, 0.003, 0.003), fill: 0.8, footprint: (1, 1), stacking: Count(10),
             properties: [(name: "binding", value: FromMaterial(field: "tensile_mpa", scale: 0.001))],
             tags: ["binding"],
+        ),
+        (
+            // A length of trunk: a metre of a 40 cm log, rolled or dragged, too heavy to carry.
+            id: "log_section", name: "{material} log section", materials: (categories: [Wood]),
+            size_m: (1.0, 0.4, 0.4), fill: 0.785, footprint: (2, 5),
+            tags: ["two_handed", "rollable", "wood"],
+        ),
+        // Containers (v2 §10.2): each has its own grid and the most it holds.
+        (
+            id: "bundle", name: "{material} bundle", materials: (tags: ["hide"]),
+            size_m: (0.45, 0.35, 0.25), fill: 0.028, footprint: (3, 2),
+            container: Some((grid: (3, 3), max_kg: 10.0, back: true)),
+            tags: ["container"],
+        ),
+        (
+            id: "pouch", name: "{material} pouch", materials: (tags: ["hide"]),
+            size_m: (0.15, 0.12, 0.05), fill: 0.08, footprint: (1, 1),
+            container: Some((grid: (2, 2), max_kg: 1.5)),
+            hangs_on: ["tie", "belt_loop"], tags: ["container"],
+        ),
+        (
+            id: "water_skin", name: "{material} water skin", materials: (ids: ["hearth:scraped_hide"]),
+            size_m: (0.3, 0.2, 0.08), fill: 0.05, footprint: (2, 2),
+            container: Some((grid: (0, 0), max_kg: 2.2, liquid_l: 2.0)),
+            hangs_on: ["belt_loop", "strap"], tags: ["container", "liquid"],
+        ),
+        (
+            id: "basket", name: "{material} basket", materials: (tags: ["basketry"]),
+            size_m: (0.4, 0.3, 0.4), fill: 0.025, footprint: (3, 3),
+            container: Some((grid: (4, 4), max_kg: 12.0)),
+            tags: ["container"],
+        ),
+        (
+            id: "back_basket", name: "{material} back basket", materials: (tags: ["basketry"]),
+            size_m: (0.4, 0.6, 0.3), fill: 0.025, footprint: (3, 4),
+            container: Some((grid: (4, 6), max_kg: 25.0, back: true)),
+            tags: ["container"],
         ),
     ],
 )

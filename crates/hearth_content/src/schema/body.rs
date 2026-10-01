@@ -150,5 +150,12 @@ entry! {
         pub noise: f32,
         #[serde(default)]
         pub knowledge: Option<IdRef>,
+        /// Inventory grid cells when carried rather than worn.
+        #[serde(default = "garment_footprint")]
+        pub footprint: (u8, u8),
     }
+}
+
+fn garment_footprint() -> (u8, u8) {
+    (2, 2)
 }

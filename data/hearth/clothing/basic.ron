@@ -30,5 +30,9 @@
         (id: "bark_rain_cape", status: Implemented, name: "{material} rain cape", layer: Outer, regions: [Head, Chest, Abdomen],
          materials: (categories: [Bark]), clo: 0.2, wind: 0.6, water: 0.9, mass_kg: 1.2, noise: 0.4,
          knowledge: "lean_to", uncertain: true),
+        (id: "belt", status: Implemented, name: "{material} belt", layer: Belt, regions: [Abdomen],
+         materials: (tags: ["hide", "cordage"]), clo: 0.0, wind: 0.0, water: 0.0, mass_kg: 0.15,
+         attachments: ["belt_loop", "belt_loop", "belt_loop"], noise: 0.0, footprint: (2, 1),
+         notes: "A band of hide or cord: three loops hang a pouch, a sheath, a water skin or an axe."),
     ],
 )

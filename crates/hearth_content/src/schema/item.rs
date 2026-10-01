@@ -31,6 +31,21 @@ pub enum PropertyValue {
     },
 }
 
+/// What a container holds and how it is carried (v2 §10.2).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ContainerSpec {
+    /// Its grid (cells wide and high).
+    pub grid: (u8, u8),
+    /// The most it holds (kg).
+    pub max_kg: f32,
+    /// The liquid it holds (litres), if it holds liquid.
+    #[serde(default)]
+    pub liquid_l: f32,
+    /// Carried on the back (a back basket, a bundle tied on).
+    #[serde(default)]
+    pub back: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Property {
     /// e.g. `sharp_edge`, `hard_hammer`, `fuel`, `bow_stave`.
@@ -57,6 +72,12 @@ entry! {
         pub properties: Vec<Property>,
         #[serde(default)]
         pub tags: Vec<String>,
+        /// It holds things.
+        #[serde(default)]
+        pub container: Option<ContainerSpec>,
+        /// Attachment points it can hang from (`tie`, `belt_loop`, `strap`).
+        #[serde(default)]
+        pub hangs_on: Vec<String>,
     }
 }
 
@@ -80,5 +101,12 @@ entry! {
         pub properties: Vec<(String, f32)>,
         #[serde(default)]
         pub tags: Vec<String>,
+        /// Bounding box in metres (a cube of its volume when not given).
+        #[serde(default)]
+        pub size_m: Option<[f32; 3]>,
+        #[serde(default)]
+        pub container: Option<ContainerSpec>,
+        #[serde(default)]
+        pub hangs_on: Vec<String>,
     }
 }

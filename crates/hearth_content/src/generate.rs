@@ -3,7 +3,8 @@
 
 use crate::content::{Origin, Table};
 use crate::diag::Report;
-use crate::schema::item::{Item, ItemForm, PropertyValue, Stacking};
+use crate::schema::body::Garment;
+use crate::schema::item::{ContainerSpec, Item, ItemForm, PropertyValue, Stacking};
 use crate::schema::material::Material;
 use crate::schema::{Entry, Status};
 
@@ -21,6 +22,13 @@ pub struct ItemDef {
     pub properties: Vec<(String, f32)>,
     pub tags: Vec<String>,
     pub status: Status,
+    /// Bounding box (m) and colour (sRGB, the material's) as a thing in the world.
+    pub size_m: [f32; 3],
+    pub color: [u8; 3],
+    pub container: Option<ContainerSpec>,
+    pub hangs_on: Vec<String>,
+    /// The garment it is, when worn.
+    pub garment: Option<String>,
 }
 
 impl ItemDef {
@@ -83,10 +91,16 @@ pub fn generate_items(
     forms: &Table<ItemForm>,
     materials: &Table<Material>,
     explicit: &Table<Item>,
+    garments: &Table<Garment>,
     report: &mut Report,
 ) -> Table<ItemDef> {
     let mut out: Table<ItemDef> = Table::default();
     for (item, origin) in explicit.iter_with_origin() {
+        let material = item
+            .material
+            .as_ref()
+            .and_then(|m| materials.get(m.as_str()));
+        let side = (item.volume_l.max(0.001) / 1000.0).cbrt();
         out.upsert(
             item.id.clone(),
             ItemDef {
@@ -101,9 +115,51 @@ pub fn generate_items(
                 properties: item.properties.clone(),
                 tags: item.tags.clone(),
                 status: item.status,
+                size_m: item.size_m.unwrap_or([side; 3]),
+                color: material.map_or([140, 120, 100], |m| m.appearance.color.0),
+                container: item.container,
+                hangs_on: item.hangs_on.clone(),
+                garment: None,
             },
             origin.clone(),
         );
+    }
+    // Garments are things too, made of whatever their materials allow.
+    for (g, origin) in garments.iter_with_origin() {
+        for m in materials.iter() {
+            if !g.materials.matches(m.id(), m) {
+                continue;
+            }
+            let id = generated_id(g.id(), m.id());
+            let volume_l = g.mass_kg / m.density_kg_m3.max(1.0) * 1000.0 * 2.0;
+            let side = (volume_l / 1000.0).cbrt();
+            out.upsert(
+                id.clone(),
+                ItemDef {
+                    id,
+                    name: g.name.replace("{material}", &m.name),
+                    form: None,
+                    material: Some(m.id().to_owned()),
+                    mass_kg: g.mass_kg,
+                    volume_l,
+                    footprint: g.footprint,
+                    stacking: Stacking::Single,
+                    properties: Vec::new(),
+                    tags: vec!["garment".to_owned()],
+                    status: g.status,
+                    size_m: [side * 1.6, side * 0.4, side * 1.6],
+                    color: m.appearance.color.0,
+                    container: None,
+                    hangs_on: Vec::new(),
+                    garment: Some(g.id().to_owned()),
+                },
+                Origin {
+                    file: origin.file.clone(),
+                    line: origin.line,
+                    pack: origin.pack,
+                },
+            );
+        }
     }
     for (form, origin) in forms.iter_with_origin() {
         for p in &form.properties {
@@ -155,6 +211,11 @@ pub fn generate_items(
                     properties,
                     tags,
                     status: form.status(),
+                    size_m: form.size_m,
+                    color: m.appearance.color.0,
+                    container: form.container,
+                    hangs_on: form.hangs_on.clone(),
+                    garment: None,
                 },
                 Origin {
                     file: origin.file.clone(),

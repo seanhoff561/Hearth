@@ -259,7 +259,8 @@ impl Content {
         let materials = load_table::<Material>(packs, &mut r);
         let forms = load_table::<ItemForm>(packs, &mut r);
         let explicit_items = load_table::<Item>(packs, &mut r);
-        let items = generate_items(&forms, &materials, &explicit_items, &mut r);
+        let garments = load_table::<crate::schema::body::Garment>(packs, &mut r);
+        let items = generate_items(&forms, &materials, &explicit_items, &garments, &mut r);
         let content = Content {
             packs: packs.to_vec(),
             materials,
@@ -281,7 +282,7 @@ impl Content {
             construction: load_table(packs, &mut r),
             injuries: load_table(packs, &mut r),
             illnesses: load_table(packs, &mut r),
-            garments: load_table(packs, &mut r),
+            garments,
             eras: load_table(packs, &mut r),
             balance_keys: load_table(packs, &mut r),
             balance_presets: load_table(packs, &mut r),
