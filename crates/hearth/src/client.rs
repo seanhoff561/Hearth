@@ -139,6 +139,9 @@ pub struct Client {
     breath_phase: f64,
     reduce_motion: bool,
     guided_hud: bool,
+    /// The Body panel (B) open, and the body's definitions it names injuries from.
+    pub body_panel: bool,
+    body_cfg: Option<Arc<hearth_body::BodyConfig>>,
 }
 
 impl Client {
@@ -214,7 +217,14 @@ impl Client {
             breath_phase: 0.0,
             reduce_motion: options.accessibility.reduce_motion,
             guided_hud: options.accessibility.guided_hud,
+            body_panel: false,
+            body_cfg: None,
         }
+    }
+
+    /// Opens or closes the Body panel.
+    pub fn toggle_body_panel(&mut self) {
+        self.body_panel = !self.body_panel;
     }
 
     /// The body's senses on the image (v2 §9.9): exhaustion, thirst and weakness drain colour,
@@ -822,6 +832,7 @@ impl Client {
                     self.eye_y = self.mover.eye().y;
                     self.camera.pos = self.mover.eye();
                     self.figure = Some(Figure::new(r.appearance));
+                    self.body_cfg = Some(r.body);
                     self.pose = None;
                     self.world = Some(World {
                         planet,
@@ -1075,6 +1086,11 @@ impl Client {
         }
         if self.captions {
             self.draw_captions(ui, veil);
+        }
+        if self.body_panel
+            && let Some(b) = &self.body
+        {
+            crate::body_panel::draw(ui, self.body_cfg.as_deref(), b, veil);
         }
         if self.debug_overlay {
             let lines = self.debug_lines(ui.lang);

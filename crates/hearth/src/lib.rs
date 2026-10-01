@@ -4,6 +4,7 @@
 pub mod alloc_count;
 pub mod app;
 pub mod bench;
+pub mod body_panel;
 pub mod client;
 pub mod content_cli;
 pub mod content_state;
