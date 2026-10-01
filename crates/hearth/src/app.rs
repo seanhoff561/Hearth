@@ -310,11 +310,15 @@ impl App {
                 self.frames_rendered += 1;
                 run.title_frames += 1;
             }
+            if self.input.debug_overlay_toggled() {
+                run.client.toggle_debug();
+            }
             let elapsed = run.title_timer.elapsed().as_secs_f64();
             // The globe describes the place under the cursor: keep up with it.
             let period = if run.client.globe.open { 0.1 } else { 0.5 };
             if elapsed >= period {
                 let fps = run.title_frames as f64 / elapsed;
+                run.client.fps = fps;
                 run.window.set_title(&format!(
                     "{} | {}",
                     hearth_core::window_title(),

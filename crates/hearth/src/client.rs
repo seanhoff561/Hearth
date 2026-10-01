@@ -15,7 +15,9 @@ use hearth_protocol::{BodyView, Moved, ToClient, ToServer};
 use hearth_render::atlas::TextureArray;
 use hearth_render::camera::Camera;
 use hearth_render::scene::SceneRenderer;
+use hearth_render::ui::UiRenderer;
 use hearth_render::{FrameTargets, GpuContext};
+use hearth_ui::{DrawList, Font, Lang, Rgba};
 use hearth_world::{BlockRegistry, CubeMap};
 
 use crate::environment::{EnvOverrides, EnvSampler};
@@ -98,6 +100,15 @@ pub struct Client {
     /// Extra ticks per second of play (asked of the server).
     pub time_warp: f64,
     pub status: String,
+    /// The interface: its renderer, font, words and this frame's drawing.
+    ui: Option<UiRenderer>,
+    font: Font,
+    pub lang: Lang,
+    draw: DrawList,
+    gui_scale: u32,
+    /// The debug screen (F3), and the frame rate it shows.
+    pub debug_overlay: bool,
+    pub fps: f64,
 }
 
 impl Client {
@@ -155,7 +166,22 @@ impl Client {
             calendar,
             time_warp: 0.0,
             status: "generating planet".into(),
+            ui: None,
+            font: Font::new(),
+            lang: Lang::load(
+                &[crate::scene::data_pack_dir().join("hearth")],
+                &options.language,
+            ),
+            draw: DrawList::new(1),
+            gui_scale: options.video.gui_scale,
+            debug_overlay: false,
+            fps: 0.0,
         }
+    }
+
+    /// Shows or hides the debug screen.
+    pub fn toggle_debug(&mut self) {
+        self.debug_overlay = !self.debug_overlay;
     }
 
     /// The default world: its name, seed and where it is saved.
@@ -521,6 +547,7 @@ impl Client {
                 self.color_format,
                 camera,
             );
+            self.draw_interface(ctx, enc, &targets);
             return;
         }
         let near = self.near_area();
@@ -568,6 +595,208 @@ impl Client {
         }
         scene.prepare(ctx, &self.camera, targets.size, &e, dt);
         scene.render(ctx, enc, targets.color, targets.depth, targets.size);
+        self.draw_interface(ctx, enc, &targets);
+    }
+
+    /// The interface over the frame: what death says, and the debug screen.
+    fn draw_interface(
+        &mut self,
+        ctx: &GpuContext,
+        enc: &mut wgpu::CommandEncoder,
+        targets: &FrameTargets<'_>,
+    ) {
+        let scale = hearth_ui::gui_scale(self.gui_scale, targets.size.1);
+        let mut draw = std::mem::take(&mut self.draw);
+        draw.clear(scale);
+        let (w, h) = (
+            targets.size.0 as f32 / scale as f32,
+            targets.size.1 as f32 / scale as f32,
+        );
+        if let Some(b) = &self.body
+            && let Some(death) = &b.dead
+        {
+            let what = death_words(&self.lang, death);
+            let lines = [what, self.lang.get("body.death.live_on").to_owned()];
+            draw.rect(0.0, h * 0.4 - 6.0, w, 34.0, Rgba([0, 0, 0, 140]));
+            for (k, line) in lines.iter().enumerate() {
+                let lw = self.font.width(line) as f32;
+                draw.text_shadowed(
+                    &self.font,
+                    line,
+                    ((w - lw) / 2.0).round(),
+                    (h * 0.4 + 12.0 * k as f32).round(),
+                    Rgba::rgb(240, 220, 200),
+                );
+            }
+        }
+        if self.debug_overlay {
+            let lines = self.debug_lines();
+            let width = lines.iter().map(|l| self.font.width(l)).max().unwrap_or(0) as f32;
+            let lh = hearth_ui::font::LINE as f32;
+            draw.rect(
+                1.0,
+                1.0,
+                width + 4.0,
+                lines.len() as f32 * lh + 3.0,
+                Rgba([0, 0, 0, 110]),
+            );
+            for (k, line) in lines.iter().enumerate() {
+                draw.text_shadowed(&self.font, line, 3.0, 3.0 + k as f32 * lh, Rgba::WHITE);
+            }
+        }
+        if !draw.vertices.is_empty() {
+            let font = &self.font;
+            let ui = self
+                .ui
+                .get_or_insert_with(|| UiRenderer::new(ctx, self.color_format, &font.pixels));
+            ui.draw(ctx, enc, targets.color, targets.size, &draw);
+        }
+        self.draw = draw;
+    }
+
+    /// The debug screen's lines.
+    fn debug_lines(&self) -> Vec<String> {
+        let l = &self.lang;
+        let mut out = vec![format!(
+            "{} {} · {:.0} fps",
+            l.get("game.title"),
+            hearth_core::GAME_VERSION,
+            self.fps
+        )];
+        let Some(w) = &self.world else {
+            out.push(self.status.clone());
+            return out;
+        };
+        let p = self.camera.pos;
+        let m = self.calendar.at(self.now_ticks());
+        let local = m.local_time(w.planet.solar_time_offset(p.x)) * 24.0;
+        let southern = w.planet.latitude(p.z) < 0.0;
+        let day = (m.season_progress() * self.calendar.days_per_season as f64) as u32 + 1;
+        let season = format!("{:?}", m.season(southern)).to_lowercase();
+        out.push(l.format(
+            "debug.position",
+            &[
+                ("x", &format!("{:.1}", p.x)),
+                ("y", &format!("{:.1}", p.y)),
+                ("z", &format!("{:.1}", p.z)),
+                ("lat", &format!("{:.2}", w.planet.latitude_deg(p.z))),
+                ("lon", &format!("{:.2}", w.planet.longitude_deg(p.x))),
+            ],
+        ));
+        out.push(l.format(
+            "debug.time",
+            &[
+                ("season", l.get(&format!("season.{season}"))),
+                ("day", &day.to_string()),
+                (
+                    "time",
+                    &format!("{:02}:{:02}", local as u32, (local.fract() * 60.0) as u32),
+                ),
+            ],
+        ));
+        if let Some(b) = &self.body {
+            let e = &b.exposure;
+            let rain = if e.rain_mm_h > 0.05 {
+                l.format(
+                    "debug.weather.rain",
+                    &[("rain", &format!("{:.1}", e.rain_mm_h))],
+                )
+            } else {
+                String::new()
+            };
+            let shelter = if e.radiant_w_m2 == 0.0 && e.sky_c_offset == 0.0 {
+                l.get("debug.weather.sheltered").to_owned()
+            } else {
+                String::new()
+            };
+            out.push(l.format(
+                "debug.weather",
+                &[
+                    ("air", &format!("{:.1}", e.air_c)),
+                    ("humidity", &format!("{:.0}", e.humidity * 100.0)),
+                    ("wind", &format!("{:.1}", e.wind_m_s)),
+                    ("rain", &rain),
+                    ("shelter", &shelter),
+                ],
+            ));
+            let s = &b.status;
+            out.push(l.format(
+                "debug.body",
+                &[
+                    ("hunger", l.get(s.hunger.key())),
+                    ("thirst", l.get(s.thirst.key())),
+                    ("warmth", l.get(s.warmth.key())),
+                    ("tiredness", l.get(s.tiredness.key())),
+                    ("core", &format!("{:.2}", s.core_c)),
+                    ("skin", &format!("{:.1}", s.skin_c)),
+                    ("stamina", &format!("{:.0}", s.stamina * 100.0)),
+                ],
+            ));
+            if !b.injuries.is_empty() {
+                let list: Vec<String> = b
+                    .injuries
+                    .iter()
+                    .map(|i| {
+                        format!(
+                            "{} ({:?}, {:.0}% healed)",
+                            i.id.rsplit(':').next().unwrap_or(&i.id),
+                            i.region,
+                            i.healed * 100.0
+                        )
+                    })
+                    .collect();
+                out.push(l.format("debug.injuries", &[("list", &list.join(", "))]));
+            }
+            if !b.illnesses.is_empty() {
+                out.push(l.format("debug.illnesses", &[("list", &b.illnesses.join(", "))]));
+            }
+        }
+        if self.mode == CameraMode::Free {
+            out.push(l.format(
+                "debug.free_camera",
+                &[("speed", &format!("{:.0}", self.speed))],
+            ));
+        } else {
+            let r = self.last_report.unwrap_or_default();
+            out.push(l.format(
+                "debug.movement",
+                &[
+                    ("mode", l.get("debug.mode.body")),
+                    ("stance", &format!("{:?}", self.mover.stance).to_lowercase()),
+                    (
+                        "ground",
+                        if self.mover.on_ground {
+                            " · on the ground"
+                        } else {
+                            ""
+                        },
+                    ),
+                    (
+                        "water",
+                        &if r.immersion > 0.0 {
+                            format!(" · {:.0}% in water", r.immersion * 100.0)
+                        } else {
+                            String::new()
+                        },
+                    ),
+                ],
+            ));
+        }
+        if let Some(s) = &self.scene {
+            let st = s.terrain.stats;
+            let (wanted, pending) = self.lod.as_ref().map_or((0, 0), |l| l.progress(&s.lod));
+            let _ = wanted;
+            out.push(l.format(
+                "debug.terrain",
+                &[
+                    ("cubes", &st.meshes.to_string()),
+                    ("visible", &st.visible_cubes.to_string()),
+                    ("lod_drawn", &s.lod.stats.drawn.to_string()),
+                    ("lod_queued", &pending.to_string()),
+                ],
+            ));
+        }
+        out
     }
 
     /// One-line status for the window title.
@@ -653,5 +882,31 @@ impl Client {
             }
             (None, _) => place,
         }
+    }
+}
+
+/// How a body died, in the player's words.
+fn death_words(l: &Lang, d: &hearth_body::Death) -> String {
+    use hearth_body::Death;
+    let key = match d {
+        Death::Hypothermia => "body.death.hypothermia",
+        Death::HeatStroke => "body.death.heat_stroke",
+        Death::Dehydration => "body.death.dehydration",
+        Death::Starvation => "body.death.starvation",
+        Death::BloodLoss => "body.death.blood_loss",
+        Death::Drowning => "body.death.drowning",
+        Death::Illness(id) => {
+            let name = id.rsplit(':').next().unwrap_or(id).replace('_', " ");
+            return l.format("body.death.illness", &[("illness", &name)]);
+        }
+        Death::Injury(cause) => {
+            return l.format("body.death.injury", &[("cause", cause)]);
+        }
+    };
+    let words = l.get(key);
+    let mut c = words.chars();
+    match c.next() {
+        Some(first) => format!("You {}{}.", first.to_lowercase(), c.as_str()),
+        None => String::new(),
     }
 }

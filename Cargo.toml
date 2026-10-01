@@ -24,6 +24,7 @@ hearth_body = { path = "crates/hearth_body" }
 hearth_physics = { path = "crates/hearth_physics" }
 hearth_player = { path = "crates/hearth_player" }
 hearth_protocol = { path = "crates/hearth_protocol" }
+hearth_ui = { path = "crates/hearth_ui" }
 hearth_render = { path = "crates/hearth_render" }
 hearth_lod = { path = "crates/hearth_lod" }
 

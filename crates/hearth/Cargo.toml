@@ -27,6 +27,7 @@ hearth_physics.workspace = true
 hearth_player.workspace = true
 hearth_protocol.workspace = true
 hearth_save.workspace = true
+hearth_ui.workspace = true
 bytemuck.workspace = true
 anyhow.workspace = true
 png.workspace = true

@@ -18,6 +18,7 @@ pub mod profiler;
 pub mod scene;
 pub mod sky;
 pub mod terrain;
+pub mod ui;
 pub mod water;
 
 pub use gpu::{GpuCapabilities, GpuContext, GpuError, PresentPreference, SurfaceState};

@@ -1,0 +1,17 @@
+[package]
+name = "hearth_ui"
+description = "The game's interface: its own pixel font, text layout, draw lists, localisation."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+rustc-hash.workspace = true
+serde_json.workspace = true
+log.workspace = true
+
+[lints]
+workspace = true
