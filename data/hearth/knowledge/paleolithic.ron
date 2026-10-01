@@ -179,6 +179,33 @@
             uncertain: true,
             notes: "Shelters are built with the structural building of V2-8.",
         ),
+        (
+            id: "telling_umbellifer", status: Implemented, name: "Telling the umbellifers apart", era: 0,
+            discovery: [
+                (route: Observation, trigger: "see:umbellifer", insight: 0.12, hint: "Some of the white-flowered stems are spotted purple and smell of mice."),
+                (route: Experiment, trigger: "eat:umbellifer", insight: 0.5, hint: "The root you ate tasted of carrot; that one did not."),
+            ],
+            history: (summary: "Foragers know the carrot family's edible roots from hemlock and water dropwort, which kill.", date: "as old as foraging", years_bp: 300000),
+            uncertain: true,
+        ),
+        (
+            id: "telling_white_mushroom", status: Implemented, name: "Telling white mushrooms apart", era: 0,
+            discovery: [
+                (route: Observation, trigger: "see:white_mushroom", insight: 0.1, hint: "Some pale mushrooms stand in a cup at their foot and keep their gills white."),
+                (route: Experiment, trigger: "eat:white_mushroom", insight: 0.5),
+            ],
+            history: (summary: "Field mushrooms and death caps grow in different places and differ in their gills and foot; most deaths from mushrooms are from the death cap.", date: "as old as foraging", years_bp: 300000),
+            uncertain: true,
+        ),
+        (
+            id: "telling_dark_berry", status: Implemented, name: "Telling dark berries apart", era: 0,
+            discovery: [
+                (route: Observation, trigger: "see:dark_berry", insight: 0.12, hint: "Bilberries grow low in clusters; the glossy black berries sit singly in a green star on a tall plant."),
+                (route: Experiment, trigger: "eat:dark_berry", insight: 0.5),
+            ],
+            history: (summary: "Bilberries and deadly nightshade share woods; the nightshade's single glossy berries in a green star are deadly.", date: "as old as foraging", years_bp: 300000),
+            uncertain: true,
+        ),
         // ---- Era 1: Middle Paleolithic ----
         (
             id: "fire_by_friction_hand_drill", status: Implemented, name: "Fire by hand drill", era: 1, requires: ["fire_keeping", "flake_cutting"],

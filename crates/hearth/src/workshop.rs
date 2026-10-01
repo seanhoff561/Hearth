@@ -845,6 +845,15 @@ impl Workshop {
             h.out.push(acted(&def.id, false, words));
             return;
         }
+        // A poultice or dressing on the newest injury that has not had one.
+        if let Some(t) = def.treats.clone() {
+            match h.player.body.untreated(&t) {
+                Some(i) => h.player.body.treat_injury(i, &t),
+                None => h
+                    .out
+                    .push(acted(&def.id, false, "There is no wound to treat.")),
+            }
+        }
         // What it does to its target.
         match (o.effect, aim) {
             (Effect::Remove, AimAt::Block { pos, .. }) => {
@@ -1483,6 +1492,17 @@ impl Workshop {
                         .unwrap_or_default();
                 let t: Vec<String> = with_verb("eat", &keys).collect();
                 self.hear(h, &t);
+                // Medicine works for some hours (willow bark eases pain).
+                if let Some(m) = kind
+                    .material
+                    .as_deref()
+                    .and_then(|m| h.lw.content.materials.get(m))
+                    .and_then(|m| m.medicine.clone())
+                {
+                    h.player
+                        .body
+                        .take_medicine(&m.kind, m.strength, m.hours as f64);
+                }
                 h.out.push(acted(
                     "eat",
                     true,

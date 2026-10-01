@@ -108,6 +108,17 @@ pub struct Appearance {
     pub roughness: Option<f32>,
 }
 
+/// What a medicinal plant does when taken (eaten, chewed, drunk), modestly (v2 §6.5).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Medicine {
+    /// `analgesic`: eases pain.
+    pub kind: String,
+    /// 0–1 how much.
+    pub strength: f32,
+    /// For how long (hours of the day scale).
+    pub hours: f32,
+}
+
 /// What a kilogram of a food gives: grams of protein, fat and carbohydrate, its water, the
 /// fresh-food vitamins in it, and what eating it as it is risks.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -179,6 +190,9 @@ entry! {
         /// How many days it keeps at 20 °C before it spoils; none: it does not spoil.
         #[serde(default)]
         pub keeps_days: Option<f32>,
+        /// What it does as medicine, taken.
+        #[serde(default)]
+        pub medicine: Option<Medicine>,
         pub appearance: Appearance,
     }
 }

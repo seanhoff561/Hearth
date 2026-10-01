@@ -416,6 +416,9 @@ pub struct Body {
     /// Real seconds the skin of the hands, the feet and the face has been freezing.
     #[serde(default)]
     pub freezing_s: [f64; 3],
+    /// Medicines working: (kind, strength 0–1, real seconds left).
+    #[serde(default)]
+    pub medicines: Vec<(String, f32, f64)>,
     seed: u64,
     draws: u64,
     /// The last step's heat flows (not saved).
@@ -446,6 +449,7 @@ impl Body {
             stamina: 1.0,
             blood_l: cfg.params.blood_l as f64,
             injuries: Vec::new(),
+            medicines: Vec::new(),
             illnesses: Vec::new(),
             dead: None,
             age_s: 0.0,
@@ -643,6 +647,10 @@ impl Body {
             condition *= 1.3;
         }
 
+        for m in self.medicines.iter_mut() {
+            m.2 -= dt;
+        }
+        self.medicines.retain(|m| m.2 > 0.0);
         let mut blood_lost = 0.0;
         let mut rolls = Vec::new();
         for (index, inj) in self.injuries.iter_mut().enumerate() {
@@ -653,7 +661,15 @@ impl Body {
             inj.age_s += dt;
             // Bleeding, slowed by pressure and bandages, clotting over time.
             let stemmed = inj.treated_with(&STEMMING);
-            let rate = inj.bleeding_ml_min * if stemmed { 0.1 } else { 1.0 };
+            let herbal = inj.treated_with(&harm::HERBAL_STEMMING);
+            let rate = inj.bleeding_ml_min
+                * if stemmed {
+                    0.1
+                } else if herbal {
+                    0.4
+                } else {
+                    1.0
+                };
             blood_lost += rate / 60.0 * dt / 1000.0;
             let clot = inj.clotting_s(kind) / if stemmed { 3.0 } else { 1.0 };
             inj.bleeding_ml_min *= (-dt / clot).exp();
@@ -836,6 +852,23 @@ impl Body {
     }
 
     /// Applies a treatment to an injury.
+    /// Takes a medicine: `kind` (`analgesic`) works at `strength` for `hours` of body time.
+    pub fn take_medicine(&mut self, kind: &str, strength: f32, hours: f64) {
+        self.medicines.retain(|(k, _, _)| k != kind);
+        self.medicines.push((
+            kind.to_owned(),
+            strength.clamp(0.0, 1.0),
+            hours.max(0.0) * 3600.0,
+        ));
+    }
+
+    /// The most recent injury that has not had a treatment, if any.
+    pub fn untreated(&self, treatment: &str) -> Option<usize> {
+        self.injuries
+            .iter()
+            .rposition(|i| i.healed < 1.0 && !i.treatments.iter().any(|t| t == treatment))
+    }
+
     pub fn treat_injury(&mut self, index: usize, treatment: &str) {
         if let Some(i) = self.injuries.get_mut(index)
             && !i.treatments.iter().any(|t| t == treatment)
@@ -976,7 +1009,14 @@ impl Body {
                 fx.jump = false;
             }
         }
-        fx.pain = (pain as f32).min(1.0);
+        // An analgesic (willow bark) takes the edge off.
+        let eased = self
+            .medicines
+            .iter()
+            .filter(|(k, _, _)| k == "analgesic")
+            .map(|(_, s, _)| *s)
+            .fold(0.0f32, f32::max);
+        fx.pain = (pain as f32 * (1.0 - eased)).min(1.0);
         for e in self.active_illness_effects(cfg) {
             match e {
                 "weakness" => fx.strength = fx.strength.min(0.6),

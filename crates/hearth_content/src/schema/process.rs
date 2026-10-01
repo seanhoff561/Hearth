@@ -222,6 +222,10 @@ entry! {
         /// berries); none: as often as wanted.
         #[serde(default)]
         pub harvests: Option<u8>,
+        /// A treatment it gives the body's most recent injury that has not had it (a poultice
+        /// of yarrow on a cut).
+        #[serde(default)]
+        pub treats: Option<String>,
     }
 }
 

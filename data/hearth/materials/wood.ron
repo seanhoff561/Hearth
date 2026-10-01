@@ -50,6 +50,7 @@
         (id: "linden_bast", name: "lime bast", category: PlantFibre, tags: ["fibre", "cordage"], density_kg_m3: 1200,
          strength: (tensile_mpa: 150), appearance: (color: "#c8b58f", pattern: Fibrous, roughness: 0.7), uncertain: true),
         (id: "willow_bark", name: "willow bark", category: Bark, tags: ["medicine"], density_kg_m3: 700,
+         medicine: Some((kind: "analgesic", strength: 0.3, hours: 4.0)),
          appearance: (color: "#6d6a57", pattern: Bark, roughness: 0.9),
          notes: "Contains salicin; chewed or brewed it eases pain a little."),
         (id: "white_oak_wood", name: "white oak", category: Wood, tags: ["firewood", "hardwood", "construction", "tannin", "watertight"], density_kg_m3: 755,

@@ -80,6 +80,26 @@ pub struct Items {
 }
 
 impl Items {
+    /// The same kinds with some renamed (`rename` gives a kind's new name): what a person sees
+    /// who cannot yet tell look-alikes apart.
+    pub fn renamed(&self, rename: impl Fn(&ItemKind) -> Option<String>) -> Self {
+        let kinds = self
+            .kinds
+            .iter()
+            .map(|k| {
+                let mut k = k.clone();
+                if let Some(n) = rename(&k) {
+                    k.name = n;
+                }
+                k
+            })
+            .collect();
+        Self {
+            kinds,
+            index: self.index.clone(),
+        }
+    }
+
     pub fn from_content(c: &Content) -> Self {
         let mut kinds: Vec<ItemKind> = c
             .items

@@ -19,5 +19,13 @@
          onset: (hours: 240, scale: Day), lasts: (hours: 168, scale: Day), effects: ["fever", "chills", "weakness"],
          treatments: ["rest", "water", "shade"], lethality: 0.005, uncertain: true,
          notes: "Mild mosquito-borne fever of tropical wetlands."),
+        (id: "plant_poisoning", status: Implemented, name: "Plant poisoning", causes: ["toxic_plant"],
+         onset: (hours: 1, scale: Day), lasts: (hours: 24, scale: Day), effects: ["nausea", "weakness", "pain"],
+         treatments: ["rest", "clean_water"], lethality: 0.01,
+         notes: "Foxglove, fly agaric, raw bracken and the like: sickness, a racing or slowed heart."),
+        (id: "deadly_poisoning", status: Implemented, name: "Deadly poisoning", causes: ["deadly_plant"],
+         onset: (hours: 4, scale: Day), lasts: (hours: 48, scale: Day), effects: ["nausea", "weakness", "pain", "dehydration"],
+         treatments: ["rest", "clean_water"], lethality: 0.4,
+         notes: "Hemlock, death cap, deadly nightshade, yew: many who eat them die."),
     ],
 )

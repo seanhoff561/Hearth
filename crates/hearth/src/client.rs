@@ -175,6 +175,11 @@ pub struct Client {
     figure_boxes: Vec<FigureInstance>,
     /// Trees falling: drawn as boxes turning about their stump until they come to rest.
     falling: Vec<Falling>,
+    /// The item kinds as the server has them (`items` is them as the player sees them, with
+    /// look-alikes not yet told apart under their group's name).
+    base_items: Option<Arc<hearth_items::Items>>,
+    /// The look-alike groups not yet told apart: (group, its materials).
+    hidden_looks: Vec<(String, Vec<String>)>,
     /// The eyelids (0 open, 1 shut): shut asleep or unconscious, slow to open on waking.
     eyes_shut: f32,
     /// Why the player last woke, and how long ago (s).
@@ -295,6 +300,8 @@ impl Client {
             view_bobbing: options.video.view_bobbing,
             figure_boxes: Vec::new(),
             falling: Vec::new(),
+            base_items: None,
+            hidden_looks: Vec::new(),
             eyes_shut: 0.0,
             woke: None,
             heart_phase: 0.0,
@@ -903,7 +910,13 @@ impl Client {
                     .crafting
                     .as_ref()
                     .is_some_and(|c| c.offers.iter().any(|o| o.act.is_some()));
-                offers.then(|| b.name.path().replace('_', " "))
+                let hidden = b.def.material.as_deref().and_then(|m| {
+                    self.hidden_looks
+                        .iter()
+                        .find(|(_, mats)| mats.iter().any(|x| x == m))
+                        .map(|(g, _)| l.get(&format!("lookalike.{g}")).to_owned())
+                });
+                offers.then(|| hidden.unwrap_or_else(|| b.name.path().replace('_', " ")))
             }
         }
     }
@@ -1587,6 +1600,7 @@ impl Client {
                     self.body_cfg = Some(r.body);
                     self.death_rules = r.death_rules;
                     self.ended = r.ended;
+                    self.base_items = Some(r.items.clone());
                     self.items = Some(r.items);
                     self.crafting = Some(Crafting::new(
                         r.content,
@@ -1657,6 +1671,26 @@ impl Client {
                 ToClient::Knowledge(k) => {
                     if let Some(c) = &mut self.crafting {
                         c.knowledge = *k;
+                        // Look-alikes go by their group's name until they are told apart.
+                        let hidden =
+                            hearth_craft::knowledge::hidden_looks(&c.content, &c.knowledge);
+                        if hidden != self.hidden_looks
+                            && let Some(base) = &self.base_items
+                        {
+                            let lang = crate::interface::lang();
+                            let names: Vec<(String, String)> = hidden
+                                .iter()
+                                .flat_map(|(g, mats)| {
+                                    let n = lang.get(&format!("lookalike.{g}")).to_owned();
+                                    mats.iter().map(move |m| (m.clone(), n.clone()))
+                                })
+                                .collect();
+                            self.items = Some(Arc::new(base.renamed(|kind| {
+                                let m = kind.material.as_deref()?;
+                                names.iter().find(|(x, _)| x == m).map(|(_, n)| n.clone())
+                            })));
+                            self.hidden_looks = hidden;
+                        }
                     }
                 }
                 ToClient::Work(w) => {

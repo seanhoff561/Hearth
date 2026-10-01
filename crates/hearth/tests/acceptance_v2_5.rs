@@ -1532,14 +1532,17 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
     // ---- Bone: scratching bone teaches burins and bone work; awls; needles. ----
     bot.until_known("burin", "scratch_bone", AimAt::Nothing, 6);
     bot.until_known("bone_antler_working", "scratch_bone", AimAt::Nothing, 6);
-    if bot.count("blade/flint") == 0 {
-        bot.cobbles(2, &knappable);
-        bot.work("test_nodule", AimAt::Nothing);
-        bot.work("knap_blades", AimAt::Nothing);
-    }
-    for _ in 0..3 {
+    // A blade for the burin (a nodule may shatter, a blade may snap: try again).
+    for _ in 0..8 {
         if bot.count("burin/flint") > 0 {
             break;
+        }
+        if bot.count("blade/flint") == 0 {
+            if bot.count("core/flint") == 0 {
+                bot.cobbles(2, &knappable);
+                bot.work("test_nodule", AimAt::Nothing);
+            }
+            bot.work("knap_blades", AimAt::Nothing);
         }
         bot.work("make_burin", AimAt::Nothing);
     }
@@ -1624,6 +1627,16 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         );
     }
     assert!(bot.knows("drying_and_smoking"), "{:?}", bot.w.learned);
+    // Cord for the rack's lashings (what the clothes left over may not be enough).
+    for _ in 0..8 {
+        if bot.count("cord/") >= 4 {
+            break;
+        }
+        if bot.count("hank/sinew") == 0 {
+            bot.butcher_one();
+        }
+        bot.work("twist_sinew", AimAt::Nothing);
+    }
     let rack_ground = bot.site(-2, 0);
     let rack = rack_ground.up();
     assert!(

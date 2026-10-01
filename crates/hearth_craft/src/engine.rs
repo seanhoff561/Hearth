@@ -94,6 +94,7 @@ impl Crafts {
                     mets: 3.0,
                     wear: 0.0,
                     harvests: None,
+                    treats: None,
                     status: Status::Implemented,
                     notes: None,
                     realism_source: None,

@@ -239,6 +239,32 @@ pub struct KnowledgeState {
     pub made: BTreeSet<String>,
 }
 
+/// The look-alike groups the player cannot yet tell apart, and the materials in each: a
+/// material is in a group when it carries the group's tag (umbellifer, white_mushroom,
+/// dark_berry), and the group is told apart by knowing `telling_<group>`.
+pub fn hidden_looks(c: &hearth_content::Content, k: &KnowledgeState) -> Vec<(String, Vec<String>)> {
+    let mut groups: Vec<String> = c
+        .plants
+        .iter()
+        .filter_map(|p| p.look_alike.clone())
+        .collect();
+    groups.sort();
+    groups.dedup();
+    groups
+        .into_iter()
+        .filter(|g| !k.knows(&format!("hearth:telling_{g}")))
+        .map(|g| {
+            let mats = c
+                .materials
+                .iter()
+                .filter(|m| m.tags.contains(&g))
+                .map(|m| m.id.clone())
+                .collect();
+            (g, mats)
+        })
+        .collect()
+}
+
 impl KnowledgeState {
     /// Everything implemented, known (Open mode).
     pub fn open(graph: &Graph, tick: u64) -> Self {

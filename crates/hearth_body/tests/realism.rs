@@ -482,3 +482,78 @@ fn falls_hurt_by_their_height() {
     let (_, _, dead) = outcome(25.0);
     assert!(dead > 0.95);
 }
+
+#[test]
+fn yarrow_stems_bleeding_and_willow_bark_eases_pain() {
+    let cfg = config();
+    let lost = |treat: bool| {
+        let mut b = Body::new(&cfg, 77);
+        let i = b
+            .injure(
+                &cfg,
+                "deep_wound",
+                hearth_content::schema::body::BodyRegion::UpperLeg,
+                hearth_body::Side::Left,
+                0.6,
+            )
+            .expect("a wound");
+        if treat {
+            let n = b.untreated("yarrow").expect("untreated");
+            assert_eq!(n, i);
+            b.treat_injury(n, "yarrow");
+        }
+        let before = b.blood_l;
+        run(
+            &mut b,
+            &cfg,
+            0.25,
+            |_, _| {
+                (
+                    hearth_body::Exposure::mild(),
+                    wearing(&["loincloth"]),
+                    cfg.activity("resting"),
+                )
+            },
+            |_| false,
+        );
+        before - b.blood_l
+    };
+    let (bare, dressed) = (lost(false), lost(true));
+    println!("blood lost in a quarter hour: {bare:.3} l bare, {dressed:.3} l under yarrow");
+    assert!(
+        dressed < bare * 0.6 && dressed > bare * 0.2,
+        "{dressed} vs {bare}"
+    );
+
+    // Pain eased by a third for some hours, then back.
+    let mut b = Body::new(&cfg, 78);
+    b.injure(
+        &cfg,
+        "fracture",
+        hearth_content::schema::body::BodyRegion::LowerArm,
+        hearth_body::Side::Right,
+        0.7,
+    );
+    let pain = |b: &Body| b.effects(&cfg).pain;
+    let raw = pain(&b);
+    b.take_medicine("analgesic", 0.3, 4.0);
+    let eased = pain(&b);
+    assert!(
+        raw > 0.1 && (eased - raw * 0.7).abs() < 0.02,
+        "{raw} → {eased}"
+    );
+    run(
+        &mut b,
+        &cfg,
+        5.0,
+        |_, _| {
+            (
+                hearth_body::Exposure::mild(),
+                wearing(&["loincloth"]),
+                cfg.activity("resting"),
+            )
+        },
+        |_| false,
+    );
+    assert!(b.medicines.is_empty(), "worn off");
+}

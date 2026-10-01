@@ -2,7 +2,7 @@
 //! states their parts are drawn with.
 
 use hearth_content::Content;
-use hearth_content::schema::flora::{ClimateEnvelope, TreeForm};
+use hearth_content::schema::flora::{ClimateEnvelope, Ground, TreeForm, Understory};
 use hearth_flora::{Part, Templates};
 use hearth_world::{BlockRegistry, BlockStateId};
 
@@ -98,12 +98,47 @@ pub struct PlaceClimate {
     pub wet: bool,
 }
 
-/// Every tree species of the content: its templates, its blocks and its niche (same order).
+/// A plant of the understory as the generator places it.
+#[derive(Debug, Clone)]
+pub struct UnderPlant {
+    pub id: String,
+    pub niche: Niche,
+    pub understory: Understory,
+    /// Its block, and the upper half's for plants two blocks tall.
+    pub lower: BlockStateId,
+    pub upper: Option<BlockStateId>,
+}
+
+/// The ground under a place, as the understory reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct PlaceGround {
+    pub wet: bool,
+    pub rich: bool,
+    pub acid: bool,
+    pub disturbed: bool,
+}
+
+impl PlaceGround {
+    fn has(&self, g: Ground) -> bool {
+        match g {
+            Ground::Wet => self.wet,
+            Ground::Rich => self.rich,
+            Ground::Acid => self.acid,
+            Ground::Disturbed => self.disturbed,
+            // Lime is not yet told from the bedrock: neither for nor against.
+            Ground::Lime => true,
+        }
+    }
+}
+
+/// Every tree species of the content: its templates, its blocks and its niche (same order);
+/// and the plants of the understory.
 #[derive(Debug)]
 pub struct Forest {
     pub templates: Templates,
     pub blocks: Vec<SpeciesBlocks>,
     pub niches: Vec<Niche>,
+    pub understory: Vec<UnderPlant>,
 }
 
 /// The coarse climate class a Köppen code belongs to.
@@ -243,11 +278,96 @@ impl Forest {
                 Err(e) => log::warn!("tree `{}` is left out: {e}", p.id),
             }
         }
+        let mut understory = Vec::new();
+        for p in content.plants.iter() {
+            let Some(u) = &p.understory else {
+                continue;
+            };
+            let block = u.block.as_str();
+            let (lower, upper) = match (
+                reg.parse_state(&format!("{block}[half=lower]")),
+                reg.parse_state(&format!("{block}[half=upper]")),
+            ) {
+                (Ok(l), Ok(h)) => (l, Some(h)),
+                _ => match reg.parse_state(block) {
+                    Ok(s) => (s, None),
+                    Err(e) => {
+                        log::warn!("plant `{}` is left out: {e}", p.id);
+                        continue;
+                    }
+                },
+            };
+            understory.push(UnderPlant {
+                id: p.id.clone(),
+                niche: Niche {
+                    climate: p.climate.clone(),
+                    shade_tolerance: p.shade_tolerance,
+                    drainage: p.soil.drainage,
+                    conifer: false,
+                },
+                understory: u.clone(),
+                lower,
+                upper,
+            });
+        }
         Self {
             templates: Templates::new(species),
             blocks,
             niches,
+            understory,
         }
+    }
+
+    /// A plant of the understory for a column, or none: each species as likely as its climate,
+    /// the light under the canopy (0 deep shade … 1 open), the ground and its abundance say,
+    /// in patches of its own size where it grows in patches. `roll` and `patch_roll` (by
+    /// species and patch) are the column's and the patches' draws.
+    pub fn choose_under(
+        &self,
+        c: &PlaceClimate,
+        ground: &PlaceGround,
+        light: f32,
+        roll: f32,
+        patch_roll: impl Fn(usize, f32) -> f32,
+    ) -> Option<usize> {
+        let mut odds: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
+        for (i, p) in self.understory.iter().enumerate() {
+            let u = &p.understory;
+            let climate = p.niche.suits(c).min(1.0);
+            let lit = fit(light, u.light.0, u.light.1, 0.15);
+            let soil = if u.ground.is_empty() || u.ground.iter().any(|g| ground.has(*g)) {
+                1.0
+            } else {
+                0.25
+            };
+            let fit = climate * lit * soil;
+            let p = if fit < 0.15 {
+                0.0
+            } else if u.patch_m > 0.0 {
+                // A patch is there or not; inside one, the plant is thick on the ground.
+                if patch_roll(i, u.patch_m) < u.abundance * fit {
+                    0.35 * fit
+                } else {
+                    0.0
+                }
+            } else {
+                0.02 * u.abundance * fit
+            };
+            odds.push(p);
+        }
+        let total: f32 = odds.iter().sum::<f32>().min(0.7);
+        if roll >= total {
+            return None;
+        }
+        let sum: f32 = odds.iter().sum();
+        let mut r = roll / total * sum;
+        for (i, p) in odds.iter().enumerate() {
+            if r < *p {
+                return Some(i);
+            }
+            r -= p;
+        }
+        None
     }
 
     /// The species of a place, drawn by `roll` (0–1) from those that fit it, weighted by how

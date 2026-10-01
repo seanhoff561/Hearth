@@ -1086,6 +1086,30 @@ fn tree_blocks(c: &Content, blocks: &[(String, Option<String>)], report: &mut Re
         blocks.iter().any(|(b, _)| *b == full)
     };
     for (p, o) in c.plants.iter_with_origin() {
+        if let Some(u) = &p.understory
+            && !known(u.block.as_str())
+        {
+            report.error(
+                "unknown-ref",
+                Some(o.file.clone()),
+                o.line,
+                format!("`{}` grows as unknown block `{}`", p.id(), u.block),
+            );
+        }
+        // Look-alikes are told apart by a knowledge of their group.
+        if let Some(g) = &p.look_alike
+            && c.knowledge.get(&format!("hearth:telling_{g}")).is_none()
+        {
+            report.error(
+                "unknown-ref",
+                Some(o.file.clone()),
+                o.line,
+                format!(
+                    "`{}` looks like the other {g} plants, but no `telling_{g}` tells them apart",
+                    p.id()
+                ),
+            );
+        }
         let Some(t) = &p.tree else {
             continue;
         };

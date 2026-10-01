@@ -137,6 +137,7 @@ impl Priorities<'_> {
         match b.tree_part.get(s.0 as usize) {
             Some(1) => return 60,
             Some(2) => return 40,
+            Some(3) => return 10,
             _ => {}
         }
         if s == b.mossy_cobblestone || s == b.cobblestone || s == b.cactus {
@@ -535,11 +536,15 @@ impl FeatureGen {
                 self.sugar_cane(w, wg, col, x, z, top, r2);
             }
             _ => {
-                // Temperate grasslands and forests: grass, flowers in clusters.
+                // Temperate grasslands and forests: the understory's species, then grass and
+                // flowers in clusters.
                 let forest = matches!(
                     s.biome,
                     Biome::BroadleafForest | Biome::BirchForest | Biome::MixedForest
                 );
+                if grassy && self.understory(w, wg, x, z, top, s, flower_n) {
+                    return;
+                }
                 if grassy {
                     if flower_n > 0.42 && r < if forest { 0.12 } else { 0.3 } {
                         let f = if forest {
@@ -557,13 +562,6 @@ impl FeatureGen {
                         tall(w, b.tall_grass);
                     } else if forest && r < 0.43 {
                         w.put(x, top, z, b.fern);
-                    } else if forest && r < 0.445 {
-                        tall(w, b.hazel);
-                    } else if (forest || s.river.is_some()) && r < 0.455 {
-                        w.put(x, top, z, b.bramble);
-                    } else if (forest || s.river.is_some()) && flower_n > 0.1 && r < 0.475 {
-                        // Nettles in patches on rich ground.
-                        w.put(x, top, z, b.nettle);
                     } else if forest && r > 0.997 {
                         w.put(
                             x,
@@ -582,6 +580,66 @@ impl FeatureGen {
                 }
             }
         }
+    }
+
+    /// A plant of the understory's species on a column, if one grows there. Whether one did.
+    #[allow(clippy::too_many_arguments)]
+    fn understory(
+        &self,
+        w: &mut Writer<'_>,
+        wg: &WorldGenerator,
+        x: i32,
+        z: i32,
+        top: i32,
+        s: &ColumnSample,
+        flower_n: f32,
+    ) -> bool {
+        let forest = &wg.forest;
+        if forest.understory.is_empty() {
+            return false;
+        }
+        let climate = crate::trees::PlaceClimate {
+            mean_c: s.temperature,
+            warm_c: s.t_warm,
+            cold_c: 2.0 * s.temperature - s.t_warm,
+            precip_mm: s.precipitation,
+            class: s.climate,
+            biome: s.biome,
+            wet: s.biome == Biome::Wetland,
+        };
+        let wet = s.biome == Biome::Wetland
+            || s.river
+                .is_some_and(|r| r.distance < r.width * 0.5 + 14.0 && s.height - r.level < 2.5);
+        // Light under the canopy: closed where trees are dense and the stand has grown.
+        let stand = self.stand_age(x, z);
+        let closure = (s.tree_density * 1.9).min(1.0) * (stand / 40.0).min(1.0);
+        let light = 1.0 - 0.85 * closure;
+        let ground = crate::trees::PlaceGround {
+            wet,
+            rich: flower_n > 0.1 || wet,
+            acid: matches!(s.surface, Surface::Podzol | Surface::Moss) || s.precipitation > 1100.0,
+            disturbed: s.slope > 0.35 || (s.tree_density > 0.3 && closure < 0.45),
+        };
+        let seed = self.seed;
+        let roll = unit_f32(hash_2d(seed ^ 0x0de5, x, z));
+        let patch = |i: usize, size: f32| {
+            let size = size.max(2.0) as i32;
+            unit_f32(hash_3d(
+                seed ^ 0x9a7c,
+                x.div_euclid(size),
+                i as i32,
+                z.div_euclid(size),
+            ))
+        };
+        let Some(i) = forest.choose_under(&climate, &ground, light, roll, patch) else {
+            return false;
+        };
+        let p = &forest.understory[i];
+        w.put(x, top, z, p.lower);
+        if let Some(up) = p.upper {
+            w.put(x, top + 1, z, up);
+        }
+        true
     }
 
     /// Sugar cane on banks directly next to water.

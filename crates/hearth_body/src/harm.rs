@@ -17,9 +17,11 @@ pub enum Side {
 }
 
 /// Treatments that keep a wound from becoming infected.
-pub const CLEANING: [&str; 4] = ["clean_water", "boiled_water", "honey", "resin"];
+pub const CLEANING: [&str; 5] = ["clean_water", "boiled_water", "honey", "resin", "plantain"];
 /// Treatments that stem bleeding.
 pub const STEMMING: [&str; 2] = ["pressure", "bandage"];
+/// Herbs pressed on a wound that slow its bleeding a little (yarrow).
+pub const HERBAL_STEMMING: [&str; 1] = ["yarrow"];
 /// Real seconds after which an uncleaned wound may become infected.
 pub const INFECTION_WINDOW_S: f64 = 6.0 * 3600.0;
 

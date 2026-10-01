@@ -151,6 +151,65 @@ pub struct PlantAppearance {
     /// Crown shape in words (the growth model reads `TreeForm::crown`).
     #[serde(default)]
     pub crown: Option<String>,
+    /// The colour of its fruit or berries.
+    #[serde(default)]
+    pub fruit: Option<Color>,
+    /// How its block is drawn (herbs, shrubs, ferns and fungi).
+    #[serde(default)]
+    pub sprite: Option<Sprite>,
+}
+
+/// The drawings of the understory's plants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Sprite {
+    /// A leafy bush hung with fruit.
+    Bush,
+    /// A low, dense, twiggy shrub (heather, bilberry).
+    Heath,
+    /// Leaves in a low ring on the ground.
+    Rosette,
+    /// A tall stem crowned with an umbrella of small flowers (the carrot family).
+    Umbel,
+    /// A tall stem of flowers up its length (foxglove).
+    Spike,
+    Fern,
+    /// A cap on a stem.
+    Mushroom,
+    /// Strap-shaped leaves in a clump (wild garlic).
+    Clump,
+    /// Low runners with leaves and fruit (strawberry).
+    Creeper,
+}
+
+/// Ground the understory's plants need.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Ground {
+    Wet,
+    /// Rich in nitrogen (old camps, middens, woodland on good soil).
+    Rich,
+    /// Poor and acid (heath, pine and birch woods on sand).
+    Acid,
+    /// On lime.
+    Lime,
+    /// Broken ground: clearings, burns, banks.
+    Disturbed,
+}
+
+/// How a herb, shrub, fern or fungus of the understory is drawn and where it grows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Understory {
+    /// The block it is drawn as.
+    pub block: IdRef,
+    /// How common it is where it fits best, 0–1 (a carpet of wild garlic 1, a lone foxglove
+    /// a few hundredths).
+    pub abundance: f32,
+    /// The light it grows in: 0 deep shade … 1 full sun.
+    pub light: Range,
+    #[serde(default)]
+    pub ground: Vec<Ground>,
+    /// It grows in patches this wide (m); 0 scattered.
+    #[serde(default)]
+    pub patch_m: f32,
 }
 
 /// Crown shapes of the growth model.
@@ -291,6 +350,13 @@ entry! {
         /// How a tree or woody shrub grows (the growth model).
         #[serde(default)]
         pub tree: Option<TreeForm>,
+        /// How a plant of the understory is drawn and where it grows.
+        #[serde(default)]
+        pub understory: Option<Understory>,
+        /// Plants of one group (umbellifers, white mushrooms, dark berries) look alike until
+        /// the player has learned to tell them apart (`knowledge` `telling_<group>`).
+        #[serde(default)]
+        pub look_alike: Option<String>,
         #[serde(default)]
         pub parts: Vec<PlantPart>,
         /// 0–1 flammability of the living plant.

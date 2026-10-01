@@ -25,7 +25,8 @@ pub struct WoodStates {
 #[derive(Debug, Clone)]
 pub struct GenBlocks {
     pub air: BlockStateId,
-    /// Per state: 1 a tree's wood (log, limb, bark), 2 its foliage, 0 anything else.
+    /// Per state: 1 a tree's wood (log, limb, bark), 2 its foliage, 3 a plant of the
+    /// understory, 0 anything else.
     pub tree_part: Vec<u8>,
     /// Per state: rock made of a material (bedrock and outcrops), anything caves may cut, and
     /// ground plants can grow in.
@@ -156,6 +157,11 @@ impl GenBlocks {
                     1
                 } else if path.ends_with("_leaves") {
                     2
+                } else if block.def.render == hearth_world::RenderKind::Cross
+                    && block.def.fluid.is_none()
+                    && !block.def.collision
+                {
+                    3
                 } else {
                     0
                 };

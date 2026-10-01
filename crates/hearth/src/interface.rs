@@ -22,9 +22,11 @@ pub struct Interface {
 
 impl Interface {
     pub fn new(language: &str) -> Self {
+        let lang = load_lang(language);
+        set_current(&lang);
         Self {
             font: Font::new(),
-            lang: load_lang(language),
+            lang,
             state: UiState::default(),
             draw: DrawList::new(1),
             renderer: None,
@@ -36,6 +38,7 @@ impl Interface {
 
     pub fn set_language(&mut self, language: &str) {
         self.lang = load_lang(language);
+        set_current(&self.lang);
     }
 
     /// The languages the packs have words for.
@@ -140,4 +143,25 @@ impl Interface {
 
 fn load_lang(code: &str) -> Lang {
     Lang::load(&[crate::scene::data_pack_dir().join("hearth")], code)
+}
+
+/// The words of the language in use, for what is named away from the interface (the names
+/// look-alikes go by); English until the interface sets one.
+static CURRENT: std::sync::RwLock<Option<std::sync::Arc<Lang>>> = std::sync::RwLock::new(None);
+
+fn set_current(l: &Lang) {
+    if let Ok(mut c) = CURRENT.write() {
+        *c = Some(std::sync::Arc::new(l.clone()));
+    }
+}
+
+pub fn lang() -> std::sync::Arc<Lang> {
+    if let Some(l) = CURRENT.read().ok().and_then(|c| c.clone()) {
+        return l;
+    }
+    let l = std::sync::Arc::new(load_lang("en_us"));
+    if let Ok(mut c) = CURRENT.write() {
+        *c = Some(l.clone());
+    }
+    l
 }

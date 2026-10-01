@@ -38,6 +38,61 @@
             inputs: [], duration: (hours: 0.03),
             outputs: [(item: Form(form: "stick", materials: (ids: ["hazel_wood"])), amount: (1, 2)), (item: Form(form: "twig", materials: (ids: ["hazel_wood"])), amount: (2, 4))],
         ),
+        // ---- The understory (V2-6): berries, greens, roots, mushrooms, bedding, wound herbs. ----
+        (
+            id: "pick_summer_berries", status: Implemented, name: "Pick berries", action: "pick the ripe berries",
+            verb: "pick", target: Block(Any([Id("raspberry"), Id("bilberry"), Id("wild_strawberry"), Id("deadly_nightshade")])), harvests: Some(3),
+            inputs: [], conditions: [Season([Summer])], duration: (hours: 0.15),
+            outputs: [(item: Form(form: "handful"), amount: (1, 2))],
+        ),
+        (
+            id: "pick_autumn_berries", status: Implemented, name: "Pick hips and berries", action: "pick the hips and berries",
+            verb: "pick", target: Block(Any([Id("lingonberry"), Id("dog_rose"), Id("juniper")])), harvests: Some(3),
+            inputs: [], conditions: [Season([Autumn, Winter])], duration: (hours: 0.15),
+            outputs: [(item: Form(form: "handful"), amount: (1, 2))],
+        ),
+        (
+            id: "pick_greens", status: Implemented, name: "Pick leaves", action: "pick the young leaves",
+            verb: "pick", target: Block(Any([Id("wood_sorrel"), Id("ribwort_plantain"), Id("dandelion"), Id("wild_garlic")])), harvests: Some(2),
+            inputs: [], conditions: [Season([Spring, Summer])], duration: (hours: 0.1),
+            outputs: [(item: Form(form: "handful"), amount: (1, 1))],
+        ),
+        (
+            id: "pick_herbs", status: Implemented, name: "Pick herbs", action: "strip the leaves from the stems",
+            verb: "pick", target: Block(Any([Id("yarrow"), Id("foxglove")])), harvests: Some(2),
+            inputs: [], conditions: [Season([Spring, Summer, Autumn])], duration: (hours: 0.1),
+            outputs: [(item: Form(form: "handful"), amount: (1, 1))],
+        ),
+        (
+            id: "dig_roots", status: Implemented, name: "Dig up roots", action: "dig the root out",
+            verb: "dig", target: Block(Any([Id("wild_carrot"), Id("burdock"), Id("hemlock")])), effect: Remove,
+            inputs: [], tools: [(property: "digging", min: 0.15)], conditions: [Season([Spring, Autumn])], duration: (hours: 0.15),
+            outputs: [(item: Form(form: "handful"), amount: (1, 2))],
+        ),
+        (
+            id: "gather_mushrooms", status: Implemented, name: "Gather mushrooms", action: "twist the mushrooms free",
+            verb: "pick", target: Block(Any([Id("chanterelle"), Id("porcini"), Id("field_mushroom"), Id("death_cap"), Id("fly_agaric")])), effect: Remove,
+            inputs: [], conditions: [Season([Summer, Autumn])], duration: (hours: 0.05),
+            outputs: [(item: Form(form: "handful"), amount: (1, 2))],
+        ),
+        (
+            id: "cut_bracken", status: Implemented, name: "Cut bracken", action: "cut the fronds",
+            verb: "cut", target: Block(Any([Id("bracken"), Id("heather")])), effect: Remove,
+            inputs: [], conditions: [Season([Summer, Autumn])], duration: (hours: 0.1),
+            outputs: [(item: Form(form: "handful"), amount: (2, 4))],
+        ),
+        (
+            id: "poultice_wound", status: Implemented, name: "Press yarrow on a wound", action: "press crushed yarrow on the wound",
+            verb: "treat", treats: Some("yarrow"),
+            inputs: [(item: Material("yarrow"), amount: 0.02)], duration: (hours: 0.05),
+            outputs: [],
+        ),
+        (
+            id: "dress_with_plantain", status: Implemented, name: "Dress a wound with plantain", action: "bind chewed plantain leaves over the wound",
+            verb: "treat", treats: Some("plantain"),
+            inputs: [(item: Material("plantain_leaves"), amount: 0.02)], duration: (hours: 0.05),
+            outputs: [],
+        ),
         // ---- Trees (V2-6): felled, limbed and bucked with a chopping tool. ----
         (
             id: "fell_tree", status: Implemented, name: "Fell a tree", action: "chop through the trunk",
@@ -63,13 +118,13 @@
         ),
         (
             id: "cut_rods", status: Implemented, name: "Cut hazel rods", action: "cut straight rods",
-            verb: "cut", target: Block(Id("hazel")), harvests: Some(3),
+            verb: "cut", target: Block(Id("hazel_branch")), harvests: Some(3),
             inputs: [], tools: [(property: "sharp_edge", min: 0.3)], duration: (hours: 0.1), wear: 0.02,
             outputs: [(item: Form(form: "pole", materials: (ids: ["hazel_wood"])), amount: (1, 2)), (item: Form(form: "stick", materials: (ids: ["hazel_wood"])), amount: (1, 3))],
         ),
         (
             id: "pick_hazelnuts", status: Implemented, name: "Pick hazelnuts", action: "pick the hazelnuts",
-            verb: "pick", target: Block(Id("hazel")), harvests: Some(2), conditions: [Season([Autumn])],
+            verb: "pick", target: Block(Id("hazel_leaves")), harvests: Some(2), conditions: [Season([Autumn])],
             inputs: [], duration: (hours: 0.2),
             outputs: [(item: Material("hazelnut"), amount: (0.2, 0.6))],
         ),

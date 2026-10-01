@@ -7,6 +7,7 @@ pub mod blocks;
 pub mod craft;
 pub mod material;
 pub mod paint;
+pub mod plants;
 pub mod trees;
 
 pub use paint::Tex;
@@ -53,6 +54,14 @@ pub fn textures_for(content: Option<&hearth_content::Content>) -> Vec<TexEntry> 
         .filter(|t| !generated.iter().any(|g| g.name == t.name))
         .collect();
     out.extend(generated);
+    // The understory's plants, where no hand-drawn texture of the same name exists.
+    if let Some(c) = content {
+        let drawn: Vec<TexEntry> = plants::textures(c)
+            .into_iter()
+            .filter(|t| !out.iter().any(|o| o.name == t.name))
+            .collect();
+        out.extend(drawn);
+    }
     out
 }
 
