@@ -269,5 +269,9 @@
   "character.light.dusk": "dusk",
   "character.light.firelight": "firelight",
   "menu.new_world.character": "Who",
-  "menu.new_world.edit_character": "Edit"
+  "menu.new_world.edit_character": "Edit",
+  "key.sleep": "Lie down / sleep",
+  "key.body_panel": "Body",
+  "body.asleep": "Asleep",
+  "body.lying": "Lying down: sleep comes when you are tired (lie down again to get up)"
 }

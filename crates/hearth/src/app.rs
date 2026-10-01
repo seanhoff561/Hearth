@@ -431,6 +431,8 @@ impl App {
                         p.toggle_free_camera();
                     } else if action == builtin::TOGGLE_PERSPECTIVE {
                         p.toggle_perspective();
+                    } else if action == builtin::SLEEP {
+                        p.toggle_rest();
                     } else if action == builtin::JUMP && p.dead() {
                         p.respawn();
                     }

@@ -1133,7 +1133,11 @@ impl Body {
             Some(Wake::Thirst)
         } else if s.hunger >= Hunger::VeryHungry {
             Some(Wake::Hunger)
-        } else if self.sleep.pressure < 0.08 && self.sleep.asleep_s > 4.0 * 3600.0 {
+        } else if self.sleep.asleep_s > 4.0 * 3600.0
+            && self.sleep.sleepiness(e.local_hour as f64) < 0.2
+        {
+            // Sleep pressure spent as the body's clock turns toward morning (the two-process
+            // model): about eight hours after a long day.
             Some(Wake::Rested)
         } else {
             None

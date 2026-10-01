@@ -146,3 +146,56 @@ fn swimming_in_cold_water_chills() {
     println!("core {:.2} °C, {:?}", p.body.thermal.core_c, p.body.dead);
     assert!(p.body.thermal.core_c < 35.0 || p.body.dead == Some(Death::Hypothermia));
 }
+
+#[test]
+fn a_tired_body_sleeps_till_rested_and_the_cold_wakes_it() {
+    let cfg = config();
+    let sleeping = cfg.activity("sleeping");
+    // Lying naked in a warm night (about the warmth a bare body needs at rest).
+    let night = |air_c: f32| Exposure {
+        air_c,
+        humidity: 0.5,
+        wind_m_s: 0.2,
+        sky_c_offset: 0.0,
+        local_hour: 23.0,
+        ..Exposure::mild()
+    };
+    let sleep = |air_c: f32| {
+        let e = night(air_c);
+        let mut p = Player::new(&cfg, DVec3::ZERO, 1);
+        p.body.sleep.pressure = 0.7;
+        p.lying = true;
+        for _ in 0..(6.0 / DT) as usize {
+            assert!(p.rest(&cfg, &e, 23.0, DT).is_none());
+        }
+        assert!(p.asleep, "a tired body at ease drops off within seconds");
+        // Asleep: a second of play is half a minute of the body's night.
+        for s in 0..2400 {
+            let hour = (23.0 + s as f64 * 30.0 / 3600.0) % 24.0;
+            let e = Exposure {
+                local_hour: hour as f32,
+                ..e
+            };
+            p.body.step(&cfg, 1.0, &e, &Worn::naked(), &sleeping);
+            if let Some(why) = p.rest(&cfg, &e, hour, 1.0) {
+                return (why, s as f64 * 30.0 / 3600.0, p);
+            }
+        }
+        panic!("never woke");
+    };
+    let (why, hours, p) = sleep(29.0);
+    println!(
+        "warm night: woke {why:?} after {hours:.1} h, pressure {:.2}",
+        p.body.sleep.pressure
+    );
+    assert_eq!(why, hearth_body::Wake::Rested);
+    assert!((5.0..11.0).contains(&hours), "slept {hours:.1} h");
+    assert!(!p.lying, "up on waking");
+    let (why, hours, _) = sleep(4.0);
+    println!("cold night: woke {why:?} after {hours:.1} h");
+    assert_eq!(why, hearth_body::Wake::Cold);
+    assert!(
+        hours < 2.0,
+        "the cold wakes a bare body within the hour or two"
+    );
+}

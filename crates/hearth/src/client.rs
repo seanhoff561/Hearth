@@ -129,6 +129,10 @@ pub struct Client {
     pub perspective: Perspective,
     view_bobbing: bool,
     figure_boxes: Vec<FigureInstance>,
+    /// The eyelids (0 open, 1 shut): shut asleep or unconscious, slow to open on waking.
+    eyes_shut: f32,
+    /// Why the player last woke, and how long ago (s).
+    woke: Option<(hearth_body::Wake, f64)>,
 }
 
 impl Client {
@@ -198,7 +202,22 @@ impl Client {
             perspective: Perspective::First,
             view_bobbing: options.video.view_bobbing,
             figure_boxes: Vec::new(),
+            eyes_shut: 0.0,
+            woke: None,
         }
+    }
+
+    /// Lies down to rest (sleep comes when the body is sleepy), or gets up.
+    pub fn toggle_rest(&mut self) {
+        let lying = self.body.as_ref().is_some_and(|b| b.lying);
+        if !self.dead() {
+            self.server.send(ToServer::Sleep(!lying));
+        }
+    }
+
+    /// Lying down, awake or asleep.
+    pub fn lying(&self) -> bool {
+        self.body.as_ref().is_some_and(|b| b.lying || b.asleep)
     }
 
     /// First person, behind, in front, and round again.
@@ -259,7 +278,7 @@ impl Client {
             || self
                 .body
                 .as_ref()
-                .is_some_and(|b| b.asleep || !b.status.effects.conscious);
+                .is_some_and(|b| b.asleep || b.lying || !b.status.effects.conscious);
         let report = self.last_report.unwrap_or_default();
         let m = &self.mover;
         // The body turns to where the eyes look as it moves, or when the head would turn
@@ -508,8 +527,21 @@ impl Client {
             self.camera.pitch =
                 (self.camera.pitch + (pad.look.y * rate * dt) as f32).clamp(-90.0, 90.0);
         }
-        // The clock runs at 20 ticks per second (plus warp) between the server's messages.
-        self.tick_frac += dt * (20.0 + self.time_warp);
+        // The clock runs at 20 ticks per second (faster warped or asleep) between the
+        // server's messages.
+        let rate = self.body.as_ref().map_or(20.0 + self.time_warp, |b| b.rate);
+        self.tick_frac += dt * rate;
+        // Eyes close for sleep and fainting, and open slowly, a little lost, on waking.
+        let shut = self
+            .body
+            .as_ref()
+            .is_some_and(|b| b.asleep || (b.dead.is_none() && !b.status.effects.conscious));
+        let rate = if shut { 0.7 } else { 0.4 };
+        let target = if shut { 1.0 } else { 0.0 };
+        self.eyes_shut += (target - self.eyes_shut) * (1.0 - (-dt * rate).exp()) as f32;
+        if let Some((_, t)) = &mut self.woke {
+            *t += dt;
+        }
         if let Some((dx, dy)) = look {
             let f = sensitivity as f64 * 0.6 + 0.2;
             let deg_per_count = f * f * f * 8.0 * 0.15;
@@ -604,7 +636,7 @@ impl Client {
             && self
                 .body
                 .as_ref()
-                .is_none_or(|b| !b.asleep && b.status.effects.conscious);
+                .is_none_or(|b| !b.asleep && !b.lying && b.status.effects.conscious);
         let intent = if alive {
             let crouch = input.is_active(builtin::SNEAK) || pad.crouch;
             // A part-way stick walks slower; keys are full.
@@ -738,6 +770,7 @@ impl Client {
                     self.tick_frac = 0.0;
                 }
                 ToClient::Body(b) => self.body = Some(*b),
+                ToClient::Woke(why) => self.woke = Some((why, 0.0)),
                 ToClient::Placed(m) => {
                     self.mover = m;
                     self.eye_y = m.eye().y;
@@ -898,6 +931,35 @@ impl Client {
                     Rgba::rgb(240, 220, 200),
                 );
             }
+        }
+        // Eyelids: the world goes dark asleep or fainting.
+        if self.eyes_shut > 0.01 {
+            let a = (self.eyes_shut.clamp(0.0, 1.0) * 255.0) as u8;
+            ui.draw.rect(0.0, 0.0, w, h, Rgba([0, 0, 0, a]));
+        }
+        let lying = self.body.as_ref().is_some_and(|b| b.lying && !b.asleep);
+        if let Some(b) = &self.body
+            && b.dead.is_none()
+        {
+            let line = if b.asleep {
+                Some(ui.t("body.asleep"))
+            } else if lying {
+                Some(ui.t("body.lying"))
+            } else {
+                None
+            };
+            if let Some(line) = line {
+                let lw = ui.font.width(&line) as f32;
+                ui.label((w - lw) / 2.0, h * 0.82, &line, Rgba([220, 220, 230, 200]));
+            }
+        }
+        if let Some((why, t)) = self.woke
+            && t < 5.0
+        {
+            let line = ui.t(why.key());
+            let lw = ui.font.width(&line) as f32;
+            let a = ((1.0 - ((t - 3.5).max(0.0) / 1.5)) * 230.0) as u8;
+            ui.label((w - lw) / 2.0, h * 0.4, &line, Rgba([235, 230, 220, a]));
         }
         if self.captions {
             self.draw_captions(ui, veil);

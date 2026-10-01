@@ -64,6 +64,9 @@ pub struct View {
     pub vertical: i32,
 }
 
+/// How much faster the world goes while the player sleeps (v2 §9.5: smoothly, up to 60–120×).
+const SLEEP_SPEED: f64 = 90.0;
+
 /// What `player.json` holds.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PlayerSave {
@@ -230,11 +233,13 @@ fn report_of(m: &Moved) -> Report {
     }
 }
 
-fn body_view(cfg: &BodyConfig, p: &Player, exposure: Exposure) -> BodyView {
+fn body_view(cfg: &BodyConfig, p: &Player, exposure: Exposure, rate: f64) -> BodyView {
     BodyView {
         status: p.body.status(cfg),
         ability: p.ability(cfg),
         asleep: p.asleep,
+        lying: p.lying,
+        rate,
         dead: p.body.dead.clone(),
         injuries: p.body.injuries.clone(),
         illnesses: p
@@ -380,6 +385,7 @@ fn run(
     let mut water = WaterSim::new(&lw.reg)?;
     let mut last_moved: Option<Moved> = None;
     let mut warp = 0.0f64;
+    let mut sleep_warp = 0.0f64;
     let mut warp_carry = 0.0f64;
     let mut paused = false;
     let mut next_tick = Instant::now();
@@ -400,7 +406,14 @@ fn run(
                     }
                     last_moved = Some(m);
                 }
-                Ok(ToServer::Sleep(asleep)) => player.asleep = asleep && player.body.dead.is_none(),
+                Ok(ToServer::Sleep(lie)) => {
+                    // Lying down to rest (sleep comes if the body is sleepy); getting up wakes.
+                    player.lying = lie && player.body.dead.is_none();
+                    if !player.lying {
+                        player.asleep = false;
+                    }
+                    player.drowsy_s = 0.0;
+                }
                 Ok(ToServer::Place(p)) => {
                     let (x, z) = lw
                         .terrain()
@@ -450,18 +463,36 @@ fn run(
             let report = last_moved.as_ref().map(report_of).unwrap_or_default();
             if player.body.dead.is_none() {
                 let mut activity = player.activity(&cfg, &report);
-                if player.asleep {
+                if player.asleep || player.lying {
                     activity.posture = Posture::Lying;
                 }
                 // Warped time passes for the body too.
-                player
-                    .body
-                    .step(&cfg, TICK_S * (1.0 + warp / 20.0), &e, &worn, &activity);
-                if player.asleep && player.body.wakes(&cfg, &e).is_some() {
-                    player.asleep = false;
+                player.body.step(
+                    &cfg,
+                    TICK_S * (1.0 + (warp + sleep_warp) / 20.0),
+                    &e,
+                    &worn,
+                    &activity,
+                );
+                let hour = env.local_time(&moment, player.mover.pos.x) * 24.0;
+                if let Some(why) = player.rest(&cfg, &e, hour, TICK_S) {
+                    let _ = tx.send(ToClient::Woke(why));
                 }
+            } else {
+                player.asleep = false;
+                player.lying = false;
             }
-            warp_carry += warp * TICK_S;
+            // Asleep, the world speeds up smoothly; awake, it slows back.
+            let target = if player.asleep {
+                20.0 * (SLEEP_SPEED - 1.0)
+            } else {
+                0.0
+            };
+            sleep_warp += (target - sleep_warp) * (1.0 - (-TICK_S / 2.5).exp());
+            if sleep_warp < 1.0 && target == 0.0 {
+                sleep_warp = 0.0;
+            }
+            warp_carry += (warp + sleep_warp) * TICK_S;
             let extra = warp_carry.floor();
             warp_carry -= extra;
             ticks += 1 + extra as u64;
@@ -494,7 +525,12 @@ fn run(
             }
             if tx.send(ToClient::Clock(ticks)).is_err()
                 || tx
-                    .send(ToClient::Body(Box::new(body_view(&cfg, &player, e))))
+                    .send(ToClient::Body(Box::new(body_view(
+                        &cfg,
+                        &player,
+                        e,
+                        20.0 + warp + sleep_warp,
+                    ))))
                     .is_err()
             {
                 save(&mut save_state, &player, &appearance, ticks);

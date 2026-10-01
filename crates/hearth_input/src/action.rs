@@ -119,9 +119,10 @@ pub mod builtin {
         DEBUG_FRAME_GRAPH = 40; DEBUG_PROFILER = 41;
         DEBUG_TIME_FORWARD = 42; DEBUG_TIME_BACK = 43; DEBUG_SEASON_FORWARD = 44;
         DEBUG_TIME_WARP = 45; CRAWL = 46; DEBUG_FREE_CAMERA = 47;
+        SLEEP = 48; BODY_PANEL = 49;
     }
     /// Number of built-in actions.
-    pub const COUNT: usize = 48;
+    pub const COUNT: usize = 50;
 
     /// Hotbar actions in slot order.
     pub const HOTBAR: [ActionId; 9] = [
@@ -227,6 +228,8 @@ impl ActionRegistry {
         add("key.debug.time_warp", C::Debug, dbg, k(Key::W), H);
         add("key.crawl", C::Movement, g, k(Key::C), T);
         add("key.debug.free_camera", C::Debug, dbg, k(Key::N), H);
+        add("key.sleep", C::Gameplay, g, k(Key::Z), H);
+        add("key.body_panel", C::Gameplay, g, k(Key::B), H);
         debug_assert_eq!(r.defs.len(), builtin::COUNT);
         r
     }

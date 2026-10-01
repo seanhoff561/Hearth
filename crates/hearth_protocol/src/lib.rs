@@ -86,6 +86,10 @@ pub struct BodyView {
     pub status: Status,
     pub ability: Ability,
     pub asleep: bool,
+    /// Lying down (resting or asleep).
+    pub lying: bool,
+    /// Ticks of the world a second now (20, more while time is warped or the player sleeps).
+    pub rate: f64,
     pub dead: Option<Death>,
     pub injuries: Vec<InjuryState>,
     /// Illnesses (content ids) whose symptoms have begun.
@@ -111,4 +115,6 @@ pub enum ToClient {
     /// The world was saved.
     Saved,
     Failed(String),
+    /// The player woke, and why.
+    Woke(hearth_body::Wake),
 }

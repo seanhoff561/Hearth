@@ -3,7 +3,7 @@
 //! injure it, the water it is in cools it, and the air it lacks drowns it.
 
 use glam::DVec3;
-use hearth_body::{Activity, Body, BodyConfig, Death, Exposure, Posture, Worn};
+use hearth_body::{Activity, Body, BodyConfig, Death, Exposure, Posture, Wake, Worn};
 use hearth_physics::{Ability, Intent, Motion, Mover, Report, Stance, Terrain};
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 pub const DROWN_S: f64 = 60.0;
 /// Seconds without air after which a body loses consciousness.
 pub const FAINT_S: f64 = 25.0;
+/// Seconds lying sleepy and at ease before sleep comes (play time).
+pub const DROP_OFF_S: f64 = 5.0;
+/// How sleepy (0–1) a body must be to drop off.
+pub const SLEEPY: f64 = 0.3;
 
 /// A player's body and where it is.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -19,6 +23,12 @@ pub struct Player {
     pub mover: Mover,
     /// Asleep (the world decides when to wake).
     pub asleep: bool,
+    /// Lying down to rest or sleep.
+    #[serde(default)]
+    pub lying: bool,
+    /// Seconds lying sleepy and at ease: sleep comes after a few.
+    #[serde(skip)]
+    pub drowsy_s: f64,
 }
 
 impl Player {
@@ -27,6 +37,8 @@ impl Player {
             body: Body::new(cfg, seed),
             mover: Mover::new(feet),
             asleep: false,
+            lying: false,
+            drowsy_s: 0.0,
         }
     }
 
@@ -54,9 +66,39 @@ impl Player {
         }
     }
 
+    /// Lying down: sleep comes to a sleepy body at ease after a few seconds and lasts until
+    /// something wakes it (`hour` is the local hour, `dt` seconds of play). Returns why it
+    /// woke, if it woke on this step.
+    pub fn rest(&mut self, cfg: &BodyConfig, e: &Exposure, hour: f64, dt: f64) -> Option<Wake> {
+        if self.body.dead.is_some() {
+            self.asleep = false;
+            self.lying = false;
+            return None;
+        }
+        if self.asleep {
+            let why = self.body.wakes(cfg, e)?;
+            self.asleep = false;
+            self.lying = false;
+            return Some(why);
+        }
+        if self.lying
+            && self.body.wakes(cfg, e).is_none()
+            && self.body.sleep.sleepiness(hour) >= SLEEPY
+        {
+            self.drowsy_s += dt;
+            if self.drowsy_s >= DROP_OFF_S {
+                self.asleep = true;
+            }
+        } else {
+            self.drowsy_s = 0.0;
+        }
+        None
+    }
+
     /// Whether the player can act (awake and conscious).
     pub fn can_act(&self, cfg: &BodyConfig) -> bool {
         !self.asleep
+            && !self.lying
             && self.body.dead.is_none()
             && self.body.effects(cfg).conscious
             && self.mover.airless_s < FAINT_S

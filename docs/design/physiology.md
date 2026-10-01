@@ -54,7 +54,14 @@ compressed. All conversion goes through `TimeScales`.
 - **Sleep** (`sleep.rs`): Borbély's two processes — pressure building while awake (18.2 h
   time constant, faster with work) and draining asleep (4.2 h, slower when the sleep is poor:
   cold, wet, hard ground, pain, noise) — and the body clock's swing. `wakes` says what would
-  wake a sleeper (rested, cold, heat, wet, pain, hunger, thirst, disturbance).
+  wake a sleeper (cold, heat, wet, pain, hunger, thirst, disturbance, or rested: after four
+  hours, once pressure and the clock together fall below 0.2 — about eight hours after a long
+  day, toward morning).
+- **Sleeping** (`hearth_player::Player::rest`, the server): the player lies down (Z); a body
+  sleepy enough (0.3) and at ease drops off after 5 s of play; asleep, the world eases up to
+  90× as fast (v2 §9.5: accelerated, not skipped: the weather, water and body go on), and
+  slows back on waking. What wakes the player is said as they open their eyes; the eyes
+  close slowly into sleep and open slowly out of it.
 - **Stamina**: drains with effort above a third (an all-out sprint empties it in 15 s of play),
   recovers in 30 s at rest, slower when tired, weak or out of glycogen.
 - **Injuries** (`harm.rs`): on a region and side with a severity; bleeding from the data's
