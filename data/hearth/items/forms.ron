@@ -5,13 +5,13 @@
     schema: 1,
     entries: [
         (
-            id: "cobble", name: "{material} cobble", materials: (categories: [Rock]),
+            id: "cobble", status: Implemented, name: "{material} cobble", materials: (categories: [Rock]),
             size_m: (0.12, 0.09, 0.07), fill: 0.55, footprint: (1, 1),
             properties: [(name: "hard_hammer", value: FromMaterial(field: "hardness_mohs", scale: 0.1))],
             tags: ["gatherable", "stone", "throwable"],
         ),
         (
-            id: "core", name: "{material} core", materials: (tags: ["knappable"]),
+            id: "core", status: Implemented, name: "{material} core", materials: (tags: ["knappable"]),
             size_m: (0.09, 0.07, 0.05), fill: 0.55, footprint: (1, 1),
             properties: [
                 (name: "knappable", value: FromMaterial(field: "knapping", scale: 1.0)),
@@ -20,13 +20,13 @@
             tags: ["stone"],
         ),
         (
-            id: "flake", name: "{material} flake", materials: (tags: ["knappable"]),
+            id: "flake", status: Implemented, name: "{material} flake", materials: (tags: ["knappable"]),
             size_m: (0.06, 0.04, 0.008), fill: 0.45, footprint: (1, 1), stacking: Count(8),
             properties: [(name: "sharp_edge", value: FromMaterial(field: "knapping", scale: 1.0))],
             tags: ["cutting"],
         ),
         (
-            id: "chopper", name: "{material} chopper", materials: (tags: ["knappable"]),
+            id: "chopper", status: Implemented, name: "{material} chopper", materials: (tags: ["knappable"]),
             size_m: (0.10, 0.08, 0.06), fill: 0.55, footprint: (1, 1),
             properties: [
                 (name: "sharp_edge", value: FromMaterial(field: "knapping", scale: 0.5)),
@@ -36,7 +36,7 @@
             tags: ["tool"],
         ),
         (
-            id: "hand_axe", name: "{material} hand axe", materials: (tags: ["knappable"]),
+            id: "hand_axe", status: Implemented, name: "{material} hand axe", materials: (tags: ["knappable"]),
             size_m: (0.15, 0.09, 0.04), fill: 0.5, footprint: (1, 2),
             properties: [
                 (name: "sharp_edge", value: FromMaterial(field: "knapping", scale: 0.75)),
@@ -46,97 +46,97 @@
             tags: ["tool"], hangs_on: ["belt_loop"],
         ),
         (
-            id: "scraper", name: "{material} scraper", materials: (tags: ["knappable"]),
+            id: "scraper", status: Implemented, name: "{material} scraper", materials: (tags: ["knappable"]),
             size_m: (0.05, 0.04, 0.012), fill: 0.5, footprint: (1, 1),
             properties: [(name: "scraping", value: FromMaterial(field: "knapping", scale: 0.9))],
             tags: ["tool"],
         ),
         (
-            id: "point", name: "{material} point", materials: (tags: ["knappable"]),
+            id: "point", status: Implemented, name: "{material} point", materials: (tags: ["knappable"]),
             size_m: (0.07, 0.035, 0.008), fill: 0.45, footprint: (1, 1),
             properties: [(name: "piercing", value: FromMaterial(field: "knapping", scale: 0.9))],
             tags: ["projectile_tip"],
         ),
         (
-            id: "anvil_stone", name: "{material} anvil stone", materials: (categories: [Rock], exclude_tags: ["soft_stone", "brittle"]),
+            id: "anvil_stone", status: Implemented, name: "{material} anvil stone", materials: (categories: [Rock], exclude_tags: ["soft_stone", "brittle"]),
             size_m: (0.35, 0.25, 0.12), fill: 0.7, footprint: (2, 2),
             properties: [(name: "anvil", value: Const(1.0))],
             tags: ["gatherable", "stone", "heavy"],
         ),
         (
-            id: "stick", name: "{material} stick", materials: (categories: [Wood]),
+            id: "stick", status: Implemented, name: "{material} stick", materials: (categories: [Wood]),
             size_m: (1.0, 0.025, 0.025), fill: 0.78, footprint: (1, 3),
             tags: ["gatherable", "wood"],
         ),
         (
-            id: "pole", name: "{material} pole", materials: (categories: [Wood]),
+            id: "pole", status: Implemented, name: "{material} pole", materials: (categories: [Wood]),
             size_m: (2.2, 0.04, 0.04), fill: 0.78, footprint: (1, 4),
             tags: ["gatherable", "wood"],
             notes: "Deadfall or storm-broken saplings; cutting live ones needs a chopping tool.",
         ),
         (
-            id: "twig", name: "{material} twig", materials: (categories: [Wood]),
+            id: "twig", status: Implemented, name: "{material} twig", materials: (categories: [Wood]),
             size_m: (0.3, 0.006, 0.006), fill: 0.78, footprint: (1, 1), stacking: Count(10),
             properties: [(name: "probe", value: Const(1.0))],
             tags: ["gatherable", "wood"],
         ),
         (
-            id: "digging_stick", name: "{material} digging stick", materials: (categories: [Wood]),
+            id: "digging_stick", status: Implemented, name: "{material} digging stick", materials: (categories: [Wood]),
             size_m: (1.1, 0.03, 0.03), fill: 0.75, footprint: (1, 3),
             properties: [(name: "digging", value: FromMaterial(field: "density_kg_m3", scale: 0.0008))],
             tags: ["tool"],
         ),
         (
-            id: "wooden_spear", name: "{material} spear", materials: (categories: [Wood]),
+            id: "wooden_spear", status: Implemented, name: "{material} spear", materials: (categories: [Wood]),
             size_m: (2.2, 0.035, 0.035), fill: 0.72, footprint: (1, 4),
             properties: [(name: "piercing", value: Const(0.4)), (name: "reach_m", value: Const(2.2))],
             tags: ["weapon"],
         ),
         (
-            id: "fire_hardened_spear", name: "fire-hardened {material} spear", materials: (categories: [Wood]),
+            id: "fire_hardened_spear", status: Implemented, name: "fire-hardened {material} spear", materials: (categories: [Wood]),
             size_m: (2.2, 0.035, 0.035), fill: 0.72, footprint: (1, 4),
             properties: [(name: "piercing", value: Const(0.55)), (name: "reach_m", value: Const(2.2))],
             tags: ["weapon"],
         ),
         (
-            id: "cord", name: "{material} cord", materials: (categories: [PlantFibre, AnimalFibre]),
+            id: "cord", status: Implemented, name: "{material} cord", materials: (categories: [PlantFibre, AnimalFibre]),
             size_m: (1.0, 0.003, 0.003), fill: 0.8, footprint: (1, 1), stacking: Count(10),
             properties: [(name: "binding", value: FromMaterial(field: "tensile_mpa", scale: 0.001))],
             tags: ["binding"],
         ),
         (
             // A length of trunk: a metre of a 40 cm log, rolled or dragged, too heavy to carry.
-            id: "log_section", name: "{material} log section", materials: (categories: [Wood]),
+            id: "log_section", status: Implemented, name: "{material} log section", materials: (categories: [Wood]),
             size_m: (1.0, 0.4, 0.4), fill: 0.785, footprint: (2, 5),
             tags: ["two_handed", "rollable", "wood"],
         ),
         // Containers (v2 §10.2): each has its own grid and the most it holds.
         (
-            id: "bundle", name: "{material} bundle", materials: (tags: ["hide"]),
+            id: "bundle", status: Implemented, name: "{material} bundle", materials: (tags: ["hide"]),
             size_m: (0.45, 0.35, 0.25), fill: 0.028, footprint: (3, 2),
             container: Some((grid: (3, 3), max_kg: 10.0, back: true)),
             tags: ["container"],
         ),
         (
-            id: "pouch", name: "{material} pouch", materials: (tags: ["hide"]),
+            id: "pouch", status: Implemented, name: "{material} pouch", materials: (tags: ["hide"]),
             size_m: (0.15, 0.12, 0.05), fill: 0.08, footprint: (1, 1),
             container: Some((grid: (2, 2), max_kg: 1.5)),
             hangs_on: ["tie", "belt_loop"], tags: ["container"],
         ),
         (
-            id: "water_skin", name: "{material} water skin", materials: (ids: ["hearth:scraped_hide"]),
+            id: "water_skin", status: Implemented, name: "{material} water skin", materials: (ids: ["hearth:scraped_hide"]),
             size_m: (0.3, 0.2, 0.08), fill: 0.05, footprint: (2, 2),
             container: Some((grid: (0, 0), max_kg: 2.2, liquid_l: 2.0)),
             hangs_on: ["belt_loop", "strap"], tags: ["container", "liquid"],
         ),
         (
-            id: "basket", name: "{material} basket", materials: (tags: ["basketry"]),
+            id: "basket", status: Implemented, name: "{material} basket", materials: (tags: ["basketry"]),
             size_m: (0.4, 0.3, 0.4), fill: 0.025, footprint: (3, 3),
             container: Some((grid: (4, 4), max_kg: 12.0)),
             tags: ["container"],
         ),
         (
-            id: "back_basket", name: "{material} back basket", materials: (tags: ["basketry"]),
+            id: "back_basket", status: Implemented, name: "{material} back basket", materials: (tags: ["basketry"]),
             size_m: (0.4, 0.6, 0.3), fill: 0.025, footprint: (3, 4),
             container: Some((grid: (4, 6), max_kg: 25.0, back: true)),
             tags: ["container"],

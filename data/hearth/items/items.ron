@@ -3,7 +3,7 @@
     schema: 1,
     entries: [
         (
-            id: "small_carcass", name: "small game carcass", mass_kg: 15, volume_l: 16, footprint: (3, 2),
+            id: "small_carcass", status: Implemented, name: "small game carcass", mass_kg: 15, volume_l: 16, footprint: (3, 2),
             tags: ["carcass", "natural"],
             notes: "Scavenged or hunted small game (a roe deer kid, a hare's larger cousins). Replaced by per-species carcasses in V2-7.",
         ),

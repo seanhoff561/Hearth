@@ -671,3 +671,17 @@ same hide or fibre across the chest (`chest_band`, worn and counted in the heat 
 any garment, 0.02 clo). The figures carry no anatomical detail either way. It keeps the start
 suitable for a general audience without changing what the body faces from the cold.
 
+## D71 — Carrying by hands, garments and containers; loads by Pandolf; drags by friction
+What a person carries is modelled as a person carries: a thing in each hand (12 kg at most in
+one), one in both arms (up to half the body's mass, the commonly cited limit for carrying any
+distance), worn garments by layer and region with the attachment points they give, containers
+with grids and loads, a back load, and a drag. The loincloth's tie takes one small thing, so a
+new person carries almost nothing, as v2 §10.2 asks. The load's cost comes from Pandolf's
+equation (load terms only, the body already counts walking), its effect on speed from field
+studies (little below a fifth of body mass, about 55 % of walking speed above half). A drag's
+pace comes from the power a person sustains pulling (about 120 W) against the ground's sliding
+friction, so terrain matters as it does: logs slide on snow and stick in mud. Moves are by
+path and all or nothing, and the server keeps the truth (the client shows a move at once and
+takes the server's word). The v2 §10.6 controls replace v1's (crouch C, prone Z, inventory
+Tab, drop G, interact E, drag F, quick choice Q); lying down to sleep moved to X.
+

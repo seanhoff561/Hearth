@@ -21,7 +21,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Sound (procedural sounds, mixer, what the player hears) | [audio.md](audio.md) | implemented (V2-3d) |
 | The player's person (appearance, rig, movement, views) | [character.md](character.md) | implemented (V2-3e) |
 | What the body tells the player (senses, Body panel, Guided HUD) | [hud.md](hud.md) | implemented (V2-3f) |
-| Inventory, carrying, clothing | [inventory.md](inventory.md) | planned (V2-4) |
+| Inventory, carrying, clothing | [inventory.md](inventory.md) | implemented (V2-4) |
 | Processes and the knowledge graph | [knowledge-and-processes.md](knowledge-and-processes.md) | partial (data V2-0; engine V2-5) |
 | Flora | [flora.md](flora.md) | planned (V2-6) |
 | Fauna and ecosystems | [fauna.md](fauna.md) | planned (V2-7) |

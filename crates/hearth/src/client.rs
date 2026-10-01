@@ -56,6 +56,10 @@ pub enum Aim {
 
 /// How far the hands reach from the eyes (m).
 const REACH_M: f64 = 2.6;
+/// Seconds to draw a thing from where it hangs into the hand.
+const DRAW_S: f64 = 0.5;
+/// Quick slots (keys 1–6): the attachment points, in order.
+const QUICK_SLOTS: usize = 6;
 
 /// Where a ray from `from` along `dir` enters the box `lo`–`hi` (distance), if it does.
 fn ray_box(from: DVec3, dir: DVec3, lo: DVec3, hi: DVec3) -> Option<f64> {
@@ -189,6 +193,12 @@ pub struct Client {
     pub aim: Option<Aim>,
     dragged_at: Option<DVec3>,
     drag_was: bool,
+    /// A thing being drawn into the right hand from where it hangs, and how long the reach
+    /// has taken; where the right hand's thing came from (to put it back).
+    drawing: Option<(hearth_items::Root, f64)>,
+    drawn_from: Option<hearth_items::Root>,
+    /// The quick-choice wheel (hold Q): open, and where the pointer leans.
+    pub radial: Option<DVec2>,
 }
 
 impl Client {
@@ -274,7 +284,77 @@ impl Client {
             aim: None,
             dragged_at: None,
             drag_was: false,
+            drawing: None,
+            drawn_from: None,
+            radial: None,
         }
+    }
+
+    /// The places the quick slots draw from: each worn garment's attachment points in order.
+    pub fn quick_places(&self) -> Vec<hearth_items::Root> {
+        let mut out = Vec::new();
+        for (i, w) in self.carry.worn.iter().enumerate() {
+            for p in 0..w.hung.len() {
+                out.push(hearth_items::Root::Hung(i, p));
+            }
+        }
+        out.truncate(QUICK_SLOTS);
+        out
+    }
+
+    /// Quick slot `n` (0-based): draws what hangs there into the right hand, after a moment,
+    /// or puts the drawn thing back where it came from.
+    fn quick(&mut self, n: usize) {
+        use hearth_items::{Hand, Path, Root, Target};
+        let Some(&place) = self.quick_places().get(n) else {
+            return;
+        };
+        let right = Path::at(Root::Hand(Hand::Right));
+        if self.carry.right.is_some() && self.drawn_from == Some(place) {
+            // Back where it hangs.
+            self.shift(right, None, Target::Root(place));
+            self.drawn_from = None;
+            return;
+        }
+        if self.carry.get(&Path::at(place)).is_some() {
+            self.drawing = Some((place, 0.0));
+        }
+    }
+
+    /// The reach for a thing being drawn: when done, what the hand held is stowed and the
+    /// thing comes into it.
+    fn reach(&mut self, dt: f64) {
+        use hearth_items::{Hand, Path, Root, Target};
+        let Some((place, t)) = &mut self.drawing else {
+            return;
+        };
+        *t += dt;
+        if *t < DRAW_S {
+            return;
+        }
+        let place = *place;
+        self.drawing = None;
+        let right = Path::at(Root::Hand(Hand::Right));
+        if self.carry.right.is_some() {
+            match self.drawn_from {
+                Some(from) => self.shift(right.clone(), None, Target::Root(from)),
+                None => self.shift(right.clone(), None, Target::Stow),
+            }
+        }
+        self.shift(Path::at(place), None, Target::Root(Root::Hand(Hand::Right)));
+        self.drawn_from = Some(place);
+    }
+
+    /// The quick-choice wheel: the places and the one the pointer leans toward.
+    pub fn radial_choice(&self) -> Option<usize> {
+        let v = self.radial?;
+        let n = self.quick_places().len();
+        if n == 0 || v.length() < 20.0 {
+            return None;
+        }
+        // Slots around the circle clockwise from the top.
+        let angle = v.x.atan2(-v.y).rem_euclid(std::f64::consts::TAU);
+        Some(((angle / std::f64::consts::TAU * n as f64 + 0.5) as usize) % n)
     }
 
     /// What the eyes rest on within reach: a thing lying there, loose stones, or the ground.
@@ -342,6 +422,12 @@ impl Client {
     /// The things the hands do this frame: pick up, gather, put down, drag and let go.
     fn handle_things(&mut self, input: &InputState, dt: f64) {
         self.aim = self.find_aim();
+        for (n, key) in builtin::HOTBAR.iter().take(QUICK_SLOTS).enumerate() {
+            if input.was_pressed(*key) {
+                self.quick(n);
+            }
+        }
+        self.reach(dt);
         if input.was_pressed(builtin::INTERACT) {
             match self.aim {
                 Some(Aim::Item(id)) => self.server.send(ToServer::PickUp(id)),
@@ -1022,7 +1108,21 @@ impl Client {
         let r = self.hearing.rhythms;
         self.heart_phase += dt * r.heart_bpm as f64 / 60.0;
         self.breath_phase += dt * r.breaths_per_min as f64 / 60.0;
-        if let Some((dx, dy)) = look {
+        // Holding the quick-choice key, the mouse leans the wheel instead of turning the head.
+        if self.mode == CameraMode::Body && input.is_active(builtin::RADIAL) && !self.dead() {
+            let v = self.radial.get_or_insert(DVec2::ZERO);
+            if let Some((dx, dy)) = look {
+                *v += DVec2::new(dx, dy);
+                if v.length() > 120.0 {
+                    *v = v.normalize() * 120.0;
+                }
+            }
+        } else if self.radial.is_some() {
+            if let Some(n) = self.radial_choice() {
+                self.quick(n);
+            }
+            self.radial = None;
+        } else if let Some((dx, dy)) = look {
             let f = sensitivity as f64 * 0.6 + 0.2;
             let deg_per_count = f * f * f * 8.0 * 0.15;
             self.camera.yaw = (self.camera.yaw + (dx * deg_per_count) as f32).rem_euclid(360.0);
@@ -1430,6 +1530,9 @@ impl Client {
         if self.guided_hud {
             self.draw_guided(ui, veil);
         }
+        if self.radial.is_some() {
+            self.draw_radial(ui);
+        }
         if self.mode == CameraMode::Body
             && self.perspective == Perspective::First
             && !self.dead()
@@ -1529,6 +1632,41 @@ impl Client {
             let a = (cold * env * 0.35 * (1.0 - kf * 0.15) * 255.0) as u8;
             ui.draw
                 .rect(x, y, size, size * 0.6, Rgba([232, 236, 240, a]));
+        }
+    }
+
+    /// The quick-choice wheel: what hangs at each attachment point, around the middle of the
+    /// view, the one leaned toward lit.
+    fn draw_radial(&self, ui: &mut Ui<'_>) {
+        let Some(items) = &self.items else {
+            return;
+        };
+        let places = self.quick_places();
+        if places.is_empty() {
+            return;
+        }
+        let (w, h) = ui.size;
+        let (cx, cy) = (w / 2.0, h / 2.0);
+        let chosen = self.radial_choice();
+        let r = 52.0;
+        for (k, place) in places.iter().enumerate() {
+            let a = k as f32 / places.len() as f32 * std::f32::consts::TAU;
+            let (x, y) = (cx + r * a.sin(), cy - r * a.cos());
+            let name = self
+                .carry
+                .get(&hearth_items::Path::at(*place))
+                .and_then(|s| s.kind(items))
+                .map_or_else(|| ui.t("inv.empty"), |k| k.name.clone());
+            let label = format!("{} {name}", k + 1);
+            let lw = ui.font.width(&label) as f32;
+            let bg = if chosen == Some(k) {
+                Rgba([70, 80, 96, 230])
+            } else {
+                Rgba([10, 12, 16, 200])
+            };
+            ui.draw
+                .rect(x - lw / 2.0 - 3.0, y - 6.0, lw + 6.0, 12.0, bg);
+            ui.label(x - lw / 2.0, y - 4.0, &label, Rgba([235, 235, 230, 240]));
         }
     }
 
