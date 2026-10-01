@@ -23,6 +23,8 @@ pub struct WorldEntry {
     pub folder: String,
     pub name: String,
     pub last_played_unix: u64,
+    /// Ended with its character's death (permadeath).
+    pub ended: bool,
 }
 
 /// The worlds in a saves folder, most recently played first.
@@ -38,6 +40,7 @@ pub fn list_worlds(saves: &Path) -> Vec<WorldEntry> {
                         folder,
                         name: meta.name,
                         last_played_unix: meta.last_played_unix,
+                        ended: meta.ended,
                     })
                 })
                 .collect()
@@ -56,7 +59,11 @@ pub enum Screen {
     NewWorld {
         name: String,
         seed: String,
+        /// Which of the death rules (Legacy, Permadeath, Hardy).
+        death: usize,
     },
+    /// After death: what the world's rules allow.
+    Death,
     Pause,
     Options,
     Video,
@@ -92,7 +99,10 @@ pub enum MenuAction {
     Play {
         folder: String,
         seed: u64,
+        death_rules: hearth_save::DeathRules,
     },
+    /// Live on after death (as this person, under Legacy).
+    LiveOn(Option<Appearance>),
     Resume,
     QuitToTitle,
     QuitGame,
@@ -113,7 +123,24 @@ pub struct MenuContext<'a> {
     /// The sound output devices there are.
     pub audio_devices: &'a [String],
     pub profiles: &'a mut crate::profiles::Profiles,
+    /// The player's death, when there is one to face.
+    pub death: Option<DeathInfo>,
 }
+
+/// What the death screen says.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeathInfo {
+    pub words: String,
+    pub rules: hearth_save::DeathRules,
+    /// The life's tale, when it ended the world.
+    pub summary: Option<Vec<String>>,
+}
+
+const DEATH_RULES: [hearth_save::DeathRules; 3] = [
+    hearth_save::DeathRules::Legacy,
+    hearth_save::DeathRules::Permadeath,
+    hearth_save::DeathRules::Hardy,
+];
 
 /// The open screens, the top one shown.
 pub struct Menus {
@@ -168,7 +195,7 @@ impl Menus {
     /// Back one screen (Escape). Closing the pause screen resumes the game.
     pub fn back(&mut self) -> Option<MenuAction> {
         match self.stack.last() {
-            Some(Screen::Title) | None => None,
+            Some(Screen::Title) | Some(Screen::Death) | None => None,
             Some(Screen::Pause) => {
                 self.stack.pop();
                 Some(MenuAction::Resume)
@@ -272,7 +299,12 @@ impl Menus {
                     *selected,
                     |ui, r, i, _| {
                         let w = &entries[i];
-                        ui.label(r.x + 4.0, r.y + 2.0, &w.name, theme::TEXT);
+                        let name = if w.ended {
+                            format!("{} {}", w.name, ui.t("menu.worlds.ended"))
+                        } else {
+                            w.name.clone()
+                        };
+                        ui.label(r.x + 4.0, r.y + 2.0, &name, theme::TEXT);
                         ui.label(r.x + 4.0, r.y + 11.0, &w.folder, theme::DIM);
                     },
                 );
@@ -281,11 +313,12 @@ impl Menus {
                     ui.text_centred(&list_r, &hint, theme::DIM);
                 }
                 if let Some(i) = clicked {
-                    if *selected == Some(i) {
+                    if *selected == Some(i) && !entries[i].ended {
                         // A second click plays it.
                         out.push(MenuAction::Play {
                             folder: entries[i].folder.clone(),
                             seed: 0,
+                            death_rules: Default::default(),
                         });
                     }
                     *selected = Some(i);
@@ -294,25 +327,28 @@ impl Menus {
                 let row = c.row(ROW);
                 let (a, rest) = row.split_left((W + 80.0 - 8.0) / 3.0, 4.0);
                 let (b, d) = rest.split_left((W + 80.0 - 8.0) / 3.0, 4.0);
-                if ui.button_enabled(a, &ui.t("menu.worlds.play"), selected.is_some())
+                let playable = selected.is_some_and(|i| !entries[i].ended);
+                if ui.button_enabled(a, &ui.t("menu.worlds.play"), playable)
                     && let Some(i) = *selected
                 {
                     out.push(MenuAction::Play {
                         folder: entries[i].folder.clone(),
                         seed: 0,
+                        death_rules: Default::default(),
                     });
                 }
                 if ui.button(b, &ui.t("menu.worlds.new")) {
                     push = Some(Screen::NewWorld {
                         name: String::new(),
                         seed: String::new(),
+                        death: 0,
                     });
                 }
                 if ui.button(d, &ui.t("menu.back")) {
                     pop = true;
                 }
             }
-            Screen::NewWorld { name, seed } => {
+            Screen::NewWorld { name, seed, death } => {
                 ui.title(30.0, &ui.t("menu.new_world.title"));
                 let mut c = Column::new(x, 60.0, W);
                 ui.label(x, c.y, &ui.t("menu.new_world.name"), theme::DIM);
@@ -338,6 +374,11 @@ impl Menus {
                 if ui.button(edit, &ui.t("menu.new_world.edit_character")) {
                     push = Some(Self::character());
                 }
+                let rules: Vec<String> = ["rules.legacy", "rules.permadeath", "rules.hardy"]
+                    .iter()
+                    .map(|k| ui.t(k))
+                    .collect();
+                ui.cycle(c.row(ROW), &ui.t("menu.new_world.death"), &rules, death);
                 c.space(10.0);
                 let folder = folder_name(name);
                 let exists = cx.saves.join(&folder).join("level.json").exists();
@@ -349,6 +390,7 @@ impl Menus {
                     out.push(MenuAction::Play {
                         folder,
                         seed: parse_seed(seed),
+                        death_rules: DEATH_RULES[(*death).min(DEATH_RULES.len() - 1)],
                     });
                 }
                 if ui.button(c.row(ROW), &ui.t("menu.back")) {
@@ -727,6 +769,9 @@ impl Menus {
                     out.push(MenuAction::OptionsChanged);
                 }
             }
+            Screen::Death => {
+                death_screen(ui, cx, &mut out, &mut push);
+            }
             Screen::Character { yaw, light, drag } => {
                 let (preview, changed, done) = character_screen(ui, cx.profiles, yaw, light, drag);
                 self.preview = Some(preview);
@@ -1025,6 +1070,71 @@ fn character_screen(
         light: PreviewLight::ALL[(*light).min(PreviewLight::ALL.len() - 1)],
     };
     (preview, changed, done)
+}
+
+/// After death: how it happened, and what the world's rules allow — live on as someone new
+/// (Legacy), live again (Hardy), or the tale of the life that ended the world (permadeath).
+fn death_screen(
+    ui: &mut Ui<'_>,
+    cx: &mut MenuContext<'_>,
+    out: &mut Vec<MenuAction>,
+    push: &mut Option<Screen>,
+) {
+    let size = ui.size;
+    let Some(d) = cx.death.clone() else {
+        // Alive again: nothing to face.
+        return;
+    };
+    let x = ((size.0 - W) / 2.0).round();
+    ui.title((size.1 * 0.22).round(), &d.words);
+    let mut c = Column::new(x, (size.1 * 0.22 + 20.0).round(), W);
+    let rules = match d.rules {
+        hearth_save::DeathRules::Legacy => "body.death.legacy",
+        hearth_save::DeathRules::Hardy => "body.death.hardy",
+        hearth_save::DeathRules::Permadeath => "body.death.permadeath",
+    };
+    for line in ui.font.wrap(&ui.t(rules), (W + 80.0) as u32) {
+        let lw = ui.font.width(&line) as f32;
+        ui.label(((size.0 - lw) / 2.0).round(), c.y, &line, theme::DIM);
+        c.space(hearth_ui::font::LINE as f32);
+    }
+    c.space(8.0);
+    match d.rules {
+        hearth_save::DeathRules::Legacy => {
+            let unnamed = ui.t("menu.character.unnamed");
+            let people: Vec<String> = (0..cx.profiles.list.len())
+                .map(|i| cx.profiles.name(i, &unnamed))
+                .collect();
+            let mut who = cx.profiles.selected;
+            if ui.cycle(c.row(ROW), &ui.t("menu.death.as"), &people, &mut who) {
+                cx.profiles.selected = who;
+                out.push(MenuAction::ProfilesChanged);
+            }
+            if ui.button(c.row(ROW), &ui.t("menu.death.live_on")) {
+                out.push(MenuAction::LiveOn(Some(cx.profiles.current().clone())));
+            }
+            if ui.button(c.row(ROW), &ui.t("menu.death.someone_new")) {
+                *push = Some(Menus::character());
+            }
+        }
+        hearth_save::DeathRules::Hardy => {
+            if ui.button(c.row(ROW), &ui.t("menu.death.live_again")) {
+                out.push(MenuAction::LiveOn(None));
+            }
+        }
+        hearth_save::DeathRules::Permadeath => {
+            for line in d.summary.iter().flatten() {
+                let lw = ui.font.width(line) as f32;
+                ui.label(((size.0 - lw) / 2.0).round(), c.y, line, theme::TEXT);
+                c.space(hearth_ui::font::LINE as f32 + 1.0);
+            }
+            c.space(6.0);
+        }
+    }
+    c.space(6.0);
+    if ui.button(c.row(ROW), &ui.t("menu.death.to_title")) {
+        out.push(MenuAction::QuitToTitle);
+    }
 }
 
 /// A world's folder from its name.

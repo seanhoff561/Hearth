@@ -34,7 +34,8 @@ pub enum ToServer {
     /// ground there.
     Place(DVec3),
     /// Live on as a new person after death (by the world's death rules).
-    Respawn,
+    /// After death, live on as the world's rules allow (Legacy: as this person, or the same).
+    Respawn(Option<hearth_character::Appearance>),
     /// Debug: move the clock on (or back) by game hours.
     SkipHours(f64),
     /// Debug: extra ticks per second of play (0 for none).
@@ -78,6 +79,21 @@ pub struct Ready {
     pub player: Mover,
     /// How the player looks.
     pub appearance: hearth_character::Appearance,
+    /// What death means in this world.
+    pub death_rules: hearth_save::DeathRules,
+    /// The world ended (permadeath), and the life it ended with.
+    pub ended: Option<LifeSummary>,
+}
+
+/// A life told after it ended (permadeath).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LifeSummary {
+    pub name: String,
+    /// Days of the world's calendar lived.
+    pub days: f64,
+    pub walked_km: f64,
+    pub farthest_km: f64,
+    pub cause: hearth_body::Death,
 }
 
 /// The player's body as the client shows it and lets it move.
@@ -117,4 +133,8 @@ pub enum ToClient {
     Failed(String),
     /// The player woke, and why.
     Woke(hearth_body::Wake),
+    /// The player is someone else now (Legacy) or again (Hardy).
+    Person(hearth_character::Appearance),
+    /// The world ended with its character's death (permadeath).
+    Ended(LifeSummary),
 }

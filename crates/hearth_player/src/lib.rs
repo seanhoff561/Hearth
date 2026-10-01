@@ -16,6 +16,48 @@ pub const DROP_OFF_S: f64 = 5.0;
 /// How sleepy (0–1) a body must be to drop off.
 pub const SLEEPY: f64 = 0.3;
 
+/// What a life has been: when it began, the ground it covered and the farthest it went from
+/// where it began (for the world's last words under permadeath).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Life {
+    pub born_tick: u64,
+    pub start: DVec3,
+    pub walked_m: f64,
+    pub farthest_m: f64,
+}
+
+impl Life {
+    pub fn begin(at: DVec3, tick: u64) -> Self {
+        Self {
+            born_tick: tick,
+            start: at,
+            walked_m: 0.0,
+            farthest_m: 0.0,
+        }
+    }
+
+    /// The player moved from `from` to `to`; jumps of more than 10 m (being put somewhere)
+    /// are not walking.
+    pub fn moved(&mut self, from: DVec3, to: DVec3) {
+        let step = (to - from).truncate_y();
+        if step < 10.0 {
+            self.walked_m += step;
+        }
+        self.farthest_m = self.farthest_m.max((to - self.start).truncate_y());
+    }
+}
+
+/// Horizontal length.
+trait Flat {
+    fn truncate_y(self) -> f64;
+}
+
+impl Flat for DVec3 {
+    fn truncate_y(self) -> f64 {
+        (self.x * self.x + self.z * self.z).sqrt()
+    }
+}
+
 /// A player's body and where it is.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Player {
@@ -29,6 +71,8 @@ pub struct Player {
     /// Seconds lying sleepy and at ease: sleep comes after a few.
     #[serde(skip)]
     pub drowsy_s: f64,
+    #[serde(default)]
+    pub life: Life,
 }
 
 impl Player {
@@ -39,6 +83,7 @@ impl Player {
             asleep: false,
             lying: false,
             drowsy_s: 0.0,
+            life: Life::begin(feet, 0),
         }
     }
 

@@ -435,8 +435,6 @@ impl App {
                         p.toggle_rest();
                     } else if action == builtin::BODY_PANEL {
                         p.toggle_body_panel();
-                    } else if action == builtin::JUMP && p.dead() {
-                        p.respawn();
                     }
                 }
             }
@@ -464,7 +462,7 @@ impl App {
     }
 
     /// Starts playing a world.
-    fn play(&mut self, folder: &str, seed: u64) {
+    fn play(&mut self, folder: &str, seed: u64, death_rules: hearth_save::DeathRules) {
         let Some(run) = &mut self.running else {
             return;
         };
@@ -476,6 +474,7 @@ impl App {
                 Some(self.dirs.cache()),
                 Some(self.dirs.saves()),
                 self.profiles.current().clone(),
+                death_rules,
             ),
             &self.options,
             run.renderer.color_format(),
@@ -490,7 +489,19 @@ impl App {
     fn menu_actions(&mut self, actions: Vec<MenuAction>) {
         for a in actions {
             match a {
-                MenuAction::Play { folder, seed } => self.play(&folder, seed),
+                MenuAction::Play {
+                    folder,
+                    seed,
+                    death_rules,
+                } => self.play(&folder, seed, death_rules),
+                MenuAction::LiveOn(who) => {
+                    if let Some(run) = &mut self.running {
+                        run.menus.close_all();
+                        if let Some(c) = &mut run.client {
+                            c.respawn(who);
+                        }
+                    }
+                }
                 MenuAction::Resume => {
                     if let Some(run) = &mut self.running {
                         run.menus.close_all();
@@ -604,7 +615,6 @@ impl App {
                     }
                 }
                 Press::Select => release_mouse |= c.toggle_globe(),
-                Press::South if c.dead() => c.respawn(),
                 _ => {}
             }
         }
@@ -636,6 +646,14 @@ impl App {
             });
             if let Some(c) = &mut run.client {
                 c.pump(&run.renderer.ctx);
+                if c.dead() && !run.menus.is_open() {
+                    run.menus.open(Screen::Death);
+                    if run.captured {
+                        run.captured = false;
+                        let _ = run.window.set_cursor_grab(CursorGrabMode::None);
+                        run.window.set_cursor_visible(true);
+                    }
+                }
                 if !menu_open {
                     c.update(
                         dt,
@@ -679,6 +697,7 @@ impl App {
                         languages,
                         audio_devices,
                         profiles,
+                        death: client.as_ref().and_then(|c| c.death_info(ui.lang)),
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
@@ -819,7 +838,7 @@ impl ApplicationHandler for App {
             self.audio_devices.len()
         );
         if let Some(world) = self.world.clone() {
-            self.play(&world, self.seed);
+            self.play(&world, self.seed, hearth_save::DeathRules::default());
         }
         self.apply_display_mode();
         event_loop.set_control_flow(ControlFlow::Poll);

@@ -19,7 +19,7 @@ use hearth_env::{Calendar, Moment};
 use hearth_math::{BlockPos, CubePos, Planet, PlanetSize};
 use hearth_physics::{Mover, Report};
 use hearth_player::{DROWN_S, Player};
-use hearth_protocol::{BodyView, Moved, Ready, ToClient, ToServer};
+use hearth_protocol::{BodyView, LifeSummary, Moved, Ready, ToClient, ToServer};
 use hearth_render::atlas::TextureArray;
 use hearth_render::mesh::MeshOptions;
 use hearth_render::models::BlockModels;
@@ -55,6 +55,8 @@ pub struct WorldSpec {
     pub saves_dir: Option<PathBuf>,
     /// Who the player is in a new world (a saved world keeps its own person).
     pub appearance: hearth_character::Appearance,
+    /// What death means in a new world (a saved world keeps its own rules).
+    pub death_rules: hearth_save::DeathRules,
 }
 
 /// How much terrain to keep around the player (cubes).
@@ -147,6 +149,7 @@ fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> 
     .sanitized();
     let mut settings = WorldSettings::new(planet);
     settings.life = hearth_save::LifeSettings::from_content(&lw.content.time);
+    settings.life.death_rules = spec.death_rules;
     let meta = WorldMeta::new(&spec.name, settings, lw.reg.state_names());
     let dir = WorldDir::create(saves, &meta)?;
     log::info!("created world {:?} in {}", spec.name, dir.root.display());
@@ -339,7 +342,7 @@ fn run(
                     None
                 }
             });
-    let (mut player, appearance) = match saved {
+    let (mut player, mut appearance) = match saved {
         Some(p) => (p.player, p.appearance.sanitized()),
         None => (
             Player::new(&cfg, first_spawn, seed ^ 0x5eed),
@@ -347,14 +350,27 @@ fn run(
         ),
     };
     // Everyone starts in a loincloth; a female body with a band across the chest too (D70).
-    let female = appearance.body == hearth_character::BodyType::Female;
-    let worn = Worn::of(
-        content.garments.get("hearth:loincloth").into_iter().chain(
-            female
-                .then(|| content.garments.get("hearth:chest_band"))
-                .flatten(),
-        ),
-    );
+    let dress = |a: &hearth_character::Appearance| {
+        let female = a.body == hearth_character::BodyType::Female;
+        Worn::of(
+            content.garments.get("hearth:loincloth").into_iter().chain(
+                female
+                    .then(|| content.garments.get("hearth:chest_band"))
+                    .flatten(),
+            ),
+        )
+    };
+    let mut worn = dress(&appearance);
+    let death_rules = save_state
+        .as_ref()
+        .map_or(spec.death_rules, |s| s.meta.settings.life.death_rules);
+    let ended = save_state.as_ref().and_then(|s| {
+        s.meta
+            .ended
+            .then(|| s.dir.read_json::<LifeSummary>("life.json").ok().flatten())
+            .flatten()
+    });
+    let mut death_told = player.body.dead.is_some();
 
     let lod = Arc::new(hearth_lod::LodGen::new(
         &lw.reg,
@@ -373,6 +389,8 @@ fn run(
             ticks,
             player: player.mover,
             appearance: appearance.clone(),
+            death_rules,
+            ended,
         })))
         .is_err()
     {
@@ -395,6 +413,9 @@ fn run(
         loop {
             match inbox.try_recv() {
                 Ok(ToServer::Moved(m)) => {
+                    if player.body.dead.is_none() {
+                        player.life.moved(player.mover.pos, m.mover.pos);
+                    }
                     player.mover = m.mover;
                     if !player.asleep
                         && let Some(v) = m.landed
@@ -421,15 +442,32 @@ fn run(
                     player.mover = Mover::new(ground_at(&lw, x, z));
                     let _ = tx.send(ToClient::Placed(player.mover));
                 }
-                Ok(ToServer::Respawn) => {
+                Ok(ToServer::Respawn(who)) => {
                     if player.body.dead.is_some() {
-                        // A new person arrives in the same region (Legacy rules, v2 §9.8).
-                        let at = player.mover.pos;
-                        let (x, z) = lw
-                            .terrain()
-                            .spawn_near(at.x.floor() as i32, at.z.floor() as i32);
-                        player = Player::new(&cfg, ground_at(&lw, x, z), seed ^ ticks);
-                        let _ = tx.send(ToClient::Placed(player.mover));
+                        // v2 §9.8. Legacy: someone new arrives in the same region; Hardy: the
+                        // same person again where the world began; permadeath: the end.
+                        let at = match death_rules {
+                            hearth_save::DeathRules::Legacy => {
+                                let at = player.mover.pos;
+                                let (x, z) = lw
+                                    .terrain()
+                                    .spawn_near(at.x.floor() as i32, at.z.floor() as i32);
+                                if let Some(a) = who {
+                                    appearance = a.sanitized();
+                                }
+                                Some(ground_at(&lw, x, z))
+                            }
+                            hearth_save::DeathRules::Hardy => Some(first_spawn),
+                            hearth_save::DeathRules::Permadeath => None,
+                        };
+                        if let Some(at) = at {
+                            player = Player::new(&cfg, at, seed ^ ticks);
+                            player.life = hearth_player::Life::begin(at, ticks);
+                            worn = dress(&appearance);
+                            death_told = false;
+                            let _ = tx.send(ToClient::Person(appearance.clone()));
+                            let _ = tx.send(ToClient::Placed(player.mover));
+                        }
                     }
                 }
                 Ok(ToServer::SkipHours(h)) => {
@@ -491,6 +529,28 @@ fn run(
             sleep_warp += (target - sleep_warp) * (1.0 - (-TICK_S / 2.5).exp());
             if sleep_warp < 1.0 && target == 0.0 {
                 sleep_warp = 0.0;
+            }
+            // A death is told once; under permadeath it ends the world, with its life's tale.
+            if !death_told && let Some(cause) = player.body.dead.clone() {
+                death_told = true;
+                if death_rules == hearth_save::DeathRules::Permadeath {
+                    let summary = LifeSummary {
+                        name: appearance.name.clone(),
+                        days: ticks.saturating_sub(player.life.born_tick) as f64
+                            / calendar.ticks_per_day(),
+                        walked_km: player.life.walked_m / 1000.0,
+                        farthest_km: player.life.farthest_m / 1000.0,
+                        cause,
+                    };
+                    if let Some(s) = &mut save_state {
+                        s.meta.ended = true;
+                        if let Err(e) = s.dir.write_json("life.json", &summary) {
+                            log::error!("could not write the life's tale: {e}");
+                        }
+                    }
+                    save(&mut save_state, &player, &appearance, ticks);
+                    let _ = tx.send(ToClient::Ended(summary));
+                }
             }
             warp_carry += (warp + sleep_warp) * TICK_S;
             let extra = warp_carry.floor();

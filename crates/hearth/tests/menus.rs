@@ -43,6 +43,11 @@ fn render(
                 languages: &languages,
                 audio_devices: &[],
                 profiles: &mut profiles,
+                death: Some(hearth::menus::DeathInfo {
+                    words: "You froze to death.".into(),
+                    rules: hearth_save::DeathRules::Legacy,
+                    summary: None,
+                }),
             };
             actions = menus.ui(ui, &mut cx);
         },
@@ -81,6 +86,7 @@ fn the_screens_draw_and_answer() {
             Screen::NewWorld {
                 name: "Hearthstead".into(),
                 seed: String::new(),
+                death: 0,
             },
         ),
         ("options", Screen::Options),
@@ -102,6 +108,7 @@ fn the_screens_draw_and_answer() {
             },
         ),
         ("pause", Screen::Pause),
+        ("death", Screen::Death),
     ];
     for (name, screen) in screens {
         let mut menus = Menus::none();

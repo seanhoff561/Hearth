@@ -17,6 +17,8 @@ hearth_body.workspace = true
 hearth_character.workspace = true
 hearth_physics.workspace = true
 hearth_env.workspace = true
+hearth_save.workspace = true
+serde.workspace = true
 glam.workspace = true
 
 [lints]

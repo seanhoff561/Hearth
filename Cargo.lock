@@ -1084,8 +1084,10 @@ dependencies = [
  "hearth_math",
  "hearth_physics",
  "hearth_render",
+ "hearth_save",
  "hearth_world",
  "hearth_worldgen",
+ "serde",
 ]
 
 [[package]]

@@ -142,6 +142,9 @@ pub struct Client {
     /// The Body panel (B) open, and the body's definitions it names injuries from.
     pub body_panel: bool,
     body_cfg: Option<Arc<hearth_body::BodyConfig>>,
+    /// What death means in this world, and the life's tale if it has ended.
+    pub death_rules: hearth_save::DeathRules,
+    pub ended: Option<hearth_protocol::LifeSummary>,
 }
 
 impl Client {
@@ -219,7 +222,30 @@ impl Client {
             guided_hud: options.accessibility.guided_hud,
             body_panel: false,
             body_cfg: None,
+            death_rules: hearth_save::DeathRules::default(),
+            ended: None,
         }
+    }
+
+    /// The death screen's words: how the player died, the world's rules, and the life's tale
+    /// if it ended the world.
+    pub fn death_info(&self, l: &Lang) -> Option<crate::menus::DeathInfo> {
+        let death = self.body.as_ref()?.dead.as_ref()?;
+        let summary = self.ended.as_ref().map(|s| {
+            let mut lines = Vec::new();
+            if !s.name.trim().is_empty() {
+                lines.push(s.name.clone());
+            }
+            lines.push(l.format("life.days", &[("n", &format!("{:.0}", s.days.floor()))]));
+            lines.push(l.format("life.walked", &[("km", &format!("{:.1}", s.walked_km))]));
+            lines.push(l.format("life.farthest", &[("km", &format!("{:.1}", s.farthest_km))]));
+            lines
+        });
+        Some(crate::menus::DeathInfo {
+            words: death_words(l, death),
+            rules: self.death_rules,
+            summary,
+        })
     }
 
     /// Opens or closes the Body panel.
@@ -537,6 +563,7 @@ impl Client {
         cache_dir: Option<std::path::PathBuf>,
         saves_dir: Option<std::path::PathBuf>,
         appearance: hearth_character::Appearance,
+        death_rules: hearth_save::DeathRules,
     ) -> WorldSpec {
         WorldSpec {
             name: name.to_owned(),
@@ -545,6 +572,7 @@ impl Client {
             cache_dir,
             saves_dir,
             appearance,
+            death_rules,
         }
     }
 
@@ -571,9 +599,10 @@ impl Client {
     }
 
     /// Asks to live on as a new person (after death).
-    pub fn respawn(&mut self) {
-        if self.body.as_ref().is_some_and(|b| b.dead.is_some()) {
-            self.server.send(ToServer::Respawn);
+    /// After death: live on as the world's rules allow (as `who`, under Legacy).
+    pub fn respawn(&mut self, who: Option<hearth_character::Appearance>) {
+        if self.dead() {
+            self.server.send(ToServer::Respawn(who));
         }
     }
 
@@ -833,6 +862,8 @@ impl Client {
                     self.camera.pos = self.mover.eye();
                     self.figure = Some(Figure::new(r.appearance));
                     self.body_cfg = Some(r.body);
+                    self.death_rules = r.death_rules;
+                    self.ended = r.ended;
                     self.pose = None;
                     self.world = Some(World {
                         planet,
@@ -881,6 +912,12 @@ impl Client {
                 }
                 ToClient::Body(b) => self.body = Some(*b),
                 ToClient::Woke(why) => self.woke = Some((why, 0.0)),
+                ToClient::Person(a) => {
+                    self.figure = Some(Figure::new(a));
+                    self.pose = None;
+                    self.hearing = crate::hearing::Hearing::default();
+                }
+                ToClient::Ended(s) => self.ended = Some(s),
                 ToClient::Placed(m) => {
                     self.mover = m;
                     self.eye_y = m.eye().y;
@@ -1027,23 +1064,6 @@ impl Client {
     pub fn hud(&self, ui: &mut Ui<'_>, backdrop: f32) {
         let (w, h) = ui.size;
         let veil = (backdrop.clamp(0.0, 1.0) * 255.0) as u8;
-        if let Some(b) = &self.body
-            && let Some(death) = &b.dead
-        {
-            let what = death_words(ui.lang, death);
-            let lines = [what, ui.t("body.death.live_on")];
-            ui.draw
-                .rect(0.0, h * 0.4 - 6.0, w, 34.0, Rgba([0, 0, 0, veil]));
-            for (k, line) in lines.iter().enumerate() {
-                let lw = ui.font.width(line) as f32;
-                ui.label(
-                    (w - lw) / 2.0,
-                    h * 0.4 + 12.0 * k as f32,
-                    line,
-                    Rgba::rgb(240, 220, 200),
-                );
-            }
-        }
         if let Some(b) = &self.body
             && b.dead.is_none()
             && !b.asleep

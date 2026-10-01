@@ -385,6 +385,9 @@ V2-3 — player: character, body & physiology. Done so far:
   zoning (oxide cap over sulfide ore) — both with V2-13 prospecting.
 - Fumarole ground is snowed over like any other (warm ground melting snow comes with the
   thermal model, V2-5); the dead-bush sprite reads as a dark wedge from above (V2-6 flora).
+- Death under Legacy rules leaves no body or belongings where the player fell, and no journal
+  of what the dead knew: both need items (V2-4) and knowledge (V2-5). Hardy comes back at the
+  world's first spawn until there are camps (V2-8).
 - Sounds are all the player's own or around them: sounds placed in the world (direction,
   distance, occlusion) come with fauna (V2-7) and the work of the hands (V2-4/V2-5); no
   music, thunder, fire, flowing water or animal sounds yet (their volume sliders are hidden);
