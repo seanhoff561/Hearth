@@ -475,6 +475,50 @@ impl Client {
         }
     }
 
+    /// Dresses the figure in what is worn.
+    fn redress(&mut self) {
+        let (Some(items), Some(f)) = (&self.items, &mut self.figure) else {
+            return;
+        };
+        let garbs: Vec<hearth_character::Garb> = self
+            .carry
+            .worn
+            .iter()
+            .filter_map(|w| {
+                let k = w.stack.kind(items)?;
+                let wear = k.wear.as_ref()?;
+                Some(hearth_character::Garb {
+                    garment: wear.garment.clone(),
+                    color: k.color,
+                    layer: wear.layer,
+                    regions: wear.regions.clone(),
+                })
+            })
+            .collect();
+        f.dress(&garbs);
+    }
+
+    /// What the inventory screen shows.
+    pub fn inventory_view(&self) -> Option<crate::inventory_ui::InventoryView<'_>> {
+        Some(crate::inventory_ui::InventoryView {
+            carry: &self.carry,
+            items: self.items.as_deref()?,
+            body_kg: self.body_cfg.as_ref().map_or(70.0, |c| c.mass_kg as f32),
+        })
+    }
+
+    /// Puts a carried thing down just in front of the feet.
+    pub fn put_down_from(&mut self, from: hearth_items::Path, count: Option<u16>) {
+        let (sy, cy) = (self.camera.yaw as f64).to_radians().sin_cos();
+        let at = self.mover.pos + DVec3::new(-sy * 0.6, 0.5, cy * 0.6);
+        self.server.send(ToServer::PutDown { from, count, at });
+    }
+
+    /// Whether the player can look through what they carry now.
+    pub fn can_handle(&self) -> bool {
+        self.items.is_some() && !self.dead() && !self.lying() && self.mode == CameraMode::Body
+    }
+
     /// What the crosshair says: what is aimed at and what can be done with it.
     pub fn aim_words(&self, l: &Lang) -> Option<String> {
         let items = self.items.as_ref()?;
@@ -1218,11 +1262,15 @@ impl Client {
                 ToClient::Woke(why) => self.woke = Some((why, 0.0)),
                 ToClient::Person(a) => {
                     self.figure = Some(Figure::new(a));
+                    self.redress();
                     self.pose = None;
                     self.hearing = crate::hearing::Hearing::default();
                 }
                 ToClient::Ended(s) => self.ended = Some(s),
-                ToClient::Carried(c) => self.carry = c,
+                ToClient::Carried(c) => {
+                    self.carry = c;
+                    self.redress();
+                }
                 ToClient::Items(v) => self.world_items = v,
                 ToClient::Placed(m) => {
                     self.mover = m;

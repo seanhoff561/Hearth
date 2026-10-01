@@ -356,6 +356,7 @@ impl App {
             }
             match key {
                 InputKey::Mouse(MouseButton::Left) => run.interface.button(true),
+                InputKey::Mouse(MouseButton::Right) => run.interface.alt_button(),
                 InputKey::Keyboard(k) => {
                     let nav = match k {
                         Key::Up => Some(NavKey::Up),
@@ -370,7 +371,11 @@ impl App {
                         Key::End => Some(NavKey::End),
                         _ => None,
                     };
-                    if let Some(n) = nav {
+                    let inventory_key = self.bindings.get(builtin::INVENTORY)
+                        == Some(hearth_input::Binding::key(k));
+                    if inventory_key && run.menus.inventory_open() {
+                        run.menus.close_all();
+                    } else if let Some(n) = nav {
                         run.interface.key(n);
                     } else if k == Key::Escape {
                         let action = run.menus.back();
@@ -435,6 +440,12 @@ impl App {
                         p.toggle_rest();
                     } else if action == builtin::BODY_PANEL {
                         p.toggle_body_panel();
+                    } else if action == builtin::INVENTORY && p.can_handle() {
+                        run.menus.open(Screen::Inventory {
+                            lifted: None,
+                            turned: false,
+                        });
+                        release_mouse = true;
                     }
                 }
             }
@@ -494,6 +505,16 @@ impl App {
                     seed,
                     death_rules,
                 } => self.play(&folder, seed, death_rules),
+                MenuAction::Shift { from, count, to } => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.shift(from, count, to);
+                    }
+                }
+                MenuAction::PutDown { from, count } => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.put_down_from(from, count);
+                    }
+                }
                 MenuAction::LiveOn(who) => {
                     if let Some(run) = &mut self.running {
                         run.menus.close_all();
@@ -698,14 +719,17 @@ impl App {
                         audio_devices,
                         profiles,
                         death: client.as_ref().and_then(|c| c.death_info(ui.lang)),
+                        inventory: client.as_ref().and_then(|c| c.inventory_view()),
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
                 // The character screen's person, over its space in the interface.
                 if let Some(p) = menus.preview() {
-                    let fig = preview_figure
-                        .get_or_insert_with(|| hearth_character::Figure::new(p.appearance.clone()));
+                    let fig = preview_figure.get_or_insert_with(|| {
+                        hearth_character::Figure::starting(p.appearance.clone())
+                    });
                     fig.set_appearance(&p.appearance);
+                    fig.dress(&hearth_character::starting_garbs(&p.appearance));
                     let drive = hearth_character::Drive {
                         breaths_per_min: 12.0,
                         ..Default::default()

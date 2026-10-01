@@ -77,6 +77,11 @@ impl Interface {
         }
     }
 
+    /// The secondary (right) button went down.
+    pub fn alt_button(&mut self) {
+        self.input.alt_pressed = true;
+    }
+
     pub fn scroll(&mut self, steps: f32) {
         self.input.scroll += steps;
     }

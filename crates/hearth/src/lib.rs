@@ -14,6 +14,7 @@ pub mod gamepad;
 pub mod globe;
 pub mod hearing;
 pub mod interface;
+pub mod inventory_ui;
 pub mod lod_stream;
 pub mod menus;
 pub mod profiles;

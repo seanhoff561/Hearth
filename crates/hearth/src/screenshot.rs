@@ -467,7 +467,7 @@ pub fn render_shot(
     if spec.body {
         // The camera in the eyes of someone standing here, looking as the shot looks.
         let feet = DVec3::new(sx, lw.surface_y(sx, sz) + 1.0, sz);
-        let figure = hearth_character::Figure::new(hearth_character::Appearance::default());
+        let figure = hearth_character::Figure::starting(hearth_character::Appearance::default());
         let pose = figure.animator.pose(
             &figure.rig,
             hearth_character::Activity::Stand,
@@ -500,7 +500,7 @@ pub fn render_shot(
         let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
         let (px, pz) = (camera.pos.x + flat.x * d, camera.pos.z + flat.z * d);
         let feet = DVec3::new(px, lw.surface_y(px, pz), pz);
-        let figure = hearth_character::Figure::new(hearth_character::Appearance::default());
+        let figure = hearth_character::Figure::starting(hearth_character::Appearance::default());
         let pose = figure.animator.pose(
             &figure.rig,
             hearth_character::Activity::Stand,

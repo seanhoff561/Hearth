@@ -99,6 +99,8 @@ pub struct UiInput {
     pub down: bool,
     pub pressed: bool,
     pub released: bool,
+    /// The secondary (right) button pressed this frame.
+    pub alt_pressed: bool,
     /// Wheel steps (positive away from the player).
     pub scroll: f32,
     /// Text typed.

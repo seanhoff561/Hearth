@@ -64,6 +64,11 @@ pub enum Screen {
     },
     /// After death: what the world's rules allow.
     Death,
+    /// What the player carries (Tab): a thing lifted onto the pointer, and whether it is turned.
+    Inventory {
+        lifted: Option<crate::inventory_ui::Lifted>,
+        turned: bool,
+    },
     Pause,
     Options,
     Video,
@@ -103,6 +108,17 @@ pub enum MenuAction {
     },
     /// Live on after death (as this person, under Legacy).
     LiveOn(Option<Appearance>),
+    /// Move a carried thing.
+    Shift {
+        from: hearth_items::Path,
+        count: Option<u16>,
+        to: hearth_items::Target,
+    },
+    /// Put a carried thing down on the ground.
+    PutDown {
+        from: hearth_items::Path,
+        count: Option<u16>,
+    },
     Resume,
     QuitToTitle,
     QuitGame,
@@ -125,6 +141,8 @@ pub struct MenuContext<'a> {
     pub profiles: &'a mut crate::profiles::Profiles,
     /// The player's death, when there is one to face.
     pub death: Option<DeathInfo>,
+    /// What the player carries, in a world.
+    pub inventory: Option<crate::inventory_ui::InventoryView<'a>>,
 }
 
 /// What the death screen says.
@@ -205,6 +223,11 @@ impl Menus {
                 None
             }
         }
+    }
+
+    /// Whether the inventory is the screen shown.
+    pub fn inventory_open(&self) -> bool {
+        matches!(self.stack.last(), Some(Screen::Inventory { .. }))
     }
 
     /// Whether the controls screen is waiting for a key.
@@ -772,6 +795,12 @@ impl Menus {
             Screen::Death => {
                 death_screen(ui, cx, &mut out, &mut push);
             }
+            Screen::Inventory { lifted, turned } => match &cx.inventory {
+                Some(view) => {
+                    crate::inventory_ui::inventory_screen(ui, view, lifted, turned, &mut out);
+                }
+                None => pop = true,
+            },
             Screen::Character { yaw, light, drag } => {
                 let (preview, changed, done) = character_screen(ui, cx.profiles, yaw, light, drag);
                 self.preview = Some(preview);

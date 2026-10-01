@@ -48,6 +48,7 @@ fn render(
                     rules: hearth_save::DeathRules::Legacy,
                     summary: None,
                 }),
+                inventory: None,
             };
             actions = menus.ui(ui, &mut cx);
         },

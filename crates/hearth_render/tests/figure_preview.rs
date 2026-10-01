@@ -77,7 +77,7 @@ fn bodies_stand_in_the_preview() {
                     multiview_mask: None,
                 });
             }
-            let f = Figure::new(a.clone());
+            let f = Figure::starting(a.clone());
             let pose = f.animator.pose(&f.rig, Activity::Stand, &Drive::default());
             let mut boxes = Vec::new();
             // Each turned a little toward the camera's right.
@@ -123,4 +123,112 @@ fn bodies_stand_in_the_preview() {
         let name = format!("character_{light:?}").to_lowercase();
         write_png(&out.join(format!("{name}.png")), w, h, &px).expect("png");
     }
+}
+
+#[test]
+fn dressed_for_winter() {
+    use hearth_character::Garb;
+    use hearth_content::schema::body::{BodyRegion, ClothingLayer};
+    let Ok(ctx) = GpuContext::headless(false) else {
+        eprintln!("skipped: no GPU adapter");
+        return;
+    };
+    let fur = [118, 86, 60];
+    let garbs = vec![
+        Garb {
+            garment: "hearth:sewn_fur_parka".into(),
+            color: fur,
+            layer: ClothingLayer::Outer,
+            regions: vec![
+                BodyRegion::Head,
+                BodyRegion::Chest,
+                BodyRegion::Abdomen,
+                BodyRegion::UpperArm,
+                BodyRegion::LowerArm,
+            ],
+        },
+        Garb {
+            garment: "hearth:fur_leggings".into(),
+            color: [96, 72, 52],
+            layer: ClothingLayer::Main,
+            regions: vec![
+                BodyRegion::Pelvis,
+                BodyRegion::UpperLeg,
+                BodyRegion::LowerLeg,
+            ],
+        },
+        Garb {
+            garment: "hearth:moccasins".into(),
+            color: [140, 104, 70],
+            layer: ClothingLayer::Feet,
+            regions: vec![BodyRegion::Foot],
+        },
+        Garb {
+            garment: "hearth:fur_mittens".into(),
+            color: fur,
+            layer: ClothingLayer::Hands,
+            regions: vec![BodyRegion::Hand],
+        },
+    ];
+    let (w, h) = (640, 720);
+    let target = OffscreenTarget::new(&ctx, w, h);
+    let mut preview = FigurePreview::new(&ctx, OFFSCREEN_FORMAT);
+    for (k, a) in [Appearance::default(), Appearance::female()]
+        .into_iter()
+        .enumerate()
+    {
+        let mut f = Figure::new(a);
+        f.dress(&garbs);
+        let pose = f.animator.pose(&f.rig, Activity::Stand, &Drive::default());
+        let mut boxes = Vec::new();
+        let place = Affine3A::from_rotation_translation(Quat::from_rotation_y(0.4), Vec3::ZERO);
+        instances(
+            &f.rig,
+            &f.palette,
+            &pose,
+            place,
+            Show::default(),
+            &mut boxes,
+        );
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        if k == 0 {
+            let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target.color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.05,
+                            g: 0.06,
+                            b: 0.08,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+        }
+        preview.render(
+            &ctx,
+            &mut enc,
+            &target.color_view,
+            (w, h),
+            [k as u32 * 320, 0, 320, 720],
+            &boxes,
+            1.9,
+            PreviewLight::Overcast,
+        );
+        ctx.queue.submit(Some(enc.finish()));
+    }
+    let px = target.read_rgba(&ctx);
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
+    write_png(&out.join("character_winter.png"), w, h, &px).expect("png");
 }

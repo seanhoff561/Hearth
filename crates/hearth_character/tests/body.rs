@@ -298,3 +298,77 @@ fn first_person_leaves_out_the_head() {
         assert!(top < 0.85 * f.rig.dims.stature, "a box reaches {top}");
     }
 }
+
+#[test]
+fn garments_dress_the_body() {
+    use hearth_character::{Garb, starting_garbs};
+    use hearth_content::schema::body::{BodyRegion, ClothingLayer};
+    let a = Appearance {
+        hair: HairStyle::LongStraight,
+        facial_hair: hearth_character::FacialHair::FullBeard,
+        ..Appearance::female()
+    };
+    let mut f = Figure::new(a.clone());
+    assert!(f.rig.clothes.is_empty(), "undressed");
+    f.dress(&starting_garbs(&a));
+    let start = f.rig.clothes.len();
+    assert_eq!(start, 5, "a loincloth's four boxes and a chest band");
+    // Fur leggings over the hips and both legs, standing off the skin.
+    let leggings = Garb {
+        garment: "hearth:fur_leggings".into(),
+        color: [110, 80, 60],
+        layer: ClothingLayer::Main,
+        regions: vec![
+            BodyRegion::Pelvis,
+            BodyRegion::UpperLeg,
+            BodyRegion::LowerLeg,
+        ],
+    };
+    let mut garbs = starting_garbs(&a);
+    garbs.push(leggings);
+    f.dress(&garbs);
+    let added: Vec<_> = f.rig.clothes[start..].to_vec();
+    assert_eq!(
+        added.len(),
+        1 + 4 + 4,
+        "the pelvis, two thighs and two shins of two boxes"
+    );
+    for c in &added {
+        let skin = f
+            .rig
+            .parts
+            .iter()
+            .find(|p| p.joint == c.joint && p.center == c.center)
+            .expect("over a body part");
+        assert!(c.size.cmpgt(skin.size).all(), "wider than the skin");
+    }
+    // A parka's hood covers the hair, not the beard.
+    let parka = Garb {
+        garment: "hearth:sewn_fur_parka".into(),
+        color: [120, 90, 70],
+        layer: ClothingLayer::Outer,
+        regions: vec![BodyRegion::Head, BodyRegion::Chest],
+    };
+    let count_hair = |f: &Figure| {
+        let pose = Pose::rest(&f.rig);
+        let mut boxes = Vec::new();
+        instances(
+            &f.rig,
+            &f.palette,
+            &pose,
+            Affine3A::IDENTITY,
+            Show::default(),
+            &mut boxes,
+        );
+        let hair = f.palette.hair;
+        boxes.iter().filter(|b| b.color[..3] == hair[..]).count()
+    };
+    let bare = count_hair(&f);
+    f.dress(&[parka]);
+    assert!(f.rig.hooded);
+    let hooded = count_hair(&f);
+    assert!(
+        hooded < bare && hooded > 0,
+        "{bare} hair boxes, {hooded} under the hood (the beard)"
+    );
+}

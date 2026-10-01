@@ -6,6 +6,8 @@
 
 use glam::Vec3;
 
+use hearth_content::schema::body::{BodyRegion, ClothingLayer};
+
 use crate::appearance::{Appearance, BodyType, FacialHair, HairStyle};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,6 +229,8 @@ pub enum Stuff {
     Sclera,
     Iris,
     Cloth,
+    /// A garment's own colour (sRGB).
+    Dyed([u8; 3]),
 }
 
 /// What a box belongs to, so parts can be hidden (the head in first person).
@@ -255,6 +259,10 @@ pub struct Rig {
     pub dims: Proportions,
     pub rest: [Vec3; JOINTS],
     pub parts: Vec<Part>,
+    /// The garments' boxes, over the body's.
+    pub clothes: Vec<Part>,
+    /// A hood covers the hair.
+    pub hooded: bool,
 }
 
 impl Rig {
@@ -271,12 +279,20 @@ impl Rig {
         body(&dims, &mut parts);
         face(&a, &dims, &mut parts);
         hair(&a, &dims, &mut parts);
-        clothes(&a, &dims, &mut parts);
         Self {
             dims,
             rest: dims.rest_offsets(),
             parts,
+            clothes: Vec::new(),
+            hooded: false,
         }
+    }
+
+    /// Dresses the body in these garments (replacing what it wore).
+    pub fn dress(&mut self, garbs: &[Garb]) {
+        let mut clothes = Vec::new();
+        self.hooded = garments(&self.parts, &self.dims, garbs, &mut clothes);
+        self.clothes = clothes;
     }
 }
 
@@ -832,53 +848,193 @@ fn hair(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
     }
 }
 
-fn clothes(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
+/// A garment worn, as it looks: which garment, its colour (sRGB), its layer and the regions it
+/// covers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Garb {
+    /// The garment's content id (`hearth:loincloth`).
+    pub garment: String,
+    pub color: [u8; 3],
+    pub layer: ClothingLayer,
+    pub regions: Vec<BodyRegion>,
+}
+
+/// What each joint's flesh is, as the clothing's regions name it.
+fn region_of(j: Joint) -> BodyRegion {
+    use Joint::*;
+    match j {
+        Root => BodyRegion::Pelvis,
+        Waist => BodyRegion::Abdomen,
+        Chest => BodyRegion::Chest,
+        Neck => BodyRegion::Neck,
+        Head => BodyRegion::Head,
+        ShoulderL | ShoulderR => BodyRegion::UpperArm,
+        ElbowL | ElbowR => BodyRegion::LowerArm,
+        WristL | WristR => BodyRegion::Hand,
+        HipL | HipR => BodyRegion::UpperLeg,
+        KneeL | KneeR => BodyRegion::LowerLeg,
+        AnkleL | AnkleR => BodyRegion::Foot,
+    }
+}
+
+/// How thick a layer lies over the skin (a share of stature).
+fn layer_thickness(l: ClothingLayer) -> f32 {
+    match l {
+        ClothingLayer::Under => 0.003,
+        ClothingLayer::Main => 0.007,
+        ClothingLayer::Outer => 0.012,
+        ClothingLayer::Feet | ClothingLayer::Hands => 0.006,
+        ClothingLayer::Head => 0.009,
+        ClothingLayer::Belt | ClothingLayer::Back => 0.004,
+    }
+}
+
+/// The boxes of the garments worn, over the body's.
+fn garments(body: &[Part], d: &Proportions, garbs: &[Garb], out: &mut Vec<Part>) -> bool {
     let h = d.stature;
     let v = Vec3::new;
-    let b = Region::Body;
-    let cloth = Stuff::Cloth;
-    // A loincloth: a tie at the hips, flaps before and behind, the cloth between the legs.
-    add(
-        out,
-        Joint::Root,
-        v(0.0, (0.585 - HIP) * h, 0.0),
-        v(d.hip_w + 0.008 * h, 0.02 * h, d.pelvis_d + 0.008 * h),
-        cloth,
-        b,
-        0.004 * h,
-    );
-    for (s, w) in [(1.0, 0.075), (-1.0, 0.085)] {
-        add(
-            out,
-            Joint::Root,
-            v(0.0, (0.505 - HIP) * h, s * (d.pelvis_d / 2.0 + 0.003 * h)),
-            v(w * h, 0.13 * h, 0.004 * h),
-            cloth,
-            b,
-            0.0,
-        );
+    let mut hooded = false;
+    for g in garbs {
+        let cloth = Stuff::Dyed(g.color);
+        let t = layer_thickness(g.layer) * h;
+        let name = g.garment.rsplit(':').next().unwrap_or(&g.garment);
+        match name {
+            "loincloth" => {
+                // A tie at the hips, flaps before and behind, the cloth between the legs.
+                add(
+                    out,
+                    Joint::Root,
+                    v(0.0, (0.585 - HIP) * h, 0.0),
+                    v(d.hip_w + 0.008 * h, 0.02 * h, d.pelvis_d + 0.008 * h),
+                    cloth,
+                    Region::Body,
+                    0.004 * h,
+                );
+                for (s, w) in [(1.0, 0.075), (-1.0, 0.085)] {
+                    add(
+                        out,
+                        Joint::Root,
+                        v(0.0, (0.505 - HIP) * h, s * (d.pelvis_d / 2.0 + 0.003 * h)),
+                        v(w * h, 0.13 * h, 0.004 * h),
+                        cloth,
+                        Region::Body,
+                        0.0,
+                    );
+                }
+                add(
+                    out,
+                    Joint::Root,
+                    v(0.0, (CROTCH + 0.008 - HIP) * h, 0.0),
+                    v(d.hip_w * 0.55, 0.025 * h, d.pelvis_d * 0.9),
+                    cloth,
+                    Region::Body,
+                    0.004 * h,
+                );
+            }
+            "chest_band" => {
+                let front = d.chest_d / 2.0 - 0.004 * h + d.bust_d + 0.003 * h;
+                let back = -d.chest_d / 2.0 - 0.007 * h;
+                add(
+                    out,
+                    Joint::Chest,
+                    v(0.0, 0.032 * h, (front + back) / 2.0),
+                    v(d.chest_w + 0.006 * h, 0.062 * h, front - back),
+                    cloth,
+                    Region::Body,
+                    0.008 * h,
+                );
+            }
+            "belt" => {
+                add(
+                    out,
+                    Joint::Waist,
+                    v(0.0, 0.004 * h, 0.004 * h),
+                    v(d.waist_w + 0.01 * h, 0.018 * h, d.waist_d + 0.01 * h),
+                    cloth,
+                    Region::Body,
+                    0.005 * h,
+                );
+            }
+            _ => {
+                for r in &g.regions {
+                    if *r == BodyRegion::Head {
+                        // A hood: over the top, the back and the sides, the face left open.
+                        hooded = true;
+                        let (c, half) = head_box(d);
+                        let w = d.head_w + 2.0 * t;
+                        add(
+                            out,
+                            Joint::Head,
+                            v(0.0, c.y + half.y + t / 2.0, c.z - 0.002 * h),
+                            v(w, t + 0.004 * h, d.head_d + 2.0 * t),
+                            cloth,
+                            Region::Head,
+                            0.01 * h,
+                        );
+                        add(
+                            out,
+                            Joint::Head,
+                            v(0.0, c.y, c.z - half.z - t / 2.0),
+                            v(w, d.head_h + 2.0 * t, t),
+                            cloth,
+                            Region::Head,
+                            0.0,
+                        );
+                        for side in [1.0, -1.0] {
+                            add(
+                                out,
+                                Joint::Head,
+                                v(side * (half.x + t / 2.0), c.y, c.z - half.z * 0.2),
+                                v(t, d.head_h + 2.0 * t, d.head_d * 0.8),
+                                cloth,
+                                Region::Head,
+                                0.0,
+                            );
+                        }
+                        continue;
+                    }
+                    for p in body.iter().filter(|p| {
+                        p.stuff == Stuff::Skin
+                            && region_of(p.joint) == *r
+                            && p.joint != Joint::Head
+                            && p.size.min_element() > 0.008 * h
+                    }) {
+                        // A little longer than the flesh, so neighbouring pieces meet over the
+                        // joints, and less rounded.
+                        add(
+                            out,
+                            p.joint,
+                            p.center,
+                            p.size + Vec3::new(2.0 * t, 2.0 * t + 0.012 * h, 2.0 * t),
+                            cloth,
+                            p.region,
+                            p.round * 0.5,
+                        );
+                    }
+                }
+            }
+        }
     }
-    add(
-        out,
-        Joint::Root,
-        v(0.0, (CROTCH + 0.008 - HIP) * h, 0.0),
-        v(d.hip_w * 0.55, 0.025 * h, d.pelvis_d * 0.9),
-        cloth,
-        b,
-        0.004 * h,
-    );
-    // A band across the chest (D70).
+    hooded
+}
+
+/// What a new person starts in (as the server dresses them): a loincloth of their chosen
+/// material, and a chest band for a female body (D70).
+pub fn starting_garbs(a: &Appearance) -> Vec<Garb> {
+    let color = a.loincloth.srgb();
+    let mut out = vec![Garb {
+        garment: "hearth:loincloth".into(),
+        color,
+        layer: ClothingLayer::Under,
+        regions: vec![BodyRegion::Pelvis],
+    }];
     if a.body == BodyType::Female {
-        let front = d.chest_d / 2.0 - 0.004 * h + d.bust_d + 0.003 * h;
-        let back = -d.chest_d / 2.0 - 0.007 * h;
-        add(
-            out,
-            Joint::Chest,
-            v(0.0, 0.032 * h, (front + back) / 2.0),
-            v(d.chest_w + 0.006 * h, 0.062 * h, front - back),
-            cloth,
-            b,
-            0.008 * h,
-        );
+        out.push(Garb {
+            garment: "hearth:chest_band".into(),
+            color,
+            layer: ClothingLayer::Under,
+            regions: vec![BodyRegion::Chest],
+        });
     }
+    out
 }

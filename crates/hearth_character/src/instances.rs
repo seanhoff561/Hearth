@@ -61,6 +61,7 @@ impl Palette {
             Stuff::Sclera => self.sclera,
             Stuff::Iris => self.iris,
             Stuff::Cloth => self.cloth,
+            Stuff::Dyed(c) => c,
         }
     }
 }
@@ -87,8 +88,16 @@ pub fn instances(
 ) {
     let joints = pose.joints(rig);
     let light = [show.sky_light.min(15), show.block_light.min(15), 0, 0];
-    for p in &rig.parts {
+    for p in rig.parts.iter().chain(&rig.clothes) {
         if show.hide_head && p.region == Region::Head {
+            continue;
+        }
+        // A hood covers the hair (not the beard).
+        if rig.hooded
+            && p.joint == crate::rig::Joint::Head
+            && matches!(p.stuff, Stuff::Hair | Stuff::Shadow)
+            && p.center.y > 0.02 * rig.dims.stature
+        {
             continue;
         }
         let m = place * joints[p.joint.index()];

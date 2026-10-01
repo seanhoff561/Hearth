@@ -13,7 +13,7 @@ pub use appearance::{
     Appearance, BodyType, EyeColor, FacialHair, HAIR_COLORS, HairStyle, Loincloth,
 };
 pub use instances::{FigureInstance, Palette, Show, instances, solid};
-pub use rig::{EYE, Joint, Region, Rig, Stuff};
+pub use rig::{EYE, Garb, Joint, Region, Rig, Stuff, starting_garbs};
 
 /// A person ready to draw: their rig and colours, rebuilt when their appearance changes.
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +22,8 @@ pub struct Figure {
     pub rig: Rig,
     pub palette: Palette,
     pub animator: Animator,
+    /// What they wear.
+    pub garbs: Vec<Garb>,
 }
 
 impl Figure {
@@ -32,17 +34,36 @@ impl Figure {
             palette: Palette::of(&appearance),
             appearance,
             animator: Animator::default(),
+            garbs: Vec::new(),
         }
     }
 
-    /// Takes a changed appearance (keeps the animation going).
+    /// Takes a changed appearance (keeps the animation going and what is worn).
     pub fn set_appearance(&mut self, appearance: &Appearance) {
         let a = appearance.clone().sanitized();
         if a != self.appearance {
+            let garbs = std::mem::take(&mut self.garbs);
             self.rig = Rig::new(&a);
             self.palette = Palette::of(&a);
             self.appearance = a;
+            self.dress(&garbs);
         }
+    }
+
+    /// Dresses the person (when what they wear changed).
+    pub fn dress(&mut self, garbs: &[Garb]) {
+        if garbs != self.garbs.as_slice() {
+            self.rig.dress(garbs);
+            self.garbs = garbs.to_vec();
+        }
+    }
+
+    /// A person dressed as they start (a loincloth; a chest band for a female body).
+    pub fn starting(appearance: Appearance) -> Self {
+        let garbs = starting_garbs(&appearance);
+        let mut f = Self::new(appearance);
+        f.dress(&garbs);
+        f
     }
 
     /// Where a hand holds things in the figure's frame (the middle of the palm, the thing's
