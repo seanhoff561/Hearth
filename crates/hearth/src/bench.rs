@@ -225,6 +225,8 @@ pub struct BenchOptions {
     pub software: bool,
     /// Vertical LOD error allowed on screen (pixels; 0: the distance rule alone).
     pub lod_error: f64,
+    /// Rendered size relative to the output (FSR 1 upscaling below 1).
+    pub render_scale: f32,
 }
 
 impl Default for BenchOptions {
@@ -244,6 +246,7 @@ impl Default for BenchOptions {
             gate: 5.0,
             software: false,
             lod_error: VideoOptions::default().lod_error_px(),
+            render_scale: VideoOptions::default().render_scale,
         }
     }
 }
@@ -273,6 +276,8 @@ OPTIONS:
     --gate PCT                   Allowed drop (default 5)
     --lod-error PX               Vertical LOD error allowed on screen (default: the
                                  preset's, 2; 0 = the distance rule alone)
+    --render-scale S             Render at S times the size (0.5-2, default 1): upscaled
+                                 with FSR 1 below 1, filtered down above
     --software                   Use the software adapter";
 
 impl BenchOptions {
@@ -319,6 +324,7 @@ impl BenchOptions {
                 "--gate" => o.gate = val()?.parse()?,
                 "--software" => o.software = true,
                 "--lod-error" => o.lod_error = val()?.parse::<f64>()?.max(0.0),
+                "--render-scale" => o.render_scale = val()?.parse::<f32>()?.clamp(0.5, 2.0),
                 other => anyhow::bail!("unknown argument {other:?}"),
             }
         }
@@ -427,7 +433,7 @@ pub fn run_with(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result
         adapter: ctx.info.name.clone(),
         backend: format!("{:?}", ctx.info.backend),
         resolution: (opts.width, opts.height),
-        preset: format!("{:?}", video.graphics),
+        preset: preset_label(&video, opts),
         scenes: Vec::new(),
     };
     for name in &opts.scenes {
@@ -585,6 +591,7 @@ fn run_scene(
     );
     scene.terrain.render_distance = rd;
     scene.terrain.vertical_distance = video.vertical_render_distance as i32;
+    scene.render_scale = opts.render_scale;
     for m in &meshes {
         scene.terrain.upload(ctx, m);
     }
@@ -603,7 +610,10 @@ fn run_scene(
         ]
     };
     // Refined by screen-space error as the game does (`LodStream`).
-    let ppr = hearth_lod::px_per_rad(opts.height, VideoOptions::default().fov);
+    let ppr = hearth_lod::px_per_rad(
+        scene.render_size((opts.width, opts.height)).1,
+        VideoOptions::default().fov,
+    );
     let select = |c: DVec3, errors: &Errors, split_before: &FxHashSet<TileKey>| {
         if def.lod == 0 {
             return Vec::new();
@@ -1426,6 +1436,18 @@ fn diff_image(a: &[u8], b: &[u8]) -> Vec<u8> {
 }
 
 // ------------------------------------------------------------------------------ reports
+
+/// The preset's name, with the settings the options override.
+fn preset_label(video: &VideoOptions, opts: &BenchOptions) -> String {
+    let mut s = format!("{:?}", video.graphics);
+    if opts.lod_error != video.lod_error_px() {
+        let _ = write!(s, ", LOD error {} px", opts.lod_error);
+    }
+    if opts.render_scale != video.render_scale {
+        let _ = write!(s, ", render scale {}", opts.render_scale);
+    }
+    s
+}
 
 fn report(run: &BenchRun) -> String {
     let mut s = String::new();

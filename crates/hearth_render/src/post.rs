@@ -1,9 +1,12 @@
 //! HDR render target, highlight metering (`shaders/meter.wgsl`) and the final tonemap to the
-//! display format (`shaders/post.wgsl`).
+//! display format (`shaders/post.wgsl`). A frame rendered at another size than the output's
+//! (the render scale) is tonemapped at its own size, then upscaled with FSR 1's EASU and RCAS
+//! passes or filtered down.
 
 use bytemuck::{Pod, Zeroable};
 
 use crate::gpu::GpuContext;
+use crate::profiler::GpuTimer;
 
 /// Format of the scene's HDR colour target.
 pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -12,11 +15,37 @@ pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const METER_BRIGHT_TARGET: f32 = 1.2;
 /// The metering darkens the frame by at most this factor.
 const METER_MIN_SCALE: f32 = 1.0 / 16.0;
+/// Format of the tonemapped (perceptual) frame the upscaler reads and writes.
+const LDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgb10a2Unorm;
+/// RCAS sharpening, in stops below the strongest (FSR 1's usual 0.2).
+const RCAS_STOPS: f32 = 0.2;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Params {
     p: [f32; 4],
+}
+
+/// The upscaling passes' parameters (`Scale` in `post.wgsl`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct ScaleParams {
+    /// Source texels per output pixel, and the source's size.
+    ratio: [f32; 2],
+    size: [f32; 2],
+    sharp: [f32; 4],
+}
+
+/// The targets of a frame rendered at another size than the output's.
+struct Scaled {
+    render: (u32, u32),
+    output: (u32, u32),
+    /// The tonemapped frame at the render size, read by EASU (or the resampling).
+    _ldr: wgpu::Texture,
+    ldr: wgpu::TextureView,
+    from_ldr: wgpu::BindGroup,
+    /// When upscaling: EASU's output at the output size, read by RCAS.
+    up: Option<(wgpu::Texture, wgpu::TextureView, wgpu::BindGroup)>,
 }
 
 struct HdrTarget {
@@ -36,6 +65,15 @@ pub struct PostProcess {
     meter_layout: wgpu::BindGroupLayout,
     meter_pipe: wgpu::ComputePipeline,
     hdr: Option<HdrTarget>,
+    /// Rendering at another size: tonemapping to the perceptual copy, EASU, RCAS, and the
+    /// down-filter, with their layout, sampler and targets.
+    tonemap_pipe: wgpu::RenderPipeline,
+    easu_pipe: wgpu::RenderPipeline,
+    rcas_pipe: wgpu::RenderPipeline,
+    resample_pipe: wgpu::RenderPipeline,
+    scale_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    scaled: Option<Scaled>,
 }
 
 impl PostProcess {
@@ -107,30 +145,71 @@ impl PostProcess {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        let pipe = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("tonemap"),
-            layout: Some(&pl),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: output_format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
+        let scale_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("upscale layout"),
+            entries: &[
+                entry(3, fs, uniform_ty),
+                entry(
+                    4,
+                    fs,
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                ),
+                entry(
+                    5,
+                    fs,
+                    wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                ),
+            ],
+        });
+        let scale_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("upscale pipeline layout"),
+            bind_group_layouts: &[Some(&scale_layout)],
+            immediate_size: 0,
+        });
+        let pipeline = |label: &str,
+                        layout: &wgpu::PipelineLayout,
+                        entry_point: &str,
+                        format: wgpu::TextureFormat| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(entry_point),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipe = pipeline("tonemap", &pl, "fs_main", output_format);
+        let tonemap_pipe = pipeline("tonemap to scale", &pl, "fs_tonemap", LDR_FORMAT);
+        let easu_pipe = pipeline("easu", &scale_pl, "fs_easu", LDR_FORMAT);
+        let rcas_pipe = pipeline("rcas", &scale_pl, "fs_rcas", output_format);
+        let resample_pipe = pipeline("resample", &scale_pl, "fs_resample", output_format);
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("upscale sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
         });
         let meter_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("meter.wgsl"),
@@ -158,6 +237,13 @@ impl PostProcess {
             meter_layout,
             meter_pipe,
             hdr: None,
+            tonemap_pipe,
+            easu_pipe,
+            rcas_pipe,
+            resample_pipe,
+            scale_layout,
+            sampler,
+            scaled: None,
         }
     }
 
@@ -241,16 +327,25 @@ impl PostProcess {
         pass.dispatch_workgroups(1, 1, 1);
     }
 
-    /// Tonemaps the HDR target into `output`.
+    /// Tonemaps the HDR target into `output` (`size` pixels): directly at the same size; else
+    /// through a tonemapped copy at the HDR target's size, upscaled by EASU and sharpened by
+    /// RCAS, or filtered down when larger.
     pub fn render(
-        &self,
+        &mut self,
         ctx: &GpuContext,
         enc: &mut wgpu::CommandEncoder,
         output: &wgpu::TextureView,
+        size: (u32, u32),
         exposure: f32,
         night: f32,
+        mut timer: Option<&mut GpuTimer>,
     ) {
-        let Some(hdr) = &self.hdr else {
+        let mut mark = |enc: &mut wgpu::CommandEncoder, label: &'static str| {
+            if let Some(t) = timer.as_deref_mut() {
+                t.mark(enc, label);
+            }
+        };
+        let Some(render) = self.hdr.as_ref().map(|h| h.size) else {
             return;
         };
         ctx.write_buffer(
@@ -260,24 +355,147 @@ impl PostProcess {
                 p: [exposure, night, 0.0, 0.0],
             }),
         );
-        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("tonemap"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: output,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.pipe);
-        pass.set_bind_group(0, &hdr.tonemap_bind, &[]);
-        pass.draw(0..3, 0..1);
+        if render != size
+            && self
+                .scaled
+                .as_ref()
+                .is_none_or(|s| (s.render, s.output) != (render, size))
+        {
+            self.scaled = Some(self.scaled_targets(ctx, render, size));
+        }
+        let hdr = self.hdr.as_ref().expect("checked above");
+        if render == size {
+            fullscreen(enc, "tonemap", output, &self.pipe, &hdr.tonemap_bind);
+            mark(enc, "tonemap");
+            return;
+        }
+        let s = self.scaled.as_ref().expect("made above");
+        fullscreen(
+            enc,
+            "tonemap",
+            &s.ldr,
+            &self.tonemap_pipe,
+            &hdr.tonemap_bind,
+        );
+        mark(enc, "tonemap");
+        match &s.up {
+            Some((_, up, from_up)) => {
+                fullscreen(enc, "easu", up, &self.easu_pipe, &s.from_ldr);
+                mark(enc, "upscale (easu)");
+                fullscreen(enc, "rcas", output, &self.rcas_pipe, from_up);
+                mark(enc, "sharpen (rcas)");
+            }
+            None => {
+                fullscreen(enc, "resample", output, &self.resample_pipe, &s.from_ldr);
+                mark(enc, "filter down");
+            }
+        }
     }
+
+    /// The targets and bind groups for a frame rendered at `render` and shown at `output`.
+    fn scaled_targets(&self, ctx: &GpuContext, render: (u32, u32), output: (u32, u32)) -> Scaled {
+        let device = &ctx.device;
+        let texture = |label: &str, (w, h): (u32, u32)| {
+            let t = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: w.max(1),
+                    height: h.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: LDR_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let v = t.create_view(&Default::default());
+            (t, v)
+        };
+        // Each pass reads its source with its own ratio and size.
+        let bind = |label: &str, view: &wgpu::TextureView, from: (u32, u32), to: (u32, u32)| {
+            let params = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: std::mem::size_of::<ScaleParams>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            ctx.write_buffer(
+                &params,
+                0,
+                bytemuck::bytes_of(&ScaleParams {
+                    ratio: [
+                        from.0 as f32 / to.0.max(1) as f32,
+                        from.1 as f32 / to.1.max(1) as f32,
+                    ],
+                    size: [from.0 as f32, from.1 as f32],
+                    sharp: [(-RCAS_STOPS).exp2(), 0.0, 0.0, 0.0],
+                }),
+            );
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(label),
+                layout: &self.scale_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: params.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            })
+        };
+        let (ldr_texture, ldr) = texture("tonemapped at render size", render);
+        let from_ldr = bind("upscale from render size", &ldr, render, output);
+        let up = (render.0 < output.0 || render.1 < output.1).then(|| {
+            let (t, v) = texture("upscaled", output);
+            let b = bind("sharpen", &v, output, output);
+            (t, v, b)
+        });
+        Scaled {
+            render,
+            output,
+            _ldr: ldr_texture,
+            ldr,
+            from_ldr,
+            up,
+        }
+    }
+}
+
+/// Records a full-screen pass of `pipe` into `target`.
+fn fullscreen(
+    enc: &mut wgpu::CommandEncoder,
+    label: &str,
+    target: &wgpu::TextureView,
+    pipe: &wgpu::RenderPipeline,
+    bind: &wgpu::BindGroup,
+) {
+    let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: target,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    pass.set_pipeline(pipe);
+    pass.set_bind_group(0, bind, &[]);
+    pass.draw(0..3, 0..1);
 }

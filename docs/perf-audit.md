@@ -113,7 +113,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 ### Upscaling
 | Optimization | Status | Evidence / impact |
 |---|---|---|
-| Render scale with a quality upscaler, optional | **missing** | The `render_scale` option exists but is not applied. A temporal upscaler needs motion vectors and TAA (V2-6). |
+| Render scale with a quality upscaler, optional | done (result 9) — spatial | `render_scale` (0.5–2, default 1 in every preset): below 1 the frame is upscaled with FSR 1 (EASU + RCAS, 0.26 ms at 1080p), above 1 filtered down. At 1080p on this GPU it gains +13–16 % at 0.67 and +28–35 % at 0.5 in the open scenes (the frame is vertex- and CPU-bound, so fewer pixels save little). A temporal upscaler needs motion vectors and TAA (V2-6). |
 
 ### Found by measuring
 | Optimization | Status | Evidence / impact |
@@ -221,3 +221,19 @@ Results are recorded below as they land.
    from inside through the dithered cubes of the handoff band, where other LOD surfaces now
    show; underwater 0.987, where the backs of skirts hanging under the distant water surface
    no longer draw dark dashes along the horizon (that view is incomplete until V2-2e).
+9. **Render scale with FSR 1** — the `render_scale` option (0.5–2) now applies: the scene
+   renders at the scaled size with its own depth target (the terrain's Hi-Z and the LOD's
+   screen-space error follow the rendered size), is tonemapped at that size into a 10-bit
+   perceptual copy, then upscaled with the two passes of AMD FidelityFX Super Resolution 1 —
+   EASU (a 12-tap Lanczos-2 window stretched along the local edge, clamped to the nearest
+   texels' range) and RCAS (contrast-adaptive sharpening, 0.2 stops, with its noise guard) —
+   written from the published algorithm (MIT); above 1 it is filtered down by four bilinear
+   taps. Dithering stays the last step. At 1 the old single pass runs unchanged (SSIM 1.00000
+   in every scene). Cost at a 1080p output: tonemap 0.02 ms, EASU 0.18 ms (0.6 ms before its
+   taps were unrolled — indexing arrays by a variable spilled them to slow memory — and
+   0.20 ms with a 16-bit float copy), RCAS 0.09 ms. Average FPS against native (one run each):
+   at 0.5 forest +28 %, summit +35 %, coast +15 %, storm +28 %, cave −15 %; at 0.67 +13 %,
+   +12 %, +2 %, +13 %, −21 %; at 0.77 +3 %, +2 %, −6 %, +3 %, −25 %. SSIM against native
+   0.76–0.99 at 0.5 and 0.79–0.99 at 0.67 (a spatial upscaler cannot rebuild the fine voxel
+   texture). Off by default in every preset; worth it on weaker GPUs, at higher resolutions
+   and with heavier fragment work later.

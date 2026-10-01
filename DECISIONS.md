@@ -464,3 +464,14 @@ Fabulous 1 px, Fast 4 px (`VideoOptions::lod_detail`). This is the first change 
 than 5 % below the previous benchmark, deliberately: a visible quality gain at a measured cost.
 The next audit step (LOD quads grouped by face, back-facing groups skipped) won it back:
 the summit runs at 805 FPS with the 2 px detail, against 810 with the distance rule before.
+
+## D58 — Render scale upscales spatially (FSR 1) for now; temporal upscaling waits for TAA
+The audit asked for render scale with a quality upscaler as an option, never the default at
+high presets. A temporal upscaler (FSR 2/3, or our own) needs motion vectors, a jittered
+projection and history handling that the renderer will only have with TAA (V2-6), so the
+render scale upscales with FSR 1's two spatial passes (EASU, RCAS), written from AMD's
+published MIT algorithm, and filters down above 1. It is off (1) in every preset: at 1080p on
+the reference laptop the frame is bound by vertices and the CPU rather than by pixels, so 0.67
+gains only 2–16 % and costs visible fine detail (SSIM 0.79–0.98 against native); it is for
+weaker GPUs and higher resolutions. When TAA lands, a temporal upscaler replaces EASU behind
+the same option.

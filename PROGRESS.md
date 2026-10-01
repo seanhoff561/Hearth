@@ -263,11 +263,9 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
    holes and in-view first (f0b9339), dithering in the final pass (4ce9fa8), and (7)
    screen-space-error LOD selection (D57; `lod_detail`: Fancy 2 px, Fabulous 1 px, Fast 4 px;
    `hearth bench --lod-error PX` overrides it, 0 = the old distance rule), and (8) LOD quads
-   grouped by facing with the groups facing away skipped (won back (7)'s cost). A staging
-   belt for per-frame uploads was tried and reverted (no gain). Remaining, in order:
-   - (9) Render scale with a spatial upscaler (FSR 1 EASU + RCAS, MIT) as an option, off by
-     default; the `render_scale` option exists but is not applied. Temporal upscaling waits
-     for TAA/motion vectors (V2-6).
+   grouped by facing with the groups facing away skipped (won back (7)'s cost), and (9)
+   render scale with FSR 1 (D58; `hearth bench --render-scale S`). A staging belt for
+   per-frame uploads was tried and reverted (no gain). Remaining, in order:
    - (10) Performance gate `scripts/perf-gate.sh`, run at the end of every milestone: `hearth
      bench --scenes quick` against a stored baseline, failing on >5 % lower average FPS or
      1 % lows, recorded or justified in DECISIONS.md. Measured noise: about ±3–10 % between

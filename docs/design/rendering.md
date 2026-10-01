@@ -27,7 +27,10 @@ CPU culling pixel check.
 4. Sky pass where nothing was drawn: sky view, sun and moon discs (the moon lit by its phase),
    stars rotating about the celestial pole, a cloud layer drifting with the wind.
 5. Translucent terrain, then rain and snow.
-6. Highlight metering (compute) and tonemapping (ACES) with a night shift toward blue.
+6. Highlight metering (compute) and tonemapping (ACES) with a night shift toward blue,
+   dithered into the 8-bit output. At a render scale other than 1 (`render_scale`) the scene
+   renders at the scaled size, is tonemapped at that size, then upscaled with FSR 1 (EASU,
+   then RCAS sharpening) or, above 1, filtered down; the dither comes last either way.
 
 ### Atmosphere (`atmosphere.wgsl`, D29)
 After Hillaire (2020): Rayleigh, aerosol (Mie, Cornette–Shanks phase) and ozone on an

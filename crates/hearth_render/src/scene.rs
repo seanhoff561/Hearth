@@ -128,6 +128,11 @@ pub struct SceneRenderer {
     pub timer: Option<GpuTimer>,
     /// CPU time of the last `prepare`.
     pub cpu: PrepareTimes,
+    /// Size of the rendered frame relative to the output (0.5–2): smaller frames are upscaled
+    /// (FSR 1), larger ones filtered down.
+    pub render_scale: f32,
+    /// The depth target when the frame is rendered at another size than the output's.
+    depth: Option<crate::offscreen::DepthTarget>,
 }
 
 impl SceneRenderer {
@@ -158,7 +163,19 @@ impl SceneRenderer {
             meter_dt: f32::INFINITY,
             timer: None,
             cpu: PrepareTimes::default(),
+            render_scale: 1.0,
+            depth: None,
         }
+    }
+
+    /// The size the scene is rendered at for an output of `size` (the render scale applied).
+    pub fn render_size(&self, size: (u32, u32)) -> (u32, u32) {
+        let s = self.render_scale.clamp(0.5, 2.0);
+        if (s - 1.0).abs() < 1e-3 {
+            return size;
+        }
+        let scaled = |v: u32| ((v as f32 * s).round() as u32).max(1);
+        (scaled(size.0), scaled(size.1))
     }
 
     /// Forgets the eye's adaptation (the next frame adapts instantly).
@@ -181,6 +198,7 @@ impl SceneRenderer {
         env: &Environment,
         dt: f32,
     ) {
+        let size = self.render_size(size);
         let fire = FIRE_LUX * env.block_light_at_camera * env.block_light_at_camera;
         let target = env
             .horizontal_lux()
@@ -294,7 +312,8 @@ impl SceneRenderer {
         };
     }
 
-    /// Records the frame into `enc` and tonemaps into `output`.
+    /// Records the frame into `enc` and tonemaps into `output` (`size` pixels). `depth` is used
+    /// at a render scale of 1; at others the scene renders at its own size and depth.
     pub fn render(
         &mut self,
         ctx: &GpuContext,
@@ -303,6 +322,19 @@ impl SceneRenderer {
         depth: &wgpu::TextureView,
         size: (u32, u32),
     ) {
+        let render = self.render_size(size);
+        if render != size
+            && self
+                .depth
+                .as_ref()
+                .is_none_or(|d| (d.width, d.height) != render)
+        {
+            self.depth = Some(crate::offscreen::DepthTarget::new(ctx, render.0, render.1));
+        }
+        let depth = match &self.depth {
+            Some(d) if render != size => &d.view,
+            _ => depth,
+        };
         let mut timer = self.timer.take();
         let mark = |t: &mut Option<GpuTimer>, enc: &mut wgpu::CommandEncoder, l: &'static str| {
             if let Some(t) = t {
@@ -317,7 +349,7 @@ impl SceneRenderer {
             self.sky.update(ctx, enc, &p, vp);
         }
         mark(&mut timer, enc, "sky tables");
-        let hdr = self.post.hdr_view(ctx, size).clone();
+        let hdr = self.post.hdr_view(ctx, render).clone();
         self.terrain.render_opaque(
             ctx,
             enc,
@@ -344,8 +376,8 @@ impl SceneRenderer {
         mark(&mut timer, enc, "sky, translucent, rain");
         self.post.meter(ctx, enc, self.meter_dt);
         mark(&mut timer, enc, "metering");
-        self.post.render(ctx, enc, output, 1.0, self.night);
-        mark(&mut timer, enc, "tonemap");
+        self.post
+            .render(ctx, enc, output, size, 1.0, self.night, timer.as_mut());
         if let Some(t) = &mut timer {
             t.end_frame(enc, self.terrain.cull_counters());
         }

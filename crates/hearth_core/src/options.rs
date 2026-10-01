@@ -330,7 +330,8 @@ pub struct VideoOptions {
     /// Anisotropic filtering samples (1, 2, 4, 8 or 16).
     pub anisotropic_filtering: u32,
     pub anti_aliasing: AntiAliasing,
-    /// Internal render resolution scale (0.5–2.0).
+    /// Internal render resolution scale (0.5–2.0): below 1 the frame is upscaled (FSR 1),
+    /// above 1 filtered down. 1 in every preset.
     pub render_scale: f32,
     /// Bend distant terrain below the horizon according to planet curvature.
     pub planet_curvature: bool,

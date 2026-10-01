@@ -41,6 +41,8 @@ pub struct Preview {
     lod_distance: u32,
     /// Vertical error of distant terrain allowed on screen (pixels).
     lod_error_px: f64,
+    /// Size of the rendered frame relative to the window (upscaled or filtered down).
+    render_scale: f32,
     vertical_scale: f32,
     /// World clock (20 ticks per second of play) and calendar.
     pub ticks: u64,
@@ -98,6 +100,7 @@ impl Preview {
             lod: None,
             lod_distance: options.video.lod_distance,
             lod_error_px: options.video.lod_error_px(),
+            render_scale: options.video.render_scale,
             vertical_scale: 1.0,
             ticks: 0,
             calendar,
@@ -217,6 +220,7 @@ impl Preview {
                         SceneRenderer::new(ctx, &self.atlas, self.color_format, planet, 4, 4);
                     scene.terrain.render_distance = self.radius;
                     scene.terrain.vertical_distance = self.vertical;
+                    scene.render_scale = self.render_scale;
                     self.scene = Some(scene);
                     self.env = Some(EnvSampler::new(grid, self.calendar));
                     self.status = "streaming".into();
@@ -281,8 +285,9 @@ impl Preview {
         dt: f32,
     ) {
         let near = self.near_area();
-        if let Some(lod) = &mut self.lod {
-            lod.set_view(targets.size.1, self.camera.fov_y);
+        if let (Some(lod), Some(scene)) = (&mut self.lod, &self.scene) {
+            // Distant terrain is detailed for the pixels rendered.
+            lod.set_view(scene.render_size(targets.size).1, self.camera.fov_y);
         }
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
