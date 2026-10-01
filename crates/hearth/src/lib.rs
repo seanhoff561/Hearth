@@ -9,6 +9,7 @@ pub mod content_cli;
 pub mod content_state;
 pub mod environment;
 pub mod frame_limiter;
+pub mod gamepad;
 pub mod globe;
 pub mod interface;
 pub mod lod_stream;

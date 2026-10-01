@@ -289,8 +289,17 @@ impl Client {
         input: &mut InputState,
         look: Option<(f64, f64)>,
         sensitivity: f32,
+        pad: &crate::gamepad::Pad,
+        pad_sensitivity: f32,
     ) {
         self.clock_s += dt;
+        // The controller's right stick turns at up to 120–360 degrees a second.
+        if pad.look != DVec2::ZERO {
+            let rate = 120.0 + 240.0 * pad_sensitivity as f64;
+            self.camera.yaw = (self.camera.yaw + (pad.look.x * rate * dt) as f32).rem_euclid(360.0);
+            self.camera.pitch =
+                (self.camera.pitch + (pad.look.y * rate * dt) as f32).clamp(-90.0, 90.0);
+        }
         // The clock runs at 20 ticks per second (plus warp) between the server's messages.
         self.tick_frac += dt * (20.0 + self.time_warp);
         if let Some((dx, dy)) = look {
@@ -322,9 +331,10 @@ impl Client {
         if input.is_active(builtin::LEFT) {
             wish -= right;
         }
+        wish += forward * pad.stick.y + right * pad.stick.x;
         match self.mode {
             CameraMode::Free => self.fly(dt, input, wish),
-            CameraMode::Body => self.walk(dt, input, wish),
+            CameraMode::Body => self.walk(dt, input, wish, pad),
         }
     }
 
@@ -353,7 +363,7 @@ impl Client {
         }
     }
 
-    fn walk(&mut self, dt: f64, input: &mut InputState, wish: DVec2) {
+    fn walk(&mut self, dt: f64, input: &mut InputState, wish: DVec2, pad: &crate::gamepad::Pad) {
         // The sprint key jogs; pressed twice quickly, it sprints until let go.
         let sprint_key = input.is_active(builtin::SPRINT);
         if sprint_key && !self.sprint_was {
@@ -366,12 +376,12 @@ impl Client {
             self.sprinting = false;
         }
         self.sprint_was = sprint_key;
-        let gait = if !sprint_key {
-            Gait::Walk
-        } else if self.sprinting {
+        let gait = if pad.sprint || (sprint_key && self.sprinting) {
             Gait::Sprint
-        } else {
+        } else if sprint_key || pad.stick.length() > 0.92 {
             Gait::Jog
+        } else {
+            Gait::Walk
         };
         let Some(w) = &self.world else {
             return;
@@ -382,13 +392,19 @@ impl Client {
                 .as_ref()
                 .is_none_or(|b| !b.asleep && b.status.effects.conscious);
         let intent = if alive {
-            let crouch = input.is_active(builtin::SNEAK);
+            let crouch = input.is_active(builtin::SNEAK) || pad.crouch;
+            // A part-way stick walks slower; keys are full.
+            let wish = if wish.length() > 1.0 {
+                wish.normalize()
+            } else {
+                wish
+            };
             Intent {
-                wish: wish.try_normalize().unwrap_or(DVec2::ZERO),
+                wish,
                 gait,
-                jump: input.is_active(builtin::JUMP),
+                jump: input.is_active(builtin::JUMP) || pad.jump,
                 crouch,
-                crawl: input.is_active(builtin::CRAWL),
+                crawl: input.is_active(builtin::CRAWL) || pad.crawl,
                 descend: crouch,
             }
         } else {

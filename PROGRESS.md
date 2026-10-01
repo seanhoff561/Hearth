@@ -314,6 +314,15 @@ V2-3 — player: character, body & physiology. Done so far:
   moving the player every frame and reporting at 20 Hz, first-person camera, free camera
   (F3+N), crawl key (C), double-tap sprint, respawn after death, `--world NAME`. The first
   spawn is warm-temperate. Test: a world lives, saves and comes back (`tests/server.rs`).
+- (d) The interface (in parts): `hearth_ui` with a clean-room pixel font drawn for the game,
+  draw lists at a whole-number interface scale, the words from `lang/<code>.json` (English
+  under every language), immediate-mode widgets (buttons, sliders, switches, cyclers, text
+  fields, lists; keyboard focus); `hearth_render::ui`; the screens (`menus.rs`): title, worlds,
+  new world, pause (stops the clock and body), options (video, controls with rebinding,
+  accessibility, language), the F3 debug screen and the death message. Controllers (gilrs,
+  `gamepad.rs`): the left stick walks (full lean jogs, click sprints), the right stick looks
+  (squared response), South jumps, East crouches, West crawls, Start pauses, Select opens the
+  globe; in the menus the D-pad or stick moves the focus, South presses, East goes back.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -324,8 +333,8 @@ V2-3 — player: character, body & physiology. Done so far:
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
 1. V2-3 — Player: character, body & physiology (PLAN.md). Done: (a) the body, (b)
-   movement, (c) the world loop. Next: (d) UI: text rendering with a clean-room font, the
-   screens framework, options, localisation, controller, audio; (e) the character creator,
+   movement, (c) the world loop, (d) the interface and controllers. Next: (d) the audio engine;
+   (e) the character creator,
    profiles, rig, first-person body and animations; (f) the diegetic HUD, Body panel (B),
    Guided HUD, sleep with time acceleration, death and respawn rules, the acceptance review
    and the performance gate.

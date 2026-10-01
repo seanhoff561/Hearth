@@ -19,6 +19,7 @@ use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 use crate::client::Client;
 use crate::content_state::ContentState;
 use crate::frame_limiter::FrameLimiter;
+use crate::gamepad::{Gamepads, Press};
 use crate::interface::Interface;
 use crate::menus::{MenuAction, MenuContext, Menus, Screen};
 
@@ -70,6 +71,7 @@ pub struct App {
     content: ContentState,
     /// The languages there are words for.
     languages: Vec<String>,
+    pads: Gamepads,
 }
 
 impl App {
@@ -116,6 +118,7 @@ impl App {
             world,
             content: ContentState::load(vec![crate::scene::data_pack_dir()]),
             languages: Interface::languages(),
+            pads: Gamepads::new(),
         }
     }
 
@@ -429,9 +432,67 @@ impl App {
         run.captured = captured;
     }
 
+    /// What the controller's buttons do this frame.
+    fn pad_presses(&mut self, presses: Vec<Press>) {
+        let Some(run) = &mut self.running else {
+            return;
+        };
+        if run.menus.is_open() {
+            for p in presses {
+                let nav = match p {
+                    Press::Up => Some(NavKey::Up),
+                    Press::Down => Some(NavKey::Down),
+                    Press::Left => Some(NavKey::Left),
+                    Press::Right => Some(NavKey::Right),
+                    Press::South => Some(NavKey::Enter),
+                    _ => None,
+                };
+                if let Some(n) = nav {
+                    run.interface.key(n);
+                } else if matches!(p, Press::East | Press::Start) {
+                    let action = run.menus.back();
+                    if let Some(a) = action {
+                        self.menu_actions(vec![a]);
+                        return;
+                    }
+                }
+            }
+            return;
+        }
+        let Some(c) = &mut run.client else {
+            return;
+        };
+        let mut release_mouse = false;
+        for p in presses {
+            match p {
+                Press::Start => {
+                    if c.globe.open {
+                        c.globe.close();
+                    } else {
+                        c.pause(true);
+                        run.menus.open(Screen::Pause);
+                        release_mouse = true;
+                    }
+                }
+                Press::Select => release_mouse |= c.toggle_globe(),
+                Press::South if c.dead() => c.respawn(),
+                _ => {}
+            }
+        }
+        if release_mouse {
+            self.set_captured(false);
+        }
+    }
+
     fn frame(&mut self) {
         let sensitivity = self.options.controls.mouse_sensitivity;
         let invert = self.options.controls.invert_y;
+        let pad_sensitivity = self.options.controls.controller_sensitivity;
+        let presses = self.pads.poll(self.start.elapsed().as_secs_f64());
+        if !presses.is_empty() {
+            self.pad_presses(presses);
+        }
+        let pad = self.pads.pad;
         let mut actions = Vec::new();
         if let Some(run) = &mut self.running {
             let now = Instant::now();
@@ -445,7 +506,14 @@ impl App {
             if let Some(c) = &mut run.client {
                 c.pump(&run.renderer.ctx);
                 if !menu_open {
-                    c.update(dt, &mut self.input, look, sensitivity);
+                    c.update(
+                        dt,
+                        &mut self.input,
+                        look,
+                        sensitivity,
+                        &pad,
+                        pad_sensitivity,
+                    );
                 }
             }
             let client = &mut run.client;
