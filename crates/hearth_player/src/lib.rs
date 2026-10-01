@@ -73,6 +73,9 @@ pub struct Player {
     pub drowsy_s: f64,
     #[serde(default)]
     pub life: Life,
+    /// What the player carries and wears.
+    #[serde(default)]
+    pub carry: hearth_items::Carry,
 }
 
 impl Player {
@@ -84,7 +87,55 @@ impl Player {
             lying: false,
             drowsy_s: 0.0,
             life: Life::begin(feet, 0),
+            carry: hearth_items::Carry::default(),
         }
+    }
+
+    /// What the body allows the mover under a load (`load`; dragging over ground of friction
+    /// `mu`): slower with weight, no running or sprinting under a heavy one, the pace of a
+    /// drag, no climbing with the hands full.
+    pub fn ability_with(&self, cfg: &BodyConfig, load: &hearth_items::Load, mu: f32) -> Ability {
+        let mut a = self.ability(cfg);
+        let f = load.walk() as f64;
+        a.walk_m_s *= f;
+        a.jog_m_s = if load.can_jog() {
+            a.jog_m_s * f
+        } else {
+            a.walk_m_s
+        };
+        if !load.can_sprint() {
+            a.sprint = false;
+            a.sprint_m_s = a.jog_m_s;
+        }
+        if let Some(v) = load.drag_speed(mu) {
+            let v = (v as f64).min(a.walk_m_s);
+            a.walk_m_s = v;
+            a.jog_m_s = v;
+            a.sprint_m_s = v;
+            a.jump_m = 0.0;
+        }
+        a.jump_m *= (1.0 - load.share as f64).clamp(0.2, 1.0);
+        a.climb &= self.carry.hands_free();
+        a
+    }
+
+    /// Its activity with the work of a load (Pandolf's equation; a drag over ground of
+    /// friction `mu`).
+    pub fn activity_with(
+        &self,
+        cfg: &BodyConfig,
+        r: &Report,
+        load: &hearth_items::Load,
+        mu: f32,
+    ) -> Activity {
+        let mut a = self.activity(cfg, r);
+        let body_kg = cfg.mass_kg as f32;
+        let extra_w = load.work_w(body_kg, r.speed as f32, 0.0, mu);
+        // One MET for this body (W): 1.163 W per kilogram.
+        let met_w = 1.163 * body_kg;
+        a.met += extra_w / met_w;
+        a.exertion = a.exertion.max((extra_w / (4.0 * met_w)).min(1.0));
+        a
     }
 
     /// What the body allows the mover now.

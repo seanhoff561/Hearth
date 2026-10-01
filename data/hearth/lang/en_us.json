@@ -346,5 +346,12 @@
   "rules.legacy": "Legacy: live on as someone new",
   "rules.permadeath": "Permadeath: the world ends",
   "rules.hardy": "Hardy: live again",
-  "menu.worlds.ended": "(ended)"
+  "menu.worlds.ended": "(ended)",
+  "aim.pick_up": "{name} (E to pick up)",
+  "aim.drag": "{name}: too heavy to carry (hold F to drag)",
+  "aim.gather": "Loose stones (E to gather)",
+  "aim.dragging": "Dragging (let go of F to leave it)",
+  "key.interact": "Interact / pick up",
+  "key.drag": "Drag (hold)",
+  "key.radial": "Quick choice (hold)"
 }

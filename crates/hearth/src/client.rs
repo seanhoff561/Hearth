@@ -43,6 +43,42 @@ pub enum Perspective {
     Front,
 }
 
+/// What the eyes rest on within reach.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Aim {
+    /// A thing lying in the world.
+    Item(u64),
+    /// Loose stones to gather.
+    Gather(hearth_math::BlockPos),
+    /// The ground, where a thing put down would go.
+    Ground(DVec3),
+}
+
+/// How far the hands reach from the eyes (m).
+const REACH_M: f64 = 2.6;
+
+/// Where a ray from `from` along `dir` enters the box `lo`–`hi` (distance), if it does.
+fn ray_box(from: DVec3, dir: DVec3, lo: DVec3, hi: DVec3) -> Option<f64> {
+    let mut near = 0.0f64;
+    let mut far = f64::INFINITY;
+    for a in 0..3 {
+        let (o, d, l, h) = (from[a], dir[a], lo[a], hi[a]);
+        if d.abs() < 1e-9 {
+            if o < l || o > h {
+                return None;
+            }
+            continue;
+        }
+        let (t0, t1) = ((l - o) / d, (h - o) / d);
+        near = near.max(t0.min(t1));
+        far = far.min(t0.max(t1));
+        if near > far {
+            return None;
+        }
+    }
+    Some(near)
+}
+
 /// How far a third-person camera stands from the eyes (m).
 const THIRD_PERSON_M: f64 = 3.5;
 
@@ -145,6 +181,14 @@ pub struct Client {
     /// What death means in this world, and the life's tale if it has ended.
     pub death_rules: hearth_save::DeathRules,
     pub ended: Option<hearth_protocol::LifeSummary>,
+    /// The kinds of things, and what the player carries (as the server last said).
+    pub items: Option<Arc<hearth_items::Items>>,
+    pub carry: hearth_items::Carry,
+    /// The things lying nearby, what the eyes rest on, and where a dragged thing is.
+    pub world_items: Vec<hearth_items::WorldItem>,
+    pub aim: Option<Aim>,
+    dragged_at: Option<DVec3>,
+    drag_was: bool,
 }
 
 impl Client {
@@ -224,7 +268,255 @@ impl Client {
             body_cfg: None,
             death_rules: hearth_save::DeathRules::default(),
             ended: None,
+            items: None,
+            carry: hearth_items::Carry::default(),
+            world_items: Vec::new(),
+            aim: None,
+            dragged_at: None,
+            drag_was: false,
         }
+    }
+
+    /// What the eyes rest on within reach: a thing lying there, loose stones, or the ground.
+    fn find_aim(&self) -> Option<Aim> {
+        let w = self.world.as_ref()?;
+        let items = self.items.as_ref()?;
+        let eye = self.camera.pos;
+        let dir = self.camera.forward().as_dvec3();
+        let mut best: Option<(f64, Aim)> = None;
+        for wi in &self.world_items {
+            let Some(k) = wi.stack.kind(items) else {
+                continue;
+            };
+            let p = DVec3::from_array(wi.pos);
+            if (p - eye).length() > REACH_M + 2.0 {
+                continue;
+            }
+            let r = (0.5 * k.size_m[0].max(k.size_m[2]) as f64).max(0.08);
+            let h = (k.size_m[1] as f64).max(0.06);
+            let lo = p - DVec3::new(r, 0.0, r);
+            let hi = p + DVec3::new(r, h, r);
+            if let Some(t) = ray_box(eye, dir, lo, hi)
+                && t <= REACH_M
+                && best.as_ref().is_none_or(|b| t < b.0)
+            {
+                best = Some((t, Aim::Item(wi.id)));
+            }
+        }
+        let mut t = 0.0;
+        while t <= REACH_M {
+            let p = eye + dir * t;
+            let bp = hearth_math::BlockPos::containing(p);
+            if let Some(s) = w.mirror.block(bp)
+                && !s.is_air()
+            {
+                if w.reg.block_of(s).name.path().ends_with("_cobbles") {
+                    if best.as_ref().is_none_or(|b| t < b.0) {
+                        best = Some((t, Aim::Gather(bp)));
+                    }
+                    break;
+                }
+                if !w.reg.collision_shape(s).is_empty() {
+                    if best.is_none() {
+                        best = Some((t, Aim::Ground(p)));
+                    }
+                    break;
+                }
+            }
+            t += 0.05;
+        }
+        best.map(|(_, a)| a)
+    }
+
+    /// The hand that puts down or uses things first: the right, else the left.
+    fn busy_hand(&self) -> Option<hearth_items::Hand> {
+        if self.carry.right.is_some() {
+            Some(hearth_items::Hand::Right)
+        } else if self.carry.left.is_some() {
+            Some(hearth_items::Hand::Left)
+        } else {
+            None
+        }
+    }
+
+    /// The things the hands do this frame: pick up, gather, put down, drag and let go.
+    fn handle_things(&mut self, input: &InputState, dt: f64) {
+        self.aim = self.find_aim();
+        if input.was_pressed(builtin::INTERACT) {
+            match self.aim {
+                Some(Aim::Item(id)) => self.server.send(ToServer::PickUp(id)),
+                Some(Aim::Gather(p)) => self.server.send(ToServer::Gather(p)),
+                _ => {}
+            }
+        }
+        let all = input.was_pressed(builtin::DROP_STACK);
+        if (all || input.was_pressed(builtin::DROP))
+            && let Some(hand) = self.busy_hand()
+        {
+            let (sy, cy) = (self.camera.yaw as f64).to_radians().sin_cos();
+            let at = match self.aim {
+                Some(Aim::Ground(p)) => p,
+                _ => self.mover.pos + DVec3::new(-sy * 0.6, 0.5, cy * 0.6),
+            };
+            let count = self
+                .carry
+                .right
+                .as_ref()
+                .or(self.carry.left.as_ref())
+                .and_then(|s| (!all && s.count > 1).then_some(1));
+            self.server.send(ToServer::PutDown {
+                from: hearth_items::Path::at(hearth_items::Root::Hand(hand)),
+                count,
+                at,
+            });
+        }
+        let drag = input.is_active(builtin::DRAG);
+        if drag
+            && !self.drag_was
+            && let Some(Aim::Item(id)) = self.aim
+        {
+            self.server.send(ToServer::Drag(id));
+        }
+        if !drag && self.drag_was && self.carry.dragging.is_some() {
+            let at = self.dragged_at.unwrap_or(self.mover.pos);
+            self.server.send(ToServer::LetGo(at));
+        }
+        self.drag_was = drag;
+        // A dragged thing trails behind on the ground.
+        if self.carry.dragging.is_some() {
+            let (sy, cy) = (self.body_yaw as f64).to_radians().sin_cos();
+            let behind = self.mover.pos - DVec3::new(-sy, 0.0, cy) * 1.6;
+            let at = self.dragged_at.get_or_insert(behind);
+            *at += (behind - *at) * (1.0 - (-dt * 4.0).exp());
+        } else {
+            self.dragged_at = None;
+        }
+    }
+
+    /// Boxes for the things lying around, held and dragged.
+    fn thing_boxes(&mut self, view: DVec3) {
+        let (Some(items), Some(w)) = (&self.items, &self.world) else {
+            return;
+        };
+        let light = |p: DVec3| {
+            let b = hearth_math::BlockPos::containing(p + DVec3::Y * 0.3);
+            (w.mirror.sky_light(b), w.mirror.block_light(b))
+        };
+        for wi in &self.world_items {
+            let Some(k) = wi.stack.kind(items) else {
+                continue;
+            };
+            let p = DVec3::from_array(wi.pos);
+            if (p - view).length() > 96.0 {
+                continue;
+            }
+            let size = glam::Vec3::from(k.size_m);
+            let center = p + DVec3::new(0.0, size.y as f64 / 2.0, 0.0);
+            let place = Affine3A::from_scale_rotation_translation(
+                size,
+                Quat::from_rotation_y(wi.yaw),
+                (center - view).as_vec3(),
+            );
+            self.figure_boxes
+                .push(hearth_character::solid(place, k.color, light(p)));
+        }
+        let (Some(f), Some(pose)) = (&self.figure, &self.pose) else {
+            return;
+        };
+        let body = Affine3A::from_rotation_translation(
+            Quat::from_rotation_y(-self.body_yaw.to_radians()),
+            (self.mover.pos - view).as_vec3(),
+        );
+        let lit = light(self.mover.pos + DVec3::Y);
+        // In the hands: the long side along the forearm; a load in both arms before the chest.
+        let held = |s: &hearth_items::Stack| {
+            let k = s.kind(items)?;
+            let mut d = k.size_m;
+            d.sort_by(|a, b| b.total_cmp(a));
+            Some((k.color, glam::Vec3::new(d[1], d[0], d[2])))
+        };
+        for (stack, left) in [(&self.carry.left, true), (&self.carry.right, false)] {
+            let Some((color, size)) = stack.as_ref().and_then(held) else {
+                continue;
+            };
+            let place = if self.carry.both {
+                let a = f.hand(pose, true).translation;
+                let b = f.hand(pose, false).translation;
+                body * Affine3A::from_scale_rotation_translation(
+                    glam::Vec3::new(size.y, size.x, size.z),
+                    Quat::IDENTITY,
+                    ((a + b) / 2.0).into(),
+                )
+            } else {
+                body * f.hand(pose, left)
+                    * Affine3A::from_scale_rotation_translation(
+                        size,
+                        Quat::IDENTITY,
+                        glam::Vec3::new(0.0, -size.y * 0.25, 0.0),
+                    )
+            };
+            self.figure_boxes
+                .push(hearth_character::solid(place, color, lit));
+        }
+        if let (Some(s), Some(at)) = (&self.carry.dragging, self.dragged_at)
+            && let Some(k) = s.kind(items)
+        {
+            let size = glam::Vec3::from(k.size_m);
+            let along = self.mover.pos - at;
+            let yaw = along.x.atan2(along.z) as f32 + std::f32::consts::FRAC_PI_2;
+            let center = at + DVec3::new(0.0, size.y as f64 / 2.0, 0.0);
+            let place = Affine3A::from_scale_rotation_translation(
+                size,
+                Quat::from_rotation_y(yaw),
+                (center - view).as_vec3(),
+            );
+            self.figure_boxes
+                .push(hearth_character::solid(place, k.color, light(at)));
+        }
+    }
+
+    /// What the crosshair says: what is aimed at and what can be done with it.
+    pub fn aim_words(&self, l: &Lang) -> Option<String> {
+        let items = self.items.as_ref()?;
+        if self.carry.dragging.is_some() {
+            return Some(l.get("aim.dragging").to_owned());
+        }
+        match self.aim? {
+            Aim::Item(id) => {
+                let wi = self.world_items.iter().find(|w| w.id == id)?;
+                let k = wi.stack.kind(items)?;
+                let body_kg = self.body_cfg.as_ref().map_or(70.0, |c| c.mass_kg as f32);
+                let name = if wi.stack.count > 1 {
+                    format!("{} ×{}", k.name, wi.stack.count)
+                } else {
+                    k.name.clone()
+                };
+                let key = if wi.stack.mass(items) > hearth_items::carry::BOTH_HANDS_SHARE * body_kg
+                {
+                    "aim.drag"
+                } else {
+                    "aim.pick_up"
+                };
+                Some(l.format(key, &[("name", &name)]))
+            }
+            Aim::Gather(_) => Some(l.get("aim.gather").to_owned()),
+            Aim::Ground(_) => None,
+        }
+    }
+
+    /// Moves a carried thing (or `count` of a stack): asks the server, which keeps it.
+    pub fn shift(
+        &mut self,
+        from: hearth_items::Path,
+        count: Option<u16>,
+        to: hearth_items::Target,
+    ) {
+        // Shown at once; the server's word follows.
+        let body_kg = self.body_cfg.as_ref().map_or(70.0, |c| c.mass_kg as f32);
+        if let Some(items) = &self.items {
+            self.carry.shift(items, &from, count, &to, body_kg);
+        }
+        self.server.send(ToServer::Shift { from, count, to });
     }
 
     /// The death screen's words: how the player died, the world's rules, and the life's tale
@@ -464,6 +756,12 @@ impl Client {
             climb,
             shiver: body.map_or(0.0, |b| b.status.effects.shivering),
             breaths_per_min: self.hearing.rhythms.breaths_per_min,
+            holding: hearth_character::Holding {
+                left: self.carry.left.is_some(),
+                right: self.carry.right.is_some(),
+                both: self.carry.both,
+                dragging: self.carry.dragging.is_some(),
+            },
         };
         if let Some(fig) = &mut self.figure {
             self.pose = Some(fig.animator.update(&fig.rig, &drive, dt as f32));
@@ -714,6 +1012,11 @@ impl Client {
             CameraMode::Free => self.fly(dt, input, wish),
             CameraMode::Body => self.walk(dt, input, wish, pad),
         }
+        if self.mode == CameraMode::Body && !self.dead() && !self.lying() {
+            self.handle_things(input, dt);
+        } else {
+            self.aim = None;
+        }
         self.hearing
             .body(self.body.as_ref(), self.last_report.as_ref(), dt);
         if let Some(w) = &self.world {
@@ -864,6 +1167,7 @@ impl Client {
                     self.body_cfg = Some(r.body);
                     self.death_rules = r.death_rules;
                     self.ended = r.ended;
+                    self.items = Some(r.items);
                     self.pose = None;
                     self.world = Some(World {
                         planet,
@@ -918,6 +1222,8 @@ impl Client {
                     self.hearing = crate::hearing::Hearing::default();
                 }
                 ToClient::Ended(s) => self.ended = Some(s),
+                ToClient::Carried(c) => self.carry = c,
+                ToClient::Items(v) => self.world_items = v,
                 ToClient::Placed(m) => {
                     self.mover = m;
                     self.eye_y = m.eye().y;
@@ -986,6 +1292,8 @@ impl Client {
         let ticks = self.now_ticks();
         let view = self.view_camera();
         let senses = self.senses();
+        self.figure_boxes.clear();
+        self.thing_boxes(view.pos);
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1031,7 +1339,6 @@ impl Client {
             _ => scene.near_area = None,
         }
         // The player's body: in first person without the head (the eyes are in it).
-        self.figure_boxes.clear();
         if let (Some(f), Some(pose), Some(w)) = (&self.figure, &self.pose, &self.world) {
             let rel = (self.mover.pos - view.pos).as_vec3();
             let place = Affine3A::from_rotation_translation(
@@ -1074,6 +1381,28 @@ impl Client {
         }
         if self.guided_hud {
             self.draw_guided(ui, veil);
+        }
+        if self.mode == CameraMode::Body
+            && self.perspective == Perspective::First
+            && !self.dead()
+            && !self.body_panel
+        {
+            ui.draw.rect(
+                (w / 2.0).round() - 1.0,
+                (h / 2.0).round() - 1.0,
+                2.0,
+                2.0,
+                Rgba([235, 235, 235, 180]),
+            );
+            if let Some(words) = self.aim_words(ui.lang) {
+                let lw = ui.font.width(&words) as f32;
+                ui.label(
+                    ((w - lw) / 2.0).round(),
+                    (h / 2.0 + 8.0).round(),
+                    &words,
+                    Rgba([235, 235, 230, 220]),
+                );
+            }
         }
         // Eyelids: the world goes dark asleep or fainting.
         if self.eyes_shut > 0.01 {

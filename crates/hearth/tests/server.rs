@@ -220,3 +220,99 @@ fn death_follows_the_world_rules() {
     drop(server);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn things_are_carried_put_down_picked_up_and_dragged() {
+    let dir = std::env::temp_dir().join(format!("hearth-things-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let view = View {
+        radius: 2,
+        vertical: 2,
+    };
+    let server = Server::start(spec(&dir), atlas(), view);
+    let ready = wait(&server, 120.0, |m| match m {
+        ToClient::Ready(r) => Some(r),
+        _ => None,
+    });
+    let items = ready.items.clone();
+    let find = |suffix: &str| {
+        items
+            .iter()
+            .find(|k| k.id.ends_with(suffix))
+            .map(|k| k.id.clone())
+            .expect("kind")
+    };
+    // A new person wears a loincloth with a tie.
+    let carry = wait(&server, 10.0, |m| match m {
+        ToClient::Carried(c) => Some(c),
+        _ => None,
+    });
+    assert_eq!(carry.worn.len(), 1, "dressed");
+    // Flakes go on the tie; put down in front, they lie there; picked up, back on the tie.
+    server.send(ToServer::Give(hearth_items::Stack::of(
+        &find("flake/flint"),
+        5,
+    )));
+    let carry = wait(&server, 10.0, |m| match m {
+        ToClient::Carried(c) if c.worn[0].hung[0].is_some() => Some(c),
+        _ => None,
+    });
+    assert_eq!(carry.worn[0].hung[0].as_ref().map(|s| s.count), Some(5));
+    let feet = ready.player.pos;
+    server.send(ToServer::PutDown {
+        from: hearth_items::Path::at(hearth_items::Root::Hung(0, 0)),
+        count: None,
+        at: feet + DVec3::new(0.8, 0.5, 0.0),
+    });
+    let lying = wait(&server, 10.0, |m| match m {
+        ToClient::Items(v) if !v.is_empty() => Some(v),
+        _ => None,
+    });
+    let flakes = lying[0].clone();
+    assert!(
+        flakes.pos[1] <= feet.y + 0.6,
+        "on the ground: {:?}",
+        flakes.pos
+    );
+    server.send(ToServer::PickUp(flakes.id));
+    wait(&server, 10.0, |m| match m {
+        ToClient::Carried(c) if c.worn[0].hung[0].is_some() => Some(()),
+        _ => None,
+    });
+    // A log section: too heavy to carry, so it is dragged, and slowly.
+    server.send(ToServer::Give(hearth_items::Stack::one(&find(
+        "log_section/oak_wood",
+    ))));
+    wait(&server, 10.0, |m| match m {
+        ToClient::Carried(c) if c.dragging.is_some() => Some(()),
+        _ => None,
+    });
+    let body = wait(&server, 10.0, |m| match m {
+        ToClient::Body(b) => Some(*b),
+        _ => None,
+    });
+    assert!(
+        body.ability.walk_m_s < 0.5,
+        "dragging a log: {} m/s",
+        body.ability.walk_m_s
+    );
+    assert!(!body.ability.sprint);
+    // Let go, it lies there; picked up, dragged again.
+    server.send(ToServer::LetGo(feet + DVec3::new(-1.0, 0.5, 0.0)));
+    let lying = wait(&server, 10.0, |m| match m {
+        ToClient::Items(v) if v.iter().any(|w| w.stack.id.contains("log_section")) => Some(v),
+        _ => None,
+    });
+    let log = lying
+        .iter()
+        .find(|w| w.stack.id.contains("log_section"))
+        .expect("log")
+        .clone();
+    server.send(ToServer::PickUp(log.id));
+    wait(&server, 10.0, |m| match m {
+        ToClient::Carried(c) if c.dragging.is_some() => Some(()),
+        _ => None,
+    });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&dir);
+}

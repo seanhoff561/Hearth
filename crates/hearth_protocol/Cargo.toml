@@ -15,6 +15,7 @@ hearth_render.workspace = true
 hearth_lod.workspace = true
 hearth_body.workspace = true
 hearth_character.workspace = true
+hearth_items.workspace = true
 hearth_physics.workspace = true
 hearth_env.workspace = true
 hearth_save.workspace = true

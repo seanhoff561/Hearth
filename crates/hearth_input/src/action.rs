@@ -119,10 +119,10 @@ pub mod builtin {
         DEBUG_FRAME_GRAPH = 40; DEBUG_PROFILER = 41;
         DEBUG_TIME_FORWARD = 42; DEBUG_TIME_BACK = 43; DEBUG_SEASON_FORWARD = 44;
         DEBUG_TIME_WARP = 45; CRAWL = 46; DEBUG_FREE_CAMERA = 47;
-        SLEEP = 48; BODY_PANEL = 49;
+        SLEEP = 48; BODY_PANEL = 49; INTERACT = 50; DRAG = 51; RADIAL = 52;
     }
     /// Number of built-in actions.
-    pub const COUNT: usize = 50;
+    pub const COUNT: usize = 53;
 
     /// Hotbar actions in slot order.
     pub const HOTBAR: [ActionId; 9] = [
@@ -162,18 +162,18 @@ impl ActionRegistry {
         add("key.back", C::Movement, g, k(Key::S), H);
         add("key.right", C::Movement, g, k(Key::D), H);
         add("key.jump", C::Movement, g, k(Key::Space), H);
-        add("key.sneak", C::Movement, g, k(Key::LeftControl), T);
+        add("key.sneak", C::Movement, g, k(Key::C), T);
         add("key.sprint", C::Movement, g, k(Key::LeftShift), T);
         add("key.attack", C::Gameplay, g, m(MouseButton::Left), H);
         add("key.use", C::Gameplay, g, m(MouseButton::Right), H);
         add("key.pick_block", C::Gameplay, g, m(MouseButton::Middle), H);
-        add("key.inventory", C::Inventory, gc, k(Key::LeftAlt), H);
-        add("key.drop", C::Inventory, gc, k(Key::X), H);
+        add("key.inventory", C::Inventory, gc, k(Key::Tab), H);
+        add("key.drop", C::Inventory, gc, k(Key::G), H);
         add(
             "key.drop_stack",
             C::Inventory,
             gc,
-            Some(Binding::with(Key::X, Modifiers::CTRL)),
+            Some(Binding::with(Key::G, Modifiers::CTRL)),
             H,
         );
         add(
@@ -199,7 +199,7 @@ impl ActionRegistry {
         }
         add("key.chat", C::Multiplayer, g, k(Key::T), H);
         add("key.command", C::Multiplayer, g, k(Key::Slash), H);
-        add("key.player_list", C::Multiplayer, g, k(Key::Tab), H);
+        add("key.player_list", C::Multiplayer, g, None, H);
         add("key.hide_hud", C::Miscellaneous, g, k(Key::F1), H);
         add("key.screenshot", C::Miscellaneous, glob, k(Key::F2), H);
         add("key.debug", C::Miscellaneous, g, k(Key::F3), H);
@@ -226,10 +226,13 @@ impl ActionRegistry {
         add("key.debug.time_back", C::Debug, dbg, k(Key::Left), H);
         add("key.debug.season_forward", C::Debug, dbg, k(Key::Up), H);
         add("key.debug.time_warp", C::Debug, dbg, k(Key::W), H);
-        add("key.crawl", C::Movement, g, k(Key::C), T);
+        add("key.crawl", C::Movement, g, k(Key::Z), T);
         add("key.debug.free_camera", C::Debug, dbg, k(Key::N), H);
-        add("key.sleep", C::Gameplay, g, k(Key::Z), H);
+        add("key.sleep", C::Gameplay, g, k(Key::X), H);
         add("key.body_panel", C::Gameplay, g, k(Key::B), H);
+        add("key.interact", C::Gameplay, g, k(Key::E), H);
+        add("key.drag", C::Gameplay, g, k(Key::F), H);
+        add("key.radial", C::Inventory, g, k(Key::Q), H);
         debug_assert_eq!(r.defs.len(), builtin::COUNT);
         r
     }

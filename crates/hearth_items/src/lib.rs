@@ -13,3 +13,45 @@ pub use container::{Container, Misfit, Placed};
 pub use hearth_content::schema::item::{ContainerSpec, Stacking};
 pub use registry::{ItemKind, Items, Wear};
 pub use stack::Stack;
+
+/// A thing lying in the world: where it rests (the middle of its base), which way it lies, and
+/// what it is.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorldItem {
+    pub id: u64,
+    pub stack: Stack,
+    pub pos: [f64; 3],
+    #[serde(default)]
+    pub yaw: f32,
+}
+
+/// The things lying in a world.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct WorldItems {
+    pub next_id: u64,
+    pub items: Vec<WorldItem>,
+}
+
+impl WorldItems {
+    /// Lays a thing down; its new id.
+    pub fn add(&mut self, stack: Stack, pos: [f64; 3], yaw: f32) -> u64 {
+        self.next_id += 1;
+        let id = self.next_id;
+        self.items.push(WorldItem {
+            id,
+            stack,
+            pos,
+            yaw,
+        });
+        id
+    }
+
+    pub fn take(&mut self, id: u64) -> Option<WorldItem> {
+        let i = self.items.iter().position(|w| w.id == id)?;
+        Some(self.items.swap_remove(i))
+    }
+
+    pub fn get(&self, id: u64) -> Option<&WorldItem> {
+        self.items.iter().find(|w| w.id == id)
+    }
+}

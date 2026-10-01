@@ -928,6 +928,7 @@ dependencies = [
  "hearth_core",
  "hearth_env",
  "hearth_input",
+ "hearth_items",
  "hearth_lod",
  "hearth_math",
  "hearth_physics",
@@ -1078,6 +1079,7 @@ dependencies = [
  "glam",
  "hearth_body",
  "hearth_content",
+ "hearth_items",
  "hearth_physics",
  "serde",
 ]
@@ -1090,6 +1092,7 @@ dependencies = [
  "hearth_body",
  "hearth_character",
  "hearth_env",
+ "hearth_items",
  "hearth_lod",
  "hearth_math",
  "hearth_physics",

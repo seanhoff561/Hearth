@@ -8,11 +8,11 @@ pub mod appearance;
 pub mod instances;
 pub mod rig;
 
-pub use animate::{Activity, Animator, Drive, Pose};
+pub use animate::{Activity, Animator, Drive, Holding, Pose};
 pub use appearance::{
     Appearance, BodyType, EyeColor, FacialHair, HAIR_COLORS, HairStyle, Loincloth,
 };
-pub use instances::{FigureInstance, Palette, Show, instances};
+pub use instances::{FigureInstance, Palette, Show, instances, solid};
 pub use rig::{EYE, Joint, Region, Rig, Stuff};
 
 /// A person ready to draw: their rig and colours, rebuilt when their appearance changes.
@@ -43,6 +43,15 @@ impl Figure {
             self.palette = Palette::of(&a);
             self.appearance = a;
         }
+    }
+
+    /// Where a hand holds things in the figure's frame (the middle of the palm, the thing's
+    /// length along the forearm's line).
+    pub fn hand(&self, pose: &Pose, left: bool) -> glam::Affine3A {
+        let j = if left { Joint::WristL } else { Joint::WristR };
+        let h = self.rig.dims.stature;
+        pose.joints(&self.rig)[j.index()]
+            * glam::Affine3A::from_translation(glam::Vec3::new(0.0, -0.05 * h, 0.012 * h))
     }
 
     /// The eye point in the figure's frame for a pose.

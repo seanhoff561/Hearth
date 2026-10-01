@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 hearth_body.workspace = true
 hearth_physics.workspace = true
+hearth_items.workspace = true
 glam.workspace = true
 serde.workspace = true
 

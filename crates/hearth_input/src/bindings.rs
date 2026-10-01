@@ -241,13 +241,20 @@ mod tests {
         let b = KeyBindings::builtin_defaults();
         assert_eq!(b.get(builtin::FORWARD), Some(Binding::key(Key::W)));
         assert_eq!(b.get(builtin::SPRINT), Some(Binding::key(Key::LeftShift)));
-        assert_eq!(b.get(builtin::SNEAK), Some(Binding::key(Key::LeftControl)));
-        assert_eq!(b.get(builtin::INVENTORY), Some(Binding::key(Key::LeftAlt)));
-        assert_eq!(b.get(builtin::DROP), Some(Binding::key(Key::X)));
+        // v2 §10.6: crouch C, prone Z, inventory Tab, drop G, interact E, drag F, radial Q,
+        // the Body panel B.
+        assert_eq!(b.get(builtin::SNEAK), Some(Binding::key(Key::C)));
+        assert_eq!(b.get(builtin::CRAWL), Some(Binding::key(Key::Z)));
+        assert_eq!(b.get(builtin::INVENTORY), Some(Binding::key(Key::Tab)));
+        assert_eq!(b.get(builtin::DROP), Some(Binding::key(Key::G)));
         assert_eq!(
             b.get(builtin::DROP_STACK),
-            Some(Binding::with(Key::X, Modifiers::CTRL))
+            Some(Binding::with(Key::G, Modifiers::CTRL))
         );
+        assert_eq!(b.get(builtin::INTERACT), Some(Binding::key(Key::E)));
+        assert_eq!(b.get(builtin::DRAG), Some(Binding::key(Key::F)));
+        assert_eq!(b.get(builtin::RADIAL), Some(Binding::key(Key::Q)));
+        assert_eq!(b.get(builtin::BODY_PANEL), Some(Binding::key(Key::B)));
         assert_eq!(
             b.get(builtin::SWAP_OFFHAND),
             Some(Binding::mouse(MouseButton::Forward))

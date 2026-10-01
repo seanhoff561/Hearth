@@ -85,6 +85,17 @@ pub struct Drive {
     /// Shivering (0–1): arms hug the body, a tremor.
     pub shiver: f32,
     pub breaths_per_min: f32,
+    /// What the hands are doing with things.
+    pub holding: Holding,
+}
+
+/// What the hands hold: a thing in either hand, a load in both arms, or a drag behind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Holding {
+    pub left: bool,
+    pub right: bool,
+    pub both: bool,
+    pub dragging: bool,
 }
 
 /// Joint rotations and the root's height above the feet's ground (m).
@@ -527,9 +538,47 @@ impl Animator {
                 )
             }
         };
+        // Things in the hands: held forward to be seen and used, a load carried in both arms
+        // before the chest (leaning back against it), a drag pulled with the arms back and the
+        // body leaning into it.
+        let upright = matches!(
+            activity,
+            Activity::Stand
+                | Activity::Walk
+                | Activity::Jog
+                | Activity::Sprint
+                | Activity::Wade
+                | Activity::Crouch
+        );
+        if upright {
+            let h = d.holding;
+            if h.dragging {
+                for a in &mut arms {
+                    a.flex = -25.0;
+                    a.abduct = rest_abduct + 6.0;
+                    a.elbow = 15.0;
+                }
+                trunk += 18.0;
+            } else if h.both {
+                for a in &mut arms {
+                    a.flex = 38.0 + 0.2 * a.flex;
+                    a.abduct = 12.0;
+                    a.elbow = 85.0;
+                }
+                trunk -= 4.0;
+            } else {
+                for (held, a) in [h.left, h.right].into_iter().zip(arms.iter_mut()) {
+                    if held {
+                        a.flex = 22.0 + 0.4 * a.flex;
+                        a.elbow = 70.0;
+                    }
+                }
+            }
+        }
         // Cold: arms wrapped around the body, and a tremor.
+        let empty = d.holding == Holding::default();
         let hug = ((d.shiver - 0.35) / 0.4).clamp(0.0, 1.0)
-            * if matches!(activity, Activity::Stand | Activity::Walk) {
+            * if matches!(activity, Activity::Stand | Activity::Walk) && empty {
                 1.0
             } else {
                 0.0

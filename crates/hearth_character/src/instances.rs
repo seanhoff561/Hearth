@@ -126,3 +126,20 @@ pub fn instances(
 pub fn albedo(i: &FigureInstance) -> [f32; 3] {
     srgb_to_linear([i.color[0], i.color[1], i.color[2]])
 }
+
+/// A plain box: the unit cube placed (and scaled) by `place` into camera-relative space, of a
+/// colour (sRGB), in the light where it is (sky, block: 0–15).
+pub fn solid(place: Affine3A, color: [u8; 3], light: (u8, u8)) -> FigureInstance {
+    let c = place.matrix3;
+    let t = place.translation;
+    FigureInstance {
+        rows: [
+            [c.x_axis.x, c.y_axis.x, c.z_axis.x, t.x],
+            [c.x_axis.y, c.y_axis.y, c.z_axis.y, t.y],
+            [c.x_axis.z, c.y_axis.z, c.z_axis.z, t.z],
+        ],
+        color: [color[0], color[1], color[2], 255],
+        light: [light.0.min(15), light.1.min(15), 0, 0],
+        pad: [0; 2],
+    }
+}

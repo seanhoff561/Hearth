@@ -344,9 +344,10 @@ mod tests {
     #[test]
     fn modifier_combo_prefers_most_specific() {
         let (b, mut s) = setup();
-        s.press(kb(Key::LeftControl), &b);
+        s.press(kb(Key::C), &b);
         assert!(s.is_down(SNEAK));
-        s.press(kb(Key::X), &b);
+        s.press(kb(Key::LeftControl), &b);
+        s.press(kb(Key::G), &b);
         assert!(s.was_pressed(DROP_STACK));
         assert!(!s.was_pressed(DROP));
         assert!(s.is_down(SNEAK), "sneak stays held");
@@ -367,12 +368,12 @@ mod tests {
             toggle_sneak: true,
             toggle_sprint: false,
         });
-        s.press(kb(Key::LeftControl), &b);
-        s.release(kb(Key::LeftControl), &b);
+        s.press(kb(Key::C), &b);
+        s.release(kb(Key::C), &b);
         assert!(s.is_active(SNEAK));
         assert!(!s.is_down(SNEAK));
-        s.press(kb(Key::LeftControl), &b);
-        s.release(kb(Key::LeftControl), &b);
+        s.press(kb(Key::C), &b);
+        s.release(kb(Key::C), &b);
         assert!(!s.is_active(SNEAK));
         // Sprint stays hold-mode.
         s.press(kb(Key::LeftShift), &b);
@@ -420,11 +421,11 @@ mod tests {
         s.set_context(Contexts::CONTAINER, &b);
         assert!(!s.is_down(FORWARD), "movement released when a screen opens");
         assert!(s.is_down(HOTBAR_2), "hotbar keys stay valid in containers");
-        // In a container, W does nothing, X drops.
+        // In a container, W does nothing, G drops.
         s.release(kb(Key::W), &b);
         s.press(kb(Key::W), &b);
         assert!(!s.is_down(FORWARD));
-        s.press(kb(Key::X), &b);
+        s.press(kb(Key::G), &b);
         assert!(s.was_pressed(DROP));
     }
 

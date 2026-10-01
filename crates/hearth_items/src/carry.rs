@@ -341,6 +341,20 @@ impl Carry {
         Err(stack)
     }
 
+    /// Everything carried, worn and dragged, as stacks.
+    pub fn into_stacks(self) -> Vec<Stack> {
+        let mut out: Vec<Stack> = Vec::new();
+        out.extend(self.left);
+        out.extend(self.right);
+        out.extend(self.back);
+        out.extend(self.dragging);
+        for w in self.worn {
+            out.push(w.stack);
+            out.extend(w.hung.into_iter().flatten());
+        }
+        out
+    }
+
     /// The garments worn (their content ids), for the body's warmth.
     pub fn garments(&self, items: &Items) -> Vec<String> {
         self.worn

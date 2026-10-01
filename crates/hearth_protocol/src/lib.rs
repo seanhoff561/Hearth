@@ -36,6 +36,28 @@ pub enum ToServer {
     /// Live on as a new person after death (by the world's death rules).
     /// After death, live on as the world's rules allow (Legacy: as this person, or the same).
     Respawn(Option<hearth_character::Appearance>),
+    /// Move a carried thing (or `count` of a stack) somewhere else carried.
+    Shift {
+        from: hearth_items::Path,
+        count: Option<u16>,
+        to: hearth_items::Target,
+    },
+    /// Pick up a thing lying in the world (or take hold to drag it if it is too heavy).
+    PickUp(u64),
+    /// Put a carried thing (or `count` of a stack) down on the ground at a point.
+    PutDown {
+        from: hearth_items::Path,
+        count: Option<u16>,
+        at: DVec3,
+    },
+    /// Take hold of a thing lying in the world to drag it.
+    Drag(u64),
+    /// Let go of what is dragged, where it is now.
+    LetGo(DVec3),
+    /// Gather loose stones (or what a block yields by hand).
+    Gather(hearth_math::BlockPos),
+    /// Development and tests: put a thing in the player's hands or containers (or a drag).
+    Give(hearth_items::Stack),
     /// Debug: move the clock on (or back) by game hours.
     SkipHours(f64),
     /// Debug: extra ticks per second of play (0 for none).
@@ -81,6 +103,8 @@ pub struct Ready {
     pub appearance: hearth_character::Appearance,
     /// What death means in this world.
     pub death_rules: hearth_save::DeathRules,
+    /// The kinds of things.
+    pub items: Arc<hearth_items::Items>,
     /// The world ended (permadeath), and the life it ended with.
     pub ended: Option<LifeSummary>,
 }
@@ -135,6 +159,10 @@ pub enum ToClient {
     Woke(hearth_body::Wake),
     /// The player is someone else now (Legacy) or again (Hardy).
     Person(hearth_character::Appearance),
+    /// What the player carries, when it changed.
+    Carried(hearth_items::Carry),
+    /// The things lying near the player, when they changed.
+    Items(Vec<hearth_items::WorldItem>),
     /// The world ended with its character's death (permadeath).
     Ended(LifeSummary),
 }

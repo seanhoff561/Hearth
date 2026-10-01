@@ -156,6 +156,72 @@ fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> 
     Ok(Some(Save { dir, meta }))
 }
 
+/// Whether a point is within the player's reach (3 m of the eyes).
+fn within_reach(player: &Player, at: DVec3) -> bool {
+    let eye = player.mover.pos + DVec3::new(0.0, 1.6, 0.0);
+    (at - eye).length() <= 3.0 && at.is_finite()
+}
+
+/// Where a thing put down at `at` comes to rest: on the first solid surface below it.
+fn rest_on(lw: &LocalWorld, at: DVec3) -> DVec3 {
+    let x = at.x.floor() as i32;
+    let z = at.z.floor() as i32;
+    let top = (at.y + 1.5).floor() as i32;
+    for y in (top - 8..=top).rev() {
+        let p = BlockPos::new(x, y, z);
+        if let Some(s) = lw.map.block(p) {
+            let shape = lw.reg.collision_shape(s);
+            if !shape.is_empty() {
+                let h = shape.boxes.iter().map(|b| b.max.y).fold(0.0f64, f64::max);
+                let surface = y as f64 + h;
+                if surface <= at.y + 1.0 {
+                    return DVec3::new(at.x, surface, at.z);
+                }
+            }
+        }
+    }
+    at
+}
+
+/// What gathering a block by hand gives (loose stones: three cobbles of their rock).
+fn gathered_from(
+    lw: &LocalWorld,
+    items: &hearth_items::Items,
+    pos: BlockPos,
+) -> Option<(hearth_items::Stack, usize)> {
+    let state = lw.map.block(pos)?;
+    let block = lw.reg.block_of(state);
+    if !block.name.path().ends_with("_cobbles") {
+        return None;
+    }
+    let material = block.def.material.as_deref()?;
+    let id = hearth_content::generate::generated_id("hearth:cobble", material);
+    items.get(&id)?;
+    Some((hearth_items::Stack::one(&id), 3))
+}
+
+/// How hard the ground underfoot drags at a load pulled over it (sliding friction): snow and
+/// ice let a load slide, sand and mud hold it.
+fn drag_friction(lw: &LocalWorld, feet: DVec3) -> f32 {
+    let below = BlockPos::containing(feet - DVec3::new(0.0, 0.05, 0.0));
+    let at = BlockPos::containing(feet + DVec3::new(0.0, 0.05, 0.0));
+    let group = |p: BlockPos| {
+        lw.map
+            .block(p)
+            .filter(|s| !s.is_air())
+            .map(|s| lw.reg.block_of(s).def.sound.clone())
+    };
+    match group(at).or_else(|| group(below)).as_deref() {
+        Some("snow") => 0.12,
+        Some("glass") => 0.05,
+        Some("sand") => 0.6,
+        Some("mud") => 0.7,
+        Some("stone") | Some("deepslate") => 0.35,
+        Some("none") => 0.1,
+        _ => 0.45,
+    }
+}
+
 /// Feet on the ground at a column: on the surface or the water, a little above.
 fn ground_at(lw: &LocalWorld, x: i32, z: i32) -> DVec3 {
     DVec3::new(
@@ -236,10 +302,18 @@ fn report_of(m: &Moved) -> Report {
     }
 }
 
-fn body_view(cfg: &BodyConfig, p: &Player, exposure: Exposure, rate: f64) -> BodyView {
+fn body_view(
+    cfg: &BodyConfig,
+    p: &Player,
+    exposure: Exposure,
+    rate: f64,
+    items: &hearth_items::Items,
+    mu: f32,
+) -> BodyView {
+    let load = p.carry.load(items, cfg.mass_kg as f32);
     BodyView {
         status: p.body.status(cfg),
-        ability: p.ability(cfg),
+        ability: p.ability_with(cfg, &load, mu),
         asleep: p.asleep,
         lying: p.lying,
         rate,
@@ -261,6 +335,7 @@ fn save(
     save: &mut Option<Save>,
     player: &Player,
     appearance: &hearth_character::Appearance,
+    world_items: &hearth_items::WorldItems,
     ticks: u64,
 ) {
     let Some(s) = save else {
@@ -277,6 +352,7 @@ fn save(
         .dir
         .save_meta(&s.meta)
         .and_then(|()| s.dir.write_json("player.json", &player))
+        .and_then(|()| s.dir.write_json("items.json", world_items))
     {
         log::error!("could not save the world: {e}");
     } else {
@@ -349,18 +425,47 @@ fn run(
             spec.appearance.clone().sanitized(),
         ),
     };
-    // Everyone starts in a loincloth; a female body with a band across the chest too (D70).
-    let dress = |a: &hearth_character::Appearance| {
-        let female = a.body == hearth_character::BodyType::Female;
+    let items = Arc::new(hearth_items::Items::from_content(&content));
+    // What a new person starts in: the loincloth (with a chest band for a female body, D70) of
+    // their chosen material, as things they wear.
+    let outfit = |a: &hearth_character::Appearance| {
+        let material = match a.loincloth {
+            hearth_character::Loincloth::Hide => "hearth:rawhide",
+            hearth_character::Loincloth::PlantFibre => "hearth:nettle_fibre",
+        };
+        let mut garments = vec!["hearth:loincloth"];
+        if a.body == hearth_character::BodyType::Female {
+            garments.push("hearth:chest_band");
+        }
+        let stacks: Vec<hearth_items::Stack> = garments
+            .iter()
+            .filter_map(|g| items.garment(g, material))
+            .map(|k| hearth_items::Stack::one(&k.id))
+            .collect();
+        hearth_items::Carry::dressed(&items, stacks)
+    };
+    // Saves from before carrying wore nothing: dress them.
+    if player.carry.worn.is_empty() {
+        player.carry = outfit(&appearance);
+    }
+    let dress_carry = |c: &hearth_items::Carry| {
         Worn::of(
-            content.garments.get("hearth:loincloth").into_iter().chain(
-                female
-                    .then(|| content.garments.get("hearth:chest_band"))
-                    .flatten(),
-            ),
+            c.garments(&items)
+                .iter()
+                .filter_map(|g| content.garments.get(g)),
         )
     };
-    let mut worn = dress(&appearance);
+    let mut worn = dress_carry(&player.carry);
+    let mut carry_sent: Option<hearth_items::Carry> = None;
+    // The things lying in the world; where the player was when they were last told of them.
+    let mut world_items: hearth_items::WorldItems = save_state
+        .as_ref()
+        .and_then(|s| s.dir.read_json("items.json").ok().flatten())
+        .unwrap_or_default();
+    let mut items_told: Option<DVec3> = None;
+    let mut items_changed = true;
+    // Blocks changed by the player since the last tick.
+    let mut gathered: Vec<BlockPos> = Vec::new();
     let death_rules = save_state
         .as_ref()
         .map_or(spec.death_rules, |s| s.meta.settings.life.death_rules);
@@ -390,6 +495,7 @@ fn run(
             player: player.mover,
             appearance: appearance.clone(),
             death_rules,
+            items: items.clone(),
             ended,
         })))
         .is_err()
@@ -461,12 +567,124 @@ fn run(
                             hearth_save::DeathRules::Permadeath => None,
                         };
                         if let Some(at) = at {
+                            let fell = player.mover.pos;
+                            let left = std::mem::take(&mut player.carry);
+                            for (k, stack) in left.into_stacks().into_iter().enumerate() {
+                                let a = k as f64 * 2.4;
+                                let spot = fell + DVec3::new(a.cos() * 0.6, 0.5, a.sin() * 0.6);
+                                world_items.add(stack, rest_on(&lw, spot).to_array(), a as f32);
+                            }
+                            items_changed = true;
                             player = Player::new(&cfg, at, seed ^ ticks);
                             player.life = hearth_player::Life::begin(at, ticks);
-                            worn = dress(&appearance);
+                            player.carry = outfit(&appearance);
+                            worn = dress_carry(&player.carry);
                             death_told = false;
                             let _ = tx.send(ToClient::Person(appearance.clone()));
                             let _ = tx.send(ToClient::Placed(player.mover));
+                        }
+                    }
+                }
+                Ok(ToServer::PickUp(id)) => {
+                    let near = world_items
+                        .get(id)
+                        .is_some_and(|w| within_reach(&player, DVec3::from_array(w.pos)));
+                    if player.can_act(&cfg)
+                        && near
+                        && let Some(w) = world_items.take(id)
+                    {
+                        let body_kg = cfg.mass_kg as f32;
+                        // Into what is carried; too heavy for that, taken hold of to drag.
+                        let back = match player.carry.stow(&items, w.stack, body_kg) {
+                            Ok(()) => None,
+                            Err(stack) => player.carry.drag(&items, stack, body_kg).err(),
+                        };
+                        if let Some((stack, _)) = back {
+                            world_items
+                                .items
+                                .push(hearth_items::WorldItem { stack, ..w });
+                        }
+                        items_changed = true;
+                    }
+                }
+                Ok(ToServer::Drag(id)) => {
+                    let near = world_items
+                        .get(id)
+                        .is_some_and(|w| within_reach(&player, DVec3::from_array(w.pos)));
+                    if player.can_act(&cfg)
+                        && near
+                        && let Some(w) = world_items.take(id)
+                    {
+                        if let Err((stack, _)) =
+                            player.carry.drag(&items, w.stack, cfg.mass_kg as f32)
+                        {
+                            world_items
+                                .items
+                                .push(hearth_items::WorldItem { stack, ..w });
+                        }
+                        items_changed = true;
+                    }
+                }
+                Ok(ToServer::PutDown { from, count, at }) => {
+                    if player.can_act(&cfg)
+                        && within_reach(&player, at)
+                        && let Some(stack) = player.carry.take(&items, &from, count)
+                    {
+                        let rest = rest_on(&lw, at);
+                        world_items.add(stack, rest.to_array(), 0.0);
+                        worn = dress_carry(&player.carry);
+                        items_changed = true;
+                    }
+                }
+                Ok(ToServer::LetGo(at)) => {
+                    let at = if within_reach(&player, at) {
+                        at
+                    } else {
+                        player.mover.pos
+                    };
+                    if let Some(stack) = player.carry.dragging.take() {
+                        world_items.add(stack, rest_on(&lw, at).to_array(), 0.0);
+                        items_changed = true;
+                    }
+                }
+                Ok(ToServer::Gather(pos)) => {
+                    let center =
+                        DVec3::new(pos.x as f64 + 0.5, pos.y as f64 + 0.3, pos.z as f64 + 0.5);
+                    if player.can_act(&cfg)
+                        && within_reach(&player, center)
+                        && let Some((stack, count)) = gathered_from(&lw, &items, pos)
+                    {
+                        let air = lw.reg.default_state("hearth:air");
+                        lw.map.set_block(pos, air, &lw.reg);
+                        gathered.push(pos);
+                        let body_kg = cfg.mass_kg as f32;
+                        for _ in 0..count {
+                            if let Err(s) = player.carry.stow(&items, stack.clone(), body_kg) {
+                                // What cannot be carried lies where it was.
+                                world_items.add(s, rest_on(&lw, center).to_array(), 0.0);
+                            }
+                        }
+                        items_changed = true;
+                    }
+                }
+                Ok(ToServer::Give(stack)) => {
+                    let body_kg = cfg.mass_kg as f32;
+                    if items.get(&stack.id).is_some() {
+                        let left = match player.carry.stow(&items, stack, body_kg) {
+                            Ok(()) => None,
+                            Err(s) => player.carry.drag(&items, s, body_kg).err(),
+                        };
+                        if let Some((s, _)) = left {
+                            world_items.add(s, player.mover.pos.to_array(), 0.0);
+                            items_changed = true;
+                        }
+                    }
+                }
+                Ok(ToServer::Shift { from, count, to }) => {
+                    if player.can_act(&cfg) {
+                        let body_kg = cfg.mass_kg as f32;
+                        if player.carry.shift(&items, &from, count, &to, body_kg) {
+                            worn = dress_carry(&player.carry);
                         }
                     }
                 }
@@ -483,7 +701,7 @@ fn run(
                     };
                 }
                 Ok(ToServer::Quit) | Err(TryRecvError::Disconnected) => {
-                    save(&mut save_state, &player, &appearance, ticks);
+                    save(&mut save_state, &player, &appearance, &world_items, ticks);
                     let _ = tx.send(ToClient::Saved);
                     return Ok(());
                 }
@@ -500,7 +718,9 @@ fn run(
             let e = exposure(&env, &lw, &moment, &player.mover, immersion);
             let report = last_moved.as_ref().map(report_of).unwrap_or_default();
             if player.body.dead.is_none() {
-                let mut activity = player.activity(&cfg, &report);
+                let load = player.carry.load(&items, cfg.mass_kg as f32);
+                let mu = drag_friction(&lw, player.mover.pos);
+                let mut activity = player.activity_with(&cfg, &report, &load, mu);
                 if player.asleep || player.lying {
                     activity.posture = Posture::Lying;
                 }
@@ -548,7 +768,7 @@ fn run(
                             log::error!("could not write the life's tale: {e}");
                         }
                     }
-                    save(&mut save_state, &player, &appearance, ticks);
+                    save(&mut save_state, &player, &appearance, &world_items, ticks);
                     let _ = tx.send(ToClient::Ended(summary));
                 }
             }
@@ -565,7 +785,7 @@ fn run(
                 humidity: e.humidity,
                 wind_m_s: e.wind_m_s,
             };
-            let mut changed: Vec<BlockPos> = Vec::new();
+            let mut changed: Vec<BlockPos> = std::mem::take(&mut gathered);
             if ticks.is_multiple_of(2) {
                 changed.extend_from_slice(water.tick(&mut lw.map, &lw.reg, &world_water));
             }
@@ -580,8 +800,28 @@ fn run(
                     .blocks_changed(&mut lw, &models, opts, &changed, tx)
                     .is_err()
             {
-                save(&mut save_state, &player, &appearance, ticks);
+                save(&mut save_state, &player, &appearance, &world_items, ticks);
                 return Ok(());
+            }
+            // The things lying near the player: told when they change or the player goes far.
+            let moved_far = items_told.is_none_or(|p| (p - player.mover.pos).length() > 16.0);
+            if items_changed || moved_far {
+                items_changed = false;
+                items_told = Some(player.mover.pos);
+                let near: Vec<hearth_items::WorldItem> = world_items
+                    .items
+                    .iter()
+                    .filter(|w| {
+                        let d = DVec3::from_array(w.pos) - player.mover.pos;
+                        d.x * d.x + d.z * d.z < 96.0 * 96.0
+                    })
+                    .cloned()
+                    .collect();
+                let _ = tx.send(ToClient::Items(near));
+            }
+            if carry_sent.as_ref() != Some(&player.carry) {
+                carry_sent = Some(player.carry.clone());
+                let _ = tx.send(ToClient::Carried(player.carry.clone()));
             }
             if tx.send(ToClient::Clock(ticks)).is_err()
                 || tx
@@ -590,15 +830,17 @@ fn run(
                         &player,
                         e,
                         20.0 + warp + sleep_warp,
+                        &items,
+                        drag_friction(&lw, player.mover.pos),
                     ))))
                     .is_err()
             {
-                save(&mut save_state, &player, &appearance, ticks);
+                save(&mut save_state, &player, &appearance, &world_items, ticks);
                 return Ok(());
             }
             if since_save >= AUTOSAVE_TICKS {
                 since_save = 0;
-                save(&mut save_state, &player, &appearance, ticks);
+                save(&mut save_state, &player, &appearance, &world_items, ticks);
                 let _ = tx.send(ToClient::Saved);
             }
             next_tick += Duration::from_secs_f64(TICK_S);
@@ -636,7 +878,7 @@ fn run(
                 std::thread::sleep(wait.min(Duration::from_millis(5)));
             }
             Err(_) => {
-                save(&mut save_state, &player, &appearance, ticks);
+                save(&mut save_state, &player, &appearance, &world_items, ticks);
                 return Ok(());
             }
         }
