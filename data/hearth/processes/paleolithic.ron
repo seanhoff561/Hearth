@@ -33,6 +33,15 @@
             outputs: [(item: Form(form: "pole"), amount: (1, 1))],
         ),
         (
+            id: "set_alight", status: Implemented, name: "Set alight", action: "put the flame to the dry growth",
+            verb: "light",
+            target: Block(Any([Id("grass_block"), Id("podzol"), Suffix("grass"), Suffix("_leaves"), Id("dead_bush"), Id("bracken"), Id("heather"), Id("fern"), Id("large_fern"), Id("fireweed")])),
+            effect: SetAlight,
+            inputs: [(item: Tag("fire_source"), amount: 1, consumed: false)],
+            duration: (hours: 0.01),
+            outputs: [],
+        ),
+        (
             id: "break_dead_bush", status: Implemented, name: "Break up a dead bush", action: "break up the dead bush",
             verb: "break", target: Block(Id("dead_bush")), effect: Remove,
             inputs: [], duration: (hours: 0.03),

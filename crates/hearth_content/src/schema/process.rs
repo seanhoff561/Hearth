@@ -81,6 +81,8 @@ pub enum Effect {
     Lop,
     /// A lying trunk is cut through: a section comes off.
     Buck,
+    /// The vegetation aimed at is set alight (it spreads as dry as it is).
+    SetAlight,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

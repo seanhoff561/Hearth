@@ -29,6 +29,8 @@ pub struct World {
     pub mover: Mover,
     pub ticks: u64,
     pub ticks_per_day: f64,
+    /// The world's calendar (its seasons and their start).
+    pub calendar: hearth_env::Calendar,
     /// What came of things done: (process, done, words).
     pub acted: Vec<(String, bool, String)>,
     pub learned: Vec<String>,
@@ -91,6 +93,7 @@ impl World {
             mover: ready.player,
             ticks: ready.ticks,
             ticks_per_day: ready.calendar.ticks_per_day(),
+            calendar: ready.calendar,
             acted: Vec::new(),
             learned: Vec::new(),
             working: false,

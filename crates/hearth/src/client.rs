@@ -1650,6 +1650,20 @@ impl Client {
                         s.terrain.water.set_heights(ctx, *water);
                     }
                 }
+                ToClient::Smoke(plumes) => {
+                    if let Some(s) = &mut self.scene {
+                        s.smoke.set_plumes(
+                            plumes
+                                .iter()
+                                .map(|p| hearth_render::smoke::SmokePlume {
+                                    at: p.at,
+                                    strength: p.strength,
+                                    far: p.far,
+                                })
+                                .collect(),
+                        );
+                    }
+                }
                 ToClient::Clock(t) => {
                     self.ticks = t;
                     self.tick_frac = 0.0;

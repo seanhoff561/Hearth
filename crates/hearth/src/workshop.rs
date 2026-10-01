@@ -37,11 +37,12 @@ use hearth_math::hash::Rng;
 use hearth_player::Player;
 use hearth_protocol::{Acted, AimAt, DrinkFrom, ToClient, WorkView};
 use hearth_world::BlockStateId;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::environment::EnvSampler;
 use crate::scene::LocalWorld;
+use crate::wildfire::{Danger, FarFire, FireWorld, FuelTable, Plume, Wildfire};
 
 /// How far things lying about are within reach of the work (m).
 const REACH_M: f64 = 2.5;
@@ -135,6 +136,39 @@ pub struct Workshop {
     tasted_salt: Option<u64>,
     /// Trees falling: where they come to rest, and the tick they get there.
     falls: Vec<(u64, Vec<(BlockPos, BlockStateId)>)>,
+    /// Fire in the vegetation near the player, and far away.
+    blaze: Wildfire,
+    far_fire: FarFire,
+    /// What each block burns as (from the registry, on first need).
+    fuel: Option<Arc<FuelTable>>,
+    /// The fire danger at the fire, and the game minute it was found.
+    danger: Option<(u64, Danger)>,
+}
+
+/// The near fire's view of the world: the loaded terrain; what burns is nature's change (the
+/// player's own changes stay theirs, as burned), and workstations are spared.
+struct HereFire<'a, 'b> {
+    h: &'a mut Here<'b>,
+    spared: &'a FxHashSet<BlockPos>,
+}
+
+impl FireWorld for HereFire<'_, '_> {
+    fn block(&self, p: BlockPos) -> Option<BlockStateId> {
+        self.h.lw.map.block(p)
+    }
+
+    fn set(&mut self, p: BlockPos, s: BlockStateId) {
+        let reg = self.h.lw.reg.clone();
+        self.h.lw.map.set_block(p, s, &reg);
+        if self.h.lw.edits.get(p).is_some() {
+            self.h.lw.edits.set(p, s);
+        }
+        self.h.changed.push(p);
+    }
+
+    fn spared(&self, p: BlockPos) -> bool {
+        self.spared.contains(&p)
+    }
 }
 
 /// An action's outcome in words, as the client is told it.
@@ -265,6 +299,10 @@ impl Workshop {
             knowledge_changed: true,
             tasted_salt: None,
             falls: Vec::new(),
+            blaze: Wildfire::new(seed),
+            far_fire: FarFire::new(seed),
+            fuel: None,
+            danger: None,
         }
     }
 
@@ -609,6 +647,10 @@ impl Workshop {
                 }
             }
         }
+        // Fire in the vegetation.
+        if self.blaze.is_burning() {
+            self.fire_step(h);
+        }
         // The world, a game minute at a time.
         let minute = (h.ticks_per_day / 1440.0).max(1.0);
         while (h.ticks.saturating_sub(self.last_update)) as f64 >= minute {
@@ -909,6 +951,11 @@ impl Workshop {
                 }
                 self.show_station(h, pos);
             }
+            (Effect::SetAlight, AimAt::Block { pos, .. }) => {
+                if !self.ignite_at(h, pos) {
+                    h.out.push(acted(&def.id, false, "It will not catch."));
+                }
+            }
             (Effect::Fell, AimAt::Block { pos, .. }) => self.fell(h, pos),
             (Effect::Lop, AimAt::Block { pos, .. }) => self.lop(h, pos),
             (Effect::Buck, AimAt::Block { pos, .. }) => self.set_block(h, pos, BlockStateId::AIR),
@@ -1172,6 +1219,7 @@ impl Workshop {
                     z: foot.z,
                     radius: (t.template.reach() as f32).max(2.0),
                     severity: 1.0,
+                    patches: Vec::new(),
                 });
         let height = standing
             .iter()
@@ -1418,7 +1466,7 @@ impl Workshop {
 
     /// Radiant heat from fires near a point, as a body there absorbs it averaged over its skin
     /// (W/m²): about half the body faces the fire and skin takes nine tenths of what reaches
-    /// it.
+    /// it. A fire in the vegetation about it adds its own.
     pub fn radiant_w_m2(&self, at: DVec3) -> f32 {
         let facing: f32 = self
             .stations
@@ -1430,7 +1478,151 @@ impl Workshop {
                 (d < 16.0).then(|| f.radiant_w_m2(d))
             })
             .sum();
-        (0.45 * facing).min(600.0)
+        (0.45 * facing).min(600.0) + self.blaze.radiant_w_m2(at)
+    }
+
+    /// What each block burns as.
+    fn fuel_table(&mut self, h: &Here) -> Arc<FuelTable> {
+        self.fuel
+            .get_or_insert_with(|| Arc::new(FuelTable::new(&h.lw.reg)))
+            .clone()
+    }
+
+    /// The fire danger where the near fire burns (or at the player), found once a game minute.
+    fn danger_near(&mut self, h: &Here) -> Danger {
+        let minute = (h.ticks as f64 / (h.ticks_per_day / 1440.0).max(1.0)) as u64;
+        if let Some((m, d)) = self.danger
+            && m == minute
+        {
+            return d;
+        }
+        let at = self
+            .blaze
+            .plumes()
+            .first()
+            .map_or(h.player.mover.pos, |p| p.at);
+        let d = crate::wildfire::danger(h.env, h.ticks, at);
+        self.danger = Some((minute, d));
+        d
+    }
+
+    /// A block of vegetation is set alight (lightning, a brand, a test); whether it caught.
+    pub fn ignite_at(&mut self, h: &mut Here, pos: BlockPos) -> bool {
+        let table = self.fuel_table(h);
+        let tick_s = (86_400.0 / h.ticks_per_day) as f32;
+        let spared: FxHashSet<BlockPos> = self
+            .stations
+            .iter()
+            .chain(&self.wildfires)
+            .map(|s| s.pos)
+            .collect();
+        let ticks = h.ticks;
+        let mut world = HereFire { h, spared: &spared };
+        // A plant over turf, or the turf under it.
+        self.blaze.ignite(&mut world, &table, pos, ticks, tick_s)
+            || self
+                .blaze
+                .ignite(&mut world, &table, pos.down(), ticks, tick_s)
+    }
+
+    /// A step of the near fire; where it runs on into terrain not loaded, the far fire takes it.
+    fn fire_step(&mut self, h: &mut Here) {
+        let table = self.fuel_table(h);
+        let danger = self.danger_near(h);
+        let tick_s = (86_400.0 / h.ticks_per_day) as f32;
+        let spared: FxHashSet<BlockPos> = self
+            .stations
+            .iter()
+            .chain(&self.wildfires)
+            .map(|s| s.pos)
+            .collect();
+        let ticks = h.ticks;
+        let mut beyond = Vec::new();
+        {
+            let mut world = HereFire { h, spared: &spared };
+            self.blaze
+                .step(&mut world, &table, danger, ticks, tick_s, &mut beyond);
+        }
+        let mut cells: Vec<(i32, i32)> = beyond
+            .iter()
+            .map(|p| FarFire::cell_of(p.x as f64, p.z as f64))
+            .collect();
+        cells.sort_unstable();
+        cells.dedup();
+        for cell in cells {
+            let fuel = FarFire::fuel(h.env, h.lw.terrain(), cell);
+            self.far_fire.ignite(cell, fuel, ticks, h.ticks_per_day);
+        }
+    }
+
+    /// A game minute of fire: the ground the near fire has left is kept as burned; the far
+    /// fire's hours; flames burn whoever stands in them.
+    fn fire_minute(&mut self, h: &mut Here) {
+        if let Some(d) = self.blaze.take_burned(h.lw.vegetation.year) {
+            h.lw.vegetation = h.lw.vegetation.with(d);
+        }
+        if self.far_fire.is_burning() {
+            let feet = h.player.mover.pos;
+            let near = |cell: (i32, i32)| {
+                let c = DVec3::new(
+                    (cell.0 * hearth_worldgen::vegetation::ECO_CELL
+                        + hearth_worldgen::vegetation::ECO_CELL / 2) as f64,
+                    feet.y,
+                    (cell.1 * hearth_worldgen::vegetation::ECO_CELL
+                        + hearth_worldgen::vegetation::ECO_CELL / 2) as f64,
+                );
+                (c - feet).length() < 220.0
+            };
+            let mut handed = Vec::new();
+            let terrain = h.lw.generator.terrain.clone();
+            self.far_fire
+                .hour(h.env, &terrain, h.ticks, feet, near, &mut handed);
+            // A far fire coming near: the near fire takes it up at the cell's edge nearest it.
+            for cell in handed {
+                let e = hearth_worldgen::vegetation::ECO_CELL;
+                for _ in 0..24 {
+                    let x = cell.0 * e + self.rng.range_i32(0, e);
+                    let z = cell.1 * e + self.rng.range_i32(0, e);
+                    if let Some(top) = h.lw.map.sky_top(x, z)
+                        && self.ignite_at(h, BlockPos::new(x, top, z))
+                    {
+                        break;
+                    }
+                }
+            }
+            for d in self.far_fire.take_burned(h.lw.vegetation.year) {
+                h.lw.vegetation = h.lw.vegetation.with(d);
+            }
+        }
+        // Flames burn.
+        let feet = BlockPos::containing(h.player.mover.pos + DVec3::new(0.0, 0.1, 0.0));
+        if self.blaze.is_burning()
+            && h.player.body.dead.is_none()
+            && (self.blaze.in_flames(feet) || self.blaze.in_flames(feet.up()))
+        {
+            use hearth_content::schema::body::BodyRegion;
+            let side = if self.rng.chance(0.5) {
+                hearth_body::Side::Left
+            } else {
+                hearth_body::Side::Right
+            };
+            h.player
+                .body
+                .injure(h.cfg, "burn", BodyRegion::Foot, side, 0.3);
+            h.out.push(acted("", false, "The flames burn you."));
+        }
+    }
+
+    /// The smoke of the fires in the vegetation, near and far.
+    pub fn plumes(&self, h: &Here) -> Vec<Plume> {
+        let mut v = self.blaze.plumes();
+        v.extend(self.far_fire.plumes(h.lw.terrain(), *h.lw.map.planet()));
+        v
+    }
+
+    /// Whether any fire burns in the vegetation.
+    pub fn fire_burning(&self) -> bool {
+        self.blaze.is_burning() || self.far_fire.is_burning()
     }
 
     /// The bedding under someone lying at `feet` (insulation from the ground, clo).
@@ -1757,6 +1949,9 @@ impl Workshop {
         }
         self.batches(h, dt_h, air_c);
         self.go_off(h, dt_h, air_c);
+        if self.fire_burning() {
+            self.fire_minute(h);
+        }
         self.storm(h, &w);
         self.kills(h);
     }
@@ -1896,6 +2091,18 @@ impl Workshop {
             return;
         }
         let feet = h.player.mover.pos;
+        // Strikes far off light the land where it is dry enough to burn.
+        if self.rng.chance(0.3) {
+            let a = self.rng.range_f64(0.0, std::f64::consts::TAU);
+            let d = self.rng.range_f64(800.0, 6000.0);
+            let (x, z) = (feet.x + a.cos() * d, feet.z + a.sin() * d);
+            let danger = crate::wildfire::danger(h.env, h.ticks, DVec3::new(x, feet.y, z));
+            if danger.level > 0.35 {
+                let cell = FarFire::cell_of(x, z);
+                let fuel = FarFire::fuel(h.env, h.lw.terrain(), cell);
+                self.far_fire.ignite(cell, fuel, h.ticks, h.ticks_per_day);
+            }
+        }
         for _ in 0..16 {
             let a = self.rng.range_f64(0.0, std::f64::consts::TAU);
             let d = self.rng.range_f64(30.0, 150.0);
@@ -2004,6 +2211,17 @@ impl Workshop {
             id: WILDFIRE.to_owned(),
             fire: Some(fire),
         });
+        // The crown where it was struck catches: in dry weather the fire spreads from it.
+        for p in [
+            at,
+            at.down(),
+            BlockPos::new(at.x + 1, at.y - 1, at.z),
+            BlockPos::new(at.x - 1, at.y - 1, at.z),
+            BlockPos::new(at.x, at.y - 1, at.z + 1),
+            BlockPos::new(at.x, at.y - 1, at.z - 1),
+        ] {
+            self.ignite_at(h, p);
+        }
         true
     }
 

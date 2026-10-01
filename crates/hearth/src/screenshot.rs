@@ -26,6 +26,88 @@ use crate::environment::{EnvOverrides, EnvSampler};
 use crate::scene::LocalWorld;
 use rayon::prelude::*;
 
+/// Sets the grass `ahead` metres in front of the camera alight and lets the fire burn on for
+/// `minutes` game minutes in hot dry air, the wind blowing to the camera's right; the blocks it
+/// changes are relit. Returns its smoke.
+fn burn_ahead(
+    lw: &mut LocalWorld,
+    camera: &Camera,
+    minutes: f64,
+    ahead: f64,
+    seed: u64,
+) -> Vec<hearth_render::smoke::SmokePlume> {
+    use crate::wildfire::{Danger, FireWorld, FuelTable, STEP_TICKS, Wildfire};
+    struct ShotFire<'a> {
+        lw: &'a mut LocalWorld,
+        changed: Vec<hearth_math::BlockPos>,
+    }
+    impl FireWorld for ShotFire<'_> {
+        fn block(&self, p: hearth_math::BlockPos) -> Option<hearth_world::BlockStateId> {
+            self.lw.map.block(p)
+        }
+        fn set(&mut self, p: hearth_math::BlockPos, s: hearth_world::BlockStateId) {
+            let reg = self.lw.reg.clone();
+            self.lw.map.set_block(p, s, &reg);
+            self.changed.push(p);
+        }
+        fn spared(&self, _: hearth_math::BlockPos) -> bool {
+            false
+        }
+    }
+    let f = camera.forward().as_dvec3();
+    let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+    let side = DVec3::new(-flat.z, 0.0, flat.x);
+    let (px, pz) = (camera.pos.x + flat.x * ahead, camera.pos.z + flat.z * ahead);
+    let start = hearth_math::BlockPos::containing(DVec3::new(px, lw.surface_y(px, pz) - 0.5, pz));
+    let table = FuelTable::new(&lw.reg);
+    let mut fire = Wildfire::new(seed);
+    let danger = Danger {
+        level: 0.9,
+        wind: glam::Vec2::new(side.x as f32, side.z as f32) * 4.0,
+        rain_mm_h: 0.0,
+    };
+    let tick_s = 1.5;
+    let mut world = ShotFire {
+        lw,
+        changed: Vec::new(),
+    };
+    if !fire.ignite(&mut world, &table, start, 0, tick_s) {
+        fire.ignite(&mut world, &table, start.up(), 0, tick_s);
+    }
+    let steps = (minutes * 60.0 / (STEP_TICKS as f64 * tick_s as f64)) as u64;
+    let mut beyond = Vec::new();
+    for k in 0..steps {
+        fire.step(
+            &mut world,
+            &table,
+            danger,
+            k * STEP_TICKS,
+            tick_s,
+            &mut beyond,
+        );
+    }
+    let ShotFire { lw, mut changed } = world;
+    changed.sort_unstable();
+    changed.dedup();
+    let reg = lw.reg.clone();
+    for p in &changed {
+        lw.light.block_changed(&mut lw.map, &reg, *p);
+    }
+    log::info!(
+        "fire set at {start:?}: {} blocks burning after {minutes} minutes, {} changed",
+        fire.burning_count(),
+        changed.len()
+    );
+    fire.plumes()
+        .into_iter()
+        .map(|p| hearth_render::smoke::SmokePlume {
+            at: p.at,
+            strength: p.strength,
+            far: p.far,
+        })
+        .collect()
+}
+
 /// One screenshot request.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShotSpec {
@@ -82,6 +164,11 @@ pub struct ShotSpec {
     /// Ground cleared or burned in front of the camera, seen years later: (what, radius m,
     /// years since, metres ahead). The rest of the land has grown those years too.
     pub disturb: Vec<(hearth_worldgen::vegetation::DisturbanceKind, f64, f64, f64)>,
+    /// A fire set in the grass this far (m) ahead, burned on for this many game minutes in
+    /// hot dry air with the wind blowing to the right: (minutes, metres ahead).
+    pub fire: Option<(f64, f64)>,
+    /// The smoke of a far fire this many metres ahead (as a burning ecological cell sends up).
+    pub far_smoke: Vec<f64>,
     /// See through the eyes of a person standing on the ground below the camera (their body
     /// drawn as in first person).
     pub body: bool,
@@ -123,6 +210,8 @@ impl Default for ShotSpec {
             place: Vec::new(),
             trees: Vec::new(),
             disturb: Vec::new(),
+            fire: None,
+            far_smoke: Vec::new(),
             body: false,
             senses: None,
         }
@@ -221,6 +310,13 @@ impl ShotSpec {
                     let ahead = n.next().unwrap_or("0").parse()?;
                     spec.disturb.push((kind, radius.parse()?, years, ahead));
                 }
+                // `fire=6@40`: burned on 6 game minutes, set 40 m ahead.
+                "fire" => {
+                    let (minutes, ahead) = v.split_once('@').unwrap_or((v, "30"));
+                    spec.fire = Some((minutes.parse()?, ahead.parse()?));
+                }
+                // `farsmoke=4000`: a far fire's smoke 4 km ahead, repeatable.
+                "farsmoke" => spec.far_smoke.push(v.parse()?),
                 "body" => spec.body = v.parse()?,
                 "senses" => spec.senses = Some(v.to_owned()),
                 other => anyhow::bail!("unknown screenshot key {other:?}"),
@@ -398,6 +494,7 @@ pub fn render_shot(
                     z: at.z.floor() as i32,
                     radius: radius as f32,
                     severity: 1.0,
+                    patches: Vec::new(),
                 }
             })
             .collect();
@@ -475,9 +572,29 @@ pub fn render_shot(
             );
         }
     }
+    // A fire set in the grass ahead and burned on.
+    let mut plumes = Vec::new();
+    if let Some((minutes, ahead)) = spec.fire {
+        plumes = burn_ahead(lw, &camera, minutes, ahead, spec.seed);
+    }
+    for ahead in &spec.far_smoke {
+        let f = camera.forward().as_dvec3();
+        let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+        let at = camera.pos + flat * *ahead;
+        let ground = lw
+            .terrain()
+            .sample(planet.wrap_x(at.x.floor() as i32), at.z.floor() as i32)
+            .height as f64;
+        plumes.push(hearth_render::smoke::SmokePlume {
+            at: DVec3::new(at.x, ground, at.z),
+            strength: 0.9,
+            far: true,
+        });
+    }
     let models = BlockModels::build(&lw.reg, atlas);
     let meshes = lw.mesh(&models, &positions, MeshOptions::default());
     let mut scene = SceneRenderer::new(ctx, atlas, OFFSCREEN_FORMAT, planet, 4, 4);
+    scene.smoke.set_plumes(plumes);
     scene.terrain.render_distance = spec.distance;
     scene.terrain.vertical_distance = 64;
     for m in &meshes {

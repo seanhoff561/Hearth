@@ -108,6 +108,7 @@ fn cleared_land_grows_back_through_pioneers_to_the_old_forest() {
             z: c.1,
             radius: 60.0,
             severity: 1.0,
+            patches: Vec::new(),
         }],
     };
     let before = within(wg, &at(&save, 9.9), c, 45);
@@ -171,6 +172,7 @@ fn a_burned_stand_stands_charred_and_bare_then_grows_back() {
             z: c.1,
             radius: 50.0,
             severity: 1.0,
+            patches: Vec::new(),
         }],
     };
     let just = within(wg, &at(&save, 5.05), c, 35);
@@ -238,6 +240,7 @@ fn a_felled_tree_leaves_its_stump_and_another_takes_its_place() {
         z: foot.1,
         radius: tree.template.reach() as f32,
         severity: 1.0,
+        patches: Vec::new(),
     });
     let save = felled.save();
     let site = |year: f64| {

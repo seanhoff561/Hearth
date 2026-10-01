@@ -142,12 +142,36 @@ seasonal cover taken off and laid again), then relit and remeshed. The state is 
 (`vegetation.json`), sent to the client and drawn in the distant terrain.
 
 ### Wildfire
-Lightning in the dry season sets the vegetation alight, and so can the player. Near the player
-fire spreads block by block through litter, grass, foliage and wood, faster downwind and
-upslope and in dry weather, slower in damp; burned ground is left bare, trunks stand charred,
-and the area enters succession. Far away a fire spreads over ecological cells by their fuel,
-dryness, wind and slope (a surface fire runs metres a minute), and its smoke rises high enough
-to be seen across the land. Fires burn out against water, rock, bare ground and rain.
+Lightning sets the vegetation alight (the struck tree's crown, and far off, cells of dry
+land), and so can the player, by putting a burning brand to dry growth (`set_alight`).
+
+**Danger.** How readily a place burns is the dryness of its fine dead fuel times how much of
+its growth has cured. The fuel's moisture is its equilibrium moisture in the air (Simard's
+formula from humidity and temperature: about 5 % in hot dry air, 12 % at 60 % humidity, 25 %
+in damp air), raised by the rain of the last two days and soaked while rain falls; it carries
+no fire above 30 %. The growth has cured in a dry month (by Gaussen's rule, the month's rain
+under twice its temperature, as in a Mediterranean summer) and only a fifth otherwise.
+
+**Near the player** fire spreads block by block through turf and litter (grass, podzol and
+moss blocks), plants, foliage, twigs, limbs and trunks. Each burning block sets its neighbours
+alight with a chance by their fuel, its own heat, the danger to the power 1.5, the wind
+(downwind up to five times more readily, upwind a tenth or less, so a fire runs before the
+wind and hardly backs) and the slope (flames climb). Turf burns to bare black ground
+(`burnt_ground`); plants, foliage and twigs to nothing; limbs and trunks char (`charred_branch`,
+`charred_log`). Flames show where the fire is. Rain puts burning blocks out. Fires stop at
+what does not burn: water, rock, sand, burned ground. A body in the flames is burned and the
+fire's heat reaches it as radiant heat. The fire's smoke rises over it, a plume for each
+32 m square burning. Each 4 m square of ground the fire has burned and left is kept, a few at a
+time, as a Burned disturbance with that exact shape, so it enters succession and stays burned
+when the terrain is generated again.
+
+**Far away** (beyond the loaded terrain, as far as 12 km from the player) a fire spreads over
+the ecological cells by their fuel (grass and scrub most, forest less, nothing on water, rock,
+ice and desert), the danger there, the wind and diagonals, burns each cell for 6–18 hours and
+keeps it as a Burned disturbance of the cell (its edge ragged, unburned patches by how little
+fuel it had). Its smoke rises a kilometre and more and is seen across the land. A near fire
+running out of the loaded terrain is taken up by the far fire, and a far fire coming within
+about 200 m of the player lights the near fire at the cell's edge.
 
 ### Distant terrain (engine)
 LOD tiles are cached on disk by seed, content and the vegetation and edits that touch them.
@@ -170,6 +194,12 @@ fields). Tiles stay within a VRAM budget, far tiles coarsening first. TAA is an 
 - Taking opened ground: (1 − shade tolerance)³ × seed travel (wind 1.5, water 1, animals 0.6,
   gravity 0.3) × pace (growth ÷ 0.5 m a year, 0.5–2). Taking a gap: (0.2 + 1.6 × shade
   tolerance) × pace.
+- Fire: the near fire steps every 15 game seconds; catching in fully dry, cured fuel and still
+  air per step: turf 0.20, herbs 0.25, foliage 0.09, twigs 0.07, limbs 0.025, trunks 0.012;
+  burning: turf 40–90 s, herbs 30–60 s, foliage 40–100 s, twigs 2–5 min, limbs 15–30 min,
+  trunks 40–80 min; wind factor e^(0.22·u·cos θ) downwind, e^(0.5·u·cos θ) upwind; climbing
+  ×2.5, going down ×0.35; at most 6,000 blocks burning. Far: 0.15 × fuel × danger² per
+  neighbour cell and game hour, at most 200 cells burning.
 
 ## Interactions
 Seasons (phenology tints and leaf cover, snow on crowns), light (shade under foliage), body
@@ -187,6 +217,10 @@ danger, rain), fauna (cover and forage, V2-7), the distant terrain.
 - Trees regrow only on tree sites; the understory's plants are drawn afresh for a disturbed
   place, not grown individually.
 - A fallen trunk does not rot away, and a felled tree's foliage does not wither.
+- Fire burning when the world is saved is out when it is opened again (what it burned is
+  kept). Fire does not yet spread from a campfire to the grass about it, and the player
+  cannot beat it out.
+- Smoke is drawn but does not yet blind, choke or smell; it does not darken the sky's light.
 
 ## Future extensions
 Tier 2 species and biomes (V2-10); crops and domestication (V2-12); coppicing and pollarding;

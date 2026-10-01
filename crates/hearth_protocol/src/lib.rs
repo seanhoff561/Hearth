@@ -88,6 +88,10 @@ pub enum ToServer {
     Run(u64),
     /// Tests and bots: lightning strikes this column (a tree there catches fire).
     Strike { x: i32, z: i32 },
+    /// Tests and bots: the weather held as given wherever it is sampled (`None` lets it go).
+    HoldWeather(Option<hearth_env::weather::WeatherHold>),
+    /// Tests and bots: a block of vegetation catches fire.
+    Ignite(hearth_math::BlockPos),
     /// Tests and bots: the vegetation about a place is cleared or burned, from now on.
     Disturb {
         kind: hearth_worldgen::vegetation::DisturbanceKind,
@@ -221,6 +225,17 @@ pub struct BodyView {
     pub exposure: Exposure,
 }
 
+/// Smoke rising from a fire in the vegetation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Plume {
+    /// Where it rises from.
+    pub at: DVec3,
+    /// How thick, 0–1.
+    pub strength: f32,
+    /// A far fire's (its smoke rises kilometres and is seen across the land).
+    pub far: bool,
+}
+
 /// From the server.
 pub enum ToClient {
     Ready(Box<Ready>),
@@ -230,6 +245,8 @@ pub enum ToClient {
     Unload(CubePos),
     /// What covers the sky and where the water's surface lies around the player.
     Heights(Box<SkyHeights>, Box<WaterHeights>),
+    /// The smoke of the fires burning in the vegetation (empty: none).
+    Smoke(Vec<Plume>),
     /// The world clock at the end of a tick.
     Clock(u64),
     Body(Box<BodyView>),

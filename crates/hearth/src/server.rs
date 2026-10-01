@@ -452,7 +452,7 @@ fn run(
         0.33,
         planet.solar_time_offset(first_spawn.x),
     );
-    let env = EnvSampler::new(lw.grid(), calendar);
+    let mut env = EnvSampler::new(lw.grid(), calendar);
 
     let saved =
         save_state
@@ -557,6 +557,8 @@ fn run(
     let authentic = life.realism.preset == "authentic";
     // Messages the workshop has for the client.
     let mut outbox: Vec<ToClient> = Vec::new();
+    // Whether the client was last told of smoke.
+    let mut smoke_shown = false;
     // Game ticks the last server tick moved the clock by.
     let mut advanced = 1.0f64;
     let mut work_warp = 0.0f64;
@@ -815,6 +817,10 @@ fn run(
                 Ok(ToServer::Strike { x, z }) => {
                     workshop.strike(&mut here!(), x, z);
                 }
+                Ok(ToServer::HoldWeather(hold)) => env.hold = hold,
+                Ok(ToServer::Ignite(p)) => {
+                    workshop.ignite_at(&mut here!(), p);
+                }
                 Ok(ToServer::Disturb { kind, x, z, radius }) => {
                     let year = vegetation_year(&calendar, ticks);
                     lw.vegetation = lw.vegetation.at_year(year).with(
@@ -825,6 +831,7 @@ fn run(
                             z,
                             radius,
                             severity: 1.0,
+                            patches: Vec::new(),
                         },
                     );
                 }
@@ -859,6 +866,20 @@ fn run(
             next_tick = Instant::now() + Duration::from_secs_f64(TICK_S);
         } else if (lockstep && owed > 0) || (!lockstep && Instant::now() >= next_tick) {
             workshop.tick(&mut here!(), advanced);
+            // The smoke over fires in the vegetation, for the client to draw.
+            if ticks.is_multiple_of(20) && (workshop.fire_burning() || smoke_shown) {
+                let plumes: Vec<hearth_protocol::Plume> = workshop
+                    .plumes(&here!())
+                    .into_iter()
+                    .map(|p| hearth_protocol::Plume {
+                        at: p.at,
+                        strength: p.strength,
+                        far: p.far,
+                    })
+                    .collect();
+                smoke_shown = !plumes.is_empty();
+                let _ = tx.send(ToClient::Smoke(plumes));
+            }
             let moment = calendar.at(ticks);
             let immersion = last_moved.map_or(0.0, |m| m.immersion);
             let mut e = exposure(&env, &lw, &moment, &player.mover, immersion);

@@ -19,6 +19,8 @@ pub struct EnvSampler {
     pub grid: Arc<PlanetGrid>,
     pub weather: WeatherModel,
     pub calendar: Calendar,
+    /// Weather held as given (tests and bots).
+    pub hold: Option<hearth_env::weather::WeatherHold>,
     /// The sky's irradiance, integrated at nodes and interpolated from frame to frame.
     sky: std::cell::RefCell<SkyLightCache>,
 }
@@ -56,6 +58,7 @@ impl EnvSampler {
             planet,
             grid,
             calendar,
+            hold: None,
             sky: Default::default(),
         }
     }
@@ -69,8 +72,13 @@ impl EnvSampler {
     pub fn weather_at(&self, m: &Moment, at: DVec3) -> WeatherState {
         let local = self.local_time(m, at.x);
         let normals = Normals::sample(&self.grid, at.x, at.z);
-        self.weather
-            .sample(&normals, at.x, at.z, m.days, m.year_frac, local)
+        let mut w = self
+            .weather
+            .sample(&normals, at.x, at.z, m.days, m.year_frac, local);
+        if let Some(h) = &self.hold {
+            h.apply(&mut w);
+        }
+        w
     }
 
     /// Whether the sun is up at a place.
@@ -99,6 +107,9 @@ impl EnvSampler {
         let mut w = self
             .weather
             .sample(&normals, cam.x, cam.z, m.days, m.year_frac, local);
+        if let Some(h) = &self.hold {
+            h.apply(&mut w);
+        }
         if let Some(c) = o.cloud_cover {
             w.cloud_cover = c.clamp(0.0, 1.0);
         }

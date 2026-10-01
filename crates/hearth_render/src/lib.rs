@@ -18,6 +18,7 @@ pub mod precip;
 pub mod profiler;
 pub mod scene;
 pub mod sky;
+pub mod smoke;
 pub mod terrain;
 pub mod ui;
 pub mod water;

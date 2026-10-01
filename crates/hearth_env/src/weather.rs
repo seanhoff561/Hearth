@@ -44,6 +44,44 @@ pub struct WeatherState {
     pub humidity: f64,
 }
 
+/// Weather held as given wherever it is sampled (tests and bots): what is set replaces the
+/// model's.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct WeatherHold {
+    pub humidity: Option<f64>,
+    pub temperature_c: Option<f64>,
+    pub precip_mm_h: Option<f64>,
+    pub wind_speed_m_s: Option<f64>,
+    /// Toward (radians; 0 north, π/2 east).
+    pub wind_dir: Option<f64>,
+}
+
+impl WeatherHold {
+    pub fn apply(&self, w: &mut WeatherState) {
+        if let Some(h) = self.humidity {
+            w.humidity = h.clamp(0.0, 1.0);
+        }
+        if let Some(t) = self.temperature_c {
+            w.temperature_c = t;
+        }
+        if let Some(p) = self.precip_mm_h {
+            w.precip_mm_h = p.max(0.0);
+            if p <= 0.0 {
+                w.precip = Precip::None;
+                w.thunder = 0.0;
+            } else if w.precip == Precip::None {
+                w.precip = Precip::Rain;
+            }
+        }
+        if let Some(s) = self.wind_speed_m_s {
+            w.wind_speed_m_s = s.max(0.0);
+        }
+        if let Some(d) = self.wind_dir {
+            w.wind_dir = d;
+        }
+    }
+}
+
 /// Inverse of the standard normal CDF (Acklam's rational approximation, |error| < 1.2e-9).
 fn inv_norm(p: f64) -> f64 {
     let p = p.clamp(1e-9, 1.0 - 1e-9);

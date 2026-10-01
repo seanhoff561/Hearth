@@ -783,3 +783,26 @@ the vegetation's change, not the player's: its blocks are taken without entries 
 overlay, so the tree that takes its place is not cut by them. The state is saved
 (`vegetation.json`). The world as it began is unchanged: the generator at year 0 with nothing
 disturbed is the old generator, and the screenshots and benchmarks use it.
+
+## D77 — Wildfire: a block automaton near the player, cells far away, burned ground kept
+Fire in the vegetation runs at two scales. Near the player, where the terrain is loaded, it is
+a stochastic automaton over blocks: each block holds a fuel (turf, herbs, foliage, twigs,
+limbs, trunks) with a catching chance and a burning time, and each step every burning block
+may set its 26 neighbours alight by their fuel, its heat, the fire danger, the wind and the
+slope; what burns out becomes what it burns to (bare ground, nothing, charred wood). The
+danger is the moisture of fine dead fuel by Simard's equilibrium (humidity and temperature)
+with the last two days' rain, times the share of the growth cured, from the climate's month
+(Gaussen's dry month); the curing is what makes the dry season the fire season while a damp
+temperate summer hardly burns. Rates were set so that a fire's chance of spreading (the
+expected blocks each burning block lights) is well over one in a dry month's grass with
+wind, about one at moderate danger and well under one in damp air; a fire backs into the wind
+at a tenth of its pace or less. What the fire burns is nature's change, not the player's: the
+ground it has left is kept in the vegetation state as Burned disturbances with an exact shape
+of 4 m squares (taken when no block in a square still burns), so the generator draws it burned
+and grows it back, and an unloaded and reloaded area is burned as it was. Beyond the loaded
+terrain fire spreads over the 256 m ecological cells by their fuel and the danger there, each
+cell kept as a Burned circle; the two hand fires over at the loaded edge. Smoke is drawn as
+GPU-generated puff plumes (one per 32 m square of near fire, one per burning cell far away),
+depth-tested, lit by sky and sun and faded into the haze, so a far fire's column is seen from
+kilometres. Burning blocks are not saved: a fire burning at a save is out on opening, with
+what it burned kept.

@@ -27,6 +27,7 @@ pub mod screenshot;
 pub mod season_cover;
 pub mod server;
 pub mod water_env;
+pub mod wildfire;
 pub mod workshop;
 
 pub use app::{LaunchConfig, resolve_dirs, run};

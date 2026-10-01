@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use hearth_math::hash::{hash_2d, mix64, unit_f32};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
@@ -16,6 +16,8 @@ pub const ECO_CELL: i32 = 256;
 const BUCKET: i32 = 16;
 /// How far past its radius a disturbance's ragged edge may reach.
 pub const EDGE: f32 = 1.15;
+/// The side (m) of the squares a disturbance's exact shape is kept in (a fire's burned ground).
+pub const PATCH: i32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -42,6 +44,10 @@ pub struct Disturbance {
     /// How much of the ground inside it took, 0–1 (a fire leaves unburned patches).
     #[serde(default = "whole")]
     pub severity: f32,
+    /// Its exact shape where it has one (the ground a fire burned): the `PATCH`-metre squares
+    /// it took, as (x, z) ÷ `PATCH`. Empty: the circle, ragged at the edge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub patches: Vec<[i32; 2]>,
 }
 
 fn whole() -> f32 {
@@ -77,9 +83,11 @@ fn patchy(seed: u64, x: i32, z: i32, scale: f32) -> f32 {
 }
 
 /// The disturbances, in the order they happened, found by place.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Disturbances {
     list: Vec<Disturbance>,
+    /// The squares of each one that has an exact shape.
+    masks: Vec<Option<FxHashSet<(i32, i32)>>>,
     buckets: FxHashMap<(i32, i32), SmallVec<[u32; 4]>>,
     /// The planet's circumference (0: no wrapping).
     circumference: i32,
@@ -89,6 +97,7 @@ impl Disturbances {
     fn new(list: Vec<Disturbance>, circumference: i32) -> Self {
         let mut d = Self {
             list: Vec::with_capacity(list.len()),
+            masks: Vec::with_capacity(list.len()),
             buckets: FxHashMap::default(),
             circumference,
         };
@@ -109,15 +118,30 @@ impl Disturbances {
     fn push(&mut self, mut e: Disturbance) {
         e.x = self.wrap(e.x);
         let i = self.list.len() as u32;
-        let r = (e.radius.max(0.0) * EDGE).ceil() as i32 + 1;
-        for bz in (e.z - r).div_euclid(BUCKET)..=(e.z + r).div_euclid(BUCKET) {
-            for bx in (e.x - r).div_euclid(BUCKET)..=(e.x + r).div_euclid(BUCKET) {
-                let key = (self.wrap(bx * BUCKET).div_euclid(BUCKET), bz);
+        if e.patches.is_empty() {
+            let r = (e.radius.max(0.0) * EDGE).ceil() as i32 + 1;
+            for bz in (e.z - r).div_euclid(BUCKET)..=(e.z + r).div_euclid(BUCKET) {
+                for bx in (e.x - r).div_euclid(BUCKET)..=(e.x + r).div_euclid(BUCKET) {
+                    let key = (self.wrap(bx * BUCKET).div_euclid(BUCKET), bz);
+                    let ids = self.buckets.entry(key).or_default();
+                    if ids.last() != Some(&i) {
+                        ids.push(i);
+                    }
+                }
+            }
+            self.masks.push(None);
+        } else {
+            let mut mask = FxHashSet::default();
+            for &[px, pz] in &e.patches {
+                let wx = self.wrap(px * PATCH);
+                mask.insert((wx.div_euclid(PATCH), pz));
+                let key = (wx.div_euclid(BUCKET), (pz * PATCH).div_euclid(BUCKET));
                 let ids = self.buckets.entry(key).or_default();
-                if ids.last() != Some(&i) {
+                if !ids.contains(&i) {
                     ids.push(i);
                 }
             }
+            self.masks.push(Some(mask));
         }
         self.list.push(e);
     }
@@ -138,8 +162,13 @@ impl Disturbances {
         (dx * dx + dz * dz).sqrt()
     }
 
-    /// Whether a disturbance took a place: inside its ragged edge and not in a patch it spared.
-    fn takes(&self, e: &Disturbance, x: i32, z: i32) -> bool {
+    /// Whether the `i`th disturbance took a place: in its exact shape, or inside its ragged
+    /// edge and not in a patch it spared.
+    fn takes(&self, i: usize, x: i32, z: i32) -> bool {
+        let e = &self.list[i];
+        if let Some(mask) = &self.masks[i] {
+            return mask.contains(&(self.wrap(x).div_euclid(PATCH), z.div_euclid(PATCH)));
+        }
         let d = self.distance(e, x, z);
         if d > e.radius * EDGE {
             return false;
@@ -152,13 +181,14 @@ impl Disturbances {
         e.severity >= 1.0 || patchy(seed ^ 0x5eed, wx, z, 11.0) < e.severity
     }
 
-    fn near(&self, x: i32, z: i32) -> impl Iterator<Item = &Disturbance> {
+    /// The disturbances that may reach a place, oldest first, with their index.
+    fn near(&self, x: i32, z: i32) -> impl Iterator<Item = (usize, &Disturbance)> {
         let key = (self.wrap(x).div_euclid(BUCKET), z.div_euclid(BUCKET));
         self.buckets
             .get(&key)
             .into_iter()
             .flatten()
-            .map(|&i| &self.list[i as usize])
+            .map(|&i| (i as usize, &self.list[i as usize]))
     }
 }
 
@@ -198,11 +228,11 @@ impl Vegetation {
 
     /// With one more disturbance (the newest).
     pub fn with(&self, e: Disturbance) -> Self {
-        let mut list = self.disturbances.list.clone();
-        list.push(e);
+        let mut d = (*self.disturbances).clone();
+        d.push(e);
         Self {
             year: self.year,
-            disturbances: Arc::new(Disturbances::new(list, self.disturbances.circumference)),
+            disturbances: Arc::new(d),
         }
     }
 
@@ -246,7 +276,8 @@ impl Vegetation {
             return SmallVec::new();
         }
         d.near(x, z)
-            .filter(|e| e.year <= self.year && d.takes(e, x, z))
+            .filter(|(i, e)| e.year <= self.year && d.takes(*i, x, z))
+            .map(|(_, e)| e)
             .collect()
     }
 
@@ -258,6 +289,7 @@ impl Vegetation {
         }
         let wx = d.wrap(x);
         d.near(x, z)
+            .map(|(_, e)| e)
             .filter(|e| {
                 e.kind == DisturbanceKind::Felled && e.x == wx && e.z == z && e.year <= self.year
             })
@@ -284,7 +316,41 @@ mod tests {
             z,
             radius,
             severity,
+            patches: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_fire_keeps_the_exact_ground_it_burned() {
+        // Burned squares in an L about (40, 40), across the seam on a small planet.
+        let c = 1024;
+        let patches = vec![[-1, 10], [0, 10], [1, 10], [1, 11], [1, 12]];
+        let v = Vegetation::new(
+            &VegetationSave {
+                disturbances: vec![Disturbance {
+                    kind: DisturbanceKind::Burned,
+                    year: 1.0,
+                    x: 2,
+                    z: 44,
+                    radius: 12.0,
+                    severity: 1.0,
+                    patches,
+                }],
+            },
+            c,
+            2.0,
+        );
+        assert!(!v.at(1, 41).is_empty(), "in the square (0, 10)");
+        assert!(
+            !v.at(c - 2, 43).is_empty(),
+            "in the square (-1, 10), over the seam"
+        );
+        assert!(!v.at(5, 49).is_empty(), "in the square (1, 12)");
+        assert!(v.at(1, 49).is_empty(), "not in the L");
+        assert!(v.at(20, 41).is_empty());
+        let saved = serde_json::to_string(&v.save()).expect("json");
+        let back: VegetationSave = serde_json::from_str(&saved).expect("json");
+        assert_eq!(back, v.save());
     }
 
     #[test]
@@ -354,6 +420,7 @@ mod tests {
             z: 12,
             radius: 3.0,
             severity: 1.0,
+            patches: Vec::new(),
         });
         assert_eq!(one.felled(-7, 12).len(), 1);
         assert_eq!(one.felled(65_536 - 7, 12).len(), 1, "the same place");

@@ -122,6 +122,8 @@ pub struct SceneRenderer {
     /// by altitude and the planet's curvature follow it.
     pub vertical_scale: f32,
     pub precip: PrecipRenderer,
+    /// Smoke over fires in the vegetation.
+    pub smoke: crate::smoke::SmokeRenderer,
     /// Bodies (the player's own, later people and animals), drawn with the opaque terrain.
     pub figures: FigureRenderer,
     /// The player's body's senses on the image.
@@ -167,6 +169,7 @@ impl SceneRenderer {
             senses: crate::post::Senses::default(),
             post: PostProcess::new(ctx, output_format),
             precip: PrecipRenderer::new(ctx),
+            smoke: crate::smoke::SmokeRenderer::new(ctx),
             sky,
             terrain,
             lod,
@@ -345,6 +348,21 @@ impl SceneRenderer {
             env.sky_lux * e,
             env.sun_lux * env.sun_dir.y.max(0.0) * e + env.moon_lux * env.moon_dir.y.max(0.0) * e,
         );
+        self.smoke.prepare(
+            ctx,
+            camera,
+            aspect,
+            Vec3::new(env.wind_dir.x, 0.0, env.wind_dir.y) * env.wind_speed_m_s,
+            env.seconds,
+            &crate::smoke::SmokeLight {
+                ambient: env.sky_lux * e,
+                direct: env.sun_lux * env.sun_dir.y.max(0.0) * e
+                    + env.moon_lux * env.moon_dir.y.max(0.0) * e,
+                fire: FIRE_COLOR * FIRE_LUX * e,
+                haze: env.sky_lux * e / std::f32::consts::PI * Vec3::new(0.85, 0.92, 1.0),
+                haze_extinction: 4.44e-5 * env.haze.max(0.1),
+            },
+        );
         let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
         self.cpu = PrepareTimes {
             terrain_ms: ms(t0, t1),
@@ -442,6 +460,7 @@ impl SceneRenderer {
             };
             self.terrain.draw_translucent(&mut pass, &water);
             self.precip.draw(&mut pass);
+            self.smoke.draw(&mut pass);
         }
         mark(&mut timer, enc, "translucent, rain");
         self.post.meter(ctx, enc, self.meter_dt);
