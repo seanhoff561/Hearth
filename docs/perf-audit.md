@@ -1,9 +1,28 @@
 # Rendering performance audit
 
-*September 2026, at commit 038759c (distant trees in). Machine: RTX 4060 Laptop GPU, Vulkan,
-1920×1080, default preset (Fancy: render distance 12, LOD 256). Numbers from `hearth bench`
-(`BENCHMARKS.md`); every change the audit makes lands as its own commit with before/after
-numbers and an SSIM check against the golden images.*
+*September 2026, from commit 038759c (distant trees in) to 0d01d73. Machine: RTX 4060 Laptop
+GPU, Vulkan, 1920×1080, default preset (Fancy: render distance 12, LOD 256). Numbers from
+`hearth bench` (`BENCHMARKS.md`); every change the audit made landed as its own commit with
+before/after numbers and an SSIM check against the golden images. Its end state is the
+baseline of the performance gate (`perf/baseline`, D59).*
+
+## Where it ended
+The audit's first and last commits, built side by side and run alternately in one session (two
+rounds each; numbers from different hours of a laptop differ by up to 15 % with its clocks):
+
+| | forest | summit 512 | summit 1024 | coast | underwater | cave | storm |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Average FPS | 691 → 784 | 762 → 799 | 763 → 805 | 1114 → 1229 | 1085 → 1221 | 1155 → 2178 | 689 → 745 |
+| 1 % low FPS (1st percentile) | 534 → 601 | 506 → 480 | 508 → 491 | 855 → 797 | 759 → 872 | 713 → 1206 | 527 → 566 |
+| GPU ms | 1.38 → 1.24 | 1.28 → 1.22 | 1.28 → 1.21 | 0.76 → 0.79 | 0.66 → 0.69 | 0.84 → 0.43 | 1.43 → 1.27 |
+| Video memory MiB | 236 → 227 | 253 → 226 | 253 → 226 | 166 → 133 | 141 → 117 | 235 → 227 | 236 → 227 |
+| LOD tiles drawn | 384 → 442 | 454 → 742 | 454 → 742 | 393 → 424 | 289 → 289 | 449 → 653 | 384 → 442 |
+
+Average frame rates rose in every scene (+5 to +89 %) while the distant land got finer where
+it is rough (D57) and the output got dithered. The 1st-percentile frame rates of the summit
+and the coast fell 3–7 % (about 0.1 ms on their slowest frames, which wait on the GPU): the
+heaviest view directions now draw the added LOD detail, and every frame the dithering and the
+LOD cull pass (+0.03 ms). Accepted as the cost of that detail (D60).
 
 ## Method
 `hearth bench` renders seven scenes on fixed camera paths offscreen with the default preset:
@@ -68,7 +87,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 ### LOD
 | Optimization | Status | Evidence / impact |
 |---|---|---|
-| Level choice by screen-space error, with hysteresis | done (result 7) | The distance rule (columns 3–6 px wide) stays as the floor — coarser tiles would blur colours and trees — and rough tiles are split until the steps between their columns stray at most 2 px on screen (1 px on Fabulous) from what finer columns would show; hysteresis on both rules, neighbours kept within a level. It adds detail, so it costs frame time: −27 % average FPS on the summit, −6 to −10 % elsewhere. |
+| Level choice by screen-space error, with hysteresis | done (result 7) | The distance rule (columns 3–6 px wide) stays as the floor — coarser tiles would blur colours and trees — and rough tiles are split until the steps between their columns stray at most 2 px on screen (1 px on Fabulous) from what finer columns would show; hysteresis on both rules, neighbours kept within a level. It adds detail, so it cost frame time (−27 % average FPS on the summit, −6 to −10 % elsewhere), won back by result 8. |
 | Quads grouped by facing, groups facing away skipped | done (result 8) | As the full-detail terrain's buckets: each tile's quads in six groups by geometric facing; only runs of groups that can face the camera are drawn (the pipeline draws both sides, so back faces cost vertices and fragments). LOD pass −40 %. |
 | Quantized tile-relative vertex data | done (result 3) | One 16-byte record per quad (was four 16-byte vertices), expanded by the vertex shader: 73–91 MiB less video memory in LOD-heavy scenes. |
 | LOD in the GPU culling path, occluded by near terrain | done (result 4) | See culling. |
@@ -108,12 +127,12 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Two to three frames in flight | done | Swapchain frame latency 2. |
 | No CPU–GPU stalls on the frame path | done | Draw counters and pass timings are read back asynchronously; the only waits are the frame latency. |
 | Accurate frame limiter | done | Sleep, then spin for the last 1.5 ms. |
-| Zero steady-state allocations | **missing** | ~73 allocations per frame in our code, ~320 inside wgpu. |
+| Zero steady-state allocations | done for our code (result 2) | Our frame code allocates nothing in steady state (only when the LOD or the rain cover is re-selected, under one allocation per frame on average). The ~350 per frame inside wgpu (a staging buffer per queue write, command encoding, submission) are **not worth** working around: a staging belt for the queue writes made no measurable difference. |
 
 ### Upscaling
 | Optimization | Status | Evidence / impact |
 |---|---|---|
-| Render scale with a quality upscaler, optional | done (result 9) — spatial | `render_scale` (0.5–2, default 1 in every preset): below 1 the frame is upscaled with FSR 1 (EASU + RCAS, 0.26 ms at 1080p), above 1 filtered down. At 1080p on this GPU it gains +13–16 % at 0.67 and +28–35 % at 0.5 in the open scenes (the frame is vertex- and CPU-bound, so fewer pixels save little). A temporal upscaler needs motion vectors and TAA (V2-6). |
+| Render scale with a quality upscaler, optional | done (result 9) — spatial (D58) | `render_scale` (0.5–2, default 1 in every preset): below 1 the frame is upscaled with FSR 1 (EASU + RCAS, 0.26 ms at 1080p), above 1 filtered down. At 1080p on this GPU it gains +13–16 % at 0.67 and +28–35 % at 0.5 in the open scenes (the frame is vertex- and CPU-bound, so fewer pixels save little). A temporal upscaler needs motion vectors and TAA (V2-6). |
 
 ### Found by measuring
 | Optimization | Status | Evidence / impact |
@@ -122,7 +141,8 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Fewer queue writes per frame | not worth it | Tried a staging belt for the per-frame uploads: no change in average FPS in alternating A/B runs, 1 % lows slightly lower; reverted. |
 
 ## Plan
-Missing and worth doing, one commit each with before/after numbers and an SSIM check:
+Missing and worth doing, one commit each with before/after numbers and an SSIM check (all
+done; the results follow):
 
 1. Environment sampling: memoize the sky light while its inputs stay put.
 2. Zero allocations in our frame code; the Hi-Z bind group cached.
@@ -242,6 +262,8 @@ Results are recorded below as they land.
    `bench-out/gate`) run the quick scenes (forest, summit at LOD 512, cave) alternately, three
    rounds by default; `hearth bench --judge` compares the medians per scene and fails on a
    drop of more than 5 % in average FPS or 1 % lows (judged as the 1st percentile of frame
-   rates: the average of the slowest 1 % swings threefold with single driver hitches). A failure is fixed, or justified in
-   `DECISIONS.md` with the baseline moved by `--accept`. Part of every milestone's definition
-   of done (`PLAN.md`).
+   rates: the average of the slowest 1 % swings threefold with single driver hitches). A
+   failure is fixed, or justified in `DECISIONS.md` with the baseline moved by `--accept`.
+   Part of every milestone's definition of done (`PLAN.md`). Checked both ways: a commit
+   against itself passes (every scene within −1.0 to +1.9 %), result 7 against result 8 fails
+   in six of seven scenes (−6 to −27 %).

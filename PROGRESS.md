@@ -253,33 +253,22 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
   `tools/shots/v22_rivers.shots` (snowmelt flood, summer, winter low; savanna wet and dry).
 
 ## Next steps
-0. **Interjected — rendering performance audit (in progress; resume here).** Read
-   `docs/perf-audit.md` (the audit table, plan and results) and `BENCHMARKS.md`. Done and
-   committed: the benchmark (`hearth bench`, 1e04b39, f2378b4), distant trees in the LOD like
-   Distant Horizons (D56, 038759c, an interjection the user asked for), and results 1–6: sky
-   light cache (bae343b), no per-frame allocations in our frame code + cached Hi-Z bind group
-   (564e0bc), LOD quads as pooled 16-byte records drawn with one multi-draw (5556f36), LOD
-   occlusion-culled on the GPU against the near terrain's Hi-Z (37014f2), LOD streaming without
-   holes and in-view first (f0b9339), dithering in the final pass (4ce9fa8), and (7)
-   screen-space-error LOD selection (D57; `lod_detail`: Fancy 2 px, Fabulous 1 px, Fast 4 px;
-   `hearth bench --lod-error PX` overrides it, 0 = the old distance rule), and (8) LOD quads
-   grouped by facing with the groups facing away skipped (won back (7)'s cost), and (9)
-   render scale with FSR 1 (D58; `hearth bench --render-scale S`), and (10) the performance
-   gate `scripts/perf-gate.sh` (D59: the baseline commit in `perf/baseline` is built in a
-   worktree and run alternately with the current tree; medians; >5 % drop fails), now part of
-   every milestone's definition of done (`PLAN.md`). A staging belt for per-frame uploads was
-   tried and reverted (no gain). Remaining:
-   - Update `docs/perf-audit.md`'s table to its final state, then resume V2-2 at (d, part 2b)
-     below. For one-off claims, A/B alternate builds as the gate does (or `--lod-error` /
-     `--render-scale` within one build).
-   Golden images for SSIM checks: `bench-out/p8/golden7` (result 7's look; result 8 matches
-   it within SSIM 0.9993 in the open scenes); capture the current look with `hearth bench
-   --golden DIR` before comparing new work. Submission hitches of 40–50 ms (driver) make
-   single-run 1 % lows unreliable, underwater especially.
-   Known issues found on the way: underwater views are dark with an empty region beyond the
-   full-detail area (no underwater light/fog, no LOD sea floor — V2-2e); the preview passes
-   no firelight to the eye's adaptation (the render thread lacks the map; torch-lit caves at
-   night would be overexposed in the preview — the benchmark passes it).
+0. **Done — the interjected rendering performance audit** (`docs/perf-audit.md`: table,
+   ten results, where it ended; `BENCHMARKS.md`). Commits: the benchmark (`hearth bench`,
+   1e04b39, f2378b4), distant trees like Distant Horizons (D56, 038759c), sky light cache,
+   no per-frame allocations in our code, LOD quads pooled and multi-drawn, LOD occlusion-culled
+   on the GPU, LOD streaming without holes, dithering, screen-space-error LOD selection (D57,
+   `lod_detail`), LOD quads grouped by facing, render scale with FSR 1 (D58), and the
+   performance gate (D59; end state accepted in D60; baseline `perf/baseline` = 2e45a05).
+   From now on every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline
+   in `bench-out/gate`, three alternating rounds of the quick scenes); a failure is fixed or
+   justified in DECISIONS.md and the baseline moved with `--accept` on a committed tree.
+   For one-off claims, A/B alternate builds as the gate does (or `--lod-error` /
+   `--render-scale` within one build); capture golden images with `hearth bench --golden DIR`
+   before comparing looks. Known issues found on the way: underwater views are dark with an
+   empty region beyond the full-detail area (no underwater light/fog, no LOD sea floor —
+   V2-2e); the preview passes no firelight to the eye's adaptation (torch-lit caves at night
+   would be overexposed in the preview — the benchmark passes it). **Resume at 1.**
 1. (d, part 2b) Finite conserved player-moved water with levelling and flow (v1 M5 fluids)
    and per-block quality; coastal salt pans.
 2. (e) Water rendering (v1 M7) and ice.

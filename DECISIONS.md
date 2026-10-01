@@ -494,3 +494,16 @@ The baseline moves only on purpose (`--accept`, on a committed tree), so small r
 cannot pile up milestone after milestone unnoticed: every accepted regression has an entry
 here. Runs on another GPU are not compared, nor scenes whose definition changed (accept a new
 baseline when a benchmark scene is redefined).
+
+## D60 — The rendering audit's end state, slower tails on the summit and coast accepted
+Measured against the audit's first commit in one session (alternating builds), every scene's
+average frame rate rose (forest +13 %, summit +5 %, coast +10 %, underwater +13 %, cave
++89 %, storm +8 %), but the 1st-percentile frame rate of the summit fell 5 % (3 % at LOD
+1024) and the coast's 7 %: about 0.1 ms on their slowest frames, which wait on the GPU. On the
+summit the heaviest view directions draw the finer distant land of D57 (742 tiles instead of
+454, 1.90 M triangles instead of 1.67 M) that grouping quads by facing could not fully pay for
+there. The coast draws fewer triangles than before, and its GPU time is up 0.03 ms from the
+passes every frame now runs, dithering and the LOD occlusion cull. Both are kept for what they
+show or save elsewhere: the rough land's detail is the point of D57, dithering removed visible
+banding, and the cull halved the cave's GPU time. This end state is the performance gate's
+baseline.

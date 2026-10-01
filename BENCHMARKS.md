@@ -453,3 +453,19 @@ Results of `hearth bench` (newest last). Frame times come from an offscreen fram
 | cave_torches | 10 | 653 | 88447 | 1668 | 3.8 | – | 2.59 ms, submit 2.49 | through the longest cave under a hill, lit by torches, at night |
 | thunderstorm | 1048 | 442 | 107245 | 1732 | 5.0 | – | 1.77 ms, wait for gpu 1.18 | the forest flight under a heavy thunderstorm (16 mm/h, overcast) |
 
+## End of the rendering audit — commits 038759c → 0d01d73 built side by side, alternating, two rounds each, NVIDIA GeForce RTX 4060 Laptop GPU (Vulkan), 1920x1080, preset Fancy
+
+| Scene | Avg FPS | 1% low FPS (1st percentile) | GPU ms | VRAM MiB | Triangles | LOD tiles drawn | Allocs/frame |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| lowland_forest | 691 → 784 | 534 → 601 | 1.38 → 1.24 | 236 → 227 | 1.56 → 1.26 M | 384 → 442 | 394 → 370 |
+| peak_lod512 | 762 → 799 | 506 → 480 | 1.28 → 1.22 | 253 → 226 | 1.67 → 1.90 M | 454 → 742 | 377 → 349 |
+| peak_lod1024 | 763 → 805 | 508 → 491 | 1.28 → 1.21 | 253 → 226 | 1.67 → 1.90 M | 454 → 742 | 377 → 349 |
+| coast_sunset | 1114 → 1229 | 855 → 797 | 0.76 → 0.79 | 166 → 133 | 0.52 → 0.48 M | 393 → 424 | 394 → 368 |
+| underwater | 1085 → 1221 | 759 → 872 | 0.66 → 0.69 | 141 → 117 | 0.36 → 0.25 M | 289 → 289 | 401 → 375 |
+| cave_torches | 1155 → 2178 | 713 → 1206 | 0.84 → 0.43 | 235 → 227 | 1.33 → 1.21 M | 449 → 653 | 358 → 353 |
+| thunderstorm | 689 → 745 | 527 → 566 | 1.43 → 1.27 | 236 → 227 | 1.56 → 1.26 M | 384 → 442 | 399 → 375 |
+
+The same session's numbers for the first commit are 10–20 % below those recorded for it at
+the start of the audit (laptop clocks and temperature hours apart), which is why comparisons
+are made between builds run alternately (`scripts/perf-gate.sh`, D59). The slower summit and
+coast tails are accepted in D60.
