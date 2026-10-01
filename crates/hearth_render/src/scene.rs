@@ -13,7 +13,7 @@ use crate::post::PostProcess;
 use crate::precip::{PrecipRenderer, Precipitation, SkyHeights};
 use crate::profiler::GpuTimer;
 use crate::sky::{SkyParams, SkyRenderer};
-use crate::terrain::{FrameParams, TerrainRenderer, begin_pass};
+use crate::terrain::{FrameParams, TerrainRenderer, begin_pass, begin_pass_read_depth};
 
 /// Firelight illuminance at block-light level 15 (lux): a torch or campfire at arm's length.
 pub const FIRE_LUX: f32 = 60.0;
@@ -40,6 +40,9 @@ pub struct Environment {
     pub year_frac: f32,
     pub seconds: f32,
     pub wind: f32,
+    /// The direction the wind blows toward (world x, z) and its speed (m/s), for the waves.
+    pub wind_dir: Vec2,
+    pub wind_speed_m_s: f32,
     pub star_rotation: Mat3,
     pub cloud_cover: f32,
     /// Cloud base above sea level (blocks).
@@ -69,6 +72,8 @@ impl Default for Environment {
             year_frac: 0.3,
             seconds: 0.0,
             wind: 1.0,
+            wind_dir: Vec2::X,
+            wind_speed_m_s: 4.0,
             star_rotation: Mat3::IDENTITY,
             cloud_cover: 0.0,
             cloud_base: 1500.0,
@@ -258,6 +263,9 @@ impl SceneRenderer {
         };
         let t0 = std::time::Instant::now();
         self.terrain.prepare(ctx, camera, size, &params);
+        self.terrain
+            .water
+            .prepare(ctx, size, env.wind_dir, env.wind_speed_m_s, camera.near);
         let t1 = std::time::Instant::now();
         let aspect = size.0.max(1) as f32 / size.1.max(1) as f32;
         let hzb = self.terrain.hzb().map(|(_, size, mips)| (size, mips));
@@ -364,13 +372,31 @@ impl SceneRenderer {
         {
             let (_, bind0) = self.terrain.globals_bind();
             let mut pass = begin_pass(enc, &hdr, depth, None);
-            self.lod.draw(&mut pass, bind0);
+            self.lod
+                .draw(&mut pass, bind0, self.terrain.water.waves_bind());
         }
         mark(&mut timer, enc, "lod terrain");
         {
             let mut pass = begin_pass(enc, &hdr, depth, None);
             self.sky.draw(&mut pass);
-            self.terrain.draw_translucent(&mut pass);
+        }
+        // The water sees the scene drawn so far through itself (copied, unless nothing
+        // translucent is drawn), and its depth (read-only in the pass).
+        let reads = self.terrain.water.reads_scene();
+        if reads
+            && let Some(rect) = self.terrain.stats.translucent_rect
+            && let Some(color) = self.post.hdr_texture()
+        {
+            self.terrain.water.copy_scene(enc, color, rect);
+        }
+        let water = self.terrain.water.bind(ctx, depth).clone();
+        {
+            let mut pass = if reads {
+                begin_pass_read_depth(enc, &hdr, depth)
+            } else {
+                begin_pass(enc, &hdr, depth, None)
+            };
+            self.terrain.draw_translucent(&mut pass, &water);
             self.precip.draw(&mut pass);
         }
         mark(&mut timer, enc, "sky, translucent, rain");

@@ -529,3 +529,22 @@ textbook mass-transfer coefficients alone gave 26) leaves salt as crusts the pla
 which makes salt pans work. Coastal salt pans (sabkhas) appear on hot desert coasts, using the Köppen class
 rather than a rainfall threshold: the planet's driest sheltered coasts get 230–270 mm a year,
 and a fixed 250 mm cut kept all but a handful away.
+
+## D62 — Water shading: refraction of a scene copy, sky reflections, the same model far away
+v1 §9.3 asks for wind-driven waves on the blocky water, Fresnel reflections with a sky
+fallback, sun glints, refraction absorbed by depth, shore foam and distant water shaded like near
+water. The water is drawn in the translucent pass: before it, the part of the screen the
+translucent cubes cover is copied (a full copy cost 0.05 ms at 1080p every frame, also in a cave
+with no water in sight), and the pass holds the depth buffer read-only so the water can read
+the depth behind it without a second copy. Waves are a tiling, mipmapped slope texture (the
+audit's precomputed normals) rather than per-pixel wave sums. The water body is physical in
+form (Beer–Lambert per channel, back-scattered light from the tint) but its constants are
+chosen by eye. The LOD cannot refract (no scene behind its water in the same pass), so each
+water column bakes what the near shader would show from above at a slant and the LOD shader
+adds the same reflection and glitter; near and far water then meet without a seam. Shader
+quality Low keeps the old translucent surface (with reflections); High is reserved for
+screen-space reflections. Measured against the previous build (alternating, two rounds each,
+1080p, Medium): average FPS forest −3.6 %, summit −6.7 %, coast −17 % (GPU 0.78 → 0.95 ms),
+underwater −13 %, storm −5.4 %, cave −1.6 % — the cost of shading water where it covers the
+screen, accepted for the look (SSIM against the old images 0.78 on the coast, 0.96 on the
+summit, 0.99 in the forest).

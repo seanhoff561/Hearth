@@ -43,6 +43,7 @@ pub struct Preview {
     lod_error_px: f64,
     /// Size of the rendered frame relative to the window (upscaled or filtered down).
     render_scale: f32,
+    water_quality: hearth_render::water::WaterQuality,
     vertical_scale: f32,
     /// World clock (20 ticks per second of play) and calendar.
     pub ticks: u64,
@@ -101,6 +102,7 @@ impl Preview {
             lod_distance: options.video.lod_distance,
             lod_error_px: options.video.lod_error_px(),
             render_scale: options.video.render_scale,
+            water_quality: options.video.shader.water.into(),
             vertical_scale: 1.0,
             ticks: 0,
             calendar,
@@ -221,6 +223,7 @@ impl Preview {
                     scene.terrain.render_distance = self.radius;
                     scene.terrain.vertical_distance = self.vertical;
                     scene.render_scale = self.render_scale;
+                    scene.terrain.water.quality = self.water_quality;
                     self.scene = Some(scene);
                     self.env = Some(EnvSampler::new(grid, self.calendar));
                     self.status = "streaming".into();

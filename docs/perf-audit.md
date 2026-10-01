@@ -105,7 +105,7 @@ Status: **done** (in place, evidence given), **missing** (planned below), **not 
 | Volumetric fog, clouds, SSR at reduced resolution with depth-aware upsampling and temporal accumulation | n/a | None of these effects exists yet (clouds are one textured layer in the sky pass). |
 | Atmosphere via LUTs | done | Transmittance and multiple scattering once (re-made when the haze changes by 5 %), a 256×128 sky view per frame (0.045 ms). Aerial perspective is integrated in closed form per fragment and looks up the sky view — no froxel volume is needed. |
 | Shadow cascades (tight, texel-snapped, far cascades cached round-robin on LOD geometry) | n/a | No shadow maps yet (V2-16). |
-| Water normals from tiling textures | n/a | Water shading comes with V2-2e. |
+| Water normals from tiling textures | done (D62) | One 256² mipmapped wave-slope texture sampled twice near (once far) instead of summing waves per pixel. |
 | Hi-Z ray-marched SSR with sky fallback | n/a | No SSR. |
 | Dual-filter bloom | n/a | No bloom yet (the option exists). |
 | One-pass histogram auto-exposure | done | `meter.wgsl`: one 256-thread dispatch, a workgroup histogram of 64×36 samples (0.02 ms). |

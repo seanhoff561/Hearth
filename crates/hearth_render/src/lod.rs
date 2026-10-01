@@ -294,6 +294,7 @@ impl LodRenderer {
             source: wgpu::ShaderSource::Wgsl(
                 concat!(
                     include_str!("shaders/common.wgsl"),
+                    include_str!("shaders/water.wgsl"),
                     include_str!("shaders/lod.wgsl")
                 )
                 .into(),
@@ -301,7 +302,11 @@ impl LodRenderer {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("lod pipeline layout"),
-            bind_group_layouts: &[Some(layout0), Some(&layout1)],
+            bind_group_layouts: &[
+                Some(layout0),
+                Some(&layout1),
+                Some(terrain.water.waves_layout()),
+            ],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -704,13 +709,20 @@ impl LodRenderer {
     }
 
     /// Draws this frame's tiles (after the full-detail opaque terrain, before the sky).
-    pub fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, bind0: &'a wgpu::BindGroup) {
+    /// `waves`: the water's waves bind group (`WaterRenderer::waves_bind`).
+    pub fn draw<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        bind0: &'a wgpu::BindGroup,
+        waves: &'a wgpu::BindGroup,
+    ) {
         if self.draws.is_empty() {
             return;
         }
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bind0, &[]);
         pass.set_bind_group(1, &self.bind1, &[]);
+        pass.set_bind_group(2, waves, &[]);
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         if let Some(c) = self.culler.as_ref().filter(|c| c.active) {
             pass.multi_draw_indexed_indirect_count(&c.draws, 0, &c.count, 0, c.data.len() as u32);

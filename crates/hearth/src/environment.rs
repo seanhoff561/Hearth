@@ -122,6 +122,8 @@ impl EnvSampler {
             year_frac: m.year_frac as f32,
             seconds: (m.days * self.calendar.day_length_s) as f32 % 100_000.0,
             wind: (w.wind_speed_m_s / 6.0).clamp(0.3, 3.0) as f32,
+            wind_dir: Vec2::new(w.wind_dir.sin() as f32, -(w.wind_dir.cos()) as f32),
+            wind_speed_m_s: w.wind_speed_m_s as f32,
             star_rotation,
             cloud_cover: w.cloud_cover as f32,
             cloud_base: (600.0 + 700.0 * (1.0 - w.humidity)) as f32,

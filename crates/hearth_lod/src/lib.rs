@@ -814,8 +814,6 @@ pub struct LodGen {
     class: Vec<u8>,
     /// Leaves of the usual trees: oak, birch, spruce, mangrove.
     leaves: [BlockStateId; 4],
-    /// Average colour of the water texture (linear).
-    water_tex: [f32; 3],
 }
 
 impl LodGen {
@@ -826,10 +824,7 @@ impl LodGen {
             ))
             .unwrap_or(BlockStateId::AIR)
         };
-        let water_tex = textures
-            .iter()
-            .find(|e| e.name == "block/water_still")
-            .map_or([0.6; 3], |e| average(&e.tex).map(to_linear));
+
         let mut class = vec![OTHER; reg.state_count()];
         for block in reg.blocks() {
             let path = block.name.path();
@@ -852,7 +847,6 @@ impl LodGen {
             colors: BlockColors::new(reg, textures),
             class,
             leaves: [leaf("oak"), leaf("birch"), leaf("spruce"), leaf("mangrove")],
-            water_tex,
         }
     }
 
@@ -971,10 +965,12 @@ impl LodGen {
             southern,
         );
         if s.is_underwater() {
-            // Water: its tint by warmth and depth over the texture, with the bed showing through
-            // the shallows (dimmed by the water above it) as through the full-detail water.
+            // Water as the full-detail water shades it, seen from above at a slant: the bed
+            // through the water, absorbed along about 1.5 times the depth, and the light the
+            // water scatters back (6 % of its tint); the shader adds the sky's reflection and
+            // the sun's glitter.
             let depth = (s.water_i() - s.height_i()).max(0) as f32;
-            let w = water_color(s.sea_temperature, depth);
+            let w = water_color(s.sea_temperature, depth).map(to_linear);
             let rock = wg.geology.column(x, z);
             let bed_block = wg
                 .soils
@@ -989,11 +985,15 @@ impl LodGen {
                 .unwrap_or_else(|| rock.rock_at(s.height_i() - 1));
             let bed = self.colors.get(bed_block).0;
             let bed = [bed & 255, (bed >> 8) & 255, (bed >> 16) & 255].map(|c| to_linear(c as u8));
-            let through = 0.25 * (-depth / 2.5).exp();
+            let turbid = (1.0 - w[2] / w[0].max(w[1]).max(1e-3)).clamp(0.0, 1.0);
+            let sigma = [
+                0.45 + 0.25 * turbid,
+                0.07 + 0.35 * turbid,
+                0.035 + 0.45 * turbid,
+            ];
             let rgb = [0, 1, 2].map(|k| {
-                to_srgb(
-                    to_linear(w[k]) * self.water_tex[k] * (1.0 - through) + bed[k] * 0.5 * through,
-                )
+                let through = (-sigma[k] * 1.5 * depth).exp();
+                to_srgb(bed[k] * through + w[k] * 0.06 * (1.0 - through))
             });
             return Col {
                 top: s.water_i(),

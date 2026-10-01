@@ -298,6 +298,9 @@ pub struct TerrainStats {
     pub resorted: usize,
     /// Translucent quads drawn (always from CPU draw lists).
     pub translucent_quads: u64,
+    /// The part of the screen (0–1, y down: min x, min y, max x, max y) the cubes with
+    /// translucent quads cover, for copying no more of the scene than the water reads.
+    pub translucent_rect: Option<[f32; 4]>,
 }
 
 struct Pass {
@@ -376,6 +379,8 @@ pub struct TerrainRenderer {
     pub cave_culling: bool,
     /// Use GPU occlusion culling when the adapter supports it.
     pub gpu_culling: bool,
+    /// What the water surfaces read (the scene behind them, waves, wind).
+    pub water: crate::water::WaterRenderer,
 }
 
 struct Pipelines {
@@ -542,7 +547,8 @@ impl TerrainRenderer {
             mapped_at_creation: false,
         });
         ctx.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
-        let pipes = make_pipelines(device, &layout0, &layout1, color_format);
+        let water = crate::water::WaterRenderer::new(ctx);
+        let pipes = make_pipelines(device, &layout0, &layout1, water.layout(), color_format);
         let passes = [
             Pass::new(device, "draws packed opaque"),
             Pass::new(device, "draws packed cutout"),
@@ -588,6 +594,7 @@ impl TerrainRenderer {
             vertical_distance: 8,
             cave_culling: true,
             gpu_culling: true,
+            water,
         }
     }
 
@@ -810,6 +817,7 @@ impl TerrainRenderer {
         }
         let mut quads_drawn = 0u64;
         let mut translucent_quads = 0u64;
+        let mut translucent_rect: Option<[f32; 4]> = None;
         for (inst, (pos, o)) in visible.iter().enumerate() {
             let m = &self.meshes[pos];
             let inst = inst as u32;
@@ -855,9 +863,19 @@ impl TerrainRenderer {
             }
         }
         // Translucent: back to front.
-        for (inst, (pos, _)) in visible.iter().enumerate().rev() {
+        for (inst, (pos, o)) in visible.iter().enumerate().rev() {
             let m = &self.meshes[pos];
             if m.trans_len > 0 {
+                let r = screen_rect(vp, *o, *o + Vec3::splat(CUBE_SIZE as f32));
+                translucent_rect = Some(match translucent_rect {
+                    Some(t) => [
+                        t[0].min(r[0]),
+                        t[1].min(r[1]),
+                        t[2].max(r[2]),
+                        t[3].max(r[3]),
+                    ],
+                    None => r,
+                });
                 push_draws(
                     &mut self.passes[4].draws,
                     m.trans_off,
@@ -965,6 +983,7 @@ impl TerrainRenderer {
             gpu_culling: gpu,
             resorted,
             translucent_quads,
+            translucent_rect,
         };
         self.visible = visible;
     }
@@ -1100,8 +1119,9 @@ impl TerrainRenderer {
         clear: Option<wgpu::Color>,
     ) {
         self.render_opaque(ctx, enc, color, depth, clear, None);
+        let water = self.water.bind(ctx, depth).clone();
         let mut pass = begin_pass(enc, color, depth, None);
-        self.draw_translucent(&mut pass);
+        self.draw_translucent(&mut pass, &water);
     }
 
     fn draw_gpu_phase<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, phase: u32) {
@@ -1151,10 +1171,16 @@ impl TerrainRenderer {
         }
     }
 
-    /// Records the translucent pass (after opaque geometry and the sky).
-    pub fn draw_translucent<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
+    /// Records the translucent pass (after opaque geometry and the sky), with the water's bind
+    /// group of this frame (`water.bind`).
+    pub fn draw_translucent<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        water: &'a wgpu::BindGroup,
+    ) {
         pass.set_bind_group(0, &self.bind0, &[]);
         pass.set_bind_group(1, &self.bind1, &[]);
+        pass.set_bind_group(2, water, &[]);
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         self.draw_pass(pass, &self.pipes.translucent, 4);
     }
@@ -1185,6 +1211,60 @@ impl TerrainRenderer {
 }
 
 /// Begins a pass on the scene's colour and depth targets (clearing both when `clear` is set).
+/// The part of the screen (0–1, y down: min x, min y, max x, max y) a camera-relative box
+/// covers; all of it when the box reaches behind the camera.
+pub fn screen_rect(view_proj: glam::Mat4, lo: Vec3, hi: Vec3) -> [f32; 4] {
+    let mut r = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+    for c in 0..8 {
+        let p = Vec3::new(
+            if c & 1 == 0 { lo.x } else { hi.x },
+            if c & 2 == 0 { lo.y } else { hi.y },
+            if c & 4 == 0 { lo.z } else { hi.z },
+        );
+        let clip = view_proj * p.extend(1.0);
+        if clip.w <= 1e-3 {
+            return [0.0, 0.0, 1.0, 1.0];
+        }
+        let (u, v) = (clip.x / clip.w * 0.5 + 0.5, 0.5 - clip.y / clip.w * 0.5);
+        r = [r[0].min(u), r[1].min(v), r[2].max(u), r[3].max(v)];
+    }
+    [
+        r[0].clamp(0.0, 1.0),
+        r[1].clamp(0.0, 1.0),
+        r[2].clamp(0.0, 1.0),
+        r[3].clamp(0.0, 1.0),
+    ]
+}
+
+/// A render pass over `color` that tests against `depth` without writing it, so the depth can
+/// be read as a texture in the same pass (the water reads it).
+pub fn begin_pass_read_depth<'e>(
+    enc: &'e mut wgpu::CommandEncoder,
+    color: &wgpu::TextureView,
+    depth: &wgpu::TextureView,
+) -> wgpu::RenderPass<'e> {
+    enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("translucent"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: color,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: depth,
+            depth_ops: None,
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    })
+}
+
 pub fn begin_pass<'e>(
     enc: &'e mut wgpu::CommandEncoder,
     color: &wgpu::TextureView,
@@ -1266,6 +1346,7 @@ fn make_pipelines(
     device: &wgpu::Device,
     layout0: &wgpu::BindGroupLayout,
     layout1: &wgpu::BindGroupLayout,
+    water: &wgpu::BindGroupLayout,
     color_format: wgpu::TextureFormat,
 ) -> Pipelines {
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1273,14 +1354,21 @@ fn make_pipelines(
         source: wgpu::ShaderSource::Wgsl(
             concat!(
                 include_str!("shaders/common.wgsl"),
+                include_str!("shaders/water.wgsl"),
                 include_str!("shaders/terrain.wgsl")
             )
             .into(),
         ),
     });
-    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    let opaque_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("terrain pipeline layout"),
         bind_group_layouts: &[Some(layout0), Some(layout1)],
+        immediate_size: 0,
+    });
+    // The translucent pass also reads the water's resources.
+    let translucent_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("terrain translucent pipeline layout"),
+        bind_group_layouts: &[Some(layout0), Some(layout1), Some(water)],
         immediate_size: 0,
     });
     let make = |label: &str,
@@ -1289,9 +1377,14 @@ fn make_pipelines(
                 cull: Option<wgpu::Face>,
                 blend: Option<wgpu::BlendState>,
                 depth_write: bool| {
+        let layout = if depth_write {
+            &opaque_layout
+        } else {
+            &translucent_layout
+        };
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(label),
-            layout: Some(&layout),
+            layout: Some(layout),
             vertex: wgpu::VertexState {
                 module: &module,
                 entry_point: Some(vs),

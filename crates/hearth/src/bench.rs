@@ -623,6 +623,7 @@ fn run_scene(
     scene.terrain.render_distance = rd;
     scene.terrain.vertical_distance = video.vertical_render_distance as i32;
     scene.render_scale = opts.render_scale;
+    scene.terrain.water.quality = video.shader.water.into();
     for m in &meshes {
         scene.terrain.upload(ctx, m);
     }

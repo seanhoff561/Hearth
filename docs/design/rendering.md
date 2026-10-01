@@ -26,7 +26,9 @@ CPU culling pixel check.
 3. Distant (LOD) terrain beyond the full-detail area.
 4. Sky pass where nothing was drawn: sky view, sun and moon discs (the moon lit by its phase),
    stars rotating about the celestial pole, a cloud layer drifting with the wind.
-5. Translucent terrain, then rain and snow.
+5. The scene so far copied for the water (only the part of the screen the translucent cubes
+   cover, plus a margin), then translucent terrain — water shaded as below — and rain and snow,
+   with the depth buffer read-only so the water can read it.
 6. Highlight metering (compute) and tonemapping (ACES) with a night shift toward blue,
    dithered into the 8-bit output. At a render scale other than 1 (`render_scale`) the scene
    renders at the scaled size, is tonemapped at that size, then upscaled with FSR 1 (EASU,
@@ -62,6 +64,27 @@ below that scenes are simply dark; in dim light it compensates only partly, so d
 dusk. A histogram of the frame then darkens it just enough to keep the bright end (90th
 percentile) in the tonemapper's colourful range — sunsets keep their colours and the ground
 goes to silhouette — with no readback (the tonemap pass reads the result directly).
+
+### Water (`water.rs`, `water.wgsl`, `terrain.wgsl`, D62)
+Water keeps its blocky levels; waves are shading. **Waves**: a 256² tiling field of wave slopes
+built at startup (48 wind-driven waves with whole numbers of crests across the tile, longer
+ones taller), mipmapped by averaging so distant water flattens rather than glitters at random,
+sampled at two scales (a 40-block swell and an 11-block chop at an angle) drifting with the
+weather's wind and steeper as it blows harder. **Surface** (shader quality Medium, the
+default): Schlick's Fresnel (2 % head-on) between the water body and the sky a mirror would
+show (the sky-view table, grey under a cloud deck); the sun's glitter by GGX on a surface as
+rough as the wind makes it, and rougher with distance where the waves average out, so a glitter
+path stays at sunset; the scene behind refracted by the waves where the water is deep enough
+to bend it and absorbed along the path through the water (Beer–Lambert, 0.45 / 0.07 / 0.035 per
+block for red, green, blue in clear water, more in green and brown water by the tint), with the
+light the water scatters back (6 % of its tint) taking its place — turquoise over sand, navy
+over the deep; and foam where the water thins against the shore, in patches that drift with the
+waves. Low draws a translucent surface with the same reflections and glitter but no refraction
+(no copy). From below, the world above shows through Snell's window and the water below is
+reflected outside it (past 48.6°). **Distant water** (LOD) gets the same Fresnel, sky and
+glitter over the swell, on a colour the column is given the same way (its bed through 1.5 times
+its depth of water and the scattered light), so near and far water meet without a seam and the
+shelf's turquoise darkens to navy past its edge.
 
 ### Distant terrain (`hearth_lod`, `lod.rs`, `lod.wgsl`, D52, D54)
 Beyond the full-detail cubes the land continues as LOD tiles out to the LOD distance, or to the
@@ -132,8 +155,9 @@ box in `precip.rs`.
   from trees or overhangs yet beyond the sky-light falloff.
 - LOD tiles are heightfields (no overhangs), are not cached on disk, do not yet reflect edits
   to the world, are occluded by the near terrain but not by nearer LOD tiles, and have no VRAM
-  budget; LOD water is an
-  opaque tinted surface (the water shader comes with V2-2e). No TAA.
+  budget. No TAA.
+- Water: no screen-space reflections yet (the sky is reflected, not the land), waves follow
+  the wind and not a river's flow, no caustics, underwater fog or god rays yet (V2-2e).
 - Clouds are a single textured layer (no volumetric clouds, no cloud shadows on the ground).
 - No lightning, fog banks, wet or snowy surface shading, puddles or splashes yet.
 - Rain streaks are thin and alias at a distance.

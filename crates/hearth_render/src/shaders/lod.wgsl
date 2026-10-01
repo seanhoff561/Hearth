@@ -14,6 +14,8 @@ struct LodOut {
     @location(0) world: vec3<f32>,
     @location(1) @interpolate(flat) albedo: vec3<f32>,
     @location(2) @interpolate(flat) normal: vec3<f32>,
+    // Share of open water (not frozen) on a water surface; 0 elsewhere.
+    @location(3) @interpolate(flat) water: f32,
 };
 
 // Face codes as the terrain's: down, up, north, south, west, east.
@@ -82,11 +84,18 @@ fn vs_lod(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
     out.world = world;
     out.albedo = albedo;
     out.normal = lod_normal(face);
+    out.water = 0.0;
+    if face == 1u && water {
+        out.water = smoothstep(-6.0, -3.0, t);
+    }
     return out;
 }
 
 @fragment
 fn fs_lod(in: LodOut) -> @location(0) vec4<f32> {
+    // Screen gradients for the waves, taken where control flow is uniform.
+    let gx = dpdx(in.world);
+    let gy = dpdy(in.world);
     // Inside the full-detail area the cubes are the ground. Across the band at its edge the
     // cubes thin out (dithered) and the LOD, just behind them, shows through their gaps.
     if near_weight(in.world.xz) >= 0.999 {
@@ -97,6 +106,18 @@ fn fs_lod(in: LodOut) -> @location(0) vec4<f32> {
     let ambient = g.sky_light.rgb * max(0.62 + 0.38 * n.y + 0.1 * (1.0 - abs(n.y)), 0.2)
         + vec3<f32>(g.sky_light.a);
     let direct = g.sun_light.rgb * max(dot(n, g.sun.xyz), 0.0);
-    let c = in.albedo * (ambient + direct) / 3.14159265;
+    var c = in.albedo * (ambient + direct) / 3.14159265;
+    if in.water > 0.0 {
+        // Open water as near water looks: the colour the column was given (the bed through the
+        // water and the light the water scatters back) under the sky's reflection and the
+        // sun's glitter on the same waves.
+        let dist = length(in.world);
+        let view = -in.world / max(dist, 1e-3);
+        let slope = wave_slope_far(in.world.xz + g.camera.xz, gx.xz, gy.xz);
+        let wn = normalize(vec3<f32>(-slope.x, 1.0, -slope.y));
+        let f = water_fresnel(dot(wn, view));
+        let w = mix(c, water_sky(reflect(-view, wn)), f) + water_glitter(wn, view, dist, 1.0);
+        c = mix(c, w, in.water);
+    }
     return vec4<f32>(aerial(c, in.world), 1.0);
 }

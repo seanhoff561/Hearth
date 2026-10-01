@@ -274,14 +274,106 @@ fn fs_cutout(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(shade_color(albedo, in), 1.0);
 }
 
+// ---------------------------------------------------------------- water (v1 §9.3, water.rs)
+// `water.wgsl` (the waves, the sky's reflection, the sun's glitter) comes before this file.
+
+// The scene drawn before the translucent pass, and the depth buffer (read-only).
+@group(2) @binding(1) var scene_color: texture_2d<f32>;
+@group(2) @binding(2) var scene_depth: texture_depth_2d;
+
+// The light reaching water at a block: the sky by its sky-light level, the sun where it is open
+// to the sky, firelight.
+fn water_light(in: VsOut) -> vec3<f32> {
+    let open = smoothstep(0.8, 1.0, in.light.x);
+    return g.sky_light.rgb * light_curve(in.light.x) + vec3<f32>(g.sky_light.a)
+        + g.sun_light.rgb * max(g.sun.y, 0.0) * open
+        + g.block_light.rgb * light_curve(in.light.y);
+}
+
+// Water: Fresnel reflection of the sky and the sun's glitter on wind-driven waves over the
+// scene behind (refracted, absorbed by the water's depth) at Medium and High; a translucent
+// surface over it at Low; foam where the water thins against the shore. From below: the world
+// above through Snell's window.
+fn water_shade(in: VsOut, gx: vec3<f32>, gy: vec3<f32>) -> vec4<f32> {
+    let world = in.world;
+    let dist = length(world);
+    let view = -world / max(dist, 1e-3);
+    let p = world.xz + g.camera.xz;
+    var n = in.normal;
+    var slope = vec2<f32>(0.0);
+    if n.y > 0.5 {
+        slope = wave_slope(p, gx.xz, gy.xz);
+        n = normalize(vec3<f32>(-slope.x, 1.0, -slope.y));
+    }
+    let below = dot(in.normal, view) < 0.0;
+    if below {
+        n = -n;
+    }
+    let ndv = clamp(dot(n, view), 0.0, 1.0);
+    let fresnel = water_fresnel(ndv);
+    let light = water_light(in);
+    // The water's own colour: light scattered back from inside it (dark, the water's tint).
+    let deep = in.tint * light * 0.06 / 3.14159265;
+    // Clear blue water lets light far; green and brown water (silt, algae, peat) less.
+    let turbid = clamp(1.0 - in.tint.b / max(max(in.tint.g, in.tint.r), 1e-3), 0.0, 1.0);
+    let sigma = vec3<f32>(0.45, 0.07, 0.035) + vec3<f32>(0.25, 0.35, 0.45) * turbid;
+    let tier = u32(water.wind.w + 0.5);
+    let near = water.screen.z;
+    let size = vec2<f32>(textureDimensions(scene_color));
+    if below {
+        // From under the surface: the world above through Snell's window, and outside it (past
+        // 48.6° from the vertical) the water below, reflected entirely.
+        let sin_t = 1.333 * sqrt(max(1.0 - ndv * ndv, 0.0));
+        if sin_t >= 1.0 || tier == 0u {
+            return vec4<f32>(deep, select(1.0, 0.85, tier == 0u));
+        }
+        let cos_t = sqrt(1.0 - sin_t * sin_t);
+        let q = clamp(in.pos.xy + slope * 40.0, vec2<f32>(0.0), size - 1.0);
+        let above = textureLoad(scene_color, vec2<i32>(q), 0).rgb;
+        return vec4<f32>(mix(above, deep, water_fresnel(cos_t)), 1.0);
+    }
+    let sky = water_sky(reflect(-view, n));
+    let spec = water_glitter(n, view, dist, smoothstep(0.8, 1.0, in.light.x));
+    if tier == 0u {
+        let alpha = clamp(0.65 + 0.35 * fresnel + dist * 0.002, 0.65, 0.95);
+        return vec4<f32>(aerial(mix(deep, sky, fresnel) + spec, world), alpha);
+    }
+    // The scene behind, displaced by the waves where the water is deep enough to bend it.
+    let w_surf = near / max(in.pos.z, 1e-9);
+    let px = vec2<i32>(in.pos.xy);
+    let raw0 = textureLoad(scene_depth, px, 0);
+    let thick0 = max(near / max(raw0, 1e-9) - w_surf, 0.0) * dist / max(w_surf, 1e-3);
+    var q = clamp(in.pos.xy + slope * min(thick0, 6.0) * 120.0 / max(w_surf, 1.0),
+        vec2<f32>(0.0), size - 1.0);
+    var raw = textureLoad(scene_depth, vec2<i32>(q), 0);
+    if near / max(raw, 1e-9) < w_surf {
+        // Something in front of the water there: look straight through.
+        q = in.pos.xy;
+        raw = raw0;
+    }
+    let behind = textureLoad(scene_color, vec2<i32>(q), 0).rgb;
+    let thick = max(near / max(raw, 1e-9) - w_surf, 0.0) * dist / max(w_surf, 1e-3);
+    let trans = exp(-sigma * min(thick, 1000.0));
+    var body = behind * trans + deep * (1.0 - trans);
+    // Foam where the water thins out against the shore, in patches that drift with the waves.
+    let shore = 1.0 - smoothstep(0.05, 0.7, thick);
+    if shore > 0.0 {
+        let foam = length(wave_slope(p * 3.1 + vec2<f32>(17.0, 5.0), gx.xz * 3.1, gy.xz * 3.1));
+        let patches = smoothstep(0.25, 0.75, foam / wave_steepness());
+        body = mix(body, light * 0.7 / 3.14159265, shore * mix(0.35, 0.8, patches));
+    }
+    return vec4<f32>(aerial(mix(body, sky, fresnel * (1.0 - shore * 0.5)) + spec, world), 1.0);
+}
+
 @fragment
 fn fs_translucent(in: VsOut) -> @location(0) vec4<f32> {
     handoff(in);
+    // Screen gradients for the water's waves, taken where control flow is uniform.
+    let gx = dpdx(in.world);
+    let gy = dpdy(in.world);
     let c = surface_color(in);
-    var alpha = c.a;
     if in.flags == 1u {
-        // Water: slightly more opaque with distance so far oceans read solid.
-        alpha = clamp(c.a + length(in.world) * 0.002, 0.55, 0.9);
+        return water_shade(in, gx, gy);
     }
-    return vec4<f32>(shade_color(c.rgb, in), alpha);
+    return vec4<f32>(shade_color(c.rgb, in), c.a);
 }

@@ -285,7 +285,13 @@ V2-2 — geology, soils, hydrology & resources. Done so far:
    empty region beyond the full-detail area (no underwater light/fog, no LOD sea floor —
    V2-2e); the preview passes no firelight to the eye's adaptation (torch-lit caves at night
    would be overexposed in the preview — the benchmark passes it). **Resume at 1.**
-1. (e) Water rendering (v1 M7) and ice.
+1. (e) Water rendering (v1 M7) and ice. Done: (e, part 1) water surfaces (D62): wind-driven
+   waves from a tiling slope texture, Fresnel sky reflection, sun glitter, refraction of a scene
+   copy absorbed by depth, shore foam, Snell's window from below; distant water baked and shaded
+   to match; tiers by `shader.water`. Next: (e, part 2) underwater — fog and light falling off
+   with depth, caustics on shallow floors (a map of the water surface around the camera, as
+   the rain's sky-height map), god rays at High; (e, part 3) screen-space reflections at High;
+   (e, part 4) ice.
 2. (f) Minimal spawn picker; `worldmap` soil layer; V2-2 acceptance review, the performance
    gate (`scripts/perf-gate.sh`), and commit.
 

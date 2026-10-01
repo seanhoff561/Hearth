@@ -49,7 +49,7 @@ struct Scaled {
 }
 
 struct HdrTarget {
-    _texture: wgpu::Texture,
+    texture: wgpu::Texture,
     view: wgpu::TextureView,
     tonemap_bind: wgpu::BindGroup,
     meter_bind: wgpu::BindGroup,
@@ -262,7 +262,8 @@ impl PostProcess {
                 dimension: wgpu::TextureDimension::D2,
                 format: HDR_FORMAT,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
             let view = texture.create_view(&Default::default());
@@ -289,7 +290,7 @@ impl PostProcess {
             let tonemap_bind = bind("post bind", &self.layout, &self.params);
             let meter_bind = bind("meter bind", &self.meter_layout, &self.meter_params);
             self.hdr = Some(HdrTarget {
-                _texture: texture,
+                texture,
                 view,
                 tonemap_bind,
                 meter_bind,
@@ -297,6 +298,11 @@ impl PostProcess {
             });
         }
         &self.hdr.as_ref().expect("created above").view
+    }
+
+    /// The HDR target's texture (to copy what is drawn so far).
+    pub fn hdr_texture(&self) -> Option<&wgpu::Texture> {
+        self.hdr.as_ref().map(|h| &h.texture)
     }
 
     /// Measures the rendered HDR frame and adapts the highlight exposure over `dt` seconds
