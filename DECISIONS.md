@@ -874,3 +874,32 @@ trees of its own so far, so a fifth or more of its trees are Palearctic stand-in
 the three suits; more Nearctic species come with the expansion waves (V2-10). The species chooser
 reads the realm from the column sample, so the near terrain, the distant tiles and the
 vegetation's regrowth all agree.
+
+## D81 — Populations: groups and numbers, food anchored to the community, regulation at capacity
+The spec asks for ecological cells holding densities with age and sex structure, advanced in
+abstract steps, stable over long runs by realistic mechanisms rather than clamps. Large animals
+are groups with members (so a herd seen twice is the same herd, hunting takes individuals, and a
+pack holds a territory); small ones, too many for groups, are numbers per cell. Explicit stocks
+of forage that grow, decay and are eaten were tried first and abandoned: with some forty species
+eating from the same stocks the outcome hung on every decay rate and access limit, and species
+crashed or boomed for reasons of bookkeeping. Each cell instead offers each kind of forage at the
+rate the vegetation and season give, shared out by scramble competition, and the absolute amounts
+are anchored so that the reference wood feeds its community at the species' usual densities —
+the habitat formulas say how places differ, the animals' needs say how much. Regulation is by
+mechanisms the spec names: food (lean seasons, poor summers, hard winters, mast failures), prey
+refuges (cover, and the type III response of generalist predators; a specialist, which cannot
+switch, searches harder), territories (breeding only for holders; floaters die sooner; predators
+keep apart), alternative prey and foods (omnivores make up missing meat with plants, hunters only
+partly), and density dependence (disease, stress and want of room past what the land about a
+group holds, over its home range; fewer young growing up where the place is full). The species'
+`adult_survival` and `young_survival` are survival from what is not simulated, as the schema
+says; the first data gave total survival in the wild for some small prey, which counted
+predation and hunger twice and drove them extinct, and was corrected. Condition moves toward what
+the food allows rather than adding up every shortfall, because an animal fed nine tenths of its
+need is thin, not dying. Small populations of wide-ranging animals (wolves, lynx, bears) are kept
+from dying out for good by animals coming in over the edges of the simulated land, as from land
+beyond at its usual numbers. Each cell knows the realm of its animals (a 16 km region of a
+standard planet can span the tropics and two continents). A uniform wood of four regions holds
+all of its species between a seventh and two and a half times what the habitat holds for thirty
+years, and heavy hunting of its red deer takes them down and they come back
+(`crates/hearth_fauna/tests/populations.rs`).

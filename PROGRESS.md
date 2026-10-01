@@ -473,9 +473,16 @@ V2-7 — Fauna framework (temperate forest first), in parts:
   ranging, coats, yields, tracks, calls and temperament; the Tier 1 temperate set, Palearctic
   and Nearctic (43 species: `fauna/temperate*.ron`), the freshwater ecosystem, the animal
   materials (earthworms, offal, fur pelts, feathers, tusk, horn, raw fish, honey, beeswax).
-- [ ] (b) Ecology: habitat per 256 m cell from the vegetation; groups and densities; the
-  daily step (forage, condition, births, deaths, predation, territories, dispersal); regions
-  near the player simulated, saved and caught up; the 50-year test.
+- [x] (b) Populations (`hearth_fauna`, D81, docs/design/fauna.md "Populations"): habitats of
+  256 m cells from the generator and the vegetation (Miami production shared out by canopy,
+  regrowth and mast trees, seasons, snow, yearly weather, mast years); groups for large animals
+  and numbers per cell for small ones; hunting by calibrated functional responses (type III for
+  generalists, prey refuges in cover), scramble competition for forage and carrion, condition,
+  deaths by cause, births by season and condition, territories, crowding past capacity,
+  dispersal and budding, immigration at the edges; regions of 16 km with each cell's own realm
+  of animals. Tests: a uniform wood holds every species for 30 years; heavy hunting of red
+  deer depletes and they recover; a generated temperate region feeds its animals. (Saving
+  regions and the 50-year run on a generated region come with (c) and (j).)
 - [ ] (c) Animals in the world: materialization and folding, entities, movement, protocol.
 - [ ] (d) Bodies: rigs at real dimensions, coats, procedural gaits, instanced rendering.
 - [ ] (e) Navigation: walking, swimming, climbing, flying.

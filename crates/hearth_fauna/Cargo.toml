@@ -1,0 +1,21 @@
+[package]
+name = "hearth_fauna"
+description = "Animals: species, habitats of ecological cells, and populations of groups and small species advanced through the years."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_content.workspace = true
+hearth_math.workspace = true
+hearth_worldgen.workspace = true
+rustc-hash.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+hearth_world.workspace = true
+
+[lints]
+workspace = true

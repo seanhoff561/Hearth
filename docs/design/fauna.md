@@ -83,3 +83,46 @@ The Tier 1 temperate forest set (Appendix B) has both northern realms:
 
 Freshwater species live in the `temperate_freshwater` ecosystem (rivers, lakes, wetlands);
 their densities are per km² of water. A colony species' density counts colonies.
+
+## Populations (`hearth_fauna`)
+The land is divided into **ecological cells** of 256 m, gathered in **regions** of 64 × 64
+cells (16 km) that are simulated near the player, saved, and caught up when visited again. A
+cell knows its **habitat** (`habitat.rs`): its shares of land, fresh water and sea, its
+ecosystems, its realm and the realm of the animals that live there (its own, or the stand-in's),
+its climate, its cover, and the usable production of each kind of forage — graze, browse, mast,
+fruit, seeds, invertebrates, fungi, nectar and the invertebrates of fresh water — from the Miami
+model of net primary production shared out by the vegetation (`expected_canopy`): grass where
+the canopy lets light through, browse where young trees grow back after a clearing or a fire,
+mast under nut trees old enough to bear (their species' yields), fruit at the edges. The amounts
+are anchored to what the reference wood's community eats at its usual densities, so that food is
+just enough at what the habitat holds. Each kind has a season (grass and twigs standing through
+the winter thinner, nuts falling in autumn and lasting into spring, fruit in its weeks), snow
+buries what lies on the ground, every year has its weather (how well plants grew, how hard the
+winter was), and nut trees mast heavily one year in three over a wide area.
+
+Large animals live in **groups** that keep their members — young of the year, older young,
+females and males, a condition, a home and where they are today: a herd of red deer, a family of
+roe, a sow's sounder, a wolf pack, a lynx with her kittens. Small animals (hares, squirrels,
+voles, birds, frogs, fish, snakes, bee colonies) are **numbers per cell**: young and adults with
+a shared condition. A step of the simulation (an eleventh of a month by default):
+- **Hunting**: predators take prey by a functional response whose attack rate is calibrated so
+  that each meets its need at its prey's usual numbers (a specialist — a snake — at a fifth of
+  them). It is of type III for generalists (they turn from a prey grown scarce to others), and
+  prey that keeps to cover is partly hidden. The weak and the young are taken first; fish take
+  frogs only as tadpoles. A large kill's remains are carrion.
+- **Feeding**: everyone eats what the hunt did not give them from the forage and carrion in its
+  range, shared out cell by cell when there is not enough. An omnivore short of meat eats more
+  plants; a hunter can only partly (an owl in a vole-poor year lives on worms, thinly).
+- **Condition** moves toward what the food allows (fat on all of it, thin on nine tenths,
+  starving on half); hibernators live on their fat; the cold-blooded burn little.
+- **Deaths** from what is not simulated (the species' background survival), from hunger, from
+  winter, and from disease and stress where a kind crowds past what the land about it holds
+  (judged over its home range). The dead feed the scavengers.
+- **Births** in the species' season, fewer from mothers in poor condition, and only to the
+  holders of a territory where the species keeps one; the young grow up, fewer where the place
+  is already full.
+- **Dispersal**: the young of the dispersing sex leave to settle within their species' distance
+  where there is room (territorial ones away from others' homes; pack animals pair up), in this
+  region or the next; crowded herds send some mothers and young to nearby land with room (which
+  is how the deer come back to land emptied by hunting); the edges of the simulated land take in
+  animals as if the land beyond held its usual numbers.

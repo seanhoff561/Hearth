@@ -1032,6 +1032,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "hearth_fauna"
+version = "0.1.0"
+dependencies = [
+ "hearth_content",
+ "hearth_math",
+ "hearth_world",
+ "hearth_worldgen",
+ "rustc-hash 2.1.3",
+ "serde",
+]
+
+[[package]]
 name = "hearth_flora"
 version = "0.1.0"
 dependencies = [

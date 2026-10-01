@@ -30,6 +30,7 @@ hearth_character = { path = "crates/hearth_character" }
 hearth_items = { path = "crates/hearth_items" }
 hearth_craft = { path = "crates/hearth_craft" }
 hearth_flora = { path = "crates/hearth_flora" }
+hearth_fauna = { path = "crates/hearth_fauna" }
 hearth_render = { path = "crates/hearth_render" }
 hearth_lod = { path = "crates/hearth_lod" }
 
@@ -94,6 +95,9 @@ debug = false
 opt-level = 3
 
 [profile.dev.package.hearth_lod]
+opt-level = 3
+
+[profile.dev.package.hearth_fauna]
 opt-level = 3
 
 [profile.test]
