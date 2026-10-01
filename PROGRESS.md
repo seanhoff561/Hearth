@@ -245,7 +245,85 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
     the rendering audit — the water's shading at Medium, accepted; the benchmark's map
     building moved off its frame thread and the water's scene copy trimmed on the way. The
     baseline moved to this commit.
-- [ ] V2-3 — Player: character, body & physiology
+- [x] **V2-3 — Player: character, body & physiology** (2026-10-01)
+  - (a) The body (`hearth_body`, D66): heat balance of a core and eleven skin regions (after
+    Gagge; clothing per region, wind and wetness, sweat, rain, immersion, ground, sun and fire;
+    shivering, sweating, blood flow; frostbite), food energy (stomach, glycogen, fat, protein
+    share, fresh-food vitamins), body water (sweat, insensible, kidneys, salt), sleep (two
+    processes, wake reasons), stamina, injuries (bleeding, clotting, infection, healing on their
+    scales, treatments), illness (causes, onset, course, fatal courses turned by treatment),
+    death, effects for movement and actions, and feelings for the Body panel. Data: stamina in
+    `human.ron`, fur leggings, fur mittens 1.5 clo, closed fractures. Acceptance tests
+    (`tests/acceptance.rs`: hypothermia naked in cold rain vs furs by a fire, death by thirst,
+    sprain vs fracture) and realism tests against human data (`tests/realism.rs`, twelve).
+  - (b) Movement (`hearth_physics`, `hearth_player`, D67, `docs/design/movement.md`): the box
+    swept against block shapes, gaits at human speeds (sprint on stamina above the aerobic
+    threshold), jumps of 0.45 m, steps in stride, scrambles up a block, ledges to head height
+    climbed with both hands, crouch (edges kept) and crawl (low gaps), wading and swimming with
+    breath, ladders, ice; landings by speed softened by snow, leaves or water, judged by the body
+    (`Body::land`); the player joining body and mover (effects → ability, motion → activity and
+    immersion, drowning, limp bodies sink). Blocks gained `cushion`; treading water (3.5 METs).
+    Tests: eleven of movement, five of the living player, falls by height.
+  - (c) The world loop (D68, `docs/design/world-loop.md`): `hearth_protocol`; the integrated
+    server (`server.rs`, replacing the streamer) at 20 TPS owning the world, the clock, the
+    player's body in the exposure where they stand (weather, sun, night sky, shelter, water) and
+    the finite water (ticked, restored in cubes that load again, woken by the seasonal cover),
+    streaming cubes with their blocks and meshes, saving `level.json` and `player.json` every
+    five minutes and on stop; the client (`client.rs`, replacing the preview) mirroring cubes,
+    moving the player every frame and reporting at 20 Hz, first-person camera, free camera
+    (F3+N), crawl key (C), double-tap sprint, respawn after death, `--world NAME`. The first
+    spawn is warm-temperate. Test: a world lives, saves and comes back (`tests/server.rs`).
+  - (d) The interface (in parts): `hearth_ui` with a clean-room pixel font drawn for the game,
+    draw lists at a whole-number interface scale, the words from `lang/<code>.json` (English
+    under every language), immediate-mode widgets (buttons, sliders, switches, cyclers, text
+    fields, lists; keyboard focus); `hearth_render::ui`; the screens (`menus.rs`): title, worlds,
+    new world, pause (stops the clock and body), options (video, controls with rebinding,
+    accessibility, language), the F3 debug screen and the death message. Controllers (gilrs,
+    `gamepad.rs`): the left stick walks (full lean jogs, click sprints), the right stick looks
+    (squared response), South jumps, East crouches, West crawls, Start pauses, Select opens the
+    globe; in the menus the D-pad or stick moves the focus, South presses, East goes back.
+    Sound (D69, `docs/design/audio.md`): `hearth_audio`, every sound synthesised as it plays
+    (footsteps on twelve surfaces by gait, landings, splashes, strokes, gasps, hurts, clicks;
+    wind with gusts and whistle, rain under the sky, a roof or rock, the hush under water, the
+    heart and the breath from the body), mixed by the options' categories, muffled under water,
+    echoing when shut in, paused with the world, through cpal; `hearing.rs` turns movement, the
+    ground's sound groups (natural blocks by material), the weather and the body into sounds;
+    the Sound options (volumes, output device, captions) and captions on screen. Tests: the
+    mixer offline (every sound heard and ended, volumes, wind, rain, water, rhythms, echo,
+    limiter), hearing (surfaces, enclosure, footstep pace, splashes); `bench-out/sounds/*.wav`.
+  - (e) The person (D70, `docs/design/character.md`): `hearth_character` with appearances
+    (body, height, build, skin tone and undertone, eleven hair styles, facial hair, hair colour
+    by name or hue, eyes, name, loincloth) kept as profiles (`characters.json`) and in each
+    world's `player.json`. A seventeen-joint box rig in anthropometric proportions. Procedural
+    movement with real gait phases: stance and swing, a flat foot rolling to the toes, flight
+    between running strides, a bob of 4 cm walking, footsteps heard and seen in step. Also
+    crouch, belly crawl, breaststroke, treading water, ledge and ladder climbing, falling,
+    lying, a shivering hug. Drawn as instanced boxes lit like the terrain
+    (`hearth_render::figure`): the first-person body seen looking down (eyes in the posed head),
+    third person behind or in front (F5), a character screen with a turning preview under four
+    lights, and the person chosen for a new world. A female body starts with a chest band (D70,
+    a garment in the data). Tests: proportions, poses in their boxes, gaits that stride and
+    bob as people do, skin tones in order, profiles, hair, first person;
+    `bench-out/character_*.png`; `--screenshot person=4` / `body=true`.
+  - (f) What the body tells the player (`docs/design/hud.md`), sleep and death: lying down
+    (Z) to rest, a sleepy body at ease dropping off in seconds and the world easing up to 90×
+    while it sleeps, waking for a reason said as the eyes open (rested by the two-process model
+    toward morning); sight through the body (colour drained by exhaustion, thirst and
+    weakness, dimming, edges closing in red with the pulse, the cold's blue, heat's wavering),
+    a rumbling stomach and dry swallows, muffled hearing when weak, a shivering view, breath
+    fog in cold air; the Body panel (B: regions with injuries, bandages and splints, states and
+    injuries in words); the optional Guided HUD; death by the world's rules (Legacy, Hardy,
+    Permadeath with the life's tale and the world ended). Garments, injuries and illnesses
+    are now used by the body (content status Implemented).
+  - Acceptance review: naked in 5 °C rain the core falls below 35 °C after 1.0 h of body time,
+    in furs by a fire it holds 36.4 °C; without water a hot, active body dies after 3.35 days
+    (11 resting in the shade); a sprain heals in 3.7 game days on the day scale (89 real
+    hours), a fracture in 3.4 game days on the year scale (39 real days)
+    (`hearth_body/tests/acceptance.rs`). Every item of PLAN.md's V2-3 is in: the engine's
+    protocol, integrated server, client mirror, shared physics and player saves; the interface
+    toolkit with its own font, screens, options, controllers, words and sound; the character
+    creator with profiles, the rig, the first-person body and the movements; the physiology
+    with sleep and death modes; the diegetic HUD, Body panel, Guided HUD and the body's sounds.
 - [ ] V2-4 — Inventory, carrying & clothing
 - [ ] V2-5 — Interaction, process crafting & knowledge
 - [ ] V2-6 — Flora framework (temperate first)
@@ -280,72 +358,13 @@ Generated by `hearth content status` (Implemented = used by a game system; Plann
 | Knowledge nodes | 0 | 176 |
 | Workstations | 0 | 2 |
 | Construction pieces | 0 | 5 |
-| Garments | 0 | 6 |
-| Injuries | 0 | 10 |
-| Illnesses | 0 | 5 |
+| Garments | 8 | 0 |
+| Injuries | 10 | 0 |
+| Illnesses | 5 | 0 |
 | Eras | 0 | 8 |
 
 ## In progress
-V2-3 — player: character, body & physiology. Done so far:
-- (a) The body (`hearth_body`, D66): heat balance of a core and eleven skin regions (after
-  Gagge; clothing per region, wind and wetness, sweat, rain, immersion, ground, sun and fire;
-  shivering, sweating, blood flow; frostbite), food energy (stomach, glycogen, fat, protein
-  share, fresh-food vitamins), body water (sweat, insensible, kidneys, salt), sleep (two
-  processes, wake reasons), stamina, injuries (bleeding, clotting, infection, healing on their
-  scales, treatments), illness (causes, onset, course, fatal courses turned by treatment),
-  death, effects for movement and actions, and feelings for the Body panel. Data: stamina in
-  `human.ron`, fur leggings, fur mittens 1.5 clo, closed fractures. Acceptance tests
-  (`tests/acceptance.rs`: hypothermia naked in cold rain vs furs by a fire, death by thirst,
-  sprain vs fracture) and realism tests against human data (`tests/realism.rs`, twelve).
-- (b) Movement (`hearth_physics`, `hearth_player`, D67, `docs/design/movement.md`): the box
-  swept against block shapes, gaits at human speeds (sprint on stamina above the aerobic
-  threshold), jumps of 0.45 m, steps in stride, scrambles up a block, ledges to head height
-  climbed with both hands, crouch (edges kept) and crawl (low gaps), wading and swimming with
-  breath, ladders, ice; landings by speed softened by snow, leaves or water, judged by the body
-  (`Body::land`); the player joining body and mover (effects → ability, motion → activity and
-  immersion, drowning, limp bodies sink). Blocks gained `cushion`; treading water (3.5 METs).
-  Tests: eleven of movement, five of the living player, falls by height.
-- (c) The world loop (D68, `docs/design/world-loop.md`): `hearth_protocol`; the integrated
-  server (`server.rs`, replacing the streamer) at 20 TPS owning the world, the clock, the
-  player's body in the exposure where they stand (weather, sun, night sky, shelter, water) and
-  the finite water (ticked, restored in cubes that load again, woken by the seasonal cover),
-  streaming cubes with their blocks and meshes, saving `level.json` and `player.json` every
-  five minutes and on stop; the client (`client.rs`, replacing the preview) mirroring cubes,
-  moving the player every frame and reporting at 20 Hz, first-person camera, free camera
-  (F3+N), crawl key (C), double-tap sprint, respawn after death, `--world NAME`. The first
-  spawn is warm-temperate. Test: a world lives, saves and comes back (`tests/server.rs`).
-- (d) The interface (in parts): `hearth_ui` with a clean-room pixel font drawn for the game,
-  draw lists at a whole-number interface scale, the words from `lang/<code>.json` (English
-  under every language), immediate-mode widgets (buttons, sliders, switches, cyclers, text
-  fields, lists; keyboard focus); `hearth_render::ui`; the screens (`menus.rs`): title, worlds,
-  new world, pause (stops the clock and body), options (video, controls with rebinding,
-  accessibility, language), the F3 debug screen and the death message. Controllers (gilrs,
-  `gamepad.rs`): the left stick walks (full lean jogs, click sprints), the right stick looks
-  (squared response), South jumps, East crouches, West crawls, Start pauses, Select opens the
-  globe; in the menus the D-pad or stick moves the focus, South presses, East goes back.
-  Sound (D69, `docs/design/audio.md`): `hearth_audio`, every sound synthesised as it plays
-  (footsteps on twelve surfaces by gait, landings, splashes, strokes, gasps, hurts, clicks;
-  wind with gusts and whistle, rain under the sky, a roof or rock, the hush under water, the
-  heart and the breath from the body), mixed by the options' categories, muffled under water,
-  echoing when shut in, paused with the world, through cpal; `hearing.rs` turns movement, the
-  ground's sound groups (natural blocks by material), the weather and the body into sounds;
-  the Sound options (volumes, output device, captions) and captions on screen. Tests: the
-  mixer offline (every sound heard and ended, volumes, wind, rain, water, rhythms, echo,
-  limiter), hearing (surfaces, enclosure, footstep pace, splashes); `bench-out/sounds/*.wav`.
-- (e) The person (D70, `docs/design/character.md`): `hearth_character` with appearances
-  (body, height, build, skin tone and undertone, eleven hair styles, facial hair, hair colour
-  by name or hue, eyes, name, loincloth) kept as profiles (`characters.json`) and in each
-  world's `player.json`. A seventeen-joint box rig in anthropometric proportions. Procedural
-  movement with real gait phases: stance and swing, a flat foot rolling to the toes, flight
-  between running strides, a bob of 4 cm walking, footsteps heard and seen in step. Also
-  crouch, belly crawl, breaststroke, treading water, ledge and ladder climbing, falling,
-  lying, a shivering hug. Drawn as instanced boxes lit like the terrain
-  (`hearth_render::figure`): the first-person body seen looking down (eyes in the posed head),
-  third person behind or in front (F5), a character screen with a turning preview under four
-  lights, and the person chosen for a new world. A female body starts with a chest band (D70,
-  a garment in the data). Tests: proportions, poses in their boxes, gaits that stride and
-  bob as people do, skin tones in order, profiles, hair, first person;
-  `bench-out/character_*.png`; `--screenshot person=4` / `body=true`.
+Nothing: V2-3 is done; V2-4 is next.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -355,11 +374,9 @@ V2-3 — player: character, body & physiology. Done so far:
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. V2-3 — Player: character, body & physiology (PLAN.md). Done: (a) the body, (b)
-   movement, (c) the world loop, (d) the interface, controllers and sound, (e) the person
-   (appearance, rig, movement, views, character screen). Next: (f) the diegetic HUD, Body
-   panel (B), Guided HUD, sleep with time acceleration, death and respawn rules, the
-   acceptance review and the performance gate.
+1. V2-4 — Inventory, carrying & clothing (PLAN.md): hands, body attachment points,
+   containers with grids and limits, mass/volume/footprint, placing items in the world,
+   dragging and rolling, encumbrance, quick slots; clothing layers drawn on the person.
 
 ## Known issues
 - The preview passes no firelight to the eye's adaptation (torch-lit caves at night would be

@@ -15,7 +15,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Light | [light.md](light.md) | implemented (v1) |
 | Calendar, seasons and weather | [seasons.md](seasons.md) | implemented (V2-1) |
 | Geology, soils, hydrology, resources | [geology.md](geology.md) | implemented (V2-2) |
-| Body and physiology | [physiology.md](physiology.md) | implemented (V2-3a; the player's world loop in progress) |
+| Body and physiology | [physiology.md](physiology.md) | implemented (V2-3) |
 | Movement (collision, gaits, climbing, swimming, falls) | [movement.md](movement.md) | implemented (V2-3b) |
 | The world loop (server, client, protocol) | [world-loop.md](world-loop.md) | implemented in process (V2-3c) |
 | Sound (procedural sounds, mixer, what the player hears) | [audio.md](audio.md) | implemented (V2-3d) |

@@ -1,8 +1,8 @@
 # Body and physiology
 
-*Status: the physiology is implemented (V2-3 part a, `hearth_body`, D66); the player who lives
-in it — movement, the world loop, the HUD and Body panel — comes with the rest of V2-3.
-Parameters in `data/hearth/body/` (human, injuries, illnesses) and `data/hearth/clothing/`.*
+*Status: implemented (V2-3: the physiology in `hearth_body`, D66; sleep and death with the
+player in `hearth_player` and the server; what it tells the player in `hud.md`). Parameters
+in `data/hearth/body/` (human, injuries, illnesses) and `data/hearth/clothing/`.*
 
 ## Purpose
 The player's body as v2 §9 describes it: needs, heat and cold, sleep, stamina, injuries and
