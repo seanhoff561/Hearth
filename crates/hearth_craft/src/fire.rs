@@ -27,6 +27,8 @@ pub const CHAR_SHARE: f32 = 0.15;
 pub const COAL_MJ_KG: f32 = 29.5;
 /// Share of a fire's heat given off as radiation.
 pub const RADIANT_SHARE: f32 = 0.25;
+/// Fuel no thicker than this (m) is kindling: it catches from a few embers.
+pub const KINDLING_M: f32 = 0.01;
 
 /// Fuel in a fire: one piece, or several alike.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -42,6 +44,17 @@ pub struct Fuel {
 }
 
 impl Fuel {
+    /// Whether it catches from glowing coals of `coals_kg` without flames: kindling (twigs,
+    /// shavings) from a few embers, a stick or a pole only from a bed of them.
+    pub fn catches_on(&self, coals_kg: f32) -> bool {
+        let needs = if self.thick_m <= KINDLING_M {
+            0.01
+        } else {
+            0.03
+        };
+        self.wet < 0.5 && coals_kg >= needs
+    }
+
     /// Hours a piece of this thickness takes to burn through in a fire.
     pub fn burn_h(&self) -> f32 {
         (self.thick_m.max(0.001) * 0.5) / (REGRESSION_M_H * IN_FLAME)
@@ -190,7 +203,7 @@ impl Fire {
         if self.banked {
             self.banked = false;
         }
-        if !self.flaming && self.coals_kg >= 0.03 && fuel.wet < 0.5 {
+        if !self.flaming && fuel.catches_on(self.coals_kg) {
             self.flaming = true;
             self.involved = self.involved.max(0.2);
         }
@@ -238,7 +251,12 @@ impl Fire {
         // Rain soaks the fuel and quenches coals; the water it brings takes heat to boil off
         // (a hearth's half square metre: about a third of a kilowatt per mm an hour), and a
         // fire giving less than twice that drowns.
-        let drowning = rain_mm_h > 0.0 && self.power_kw < 2.0 * 0.31 * rain_mm_h;
+        // A fire still taking hold (or coals) is sheltered by the fuel over it in a drizzle;
+        // only rain over 2 mm an hour drowns it before it has grown.
+        let growing = self.involved < 0.5;
+        let drowning = rain_mm_h > 0.0
+            && self.power_kw < 2.0 * 0.31 * rain_mm_h
+            && (!growing || rain_mm_h > 2.0);
         if rain_mm_h > 0.0 {
             for f in &mut self.fuel {
                 f.wet = (f.wet + rain_mm_h * 0.05 * dt_h).min(1.0);
@@ -284,9 +302,8 @@ impl Fire {
             }
         } else {
             self.involved = 0.0;
-            let catches = self.fuel.iter().any(|f| f.wet < 0.5);
-            if !self.banked && !drowning && self.coals_kg >= 0.03 && self.temp_c > 250.0 && catches
-            {
+            let catches = self.fuel.iter().any(|f| f.catches_on(self.coals_kg));
+            if !self.banked && !drowning && self.temp_c > 250.0 && catches {
                 // Coals light dry fuel laid on them.
                 self.flaming = true;
                 self.involved = 0.2;
@@ -406,6 +423,29 @@ mod tests {
     }
 
     #[test]
+    fn dying_embers_take_kindling_but_not_a_stick() {
+        let mut f = Fire::laid(800.0, vec![stick(); 2]);
+        f.ignite();
+        run(&mut f, 0.8, 0.0);
+        // Burned down: a few embers glowing.
+        while f.coals_kg > 0.02 {
+            run(&mut f, 0.05, 0.0);
+        }
+        assert_eq!(f.state(), FireState::Embers);
+        f.feed(stick());
+        assert!(!f.flaming, "a stick does not catch from a few embers");
+        f.feed(Fuel {
+            kg: 0.005,
+            mj_kg: 18.0,
+            thick_m: 0.006,
+            wet: 0.0,
+        });
+        assert!(f.flaming, "a twig does");
+        run(&mut f, 0.1, 0.0);
+        assert!(f.flaming, "and the stick burns with it");
+    }
+
+    #[test]
     fn hard_rain_puts_a_small_fire_out_and_wet_wood_will_not_light() {
         let mut f = Fire::laid(800.0, vec![stick(); 2]);
         f.ignite();
@@ -420,6 +460,18 @@ mod tests {
             }],
         );
         assert!(!wet.ignite());
+    }
+
+    #[test]
+    fn a_fire_catches_in_a_drizzle_but_not_a_downpour() {
+        let mut f = Fire::laid(800.0, vec![stick(); 4]);
+        f.ignite();
+        run(&mut f, 0.2, 0.4);
+        assert!(f.flaming, "it takes hold in a drizzle");
+        let mut f = Fire::laid(800.0, vec![stick(); 4]);
+        f.ignite();
+        run(&mut f, 0.2, 6.0);
+        assert!(!f.lit(), "a downpour drowns it");
     }
 
     #[test]

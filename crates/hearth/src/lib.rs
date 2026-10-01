@@ -9,6 +9,7 @@ pub mod client;
 pub mod content_cli;
 pub mod content_state;
 pub mod crafting_ui;
+pub mod edits;
 pub mod environment;
 pub mod frame_limiter;
 pub mod gamepad;

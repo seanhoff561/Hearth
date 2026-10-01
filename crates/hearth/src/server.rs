@@ -218,6 +218,46 @@ fn ground_at(lw: &LocalWorld, x: i32, z: i32) -> DVec3 {
     )
 }
 
+/// How much of the weather's wind (measured high and in the open) reaches a body standing at
+/// `feet`: about three quarters at head height over open ground (the wind's log profile),
+/// less among trees and brush close by (a wood's floor sees a fifth to a half of the open
+/// wind) and behind solid ground or walls upwind.
+fn lee(lw: &LocalWorld, feet: DVec3) -> f64 {
+    let base = BlockPos::containing(feet);
+    let mut cover = 0.0f64;
+    let mut cells = 0.0f64;
+    for dz in -4..=4 {
+        for dx in -4..=4 {
+            if dx * dx + dz * dz > 16 {
+                continue;
+            }
+            for dy in 0..4 {
+                cells += 1.0;
+                let p = BlockPos::new(base.x + dx, base.y + dy, base.z + dz);
+                if let Some(s) = lw.map.block(p)
+                    && !s.is_air()
+                {
+                    let def = &lw.reg.block_of(s).def;
+                    // Solid ground and trunks stop the wind; leaves, brush and tall plants
+                    // slow it.
+                    cover += if def.opaque {
+                        1.0
+                    } else if def.fluid.is_some() {
+                        0.0
+                    } else if dy == 0 {
+                        // Grass and flowers about the feet hardly matter.
+                        0.1
+                    } else {
+                        0.5
+                    };
+                }
+            }
+        }
+    }
+    let shelter = (cover / cells.max(1.0) * 2.5).min(0.75);
+    0.75 * (1.0 - shelter)
+}
+
 /// The weather, water and shelter where the player is, as the body feels them.
 fn exposure(
     env: &EnvSampler,
@@ -258,7 +298,7 @@ fn exposure(
     Exposure {
         air_c: w.temperature_c as f32,
         humidity: w.humidity as f32,
-        wind_m_s: (w.wind_speed_m_s * if covered { 0.3 } else { 1.0 }) as f32,
+        wind_m_s: (w.wind_speed_m_s * if covered { 0.3 } else { 1.0 } * lee(lw, pos)) as f32,
         rain_mm_h: if covered { 0.0 } else { falling as f32 },
         immersion: immersion as f32,
         water_c: water.temperature_c,
@@ -324,6 +364,7 @@ fn save(
     appearance: &hearth_character::Appearance,
     world_items: &hearth_items::WorldItems,
     workshop: &Workshop,
+    lw: &LocalWorld,
     ticks: u64,
 ) {
     let Some(s) = save else {
@@ -342,6 +383,7 @@ fn save(
         .and_then(|()| s.dir.write_json("player.json", &player))
         .and_then(|()| s.dir.write_json("items.json", world_items))
         .and_then(|()| s.dir.write_json("crafts.json", &workshop.save()))
+        .and_then(|()| s.dir.write_json("blocks.json", &lw.edits.save(&lw.reg)))
     {
         log::error!("could not save the world: {e}");
     } else {
@@ -479,6 +521,15 @@ fn run(
     let workshop_save: Option<WorkshopSave> = save_state
         .as_ref()
         .and_then(|s| s.dir.read_json("crafts.json").ok().flatten());
+    // The blocks the player changed, laid over the terrain as it streams in.
+    if let Some(e) = save_state.as_ref().and_then(|s| {
+        s.dir
+            .read_json::<crate::edits::EditsSave>("blocks.json")
+            .ok()
+            .flatten()
+    }) {
+        lw.edits = crate::edits::Edits::load(e, &lw.reg);
+    }
     let mut workshop = Workshop::new(&content, &items, mode, workshop_save, seed, ticks);
     if mode == hearth_craft::Mode::Open {
         player.knowledge.known = hearth_craft::KnowledgeState::open(&workshop.graph, ticks).known;
@@ -529,8 +580,9 @@ fn run(
     let mut sleep_warp = 0.0f64;
     let mut warp_carry = 0.0f64;
     let mut paused = false;
-    // Ticks as fast as they go rather than twenty a second (tests and bots).
-    let mut fast = false;
+    // Tests and bots: ticks run only when asked for (lockstep), as fast as they go.
+    let mut lockstep = false;
+    let mut owed: u64 = 0;
     let mut next_tick = Instant::now();
     let mut since_save = 0u64;
     macro_rules! here {
@@ -736,7 +788,13 @@ fn run(
                 }
                 Ok(ToServer::TimeWarp(w)) => warp = w.max(0.0),
                 Ok(ToServer::Pause(p)) => paused = p,
-                Ok(ToServer::Fast(f)) => fast = f,
+                Ok(ToServer::Run(n)) => {
+                    lockstep = true;
+                    owed += n;
+                }
+                Ok(ToServer::Strike { x, z }) => {
+                    workshop.strike(&mut here!(), x, z);
+                }
                 Ok(ToServer::View { radius, vertical }) => {
                     view = View {
                         radius: radius.clamp(1, 64),
@@ -750,6 +808,7 @@ fn run(
                         &appearance,
                         &world_items,
                         &workshop,
+                        &lw,
                         ticks,
                     );
                     let _ = tx.send(ToClient::Saved);
@@ -765,7 +824,7 @@ fn run(
         // The tick (none while paused: the world stands still, the terrain still streams).
         if paused {
             next_tick = Instant::now() + Duration::from_secs_f64(TICK_S);
-        } else if fast || Instant::now() >= next_tick {
+        } else if (lockstep && owed > 0) || (!lockstep && Instant::now() >= next_tick) {
             workshop.tick(&mut here!(), advanced);
             let moment = calendar.at(ticks);
             let immersion = last_moved.map_or(0.0, |m| m.immersion);
@@ -843,6 +902,7 @@ fn run(
                         &appearance,
                         &world_items,
                         &workshop,
+                        &lw,
                         ticks,
                     );
                     let _ = tx.send(ToClient::Ended(summary));
@@ -860,6 +920,8 @@ fn run(
             warp_carry -= extra;
             ticks += 1 + extra as u64;
             advanced = 1.0 + extra;
+            // In lockstep, the game ticks asked for (warped ticks count as they pass).
+            owed = owed.saturating_sub(1 + extra as u64);
             // Skills unused for long slip (Authentic), once a game day.
             let day = calendar.ticks_per_day().max(1.0) as u64;
             if authentic && (ticks / day) != ((ticks - 1 - extra as u64) / day) {
@@ -897,6 +959,7 @@ fn run(
                     &appearance,
                     &world_items,
                     &workshop,
+                    &lw,
                     ticks,
                 );
                 return Ok(());
@@ -946,6 +1009,7 @@ fn run(
                     &appearance,
                     &world_items,
                     &workshop,
+                    &lw,
                     ticks,
                 );
                 return Ok(());
@@ -958,6 +1022,7 @@ fn run(
                     &appearance,
                     &world_items,
                     &workshop,
+                    &lw,
                     ticks,
                 );
                 let _ = tx.send(ToClient::Saved);
@@ -967,8 +1032,8 @@ fn run(
                 // Far behind (a long batch, a breakpoint): don't run the missed ticks at once.
                 next_tick = Instant::now();
             }
-            // Running fast (tests), the terrain streams between every tick.
-            if !fast {
+            // In lockstep (tests), the terrain streams between every tick.
+            if !lockstep {
                 continue;
             }
         }
@@ -996,7 +1061,7 @@ fn run(
                 }
             }
             Ok((false, _)) => {
-                if !fast {
+                if !lockstep {
                     let wait = next_tick.saturating_duration_since(Instant::now());
                     std::thread::sleep(wait.min(Duration::from_millis(5)));
                 }
@@ -1008,6 +1073,7 @@ fn run(
                     &appearance,
                     &world_items,
                     &workshop,
+                    &lw,
                     ticks,
                 );
                 return Ok(());
@@ -1138,7 +1204,9 @@ impl Stream {
             });
             lw.map.insert_cube(p, Arc::new(cube), &lw.reg);
             self.loaded.insert(p);
-            // Finite water that was here when the cube was unloaded comes back.
+            // The player's changes, and finite water that was here when the cube was unloaded,
+            // come back.
+            lw.edits.restore(&mut lw.map, &lw.reg, p);
             water.restore(&mut lw.map, &lw.reg, p);
         }
         // Seasonal snow and ice on the new terrain, then light.

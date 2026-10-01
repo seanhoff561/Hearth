@@ -16,7 +16,9 @@ or goes off by what it is and how it is kept, and cooking changes what it gives 
     hearth (40 %): dry grass flares for seconds, a 2.5 cm stick lasts most of an hour, a 40 cm log
     section half a day. A fire takes a few minutes to take hold of new fuel.
   - A seventh of the wood is left as coals, which glow on for an hour or two, light dry fuel laid
-    on them, and banked under ash smoulder for half a day.
+    on them, and banked under ash smoulder for half a day. A bed of coals (30 g or more) lights a
+    stick; a few dying embers light only kindling (twigs, a centimetre thick or less), which
+    then lights the rest.
   - Heat given off: what burns × its heat (18 MJ/kg dry wood, 29.5 charcoal, 39 fat). A handful of
     sticks gives 10–30 kW; coals alone about 1 kW. The hearth's temperature rises towards its
     build's limit (a campfire 800 °C) with the heat, following within a minute or two.

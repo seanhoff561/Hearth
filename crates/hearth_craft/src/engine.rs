@@ -628,6 +628,7 @@ pub fn offers(
         let p = plan(crafts, i, bench, skill(r));
         match &p {
             Err(Lack::Target) | Err(Lack::Knowledge) => continue,
+            Err(_) if r.def.target == Some(Target::Ground) => continue,
             Err(_) => {
                 // Things in hand with nothing aimed at: only if the first input is held.
                 let aimed = r.def.target.is_some() || r.def.station.is_some();
@@ -751,13 +752,20 @@ fn failure_chance(
     skill: f32,
     matq: f32,
     humidity: f32,
+    density: f32,
 ) -> f32 {
     let mut p = f.chance - (f.chance - f.min_chance) * skill.clamp(0.0, 1.0);
     match def.skill.as_deref() {
         // Coarse stone breaks unpredictably.
         Some("knapping") => p *= 1.3 - 0.5 * matq,
-        // Damp air and wood make friction fire hard.
-        Some("firemaking") => p += 0.5 * (humidity - 0.6).max(0.0),
+        // Damp air makes friction fire hard, and so does a dense drill (oak is poor; lime,
+        // willow and other soft woods are good).
+        Some("firemaking") => {
+            p += 0.5 * (humidity - 0.6).max(0.0);
+            if def.effect == Effect::Ignite {
+                p += 0.3 * ((density - 550.0) / 300.0).clamp(0.0, 1.0);
+            }
+        }
         _ => {}
     }
     p.clamp(0.0, 0.98)
@@ -859,7 +867,14 @@ pub fn perform_by(
                 }
             }
             Some(_) => 0.0,
-            None => failure_chance(f, def, skill, matq, bench.around.humidity),
+            None => {
+                let density = plan
+                    .material
+                    .as_deref()
+                    .and_then(|m| c.materials.get(m))
+                    .map_or(600.0, |m| m.density_kg_m3);
+                failure_chance(f, def, skill, matq, bench.around.humidity, density)
+            }
         };
         if rng.next_f32() < p {
             o.failure = Some(f.outcome.clone());

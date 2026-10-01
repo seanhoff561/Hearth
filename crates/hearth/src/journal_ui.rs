@@ -86,9 +86,13 @@ pub fn journal_screen(ui: &mut Ui<'_>, view: &JournalView, tab: &mut u8, scroll:
 fn lines_of(ui: &Ui<'_>, view: &JournalView, tab: u8, width: f32) -> Vec<(String, Rgba)> {
     let k = view.knowledge;
     let mut out: Vec<(String, Rgba)> = Vec::new();
+    // Wrapped lines keep the indent of their first.
     let push = |text: &str, color: Rgba, out: &mut Vec<(String, Rgba)>| {
-        for l in ui.font.wrap(text, width as u32) {
-            out.push((l, color));
+        let body = text.trim_start();
+        let indent = &text[..text.len() - body.len()];
+        let room = (width - ui.font.width(indent) as f32).max(40.0) as u32;
+        for l in ui.font.wrap(body, room) {
+            out.push((format!("{indent}{l}"), color));
         }
     };
     let day = |tick: u64| (tick as f64 / view.ticks_per_day.max(1.0)).floor() as i64 + 1;
@@ -96,7 +100,9 @@ fn lines_of(ui: &Ui<'_>, view: &JournalView, tab: u8, width: f32) -> Vec<(String
         0 => {
             // Known techniques, by era, each with what is known of its history.
             let mut nodes: Vec<_> = view.graph.nodes.iter().filter(|n| k.knows(&n.id)).collect();
-            nodes.sort_by(|a, b| a.era.cmp(&b.era).then(a.name.cmp(&b.name)));
+            // By era, then in the order they were learned.
+            let when = |id: &str| k.known.get(id).map_or(0, |l| l.tick);
+            nodes.sort_by(|a, b| a.era.cmp(&b.era).then(when(&a.id).cmp(&when(&b.id))));
             let mut era = None;
             for n in nodes {
                 if era != Some(n.era) {

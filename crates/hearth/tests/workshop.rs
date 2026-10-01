@@ -1,205 +1,13 @@
 //! Making things in a running world (V2-5): processes done to blocks and things, stations laid
 //! and lit, fire that cooks, digging that leaves a spoil pile, eating and drinking, and the
-//! knowledge that doing things teaches. The world runs its ticks as fast as they go.
+//! knowledge that doing things teaches; the changes outlast going away and the world being
+//! saved and opened again. The world runs its ticks as fast as they go.
 
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+mod common;
 
-use glam::DVec3;
-use hearth::server::{Server, View, WorldSpec};
-use hearth_craft::KnowledgeState;
-use hearth_items::{Carry, Items, Stack, WorldItem};
+use common::{World, temp};
 use hearth_math::BlockPos;
-use hearth_protocol::{AimAt, ToClient, ToServer};
-use hearth_render::atlas::TextureArray;
-use hearth_world::{BlockRegistry, CubeMap};
-
-/// A test's view of a running world.
-pub struct World {
-    pub server: Server,
-    pub reg: Arc<BlockRegistry>,
-    pub mirror: CubeMap,
-    pub items: Arc<Items>,
-    pub carry: Carry,
-    pub knowledge: KnowledgeState,
-    pub lying: Vec<WorldItem>,
-    pub feet: DVec3,
-    pub ticks: u64,
-    pub ticks_per_day: f64,
-    /// What came of things done: (process, done, words).
-    pub acted: Vec<(String, bool, String)>,
-    pub learned: Vec<String>,
-    pub working: bool,
-}
-
-impl World {
-    pub fn start(dir: &std::path::Path, knowledge: hearth_save::KnowledgeMode, seed: u64) -> Self {
-        let spec = WorldSpec {
-            name: "test".into(),
-            seed,
-            planet: hearth_math::PlanetSize::Tiny,
-            cache_dir: None,
-            saves_dir: Some(dir.to_path_buf()),
-            appearance: hearth_character::Appearance::default(),
-            death_rules: hearth_save::DeathRules::default(),
-            knowledge,
-        };
-        let atlas = Arc::new(TextureArray::from_entries(&hearth_texgen::textures_for(
-            None,
-        )));
-        let server = Server::start(
-            spec,
-            atlas,
-            View {
-                radius: 2,
-                vertical: 2,
-            },
-        );
-        let t0 = Instant::now();
-        let ready = loop {
-            assert!(t0.elapsed() < Duration::from_secs(180), "no world");
-            match server.poll() {
-                Some(ToClient::Ready(r)) => break r,
-                Some(_) => {}
-                None => std::thread::sleep(Duration::from_millis(5)),
-            }
-        };
-        server.send(ToServer::Fast(true));
-        let mut w = World {
-            server,
-            mirror: CubeMap::new(ready.planet),
-            reg: ready.reg.clone(),
-            items: ready.items.clone(),
-            carry: Carry::default(),
-            knowledge: KnowledgeState::default(),
-            lying: Vec::new(),
-            feet: ready.player.pos,
-            ticks: ready.ticks,
-            ticks_per_day: ready.calendar.ticks_per_day(),
-            acted: Vec::new(),
-            learned: Vec::new(),
-            working: false,
-        };
-        // The ground about the player streamed in.
-        let feet = w.feet;
-        w.until(60.0, |w| {
-            w.mirror
-                .block(BlockPos::containing(feet - DVec3::new(0.0, 0.5, 0.0)))
-                .is_some()
-        });
-        w
-    }
-
-    /// Takes in what the server says.
-    pub fn pump(&mut self) {
-        while let Some(m) = self.server.poll() {
-            match m {
-                ToClient::Cube(p, c) => self.mirror.insert_cube(p, c, &self.reg),
-                ToClient::Unload(p) => {
-                    self.mirror.remove_cube(p);
-                }
-                ToClient::Carried(c) => self.carry = c,
-                ToClient::Items(v) => self.lying = v,
-                ToClient::Knowledge(k) => self.knowledge = *k,
-                ToClient::Clock(t) => self.ticks = t,
-                ToClient::Placed(m) => self.feet = m.pos,
-                ToClient::Work(w) => self.working = w.is_some(),
-                ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
-                ToClient::Learned {
-                    name,
-                    discovered: true,
-                    ..
-                } => self.learned.push(name),
-                _ => {}
-            }
-        }
-    }
-
-    /// Pumps until `pred` holds (or `secs` pass); whether it did.
-    pub fn until(&mut self, secs: f64, mut pred: impl FnMut(&Self) -> bool) -> bool {
-        let t0 = Instant::now();
-        loop {
-            self.pump();
-            if pred(self) {
-                return true;
-            }
-            if t0.elapsed() > Duration::from_secs_f64(secs) {
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(2));
-        }
-    }
-
-    /// Does a process and waits for what came of it.
-    pub fn act(&mut self, process: &str, aim: AimAt) -> (bool, String) {
-        let n = self.acted.len();
-        self.server.send(ToServer::Act {
-            process: format!("hearth:{process}"),
-            aim,
-            hand: None,
-        });
-        let id = format!("hearth:{process}");
-        let ok = self.until(120.0, |w| w.acted[n..].iter().any(|(p, _, _)| *p == id));
-        assert!(ok, "{process}: nothing came of it ({:?})", &self.acted[n..]);
-        let (_, done, words) = self.acted[n..]
-            .iter()
-            .rev()
-            .find(|(p, _, _)| *p == id)
-            .cloned()
-            .expect("acted");
-        (done, words)
-    }
-
-    /// Gives `n` of a kind, one at a time (what cannot be carried is put down by the feet).
-    pub fn give(&mut self, id: &str, n: u16) {
-        assert!(self.items.get(id).is_some(), "no {id}");
-        for _ in 0..n {
-            let (had, lay) = (self.has(id), self.lying.len());
-            self.server.send(ToServer::Give(Stack::one(id)));
-            self.until(5.0, |w| w.has(id) > had || w.lying.len() > lay);
-        }
-    }
-
-    /// How many of a kind are carried.
-    pub fn has(&self, id: &str) -> u32 {
-        let mut n = 0;
-        let mut c = self.carry.clone();
-        c.for_each_mut(&mut |s| {
-            if s.id == id {
-                n += s.count as u32;
-            }
-        });
-        n
-    }
-
-    pub fn block(&self, p: BlockPos) -> Option<String> {
-        self.mirror
-            .block(p)
-            .map(|s| self.reg.block_of(s).name.path().to_owned())
-    }
-
-    /// The first solid block under the player's feet.
-    pub fn ground(&self) -> BlockPos {
-        let mut p = BlockPos::containing(self.feet);
-        for _ in 0..6 {
-            let solid = self
-                .mirror
-                .block(p)
-                .is_some_and(|s| !self.reg.collision_shape(s).is_empty());
-            if solid {
-                return p;
-            }
-            p = p.down();
-        }
-        p
-    }
-}
-
-fn temp(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("hearth-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
+use hearth_protocol::{AimAt, ToServer};
 
 #[test]
 fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
@@ -287,8 +95,8 @@ fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
     });
     assert!(burning, "the fire burns");
     // A few minutes for the hearth to heat.
-    let t = w.ticks + (w.ticks_per_day / 288.0) as u64;
-    w.until(30.0, |w| w.ticks >= t);
+    let minutes = (w.ticks_per_day / 288.0) as u64;
+    w.run(minutes);
     // Fed for the hour a novice takes to roast.
     for _ in 0..4 {
         w.give("hearth:stick/oak_wood", 1);
@@ -351,6 +159,42 @@ fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
     } else {
         panic!("could not dig here: {words} ({before:?})");
     }
+
+    // Going far away unloads the camp's terrain, and it is generated again on coming back: the
+    // hearth, the hole and the spoil are still there.
+    let dug = w.block(soil);
+    let spoil_at: Vec<BlockPos> = (-2..=2)
+        .flat_map(|dx: i32| (-2..=2).flat_map(move |dz: i32| (-3..=3).map(move |dy| (dx, dy, dz))))
+        .map(|(dx, dy, dz)| BlockPos::new(soil.x + dx, soil.y + dy, soil.z + dz))
+        .filter(|p| w.block(*p).as_deref() == Some("spoil"))
+        .collect();
+    let home = w.mover.pos;
+    w.go(home.x + 300.0, home.z);
+    w.run(20);
+    assert!(
+        w.until(20.0, |w| w.block(hearth).is_none()),
+        "the camp's terrain was unloaded"
+    );
+    w.go_exact(home);
+    let kept = |w: &World| {
+        w.block(hearth).as_deref() == Some("campfire")
+            && w.block(soil) == dug
+            && spoil_at
+                .iter()
+                .all(|p| w.block(*p).as_deref() == Some("spoil"))
+    };
+    assert!(w.until(30.0, kept), "the camp is as it was left");
+    // Saved and opened again.
     drop(w);
+    let w = World::start(&dir, hearth_save::KnowledgeMode::Open, 11);
+    assert!(
+        {
+            let mut w = w;
+            let ok = w.until(30.0, kept);
+            drop(w);
+            ok
+        },
+        "the camp is as it was left after saving"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

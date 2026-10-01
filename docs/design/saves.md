@@ -10,7 +10,11 @@ Worlds must survive constant content and format changes (v2 §3.5).
 saves/<world>/
   level.json      WorldMeta: format, name, versions, times, settings, clock,
                   block state palette, enabled data packs
-  player.json     the player: format (1), body (hearth_body) and mover (hearth_physics)
+  player.json     the player: format (1), body (hearth_body) and mover (hearth_physics),
+                  carried things and knowledge
+  items.json      the things lying in the world (V2-4)
+  crafts.json     stations and their fires, wildfires, harvest counts, the next kill (V2-5)
+  blocks.json     the blocks the player has changed, by position and state name (V2-5, D73)
   region/         r.<x>.<y>.<z>.hrg, 8×8×8 cubes per file
 ```
 - **Format version** (`meta::FORMAT`, currently 3). Format 1 (v1) is refused with a clear
@@ -34,10 +38,14 @@ removed in V2-0) that migrates to format 3 and keeps the ore as a placeholder th
 save/reload cycle; a format-1 world that is refused.
 
 - **JSON files of a world** (`WorldDir::write_json`, `read_json`): written atomically with a
-  backup of the previous one; the server saves `level.json` and `player.json` every five
-  minutes and when it stops (V2-3, `world-loop.md`).
+  backup of the previous one; the server saves `level.json`, `player.json` and the rest every
+  five minutes and when it stops (V2-3, `world-loop.md`).
+- **The player's changes to the terrain** (`hearth::edits`, D73): terrain is generated afresh
+  whenever a cube loads, and the blocks the player changed are laid back over it (before the
+  finite water, the season's cover and the light). They are saved as positions and block
+  states by name; states the content no longer has are kept as saved and not shown.
 
 ## Future
-Entity, ecology-cell and structure files as those systems arrive, each versioned; changed
-cubes into the region files once players change blocks; region compaction; world backups
-before migrations.
+Entity, ecology-cell and structure files as those systems arrive, each versioned; the
+player's changes into the region files as a per-cube overlay once building makes them many
+(V2-8); region compaction; world backups before migrations.

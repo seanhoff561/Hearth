@@ -706,3 +706,14 @@ setting single trees burning (wildfire, V2-6); nettle, hazel and bramble blocks 
 temperate woods (flora, V2-6). Seven Era 0–2 nodes stay planned until their systems arrive
 (shelters and painting with building, fish weirs, rafts, wolves, fletching).
 
+
+## D73 — The player's changes to the terrain are an overlay, saved by name
+Terrain is generated afresh whenever a cube loads, so the blocks the player changes (stations,
+holes dug, spoil heaps, fires) are kept apart, by cube, and laid back over each cube as it
+loads, before the finite water, the seasonal cover and the light. They are saved with the
+world as a list of positions and block states by name (`blocks.json`), so they outlive changes
+to the registry's numbering, and states of blocks the content no longer has are kept as they
+were and not shown. Storing whole edited cubes in the region files would bake the season's
+snow and river levels into them; the overlay keeps generation, cover and change apart. When
+building (V2-8) makes edits many, the list moves into the region files as a per-cube overlay,
+and the LOD takes them in with V2-6.

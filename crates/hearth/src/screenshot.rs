@@ -73,6 +73,9 @@ pub struct ShotSpec {
     pub globe: Option<f32>,
     /// A person standing on the ground this far (m) in front of the camera, facing it.
     pub person: Option<f64>,
+    /// Blocks set on the ground in front of the camera: (block state, metres ahead, metres to
+    /// the right, blocks up).
+    pub place: Vec<(String, f64, f64, i32)>,
     /// See through the eyes of a person standing on the ground below the camera (their body
     /// drawn as in first person).
     pub body: bool,
@@ -111,6 +114,7 @@ impl Default for ShotSpec {
             lod_timeout: 180.0,
             globe: None,
             person: None,
+            place: Vec::new(),
             body: false,
             senses: None,
         }
@@ -172,6 +176,16 @@ impl ShotSpec {
                 "lod_timeout" => spec.lod_timeout = v.parse()?,
                 "globe" => spec.globe = Some(v.parse()?),
                 "person" => spec.person = Some(v.parse()?),
+                // `place=campfire[fire=high]@3` or `@3:1` or `@3:1:1` (ahead:right:up),
+                // repeatable.
+                "place" => {
+                    let (state, at) = v.split_once('@').unwrap_or((v, "3"));
+                    let mut n = at.split(':');
+                    let ahead = n.next().unwrap_or("3").parse()?;
+                    let right = n.next().unwrap_or("0").parse()?;
+                    let up = n.next().unwrap_or("0").parse()?;
+                    spec.place.push((state.to_owned(), ahead, right, up));
+                }
                 "body" => spec.body = v.parse()?,
                 "senses" => spec.senses = Some(v.to_owned()),
                 other => anyhow::bail!("unknown screenshot key {other:?}"),
@@ -333,6 +347,28 @@ pub fn render_shot(
         spec.hour
     );
     let positions = lw.load_area(camera.pos, spec.distance, 2, spec.snow.then_some(year_frac));
+    // Things set on the ground in front of the camera, lit as they would be.
+    for (state, ahead, right, up) in &spec.place {
+        let f = camera.forward().as_dvec3();
+        let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+        let side = DVec3::new(-flat.z, 0.0, flat.x);
+        let (px, pz) = (
+            camera.pos.x + flat.x * ahead + side.x * right,
+            camera.pos.z + flat.z * ahead + side.z * right,
+        );
+        let s = lw
+            .reg
+            .parse_state(state)
+            .map_err(|e| anyhow::anyhow!("place={state}: {e}"))?;
+        let pos = hearth_math::BlockPos::containing(DVec3::new(
+            px,
+            lw.surface_y(px, pz) + 0.5 + *up as f64,
+            pz,
+        ));
+        let reg = lw.reg.clone();
+        lw.map.set_block(pos, s, &reg);
+        lw.light.block_changed(&mut lw.map, &reg, pos);
+    }
     let models = BlockModels::build(&lw.reg, atlas);
     let meshes = lw.mesh(&models, &positions, MeshOptions::default());
     let mut scene = SceneRenderer::new(ctx, atlas, OFFSCREEN_FORMAT, planet, 4, 4);
@@ -348,10 +384,15 @@ pub fn render_shot(
         crate::water_env::water_heights(&lw.map, &lw.reg, bx, bz),
     );
     let sampler = EnvSampler::new(lw.grid(), calendar);
+    // Firelight where the camera is: the eye adapts to it as to daylight.
+    let glow = lw
+        .map
+        .block_light(hearth_math::BlockPos::containing(camera.pos)) as f32
+        / 15.0;
     let (mut env, weather) = sampler.sample(
         &moment,
         camera.pos,
-        0.0,
+        glow,
         EnvOverrides {
             cloud_cover: spec.clouds,
             precipitation: spec.precipitation,

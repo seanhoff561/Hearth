@@ -26,6 +26,8 @@ pub struct LocalWorld {
     pub cover: crate::season_cover::SeasonCover,
     /// The game data the world was built from.
     pub content: Arc<hearth_content::Content>,
+    /// The blocks the player has changed, laid over the terrain as it loads.
+    pub edits: crate::edits::Edits,
 }
 
 impl LocalWorld {
@@ -99,6 +101,7 @@ impl LocalWorld {
             reg,
             generator,
             light: LightEngine::new(),
+            edits: crate::edits::Edits::default(),
         })
     }
 

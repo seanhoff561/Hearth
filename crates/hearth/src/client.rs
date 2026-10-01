@@ -1712,6 +1712,12 @@ impl Client {
         let ticks = self.now_ticks();
         let view = self.view_camera();
         let senses = self.senses();
+        // Firelight where the eye is: the eye adapts to it as to daylight.
+        let glow = self.world.as_ref().map_or(0.0, |w| {
+            w.mirror
+                .block_light(hearth_math::BlockPos::containing(view.pos)) as f32
+                / 15.0
+        });
         self.figure_boxes.clear();
         self.thing_boxes(view.pos);
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
@@ -1741,7 +1747,7 @@ impl Client {
         };
         env.calendar = self.calendar;
         let moment = self.calendar.at(ticks);
-        let (e, weather) = env.sample(&moment, view.pos, 0.0, EnvOverrides::default());
+        let (e, weather) = env.sample(&moment, view.pos, glow, EnvOverrides::default());
         // Rain is heard; snow falls silently.
         let rain = match weather.precip {
             hearth_env::weather::Precip::Rain => weather.precip_mm_h,

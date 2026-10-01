@@ -131,6 +131,8 @@ pub struct Workshop {
     last_update: u64,
     /// The player's knowledge changed since it was last sent.
     pub knowledge_changed: bool,
+    /// When salt water was last tasted and spat out (drinking again at once swallows it).
+    tasted_salt: Option<u64>,
 }
 
 /// An action's outcome in words, as the client is told it.
@@ -151,6 +153,9 @@ fn lack_words(l: &Lack) -> String {
         Lack::Condition(c) => format!("It needs {c}."),
     }
 }
+
+/// How soon after tasting salt water drinking again swallows it (game ticks: some seconds).
+const TASTE_TICKS: u64 = 200;
 
 fn center(p: BlockPos) -> DVec3 {
     DVec3::new(p.x as f64 + 0.5, p.y as f64 + 0.5, p.z as f64 + 0.5)
@@ -184,6 +189,7 @@ impl Workshop {
             heard_at: FxHashMap::default(),
             last_update: ticks,
             knowledge_changed: true,
+            tasted_salt: None,
         }
     }
 
@@ -376,6 +382,7 @@ impl Workshop {
             return;
         };
         if !h.player.can_act(h.cfg) || h.player.asleep {
+            h.out.push(acted(process, false, "You cannot now."));
             return;
         }
         if !self.may_attempt(h, r) {
@@ -396,6 +403,7 @@ impl Workshop {
         if let AimAt::Block { pos, .. } = aim
             && (center(pos) - (h.player.mover.pos + DVec3::new(0.0, 1.6, 0.0))).length() > 4.0
         {
+            h.out.push(acted(process, false, "Out of reach."));
             return;
         }
         let p = match self.plan_now(h, r, aim) {
@@ -928,6 +936,8 @@ impl Workshop {
     fn set_block(&mut self, h: &mut Here, pos: BlockPos, state: BlockStateId) {
         let reg = h.lw.reg.clone();
         h.lw.map.set_block(pos, state, &reg);
+        // Kept, so the change outlasts the cube being unloaded and generated again.
+        h.lw.edits.set(pos, state);
         h.changed.push(pos);
         if state.is_air() {
             self.stations.retain(|s| s.pos != pos);
@@ -1060,17 +1070,21 @@ impl Workshop {
         }
     }
 
-    /// Radiant heat from fires near a point (W/m²).
+    /// Radiant heat from fires near a point, as a body there absorbs it averaged over its skin
+    /// (W/m²): about half the body faces the fire and skin takes nine tenths of what reaches
+    /// it.
     pub fn radiant_w_m2(&self, at: DVec3) -> f32 {
-        self.stations
+        let facing: f32 = self
+            .stations
             .iter()
             .chain(&self.wildfires)
             .filter_map(|s| {
                 let f = s.fire.as_ref()?;
                 let d = (center(s.pos) - at).length() as f32;
-                (d < 12.0).then(|| f.radiant_w_m2(d))
+                (d < 16.0).then(|| f.radiant_w_m2(d))
             })
-            .sum()
+            .sum();
+        (0.45 * facing).min(600.0)
     }
 
     /// The bedding under someone lying at `feet` (insulation from the ground, clo).
@@ -1183,8 +1197,12 @@ impl Workshop {
                         }
                     ),
                     Some(Aimed::Water)
-                ) || (center(*pos) - h.player.mover.pos).length() > 3.5
-                {
+                ) {
+                    return;
+                }
+                if (center(*pos) - h.player.mover.pos).length() > 3.5 {
+                    h.out
+                        .push(acted("drink", false, "The water is out of reach."));
                     return;
                 }
                 let w = h.env.weather_at(&h.moment, center(*pos));
@@ -1195,6 +1213,21 @@ impl Workshop {
                     wind_m_s: w.wind_speed_m_s as f32,
                 }
                 .quality_at(*pos);
+                // Salt water is tasted first and spat out; only drinking again at once (within
+                // some seconds) swallows it.
+                let salty = q.salinity_g_l > 5.0;
+                let just_tasted = self
+                    .tasted_salt
+                    .is_some_and(|t| h.ticks.saturating_sub(t) < TASTE_TICKS);
+                if salty && !just_tasted {
+                    self.tasted_salt = Some(h.ticks);
+                    h.out.push(acted(
+                        "drink",
+                        false,
+                        "The water is salty. You spit it out.",
+                    ));
+                    return;
+                }
                 let l =
                     h.player
                         .body
@@ -1513,58 +1546,108 @@ impl Workshop {
                 (feet.x + a.cos() * d).floor() as i32,
                 (feet.z + a.sin() * d).floor() as i32,
             );
-            let Some(top) = h.lw.map.sky_top(x, z) else {
-                continue;
-            };
-            let at = BlockPos::new(x, top, z);
-            let Some(state) = h.lw.map.block(at) else {
-                continue;
-            };
-            let wood =
-                h.lw.reg
-                    .block_of(state)
-                    .def
-                    .material
-                    .as_deref()
-                    .is_some_and(|m| {
-                        h.lw.content.materials.get(m).is_some_and(|m| {
-                            m.category == hearth_content::schema::material::MaterialCategory::Wood
-                        })
-                    });
-            let above = at.up();
-            if !wood || !Self::open(h, above) {
-                continue;
-            }
-            let Ok(flames) = h.lw.reg.parse_state("hearth:flames") else {
+            if self.strike(h, x, z) {
+                h.out.push(acted(
+                    "",
+                    true,
+                    "Lightning strikes close by. Smoke rises from a tree.",
+                ));
                 return;
-            };
-            let mut fire = Fire::laid(
-                900.0,
-                vec![
-                    Fuel {
-                        kg: 30.0,
-                        mj_kg: 18.0,
-                        thick_m: 0.3,
-                        wet: 0.0,
-                    };
-                    3
-                ],
-            );
-            fire.ignite();
-            fire.involved = 1.0;
-            self.set_block(h, above, flames);
-            self.wildfires.push(Station {
-                pos: above,
-                id: WILDFIRE.to_owned(),
-                fire: Some(fire),
-            });
-            h.out.push(acted(
-                "",
-                true,
-                "Lightning strikes close by. Smoke rises from a tree.",
-            ));
-            return;
+            }
         }
+    }
+
+    /// Lightning strikes the column at `(x, z)`: a tree there catches and burns for hours.
+    /// Whether anything caught.
+    pub fn strike(&mut self, h: &mut Here, x: i32, z: i32) -> bool {
+        let Some(top) = h.lw.map.sky_top(x, z) else {
+            return false;
+        };
+        let at = BlockPos::new(x, top, z);
+        let Some(state) = h.lw.map.block(at) else {
+            return false;
+        };
+        let content = h.lw.content.clone();
+        let wood =
+            h.lw.reg
+                .block_of(state)
+                .def
+                .material
+                .as_deref()
+                .and_then(|m| content.materials.get(m))
+                .is_some_and(|m| {
+                    m.category == hearth_content::schema::material::MaterialCategory::Wood
+                });
+        if !wood {
+            return false;
+        }
+        // The struck tree's burning limbs fall: the fire burns at its foot, beside the trunk.
+        let is_wood = |h: &Here, p: BlockPos| {
+            h.lw.map
+                .block(p)
+                .and_then(|s| h.lw.reg.block_of(s).def.material.clone())
+                .and_then(|m| content.materials.get(&m).map(|m| m.category))
+                .is_some_and(|c| c == hearth_content::schema::material::MaterialCategory::Wood)
+        };
+        let mut base = at;
+        while base.y > at.y - 40 && (is_wood(h, base.down()) || Self::open(h, base.down())) {
+            base = base.down();
+        }
+        let mut spot = None;
+        'find: for r in 1..=3 {
+            for (dx, dz) in [
+                (r, 0),
+                (-r, 0),
+                (0, r),
+                (0, -r),
+                (r, r),
+                (-r, -r),
+                (r, -r),
+                (-r, r),
+            ] {
+                for dy in -2..=2 {
+                    let p = BlockPos::new(base.x + dx, base.y + dy, base.z + dz);
+                    let ground =
+                        h.lw.map
+                            .block(p.down())
+                            .is_some_and(|s| !h.lw.reg.collision_shape(s).is_empty());
+                    if ground && Self::open(h, p) && !is_wood(h, p) {
+                        spot = Some(p);
+                        break 'find;
+                    }
+                }
+            }
+        }
+        let Some(above) = spot else {
+            return false;
+        };
+        let Ok(flames) = h.lw.reg.parse_state("hearth:flames") else {
+            return false;
+        };
+        let mut fire = Fire::laid(
+            900.0,
+            vec![
+                Fuel {
+                    kg: 30.0,
+                    mj_kg: 18.0,
+                    thick_m: 0.3,
+                    wet: 0.0,
+                };
+                3
+            ],
+        );
+        fire.ignite();
+        // Struck, the tree is already burning hard.
+        fire.involved = 1.0;
+        fire.power_kw = 40.0;
+        fire.temp_c = 800.0;
+        self.set_block(h, above, flames);
+        self.wildfires.push(Station {
+            pos: above,
+            id: WILDFIRE.to_owned(),
+            fire: Some(fire),
+        });
+        true
     }
 
     /// A predator's kill turns up nearby now and then (until animals live in the world).
@@ -1575,12 +1658,14 @@ impl Workshop {
         let days = self.rng.range_f64(1.0, 2.5);
         self.next_kill_tick = h.ticks + (days * h.ticks_per_day) as u64;
         let feet = h.player.mover.pos;
+        // Fresh kills lying near hold back another; rotting ones are the scavengers' now.
         let near = h
             .world_items
             .items
             .iter()
             .filter(|w| {
                 (DVec3::from_array(w.pos) - feet).length() < 250.0
+                    && w.stack.decay < 0.5
                     && h.items
                         .get(&w.stack.id)
                         .is_some_and(|k| k.has_tag("carcass"))

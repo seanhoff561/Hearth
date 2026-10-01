@@ -83,8 +83,11 @@ pub enum ToServer {
     SkipHours(f64),
     /// Debug: extra ticks per second of play (0 for none).
     TimeWarp(f64),
-    /// Tests and bots: run the world's ticks as fast as they go (true) or twenty a second.
-    Fast(bool),
+    /// Tests and bots: from now on the world ticks only when asked; run this many game ticks
+    /// as fast as they go (warped ticks count as they pass; 0 stops the clock until asked).
+    Run(u64),
+    /// Tests and bots: lightning strikes this column (a tree there catches fire).
+    Strike { x: i32, z: i32 },
     /// Stop the clock and the body (a single-player menu is open), or go on.
     Pause(bool),
     /// How much terrain to keep around the player (cubes).
