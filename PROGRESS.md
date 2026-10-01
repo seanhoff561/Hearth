@@ -300,7 +300,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
     crouch, belly crawl, breaststroke, treading water, ledge and ladder climbing, falling,
     lying, a shivering hug. Drawn as instanced boxes lit like the terrain
     (`hearth_render::figure`): the first-person body seen looking down (eyes in the posed head),
-    third person behind or in front (F5), a character screen with a turning preview under four
+    third person behind or in front (mouse button 4), a character screen with a turning preview under four
     lights, and the person chosen for a new world. A female body starts with a chest band (D70,
     a garment in the data). Tests: proportions, poses in their boxes, gaits that stride and
     bob as people do, skin tones in order, profiles, hair, first person;

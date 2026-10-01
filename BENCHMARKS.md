@@ -500,3 +500,18 @@ water's shading at Medium (D62–D63) costs the forest and summit their 8–9 %;
 where the benchmark's map building moved off its frame thread (the first gate run's 1 % lows
 fell 26–29 % from it) and the water's scene copy was trimmed. The candidate's GPU passes split
 the old "sky, translucent, rain" into the sky, the water's scene copy and the translucent pass.
+
+## End of V2-3 — the performance gate: ff4431d (end of V2-2) against c1bb1e3 (end of V2-3), alternating, three rounds each, NVIDIA GeForce RTX 4060 Laptop GPU (Vulkan), 1920x1080, preset Fancy
+
+| Scene | Avg FPS | 1% low FPS (1st percentile) | GPU ms | Tonemap ms | Triangles |
+|---|---:|---:|---:|---:|---:|
+| lowland_forest | 747 → 755 (+1.0 %) | 686 → 694 (+1.2 %) | 1.30 → 1.30 | 0.067 → 0.075 | 1.27 → 1.27 M |
+| peak_lod512 | 779 → 776 (-0.4 %) | 562 → 559 (-0.6 %) | 1.25 → 1.26 | 0.066 → 0.076 | 1.93 → 1.93 M |
+| cave_torches | 2152 → 2172 (+1.0 %) | 1321 → 1419 (+7.4 %) | 0.44 → 0.43 | 0.066 → 0.072 | 1.22 → 1.22 M |
+
+Medians of three runs each; 1 % lows as the gate judges them. V2-3 added no geometry to the
+benchmark's scenes (no figures are drawn there; the figure pass is skipped when empty). The
+tone-mapping pass gained the body's senses (D69's sounds cost nothing here; the senses' sight
+costs 0.006–0.010 ms of the tone map, within the frame-rate noise). Gate passed; the baseline
+moves to the end of V2-3.
+

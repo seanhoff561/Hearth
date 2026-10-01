@@ -65,7 +65,7 @@ character screen.
   and shows the chest, belly, legs and feet. The head and neck are left out (the eyes are in
   them). With view bobbing off, the eyes keep a steady height for the person's stature. The
   body turns to where the eyes look when moving, or when the head would turn more than 55°.
-- **Third person** (the camera view key, F5): behind the shoulders, then facing the player,
+- **Third person** (the camera view key, mouse button 4 by default): behind the shoulders, then facing the player,
   3.5 m back from the eyes or short of anything solid.
 - **Drawing**: each box is an instance of the unit cube placed by a 3×4 matrix, about 90 a
   person.
