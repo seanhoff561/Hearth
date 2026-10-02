@@ -11,7 +11,7 @@ use crate::id::IdRef;
 use crate::schema::knowledge::Knowledge;
 use crate::schema::material::Material;
 use crate::schema::process::{BlockMatch, Effect, Match, Output, Process, Quality, Target};
-use crate::schema::station::{ConstructionPiece, PieceShape};
+use crate::schema::station::{ConstructionPiece, Joint, PieceShape};
 use crate::schema::{Duration, Entry, Status};
 
 /// The block of a piece in a material (`hearth:post/hazel_wood`).
@@ -112,6 +112,192 @@ pub fn rests(shape: PieceShape, below: Bearing, beside: [Bearing; 4]) -> bool {
     }
 }
 
+/// The margin kept against what a member can bear: natural materials vary, and a beam of
+/// green hazel is not a tested one.
+pub const SAFETY: f32 = 2.0;
+
+/// Gravity (m/s²).
+const G: f32 = 9.81;
+
+/// A piece as a member of a structure (V2-8 (b), docs/design/building.md "Stability"): its
+/// weight and what it can bear — bent across a span, crushed or buckled as a column — after
+/// the safety margin.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Member {
+    pub shape: PieceShape,
+    /// Its weight (N), with its frame's.
+    pub weight: f32,
+    /// The bending moment it breaks at (N·m): 0 for a heap of stones or brush, which hold
+    /// together only by resting on what is under them.
+    pub moment: f32,
+    /// The share of `moment` a joint with the next piece of a run carries (stones laid end to
+    /// end none, poles lashed together some).
+    pub continuity: f32,
+    /// The load it is crushed by as a column (N).
+    pub crush: f32,
+    /// Its bending stiffness E·I (N·m²), for buckling as a column.
+    pub stiffness: f32,
+    /// How far it may reach from what holds it before it sags past use (m): fifty times its
+    /// depth (and a span twice that).
+    pub reach: f32,
+}
+
+/// What a joint between two pieces of a run carries of what the pieces themselves do.
+fn joint_share(j: Joint) -> f32 {
+    match j {
+        Joint::Stacked => 0.0,
+        Joint::Mortared => 0.1,
+        Joint::Woven => 0.2,
+        Joint::Lashed => 0.4,
+        Joint::Pegged | Joint::Nailed => 0.6,
+        Joint::MortiseTenon => 0.8,
+    }
+}
+
+/// A material's strength for building (Pa, after the safety margin): bending, crushing, and
+/// its stiffness (Pa). Measured values where the data has them; otherwise what its kind
+/// usually is (a rock's bending strength a twelfth of its crushing).
+fn strengths(m: &Material) -> (f32, f32, f32) {
+    use crate::schema::material::MaterialCategory as Cat;
+    let s = &m.strength;
+    let (bend, crush, e_gpa) = match m.category {
+        Cat::Wood => (60.0, 35.0, 9.0),
+        Cat::Bark => (15.0, 5.0, 1.5),
+        Cat::Rock | Cat::Mineral | Cat::Ore => {
+            (s.compressive_mpa.unwrap_or(100.0) / 12.0, 100.0, 40.0)
+        }
+        Cat::Clay | Cat::Soil | Cat::Sediment => (0.2, 2.0, 0.2),
+        Cat::AnimalTissue | Cat::AnimalFibre => (20.0, 1.0, 0.2),
+        Cat::PlantFibre | Cat::PlantTissue => (30.0, 1.0, 1.0),
+        Cat::Bone => (150.0, 150.0, 17.0),
+        Cat::Ice => (1.0, 5.0, 9.0),
+        Cat::Snow => (0.05, 0.3, 0.05),
+        Cat::Ceramic => (10.0, 50.0, 30.0),
+        _ => (1.0, 5.0, 1.0),
+    };
+    let bend = s
+        .bending_mpa
+        .or(s.tensile_mpa.map(|t| t * 1.5))
+        .unwrap_or(bend);
+    let crush = s.compressive_mpa.unwrap_or(crush);
+    let e = m.elastic_modulus_gpa.unwrap_or(e_gpa);
+    (bend * 1e6 / SAFETY, crush * 1e6 / SAFETY, e * 1e9)
+}
+
+/// A section's area, modulus (for bending) and second moment (for stiffness): a circle of
+/// diameter `b` when round, else `b` wide and `h` deep.
+fn section(round: bool, b: f32, h: f32) -> (f32, f32, f32) {
+    if round {
+        let d = b.min(h);
+        let pi = std::f32::consts::PI;
+        (
+            pi * d * d / 4.0,
+            pi * d.powi(3) / 32.0,
+            pi * d.powi(4) / 64.0,
+        )
+    } else {
+        (b * h, b * h * h / 6.0, b * h.powi(3) / 12.0)
+    }
+}
+
+/// A piece of a material as a member: `frame` the material its frame is reckoned in, and the
+/// form of the frame's members (their size), when it has one.
+pub fn member(p: &ConstructionPiece, m: &Material, frame: Option<(&Material, [f32; 3])>) -> Member {
+    let [x, y, z] = p.size_m;
+    let fill = p.fill.clamp(0.0, 1.0);
+    let (bend, crush, e) = strengths(m);
+    let mut weight = m.density_kg_m3 * x * y * z * fill * G;
+    // A heap of many things merely laid together bears only by resting.
+    let many = p.inputs.iter().map(|i| i.amount).sum::<f32>() > 1.0;
+    let bound = p.joints.iter().any(|j| *j != Joint::Stacked);
+    let holds = if many && !bound { 0.0 } else { 1.0 };
+    // The section across which it bends (as a run) and is pressed (as a column), and its depth.
+    let (area, modulus, inertia, depth) = match p.shape {
+        PieceShape::Post => {
+            let (a, s, i) = section(p.round, x, z);
+            (a, s, i, x.min(z))
+        }
+        PieceShape::Beam => {
+            let (a, s, i) = section(p.round, x, y);
+            (a, s, i, if p.round { x.min(y) } else { y })
+        }
+        // A panel spans along its length with its height for depth; a wall likewise.
+        PieceShape::Panel | PieceShape::Wall => {
+            let (_, s, i) = section(false, z * fill, y);
+            (x * z * fill, s, i, y)
+        }
+        PieceShape::Layer | PieceShape::Roof => {
+            let (a, s, i) = section(false, x * fill, y);
+            (a, s, i, y)
+        }
+        PieceShape::Block => {
+            let (a, s, i) = section(false, x * fill, y);
+            (a, s, i, y)
+        }
+    };
+    let mut moment = bend * modulus * holds;
+    let mut reach = 50.0 * depth;
+    let mut stiffness = e * inertia / SAFETY;
+    // A covering on a frame bends as its frame does.
+    if let (Some(f), Some((fm, fs))) = (&p.frame, frame) {
+        let (fb, _, fe) = strengths(fm);
+        let d = fs[1].min(fs[2]).min(fs[0]);
+        let (a, s, i) = section(true, d, d);
+        let n = f.count as f32;
+        let slope = if p.shape == PieceShape::Roof {
+            z
+        } else {
+            x.max(z)
+        };
+        weight += fm.density_kg_m3 * a * slope * n * G;
+        moment = moment.max(fb * s * n);
+        reach = reach.max(50.0 * d);
+        stiffness = stiffness.max(fe * i * n / SAFETY);
+    }
+    Member {
+        shape: p.shape,
+        weight,
+        moment,
+        continuity: p.joints.iter().map(|j| joint_share(*j)).fold(0.0, f32::max),
+        crush: crush * area,
+        stiffness,
+        reach,
+    }
+}
+
+/// How wide an opening a material roofs over as natural ground, unsupported (m; V2-8 (c)): what
+/// falls (sand, gravel, ash) none, loose soil half a metre, firmer soil and clay a little more
+/// than a tunnel's width, rock by its strength (a weak chalk two or three metres, granite
+/// fifteen and more), unless the material says otherwise. Ground of other kinds (wood, leaves)
+/// is not reckoned and holds.
+pub fn self_span(m: &Material) -> Option<f32> {
+    use crate::schema::material::MaterialCategory as Cat;
+    let has = |t: &str| m.tags.iter().any(|x| x == t);
+    if let Some(s) = m.span_m {
+        return Some(s);
+    }
+    if has("falls") {
+        return Some(0.0);
+    }
+    Some(match m.category {
+        Cat::Rock | Cat::Mineral | Cat::Ore => {
+            let s = 1.0 + m.strength.compressive_mpa.unwrap_or(60.0) / 15.0;
+            if has("soft_stone") {
+                s.min(3.0)
+            } else {
+                s.min(20.0)
+            }
+        }
+        Cat::Clay => 1.5,
+        Cat::Soil if has("loose") || has("organic") || has("plastic") => 0.5,
+        Cat::Soil => 1.2,
+        Cat::Sediment => 0.5,
+        Cat::Ice => 4.0,
+        Cat::Snow => 1.5,
+        _ => return None,
+    })
+}
+
 /// A piece's block, as the world's blocks are made from it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PieceBlock {
@@ -127,17 +313,26 @@ pub struct PieceBlock {
     pub hardness: f32,
     pub flammable: bool,
     pub status: Status,
+    /// What it bears as a member of a structure.
+    pub member: Member,
 }
 
 /// The blocks of every piece in every material it may be made of.
 pub fn piece_blocks(
     pieces: &Table<ConstructionPiece>,
     materials: &Table<Material>,
+    forms: &Table<crate::schema::item::ItemForm>,
 ) -> Vec<PieceBlock> {
     use crate::schema::material::MaterialCategory as Cat;
     let mut out = Vec::new();
     for p in pieces.iter() {
         let t = thickness_px(p);
+        let frame = p.frame.as_ref().and_then(|f| {
+            Some((
+                materials.get(f.material.as_str())?,
+                forms.get(f.form.as_str())?.size_m,
+            ))
+        });
         for m in materials.iter().filter(|m| p.materials.matches(m.id(), m)) {
             let sound = match m.category {
                 Cat::Wood | Cat::Bark => "wood",
@@ -160,6 +355,7 @@ pub fn piece_blocks(
                 hardness: if sound == "stone" { 2.0 } else { 0.8 },
                 flammable,
                 status: p.status,
+                member: member(p, m, frame),
             });
         }
     }

@@ -178,6 +178,10 @@ entry! {
         /// 0–1: resistance to rot, insects and weathering.
         #[serde(default)]
         pub durability: Option<f32>,
+        /// How wide an opening it roofs over, unsupported, as natural ground (m): where its kind's
+        /// rule is wrong (loess stands in cave dwellings where loam falls in).
+        #[serde(default)]
+        pub span_m: Option<f32>,
         /// 0–1 pore fraction (soils, sediments, porous rock).
         #[serde(default)]
         pub porosity: Option<f32>,

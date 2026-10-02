@@ -129,6 +129,9 @@ pub enum Sound {
     Rustle { force: f32 },
     /// The interface: a press.
     Click,
+    /// Something built giving way (V2-8): wood cracks and splinters, stone grinds and
+    /// thuds, brush and earth slump; `force` by its weight, 0.1 to 1.5.
+    Break { surface: Surface, force: f32 },
     /// An animal's call: its kind, its pitch's range (Hz), how long (s), and its own variety
     /// (a species' song keeps its notes).
     Call {
@@ -446,6 +449,54 @@ fn build(sound: Sound, b: &mut Build) -> f32 {
                 0.012 * g,
             );
             1.0
+        }
+        Sound::Break { surface, force } => {
+            let f = force.clamp(0.1, 1.5);
+            match surface {
+                Surface::Wood => {
+                    // The crack, then the splintering, then the thump of the weight let go.
+                    b.noise(High, 2600.0, 0.8, sh(0.0, 0.0005, 0.012), 0.16 * f);
+                    b.tone(900.0, 420.0, 0.02, sh(0.0, 0.0005, 0.02), 0.06 * f);
+                    b.crackle(
+                        Band,
+                        3200.0,
+                        1.2,
+                        600.0,
+                        0.003,
+                        sh(0.01, 0.01, 0.3),
+                        0.07 * f,
+                    );
+                    b.tone(95.0, 50.0, 0.08, sh(0.05, 0.003, 0.14), 0.2 * f);
+                }
+                Surface::Stone | Surface::Gravel | Surface::Ice => {
+                    // Grinding as the stones shift, and the deep knock of their fall.
+                    b.noise(Low, 500.0, 0.8, sh(0.0, 0.03, 0.35), 0.07 * f);
+                    b.crackle(
+                        Band,
+                        1400.0,
+                        1.0,
+                        300.0,
+                        0.006,
+                        sh(0.0, 0.02, 0.4),
+                        0.06 * f,
+                    );
+                    b.tone(60.0, 32.0, 0.12, sh(0.08, 0.004, 0.2), 0.3 * f);
+                }
+                _ => {
+                    b.noise(Low, 700.0, 0.7, sh(0.0, 0.04, 0.3), 0.06 * f);
+                    b.crackle(
+                        Band,
+                        2400.0,
+                        1.0,
+                        350.0,
+                        0.003,
+                        sh(0.0, 0.03, 0.25),
+                        0.04 * f,
+                    );
+                    b.tone(80.0, 45.0, 0.08, sh(0.04, 0.004, 0.12), 0.12 * f);
+                }
+            }
+            1.6
         }
         Sound::Click => {
             b.tone(1900.0, 1700.0, 0.01, sh(0.0, 0.0008, 0.007), 0.1);

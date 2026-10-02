@@ -625,6 +625,8 @@ fn run(
     let opts = MeshOptions::default();
     let mut stream = Stream::default();
     let mut water = WaterSim::new(&lw.reg)?;
+    // What is built, standing or falling (V2-8 (b)).
+    let mut structures = crate::structure::Structures::new(&lw.reg, &lw.content);
     let mut last_moved: Option<Moved> = None;
     let mut warp = 0.0f64;
     let mut sleep_warp = 0.0f64;
@@ -1245,6 +1247,9 @@ fn run(
                 wind_m_s: e.wind_m_s,
             };
             let mut changed: Vec<BlockPos> = std::mem::take(&mut gathered);
+            // What the player changed is what structures and the ground answer to (the water's
+            // own flow opens nothing).
+            structures.changed(&changed);
             if ticks.is_multiple_of(2) {
                 changed.extend_from_slice(water.tick(&mut lw.map, &lw.reg, &world_water));
             }
@@ -1253,6 +1258,67 @@ fn run(
                 let days = weather_every as f64 / calendar.ticks_per_day();
                 water.weather(&mut lw.map, &lw.reg, &world_water, days as f32);
                 changed.extend_from_slice(water.changed());
+            }
+            // What was built stands or falls: what fails breaks, half of it lying where it
+            // fell; ground over too wide an opening falls in, loose, to the floor under it.
+            // What either held is reckoned on the next tick.
+            let fell = structures.tick(&lw.map, &lw.reg);
+            if !fell.pieces.is_empty() || !fell.ground.is_empty() {
+                let mut told = Vec::new();
+                let mut moved = Vec::new();
+                let reg = lw.reg.clone();
+                for p in &fell.pieces {
+                    let Some(s) = lw.map.block(*p) else {
+                        continue;
+                    };
+                    let b = reg.block_of(s);
+                    let (name, material) = (b.name.to_string(), b.def.material.clone());
+                    lw.map.set_block(*p, BlockStateId::AIR, &reg);
+                    lw.edits.set(*p, BlockStateId::AIR);
+                    moved.push(*p);
+                    told.push((*p, s));
+                    for (id, n) in crate::structure::debris(&lw.content, &name, material.as_deref())
+                    {
+                        if items.get(&id).is_some() {
+                            let at = rest_on(&lw, p.center());
+                            world_items.add(hearth_items::Stack::of(&id, n), at.to_array(), 0.0);
+                            items_changed = true;
+                        }
+                    }
+                }
+                for p in &fell.ground {
+                    let Some(s) = lw.map.block(*p) else {
+                        continue;
+                    };
+                    lw.map.set_block(*p, BlockStateId::AIR, &reg);
+                    lw.edits.set(*p, BlockStateId::AIR);
+                    moved.push(*p);
+                    told.push((*p, s));
+                    // It lands on the floor of the opening, broken and loose.
+                    let mut floor = p.down();
+                    for _ in 0..64 {
+                        let open = lw.map.block(floor).is_some_and(|b| {
+                            b.is_air() || {
+                                let d = &reg.block_of(b).def;
+                                d.replaceable || d.fluid.is_some()
+                            }
+                        });
+                        if !open {
+                            break;
+                        }
+                        floor = floor.down();
+                    }
+                    let at = floor.up();
+                    if at != *p && lw.map.block(at).is_some() {
+                        let loose = crate::structure::fallen(&reg, s);
+                        lw.map.set_block(at, loose, &reg);
+                        lw.edits.set(at, loose);
+                        moved.push(at);
+                    }
+                }
+                changed.extend_from_slice(&moved);
+                structures.changed(&moved);
+                let _ = tx.send(ToClient::Collapse(told));
             }
             if !changed.is_empty()
                 && stream

@@ -132,7 +132,11 @@ fn generated_blocks(packs: &[PathBuf]) -> Vec<(ResourceLocation, Map<String, Val
     }
     // Construction pieces in their materials (V2-8): shaped as they sit, turned as they face;
     // roofs, floors' layers and walls cover the sky, posts, beams and panels do not.
-    for p in hearth_content::building::piece_blocks(&content.construction, &content.materials) {
+    for p in hearth_content::building::piece_blocks(
+        &content.construction,
+        &content.materials,
+        &content.forms,
+    ) {
         if p.status != hearth_content::schema::Status::Implemented {
             continue;
         }

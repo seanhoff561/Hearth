@@ -229,7 +229,11 @@ pub fn natural_textures(content: &Content) -> Vec<TexEntry> {
 pub fn piece_textures(content: &Content) -> Vec<TexEntry> {
     let mut done = std::collections::BTreeSet::new();
     let mut out = Vec::new();
-    for p in hearth_content::building::piece_blocks(&content.construction, &content.materials) {
+    for p in hearth_content::building::piece_blocks(
+        &content.construction,
+        &content.materials,
+        &content.forms,
+    ) {
         if !done.insert(p.material.clone()) {
             continue;
         }

@@ -182,6 +182,8 @@ pub struct Client {
     figure_boxes: Vec<FigureInstance>,
     /// Trees falling: drawn as boxes turning about their stump until they come to rest.
     falling: Vec<Falling>,
+    /// Built pieces fallen: tumbling down to the ground in a cloud of dust (V2-8).
+    tumbling: Vec<Tumble>,
     /// The animals near the player as the server last told of them, and as drawn (eased
     /// toward that between the server's word); the species they are of.
     animals: rustc_hash::FxHashMap<u64, ShownAnimal>,
@@ -254,6 +256,24 @@ struct Falling {
     axis: DVec3,
     started: std::time::Instant,
     seconds: f32,
+}
+
+/// A piece that gave way, falling: each of its boxes dropping and turning until it strikes the
+/// ground (when it sounds), with dust thrown up where it fell.
+struct Tumble {
+    /// Middle, size, colour, sideways speed (m/s) and turning (radians/s) of each box.
+    parts: Vec<(DVec3, glam::Vec3, [u8; 3], DVec3, f32)>,
+    /// Where the ground is under it (the height its boxes come to rest at).
+    ground_y: f64,
+    surface: hearth_audio::Surface,
+    weight: f32,
+    landed: bool,
+    started: std::time::Instant,
+}
+
+impl Tumble {
+    /// How long a piece's fall and its dust are seen (s).
+    const SECONDS: f32 = 2.5;
 }
 
 /// 0 below `lo`, 1 above `hi`, smoothly between.
@@ -338,6 +358,7 @@ impl Client {
             view_bobbing: options.video.view_bobbing,
             figure_boxes: Vec::new(),
             falling: Vec::new(),
+            tumbling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
             signs: (0.0, 1200.0, Vec::new()),
             insects: (0.0, 15.0),
@@ -1150,6 +1171,71 @@ impl Client {
             );
             self.figure_boxes
                 .push(hearth_character::solid(place, k.color, light(p)));
+        }
+        // Fallen pieces: their boxes dropping under gravity and turning until they strike the
+        // ground, and dust thrown up and settling about where they fell.
+        self.tumbling
+            .retain(|t| t.started.elapsed().as_secs_f32() < Tumble::SECONDS);
+        let (ear, facing) = (self.camera.pos, -self.camera.yaw.to_radians());
+        for t in self.tumbling.iter_mut().filter(|t| !t.landed) {
+            let Some((low, first)) = t
+                .parts
+                .iter()
+                .map(|p| (p.0.y - p.1.y as f64 / 2.0, p.0))
+                .reduce(|a, b| if b.0 < a.0 { b } else { a })
+            else {
+                continue;
+            };
+            let fall_s = (2.0 * (low - t.ground_y).max(0.0) / 9.81).sqrt() as f32;
+            if t.started.elapsed().as_secs_f32() >= fall_s {
+                t.landed = true;
+                let at = DVec3::new(first.x, t.ground_y, first.z);
+                self.hearing
+                    .crash(at, t.surface, t.weight, ear, facing, true);
+            }
+        }
+        for t in &self.tumbling {
+            let s = t.started.elapsed().as_secs_f32();
+            let lit = light(t.parts.first().map_or(view, |p| p.0));
+            for (c, size, color, v, spin) in &t.parts {
+                let rest = t.ground_y + size.y as f64 / 2.0;
+                let drop = c.y - rest;
+                let fall_s = (2.0 * drop.max(0.0) / 9.81).sqrt() as f32;
+                let tt = s.min(fall_s);
+                let p = DVec3::new(
+                    c.x + v.x * tt as f64,
+                    (c.y - 0.5 * 9.81 * (tt * tt) as f64).max(rest),
+                    c.z + v.z * tt as f64,
+                );
+                let q = Quat::from_axis_angle(
+                    glam::Vec3::new(v.z as f32, 0.0, -v.x as f32).normalize_or(glam::Vec3::X),
+                    spin * tt,
+                );
+                let place =
+                    Affine3A::from_scale_rotation_translation(*size, q, (p - view).as_vec3());
+                self.figure_boxes
+                    .push(hearth_character::solid(place, *color, lit));
+            }
+            // Dust: puffs spreading and rising a little, shrinking as they settle.
+            let at = t
+                .parts
+                .first()
+                .map_or(view, |p| DVec3::new(p.0.x, t.ground_y, p.0.z));
+            let fade = 1.0 - (s / Tumble::SECONDS).min(1.0);
+            let dust = [172, 156, 128];
+            for k in 0..8 {
+                let a = k as f64 * std::f64::consts::TAU / 8.0 + at.x * 1.7;
+                let r = 0.3 + 1.4 * (1.0 - (-(s as f64) * 2.0).exp());
+                let p = at + DVec3::new(a.cos() * r, 0.2 + 0.25 * s as f64, a.sin() * r);
+                let size = glam::Vec3::splat(0.28 * fade);
+                let place = Affine3A::from_scale_rotation_translation(
+                    size,
+                    Quat::from_rotation_y(a as f32),
+                    (p - view).as_vec3(),
+                );
+                self.figure_boxes
+                    .push(hearth_character::solid(place, dust, lit));
+            }
         }
         // Falling trees: every block turning about the stump, faster as it goes (it rests when
         // the server lays it down).
@@ -2222,6 +2308,73 @@ impl Client {
                             started: std::time::Instant::now(),
                             seconds,
                         });
+                    }
+                }
+                ToClient::Collapse(blocks) => {
+                    if let Some(w) = &self.world {
+                        let reg = &w.reg;
+                        let facing = -self.camera.yaw.to_radians();
+                        for (p, s) in blocks {
+                            let def = &reg.block_of(s).def;
+                            let color = hearth_lod_color(&def.map_color);
+                            let surface = hearth_audio::Surface::of_group(&def.sound);
+                            // The ground it falls to.
+                            let mut g = p.down();
+                            while g.y > p.y - 48
+                                && w.mirror
+                                    .block(g)
+                                    .is_some_and(|b| reg.collision_shape(b).is_empty() || b == s)
+                            {
+                                g = g.down();
+                            }
+                            let origin = DVec3::new(p.x as f64, p.y as f64, p.z as f64);
+                            let seed = (p.x as u32).wrapping_mul(73_856_093)
+                                ^ (p.y as u32).wrapping_mul(19_349_663)
+                                ^ (p.z as u32).wrapping_mul(83_492_791);
+                            let mut volume = 0.0;
+                            let parts = reg
+                                .outline_shape(s)
+                                .boxes
+                                .iter()
+                                .enumerate()
+                                .map(|(k, b)| {
+                                    let h = seed.wrapping_add(k as u32 * 2_654_435_761);
+                                    let r = |sh: u32| ((h >> sh) & 255) as f64 / 255.0 - 0.5;
+                                    let size = (b.max - b.min).as_vec3();
+                                    volume += size.x * size.y * size.z;
+                                    (
+                                        origin + (b.min + b.max) * 0.5,
+                                        size,
+                                        color,
+                                        DVec3::new(r(0) * 1.2, 0.0, r(8) * 1.2),
+                                        r(16) as f32 * 6.0,
+                                    )
+                                })
+                                .collect();
+                            let density = match surface {
+                                hearth_audio::Surface::Stone | hearth_audio::Surface::Gravel => {
+                                    2600.0
+                                }
+                                _ => 600.0,
+                            };
+                            let weight = volume * density * 9.81;
+                            self.hearing.crash(
+                                p.center(),
+                                surface,
+                                weight,
+                                self.camera.pos,
+                                facing,
+                                false,
+                            );
+                            self.tumbling.push(Tumble {
+                                parts,
+                                ground_y: g.y as f64 + 1.0,
+                                surface,
+                                weight,
+                                landed: false,
+                                started: std::time::Instant::now(),
+                            });
+                        }
                     }
                 }
                 ToClient::Acted(a) => {

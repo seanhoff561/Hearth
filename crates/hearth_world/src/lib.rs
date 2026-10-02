@@ -18,6 +18,7 @@ pub mod palette;
 pub mod query;
 pub mod shape;
 pub mod storage;
+pub mod structure;
 pub mod water;
 
 pub use block::{

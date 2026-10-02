@@ -855,6 +855,17 @@ impl Bot {
                     Some("low") => since_h > 0.4,
                     _ => false,
                 };
+                // Woken by the cold: up to stoke the fire and warm through before lying down.
+                if self.core() < 35.0 {
+                    let lay = self.w.mover.pos;
+                    self.w.server.send(ToServer::Sleep(false));
+                    self.w.run(2);
+                    self.warm_up();
+                    self.w.go_exact(lay);
+                    self.w.server.send(ToServer::Sleep(true));
+                    self.w.run(2);
+                    continue;
+                }
                 if wants {
                     let lay = self.w.mover.pos;
                     self.w.server.send(ToServer::Sleep(false));
@@ -965,7 +976,8 @@ impl Bot {
                 let (ok, _) = self
                     .w
                     .act("collect_resin", AimAt::Block { pos: p, top: true });
-                if ok {
+                // A scraping may give too little to keep: on to the next trunk then.
+                if ok && self.w.at_hand(|id| id.ends_with("pine_resin"), 3.0) > 0 {
                     // Carried home.
                     self.home();
                     self.w.put_down_all();

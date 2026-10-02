@@ -118,7 +118,23 @@ entry! {
         /// How hard the work is (METs).
         #[serde(default = "building_work")]
         pub mets: f32,
+        /// Round in section (a pole, a log): a circle of its least size, not a rectangle.
+        #[serde(default)]
+        pub round: bool,
+        /// What a covering lies on (a roof's rafters): the members that carry it.
+        #[serde(default)]
+        pub frame: Option<Frame>,
     }
+}
+
+/// The members a covering lies on (a bark roof's rafters): how many, of what form, and the
+/// material they are reckoned as (whatever wood was used; the weakest that makes the form is
+/// assumed, as the block does not say).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Frame {
+    pub form: IdRef,
+    pub count: u32,
+    pub material: IdRef,
 }
 
 fn full() -> f32 {

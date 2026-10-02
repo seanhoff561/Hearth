@@ -385,6 +385,21 @@ impl World {
         }
     }
 
+    /// Turns the player to face a way (radians: 0 toward +z, south, turning toward +x, east).
+    pub fn turn(&mut self, yaw: f32) {
+        self.server.send(ToServer::Moved(Moved {
+            mover: self.mover,
+            landed: None,
+            motion: Motion::Still,
+            speed: 0.0,
+            straining: false,
+            immersion: 0.0,
+            airless_s: 0.0,
+            yaw,
+        }));
+        self.run(1);
+    }
+
     /// Puts the player exactly here.
     pub fn go_exact(&mut self, feet: DVec3) {
         let mut m = self.mover;

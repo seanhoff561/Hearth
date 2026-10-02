@@ -427,6 +427,44 @@ impl Hearing {
         }
     }
 
+    /// Built pieces giving way (V2-8): each sounding as what it is made of, as loud as it was
+    /// heavy (N), from where it was; a falling piece landing sounds as it strikes.
+    pub fn crash(
+        &mut self,
+        at: DVec3,
+        surface: Surface,
+        weight: f32,
+        ear: DVec3,
+        facing: f32,
+        landing: bool,
+    ) {
+        let d = (at - ear).length().max(1.0) as f32;
+        let gain = (8.0 / d).min(1.0);
+        if gain < 0.02 {
+            return;
+        }
+        let right = glam::DVec2::new(-(facing.cos() as f64), facing.sin() as f64);
+        let to = glam::DVec2::new(at.x - ear.x, at.z - ear.z).normalize_or_zero();
+        let force = (weight / 400.0).sqrt().clamp(0.1, 1.5);
+        let sound = if landing {
+            Sound::Land {
+                surface,
+                impact: 3.0 + 5.0 * force,
+            }
+        } else {
+            Sound::Break { surface, force }
+        };
+        self.out.push(Command::Play {
+            sound,
+            bus: Bus::Blocks,
+            gain,
+            pan: to.dot(right) as f32,
+        });
+        if !landing {
+            self.caption("subtitles.collapse");
+        }
+    }
+
     /// The surroundings to sound: `weather` is the wind (m/s) and the rain (mm/h of water) at
     /// the place, `sheltered` whether a roof is overhead, `insects` how many crickets sing about
     /// (0–1) and the air's warmth (°C).

@@ -601,12 +601,25 @@ V2-8 — Structural building & shelter, in parts (PLAN.md; v2 §14; docs/design/
   a ghost of edges where it will go; first set in `construction/shelter.ron` (brush, post,
   beam, bark roof and covering, hide wall and roof, dry stone, stone lintel). Tests:
   `hearth/tests/building.rs`; screenshot option `put=state@east:south:up`.
-- [ ] (b) Stability: support propagated from the ground and anchored rock (Valheim-like) and a
-  load and span check from the materials' strengths, incremental on every change over the
-  connected structure (bounded, deterministic, off the tick with a budget); failed pieces break
-  and fall as debris, cascading, with sound and dust.
-- [ ] (c) Excavation: natural ground anchored until dug; unsupported spans in weak rock and soil
-  collapse unless shored (timber sets, pillars); strong rock spans far.
+- [x] (b) Stability: every piece a member (weight, moment, joint continuity, crushing,
+  stiffness, reach) from its size and material (`building::member`, coverings on frames);
+  `hearth_world::structure` reckons the connected structure whole on every change — columns
+  carry down (crush, buckling), runs span between supports (moment at every piece and joint,
+  linear time; reach for stiffness), loads top down — deterministically; the server reckons up
+  to 8192 pieces a tick (`structure.rs`), breaks what fails (half its makings lie where it
+  fell) and reckons on next tick (cascades); the client shows pieces tumbling with dust and
+  plays them giving way (`Sound::Break`) and landing (D93). Tests: solver units (lean-to
+  stands, overlong ridge breaks, one slab spans a doorway and two do not, dry stone over
+  nothing falls, beam theory, 4300 pieces in ~10 ms), content members, and a server collapse
+  (a third beam beyond reach falls; without its post the rest falls).
+- [x] (c) Excavation: natural ground roofs an opening as wide as its material allows
+  (`building::self_span`: loose earth 0.5 m, firm soil 1.2, clay 1.5, rock 1 + UCS/15 m,
+  `span_m` overrides: loess 3, laterite 2.5, frozen ground 3; turf 1 by its sound); the ground
+  over the places a change opened is reckoned (`Structures::ground_falls`), and what is over too
+  wide an opening falls in, broken (its cobbles or loose earth), to the floor below, chimneying
+  up; pieces under ground hold it and bear its weight as deep as the opening is wide (≤ 8
+  blocks), so poles buckle and stone or stout timber holds (D94). Tests: clay holds a 1-wide
+  tunnel and not 2, granite a hall, loam nothing; posts under clay buckle.
 - [ ] (d) Weather on buildings: roofs shed rain by pitch and material (thatch steep, bark less,
   flat roofs leak and drip), mudbrick erodes without plaster and eaves, timber rots in ground
   contact unless rot-resistant or on stone.

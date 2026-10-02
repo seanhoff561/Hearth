@@ -1083,3 +1083,40 @@ block), a roof or a layer against anything, a wall on the ground, a wall or a li
 is strong enough is the solver's (b), so the rule only forbids what could not stay a moment. The
 ghost is the edges of the piece's boxes drawn as thin bars in the figure pass (no new pipeline),
 pale where it would rest and red where it would not, kept where the work is while it goes on.
+
+## D93 — Stability by statics of runs and columns, not support decay; reckoned whole, on the tick
+Valheim's support (a value lost by a fixed share per block, sideways more than down) was weighed
+and set aside: it knows nothing of what a piece carries, so a beam under a stone wall and one
+under bark would reach as far. Instead pieces are members with weights and strengths from their
+materials (D91's real sizes), and the reckoning is the statics a builder would do by rule of
+thumb: columns carry loads down and are crushed or buckle; runs (beams, lintels, roofs along
+their slope, layers, hung walls) span between what holds them, each span simply held, beyond the
+outermost support a cantilever; the moment is checked at every piece and joint, and a reach of
+fifty depths stands for stiffness (sag), which governs thin poles before strength does. Joints
+carry a share of the moment by their kind — stacked stones none, so a run of slabs cannot span
+however strong each slab — which is what makes a dry-stone hut need its lintels and corbels. The
+margin is a safety factor of two on every strength. Loads are gathered top down in one pass (at
+each level coverings, then runs in an order where a run comes before what it rests on, then
+columns); statically indeterminate frames are cut at their supports, which errs safe for spans.
+A change has its whole connected structure (up to 8192 pieces) reckoned again, deterministically,
+so order of placing never matters; it runs on the server's tick under a budget of 8192 pieces a
+tick (a few milliseconds) rather than on a worker, since a hut costs a fraction of a millisecond
+and a result a tick late would let a player stand under what has already failed. What fails
+breaks at once, half its makings lying where it fell, and what it held is reckoned on the next
+tick, so a collapse runs on visibly.
+
+## D94 — Ground over an opening: a width it roofs, from the material; pieces under it take its weight
+Natural ground is not given members: a hillside is millions of blocks, and nobody reckons a
+tunnel's roof as a beam. What matters to whoever digs is how wide an opening the ground stands
+over, which depends on the ground far more than on the load: loose earth runs in at once, clay
+and firm soil hold a crawlway, rock holds halls by its strength (a rule after rock-mass
+engineering's stand-up spans, here one metre and a fifteenth of the crushing strength in MPa),
+with a material free to say otherwise (loess's cave dwellings). Only the ground over the places
+a change opened is reckoned, along the four ways through them, so ordinary digging costs a few
+hundred lookups and natural overhangs left alone stay as they are. Falling ground breaks loose
+and lands on the floor below, so a collapse migrates upward as real ones do (chimneying to a
+sinkhole in soil). A piece under ground takes the ground's weight as deep as the opening is
+wide (at most eight blocks, the rest arching over, after Terzaghi's loosened zone) — which is
+what makes shoring a matter of stout timbers or stone, not of putting anything at all in the
+way. The surface's own blocks, which carry no material, are reckoned by their sound as turf or
+bare earth rather than given materials that would change what digging them teaches.

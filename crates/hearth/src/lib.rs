@@ -29,6 +29,7 @@ pub mod screenshot;
 pub mod season_cover;
 pub mod server;
 pub mod signs;
+pub mod structure;
 pub mod water_env;
 pub mod wildfire;
 pub mod workshop;
