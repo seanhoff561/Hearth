@@ -555,7 +555,72 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
     year's rate only in their first year; crowding falls on the young and half-grown; prey reckoned
     over their own habitat; a predator on a realm's border hunts as at home. Regions are made on
     worker threads, three at a time. The performance gate run at the end.
-- [ ] V2-8 — Structural building & shelter
+- [x] V2-8 — Structural building & shelter: construction pieces × their materials as
+  generated blocks put up and taken down by generated processes of real quantities, beside
+  the face looked at and only where they rest, with a ghost; every piece a member reckoned
+  as columns and runs on every change (collapses spread, debris lies where it fell); ground
+  over openings by its material, shored by stout timber; rain through roofs by pitch, rot,
+  erosion and thaw in stages; shelter from rays into wind and warmth; the builder's view;
+  thatch, pit houses, wattle and daub, mudbrick, snow walls; the acceptance
+  (`hearth/tests/acceptance_v2_8.rs`) and the performance gate (all scenes within ±2 %
+  against the end of V2-7). In parts:
+  - [x] (a) Pieces in the world: each construction piece × each material it may be made of is a
+    generated block (`hearth:post/hazel_wood`), shaped by the piece (post, beam, panel, layer,
+    roof in eight steps, wall, block), turned by `facing`, textured from the material (bark has
+    its own pattern now: birch white with lenticels); `place_<piece>` / `take_down_<piece>`
+    generated with the piece's real quantities, time and knowledge (D91); placed beside the face
+    looked at (`AimAt::Beside`), facing the builder's way, only where it rests (stages, D92);
+    a ghost of edges where it will go; first set in `construction/shelter.ron` (brush, post,
+    beam, bark roof and covering, hide wall and roof, dry stone, stone lintel). Tests:
+    `hearth/tests/building.rs`; screenshot option `put=state@east:south:up`.
+  - [x] (b) Stability: every piece a member (weight, moment, joint continuity, crushing,
+    stiffness, reach) from its size and material (`building::member`, coverings on frames);
+    `hearth_world::structure` reckons the connected structure whole on every change — columns
+    carry down (crush, buckling), runs span between supports (moment at every piece and joint,
+    linear time; reach for stiffness), loads top down — deterministically; the server reckons up
+    to 8192 pieces a tick (`structure.rs`), breaks what fails (half its makings lie where it
+    fell) and reckons on next tick (cascades); the client shows pieces tumbling with dust and
+    plays them giving way (`Sound::Break`) and landing (D93). Tests: solver units (lean-to
+    stands, overlong ridge breaks, one slab spans a doorway and two do not, dry stone over
+    nothing falls, beam theory, 4300 pieces in ~10 ms), content members, and a server collapse
+    (a third beam beyond reach falls; without its post the rest falls).
+  - [x] (c) Excavation: natural ground roofs an opening as wide as its material allows
+    (`building::self_span`: loose earth 0.5 m, firm soil 1.2, clay 1.5, rock 1 + UCS/15 m,
+    `span_m` overrides: loess 3, laterite 2.5, frozen ground 3; turf 1 by its sound); the ground
+    over the places a change opened is reckoned (`Structures::ground_falls`), and what is over too
+    wide an opening falls in, broken (its cobbles or loose earth), to the floor below, chimneying
+    up; pieces under ground hold it and bear its weight as deep as the opening is wide (≤ 8
+    blocks), so poles buckle and stone or stout timber holds (D94). Tests: clay holds a 1-wide
+    tunnel and not 2, granite a hall, loam nothing; posts under clay buckle.
+  - [x] (d) Weather on buildings: rain through covers (`building::cover`: a roof as steep as its
+    covering needs sheds it, flatter roofs and flat coverings let 0.4 drip); pieces of materials
+    that wear away have `decay` 0–3 (members weakened by `DECAYED`), advanced a stage a day by
+    chance (`Structures::weather`): wood rots in earth in 2 + 30·d² years (four times slower
+    rained on, never dry on stone), earth erodes in the rain (3 years), snow and ice melt in a
+    thaw; past stage 3 a piece crumbles (D95). Snow loads on roofs are left for later (snow is
+    not laid on pieces yet).
+  - [x] (e) Shelter quality: seventeen rays from the eyes give enclosure, sides and heat loss
+    (`building::shelter`); the body's wind is cut by the sides, the air warmed by fires within
+    3 m by their heat over the hut's losses (≤ 25 °C), rain by the cover (D95). Tests: open
+    ground gives nothing; a hide hut with a bark roof stills the wind and a 5 kW fire warms it
+    8–25 °C.
+  - [x] (f) The builder's view (key V): pieces within 32 m outlined by stress (blue → red), the
+    server telling stresses within 48 m each second and reckoning pieces not yet reckoned since
+    their land loaded; the ghost reckons the structure it would join on the client
+    (`Structures::would_bear`, cached half a second) and shows pale, amber or red. Screenshot
+    option `stress=true`.
+  - [x] (g) Era 0–3 techniques: thatching, pit house, wattle and daub and mudbrick knowledge
+    implemented with discovery routes; pieces reed thatch (on rafters), wattle panel, daub on
+    wattle, mudbrick wall, snow wall, log post and log beam (pit houses' frames, props and caps
+    under ground); new forms mudbrick and block of snow with `make_mudbrick` (unattended, two
+    dry days) and `cut_snow_block`; dried earth pieces textured paler and grainy. The lint now
+    infers the materials of what is done to blocks by name (a log of any tree) and orders eras
+    by their implemented nodes. Deferred: log walls (timber framing needs the ground-stone axe,
+    V2-12).
+  - [x] (h) Acceptance (`hearth/tests/acceptance_v2_8.rs`): a slab spans a doorway between
+    dry-stone piers built by processes and two slabs end to end fall when their props go; a clay
+    chamber three wide falls in unshored or on poles and stands on log sets; reed thatch keeps
+    held rain off a body while flat bark lets 0.4 through; 8000 pieces reckon in ~10 ms.
 - [ ] V2-9 — Vertical slice review
 - [ ] V2-10 — Ecosystem expansion waves
 - [ ] V2-11 — Australopithecus & the agent framework
@@ -580,74 +645,18 @@ Generated by `hearth content status` (Implemented = used by a game system; Plann
 | Animal species | 43 | 0 |
 | Ecosystems | 3 | 1 |
 | Hominin species | 0 | 1 |
-| Item forms | 43 | 0 |
-| Processes | 250 | 0 |
-| Knowledge nodes | 55 | 125 |
+| Item forms | 47 | 0 |
+| Processes | 286 | 0 |
+| Knowledge nodes | 61 | 119 |
 | Workstations | 5 | 0 |
-| Construction pieces | 0 | 5 |
+| Construction pieces | 16 | 0 |
 | Garments | 9 | 0 |
 | Injuries | 10 | 0 |
 | Illnesses | 7 | 0 |
 | Eras | 0 | 8 |
 
 ## In progress
-V2-8 — Structural building & shelter, in parts (PLAN.md; v2 §14; docs/design/building.md):
-- [x] (a) Pieces in the world: each construction piece × each material it may be made of is a
-  generated block (`hearth:post/hazel_wood`), shaped by the piece (post, beam, panel, layer,
-  roof in eight steps, wall, block), turned by `facing`, textured from the material (bark has
-  its own pattern now: birch white with lenticels); `place_<piece>` / `take_down_<piece>`
-  generated with the piece's real quantities, time and knowledge (D91); placed beside the face
-  looked at (`AimAt::Beside`), facing the builder's way, only where it rests (stages, D92);
-  a ghost of edges where it will go; first set in `construction/shelter.ron` (brush, post,
-  beam, bark roof and covering, hide wall and roof, dry stone, stone lintel). Tests:
-  `hearth/tests/building.rs`; screenshot option `put=state@east:south:up`.
-- [x] (b) Stability: every piece a member (weight, moment, joint continuity, crushing,
-  stiffness, reach) from its size and material (`building::member`, coverings on frames);
-  `hearth_world::structure` reckons the connected structure whole on every change — columns
-  carry down (crush, buckling), runs span between supports (moment at every piece and joint,
-  linear time; reach for stiffness), loads top down — deterministically; the server reckons up
-  to 8192 pieces a tick (`structure.rs`), breaks what fails (half its makings lie where it
-  fell) and reckons on next tick (cascades); the client shows pieces tumbling with dust and
-  plays them giving way (`Sound::Break`) and landing (D93). Tests: solver units (lean-to
-  stands, overlong ridge breaks, one slab spans a doorway and two do not, dry stone over
-  nothing falls, beam theory, 4300 pieces in ~10 ms), content members, and a server collapse
-  (a third beam beyond reach falls; without its post the rest falls).
-- [x] (c) Excavation: natural ground roofs an opening as wide as its material allows
-  (`building::self_span`: loose earth 0.5 m, firm soil 1.2, clay 1.5, rock 1 + UCS/15 m,
-  `span_m` overrides: loess 3, laterite 2.5, frozen ground 3; turf 1 by its sound); the ground
-  over the places a change opened is reckoned (`Structures::ground_falls`), and what is over too
-  wide an opening falls in, broken (its cobbles or loose earth), to the floor below, chimneying
-  up; pieces under ground hold it and bear its weight as deep as the opening is wide (≤ 8
-  blocks), so poles buckle and stone or stout timber holds (D94). Tests: clay holds a 1-wide
-  tunnel and not 2, granite a hall, loam nothing; posts under clay buckle.
-- [x] (d) Weather on buildings: rain through covers (`building::cover`: a roof as steep as its
-  covering needs sheds it, flatter roofs and flat coverings let 0.4 drip); pieces of materials
-  that wear away have `decay` 0–3 (members weakened by `DECAYED`), advanced a stage a day by
-  chance (`Structures::weather`): wood rots in earth in 2 + 30·d² years (four times slower
-  rained on, never dry on stone), earth erodes in the rain (3 years), snow and ice melt in a
-  thaw; past stage 3 a piece crumbles (D95). Snow loads on roofs are left for later (snow is
-  not laid on pieces yet).
-- [x] (e) Shelter quality: seventeen rays from the eyes give enclosure, sides and heat loss
-  (`building::shelter`); the body's wind is cut by the sides, the air warmed by fires within
-  3 m by their heat over the hut's losses (≤ 25 °C), rain by the cover (D95). Tests: open
-  ground gives nothing; a hide hut with a bark roof stills the wind and a 5 kW fire warms it
-  8–25 °C.
-- [x] (f) The builder's view (key V): pieces within 32 m outlined by stress (blue → red), the
-  server telling stresses within 48 m each second and reckoning pieces not yet reckoned since
-  their land loaded; the ghost reckons the structure it would join on the client
-  (`Structures::would_bear`, cached half a second) and shows pale, amber or red. Screenshot
-  option `stress=true`.
-- [x] (g) Era 0–3 techniques: thatching, pit house, wattle and daub and mudbrick knowledge
-  implemented with discovery routes; pieces reed thatch (on rafters), wattle panel, daub on
-  wattle, mudbrick wall, snow wall, log post and log beam (pit houses' frames, props and caps
-  under ground); new forms mudbrick and block of snow with `make_mudbrick` (unattended, two
-  dry days) and `cut_snow_block`; dried earth pieces textured paler and grainy. The lint now
-  infers the materials of what is done to blocks by name (a log of any tree) and orders eras
-  by their implemented nodes. Deferred: log walls (timber framing needs the ground-stone axe,
-  V2-12).
-- [ ] (h) Acceptance (a too-long stone span collapses; a timber-supported tunnel stands; thatch
-  keeps rain out while a flat bark roof leaks; the solver within budget on large structures)
-  and the performance gate.
+Nothing: V2-9 next.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -657,12 +666,10 @@ V2-8 — Structural building & shelter, in parts (PLAN.md; v2 §14; docs/design/
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. V2-8 — Structural building & shelter (PLAN.md): construction pieces and stages; an
-   incremental stability solver (support propagation and load checks) with collapses and
-   debris; excavation supports; roofs, rain and rot; shelter quality; the builder's view; the
-   techniques of Eras 0–3. Accept: a too-long stone span collapses; a timber-supported tunnel
-   stands; thatch keeps rain out while a flat bark roof leaks; the solver within budget on large
-   structures.
+1. V2-9 — Vertical slice review (PLAN.md): a temperate forest year from a loincloth in spring —
+   a scripted bot run through a year (fire, food, clothing, a shelter of the new pieces, the
+   winter) with screenshots and logs; `docs/review/slice-1.md`; fix the top issues before
+   expanding.
 
 ## Known issues
 - In this environment presents never block (FIFO on both Vulkan and DX12 ran at ~1.5–2k FPS
@@ -705,10 +712,14 @@ V2-8 — Structural building & shelter, in parts (PLAN.md; v2 §14; docs/design/
   reads as a dark wedge from above (V2-6 flora).
 - Death under Legacy rules leaves no body where the player fell (belongings are left since
   V2-4, and what the dead knew passes on as legends since V2-5). Hardy comes back at the
-  world's first spawn until there are camps (V2-8).
+  world's first spawn: camps to come back to wait for the slice review (V2-9).
 - Containers lying in the world are opened by picking them up; things do not yet get wet in
   the rain or dry out (each keeps a wetness that spoiling and burning read); no rolling logs, travois,
-  sledges or rafts yet (V2-8); heavy loads do not yet weigh a swimmer down.
+  sledges or rafts yet (log sections are dragged); heavy loads do not yet weigh a swimmer down.
+- Building (V2-8): snow is not laid on built pieces, so roofs carry no snow load yet; decay
+  is not shown on a piece's texture (the builder's view shows the weakening); statically
+  indeterminate frames are cut at their supports (erring safe for spans); stone domes and
+  corbelled vaults do not stand (no arch action); log walls wait for timber framing (V2-12).
 - Sounds are all the player's own or around them: sounds placed in the world (direction,
   distance, occlusion) come with fauna (V2-7), and with them the work of the hands (knapping,
   scraping, digging) and fire's crackle; no music, thunder, flowing water or animal sounds
