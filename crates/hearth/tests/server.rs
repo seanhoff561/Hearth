@@ -73,6 +73,7 @@ fn a_world_lives_saves_and_comes_back() {
         straining: false,
         immersion: 0.0,
         airless_s: 0.0,
+        yaw: 0.0,
     }));
     let body: BodyView = wait(&server, 10.0, |m| match m {
         ToClient::Body(b) if !b.injuries.is_empty() || b.dead.is_some() => Some(*b),
@@ -129,6 +130,7 @@ fn drown(server: &Server, at: hearth_physics::Mover) {
         straining: false,
         immersion: 1.0,
         airless_s: 61.0,
+        yaw: 0.0,
     }));
 }
 
@@ -195,6 +197,7 @@ fn death_follows_the_world_rules() {
         straining: false,
         immersion: 0.0,
         airless_s: 0.0,
+        yaw: 0.0,
     }));
     drown(&server, walked);
     let tale = wait(&server, 10.0, |m| match m {

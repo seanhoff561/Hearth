@@ -257,3 +257,43 @@ species' `habits` (vigilance, grooming, roaming, sociability), defaulting by its
 lives; out of its hours it sleeps. So from downwind a stalker gets within a hundred metres of a
 grazing red deer that would scent them at three hundred from upwind, and crouched and slow
 within a hundred where running is heard at three hundred.
+
+## Danger (`hearth_fauna::danger`)
+Animals turn on a person only for a reason a naturalist would give, weighed once an encounter
+(again after fifteen seconds) by an animal aware of the person, startled, or a snake underfoot:
+- **Defending young**: a mother whose young (within 25 m of her) the person comes within her
+  guarding distance of (30 m for a bear, less for smaller beasts).
+- **Defending a kill**: a hunter feeding at its kill, approached within 25 m.
+- **Surprise**: a big animal (25 kg and more) startled close by, too close to get away first.
+- **Cornered**: one running that finds no way on, the person within five metres.
+- **Rut**: a grown male in the season of his rut, within twenty metres.
+- **Hunger**: a hunter of people (wolves, bears) in a lean season (leanest at winter's end),
+  the person seeming small — crouched or crawling, in the dark, hurt — and not by a fire.
+- **Stepped near**: a venomous snake the person steps within a metre of.
+
+How likely each is goes with the species' aggression, scaled by the world's Predator Behavior
+setting (Authentic; Wild two and a half times; Tranquil a seventh) and lessened by what the
+animal has learned to fear of people. Most turn with a charge: a hunter stalks low and slow
+until within twelve metres; then the rush. A defender's charge closes on the person only some
+of the time (a bear's less than a third; a boar's more than half); otherwise it stops short, a
+bluff, stands a moment and goes. Closing, it strikes as its body does — a bear knocks the person
+down and mauls them (a deep wound), a boar slashes the legs with its tusks, a stag or a bull
+drives in head down (a puncture), a hind strikes with her forefeet (a bruise), a wolf, fox or
+cat bites, a snake bites with its venom (envenomation), a bird flies at the head — and then a
+defender goes, its point made, while a hungry hunter comes again.
+
+The person can turn it. Fire keeps hunters off (light at the person's feet, from a fire or a
+torch); facing an animal upright and loud (a shout, H) turns back a hunter at once and a
+defender before long, and makes a defender likelier to stop short; backing off from what it
+defends ends its charge; running from a hunter of people sets it after them. An animal turned
+back fears people more after, for a good while. Every charge and blow comes with its reason in
+words ("The brown bear charges and stops short: you came too near its young.") and in the log.
+
+Hunters hunt their prey in the world too: a hunter at its ease may go after the nearest of its
+prey within 150 m, stalking low and slow (quiet, half hidden), then rushing — a cat from seven
+metres, briefly; wolves from thirty-five and long, the pack joining the first of it to hunt.
+Prey sense hunters as they sense people (a stalker in cover downwind is hard to sense, a rush is
+heard at once), and bodies get up to speed as they do (six metres a second every second, more
+for a hunter's spring or a small body's dart), so an ambush from close in cover succeeds and a
+long chase of a faster deer seldom does, unless it is a calf (the young of the year run at
+seven tenths of their kind's speed). The prey killed lies dead and the hunter feeds at it.

@@ -1043,6 +1043,7 @@ dependencies = [
  "hearth_texgen",
  "hearth_world",
  "hearth_worldgen",
+ "log",
  "rustc-hash 2.1.3",
  "serde",
 ]

@@ -528,7 +528,20 @@ V2-7 — Fauna framework (temperate forest first), in parts:
   Tests: downwind against upwind, crouched against running, still at night against by day, the
   herd running together, a calf following, a roe deer freezing then running, a thirsty deer
   drinking. Packs hunting together come with the predators of (g).
-- [ ] (g) Predators and dangerous herbivores with logged causes; counterplay.
+- [x] (g) Danger (D86, docs/design/fauna.md "Danger"): animals turn on a person only for a
+  cause — defending young or a kill, surprise, cornered, rut, a hunter's hunger in a lean season
+  with the person seeming small, a snake stepped near — at the species' aggression by the
+  world's Predator Behavior setting less what it has learned to fear; charges that close or stop
+  short; blows as each body strikes (mauling, tusks, horns and antlers, forefeet, bites, venom)
+  applied to the player's body; counterplay: fire, facing it upright and loud (the Shout key,
+  H), backing off, not running from a hunter; every charge and blow told with its cause and
+  logged. Hunters hunt their prey in the world (cats ambush, wolves run their prey down as a
+  pack), prey sensing them as they sense people; kills lie dead. Bodies accelerate at bounded
+  rates. Tests: a bear guarding her cub charges (mostly bluffs; fewer close when faced down;
+  seldom in a tranquil world), hungry wolves at night in late winter but not by a fire, a boar
+  surprised close, an adder stepped near bites with venom, a lynx ambushes a roe deer, a charge
+  ends when the person backs off. Deferred: territorial defense at dens, habituation to people's
+  food.
 - [ ] (h) Hunting, wounds, tracks, carcasses and butchering by species (the kill stand-in
   goes).
 - [ ] (i) Calls, the dawn chorus, ambient birds and insects.

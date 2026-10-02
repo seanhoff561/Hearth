@@ -442,6 +442,8 @@ impl App {
                         p.toggle_perspective();
                     } else if action == builtin::SLEEP {
                         p.toggle_rest();
+                    } else if action == builtin::SHOUT {
+                        p.shout();
                     } else if action == builtin::BODY_PANEL {
                         p.toggle_body_panel();
                     } else if action == builtin::INVENTORY && p.can_handle() {

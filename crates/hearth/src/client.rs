@@ -1149,6 +1149,13 @@ impl Client {
         }
     }
 
+    /// Shouts (to make an animal think again).
+    pub fn shout(&mut self) {
+        if !self.dead() {
+            self.server.send(ToServer::Shout);
+        }
+    }
+
     /// Lies down to rest (sleep comes when the body is sleepy), or gets up.
     pub fn toggle_rest(&mut self) {
         let lying = self.body.as_ref().is_some_and(|b| b.lying);
@@ -1679,6 +1686,7 @@ impl Client {
                 straining: std::mem::take(&mut self.pending.straining),
                 immersion: report.immersion,
                 airless_s: report.airless_s,
+                yaw: -self.camera.yaw.to_radians(),
             }));
         }
         self.animate(dt);

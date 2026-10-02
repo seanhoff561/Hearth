@@ -13,6 +13,7 @@ use hearth_math::hash::{Rng, derive_seed, hash2};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
+use crate::danger::{Attack, Cause, Hostile, Kill, blow, closes, faced_down, lean, provoked};
 use crate::ecology::{Ecology, REGION_LEN, dist};
 use crate::habitat::CELL_M;
 use crate::mind::{Air, Presence, Sense, Wary, sense, yaw_toward};
@@ -186,6 +187,24 @@ pub struct Animal {
     /// How thirsty (a day without water is 1), and the water it is going to drink at.
     pub thirst: f32,
     pub water: Option<DVec3>,
+    /// Turned on the person.
+    pub hostile: Option<Hostile>,
+    /// What it has learned to fear of people (0 … 1).
+    pub fear: f32,
+    /// Seconds before it weighs turning on the person again.
+    pub weigh: f32,
+    /// A hunt under way.
+    pub hunt: Option<Hunt>,
+    /// Where its kill lies while it feeds.
+    pub kill_at: Option<DVec3>,
+}
+
+/// A hunt: the prey, how long it has gone on, whether the rush has begun.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Hunt {
+    pub prey: u64,
+    pub t: f32,
+    pub rushing: bool,
 }
 
 impl Animal {
@@ -227,6 +246,11 @@ impl Animal {
             // Some drank lately, some not.
             thirst: (id % 7) as f32 * 0.1,
             water: None,
+            hostile: None,
+            fear: 0.0,
+            weigh: 0.0,
+            hunt: None,
+            kill_at: None,
         }
     }
 }
@@ -238,15 +262,20 @@ pub struct Now {
     pub hour: f32,
     pub day_s: f32,
     pub air: Air,
+    /// The year's fraction (0 at the March equinox) and whether it is the south.
+    pub year_frac: f32,
+    pub southern: bool,
 }
 
 impl Now {
-    /// A still, light hour of a day of 48 minutes.
+    /// A still, light hour of a day of 48 minutes in early summer.
     pub fn day(hour: f32) -> Self {
         Self {
             hour,
             day_s: 2880.0,
             air: Air::calm_day(),
+            year_frac: 0.3,
+            southern: false,
         }
     }
 }
@@ -275,6 +304,13 @@ pub struct Live {
     rng: Rng,
     /// Animals of small species taken out of each cell (region, slot, cell): adults, young.
     drawn: FxHashMap<((i64, i64), usize, usize), (u32, u32)>,
+    /// How readily they turn on people against the species' own (the world's Predator Behavior
+    /// setting: 1 authentic).
+    pub aggression: f32,
+    /// What they did to the person in the last step (charges that stopped short too), and the
+    /// kills among them.
+    pub attacks: Vec<Attack>,
+    pub kills: Vec<Kill>,
 }
 
 /// Within this distance of the player groups become animals.
@@ -332,9 +368,12 @@ pub fn mover_of(sp: &Species) -> Mover {
 /// Whether a small species is drawn into the world about the player: those that walk, the
 /// birds big enough to see as they forage and fly (crows, owls), the fish of the streams.
 pub fn drawn(sp: &Species) -> bool {
+    use hearth_content::schema::fauna::BodyPlan as B;
     match mover_of(sp) {
         Mover::Fish => sp.mass_kg >= 0.1,
         Mover::Bird => sp.mass_kg >= SMALL_MIN_KG,
+        // Snakes basking where a person may step.
+        _ if sp.plan == B::Snake => sp.mass_kg >= 0.05,
         _ => walks(sp),
     }
 }
@@ -364,6 +403,9 @@ impl Live {
             seed,
             rng: Rng::new(derive_seed(seed, "live animals")),
             drawn: FxHashMap::default(),
+            aggression: 1.0,
+            attacks: Vec::new(),
+            kills: Vec::new(),
         }
     }
 
@@ -742,6 +784,54 @@ impl Live {
         }
         let mut searches = SEARCHES_PER_STEP;
         let mut alarms: Vec<(u64, DVec3, DVec3)> = Vec::new();
+        self.attacks.clear();
+        self.kills.clear();
+        // The young each mother has, where they are; what might be hunted, where; the hunters
+        // abroad as their prey may sense them.
+        let mut young_of: FxHashMap<u64, Vec<DVec3>> = FxHashMap::default();
+        let mut quarry: Vec<(u64, u16, DVec3)> = Vec::new();
+        let mut hunters: Vec<(u64, u16, Presence)> = Vec::new();
+        for a in &self.animals {
+            if a.dead {
+                continue;
+            }
+            if let Some(m) = a.mother {
+                young_of.entry(m).or_default().push(a.pos);
+            }
+            if matches!(a.medium, Medium::Ground | Medium::Water) {
+                quarry.push((a.id, a.species, a.pos));
+            }
+            if let Some(h) = a.hunt {
+                let sp = &cat.species[a.species as usize];
+                hunters.push((
+                    a.id,
+                    a.species,
+                    Presence {
+                        pos: a.pos,
+                        noise: if h.rushing { 0.8 } else { 0.12 },
+                        plain: if h.rushing { 1.0 } else { 0.45 },
+                        height: sp.shoulder_m,
+                        facing: a.yaw,
+                        upright: false,
+                        shouting: false,
+                        vulnerable: 0.0,
+                        by_fire: false,
+                        running: h.rushing,
+                    },
+                ));
+            }
+        }
+        let lean = lean(now.year_frac, now.southern);
+        let season = {
+            let f = if now.southern {
+                (now.year_frac + 0.5).rem_euclid(1.0)
+            } else {
+                now.year_frac
+            };
+            ((f * 4.0).floor() as usize).min(3)
+        };
+        let mut killed: Vec<(u64, u16, DVec3)> = Vec::new();
+        let mut packs: Vec<(u64, u64, DVec3)> = Vec::new();
         for a in self.animals.iter_mut() {
             if a.dead {
                 continue;
@@ -751,13 +841,118 @@ impl Live {
             let walker = Walker::of(sp);
             a.repath = (a.repath - dt).max(0.0);
             a.thirst = (a.thirst + dt / now.day_s.max(1.0)).min(2.0);
-            // What it senses of the person.
-            match presence {
-                Some(p) => {
-                    let sensed = sense(sp, a.pos, a.yaw, p, &now.air, ground);
-                    a.wary.update(sensed, p.pos, dt);
+            a.fear = (a.fear - dt / 600.0).max(0.0);
+            // What it senses of the person, and of the hunters that hunt its kind.
+            let mut sensed: Option<(f32, Sense, DVec3)> = presence.and_then(|p| {
+                sense(sp, a.pos, a.yaw, p, &now.air, ground).map(|(r, s)| (r, s, p.pos))
+            });
+            for (id, hs, hp) in &hunters {
+                if *id == a.id
+                    || !cat.species[*hs as usize]
+                        .prey
+                        .iter()
+                        .any(|(i, _)| *i == a.species as usize)
+                {
+                    continue;
                 }
+                if let Some((r, s)) = sense(sp, a.pos, a.yaw, hp, &now.air, ground)
+                    && sensed.is_none_or(|b| r > b.0)
+                {
+                    sensed = Some((r, s, hp.pos));
+                }
+            }
+            match sensed {
+                Some((r, s, at)) => a.wary.update(Some((r, s)), at, dt),
                 None => a.wary.update(None, a.pos, dt),
+            }
+            // Turning on the person, for its reasons, and its charge.
+            if let Some(p) = presence
+                && matches!(a.medium, Medium::Ground | Medium::Water)
+            {
+                let d = hdist(a.pos, p.pos);
+                a.weigh -= dt;
+                let snake_underfoot = sp.danger.venomous && d < 0.9;
+                if a.hostile.is_none()
+                    && a.hunt.is_none()
+                    && (a.weigh <= 0.0 || snake_underfoot)
+                    && d < 40.0
+                    && (a.wary.aware() || a.wary.how == Some(Sense::Startle) || snake_underfoot)
+                {
+                    let young = young_of
+                        .get(&a.id)
+                        .and_then(|y| {
+                            y.iter()
+                                .filter(|q| hdist(**q, a.pos) < 25.0)
+                                .map(|q| hdist(*q, p.pos))
+                                .min_by(f64::total_cmp)
+                        })
+                        .filter(|_| a.female && a.stage == Stage::Adult);
+                    let rut = !a.female
+                        && a.stage == Stage::Adult
+                        && sp.rut.is_some_and(|s| s as usize == season);
+                    let cornered = a.act == Act::Flee && a.repath > 0.0 && a.way.is_empty();
+                    let aggression = sp.danger.aggression * self.aggression * (1.0 - a.fear);
+                    let roll = self.rng.next_f32();
+                    let weighed = provoked(
+                        sp,
+                        p,
+                        d,
+                        a.wary.how == Some(Sense::Startle),
+                        young,
+                        a.kill_at.is_some(),
+                        cornered,
+                        rut,
+                        lean,
+                        aggression,
+                        roll,
+                    );
+                    if weighed.is_some() {
+                        // Weighed this encounter: not again for a while.
+                        a.weigh = 15.0;
+                    }
+                    if let Some(Some(cause)) = weighed {
+                        // A defender faced down is likelier to stop short.
+                        let mut close = closes(sp, cause);
+                        if matches!(
+                            cause,
+                            Cause::DefendingYoung | Cause::DefendingKill | Cause::Rut
+                        ) && faced_down(p, a.pos)
+                        {
+                            close *= 0.3;
+                        }
+                        a.hostile = Some(Hostile {
+                            cause,
+                            contact: self.rng.next_f32() < close,
+                            stalking: cause == Cause::Hunger,
+                            t: 0.0,
+                            cooldown: 0.0,
+                        });
+                        a.way.clear();
+                        a.goal = None;
+                        a.water = None;
+                        log::info!("{} turns on the person: {}", sp.name, cause.words());
+                    }
+                }
+                if a.hostile.is_some() {
+                    let moved = charge(
+                        a,
+                        sp,
+                        &walker,
+                        ground,
+                        p,
+                        dt,
+                        &mut self.rng,
+                        &mut self.attacks,
+                    );
+                    a.stride += moved / sp.stride_m().max(0.05);
+                    continue;
+                }
+            }
+            // A hunt under way: stalking its prey, then the rush.
+            if a.hunt.is_some() && matches!(a.medium, Medium::Ground | Medium::Water) {
+                let moved = hunt(a, sp, &walker, ground, &whereabouts, dt, &mut killed);
+                a.stride += moved / sp.stride_m().max(0.05);
+                continue;
             }
             // What it does about it.
             if let Some(threat) = a.wary.threat.filter(|_| a.wary.watching()) {
@@ -818,6 +1013,7 @@ impl Live {
                     .map(|(s, n)| (*s / *n, *n))
                     .unwrap_or((DVec2::new(a.pos.x, a.pos.z), 1.0));
                 let mother = a.mother.and_then(|m| whereabouts.get(&m).copied());
+                a.kill_at = None;
                 next_act(
                     a,
                     sp,
@@ -828,9 +1024,19 @@ impl Live {
                     centre,
                     herd,
                     mother,
+                    &quarry,
+                    &cat,
                     &mut searches,
                     &mut self.rng,
                 );
+                if let (Some(h), Some(g)) = (a.hunt, a.group)
+                    && matches!(
+                        sp.social,
+                        hearth_content::schema::fauna::Social::Pack { .. }
+                    )
+                {
+                    packs.push((g, h.prey, a.pos));
+                }
             }
             let moved = match a.medium {
                 Medium::Air => fly(a, sp, dt, &mut self.rng),
@@ -847,6 +1053,41 @@ impl Live {
                 ),
             };
             a.stride += moved / sp.stride_m().max(0.05);
+        }
+        // The kills: the prey dead where it fell.
+        for (prey, predator, at) in killed {
+            if let Some(v) = self.animals.iter_mut().find(|v| v.id == prey && !v.dead) {
+                v.dead = true;
+                v.speed = 0.0;
+                v.hunt = None;
+                self.kills.push(Kill {
+                    predator,
+                    prey: v.species,
+                    at,
+                    cause: Cause::Hunger,
+                });
+                log::info!(
+                    "{} killed a {}: hunger",
+                    cat.species[predator as usize].name,
+                    cat.species[v.species as usize].name
+                );
+            }
+        }
+        // A pack hunts together: the others join the first of it to hunt.
+        for (g, prey, from) in packs {
+            for a in self.animals.iter_mut().filter(|a| {
+                a.group == Some(g) && !a.dead && a.hunt.is_none() && a.hostile.is_none()
+            }) {
+                if hdist(a.pos, from) < 100.0 {
+                    a.hunt = Some(Hunt {
+                        prey,
+                        t: 0.0,
+                        rushing: false,
+                    });
+                    a.act = Act::Walk;
+                    a.timer = 120.0;
+                }
+            }
         }
         // Warned: the herd runs with the first of it to run.
         for (g, threat, from) in alarms {
@@ -1056,6 +1297,8 @@ fn next_act(
     centre: DVec2,
     herd: f64,
     mother: Option<DVec3>,
+    quarry: &[(u64, u16, DVec3)],
+    cat: &crate::species::Catalog,
     searches: &mut usize,
     rng: &mut Rng,
 ) {
@@ -1164,6 +1407,15 @@ fn next_act(
                         0.0
                     },
                 ),
+                // A hunter goes after what it hunts when there is any about.
+                (
+                    Choice::Hunt,
+                    if sp.hunts() && !sp.prey.is_empty() {
+                        0.7 * h.roaming
+                    } else {
+                        0.0
+                    },
+                ),
             ];
             let choice = choices
                 .iter()
@@ -1174,6 +1426,36 @@ fn next_act(
                 )
                 .0;
             match choice {
+                Choice::Hunt => {
+                    // The nearest of its prey within a hundred and fifty metres.
+                    let target = quarry
+                        .iter()
+                        .filter(|(id, s, _)| {
+                            *id != a.id
+                                && sp.prey.iter().any(|(i, _)| *i == *s as usize)
+                                && !cat.species[*s as usize].hunts()
+                        })
+                        .map(|(id, _, at)| (*id, hdist(*at, a.pos)))
+                        .filter(|(_, d)| *d < 150.0)
+                        .min_by(|x, y| x.1.total_cmp(&y.1));
+                    match target {
+                        Some((prey, _)) => {
+                            a.hunt = Some(Hunt {
+                                prey,
+                                t: 0.0,
+                                rushing: false,
+                            });
+                            a.act = Act::Walk;
+                            a.timer = 120.0;
+                            a.goal = None;
+                            a.way.clear();
+                        }
+                        None => {
+                            a.act = Act::Graze;
+                            a.timer = 4.0;
+                        }
+                    }
+                }
                 Choice::Follow => {
                     let m = mother.unwrap_or(a.pos);
                     let goal = DVec2::new(
@@ -1246,6 +1528,7 @@ enum Choice {
     Wander,
     Drink,
     Follow,
+    Hunt,
 }
 
 /// Along the way to the goal over the ground or through the water: a step at the speed of
@@ -1268,6 +1551,8 @@ fn go(
         (Act::Walk, _) if swimming => sp.swim_m_s.unwrap_or(0.5) * 0.7,
         (Act::Flee, _) if swimming => sp.swim_m_s.unwrap_or(0.5),
         (Act::Walk, _) => sp.walk_speed(),
+        // The young of the year cannot run as their parents do.
+        (Act::Flee, _) if a.stage == Stage::Young => sp.run_speed() * 0.7,
         (Act::Flee, _) => sp.run_speed(),
         _ => 0.0,
     };
@@ -1284,7 +1569,13 @@ fn go(
     }
     let next = a.way.first().map_or(goal, |p| DVec2::new(p.x, p.z));
     let to = next - DVec2::new(a.pos.x, a.pos.z);
-    if to.length() < 0.6 {
+    // At a trunk it is there on reaching its side.
+    let there = if a.climb.is_some() && a.way.is_empty() {
+        1.3
+    } else {
+        0.6
+    };
+    if to.length() < there {
         if !a.way.is_empty() {
             a.way.remove(0);
             return 0.0;
@@ -1319,7 +1610,7 @@ fn go(
         return 0.0;
     }
     a.yaw = turn_toward(a.yaw, to.x as f32, to.y as f32, 5.0 * dt);
-    a.speed += (target - a.speed) * (1.0 - (-4.0 * dt).exp());
+    a.speed = accelerate(sp, a.speed, target, dt);
     let dir = DVec2::new(a.yaw.sin() as f64, a.yaw.cos() as f64);
     let step = dir * (a.speed * dt) as f64;
     let (nx, nz) = (a.pos.x + step.x, a.pos.z + step.y);
@@ -1428,4 +1719,270 @@ fn climb(a: &mut Animal, sp: &Species, dt: f32) -> f32 {
     a.pos.y += step * dy.signum();
     a.speed = speed as f32;
     step as f32
+}
+
+/// Straight toward a point at a speed over the ground (no way searched: a rush), as far as the
+/// ground takes the step. The distance gone.
+#[allow(clippy::too_many_arguments)]
+fn steer(
+    a: &mut Animal,
+    sp: &Species,
+    walker: &Walker,
+    ground: &dyn Ground,
+    to: DVec2,
+    speed: f32,
+    dt: f32,
+) -> f32 {
+    let d = to - DVec2::new(a.pos.x, a.pos.z);
+    if d.length() < 0.05 || speed <= 0.0 {
+        a.speed *= (-6.0 * dt).exp();
+        return 0.0;
+    }
+    a.yaw = turn_toward(a.yaw, d.x as f32, d.y as f32, 8.0 * dt);
+    a.speed = accelerate(sp, a.speed, speed, dt);
+    let dir = DVec2::new(a.yaw.sin() as f64, a.yaw.cos() as f64);
+    let step = dir * (a.speed * dt).min(d.length() as f32) as f64;
+    let (nx, nz) = (a.pos.x + step.x, a.pos.z + step.y);
+    let level = a.pos.y;
+    let Some(f) = ground
+        .footing(nx, nz, level)
+        .filter(|f| walker.step(level, f).is_some())
+    else {
+        a.speed *= 0.5;
+        return 0.0;
+    };
+    let deep = f.water && f.depth > walker.wade;
+    a.medium = if deep { Medium::Water } else { Medium::Ground };
+    a.pos = DVec3::new(
+        nx,
+        if deep {
+            f.level() - sp.shoulder_m as f64 * 0.85
+        } else {
+            f.y
+        },
+        nz,
+    );
+    step.length() as f32
+}
+
+/// A charge at the person: a hunter stalking low and slow until near, then the rush; at reach, a
+/// blow if it means to close (and, for a hunter, more after it), or a stop short (a bluff), and
+/// then it goes. Fire keeps a hunter off, and facing it down — upright, facing it, loud —
+/// turns most back (and it fears people more after); a person running from a hunter sets it
+/// after them. The distance gone.
+#[allow(clippy::too_many_arguments)]
+fn charge(
+    a: &mut Animal,
+    sp: &Species,
+    walker: &Walker,
+    ground: &dyn Ground,
+    p: &Presence,
+    dt: f32,
+    rng: &mut Rng,
+    attacks: &mut Vec<Attack>,
+) -> f32 {
+    let Some(mut h) = a.hostile else {
+        return 0.0;
+    };
+    h.t += dt;
+    h.cooldown -= dt;
+    let d = hdist(a.pos, p.pos);
+    let defender = matches!(
+        h.cause,
+        Cause::DefendingYoung | Cause::DefendingKill | Cause::Rut
+    );
+    let deterred = match h.cause {
+        Cause::Hunger => p.by_fire || faced_down(p, a.pos),
+        _ if defender => faced_down(p, a.pos) && rng.next_f32() < dt * 0.5,
+        _ => false,
+    };
+    let backed_off = defender && d > crate::danger::guard_m(sp) * 1.6;
+    if deterred || backed_off || h.t > 30.0 || d > 60.0 {
+        // Turned back.
+        if deterred {
+            a.fear = (a.fear + 0.3).min(1.0);
+            log::info!("{} is turned back ({})", sp.name, h.cause.words());
+            let why = if p.by_fire && h.cause == Cause::Hunger {
+                "the fire"
+            } else {
+                "you facing it"
+            };
+            attacks.push(Attack {
+                animal: a.id,
+                species: a.species,
+                cause: h.cause,
+                injury: "",
+                region: hearth_content::schema::body::BodyRegion::Chest,
+                severity: 0.0,
+                venom: false,
+                words: format!(
+                    "The {} stops and turns away from {why}: {}.",
+                    sp.name.to_lowercase(),
+                    h.cause.words()
+                ),
+            });
+        }
+        a.hostile = None;
+        a.act = Act::Alert;
+        a.timer = 4.0;
+        return 0.0;
+    }
+    // Running from a hunter sets it after them.
+    if p.running && sp.danger.predatory {
+        h.contact = true;
+        h.stalking = false;
+    }
+    if h.stalking && d < 12.0 {
+        h.stalking = false;
+    }
+    let reach = sp.length_m as f64 * 0.6 + 0.7;
+    let mut moved = 0.0;
+    if h.contact && d <= reach {
+        a.act = Act::Attack;
+        a.speed = 0.0;
+        a.yaw = yaw_toward(a.pos, p.pos);
+        if h.cooldown <= 0.0 {
+            let (injury, region, severity, words) = blow(sp, h.cause, rng.next_f32());
+            attacks.push(Attack {
+                animal: a.id,
+                species: a.species,
+                cause: h.cause,
+                injury,
+                region,
+                severity,
+                venom: sp.danger.venomous,
+                words: format!("{words}: {}.", h.cause.words()),
+            });
+            log::info!(
+                "{} attacks the person ({injury}): {}",
+                sp.name,
+                h.cause.words()
+            );
+            h.cooldown = 2.5;
+            if h.cause != Cause::Hunger {
+                // Its point made, it goes.
+                a.hostile = None;
+                a.act = Act::Alert;
+                a.timer = 3.0;
+                a.fear = (a.fear + 0.1).min(1.0);
+                return 0.0;
+            }
+        }
+    } else if !h.contact && d <= reach + 3.0 {
+        // Stopping short: a bluff. It stands a moment, then goes.
+        a.act = Act::Alert;
+        a.speed *= (-8.0 * dt).exp();
+        if h.cooldown <= -2.5 {
+            attacks.push(Attack {
+                animal: a.id,
+                species: a.species,
+                cause: h.cause,
+                injury: "",
+                region: hearth_content::schema::body::BodyRegion::Chest,
+                severity: 0.0,
+                venom: false,
+                words: format!(
+                    "The {} charges and stops short: {}.",
+                    sp.name.to_lowercase(),
+                    h.cause.words()
+                ),
+            });
+            a.hostile = None;
+            a.timer = 3.0;
+            return 0.0;
+        }
+    } else {
+        let speed = if h.stalking {
+            sp.walk_speed() * 0.6
+        } else {
+            sp.run_speed()
+        };
+        a.act = if h.stalking { Act::Walk } else { Act::Flee };
+        moved = steer(
+            a,
+            sp,
+            walker,
+            ground,
+            DVec2::new(p.pos.x, p.pos.z),
+            speed,
+            dt,
+        );
+        h.cooldown = h.cooldown.max(0.0);
+    }
+    if a.hostile.is_some() {
+        a.hostile = Some(h);
+    }
+    moved
+}
+
+/// A hunt: stalking toward the prey, low and slow, until near enough to rush it; the rush; the
+/// kill within reach (the predator feeding at it after), or giving up when the rush goes on too
+/// long or the prey is gone. The distance gone.
+#[allow(clippy::too_many_arguments)]
+fn hunt(
+    a: &mut Animal,
+    sp: &Species,
+    walker: &Walker,
+    ground: &dyn Ground,
+    whereabouts: &FxHashMap<u64, DVec3>,
+    dt: f32,
+    killed: &mut Vec<(u64, u16, DVec3)>,
+) -> f32 {
+    let Some(mut h) = a.hunt else {
+        return 0.0;
+    };
+    let Some(&at) = whereabouts.get(&h.prey) else {
+        a.hunt = None;
+        a.act = Act::Alert;
+        a.timer = 3.0;
+        return 0.0;
+    };
+    h.t += dt;
+    let d = hdist(a.pos, at);
+    // Cats rush from close by and briefly; dogs from farther and long.
+    let cat = matches!(sp.social, hearth_content::schema::fauna::Social::Solitary)
+        && sp.plan != hearth_content::schema::fauna::BodyPlan::Bear;
+    let (rush_from, rush_for) = if cat { (7.0, 8.0) } else { (35.0, 40.0) };
+    if !h.rushing && d < rush_from {
+        h.rushing = true;
+        h.t = 0.0;
+    }
+    if (h.rushing && h.t > rush_for) || (!h.rushing && h.t > 120.0) {
+        // Given up.
+        a.hunt = None;
+        a.act = Act::Alert;
+        a.timer = 5.0;
+        return 0.0;
+    }
+    let reach = sp.length_m as f64 * 0.5 + 0.6;
+    if d <= reach {
+        killed.push((h.prey, a.species, at));
+        a.hunt = None;
+        a.kill_at = Some(at);
+        a.act = Act::Graze;
+        a.timer = 90.0 + sp.mass_kg.sqrt() * 5.0;
+        a.speed = 0.0;
+        return 0.0;
+    }
+    let speed = if h.rushing {
+        sp.run_speed()
+    } else {
+        sp.walk_speed() * 0.6
+    };
+    a.act = if h.rushing { Act::Flee } else { Act::Walk };
+    a.hunt = Some(h);
+    steer(a, sp, walker, ground, DVec2::new(at.x, at.z), speed, dt)
+}
+
+/// Toward a speed as fast as a body gets up to speed or slows: six metres a second every second
+/// for most, more for a hunter's spring and a small body's dart; slowing twice as fast.
+fn accelerate(sp: &Species, speed: f32, target: f32, dt: f32) -> f32 {
+    let mut up = 6.0;
+    if sp.hunts() {
+        up += 3.0;
+    }
+    if sp.mass_kg < 10.0 {
+        up += 3.0;
+    }
+    speed + (target - speed).clamp(-2.0 * up * dt, up * dt)
 }

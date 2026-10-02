@@ -70,13 +70,12 @@ fn noticed_at(how: fn(DVec3) -> Presence, pace: f64, now: Now) -> f64 {
 
 fn windy(toward: DVec2) -> Now {
     Now {
-        hour: 0.4,
-        day_s: 2880.0,
         air: Air {
             wind: toward,
             wind_speed: 4.0,
             light: 1.0,
         },
+        ..Now::day(0.4)
     }
 }
 
@@ -109,10 +108,9 @@ fn at_night_a_person_standing_still_is_hard_to_see() {
     let eco = eco();
     let deer = species(&eco, "red_deer");
     let still = |at: DVec3| Presence {
-        pos: at,
         noise: 0.05,
         plain: 0.45,
-        height: 1.7,
+        ..Presence::walking(at)
     };
     let aware_after = |light: f32| {
         let mut live = Live::new(12);

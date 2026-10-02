@@ -12,6 +12,7 @@ hearth_content.workspace = true
 hearth_math.workspace = true
 hearth_worldgen.workspace = true
 hearth_texgen.workspace = true
+log.workspace = true
 glam.workspace = true
 rustc-hash.workspace = true
 serde.workspace = true

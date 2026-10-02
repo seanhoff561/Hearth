@@ -2,6 +2,7 @@
 //! ecological cell, and the populations of the world advanced through the years.
 
 pub mod anim;
+pub mod danger;
 pub mod ecology;
 pub mod habitat;
 pub mod live;

@@ -5,8 +5,8 @@
 use hearth_content::Content;
 use hearth_content::schema::Season;
 use hearth_content::schema::fauna::{
-    Activity, Animal, BodyPlan, Coat, DietKind, Dispersers, PopulationModel, SeasonalBehavior,
-    Senses, Shape, Social,
+    Activity, Animal, BodyPlan, Coat, Danger, DietKind, Dispersers, PopulationModel,
+    SeasonalBehavior, Senses, Shape, Social,
 };
 use hearth_content::schema::flora::GrowthForm;
 use hearth_worldgen::realms::{RealmSet, set_of};
@@ -158,6 +158,10 @@ pub struct Species {
     pub freezes: bool,
     /// Its habits' weights, filled in.
     pub habits: Habits,
+    /// How it may be dangerous to people.
+    pub danger: Danger,
+    /// The season of its rut, where it has one.
+    pub rut: Option<Season>,
 }
 
 /// How an animal spends its time when nothing troubles it: weights about 1.
@@ -589,6 +593,11 @@ fn species_of(
                 sociability: h.sociability.unwrap_or(if together { 1.0 } else { 0.3 }),
             }
         },
+        danger: a.danger.clone(),
+        rut: a.seasonal.iter().find_map(|s| match s {
+            SeasonalBehavior::Rut { season } => Some(*season),
+            _ => None,
+        }),
     }
 }
 

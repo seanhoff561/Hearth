@@ -563,6 +563,14 @@ fn run(
         save_state.as_ref().map(|s| s.dir.root.as_path()),
     );
     let mut animals_shown = false;
+    // How readily the animals turn on people: the world's Predator Behavior setting.
+    fauna.live.aggression = match life.predator_behavior {
+        hearth_save::PredatorBehavior::Authentic => 1.0,
+        hearth_save::PredatorBehavior::Wild => 2.5,
+        hearth_save::PredatorBehavior::Tranquil => 0.15,
+    };
+    // The tick of the player's last shout.
+    let mut shouted = 0u64;
     if mode == hearth_craft::Mode::Open {
         player.knowledge.known = hearth_craft::KnowledgeState::open(&workshop.graph, ticks).known;
     }
@@ -828,6 +836,7 @@ fn run(
                 }
                 Ok(ToServer::TimeWarp(w)) => warp = w.max(0.0),
                 Ok(ToServer::Pause(p)) => paused = p,
+                Ok(ToServer::Shout) => shouted = ticks,
                 Ok(ToServer::Census) => {
                     let _ = tx.send(ToClient::Census(fauna.census()));
                 }
@@ -895,9 +904,47 @@ fn run(
                     hour: env.local_time(&moment, at.x) as f32,
                     day_s: (calendar.ticks_per_day() * TICK_S) as f32,
                     air: env.air_at(&moment, at),
+                    year_frac: moment.year_frac as f32,
+                    southern: lw.map.planet().latitude(at.z) < 0.0,
                 };
-                let presence = fauna.presence_of(&player.mover, &lw.map, &lw.reg);
+                let hurt = player
+                    .body
+                    .injuries
+                    .iter()
+                    .filter(|i| i.healed < 1.0)
+                    .count();
+                let presence = fauna.presence_of(
+                    &player.mover,
+                    last_moved.as_ref().map_or(0.0, |m| m.yaw),
+                    ticks.saturating_sub(shouted) < 20,
+                    hurt,
+                    now.air.light,
+                    &lw.map,
+                    &lw.reg,
+                );
                 fauna.tick(&lw, &presence, &now, years_at(ticks), TICK_S as f32, ticks);
+                // What the animals did to the player: hurt them, or made them stop and think;
+                // and why.
+                for at in fauna.live.attacks.clone() {
+                    if !at.injury.is_empty() && player.body.dead.is_none() {
+                        let side = if at.animal % 2 == 0 {
+                            hearth_body::Side::Left
+                        } else {
+                            hearth_body::Side::Right
+                        };
+                        player
+                            .body
+                            .injure(&cfg, at.injury, at.region, side, at.severity);
+                        if at.venom {
+                            player.body.catch_illness(&cfg, "envenomation");
+                        }
+                    }
+                    let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                        process: String::new(),
+                        done: false,
+                        words: at.words.clone(),
+                    }));
+                }
                 if ticks.is_multiple_of(2) {
                     let views = fauna.views();
                     if !views.is_empty() || animals_shown {

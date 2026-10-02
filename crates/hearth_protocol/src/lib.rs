@@ -101,6 +101,8 @@ pub enum ToServer {
     },
     /// Stop the clock and the body (a single-player menu is open), or go on.
     Pause(bool),
+    /// A shout: loud, to make an animal think again.
+    Shout,
     /// Asks for a census of the groups of animals in the regions about the player (tools,
     /// tests, the debug map).
     Census,
@@ -164,6 +166,8 @@ pub struct Moved {
     pub immersion: f64,
     /// Seconds without air.
     pub airless_s: f64,
+    /// Which way the player faces (radians; 0 toward +z, turning toward +x).
+    pub yaw: f32,
 }
 
 /// What the client needs once the world is ready.

@@ -273,7 +273,17 @@ impl Fauna {
     /// How the animals sense a person from how they move: the noise of their going (by gait
     /// and the ground underfoot, as the player hears their own steps), how plain they stand
     /// (upright, crouched or crawling; moving or still; among plants), how high.
-    pub fn presence_of(&self, mover: &Mover, map: &CubeMap, reg: &BlockRegistry) -> Presence {
+    #[allow(clippy::too_many_arguments)]
+    pub fn presence_of(
+        &self,
+        mover: &Mover,
+        facing: f32,
+        shouting: bool,
+        hurt: usize,
+        light: f32,
+        map: &CubeMap,
+        reg: &BlockRegistry,
+    ) -> Presence {
         use hearth_audio::Surface as S;
         let speed = glam::DVec2::new(mover.vel.x, mover.vel.z).length() as f32;
         let (gait, plain, height) = match mover.stance {
@@ -315,11 +325,29 @@ impl Fauna {
             (true, false) => 0.8,
             _ => 1.0,
         };
+        let crouched = match mover.stance {
+            Stance::Crouching => 0.35,
+            Stance::Crawling => 0.5,
+            _ => 0.1,
+        };
+        // By a fire (or another light): the light where they stand.
+        let by_fire = map.block_light(BlockPos::containing(mover.pos + DVec3::Y)) >= 8;
         Presence {
             pos: mover.pos,
-            noise: (gait * loud).min(1.0),
+            noise: if shouting {
+                1.0
+            } else {
+                (gait * loud).min(1.0)
+            },
             plain: plain * still * cover,
             height,
+            facing,
+            upright: mover.stance == Stance::Standing,
+            shouting,
+            // Small and weak to a hunter: crouched or crawling, in the dark, hurt.
+            vulnerable: (crouched + (1.0 - light) * 0.35 + hurt.min(3) as f32 * 0.12).min(1.0),
+            by_fire,
+            running: speed > 3.5,
         }
     }
 

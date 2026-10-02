@@ -31,36 +31,55 @@ pub struct Presence {
     pub plain: f32,
     /// How high their body stands (m): upright, crouched, crawling.
     pub height: f32,
+    /// Which way they face (0 toward +z, turning toward +x).
+    pub facing: f32,
+    /// Standing tall.
+    pub upright: bool,
+    /// Shouting now.
+    pub shouting: bool,
+    /// How small and weak they seem to a hunter (0 … 1: crouched, alone, at night, hurt).
+    pub vulnerable: f32,
+    /// In the light of a fire.
+    pub by_fire: bool,
+    /// Running.
+    pub running: bool,
 }
 
 impl Presence {
-    /// Someone walking upright in the open.
+    /// Someone walking upright in the open by day.
     pub fn walking(pos: DVec3) -> Self {
         Self {
             pos,
             noise: 0.55,
             plain: 1.0,
             height: 1.7,
+            facing: 0.0,
+            upright: true,
+            shouting: false,
+            vulnerable: 0.1,
+            by_fire: false,
+            running: false,
         }
     }
 
     /// Someone stalking: crouched, slow and quiet.
     pub fn stalking(pos: DVec3) -> Self {
         Self {
-            pos,
             noise: 0.2,
             plain: 0.4,
             height: 1.0,
+            upright: false,
+            vulnerable: 0.5,
+            ..Self::walking(pos)
         }
     }
 
     /// Someone running.
     pub fn running(pos: DVec3) -> Self {
         Self {
-            pos,
             noise: 1.0,
-            plain: 1.0,
-            height: 1.7,
+            running: true,
+            ..Self::walking(pos)
         }
     }
 }
@@ -135,8 +154,8 @@ pub fn sense(
             best = Some((rate, s));
         }
     };
-    // Startled close by, whatever it sensed.
-    let startle = (sp.flight_m() * 0.15).max(2.0) as f64;
+    // Startled close by (a few of its own heights), whatever it sensed.
+    let startle = (2.0 + sp.shoulder_m * 3.0) as f64;
     if d < startle && p.noise + p.plain > 0.2 {
         take(10.0, Sense::Startle);
     }

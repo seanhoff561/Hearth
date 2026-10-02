@@ -982,3 +982,21 @@ running with its first runner is how herds share vigilance. Predators, hunting a
 the alarms will sound with come in (g)–(i). Clothing colour does not yet change how plain a
 person stands (nothing records clothing colour beyond its look).
 
+## D86 — Attacks only for causes, weighed once an encounter; acceleration bounded
+The spec asks that predators avoid people most of the time and attack for real reasons (hunger
+in lean seasons, surprise, defense of young, food or kills, cornering, the person seeming small,
+territory), that dangerous herbivores charge when threatened, that snakes bite when stepped
+near, that counterplay be real (fire, standing tall and facing them with noise, not running from
+a cat), and V2-7's acceptance that every attack log a realistic cause. An attack therefore
+cannot begin without a cause holding, each cause with its own conditions and odds from the
+species' aggression and the world's setting, rolled once an encounter (then not for fifteen
+seconds) so that lingering near an animal is not a slot machine; the cause travels with the
+charge and is told to the player and logged. Bluff charges are the common outcome for defenders
+(as bears' are), and a defender that has struck goes; only hunger presses on. Territorial defense
+and habituation to people's food are not modelled yet (no dens, no stores of food that draw
+animals); wounds from hunting and the provocation they bring come with (h). Speeds changed from
+an exponential ease (which got a deer to two thirds of its top speed in a quarter of a second) to
+bounded acceleration (six metres a second every second, more for hunters and small bodies), as
+an ambush depends on it: with the ease every prey that noticed a rush was gone before the hunter
+reached it.
+
