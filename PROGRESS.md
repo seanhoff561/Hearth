@@ -430,7 +430,131 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
     low at 1280×720 on the RTX 4060 Laptop).
   - The V2-5 bot now dries meat in the summer after its first kill, fetching kills for hides
     while it dries: fire on day 0.2, dried meat 15.6, moccasins 16.7, spear 17.3.
-- [ ] V2-7 — Fauna framework (temperate forest first)
+- [x] V2-7 — Fauna framework (temperate forest first): 43 Tier 1 temperate species
+  (Palearctic and Nearctic) living as populations in 256 m cells and 16 km regions, brought into
+  the world as animals near the player with bodies, gaits, coats, minds, ways, danger, wounds,
+  signs and voices; carcasses and butchering by species; the acceptance
+  (`hearth_fauna/tests/acceptance_v2_7.rs`) and the performance gate (lowland forest −4.7 %
+  average FPS against the end of V2-6, the other scenes within ±2 %). In parts:
+  - [x] (a) Realms and content: biogeographic realms per landmass (D80; the trees of a realm
+    are its own, stand-ins from one realm where it has none); the fauna schema's life history,
+    ranging, coats, yields, tracks, calls and temperament; the Tier 1 temperate set, Palearctic
+    and Nearctic (43 species: `fauna/temperate*.ron`), the freshwater ecosystem, the animal
+    materials (earthworms, offal, fur pelts, feathers, tusk, horn, raw fish, honey, beeswax).
+  - [x] (b) Populations (`hearth_fauna`, D81, docs/design/fauna.md "Populations"): habitats of
+    256 m cells from the generator and the vegetation (Miami production shared out by canopy,
+    regrowth and mast trees, seasons, snow, yearly weather, mast years); groups for large animals
+    and numbers per cell for small ones; hunting by calibrated functional responses (type III for
+    generalists, prey refuges in cover), scramble competition for forage and carrion, condition,
+    deaths by cause, births by season and condition, territories, crowding past capacity,
+    dispersal and budding, immigration at the edges; regions of 16 km with each cell's own realm
+    of animals. Tests: a uniform wood holds every species for 30 years; heavy hunting of red
+    deer depletes and they recover; a generated temperate region feeds its animals. (Saving
+    regions and the 50-year run on a generated region come with (c) and (j).)
+  - [x] (c) Animals in the world (D82, docs/design/fauna.md "Animals in the world"): the server
+    keeps the 3 × 3 regions about the player, advances them with the calendar and saves them
+    (`fauna.json.zst`); groups within 112 m come into the world as their members and fold back
+    beyond 150 m (the dead staying dead), small walking species drawn from the cells within 80 m;
+    grazing, wandering, resting by their hours and fleeing within their flight distance; the
+    `Animals` and `Census` messages; the client eases and draws them (box bodies until (d)).
+    Screenshots: `animal=`, `herd=`, `fauna=true`, `seek=<species>[:n]` (the camera where it
+    sees the most of the nth nearest group). Test: walking to the groups about the spawn meets
+    animals on the ground that move and are folded away when left behind. Deferred to (j):
+    making regions on a worker (done in (j)).
+  - [x] (d) Bodies (D83, docs/design/fauna.md "Bodies"): skeletons built from data at real
+    dimensions for every body plan in the content (four-legged, birds, snakes, fish, frogs,
+    insects), their `shape` proportions defaulting by plan (antlers grown and cast by season,
+    horns, tusks, humps); gaits by the Froude number with Alexander's stride, every foot set by
+    two-bone IK on the ground under it and the body pitched to the slope; head, jaw, ears, tail
+    and breath; lying, asleep, grazing, drinking, grooming, alert (hares and squirrels sit up),
+    rearing, attacking; birds hop, peck and fly, snakes wind and coil, fish swim, frogs sit and
+    hop; coats painted per species and variant (winter, male, young) into one atlas by
+    `hearth_texgen::coats`, read by the figure shader (one instanced draw with the players). All
+    43 species and the 3 ecosystems they live in are implemented. Screenshot keys: `mow=`, every
+    act on `animal=`. Tests: every species at its dimensions, every act poses whole, feet on a
+    slope, gaits by speed, antlers by season, the atlas without overlaps. Deferred: posing on the
+    GPU (the CPU poses a herd in well under a millisecond; revisit with the ambient flocks of
+    (i)); coats from resource packs.
+  - [x] (e) Navigation (D84, docs/design/fauna.md "Finding the way"): ways searched by A* on the
+    loaded blocks a column at a time with each body's step, wading and swimming rules, bounded
+    per search and per step, drawn straight where the ground allows; walkers run from a person
+    along them and swim where they must; climbers (squirrels, the black bear) run up the nearest
+    trunk; birds big enough to see (crows, ravens, owls, capercaillie, turkey) forage, perch on
+    crowns and fly over the trees; fish keep to the streams. The client draws swimming, climbing,
+    perched and flying bodies. Screenshot keys: `run=` (the animals live on with the camera among
+    them), `near=water`, and the `swim`, `climb`, `perch` and `fly` acts. Tests: ways round a
+    wall, across a river for swimmers and not for others, fish in the water, flights over a
+    crown to a perch; a deer swims a river to get away, a squirrel runs up a tree, a crow flies
+    to a tree's crown, a trout keeps to its stream.
+  - [x] (f) Minds (D85, docs/design/fauna.md "Minds"): sight (field of view, daylight and night
+    vision, how plain the person stands, cover along the line of sight), hearing (the noise of the
+    player's gait and the ground underfoot), scent carried downwind, startle; suspicion rising and
+    fading; watching, running when aware within flight distance, freezing for those that hide;
+    the herd running with the first to run; the young following their mothers; thirst and going
+    to water to drink; a utility choice of what to do at ease weighted by the species' `habits`
+    (data). The server senses the player from their mover and the weather's wind and daylight.
+    Tests: downwind against upwind, crouched against running, still at night against by day, the
+    herd running together, a calf following, a roe deer freezing then running, a thirsty deer
+    drinking. Packs hunting together come with the predators of (g).
+  - [x] (g) Danger (D86, docs/design/fauna.md "Danger"): animals turn on a person only for a
+    cause — defending young or a kill, surprise, cornered, rut, a hunter's hunger in a lean season
+    with the person seeming small, a snake stepped near — at the species' aggression by the
+    world's Predator Behavior setting less what it has learned to fear; charges that close or stop
+    short; blows as each body strikes (mauling, tusks, horns and antlers, forefeet, bites, venom)
+    applied to the player's body; counterplay: fire, facing it upright and loud (the Shout key,
+    H), backing off, not running from a hunter; every charge and blow told with its cause and
+    logged. Hunters hunt their prey in the world (cats ambush, wolves run their prey down as a
+    pack), prey sensing them as they sense people; kills lie dead. Bodies accelerate at bounded
+    rates. Tests: a bear guarding her cub charges (mostly bluffs; fewer close when faced down;
+    seldom in a tranquil world), hungry wolves at night in late winter but not by a fire, a boar
+    surprised close, an adder stepped near bites with venom, a lynx ambushes a roe deer, a charge
+    ends when the person backs off. Deferred: territorial defense at dens, habituation to people's
+    food.
+  - [x] (h) Hunting, wounds, tracks, carcasses and butchering by species (D87, D88,
+    docs/design/fauna.md "Carcasses and butchering", "Hunting and wounds", "Tracks and signs"):
+    carcasses generated per species from its data (a grown one's, a male's where the sexes differ
+    — the new `dimorphism` — a young one's where worth working; 61 for the temperate set) with
+    butchering and hacking at each (yields by mass, fat by the season, antlers in their seasons,
+    work by size); the craft engine's seasonal outputs, what is left of a carcass, decay passed on,
+    freshest inputs first. The kill stand-in is gone: kills in the world lie with what the hunter
+    ate gone; the populations keep remains where large animals die (predation, age, hunger, winter,
+    crowding) that come into the world within 90 m and that ravens tell of within 2 km by day.
+    Carcasses drawn as the animal dead on a flank. Hunting: throws stray by the `throwing` skill
+    and strike the first animal on their flight; thrusts with what is in hand; wounds by part and
+    depth (energy and sharpness against the body's width), bleeding to death, clotting flesh
+    wounds, lameness, stunning; a wounded defender close by turns on the person; the person told
+    when their quarry falls. Signs: prints in soft ground, blood trails, droppings, read with the
+    new tracking knowledge. Screenshot keys: the `dead` act, `trail=`. Tests: carcasses by species,
+    a red deer by sex, age and season, butchery enabling every species' butchering, seasonal fat
+    and antlers, what is left and decay passed on, remains kept and found and told of by ravens, a
+    lynx's kill eaten from, a dead deer found and butchered in the world, a spear behind the
+    shoulder, a gut-struck deer lying up, a light wound healing, wooden and stone points, a stone
+    at a hare, a wounded boar turning, a throw over the back, prints in snow and not grass, a blood
+    trail, a hunter spearing an animal that lies where it fell. The V2-5 acceptance forces a roe
+    deer's natural death near camp every day or two. Deferred: whole hides by species (hides
+    come as sheets of a kilogram; a large animal's is many) and hide-working times by area;
+    drying spoiled meat still makes good dried meat; prints spaced by the walking stride at every
+    gait.
+  - [x] (i) Calls, the dawn chorus, ambient birds and insects (D89, docs/design/fauna.md
+    "Calls and ambient life"): calls made from each species' data (19 kinds of call synthesized:
+    roars, barks, howls, hoots, songs, caws, drumming, rattles…), heard by distance, air and
+    direction with captions; animals call for alarm, distress, threat, the rut, contact,
+    territory, the dawn and the night at real-time rates, a pack taking up a howl together; the
+    populations' songbirds, owls and woodpeckers sing about the player (the dawn chorus), and far
+    packs howl and stags roar from their groups; crickets on warm summer nights by Dolbear's law.
+    Tests: every call heard and ending, low and high calls; a deer put to flight barks, a struck
+    hare screams; a pack howls by night together and not by day; a stag roars in the autumn rut
+    and not in spring; the chorus at dawn in spring against noon, night and winter, owls by night.
+    Deferred: birds and insects seen (flocks crossing the sky, insects over flowers) and with them
+    posing on the GPU.
+  - [x] (j) Acceptance and the performance gate (D90, docs/design/fauna.md "Acceptance"):
+    `acceptance_v2_7.rs` — fifty years of the 3 × 3 regions about the spawn stay within bounds for
+    every species held ten of or more; heavy hunting of the roe deer there thins them to a sixth
+    and they come back; every attack in seven kinds of encounter says its cause, each only where
+    it can hold. The populations' fixes it called for: the small species' young die at the first
+    year's rate only in their first year; crowding falls on the young and half-grown; prey reckoned
+    over their own habitat; a predator on a realm's border hunts as at home. Regions are made on
+    worker threads, three at a time. The performance gate run at the end.
 - [ ] V2-8 — Structural building & shelter
 - [ ] V2-9 — Vertical slice review
 - [ ] V2-10 — Ecosystem expansion waves
@@ -467,126 +591,7 @@ Generated by `hearth content status` (Implemented = used by a game system; Plann
 | Eras | 0 | 8 |
 
 ## In progress
-V2-7 — Fauna framework (temperate forest first), in parts:
-- [x] (a) Realms and content: biogeographic realms per landmass (D80; the trees of a realm
-  are its own, stand-ins from one realm where it has none); the fauna schema's life history,
-  ranging, coats, yields, tracks, calls and temperament; the Tier 1 temperate set, Palearctic
-  and Nearctic (43 species: `fauna/temperate*.ron`), the freshwater ecosystem, the animal
-  materials (earthworms, offal, fur pelts, feathers, tusk, horn, raw fish, honey, beeswax).
-- [x] (b) Populations (`hearth_fauna`, D81, docs/design/fauna.md "Populations"): habitats of
-  256 m cells from the generator and the vegetation (Miami production shared out by canopy,
-  regrowth and mast trees, seasons, snow, yearly weather, mast years); groups for large animals
-  and numbers per cell for small ones; hunting by calibrated functional responses (type III for
-  generalists, prey refuges in cover), scramble competition for forage and carrion, condition,
-  deaths by cause, births by season and condition, territories, crowding past capacity,
-  dispersal and budding, immigration at the edges; regions of 16 km with each cell's own realm
-  of animals. Tests: a uniform wood holds every species for 30 years; heavy hunting of red
-  deer depletes and they recover; a generated temperate region feeds its animals. (Saving
-  regions and the 50-year run on a generated region come with (c) and (j).)
-- [x] (c) Animals in the world (D82, docs/design/fauna.md "Animals in the world"): the server
-  keeps the 3 × 3 regions about the player, advances them with the calendar and saves them
-  (`fauna.json.zst`); groups within 112 m come into the world as their members and fold back
-  beyond 150 m (the dead staying dead), small walking species drawn from the cells within 80 m;
-  grazing, wandering, resting by their hours and fleeing within their flight distance; the
-  `Animals` and `Census` messages; the client eases and draws them (box bodies until (d)).
-  Screenshots: `animal=`, `herd=`, `fauna=true`, `seek=<species>[:n]` (the camera where it
-  sees the most of the nth nearest group). Test: walking to the groups about the spawn meets
-  animals on the ground that move and are folded away when left behind. Deferred to (j):
-  making regions on a worker (done in (j)).
-- [x] (d) Bodies (D83, docs/design/fauna.md "Bodies"): skeletons built from data at real
-  dimensions for every body plan in the content (four-legged, birds, snakes, fish, frogs,
-  insects), their `shape` proportions defaulting by plan (antlers grown and cast by season,
-  horns, tusks, humps); gaits by the Froude number with Alexander's stride, every foot set by
-  two-bone IK on the ground under it and the body pitched to the slope; head, jaw, ears, tail
-  and breath; lying, asleep, grazing, drinking, grooming, alert (hares and squirrels sit up),
-  rearing, attacking; birds hop, peck and fly, snakes wind and coil, fish swim, frogs sit and
-  hop; coats painted per species and variant (winter, male, young) into one atlas by
-  `hearth_texgen::coats`, read by the figure shader (one instanced draw with the players). All
-  43 species and the 3 ecosystems they live in are implemented. Screenshot keys: `mow=`, every
-  act on `animal=`. Tests: every species at its dimensions, every act poses whole, feet on a
-  slope, gaits by speed, antlers by season, the atlas without overlaps. Deferred: posing on the
-  GPU (the CPU poses a herd in well under a millisecond; revisit with the ambient flocks of
-  (i)); coats from resource packs.
-- [x] (e) Navigation (D84, docs/design/fauna.md "Finding the way"): ways searched by A* on the
-  loaded blocks a column at a time with each body's step, wading and swimming rules, bounded
-  per search and per step, drawn straight where the ground allows; walkers run from a person
-  along them and swim where they must; climbers (squirrels, the black bear) run up the nearest
-  trunk; birds big enough to see (crows, ravens, owls, capercaillie, turkey) forage, perch on
-  crowns and fly over the trees; fish keep to the streams. The client draws swimming, climbing,
-  perched and flying bodies. Screenshot keys: `run=` (the animals live on with the camera among
-  them), `near=water`, and the `swim`, `climb`, `perch` and `fly` acts. Tests: ways round a
-  wall, across a river for swimmers and not for others, fish in the water, flights over a
-  crown to a perch; a deer swims a river to get away, a squirrel runs up a tree, a crow flies
-  to a tree's crown, a trout keeps to its stream.
-- [x] (f) Minds (D85, docs/design/fauna.md "Minds"): sight (field of view, daylight and night
-  vision, how plain the person stands, cover along the line of sight), hearing (the noise of the
-  player's gait and the ground underfoot), scent carried downwind, startle; suspicion rising and
-  fading; watching, running when aware within flight distance, freezing for those that hide;
-  the herd running with the first to run; the young following their mothers; thirst and going
-  to water to drink; a utility choice of what to do at ease weighted by the species' `habits`
-  (data). The server senses the player from their mover and the weather's wind and daylight.
-  Tests: downwind against upwind, crouched against running, still at night against by day, the
-  herd running together, a calf following, a roe deer freezing then running, a thirsty deer
-  drinking. Packs hunting together come with the predators of (g).
-- [x] (g) Danger (D86, docs/design/fauna.md "Danger"): animals turn on a person only for a
-  cause — defending young or a kill, surprise, cornered, rut, a hunter's hunger in a lean season
-  with the person seeming small, a snake stepped near — at the species' aggression by the
-  world's Predator Behavior setting less what it has learned to fear; charges that close or stop
-  short; blows as each body strikes (mauling, tusks, horns and antlers, forefeet, bites, venom)
-  applied to the player's body; counterplay: fire, facing it upright and loud (the Shout key,
-  H), backing off, not running from a hunter; every charge and blow told with its cause and
-  logged. Hunters hunt their prey in the world (cats ambush, wolves run their prey down as a
-  pack), prey sensing them as they sense people; kills lie dead. Bodies accelerate at bounded
-  rates. Tests: a bear guarding her cub charges (mostly bluffs; fewer close when faced down;
-  seldom in a tranquil world), hungry wolves at night in late winter but not by a fire, a boar
-  surprised close, an adder stepped near bites with venom, a lynx ambushes a roe deer, a charge
-  ends when the person backs off. Deferred: territorial defense at dens, habituation to people's
-  food.
-- [x] (h) Hunting, wounds, tracks, carcasses and butchering by species (D87, D88,
-  docs/design/fauna.md "Carcasses and butchering", "Hunting and wounds", "Tracks and signs"):
-  carcasses generated per species from its data (a grown one's, a male's where the sexes differ
-  — the new `dimorphism` — a young one's where worth working; 61 for the temperate set) with
-  butchering and hacking at each (yields by mass, fat by the season, antlers in their seasons,
-  work by size); the craft engine's seasonal outputs, what is left of a carcass, decay passed on,
-  freshest inputs first. The kill stand-in is gone: kills in the world lie with what the hunter
-  ate gone; the populations keep remains where large animals die (predation, age, hunger, winter,
-  crowding) that come into the world within 90 m and that ravens tell of within 2 km by day.
-  Carcasses drawn as the animal dead on a flank. Hunting: throws stray by the `throwing` skill
-  and strike the first animal on their flight; thrusts with what is in hand; wounds by part and
-  depth (energy and sharpness against the body's width), bleeding to death, clotting flesh
-  wounds, lameness, stunning; a wounded defender close by turns on the person; the person told
-  when their quarry falls. Signs: prints in soft ground, blood trails, droppings, read with the
-  new tracking knowledge. Screenshot keys: the `dead` act, `trail=`. Tests: carcasses by species,
-  a red deer by sex, age and season, butchery enabling every species' butchering, seasonal fat
-  and antlers, what is left and decay passed on, remains kept and found and told of by ravens, a
-  lynx's kill eaten from, a dead deer found and butchered in the world, a spear behind the
-  shoulder, a gut-struck deer lying up, a light wound healing, wooden and stone points, a stone
-  at a hare, a wounded boar turning, a throw over the back, prints in snow and not grass, a blood
-  trail, a hunter spearing an animal that lies where it fell. The V2-5 acceptance forces a roe
-  deer's natural death near camp every day or two. Deferred: whole hides by species (hides
-  come as sheets of a kilogram; a large animal's is many) and hide-working times by area;
-  drying spoiled meat still makes good dried meat; prints spaced by the walking stride at every
-  gait.
-- [x] (i) Calls, the dawn chorus, ambient birds and insects (D89, docs/design/fauna.md
-  "Calls and ambient life"): calls made from each species' data (19 kinds of call synthesized:
-  roars, barks, howls, hoots, songs, caws, drumming, rattles…), heard by distance, air and
-  direction with captions; animals call for alarm, distress, threat, the rut, contact,
-  territory, the dawn and the night at real-time rates, a pack taking up a howl together; the
-  populations' songbirds, owls and woodpeckers sing about the player (the dawn chorus), and far
-  packs howl and stags roar from their groups; crickets on warm summer nights by Dolbear's law.
-  Tests: every call heard and ending, low and high calls; a deer put to flight barks, a struck
-  hare screams; a pack howls by night together and not by day; a stag roars in the autumn rut
-  and not in spring; the chorus at dawn in spring against noon, night and winter, owls by night.
-  Deferred: birds and insects seen (flocks crossing the sky, insects over flowers) and with them
-  posing on the GPU.
-- [x] (j) Acceptance and the performance gate (D90, docs/design/fauna.md "Acceptance"):
-  `acceptance_v2_7.rs` — fifty years of the 3 × 3 regions about the spawn stay within bounds for
-  every species held ten of or more; heavy hunting of the roe deer there thins them to a sixth
-  and they come back; every attack in seven kinds of encounter says its cause, each only where
-  it can hold. The populations' fixes it called for: the small species' young die at the first
-  year's rate only in their first year; crowding falls on the young and half-grown; prey reckoned
-  over their own habitat; a predator on a realm's border hunts as at home. Regions are made on
-  worker threads, three at a time. The performance gate run at the end.
+Nothing: V2-8 is next.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -596,14 +601,12 @@ V2-7 — Fauna framework (temperate forest first), in parts:
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. V2-7 — Fauna framework (temperate forest first, PLAN.md): the engine's v1 M9
-   infrastructure (ECS integration, body plans with shared skeletons, procedural animation,
-   pathfinding for walking, swimming, flying and climbing, instanced rendering, animal audio);
-   species coats, senses with wind-carried scent, utility-AI behaviours, herds and packs,
-   ecological cells with population dynamics, materialization and folding, biogeographic
-   realms (which also end the Nearctic trees in every world), predators with real attack
-   causes, tracking, hunting and butchering of real animals (replacing the kill stand-in),
-   Tier 1 temperate fauna, ambient birds and insects.
+1. V2-8 — Structural building & shelter (PLAN.md): construction pieces and stages; an
+   incremental stability solver (support propagation and load checks) with collapses and
+   debris; excavation supports; roofs, rain and rot; shelter quality; the builder's view; the
+   techniques of Eras 0–3. Accept: a too-long stone span collapses; a timber-supported tunnel
+   stands; thatch keeps rain out while a flat bark roof leaks; the solver within budget on large
+   structures.
 
 ## Known issues
 - In this environment presents never block (FIFO on both Vulkan and DX12 ran at ~1.5–2k FPS
@@ -611,6 +614,13 @@ V2-7 — Fauna framework (temperate forest first), in parts:
   window; the frame limiter covers the vsync-off case.
 
 ## Deferred
+- Fauna (V2-7): birds and insects seen (flocks crossing the sky, insects over flowers) and
+  posing bodies on the GPU with them; territorial defence at dens and animals drawn to people's
+  food; whole hides by species and hide-working times by area (hides come as sheets of a
+  kilogram); drying spoiled meat still makes good dried meat; prints spaced by the walking
+  stride at every gait; coats from resource packs; the timber rattlesnake holds at about a
+  tenth of its capacity on the generated land about the spawn (food-limited there: its attack
+  rates are calibrated on the reference wood).
 - Flora (V2-6): trees regrow only on tree sites and one tree stands on a site at a time; a
   fallen trunk does not rot and a felled tree's foliage does not wither; a fire burning at a
   save is out on opening; fire does not spread from a campfire to the grass about it and
