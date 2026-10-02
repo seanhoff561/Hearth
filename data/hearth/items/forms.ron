@@ -249,6 +249,18 @@
             tags: ["binding"],
         ),
         (
+            // Sun-dried mud and straw, moulded: a small brick of a hand's weight several times.
+            id: "brick", status: Implemented, name: "{material} mudbrick", materials: (categories: [Clay]),
+            size_m: (0.3, 0.08, 0.15), fill: 1.0, footprint: (2, 1),
+            tags: ["building"],
+        ),
+        (
+            // Packed snow cut with a blade, for walls: light, and it melts.
+            id: "snow_block", status: Implemented, name: "block of {material}", materials: (categories: [Snow]),
+            size_m: (0.6, 0.2, 0.4), fill: 1.0, footprint: (3, 2),
+            tags: ["building"],
+        ),
+        (
             // A length of trunk: a metre of a 40 cm log, rolled or dragged, too heavy to carry.
             id: "log_section", status: Implemented, name: "{material} log section", materials: (categories: [Wood]),
             size_m: (1.0, 0.4, 0.4), fill: 0.785, footprint: (2, 5),

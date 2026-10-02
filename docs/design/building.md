@@ -1,6 +1,6 @@
 # Building and structure
 
-*Status: V2-8 in progress — (a) pieces in the world, (b) stability, (c) excavation, (d) weather, (e) shelter and (f) the builder's view done. Pieces' data since V2-0
+*Status: V2-8 in progress — (a) pieces in the world, (b) stability, (c) excavation, (d) weather, (e) shelter, (f) the builder's view, (g) the techniques of Eras 0–3 and (h) acceptance done. Pieces' data since V2-0
 (`construction/`).*
 
 ## Pieces in the world (V2-8 (a))
@@ -203,6 +203,50 @@ again only when the ghost moves or every half second), and shows it pale (stands
 but something is pressed past seven tenths) or red (rests on nothing, or something would give
 way).
 
-## Planned (V2-8 (g)–(h))
-The Era 0–3 techniques (thatch, wattle and daub, pit house, mudbrick, snow blocks, timber
-shoring); acceptance.
+## Techniques of Eras 0–3 (V2-8 (g))
+
+| Technique | Knowledge (era) | Pieces | What it takes, a piece |
+|---|---|---|---|
+| Windbreak | windbreak (0) | brush wall; snow wall | 24 sticks; 19 cut snow blocks |
+| Lean-to, hide tent | lean-to (1) | pole post and beam, bark roof and flat covering, hide wall and roof | a pole; 56 bark strips (40 flat) or 7 hides, on two pole rafters |
+| Dry stone | — | dry-stone wall, stone lintel | 36 fieldstones; a slab |
+| Thatch | thatching (3) | reed thatch at 45° | 35 kg of reed (a foot of it, 25 kg/m²) on two rafters |
+| Pit house | pit house (3) | log post, log beam | a log section (a metre of a 40 cm trunk) |
+| Wattle and daub | wattle and daub (3) | wattle panel; daub on wattle | 12 hazel or willow rods; 160 lumps of clay, 12 rods and a kilo of dry grass |
+| Mudbrick | mudbrick (3) | mudbrick wall | 75 mudbricks and 12 lumps of clay for mortar |
+
+New things to make: a **mudbrick** (`make_mudbrick`: eight lumps of clay and a little dry grass
+moulded and left two days in dry weather; one in seven cracks), a **block of snow**
+(`cut_snow_block`: cut from packed snow with any blade, a few from each block's worth). The new
+knowledge is found as the old was: the pit house by digging soil once the lean-to is known (it
+is out of the wind down there) or by inference, thatching by weaving reed, wattle and daub by
+weaving reed or seeing clay, mudbrick by digging clay. Timber shoring under ground uses the log
+post and beam: a log post bears a clay roof's weight that buckles a pole at once. Log walls wait
+for timber framing, which needs the ground-stone axe (V2-12).
+
+Built earth is dried: its texture is paler than the wet ground's and grainy with straw. A
+pitched thatch (45°) sheds rain, insulates (R 1.5) and rots only slowly off the ground; daub and
+mudbrick wash away where the rain reaches them, so they want eaves; a thatch roof needs a ridge
+held at its ends (a post up to it at each gable) and a lintel over a doorway, or the builder's
+view shows it red.
+
+## Acceptance (V2-8 (h))
+
+`crates/hearth/tests/acceptance_v2_8.rs`:
+
+- **Stone spans.** On the generated land, by the player's own processes (in held mild
+  weather: a naked builder walling for a day and a night would freeze): dry-stone piers two
+  high; a granite slab across a one-block doorway stands; two slabs over two blocks, laid on
+  hazel props, both fall the moment the first prop is taken away — nothing carries across
+  their joint.
+- **A timbered chamber.** In clay, a chamber three wide and two high: unshored, its roof falls
+  in and the fall works upward; on hazel-pole sets the poles buckle and the clay comes in after
+  them; on oak log posts with log caps every other block it stands, the timbers pressed less
+  than seven tenths.
+- **Rain.** Under a flat birch-bark covering on a frame the rain comes through at two fifths
+  (4 mm/h of 10); under reed thatch at 45° none (a thatch roof is heavy: its beam wants a post
+  at each end, as a pole lashed out from one alone breaks under it).
+- **Budget.** A dry-stone wall of 8000 pieces is reckoned in about ten milliseconds in the
+  test build.
+
+The performance gate closes the milestone.

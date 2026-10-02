@@ -245,9 +245,17 @@ pub fn piece_textures(content: &Content) -> Vec<TexEntry> {
             .split_once(':')
             .map_or(p.material.as_str(), |(_, p)| p);
         let name = format!("material/{path}");
+        // Earth built with is dried: paler than the wet ground it came from, and grainy with
+        // its straw.
+        use hearth_content::schema::material::MaterialCategory as Cat;
+        let mut look = m.appearance;
+        if matches!(m.category, Cat::Clay | Cat::Soil | Cat::Sediment) {
+            look.color.0 = look.color.0.map(|c| (c as f32 * 1.45).min(235.0) as u8);
+            look.pattern = hearth_content::schema::material::Pattern::Grainy;
+        }
         out.push(TexEntry::still(
             &format!("block/{name}"),
-            texture(&name, &m.appearance),
+            texture(&name, &look),
         ));
     }
     out

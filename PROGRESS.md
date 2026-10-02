@@ -637,8 +637,14 @@ V2-8 — Structural building & shelter, in parts (PLAN.md; v2 §14; docs/design/
   their land loaded; the ghost reckons the structure it would join on the client
   (`Structures::would_bear`, cached half a second) and shows pale, amber or red. Screenshot
   option `stress=true`.
-- [ ] (g) Era 0–3 techniques: windbreak, lean-to, hide tent, pit house, wattle-and-daub hut,
-  thatched roof, log walls, dry-stone walls, mudbrick, timber shoring — knowledge, processes.
+- [x] (g) Era 0–3 techniques: thatching, pit house, wattle and daub and mudbrick knowledge
+  implemented with discovery routes; pieces reed thatch (on rafters), wattle panel, daub on
+  wattle, mudbrick wall, snow wall, log post and log beam (pit houses' frames, props and caps
+  under ground); new forms mudbrick and block of snow with `make_mudbrick` (unattended, two
+  dry days) and `cut_snow_block`; dried earth pieces textured paler and grainy. The lint now
+  infers the materials of what is done to blocks by name (a log of any tree) and orders eras
+  by their implemented nodes. Deferred: log walls (timber framing needs the ground-stone axe,
+  V2-12).
 - [ ] (h) Acceptance (a too-long stone span collapses; a timber-supported tunnel stands; thatch
   keeps rain out while a flat bark roof leaks; the solver within budget on large structures)
   and the performance gate.

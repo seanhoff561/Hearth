@@ -42,6 +42,9 @@ pub struct Reach {
     pub order: Vec<String>,
     /// Discovery triggers something obtainable emits.
     pub triggers: FxHashSet<String>,
+    /// The world's blocks and their materials, when known (what a process done to a block
+    /// makes its outputs of).
+    pub blocks: Vec<(String, Option<String>)>,
 }
 
 /// Rolled-up cost of reaching a knowledge node from nothing.
@@ -579,6 +582,17 @@ fn materials_in_play(p: &Process, reach: &Reach, c: &Content) -> Vec<String> {
                 .filter(|m| f.matches(m.id(), m))
                 .map(|m| m.id().to_owned()),
         );
+    } else if let Some(Target::Block(b)) = &p.target {
+        // Done to blocks by name (a log of any tree): the materials of the world's blocks it
+        // accepts.
+        for (name, mat) in &reach.blocks {
+            if let Some(m) = mat
+                && crate::triggers::block_matches(b, name, c.materials.get(m))
+                && !mats.contains(m)
+            {
+                mats.push(m.clone());
+            }
+        }
     }
     mats
 }
@@ -604,7 +618,7 @@ fn produce(out: &Output, p: &Process, reach: &mut Reach, c: &Content, new: &mut 
             }
         }
         Match::Form { form, materials } => {
-            let mats = match materials {
+            let mut mats = match materials {
                 Some(f) => c
                     .materials
                     .iter()
@@ -613,6 +627,20 @@ fn produce(out: &Output, p: &Process, reach: &mut Reach, c: &Content, new: &mut 
                     .collect(),
                 None => materials_in_play(p, reach, c),
             };
+            // Done to a block by name with the world's blocks unknown: whatever the form may
+            // be made of.
+            if mats.is_empty()
+                && reach.blocks.is_empty()
+                && matches!(p.target, Some(Target::Block(_)))
+                && let Some(f) = c.forms.get(form.as_str())
+            {
+                mats = c
+                    .materials
+                    .iter()
+                    .filter(|m| f.materials.matches(m.id(), m))
+                    .map(|m| m.id().to_owned())
+                    .collect();
+            }
             for m in mats {
                 let id = crate::generate::generated_id(form.as_str(), &m);
                 if c.items.get(&id).is_some() {
@@ -663,6 +691,7 @@ fn heard(
 pub fn reachability_in(c: &Content, blocks: Option<&[(String, Option<String>)]>) -> Reach {
     let mut reach = Reach {
         materials: natural_materials(c),
+        blocks: blocks.map(<[_]>::to_vec).unwrap_or_default(),
         ..Reach::default()
     };
     reach
@@ -1070,6 +1099,10 @@ fn effort_report(efforts: &[Effort], report: &mut Report) {
         if planned {
             continue;
         }
+        // Ordered by the nodes made so far: the planned ones of a part-made era have few
+        // processes yet and would make it look cheap.
+        let made: Vec<&&Effort> = list.iter().filter(|e| e.implemented).collect();
+        let steps = made.iter().map(|e| e.steps as f64).sum::<f64>() / made.len().max(1) as f64;
         if steps < last_mean {
             report.warning(
                 "effort-order",

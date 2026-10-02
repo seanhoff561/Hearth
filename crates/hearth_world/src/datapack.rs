@@ -169,11 +169,6 @@ fn generated_blocks(packs: &[PathBuf]) -> Vec<(ResourceLocation, Map<String, Val
             "light_opacity".into(),
             Value::from(if covers { 15 } else { 0 }),
         );
-        if p.shape == S::Block {
-            obj.insert("opaque".into(), Value::Bool(true));
-            obj.insert("render".into(), "cube".into());
-            obj.insert("layer".into(), "opaque".into());
-        }
         obj.insert("hardness".into(), Value::from(p.hardness as f64));
         obj.insert("resistance".into(), Value::from(p.hardness as f64 * 2.0));
         obj.insert("sound".into(), p.sound.into());

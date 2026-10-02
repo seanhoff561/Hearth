@@ -247,6 +247,22 @@
             outputs: [(item: Form(form: "lump"), amount: (1, 2))],
         ),
         (
+            // Mud and chopped grass pressed into a mould and left in the sun two days.
+            id: "make_mudbrick", status: Implemented, name: "Make a mudbrick", action: "press mud and straw into a brick to dry",
+            verb: "mould", attended: false, conditions: [Dry],
+            inputs: [(item: Form(form: "lump", materials: (categories: [Clay])), amount: 8), (item: Material("dry_grass"), amount: 0.1)],
+            duration: (hours: 48.0), knowledge: "mudbrick", mets: 3.0,
+            outputs: [(item: Form(form: "brick"), amount: (1, 1))],
+            failures: [(chance: 0.15, min_chance: 0.05, outcome: "The brick cracks as it dries.")],
+        ),
+        (
+            // A blade cuts packed snow into blocks, a few from each drift's worth.
+            id: "cut_snow_block", status: Implemented, name: "Cut a block of snow", action: "cut a block from the packed snow",
+            verb: "cut", target: Block(Material((categories: [Snow]))), effect: Deplete,
+            inputs: [], tools: [(property: "sharp_edge", min: 0.1)], duration: (hours: 0.1), mets: 4.0,
+            outputs: [(item: Form(form: "snow_block"), amount: (1, 1))],
+        ),
+        (
             id: "dig_ochre", status: Implemented, name: "Dig ochre", action: "dig out a lump of the coloured earth",
             verb: "dig", target: Block(Material((ids: ["red_ochre", "yellow_ochre"]))), effect: Deplete,
             inputs: [], duration: (hours: 0.2), mets: 4.0,
