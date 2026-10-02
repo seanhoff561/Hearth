@@ -63,6 +63,10 @@ impl<T> Table<T> {
         self.index.get(id).map(|&i| &self.entries[i])
     }
 
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut T> {
+        self.index.get(id).map(|&i| &mut self.entries[i])
+    }
+
     pub fn contains(&self, id: &IdRef) -> bool {
         self.index.contains_key(id.as_str())
     }
@@ -260,7 +264,18 @@ impl Content {
         let forms = load_table::<ItemForm>(packs, &mut r);
         let explicit_items = load_table::<Item>(packs, &mut r);
         let garments = load_table::<crate::schema::body::Garment>(packs, &mut r);
-        let items = generate_items(&forms, &materials, &explicit_items, &garments, &mut r);
+        let mut items = generate_items(&forms, &materials, &explicit_items, &garments, &mut r);
+        let animals = load_table::<Animal>(packs, &mut r);
+        let mut processes = load_table::<Process>(packs, &mut r);
+        let mut knowledge = load_table::<Knowledge>(packs, &mut r);
+        // Carcasses and the ways of working them, from each species' data.
+        crate::butchery::generate(
+            &animals,
+            &materials,
+            &mut items,
+            &mut processes,
+            &mut knowledge,
+        );
         let content = Content {
             packs: packs.to_vec(),
             materials,
@@ -270,14 +285,14 @@ impl Content {
             deposits: load_table(packs, &mut r),
             soils: load_table(packs, &mut r),
             plants: load_table(packs, &mut r),
-            animals: load_table(packs, &mut r),
+            animals,
             ecosystems: load_table(packs, &mut r),
             hominins: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
-            processes: load_table(packs, &mut r),
-            knowledge: load_table(packs, &mut r),
+            processes,
+            knowledge,
             workstations: load_table(packs, &mut r),
             construction: load_table(packs, &mut r),
             injuries: load_table(packs, &mut r),

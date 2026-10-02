@@ -147,6 +147,10 @@ pub struct Output {
     pub chance: f32,
     #[serde(default)]
     pub quality: Quality,
+    /// Only in these seasons, when not empty (a deer's fat in autumn, antlers while it carries
+    /// them).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seasons: Vec<Season>,
 }
 
 fn certain() -> f32 {

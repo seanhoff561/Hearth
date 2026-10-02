@@ -182,6 +182,9 @@ pub struct ShotSpec {
     /// Animals on the ground in front of the camera: (species, stage, female, what it does,
     /// metres ahead, metres to the right, its facing in degrees from the camera's).
     pub animals: Vec<ShotAnimal>,
+    /// Signs laid on the ground: whose, how many, what (prints, blood, droppings), from where
+    /// (metres ahead, to the right) and going which way (degrees from the camera's).
+    pub trails: Vec<(String, usize, hearth_fauna::live::SignKind, f64, f64, f32)>,
     /// The animals the populations put about the camera.
     pub fauna: bool,
     /// The camera to the nearest group of this species, looking at it from 30 m along `yaw`.
@@ -265,6 +268,7 @@ impl Default for ShotSpec {
             body: false,
             senses: None,
             animals: Vec::new(),
+            trails: Vec::new(),
             fauna: false,
             seek: None,
             run: None,
@@ -429,6 +433,25 @@ impl ShotSpec {
                         up,
                         medium,
                     });
+                }
+                // `trail=red_deer:12:prints@4:-1:30` a trail of signs (prints, blood or droppings)
+                // from a point going a way, repeatable.
+                "trail" => {
+                    use hearth_fauna::live::SignKind;
+                    let (what, at) = v.split_once('@').unwrap_or((v, "4"));
+                    let mut w = what.split(':');
+                    let species = w.next().unwrap_or("red_deer").to_owned();
+                    let n: usize = w.next().unwrap_or("10").parse()?;
+                    let kind = match w.next().unwrap_or("prints") {
+                        "blood" => SignKind::Blood,
+                        "droppings" => SignKind::Droppings,
+                        _ => SignKind::Print,
+                    };
+                    let mut p = at.split(':');
+                    let ahead = p.next().unwrap_or("4").parse()?;
+                    let right = p.next().unwrap_or("0").parse()?;
+                    let yaw = p.next().unwrap_or("0").parse()?;
+                    spec.trails.push((species, n, kind, ahead, right, yaw));
                 }
                 "herd" => {
                     use hearth_fauna::live::{Act, Stage};
@@ -1214,9 +1237,17 @@ pub fn render_shot(
         drawn.extend(drawn_views(&views));
     }
     if let Some((catalog, b)) = &bodies
-        && !drawn.is_empty()
+        && (!drawn.is_empty() || !spec.trails.is_empty())
     {
-        let boxes = animal_instances(&drawn, catalog, b, lw, &camera, year_frac as f32);
+        let mut boxes = animal_instances(&drawn, catalog, b, lw, &camera, year_frac as f32);
+        let signs = trail_signs(spec, lw, catalog, &camera)?;
+        let light = |p: DVec3| {
+            let b = hearth_math::BlockPos::containing(p + DVec3::Y * 0.3);
+            (lw.map.sky_light(b), lw.map.block_light(b))
+        };
+        boxes.extend(crate::signs::instances(
+            &signs, 0.0, 1200.0, catalog, camera.pos, &light,
+        ));
         scene.figures.set(ctx, &boxes);
     }
     if let Some(name) = &spec.senses {
@@ -1505,6 +1536,7 @@ fn act_of(
         "swim" => (Act::Walk, Pace::Walk),
         "climb" => (Act::Flee, Pace::Walk),
         "perch" => (Act::Alert, Pace::Still),
+        "dead" => (Act::Dead, Pace::Still),
         other => anyhow::bail!("an animal cannot {other:?}"),
     };
     let medium = match name {
@@ -1704,6 +1736,61 @@ fn placed_animals(
             phase: ((a.ahead * 0.37 + a.right * 0.21).rem_euclid(1.0)) as f32,
             medium: a.medium,
         });
+    }
+    Ok(out)
+}
+
+/// The signs a shot's trails lay on the ground: prints a stride apart either side of the way
+/// (plain as snow where there is snow), blood a quarter metre apart, droppings in a line of
+/// heaps.
+fn trail_signs(
+    spec: &ShotSpec,
+    lw: &LocalWorld,
+    catalog: &hearth_fauna::species::Catalog,
+    camera: &hearth_render::camera::Camera,
+) -> anyhow::Result<Vec<hearth_fauna::live::Sign>> {
+    use hearth_fauna::live::{Sign, SignKind};
+    let f = camera.forward().as_dvec3();
+    let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+    let right = DVec3::new(-flat.z, 0.0, flat.x);
+    let cam_yaw = flat.x.atan2(flat.z) as f32;
+    let mut out = Vec::new();
+    for (species, n, kind, ahead, r, yaw) in &spec.trails {
+        let si = catalog
+            .index(species)
+            .ok_or_else(|| anyhow::anyhow!("trail={species}: no such species"))?;
+        let sp = &catalog.species[si];
+        let heading = cam_yaw + yaw.to_radians();
+        let dir = DVec3::new(heading.sin() as f64, 0.0, heading.cos() as f64);
+        let side = DVec3::new(dir.z, 0.0, -dir.x);
+        let step = match kind {
+            SignKind::Print => sp.track.map_or(0.8, |t| t.stride_m as f64).max(0.1),
+            SignKind::Blood => 0.25,
+            SignKind::Droppings => 1.5,
+        };
+        let start = camera.pos + flat * *ahead + right * *r;
+        for k in 0..*n {
+            let lr = if k % 2 == 0 { 1.0 } else { -1.0 };
+            let at = start
+                + dir * (k as f64 * step)
+                + if *kind == SignKind::Print {
+                    side * lr * (sp.shoulder_m as f64 * 0.12).clamp(0.03, 0.2)
+                } else {
+                    DVec3::ZERO
+                };
+            let top = lw.surface_y(at.x, at.z).floor() as i32 + 3;
+            let ground = crate::fauna::surface_in(&lw.map, &lw.reg, at.x, at.z, top, 10);
+            let y = ground.map_or_else(|| lw.surface_y(at.x, at.z), |g| g.y);
+            let (plain, y) = crate::fauna::sign_surface(&lw.map, &lw.reg, at.x, at.z, y);
+            out.push(Sign {
+                kind: *kind,
+                species: si as u16,
+                pos: DVec3::new(at.x, y, at.z),
+                yaw: heading,
+                t: 0.0,
+                plain: plain.max(0.7),
+            });
+        }
     }
     Ok(out)
 }

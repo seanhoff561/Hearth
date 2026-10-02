@@ -1,13 +1,8 @@
-// Items that are not a single form × material.
+// Items that are not a single form × material. (Carcasses are generated from each species'
+// data: hearth_content::butchery.)
 (
     schema: 1,
     entries: [
-        (
-            id: "small_carcass", status: Implemented, name: "small game carcass", mass_kg: 15, volume_l: 16, footprint: (3, 2),
-            properties: [("keeps_days", 2.0)],
-            tags: ["carcass", "natural"],
-            notes: "Scavenged or hunted small game (a roe deer kid, a hare's larger cousins). Replaced by per-species carcasses in V2-7.",
-        ),
         (
             id: "ember", status: Implemented, name: "ember in tinder fungus", material: "tinder_fungus",
             mass_kg: 0.06, volume_l: 0.2, footprint: (1, 1),

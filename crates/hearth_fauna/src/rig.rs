@@ -263,15 +263,9 @@ pub fn frame_of(plan: BodyPlan) -> Frame {
     }
 }
 
-/// The mass of a grown animal of a sex: toward the top of the species' range for a male.
+/// The mass of a grown animal of a sex (heavier for a male by the species' dimorphism).
 pub fn mass_of(sp: &Species, male: bool) -> f32 {
-    let (lo, hi) = sp.mass_range;
-    let (lo, hi) = if hi > lo {
-        (lo, hi)
-    } else {
-        (sp.mass_kg, sp.mass_kg)
-    };
-    lo + (hi - lo) * if male { 0.7 } else { 0.35 }
+    hearth_content::butchery::grown_mass(sp.mass_range, sp.dimorphism, male)
 }
 
 struct Builder {

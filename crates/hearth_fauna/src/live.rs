@@ -13,13 +13,15 @@ use hearth_math::hash::{Rng, derive_seed, hash2};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
+use crate::anim::scale_of;
 use crate::danger::{Attack, Cause, Hostile, Kill, blow, closes, faced_down, lean, provoked};
 use crate::ecology::{Ecology, REGION_LEN, dist};
 use crate::habitat::CELL_M;
 use crate::mind::{Air, Presence, Sense, Wary, sense, yaw_toward};
 use crate::nav::{FISH_DEPTH, Flight, Walker, find_way, perch_near, trunk_near, water_near};
-use crate::rig::{Frame, frame_of};
-use crate::species::Species;
+use crate::rig::{Frame, Rig, frame_of};
+use crate::species::{Catalog, Species};
+use crate::wound::{Blow, Hurt, Part, strikes, wound};
 
 /// Where an animal can stand.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -71,6 +73,13 @@ pub trait Ground {
     fn footing(&self, x: f64, z: f64, y: f64) -> Option<Footing>;
     /// The highest ground at (x, z) (under the trees' foliage); None where not loaded.
     fn top(&self, x: f64, z: f64) -> Option<Footing>;
+    /// The surface at a foot's place as it takes signs: how plainly it takes a print (0 none
+    /// … 1 fresh snow: bare earth, mud and sand do; grass, moss and leaf litter hardly; stone
+    /// not at all) and its height (the top of lying snow, which a foot sinks into). By default
+    /// no print, at the foot.
+    fn sign_surface(&self, _x: f64, _z: f64, y: f64) -> (f32, f64) {
+        (0.0, y)
+    }
     /// What fills the block at (x, y, z); None where not loaded. By default, the ground with
     /// water and open air over it.
     fn cell(&self, x: i32, y: i32, z: i32) -> Option<Cell> {
@@ -121,6 +130,8 @@ pub enum Act {
     Attack,
     /// On the wing.
     Fly,
+    /// Lying dead (a carcass as it is drawn).
+    Dead,
 }
 
 /// Where an animal is: on the ground, in the water (swimming), on the wing, up a tree (a
@@ -197,6 +208,88 @@ pub struct Animal {
     pub hunt: Option<Hunt>,
     /// Where its kill lies while it feeds.
     pub kill_at: Option<DVec3>,
+    /// Dead: what killed it (a hunter's species), and what has been eaten of it (kg).
+    pub killed_by: Option<u16>,
+    pub eaten: f32,
+    /// Its wounds.
+    pub hurt: Hurt,
+    /// The stride it last left a print at, and the way it has gone since it last let fall a
+    /// drop of blood (m).
+    pub printed: f32,
+    pub drip: f32,
+}
+
+/// What a sign is: a print of a foot, a drop of blood, droppings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SignKind {
+    Print,
+    Blood,
+    Droppings,
+}
+
+impl SignKind {
+    /// How long it lasts, in days (a print in snow twice as long).
+    pub fn lasts_days(self) -> f64 {
+        match self {
+            SignKind::Print => 1.5,
+            SignKind::Blood => 1.0,
+            SignKind::Droppings => 10.0,
+        }
+    }
+}
+
+/// A sign an animal leaves on the ground: what, whose, where (on the ground), which way it went,
+/// when (the world's seconds), and how plain it is (fresh snow takes a clear print).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Sign {
+    pub kind: SignKind,
+    pub species: u16,
+    pub pos: DVec3,
+    pub yaw: f32,
+    pub t: f64,
+    pub plain: f32,
+}
+
+/// Signs are left within this distance of the person.
+pub const SIGNS_M: f64 = 80.0;
+/// The most signs kept (the oldest go first).
+const MAX_SIGNS: usize = 6000;
+
+/// A dead animal taken from the world to lie as a carcass: of what species and age, where,
+/// which way it lies, what is left of it, and what killed it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Body {
+    pub species: u16,
+    pub stage: Stage,
+    pub female: bool,
+    pub pos: DVec3,
+    pub yaw: f32,
+    pub left: f32,
+    pub killed_by: Option<u16>,
+    /// Dead of what a person did to it.
+    pub by_person: bool,
+}
+
+/// Where a path (a thrown thing's flight, a thrust) first strikes an animal: which, along which
+/// segment of the path and how far along it, the point, and the part of the body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Hit {
+    pub animal: u64,
+    pub segment: usize,
+    pub t: f32,
+    pub at: DVec3,
+    pub part: Part,
+}
+
+/// What a blow did to an animal: its kind, where it struck, whether deep, whether it killed
+/// outright; in words.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Struck {
+    pub species: u16,
+    pub part: Part,
+    pub deep: bool,
+    pub killed: bool,
+    pub words: String,
 }
 
 /// A hunt: the prey, how long it has gone on, whether the rush has begun.
@@ -251,6 +344,11 @@ impl Animal {
             weigh: 0.0,
             hunt: None,
             kill_at: None,
+            killed_by: None,
+            eaten: 0.0,
+            hurt: Hurt::default(),
+            printed: 0.0,
+            drip: 0.0,
         }
     }
 }
@@ -293,6 +391,9 @@ pub struct AnimalView {
     pub act: Act,
     pub stride: f32,
     pub medium: Medium,
+    /// Wounded (bleeding, lame).
+    #[serde(default)]
+    pub wounded: bool,
 }
 
 /// The animals near the player.
@@ -311,6 +412,10 @@ pub struct Live {
     /// kills among them.
     pub attacks: Vec<Attack>,
     pub kills: Vec<Kill>,
+    /// The signs they left about the person, oldest first, and the world's seconds they are
+    /// timed by.
+    pub signs: Vec<Sign>,
+    pub clock: f64,
 }
 
 /// Within this distance of the player groups become animals.
@@ -406,6 +511,8 @@ impl Live {
             aggression: 1.0,
             attacks: Vec::new(),
             kills: Vec::new(),
+            signs: Vec::new(),
+            clock: 0.0,
         }
     }
 
@@ -768,6 +875,7 @@ impl Live {
         dt: f32,
     ) {
         let cat = eco.catalog.clone();
+        self.clock += dt as f64;
         // Where each group's members are, about, and how many; where every animal is.
         let mut centres: FxHashMap<u64, (DVec2, f64)> = FxHashMap::default();
         let mut whereabouts: FxHashMap<u64, DVec3> = FxHashMap::default();
@@ -839,6 +947,26 @@ impl Live {
             let sp = &cat.species[a.species as usize];
             let mover = mover_of(sp);
             let walker = Walker::of(sp);
+            // Its wounds: bleeding (dead of it at the last), stunned, or too weak to go on.
+            if a.hurt.wounded() || a.hurt.stunned > 0.0 || a.hurt.since.is_some() {
+                if a.hurt.bleed(dt) {
+                    a.dead = true;
+                    a.speed = 0.0;
+                    a.act = Act::Dead;
+                    a.hostile = None;
+                    log::info!("A {} dies of its wounds", sp.name.to_lowercase());
+                    continue;
+                }
+                if a.hurt.stunned > 0.0 || a.hurt.lost > 0.3 {
+                    a.act = Act::Rest;
+                    a.speed = 0.0;
+                    a.goal = None;
+                    a.way.clear();
+                    a.hostile = None;
+                    a.timer = a.timer.max(1.0);
+                    continue;
+                }
+            }
             a.repath = (a.repath - dt).max(0.0);
             a.thirst = (a.thirst + dt / now.day_s.max(1.0)).min(2.0);
             a.fear = (a.fear - dt / 600.0).max(0.0);
@@ -902,6 +1030,7 @@ impl Live {
                         a.kill_at.is_some(),
                         cornered,
                         rut,
+                        a.hurt.lately(120.0),
                         lean,
                         aggression,
                         roll,
@@ -1054,12 +1183,29 @@ impl Live {
             };
             a.stride += moved / sp.stride_m().max(0.05);
         }
-        // The kills: the prey dead where it fell.
+        // The kills: the prey dead where it fell, the hunter (and its pack about it) making a
+        // meal of it.
         for (prey, predator, at) in killed {
+            let hunter = &cat.species[predator as usize];
+            let feeders = 1 + self
+                .animals
+                .iter()
+                .filter(|a| {
+                    !a.dead
+                        && a.species == predator
+                        && a.stage != Stage::Young
+                        && hdist(a.pos, at) < 40.0
+                })
+                .count()
+                .saturating_sub(1);
             if let Some(v) = self.animals.iter_mut().find(|v| v.id == prey && !v.dead) {
                 v.dead = true;
                 v.speed = 0.0;
                 v.hunt = None;
+                v.act = Act::Dead;
+                v.killed_by = Some(predator);
+                // A gorge: twice a day's need.
+                v.eaten = hunter.need_kg * 2.0 * feeders as f32;
                 self.kills.push(Kill {
                     predator,
                     prey: v.species,
@@ -1089,6 +1235,7 @@ impl Live {
                 }
             }
         }
+        self.leave_signs(&cat, ground, presence, now, dt);
         // Warned: the herd runs with the first of it to run.
         for (g, threat, from) in alarms {
             for a in self
@@ -1100,6 +1247,85 @@ impl Live {
                     a.wary.alarm(threat);
                 }
             }
+        }
+    }
+
+    /// The signs the animals about the person leave this step: a print at each stride where
+    /// the ground takes one, drops of blood where the wounded go (the more, the faster they
+    /// bleed), droppings now and then (a plant-eater's a dozen times a day, a hunter's a couple);
+    /// those faded with age go.
+    fn leave_signs(
+        &mut self,
+        cat: &Catalog,
+        ground: &dyn Ground,
+        presence: Option<&Presence>,
+        now: &Now,
+        dt: f32,
+    ) {
+        let day_s = now.day_s.max(1.0) as f64;
+        let clock = self.clock;
+        let mut left: Vec<Sign> = Vec::new();
+        let rng = &mut self.rng;
+        for a in self.animals.iter_mut() {
+            if a.dead || a.medium != Medium::Ground {
+                a.printed = a.stride;
+                continue;
+            }
+            if presence.is_none_or(|p| hdist(a.pos, p.pos) > SIGNS_M) {
+                a.printed = a.stride;
+                continue;
+            }
+            let sp = &cat.species[a.species as usize];
+            let ahead = DVec3::new(a.yaw.sin() as f64, 0.0, a.yaw.cos() as f64);
+            let side = DVec3::new(ahead.z, 0.0, -ahead.x);
+            // On the surface (lying snow over the ground its feet find).
+            let sign = |kind, pos: DVec3, plain| Sign {
+                kind,
+                species: a.species,
+                pos: DVec3::new(pos.x, ground.sign_surface(pos.x, pos.z, pos.y).1, pos.z),
+                yaw: a.yaw,
+                t: clock,
+                plain,
+            };
+            if a.stride.floor() > a.printed.floor() && sp.track.is_some() {
+                let plain = ground.sign_surface(a.pos.x, a.pos.z, a.pos.y).0;
+                if plain >= 0.5 {
+                    // The feet fall either side of its line, the hind in the fore's print.
+                    let lr = if (a.stride.floor() as i64) % 2 == 0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    let off = side * lr * (sp.shoulder_m as f64 * 0.12).clamp(0.03, 0.2);
+                    left.push(sign(SignKind::Print, a.pos + off, plain));
+                }
+            }
+            a.printed = a.stride;
+            let bleed = a.hurt.bleeding + a.hurt.clotting;
+            if bleed > 0.0005 {
+                a.drip += a.speed.max(0.3) * dt;
+                let every = 0.6 / (1.0 + 200.0 * bleed);
+                while a.drip >= every {
+                    a.drip -= every;
+                    let j = DVec3::new(rng.next_f64() - 0.5, 0.0, rng.next_f64() - 0.5) * 0.2;
+                    left.push(sign(SignKind::Blood, a.pos + j, 1.0));
+                }
+            }
+            let per_day = if sp.hunts() { 2.0 } else { 12.0 };
+            if rng.next_f64() < per_day * dt as f64 / day_s {
+                let at = a.pos - ahead * (sp.length_m as f64 * 0.45);
+                left.push(sign(SignKind::Droppings, at, 1.0));
+            }
+        }
+        self.signs.extend(left);
+        // The old fade away; the oldest go when there are too many.
+        self.signs.retain(|s| {
+            let lasts = s.kind.lasts_days() * if s.plain >= 0.95 { 2.0 } else { 1.0 };
+            clock - s.t < lasts * day_s
+        });
+        if self.signs.len() > MAX_SIGNS {
+            let over = self.signs.len() - MAX_SIGNS;
+            self.signs.drain(..over);
         }
     }
 
@@ -1119,6 +1345,7 @@ impl Live {
                 act: a.act,
                 stride: a.stride,
                 medium: a.medium,
+                wounded: a.hurt.wounded(),
             })
             .collect()
     }
@@ -1128,7 +1355,142 @@ impl Live {
         let a = self.animals.iter_mut().find(|a| a.id == id)?;
         a.dead = true;
         a.speed = 0.0;
+        a.act = Act::Dead;
         Some(a)
+    }
+
+    /// Where a path (points in the world, in order) first strikes an animal's body, at the
+    /// time of year `year_frac` (a young one's size).
+    pub fn hit_along(&self, cat: &Catalog, path: &[DVec3], year_frac: f32) -> Option<Hit> {
+        for (i, seg) in path.windows(2).enumerate() {
+            let (p0, p1) = (seg[0], seg[1]);
+            let mid = (p0 + p1) * 0.5;
+            let half = (p1 - p0).length() * 0.5;
+            let mut best: Option<Hit> = None;
+            for a in self.animals.iter().filter(|a| !a.dead) {
+                let sp = &cat.species[a.species as usize];
+                if (a.pos - mid).length() > half + sp.length_m.max(sp.shoulder_m) as f64 * 2.0 + 1.0
+                {
+                    continue;
+                }
+                let rig = Rig::of(sp, !a.female);
+                let scale = scale_of(
+                    &rig,
+                    a.stage,
+                    year_frac,
+                    sp.life.birth_frac,
+                    sp.life.birth_mass_kg,
+                );
+                if let Some((t, part)) = strikes(&rig, scale, a.pos, a.yaw, p0, p1)
+                    && best.is_none_or(|b| t < b.t)
+                {
+                    best = Some(Hit {
+                        animal: a.id,
+                        segment: i,
+                        t,
+                        at: p0 + (p1 - p0) * t as f64,
+                        part,
+                    });
+                }
+            }
+            if best.is_some() {
+                return best;
+            }
+        }
+        None
+    }
+
+    /// A blow of `what` (a weapon's name) from a person at `from` where a hit struck: the
+    /// wound it makes, the animal aware of the person (and running, or turning on them, as it
+    /// is); in words.
+    pub fn strike(
+        &mut self,
+        cat: &Catalog,
+        hit: &Hit,
+        blow: &Blow,
+        what: &str,
+        from: DVec3,
+        year_frac: f32,
+    ) -> Option<Struck> {
+        let roll = self.rng.next_f32();
+        let a = self
+            .animals
+            .iter_mut()
+            .find(|a| a.id == hit.animal && !a.dead)?;
+        let sp = &cat.species[a.species as usize];
+        let rig = Rig::of(sp, !a.female);
+        let scale = scale_of(
+            &rig,
+            a.stage,
+            year_frac,
+            sp.life.birth_frac,
+            sp.life.birth_mass_kg,
+        );
+        let mass = rig.mass * scale * scale * scale;
+        let w = wound(&rig, scale, mass, hit.part, blow, roll);
+        w.add_to(&mut a.hurt);
+        a.wary.alarm(from);
+        a.fear = (a.fear + 0.5).min(1.0);
+        let name = sp.name.to_lowercase();
+        let words = if w.killed {
+            a.dead = true;
+            a.speed = 0.0;
+            a.act = Act::Dead;
+            a.hostile = None;
+            format!(
+                "The {what} strikes the {name} {}: it falls dead.",
+                hit.part.words()
+            )
+        } else if w.deep {
+            format!("The {what} strikes the {name} {}, deep.", hit.part.words())
+        } else if w.stunned > 0.0 {
+            format!(
+                "The {what} strikes the {name} {}: it is stunned.",
+                hit.part.words()
+            )
+        } else if w.bleeding + w.clotting + w.lame > 0.0 {
+            format!("The {what} strikes the {name} {}.", hit.part.words())
+        } else {
+            format!("The {what} glances off the {name}.")
+        };
+        log::info!("{words}");
+        Some(Struck {
+            species: a.species,
+            part: hit.part,
+            deep: w.deep,
+            killed: w.killed,
+            words,
+        })
+    }
+
+    /// Takes the dead out of the world, to lie as carcasses: each with what is left of it after
+    /// what was eaten.
+    pub fn take_bodies(&mut self, cat: &Catalog) -> Vec<Body> {
+        let mut out = Vec::new();
+        self.animals.retain(|a| {
+            if !a.dead {
+                return true;
+            }
+            let sp = &cat.species[a.species as usize];
+            let grown = crate::rig::mass_of(sp, !a.female);
+            let mass = match a.stage {
+                Stage::Adult => grown,
+                _ => grown * hearth_content::butchery::YOUNG_SHARE,
+            };
+            out.push(Body {
+                species: a.species,
+                stage: a.stage,
+                female: a.female,
+                pos: a.pos,
+                yaw: a.yaw,
+                // Of the flesh: about three fifths of the body.
+                left: (1.0 - a.eaten / (mass * 0.6).max(1e-6)).clamp(0.05, 1.0),
+                killed_by: a.killed_by,
+                by_person: a.killed_by.is_none() && a.hurt.since.is_some(),
+            });
+            false
+        });
+        out
     }
 
     /// Puts an animal of a species into the world (tests, screenshots): not of any group or
@@ -1556,6 +1918,8 @@ fn go(
         (Act::Flee, _) => sp.run_speed(),
         _ => 0.0,
     };
+    // Wounded, it goes the slower.
+    let target = target * a.hurt.vigour();
     let Some(goal) = a.goal.filter(|_| target > 0.0) else {
         a.speed *= (-6.0 * dt).exp();
         return 0.0;
@@ -1734,6 +2098,7 @@ fn steer(
     dt: f32,
 ) -> f32 {
     let d = to - DVec2::new(a.pos.x, a.pos.z);
+    let speed = speed * a.hurt.vigour();
     if d.length() < 0.05 || speed <= 0.0 {
         a.speed *= (-6.0 * dt).exp();
         return 0.0;

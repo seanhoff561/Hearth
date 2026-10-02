@@ -22,6 +22,8 @@ use hearth_content::generate::generated_id;
 use hearth_content::schema::process::{Condition, Effect, Input, Match, Output, Process, Target};
 use hearth_content::schema::{Season, Status, TimeScale};
 use hearth_content::triggers::{block_keys, item_keys, key, material_keys, with_verb};
+
+use crate::food::keeps_days;
 use hearth_items::{Carry, Hand, ItemKind, Items, Path, Root, Stack};
 use hearth_math::hash::Rng;
 use rustc_hash::FxHashMap;
@@ -536,7 +538,17 @@ fn plan_ordered(
         .and_then(|t| bench.at_hand.iter().position(|h| h.source == t.source));
     let mut order: Vec<usize> = Vec::with_capacity(bench.at_hand.len());
     order.extend(target_i);
-    order.extend((0..bench.at_hand.len()).filter(|i| Some(*i) != target_i));
+    // Then what is at hand, of what goes off the freshest first.
+    let mut rest: Vec<usize> = (0..bench.at_hand.len())
+        .filter(|i| Some(*i) != target_i)
+        .collect();
+    rest.sort_by(|a, b| {
+        bench.at_hand[*a]
+            .stack
+            .decay
+            .total_cmp(&bench.at_hand[*b].stack.decay)
+    });
+    order.extend(rest);
     let mut uses: Vec<(Source, u16)> = Vec::new();
     let mut keeps = Vec::new();
     let mut material: Option<String> = None;
@@ -773,11 +785,20 @@ fn failure_chance(
 }
 
 /// The output stacks of `out` from `material` in play.
+/// Whether an output comes in a season (one that does not say comes always; an unknown season
+/// is taken for summer).
+fn in_season(out: &Output, season: Option<Season>) -> bool {
+    out.seasons.is_empty() || out.seasons.contains(&season.unwrap_or(Season::Summer))
+}
+
+/// Makes an output: `left` of the kilograms of a material (what is left of a carcass).
+#[allow(clippy::too_many_arguments)]
 fn produce(
     crafts: &Crafts,
     out: &Output,
     material: Option<&str>,
     quality: f32,
+    left: f32,
     c: &Content,
     items: &Items,
     rng: &mut Rng,
@@ -793,7 +814,7 @@ fn produce(
         Match::Item(r) => r.to_string(),
         Match::Material(m) => {
             let kind = crafts.bulk_item(items, m.as_str())?;
-            let kg = rng.range_f32(lo, hi + 1e-6);
+            let kg = rng.range_f32(lo, hi + 1e-6) * left.clamp(0.0, 1.0);
             // Whole units, rounded at random so the mass comes out right on average.
             let units = kg / kind.mass_kg.max(1e-4);
             let mut n = units.floor() as u16;
@@ -845,6 +866,24 @@ pub fn perform_by(
     let def = &crafts.recipes[plan.recipe].def;
     let c = bench.content;
     let matq = material_quality(c, plan.material.as_deref(), def.skill.as_deref());
+    // A carcass gives what is left of it (a kill the scavengers have been at); what goes off
+    // comes out as far gone as the worst of what went into it.
+    let used: Vec<&Handy> = plan
+        .uses
+        .iter()
+        .filter_map(|(s, _)| bench.at_hand.iter().find(|h| &h.source == s))
+        .collect();
+    let left = used
+        .iter()
+        .filter(|h| bench.kind(h).is_some_and(|k| k.has_tag("carcass")))
+        .map(|h| h.stack.condition)
+        .fold(1.0f32, f32::min);
+    let gone = used
+        .iter()
+        .filter(|h| bench.kind(h).is_some_and(|k| keeps_days(c, k).is_some()))
+        .map(|h| h.stack.decay)
+        .fold(0.0f32, f32::max);
+    let season = bench.around.season;
     let mut o = Outcome {
         triggers: triggers_of(crafts, plan, bench),
         practice: def.skill.clone().map(|s| (s, plan.hours)),
@@ -883,12 +922,13 @@ pub fn perform_by(
             if f.loses_inputs {
                 o.used = plan.uses.clone();
                 // What breaks still leaves its waste.
-                for b in &def.byproducts {
+                for b in def.byproducts.iter().filter(|b| in_season(b, season)) {
                     if let Some(s) = produce(
                         crafts,
                         b,
                         plan.material.as_deref(),
                         0.2,
+                        left,
                         c,
                         bench.items,
                         rng,
@@ -896,6 +936,7 @@ pub fn perform_by(
                         o.made.push(s);
                     }
                 }
+                gone_off(&mut o.made, gone, c, bench.items);
             }
             return o;
         }
@@ -903,7 +944,7 @@ pub fn perform_by(
     o.done = true;
     o.used = plan.uses.clone();
     o.effect = def.effect;
-    for out in &def.outputs {
+    for out in def.outputs.iter().filter(|o| in_season(o, season)) {
         let q = &out.quality;
         let rolled = if q.base == 0.0 && q.from_skill == 0.0 && q.from_material == 0.0 {
             0.3 + 0.4 * skill
@@ -919,6 +960,7 @@ pub fn perform_by(
             out,
             plan.material.as_deref(),
             quality.clamp(0.05, 1.0),
+            left,
             c,
             bench.items,
             rng,
@@ -926,12 +968,13 @@ pub fn perform_by(
             o.made.push(s);
         }
     }
-    for b in &def.byproducts {
+    for b in def.byproducts.iter().filter(|b| in_season(b, season)) {
         if let Some(s) = produce(
             crafts,
             b,
             plan.material.as_deref(),
             0.3,
+            left,
             c,
             bench.items,
             rng,
@@ -939,7 +982,20 @@ pub fn perform_by(
             o.made.push(s);
         }
     }
+    gone_off(&mut o.made, gone, c, bench.items);
     o
+}
+
+/// What goes off among things made starts as far gone as `gone`.
+fn gone_off(made: &mut [Stack], gone: f32, c: &Content, items: &Items) {
+    if gone <= 0.0 {
+        return;
+    }
+    for s in made {
+        if items.get(&s.id).is_some_and(|k| keeps_days(c, k).is_some()) {
+            s.decay = s.decay.max(gone);
+        }
+    }
 }
 
 /// Finishes unattended work on `stack` (meat on the rack, acorns in the stream): the outputs,
@@ -976,8 +1032,13 @@ pub fn finish_batch(
     let batches = (stack.count as f32 / asked).max(1.0).round() as u32;
     let mut out = Vec::new();
     for _ in 0..batches {
-        for o in def.outputs.iter().chain(&def.byproducts) {
-            if let Some(s) = produce(crafts, o, material.as_deref(), 0.5, c, items, rng) {
+        for o in def
+            .outputs
+            .iter()
+            .chain(&def.byproducts)
+            .filter(|o| in_season(o, None))
+        {
+            if let Some(s) = produce(crafts, o, material.as_deref(), 0.5, 1.0, c, items, rng) {
                 out.push(s);
             }
         }

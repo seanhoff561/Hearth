@@ -32,12 +32,15 @@ pub const SYSTEM: &[&str] = &[
     SLEEP_ON_HIDE,
     // Wood put down in water floats.
     FLOAT_WOOD,
+    // Fresh prints of an animal underfoot.
+    SEE_TRACKS,
 ];
 
 pub const CARRY_FULL_HANDS: &str = "carry:full_hands";
 pub const SEE_WILDFIRE: &str = "see:wildfire";
 pub const SLEEP_ON_HIDE: &str = "sleep:on_hide";
 pub const FLOAT_WOOD: &str = "float:wood";
+pub const SEE_TRACKS: &str = "see:tracks";
 
 /// The part of an id after its namespace.
 pub fn key(id: &str) -> &str {

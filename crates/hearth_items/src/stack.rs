@@ -51,7 +51,8 @@ pub struct Stack {
     /// 0–1 how well it was made (0.5 for what nature gives); it scales what a tool does.
     #[serde(default = "middling", skip_serializing_if = "is_middling")]
     pub quality: f32,
-    /// 0–1 what is left of its edge, point or binding (1 as made).
+    /// 0–1 what is left of its edge, point or binding (1 as made); of a carcass, what is left of
+    /// it (a kill the hunter or the scavengers have eaten from).
     #[serde(default = "whole", skip_serializing_if = "is_whole")]
     pub condition: f32,
     /// 0–1 how far it has gone off (1 spoiled).

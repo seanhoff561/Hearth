@@ -1000,3 +1000,35 @@ bounded acceleration (six metres a second every second, more for hunters and sma
 an ambush depends on it: with the ease every prey that noticed a rush was gone before the hunter
 reached it.
 
+
+## D87 — Carcasses and their butchering generated per species; remains kept by the populations
+V2-7 replaces the one generic carcass and its two processes with the animals' own. Listing a
+carcass, a butchering and a hacking for each species, sex and age by hand would be some hundred
+and eighty entries restating the species' data, so they are generated at load from the yields,
+masses and body plans (the knowledge that butchery needs lists them as it enables them), and a
+new species brings its carcasses with it. Sex and age are separate carcasses only where they
+matter (a size dimorphism, or what only males carry); the mass range was read as both sexes about
+its middle with a data `dimorphism`, since reading the range's ends as the sexes made a male
+trout one and three quarter times a female. Two small engine rules were needed: an output may be
+seasonal (fat, antlers), and a carcass gives what is left of it (its `condition`) with its decay
+passed on. Found kills come from the deaths the populations already have, kept as remains with a
+place and a time where the abstract step kills or loses a large animal, drawn from a stream of
+their own so the populations' draws stay as they were; they are few within reach (a person finds
+one now and then, and the ravens lead to others a couple of kilometres off), so a person's hides
+and meat come mostly from hunting, as they did. The V2-5 acceptance, which needed a kill every
+day or two at camp, now has a test-forced natural death near camp instead (like its forced
+lightning), the bot not hunting.
+
+## D88 — Wounds by part and depth, bleeding to death; signs near the player only
+V2-7 asks for hunting with wounds that behave as they do: a well-placed spear brings a deer down
+within a minute and a short run, a poor one wounds and the animal goes on, and the weapon
+matters. Rather than hit points, a blow is resolved by where it lands on the body (the rig's own
+torso, neck, head and legs) and how deep the point goes against what covers the vitals, from the
+weapon's energy and sharpness; what follows is bleeding, as a share of the blood a second, to
+death at two fifths lost, with flesh wounds clotting, so that the same spear kills a roe deer
+outright and only wounds an aurochs, and a gut-struck deer is found lying up a long way off — as
+hunters know. Aiming strays with the thrower's practice (a skill, not a stat). Signs (prints,
+blood, droppings) are produced only within 80 m of the player and kept for days by count, since
+a world of tracks everywhere would cost much and be seen nowhere; prints only where the ground
+takes them, so a summer wood shows few and snow shows all. Reading them takes the tracking
+knowledge, learnt by noticing them.

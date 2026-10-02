@@ -101,6 +101,11 @@ fn groups_come_into_the_world_and_fold_back() {
         .map(|a| a.id)
         .expect("a member");
     live.kill(victim);
+    // The dead one is taken from the world to lie as a carcass, whole.
+    let bodies = live.take_bodies(&eco.catalog);
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0].left, 1.0);
+    assert_eq!(bodies[0].killed_by, None);
     // The player walks away: everything folds back, the dead one excepted.
     let away = player + DVec3::new(3000.0, 0.0, 0.0);
     live.fold(&mut eco, away);

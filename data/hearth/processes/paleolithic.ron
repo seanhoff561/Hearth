@@ -409,32 +409,8 @@
             duration: (hours: 0.2), knowledge: "marrow_extraction",
             outputs: [(item: Material("marrow"), amount: (0.05, 0.15))],
         ),
-        (
-            id: "hack_at_carcass", status: Implemented, name: "Hack at a carcass", action: "hack meat from the carcass",
-            verb: "cut", target: Thing(Tag("carcass")),
-            inputs: [(item: Tag("carcass"), amount: 1)],
-            tools: [(property: "sharp_edge", min: 0.2)],
-            duration: (hours: 1.0), mets: 3.5, wear: 0.05,
-            outputs: [(item: Material("meat"), amount: (2.0, 4.0)), (item: Material("bone"), amount: (0.5, 1.0))],
-            notes: "Without knowing how, half the meat and the hide are wasted.",
-        ),
-        (
-            id: "butcher_small_game", status: Implemented, name: "Butcher small game", action: "skin and joint the carcass",
-            verb: "cut", target: Thing(Tag("carcass")),
-            inputs: [(item: Tag("carcass"), amount: 1)],
-            tools: [(property: "sharp_edge", min: 0.5)],
-            duration: (hours: 1.0), knowledge: "butchery", skill: "butchery", mets: 3.5, wear: 0.05,
-            outputs: [
-                (item: Material("meat"), amount: (5, 8)),
-                (item: Material("rawhide"), amount: (1.0, 1.3)),
-                (item: Material("bone"), amount: (1.5, 2.5)),
-            ],
-            byproducts: [
-                (item: Material("animal_fat"), amount: (0.2, 1.0)),
-                (item: Material("sinew"), amount: (0.05, 0.15)),
-            ],
-            failures: [(chance: 0.2, min_chance: 0.02, outcome: "The knife slips and cuts your hand.", loses_inputs: false, injury: "cut")],
-        ),
+        // Butchering (and hacking at) a carcass of each species is generated from the species'
+        // data: hearth_content::butchery.
         // ---- Hides and clothing ----
         (
             id: "scrape_hide_crudely", status: Implemented, name: "Scrape a hide with a flake", action: "scrape the hide with the edge",

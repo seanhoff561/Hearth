@@ -77,6 +77,9 @@ pub enum ToServer {
     },
     /// Throw what is held in the right hand along a direction at a speed (m/s).
     Throw { dir: DVec3, speed: f64 },
+    /// Thrust or strike with what is held in the right hand along a direction (at an animal in
+    /// reach).
+    Thrust { dir: DVec3 },
     /// Development and tests: put a thing in the player's hands or containers (or a drag).
     Give(hearth_items::Stack),
     /// Debug: move the clock on (or back) by game hours.
@@ -92,6 +95,9 @@ pub enum ToServer {
     HoldWeather(Option<hearth_env::weather::WeatherHold>),
     /// Tests and bots: a block of vegetation catches fire.
     Ignite(hearth_math::BlockPos),
+    /// Tests and bots: a grown animal of a species (content id) dies at a place, to lie there
+    /// (a natural death a test may force).
+    Die { species: String, at: DVec3 },
     /// Tests and bots: the vegetation about a place is cleared or burned, from now on.
     Disturb {
         kind: hearth_worldgen::vegetation::DisturbanceKind,
@@ -258,6 +264,13 @@ pub enum ToClient {
     Smoke(Vec<Plume>),
     /// The animals near the player (ten times a second while there are any).
     Animals(Vec<hearth_fauna::live::AnimalView>),
+    /// The signs animals left near the player (tracks, blood, droppings), with the world's
+    /// seconds they are timed by and how long a day is (s).
+    Signs {
+        now: f64,
+        day_s: f32,
+        signs: Vec<hearth_fauna::live::Sign>,
+    },
     /// The groups of animals in the regions about the player: species, where, how many.
     Census(Vec<(u16, glam::DVec2, u32)>),
     /// The vegetation the distant terrain is grown with (when it changes, and as the years

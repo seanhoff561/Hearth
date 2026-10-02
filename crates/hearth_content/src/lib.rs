@@ -5,6 +5,7 @@
 //! graphs. Rust code elsewhere implements mechanisms; the data here supplies parameters.
 
 pub mod balance;
+pub mod butchery;
 pub mod content;
 pub mod diag;
 pub mod generate;

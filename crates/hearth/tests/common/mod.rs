@@ -43,6 +43,8 @@ pub struct World {
     pub animals: Vec<hearth_fauna::live::AnimalView>,
     /// The last census of the groups about the player.
     pub census: Option<Vec<(u16, glam::DVec2, u32)>>,
+    /// The signs animals left about the player, as last told.
+    pub signs: Vec<hearth_fauna::live::Sign>,
 }
 
 pub fn temp(name: &str) -> std::path::PathBuf {
@@ -105,6 +107,7 @@ impl World {
             generator: ready.generator.clone(),
             animals: Vec::new(),
             census: None,
+            signs: Vec::new(),
         };
         let feet = w.mover.pos;
         w.until(60.0, |w| {
@@ -132,6 +135,7 @@ impl World {
                 ToClient::Body(b) => self.body = Some(*b),
                 ToClient::Animals(v) => self.animals = v,
                 ToClient::Census(c) => self.census = Some(c),
+                ToClient::Signs { signs, .. } => self.signs = signs,
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {
                     name,

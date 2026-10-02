@@ -2,13 +2,14 @@
 // the turkey, owls, woodpeckers, crows and ravens, and songbirds (mostly ambient). Simulated as
 // numbers per ecological cell. "litter" is the clutch and "birth_day" the day the eggs hatch.
 // Values rounded from general ornithological references (the Handbook of the Birds of the
-// World, national atlases).
+// World, national atlases). `dimorphism`: how much heavier a grown male is (owls' females are the
+// bigger).
 (
     schema: 1,
     entries: [
         (
             id: "capercaillie", name: "Western capercaillie", scientific: "Tetrao urogallus", body_plan: BirdGround, status: Implemented,
-            mass_kg: (1.5, 6.5), length_m: 0.75, shoulder_height_m: 0.4,
+            mass_kg: (1.5, 6.5), dimorphism: 2.0, length_m: 0.75, shoulder_height_m: 0.4,
             speed: (walk_m_s: 0.8, run_m_s: 5, fly_m_s: 13),
             senses: (vision_m: 150, hearing_m: 200, smell_m: 5, night_vision: 0.2),
             diet: (kind: Browser, daily_food_kg: 0.25, foods: [
@@ -37,7 +38,7 @@
         ),
         (
             id: "wild_turkey", name: "Wild turkey", scientific: "Meleagris gallopavo", body_plan: BirdGround, status: Implemented,
-            mass_kg: (3, 10), length_m: 1.1, shoulder_height_m: 0.6,
+            mass_kg: (3, 10), dimorphism: 1.8, length_m: 1.1, shoulder_height_m: 0.6,
             speed: (walk_m_s: 1.0, run_m_s: 11, fly_m_s: 15),
             senses: (vision_m: 250, hearing_m: 250, smell_m: 5, night_vision: 0.1),
             diet: (kind: Omnivore, daily_food_kg: 0.3, foods: [
@@ -66,7 +67,7 @@
         ),
         (
             id: "tawny_owl", name: "Tawny owl", scientific: "Strix aluco", body_plan: Raptor, status: Implemented,
-            mass_kg: (0.38, 0.6), length_m: 0.4, shoulder_height_m: 0.3,
+            mass_kg: (0.38, 0.6), dimorphism: 0.8, length_m: 0.4, shoulder_height_m: 0.3,
             speed: (walk_m_s: 0.3, fly_m_s: 11),
             senses: (vision_m: 200, hearing_m: 400, smell_m: 0, night_vision: 1.0),
             diet: (kind: Carnivore, daily_food_kg: 0.06, foods: [
@@ -95,7 +96,7 @@
         ),
         (
             id: "barred_owl", name: "Barred owl", scientific: "Strix varia", body_plan: Raptor, status: Implemented,
-            mass_kg: (0.5, 1.0), length_m: 0.5, shoulder_height_m: 0.35,
+            mass_kg: (0.5, 1.0), dimorphism: 0.8, length_m: 0.5, shoulder_height_m: 0.35,
             speed: (walk_m_s: 0.3, fly_m_s: 11),
             senses: (vision_m: 200, hearing_m: 400, smell_m: 0, night_vision: 1.0),
             diet: (kind: Carnivore, daily_food_kg: 0.08, foods: [
@@ -170,7 +171,7 @@
         ),
         (
             id: "common_raven", name: "Common raven", scientific: "Corvus corax", body_plan: BirdPerching, status: Implemented,
-            mass_kg: (0.7, 1.6), length_m: 0.63, shoulder_height_m: 0.25,
+            mass_kg: (0.7, 1.6), dimorphism: 1.1, length_m: 0.63, shoulder_height_m: 0.25,
             speed: (walk_m_s: 0.8, fly_m_s: 13),
             senses: (vision_m: 1000, hearing_m: 300, smell_m: 0, night_vision: 0.1),
             diet: (kind: Scavenger, daily_food_kg: 0.15, foods: [

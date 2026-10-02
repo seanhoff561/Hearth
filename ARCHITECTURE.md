@@ -9,7 +9,8 @@ live in `DECISIONS.md`; status lives in `PROGRESS.md`; per-system design notes (
 
 ```
 hearth_math ─┐
-hearth_core ─┼─> hearth_content (data packs → typed tables, lint, graphs, time scales, balance)
+hearth_core ─┼─> hearth_content (data packs → typed tables, generated items, carcasses and
+             │                   their butchering, lint, graphs, time scales, balance)
              │
              ├─> hearth_world ─> hearth_worldgen ─> hearth_lod
              │        │                 │
@@ -17,7 +18,8 @@ hearth_core ─┼─> hearth_content (data packs → typed tables, lint, graphs
              │        │                      climate, weather, snow & ice, phenology, sky
              │        │                      radiometry in lux) [math, content, worldgen]
              │        │                 └─> hearth_fauna (species, habitats, populations,
-             │        │                      animals in the world, their bodies)
+             │        │                      animals in the world, their bodies, minds,
+             │        │                      danger, wounds, tracks and signs)
              │        │                      [math, content, worldgen]
              │        │                 │
              │        └──> hearth_entity (hecs ECS, physics, AI, pathfinding)
@@ -156,7 +158,8 @@ trees, a fire, a person, animals: `animal=red_deer:adult:f:graze@12:2:90`,
 `herd=wild_boar:5@15:0`), or bring in the populations' own animals about the camera
 (`fauna=true`), or take the camera to a species' nearest group (`seek=red_deer`, `seek=lynx:2`
 for the second nearest): it stands where it sees the most of them past the trees and the lie of
-the ground, through a 40° lens unless `fov` is given.
+the ground, through a 40° lens unless `fov` is given. An animal may lie `dead` (as a carcass is
+drawn), and `trail=red_deer:12:prints@3:0:20` lays a trail of prints, blood or droppings.
 
 ## 8. Client/server
 

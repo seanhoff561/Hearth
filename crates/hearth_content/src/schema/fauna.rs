@@ -509,8 +509,12 @@ entry! {
         #[serde(default)]
         pub scientific: Option<String>,
         pub body_plan: BodyPlan,
-        /// Adult mass range.
+        /// Adult mass range (of both sexes).
         pub mass_kg: Range,
+        /// How much heavier a grown male is than a grown female (1.5 for red deer; below 1
+        /// where the females are the bigger, as in owls); 1 when not given.
+        #[serde(default)]
+        pub dimorphism: Option<f32>,
         pub length_m: f32,
         #[serde(default)]
         pub shoulder_height_m: Option<f32>,
@@ -560,5 +564,57 @@ entry! {
         pub calls: Vec<Call>,
         #[serde(default)]
         pub temperament: Option<Temperament>,
+    }
+}
+
+/// Words naming a place or a people, which keep their capital in running text.
+const PROPER: [&str; 14] = [
+    "Eurasian",
+    "European",
+    "American",
+    "African",
+    "Asian",
+    "Asiatic",
+    "Australian",
+    "Canadian",
+    "Siberian",
+    "Iberian",
+    "Indian",
+    "Arabian",
+    "Japanese",
+    "Himalayan",
+];
+
+/// A species' name as it reads in running text: its first word in small letters unless it names
+/// a place or a people ("red deer", "Eurasian lynx", "common European adder").
+pub fn common_name(name: &str) -> String {
+    let (first, rest) = match name.split_once(' ') {
+        Some((f, r)) => (f, Some(r)),
+        None => (name, None),
+    };
+    let first = if PROPER.contains(&first) {
+        first.to_owned()
+    } else {
+        first.to_lowercase()
+    };
+    match rest {
+        Some(r) => format!("{first} {r}"),
+        None => first,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn common_names_in_running_text() {
+        assert_eq!(common_name("Red deer"), "red deer");
+        assert_eq!(common_name("Eurasian lynx"), "Eurasian lynx");
+        assert_eq!(
+            common_name("Common European adder"),
+            "common European adder"
+        );
+        assert_eq!(common_name("Aurochs"), "aurochs");
     }
 }

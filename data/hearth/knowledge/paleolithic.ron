@@ -67,10 +67,20 @@
         ),
         (
             id: "throwing_stones", status: Implemented, name: "Throwing stones", era: 0,
+            // Every throw is practice at throwing true.
+            skill: "throwing",
             discovery: [
                 (route: Experiment, trigger: "throw:stone", insight: 0.25, hint: "A stone thrown hard flies far and lands with a thud."),
             ],
             history: (summary: "Changes in the human shoulder suggest powerful overarm throwing by early Homo.", date: "c. 2 million years ago (inferred)", years_bp: 2000000),
+            uncertain: true,
+        ),
+        (
+            id: "tracking", status: Implemented, name: "Tracking", era: 0,
+            discovery: [
+                (route: Observation, trigger: "see:tracks", insight: 0.2, hint: "The prints in the soft ground are fresh, and they go somewhere."),
+            ],
+            history: (summary: "Reading the prints, droppings and blood an animal leaves, to know what it is, how long since it passed and where it went, is among the oldest of hunters' arts; the San of the Kalahari still follow spoor across hard ground.", date: "deep antiquity (inferred)", years_bp: 1000000),
             uncertain: true,
         ),
         (
@@ -123,7 +133,8 @@
         ),
         (
             id: "butchery", status: Implemented, name: "Butchery", era: 0, requires: ["flake_cutting"],
-            enables: ["butcher_small_game"],
+            // Butchering each species' carcass (generated: hearth_content::butchery).
+            enables: [],
             skill: "butchery",
             discovery: [
                 (route: Experiment, trigger: "cut:carcass", insight: 0.5, hint: "Hacked open, the carcass gives meat, but much is wasted."),

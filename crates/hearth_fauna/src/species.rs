@@ -96,6 +96,10 @@ pub struct Species {
     /// Mean adult mass, kg.
     pub mass_kg: f32,
     pub mass_range: (f32, f32),
+    /// How much heavier a grown male is than a grown female.
+    pub dimorphism: f32,
+    /// The tracks it leaves.
+    pub track: Option<hearth_content::schema::fauna::Track>,
     pub model: PopulationModel,
     pub social: Social,
     /// Usual group size (1 for solitary animals).
@@ -525,6 +529,8 @@ fn species_of(
         plan: a.body_plan,
         mass_kg: mass,
         mass_range: a.mass_kg,
+        dimorphism: a.dimorphism.unwrap_or(1.0),
+        track: a.track,
         model,
         social: a.social,
         group,

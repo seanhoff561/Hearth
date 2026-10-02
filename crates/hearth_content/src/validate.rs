@@ -270,6 +270,7 @@ pub fn validate(content: &Content, report: &mut Report) {
         |e| &e.id,
         |a, c| {
             c.pair("mass_kg", a.mass_kg, 0.0, 200_000.0);
+            c.opt("dimorphism", a.dimorphism, 0.3, 3.0);
             c.range("length_m", a.length_m, 0.0, 35.0);
             c.opt("shoulder_height_m", a.shoulder_height_m, 0.0, 6.0);
             c.range("speed.walk_m_s", a.speed.walk_m_s, 0.0, 10.0);

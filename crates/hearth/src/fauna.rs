@@ -5,12 +5,14 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use glam::DVec3;
-use hearth_fauna::ecology::{Ecology, REGION_CELLS, Region};
+use glam::{DVec2, DVec3};
+use hearth_content::butchery::{Carcass, carcass_id};
+use hearth_fauna::ecology::{Cause, Ecology, REGION_CELLS, Region, Remains};
 use hearth_fauna::habitat::{GenLand, TreeYields};
-use hearth_fauna::live::{AnimalView, Cell, Footing, Ground, Live, Now};
+use hearth_fauna::live::{AnimalView, Cell, Footing, Ground, Live, Now, Stage};
 use hearth_fauna::mind::Presence;
 use hearth_fauna::species::Catalog;
+use hearth_items::{Items, Stack};
 use hearth_math::BlockPos;
 use hearth_physics::{Mover, Stance};
 use hearth_world::{BlockRegistry, BlockStateId, CubeMap};
@@ -55,6 +57,40 @@ pub fn cells_of(reg: &BlockRegistry) -> Vec<Cell> {
             }
         })
         .collect()
+}
+
+/// The surface at a foot's place in a map as it takes signs: how plainly it takes a print and
+/// its height — snow lying where the feet are (its top), otherwise the ground under them (not
+/// the plants on it).
+pub fn sign_surface(map: &CubeMap, reg: &BlockRegistry, x: f64, z: f64, y: f64) -> (f32, f64) {
+    let planet = map.planet();
+    let (bx, bz) = (planet.wrap_x(x.floor() as i32), z.floor() as i32);
+    let at = |yy: i32| {
+        map.block(BlockPos::new(bx, yy, bz))
+            .filter(|s| !s.is_air())
+            .map(|s| (s, reg.block_of(s).def.sound.clone()))
+    };
+    let feet = (y + 0.05).floor() as i32;
+    if let Some((s, sound)) = at(feet)
+        && sound == "snow"
+    {
+        let top = reg
+            .outline_shape(s)
+            .boxes
+            .iter()
+            .map(|b| b.max.y)
+            .fold(0.0, f64::max);
+        return (1.0, feet as f64 + top);
+    }
+    let plain = match at((y - 0.05).floor() as i32).map(|(_, s)| s).as_deref() {
+        Some("snow") => 1.0,
+        Some("sand") => 0.8,
+        Some("soil") => 0.7,
+        Some("moss") => 0.3,
+        Some("grass") | Some("wet_grass") => 0.2,
+        _ => 0.0,
+    };
+    (plain, y)
 }
 
 /// The surface of the ground in the column at (x, z) of a map, searching down from `from` for
@@ -175,6 +211,10 @@ impl Ground for MapGround<'_> {
         }
     }
 
+    fn sign_surface(&self, x: f64, z: f64, y: f64) -> (f32, f64) {
+        sign_surface(self.map, self.reg, x, z, y)
+    }
+
     fn top(&self, x: f64, z: f64) -> Option<Footing> {
         // The generated ground, then the blocks about it (the player's changes, the trees).
         let h = self.lw.surface_y(x, z);
@@ -194,6 +234,8 @@ pub struct Fauna {
     yields: TreeYields,
     /// Years since the world began the populations are simulated to.
     pub years: f64,
+    /// Years since the world began now (the populations go on a few days at a time behind).
+    pub now: f64,
 }
 
 /// What is saved of the populations.
@@ -236,6 +278,7 @@ impl Fauna {
             cells: cells_of(&lw.reg),
             yields,
             years: at,
+            now: years.max(at),
         }
     }
 
@@ -363,6 +406,7 @@ impl Fauna {
         tick: u64,
     ) {
         let player = presence.pos;
+        self.now = years;
         if tick.is_multiple_of(40) {
             let land = GenLand {
                 wg: &lw.generator,
@@ -404,6 +448,144 @@ impl Fauna {
     /// The animals near the player, for the client.
     pub fn views(&self) -> Vec<AnimalView> {
         self.live.views()
+    }
+
+    /// The carcass an animal leaves, if it is big enough to work (a male of a species whose
+    /// sexes are alike leaves a grown one's).
+    pub fn carcass_of(
+        &self,
+        items: &Items,
+        species: u16,
+        stage: Stage,
+        female: bool,
+    ) -> Option<String> {
+        let sp = self.eco.catalog.species.get(species as usize)?;
+        let which = match (stage, female) {
+            (Stage::Adult, true) => Carcass::Grown,
+            (Stage::Adult, false) => Carcass::Male,
+            _ => Carcass::Young,
+        };
+        let id = carcass_id(&sp.id, which);
+        if items.get(&id).is_some() {
+            return Some(id);
+        }
+        let grown = carcass_id(&sp.id, Carcass::Grown);
+        (which == Carcass::Male && items.get(&grown).is_some()).then_some(grown)
+    }
+
+    /// The dead taken out of the world as the carcasses they leave: what is left of each
+    /// (a hunter's kill eaten from), where, which way it lies; and, in words, those the person
+    /// at `near` brought down that fell within sight of them.
+    pub fn carcasses(
+        &mut self,
+        items: &Items,
+        near: DVec3,
+    ) -> (Vec<(Stack, DVec3, f32)>, Vec<String>) {
+        let cat = self.eco.catalog.clone();
+        let mut out = Vec::new();
+        let mut words = Vec::new();
+        for b in self.live.take_bodies(&cat) {
+            let sp = &cat.species[b.species as usize];
+            let how = match b.killed_by {
+                Some(h) => format!(
+                    "killed by a {}",
+                    cat.species[h as usize].name.to_lowercase()
+                ),
+                None if b.by_person => "killed by the person".to_owned(),
+                None => "dead".to_owned(),
+            };
+            if b.by_person && (b.pos - near).length() < 150.0 {
+                words.push(format!("The {} falls.", sp.name.to_lowercase()));
+            }
+            log::info!(
+                "A {} lies {how}, {:.0}% left",
+                sp.name.to_lowercase(),
+                b.left * 100.0
+            );
+            if let Some(id) = self.carcass_of(items, b.species, b.stage, b.female) {
+                let mut s = Stack::one(&id);
+                s.condition = b.left;
+                out.push((s, b.pos, b.yaw));
+            }
+        }
+        (out, words)
+    }
+
+    /// The remains of the populations' dead lying within `radius` of the player, taken into the
+    /// world as carcasses: with what is left of them and how far they have gone off at
+    /// `air_c`, where (on the ground of the column), which way they lie. The rotted are gone.
+    pub fn found(
+        &mut self,
+        items: &Items,
+        content: &hearth_content::Content,
+        lw: &LocalWorld,
+        at: DVec3,
+        radius: f64,
+        air_c: f32,
+    ) -> Vec<(Stack, DVec3, f32)> {
+        let mut out = Vec::new();
+        for m in self.eco.take_remains([at.x, at.z], radius, self.now) {
+            let Some(id) = self.carcass_of(items, m.species, m.stage, m.female) else {
+                continue;
+            };
+            let Some(kind) = items.get(&id) else {
+                continue;
+            };
+            let hours = ((self.now - m.time).max(0.0) * 365.0 * 24.0) as f32;
+            let decay = hearth_craft::food::keeps_days(content, kind).map_or(0.0, |keeps| {
+                hearth_craft::food::decay_per_hour(keeps, air_c, 0.0) * hours
+            });
+            if decay >= 1.5 {
+                continue;
+            }
+            let mut s = Stack::one(&id);
+            s.condition = m.left;
+            s.decay = decay;
+            let col = lw
+                .terrain()
+                .sample(m.at[0].floor() as i32, m.at[1].floor() as i32);
+            let pos = DVec3::new(m.at[0], col.height as f64 + 1.0, m.at[1]);
+            let yaw = ((m.time * 7919.0).fract() * std::f64::consts::TAU) as f32;
+            out.push((s, pos, yaw));
+        }
+        out
+    }
+
+    /// Where ravens circle over fresh remains within sight of the player (told of again after
+    /// an hour): the way to the nearest, on the ground.
+    pub fn ravens(&mut self, at: DVec3) -> Option<DVec2> {
+        let seen = self.eco.ravens(
+            [at.x, at.z],
+            2000.0,
+            self.now,
+            4.0 / 365.0,
+            1.0 / (365.0 * 24.0),
+        );
+        seen.iter()
+            .map(|m| DVec2::new(m.at[0] - at.x, m.at[1] - at.z))
+            .min_by(|a, b| a.length().total_cmp(&b.length()))
+    }
+
+    /// Tests and bots: a grown animal of a species dies at a place (a natural death a test may
+    /// force), to lie there when the player comes near.
+    pub fn die(&mut self, species: &str, at: DVec3) {
+        let Some(si) = self.eco.catalog.index(species) else {
+            return;
+        };
+        let key = self.eco.region_key(at.x, at.z);
+        if let Some(r) = self.eco.regions.get_mut(&key) {
+            r.remains.push(Remains {
+                species: si as u16,
+                stage: Stage::Adult,
+                female: true,
+                at: [at.x, at.z],
+                time: self.now,
+                left: 1.0,
+                half_days: hearth_fauna::ecology::half_days(self.eco.catalog.species[si].mass_kg),
+                cause: Cause::Natural,
+                told: -1.0,
+            });
+        }
     }
 
     /// The groups of the loaded regions: species, where, how many.

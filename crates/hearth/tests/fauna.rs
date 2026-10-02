@@ -81,3 +81,137 @@ fn animals_come_into_the_world_about_the_player_and_go_as_they_leave() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_dead_deer_lies_until_found_and_is_butchered_by_its_kind() {
+    use hearth_protocol::{AimAt, ToServer};
+    let dir = common::temp("carcass");
+    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
+    w.run(80);
+    let home = w.mover.pos;
+    // A red deer hind dies 300 m to the east: out of sight, she is not yet in the world.
+    let far = home + DVec3::new(300.0, 0.0, 0.0);
+    w.server.send(ToServer::Die {
+        species: "hearth:red_deer".into(),
+        at: far,
+    });
+    w.run(81);
+    assert!(w.lying.iter().all(|l| !l.stack.id.contains("_carcass")));
+    // By day the ravens over her tell of her.
+    if let Some((_, _, words)) = w.acted.iter().find(|(_, _, s)| s.contains("Ravens")) {
+        assert!(words.contains("east"), "{words}");
+    }
+    // Come near, she is found, whole and fresh.
+    w.go(far.x - 1.0, far.z);
+    w.run(81);
+    let c = w
+        .lying
+        .iter()
+        .find(|l| l.stack.id == "hearth:red_deer_carcass")
+        .expect("the carcass is found")
+        .clone();
+    assert!(c.stack.condition > 0.99, "{}", c.stack.condition);
+    assert!(c.stack.decay < 0.2, "{}", c.stack.decay);
+    // Butchered with a flint flake: the meat, hide and bone of a red deer hind.
+    w.give("hearth:flake/flint", 1);
+    w.put_down_all();
+    let flake = w
+        .lying
+        .iter()
+        .find(|l| l.stack.id == "hearth:flake/flint")
+        .map(|l| l.id)
+        .expect("the flake");
+    assert!(w.hold(flake), "the flake in hand");
+    let (done, words) = w.act("butcher_red_deer", AimAt::Thing(c.id));
+    assert!(done, "{words}");
+    let meat = w.at_hand(|id| id == "hearth:cut/meat", 6.0) as f32 * 0.254;
+    let hide = w.at_hand(|id| id == "hearth:sheet/rawhide", 6.0);
+    println!("{meat:.0} kg of meat, {hide} sheets of rawhide");
+    assert!((40.0..60.0).contains(&meat), "{meat:.0} kg of meat");
+    assert!(hide >= 7, "{hide} sheets of hide");
+    assert!(
+        w.lying.iter().all(|l| l.id != c.id),
+        "the carcass is used up"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
+    use hearth_protocol::ToServer;
+    let dir = common::temp("hunt");
+    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
+    let catalog = Catalog::new(&w.content);
+    let home = w.mover.pos;
+    w.run(80);
+    w.census = None;
+    w.server.send(ToServer::Census);
+    assert!(w.until(30.0, |w| w.census.is_some()), "no census");
+    let mut groups = w.census.clone().unwrap_or_default();
+    groups.sort_by(|a, b| {
+        let d = |p: glam::DVec2| (p.x - home.x).hypot(p.y - home.z);
+        d(a.1).total_cmp(&d(b.1))
+    });
+    // A spear in hand, and an animal of some size met about the spawn.
+    let spear = "hearth:stone_tipped_spear/oak_wood";
+    w.give(spear, 1);
+    w.put_down_all();
+    let id = w
+        .lying
+        .iter()
+        .find(|l| l.stack.id == spear)
+        .map(|l| l.id)
+        .expect("the spear");
+    assert!(w.hold(id), "the spear in hand");
+    let mut quarry = None;
+    'walk: for (s, at, _) in groups.iter().take(8) {
+        if catalog.species[*s as usize].mass_kg < 10.0 {
+            continue;
+        }
+        w.go(at.x, at.y);
+        for _ in 0..4 {
+            w.run(40);
+            if let Some(v) = w.animals.iter().find(|v| {
+                catalog.species[v.species as usize].mass_kg >= 10.0
+                    && v.medium == hearth_fauna::live::Medium::Ground
+            }) {
+                quarry = Some(*v);
+                break 'walk;
+            }
+        }
+    }
+    let v = quarry.expect("an animal to hunt");
+    let sp = &catalog.species[v.species as usize];
+    // Up beside it, and a thrust behind its shoulder.
+    let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
+    let side = DVec3::new(ahead.z, 0.0, -ahead.x);
+    let feet = v.pos + side * 1.6;
+    w.go_exact(feet);
+    let chest =
+        v.pos + ahead * (sp.length_m as f64 * 0.12) + DVec3::Y * (sp.shoulder_m as f64 * 0.65);
+    let n = w.acted.len();
+    w.server.send(ToServer::Thrust {
+        dir: chest - (feet + DVec3::new(0.0, 1.5, 0.0)),
+    });
+    w.run(2);
+    let said: Vec<String> = w.acted[n..].iter().map(|(_, _, s)| s.clone()).collect();
+    println!("{}: {said:?}", sp.name);
+    assert!(said.iter().any(|s| s.contains("strikes")), "{said:?}");
+    // It runs and falls; followed to where it lies.
+    let mut last = v.pos;
+    for _ in 0..120 {
+        w.run(20);
+        match w.animals.iter().find(|x| x.id == v.id) {
+            Some(x) => last = x.pos,
+            None => break,
+        }
+    }
+    w.go(last.x, last.z);
+    w.run(81);
+    let carcass = format!("{}_carcass", sp.id);
+    assert!(
+        w.lying.iter().any(|l| l.stack.id.starts_with(&carcass)),
+        "no {carcass} where it fell"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -3,6 +3,7 @@
 //! outputs are made of the material in play.
 
 use hearth_content::Content;
+use hearth_content::schema::Season;
 use hearth_craft::engine::{offers, perform, plan};
 use hearth_craft::{Aimed, Bench, Crafts, Event, Graph, KnowledgeState, Mode, Surroundings};
 use hearth_items::{Carry, Hand, Items, Stack};
@@ -118,42 +119,117 @@ fn knocking_flint_together_teaches_hammering_and_flakes() {
     assert!(known.may_attempt(Some("hearth:stone_as_hammer")));
 }
 
-#[test]
-fn butchering_gives_meat_hide_bone_in_their_units() {
-    let w = world();
-    let carry = holding(&w, "hearth:flake/flint", None);
-    let carcass = Stack::one(&kind(&w, "hearth:small_carcass"));
+/// Butchers `carcass` (as given: what is left of it, how far gone) with a flint flake in a
+/// season, at full skill: what it gives.
+fn butcher(w: &World, carcass: &Stack, season: Season, seed: u64) -> hearth_craft::Outcome {
+    let carry = holding(w, "hearth:flake/flint", None);
     let bench = Bench::new(
         &w.content,
         &w.items,
         &carry,
-        [(5, &carcass)],
+        [(5, carcass)],
         Some(Aimed::Thing(5)),
-        around(),
+        Surroundings {
+            season: Some(season),
+            ..around()
+        },
     );
-    let butcher = w
-        .crafts
-        .index_of("hearth:butcher_small_game")
-        .expect("butcher");
-    let p = plan(&w.crafts, butcher, &bench, 0.5).expect("plan");
+    let process = hearth_content::butchery::butcher_id(&carcass.id);
+    let r = w.crafts.index_of(&process).expect("butcher");
+    let p = plan(&w.crafts, r, &bench, 0.5).expect("plan");
     assert_eq!(p.uses.len(), 1, "the carcass is used up");
-    let mut rng = Rng::new(3);
-    let o = loop {
+    let mut rng = Rng::new(seed);
+    loop {
         let o = perform(&w.crafts, &p, &bench, 1.0, &mut rng);
         if o.done {
             break o;
         }
-    };
-    let count = |id: &str| -> u16 { o.made.iter().filter(|s| s.id == id).map(|s| s.count).sum() };
-    let meat = count("hearth:cut/meat");
+    }
+}
+
+fn count(o: &hearth_craft::Outcome, id: &str) -> u16 {
+    o.made.iter().filter(|s| s.id == id).map(|s| s.count).sum()
+}
+
+#[test]
+fn butchering_gives_meat_hide_bone_in_their_units() {
+    let w = world();
+    let roe = Stack::one(&kind(&w, "hearth:roe_deer_carcass"));
+    let o = butcher(&w, &roe, Season::Summer, 3);
+    // A roe doe of 23 kg: about 8–10 kg of meat in quarter-kilo cuts, a hide of a kilo and a
+    // half, two or three kilos of bone.
+    let meat = count(&o, "hearth:cut/meat");
     assert!(
-        (19..=33).contains(&meat),
-        "5–8 kg of meat in quarter-kilo cuts: {meat}"
+        (30..=40).contains(&meat),
+        "8–10 kg of meat in quarter-kilo cuts: {meat}"
     );
-    assert_eq!(count("hearth:sheet/rawhide"), 1, "one hide");
-    assert!(count("hearth:piece/bone") >= 10, "bone pieces");
+    assert!(
+        (1..=2).contains(&count(&o, "hearth:sheet/rawhide")),
+        "one hide"
+    );
+    assert!(count(&o, "hearth:piece/bone") >= 14, "bone pieces");
     assert!(o.triggers.iter().any(|t| t == "cut:carcass"));
     assert!(o.triggers.iter().any(|t| t == "use:flake"));
+}
+
+#[test]
+fn a_deer_is_fat_in_autumn_and_lean_in_spring() {
+    let w = world();
+    let hind = Stack::one(&kind(&w, "hearth:red_deer_carcass"));
+    let fat = |season: Season| -> u16 {
+        (0..4)
+            .map(|k| count(&butcher(&w, &hind, season, 10 + k), "hearth:cut/animal_fat"))
+            .sum()
+    };
+    let (autumn, spring) = (fat(Season::Autumn), fat(Season::Spring));
+    assert!(
+        autumn > spring * 2,
+        "{autumn} cuts of fat in autumn, {spring} in spring"
+    );
+    // A stag's antlers while he carries them; none once cast, none from a hind.
+    let stag = Stack::one(&kind(&w, "hearth:red_deer_carcass_male"));
+    assert!(
+        count(
+            &butcher(&w, &stag, Season::Autumn, 1),
+            "hearth:piece/antler"
+        ) > 0
+    );
+    assert_eq!(
+        count(
+            &butcher(&w, &stag, Season::Spring, 1),
+            "hearth:piece/antler"
+        ),
+        0
+    );
+    assert_eq!(
+        count(
+            &butcher(&w, &hind, Season::Autumn, 1),
+            "hearth:piece/antler"
+        ),
+        0
+    );
+}
+
+#[test]
+fn a_kill_eaten_from_gives_what_is_left_and_spoiled_meat_stays_spoiled() {
+    let w = world();
+    let whole = Stack::one(&kind(&w, "hearth:roe_deer_carcass"));
+    let mut eaten = whole.clone();
+    eaten.condition = 0.5;
+    eaten.decay = 0.6;
+    let (a, b) = (
+        butcher(&w, &whole, Season::Summer, 7),
+        butcher(&w, &eaten, Season::Summer, 7),
+    );
+    let (m0, m1) = (count(&a, "hearth:cut/meat"), count(&b, "hearth:cut/meat"));
+    assert!(
+        (m1 as f32 / m0 as f32 - 0.5).abs() < 0.1,
+        "{m1} cuts against {m0}"
+    );
+    for s in b.made.iter().filter(|s| s.id == "hearth:cut/meat") {
+        assert!(s.decay >= 0.6, "as far gone as the carcass: {}", s.decay);
+    }
+    assert!(a.made.iter().all(|s| s.decay == 0.0));
 }
 
 #[test]

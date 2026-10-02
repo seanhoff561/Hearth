@@ -571,6 +571,8 @@ fn run(
     };
     // The tick of the player's last shout.
     let mut shouted = 0u64;
+    // Signs were last sent (an empty list is sent once when they go).
+    let mut signs_shown = false;
     if mode == hearth_craft::Mode::Open {
         player.knowledge.known = hearth_craft::KnowledgeState::open(&workshop.graph, ticks).known;
     }
@@ -807,7 +809,80 @@ fn run(
                 Ok(ToServer::Drink(from)) => workshop.drink(&mut here!(), &from),
                 Ok(ToServer::Fill { skin, aim }) => workshop.fill(&mut here!(), &skin, aim),
                 Ok(ToServer::Throw { dir, speed }) => {
-                    workshop.throw(&mut here!(), dir, speed);
+                    if let Some(f) = workshop.throw(&mut here!(), dir, speed) {
+                        // What it strikes on its way, and where it falls.
+                        let year_frac = calendar.at(ticks).year_frac as f32;
+                        let mut end = f.path.last().copied().unwrap_or(player.mover.pos);
+                        let kind = items.get(&f.stack.id);
+                        if let Some(hit) =
+                            fauna
+                                .live
+                                .hit_along(&fauna.eco.catalog.clone(), &f.path, year_frac)
+                        {
+                            let v = f.speed_at(hit.segment);
+                            let blow = hearth_fauna::wound::Blow {
+                                energy_j: (0.5 * f.mass * v * v) as f32,
+                                piercing: kind.and_then(|k| k.property("piercing")).unwrap_or(0.0),
+                            };
+                            let what = kind.map_or("thing".to_owned(), |k| k.name.clone());
+                            if let Some(s) = fauna.live.strike(
+                                &fauna.eco.catalog.clone(),
+                                &hit,
+                                &blow,
+                                &what,
+                                player.mover.pos,
+                                year_frac,
+                            ) {
+                                let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                                    process: String::new(),
+                                    done: false,
+                                    words: s.words,
+                                }));
+                            }
+                            end = hit.at;
+                        }
+                        world_items.add(f.stack, rest_on(&lw, end).to_array(), 0.0);
+                        items_changed = true;
+                    }
+                }
+                Ok(ToServer::Thrust { dir }) => {
+                    // A thrust or a blow with what is in the right hand, at what is in reach.
+                    if player.can_act(&cfg)
+                        && let Some(held) = player.carry.right.as_ref()
+                        && let Some(kind) = items.get(&held.id)
+                    {
+                        let reach = kind.property("reach_m").unwrap_or(0.5) as f64;
+                        let eye = player.mover.pos + DVec3::new(0.0, 1.5, 0.0);
+                        let path = [eye, eye + dir.normalize_or_zero() * (0.7 + reach)];
+                        let year_frac = calendar.at(ticks).year_frac as f32;
+                        let cat = fauna.eco.catalog.clone();
+                        if let Some(hit) = fauna.live.hit_along(&cat, &path, year_frac) {
+                            // A spear thrust with the body behind it, against a blow of the arm.
+                            let blow = hearth_fauna::wound::Blow {
+                                energy_j: if reach >= 1.5 {
+                                    150.0
+                                } else {
+                                    40.0 + 60.0 * kind.mass_kg.min(1.5)
+                                },
+                                piercing: kind.property("piercing").unwrap_or(0.0),
+                            };
+                            let what = kind.name.clone();
+                            if let Some(s) = fauna.live.strike(
+                                &cat,
+                                &hit,
+                                &blow,
+                                &what,
+                                player.mover.pos,
+                                year_frac,
+                            ) {
+                                let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                                    process: String::new(),
+                                    done: false,
+                                    words: s.words,
+                                }));
+                            }
+                        }
+                    }
                 }
                 Ok(ToServer::Give(stack)) => {
                     let body_kg = cfg.mass_kg as f32;
@@ -837,6 +912,7 @@ fn run(
                 Ok(ToServer::TimeWarp(w)) => warp = w.max(0.0),
                 Ok(ToServer::Pause(p)) => paused = p,
                 Ok(ToServer::Shout) => shouted = ticks,
+                Ok(ToServer::Die { species, at }) => fauna.die(&species, at),
                 Ok(ToServer::Census) => {
                     let _ = tx.send(ToClient::Census(fauna.census()));
                 }
@@ -944,6 +1020,71 @@ fn run(
                         done: false,
                         words: at.words.clone(),
                     }));
+                }
+                // The dead lie where they fell, as carcasses; the remains of the populations'
+                // dead come into the world as the player comes near, and ravens circling by day
+                // tell of the fresh ones within sight.
+                let (mut lying, fallen) = fauna.carcasses(&items, at);
+                for words in fallen {
+                    let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                        process: String::new(),
+                        done: false,
+                        words,
+                    }));
+                }
+                if ticks.is_multiple_of(40) {
+                    let air_c = env.weather_at(&moment, at).temperature_c as f32;
+                    let content = lw.content.clone();
+                    lying.extend(fauna.found(&items, &content, &lw, at, 90.0, air_c));
+                    if now.air.light > 0.3
+                        && let Some(way) = fauna.ravens(at)
+                    {
+                        let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                            process: String::new(),
+                            done: false,
+                            words: format!(
+                                "Ravens are circling to the {}.",
+                                crate::workshop::compass(way.x, way.y)
+                            ),
+                        }));
+                    }
+                }
+                for (stack, pos, yaw) in lying {
+                    world_items.add(stack, rest_on(&lw, pos).to_array(), yaw);
+                    items_changed = true;
+                }
+                // The signs the animals left about the player; prints underfoot teach tracking.
+                if ticks.is_multiple_of(20) {
+                    let feet = player.mover.pos;
+                    let near: Vec<hearth_fauna::live::Sign> = fauna
+                        .live
+                        .signs
+                        .iter()
+                        .filter(|s| (s.pos.x - feet.x).hypot(s.pos.z - feet.z) < 64.0)
+                        .copied()
+                        .collect();
+                    let clock = fauna.live.clock;
+                    let fresh_print = near.iter().any(|s| {
+                        s.kind == hearth_fauna::live::SignKind::Print
+                            && (s.pos - feet).length() < 2.5
+                            && clock - s.t < now.day_s as f64
+                    });
+                    if !near.is_empty() || signs_shown {
+                        signs_shown = !near.is_empty();
+                        let _ = tx.send(ToClient::Signs {
+                            now: clock,
+                            day_s: now.day_s,
+                            signs: near,
+                        });
+                    }
+                    if fresh_print {
+                        let hour = (calendar.ticks_per_day() / 24.0) as u64;
+                        workshop.hear_now_and_then(
+                            &mut here!(),
+                            hearth_content::triggers::SEE_TRACKS.to_owned(),
+                            hour,
+                        );
+                    }
                 }
                 if ticks.is_multiple_of(2) {
                     let views = fauna.views();

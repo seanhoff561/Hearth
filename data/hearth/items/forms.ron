@@ -184,12 +184,12 @@
         // Bulk (v2 §11.2): materials carried by the handful, the cut, the lump; processes count
         // them by the kilogram in these units.
         (
-            id: "cut", status: Implemented, name: "{material}", materials: (tags: ["meat", "fat"]),
+            id: "cut", status: Implemented, name: "{material}", materials: (tags: ["meat", "fat", "fish"]),
             size_m: (0.1, 0.08, 0.03), fill: 1.0, footprint: (1, 1), stacking: Count(2),
             tags: ["bulk"],
         ),
         (
-            id: "handful", status: Implemented, name: "{material}", materials: (tags: ["nut", "fruit", "greens", "grain", "meal", "tinder", "insect"], exclude_tags: ["adhesive", "meat", "fat"]),
+            id: "handful", status: Implemented, name: "{material}", materials: (tags: ["nut", "fruit", "greens", "grain", "meal", "tinder", "insect", "fletching"], exclude_tags: ["adhesive", "meat", "fat"]),
             size_m: (0.1, 0.08, 0.06), fill: 0.7, footprint: (1, 1), stacking: Count(4),
             tags: ["bulk"],
         ),

@@ -195,6 +195,7 @@ pub fn provoked(
     at_kill: bool,
     cornered: bool,
     rut: bool,
+    hurt: bool,
     lean: f32,
     aggression: f32,
     roll: f32,
@@ -203,6 +204,10 @@ pub fn provoked(
     let rolled = |chance: f32, cause: Cause| Some((roll < chance).then_some(cause));
     if sp.danger.venomous && sp.plan == BodyPlan::Snake && d < 0.9 && p.noise > 0.02 {
         return rolled(0.5 + aggression, Cause::SteppedNear);
+    }
+    // Hurt by the person, and they close: a boar or a bear turns on them.
+    if hurt && d < 10.0 && defensive && sp.mass_kg >= 20.0 {
+        return rolled((aggression * 3.0).min(0.9), Cause::Provoked);
     }
     if cornered && d < 5.0 && defensive {
         return rolled(0.6 + aggression, Cause::Cornered);

@@ -77,8 +77,6 @@ pub struct WorkshopSave {
     harvests: Vec<Harvest>,
     #[serde(default)]
     depleted: Vec<(BlockPos, f32)>,
-    #[serde(default)]
-    next_kill_tick: u64,
 }
 
 /// Work in hand.
@@ -123,7 +121,6 @@ pub struct Workshop {
     pub wildfires: Vec<Station>,
     harvests: FxHashMap<(BlockPos, String), (i64, u8)>,
     depleted: FxHashMap<BlockPos, f32>,
-    next_kill_tick: u64,
     pub work: Option<Work>,
     rng: Rng,
     /// Triggers of sight lately heard, and when (they are not heard again for a while).
@@ -291,7 +288,6 @@ impl Workshop {
                 .map(|h| ((h.pos, h.process), (h.year, h.count)))
                 .collect(),
             depleted: save.depleted.into_iter().collect(),
-            next_kill_tick: save.next_kill_tick,
             work: None,
             rng: Rng::new(seed ^ 0xc4af7),
             heard_at: FxHashMap::default(),
@@ -326,7 +322,6 @@ impl Workshop {
             wildfires: self.wildfires.clone(),
             harvests,
             depleted,
-            next_kill_tick: self.next_kill_tick,
         }
     }
 
@@ -786,7 +781,7 @@ impl Workshop {
     }
 
     /// Hears a trigger of sight, once in a while.
-    fn hear_now_and_then(&mut self, h: &mut Here, trigger: String, every_ticks: u64) {
+    pub(crate) fn hear_now_and_then(&mut self, h: &mut Here, trigger: String, every_ticks: u64) {
         let fresh = self
             .heard_at
             .get(&trigger)
@@ -1837,24 +1832,35 @@ impl Workshop {
     }
 
     /// Throws what is in the right hand: it flies and lands as a thing lying in the world.
-    pub fn throw(&mut self, h: &mut Here, dir: DVec3, speed: f64) {
+    pub fn throw(&mut self, h: &mut Here, dir: DVec3, speed: f64) -> Option<Flight> {
         if !h.player.can_act(h.cfg) {
-            return;
+            return None;
         }
-        let Some(stack) = h
+        let stack = h
             .player
             .carry
-            .take(h.items, &Path::at(Root::Hand(Hand::Right)), Some(1))
-        else {
-            return;
-        };
+            .take(h.items, &Path::at(Root::Hand(Hand::Right)), Some(1))?;
         let mass = stack.mass(h.items).max(0.05) as f64;
         // A strong overarm throw: about 20 m/s for a stone, slower for heavy things.
         let v0 = speed.clamp(0.0, 25.0) * (0.6 / mass).sqrt().clamp(0.3, 1.0);
-        let mut v = dir.normalize_or_zero() * v0;
+        // As true as the thrower's practice: a novice's throw strays three degrees or so, a
+        // practised one's half a degree.
+        let skill = h.player.knowledge.skill(THROWING);
+        let spread = (3.0 - 2.4 * skill.clamp(0.0, 1.0) as f64).to_radians();
+        let dir = dir.normalize_or_zero();
+        let side = dir.cross(DVec3::Y).normalize_or(DVec3::X);
+        let up = side.cross(dir).normalize_or(DVec3::Y);
+        let (a, r) = (
+            self.rng.range_f64(0.0, std::f64::consts::TAU),
+            self.rng.normal() * spread,
+        );
+        let dir = (dir + (side * a.cos() + up * a.sin()) * r.tan()).normalize_or_zero();
+        h.player.knowledge.practice(THROWING, 0.05, h.ticks);
+        let mut v = dir * v0;
         let mut p = h.player.mover.pos + DVec3::new(0.0, 1.5, 0.0);
         let dt = 0.02;
         let reg = h.lw.reg.clone();
+        let mut path = vec![p];
         for _ in 0..800 {
             let next = p + v * dt;
             let b = BlockPos::containing(next);
@@ -1866,22 +1872,26 @@ impl Workshop {
                 break;
             }
             p = next;
+            path.push(p);
             v.y -= 9.81 * dt;
             if h.lw.map.block(b).is_none() {
                 break;
             }
         }
-        let rest = crate::server::rest_on(h.lw, p);
         let keys =
             h.lw.content
                 .items
                 .get(&stack.id)
                 .map(|d| item_keys(d, &h.lw.content))
                 .unwrap_or_default();
-        h.world_items.add(stack, rest.to_array(), 0.0);
-        *h.items_changed = true;
         let t: Vec<String> = with_verb("throw", &keys).collect();
         self.hear(h, &t);
+        Some(Flight {
+            stack,
+            path,
+            dt,
+            mass,
+        })
     }
 
     /// Reaching for a thing with full hands and nowhere to put it.
@@ -1953,7 +1963,6 @@ impl Workshop {
             self.fire_minute(h);
         }
         self.storm(h, &w);
-        self.kills(h);
     }
 
     /// Unattended work goes on while its conditions hold.
@@ -2224,63 +2233,32 @@ impl Workshop {
         }
         true
     }
+}
 
-    /// A predator's kill turns up nearby now and then (until animals live in the world).
-    fn kills(&mut self, h: &mut Here) {
-        if h.ticks < self.next_kill_tick {
-            return;
-        }
-        let days = self.rng.range_f64(1.0, 2.5);
-        self.next_kill_tick = h.ticks + (days * h.ticks_per_day) as u64;
-        let feet = h.player.mover.pos;
-        // Fresh kills lying near hold back another; rotting ones are the scavengers' now.
-        let near = h
-            .world_items
-            .items
-            .iter()
-            .filter(|w| {
-                (DVec3::from_array(w.pos) - feet).length() < 250.0
-                    && w.stack.decay < 0.5
-                    && h.items
-                        .get(&w.stack.id)
-                        .is_some_and(|k| k.has_tag("carcass"))
-            })
-            .count();
-        if near >= 2 {
-            return;
-        }
-        let Some(kind) = h.items.iter().find(|k| k.has_tag("carcass")) else {
-            return;
-        };
-        for _ in 0..16 {
-            let a = self.rng.range_f64(0.0, std::f64::consts::TAU);
-            let d = self.rng.range_f64(30.0, 120.0);
-            let (x, z) = (feet.x + a.cos() * d, feet.z + a.sin() * d);
-            let s = h.lw.terrain().sample(x.floor() as i32, z.floor() as i32);
-            if s.water > s.height {
-                continue;
-            }
-            let at = DVec3::new(x, s.height as f64 + 1.0, z);
-            let id = kind.id.clone();
-            h.world_items.add(
-                Stack::one(&id),
-                crate::server::rest_on(h.lw, at).to_array(),
-                a as f32,
-            );
-            *h.items_changed = true;
-            let dir = compass(a.cos(), a.sin());
-            h.out.push(acted(
-                "",
-                true,
-                format!("Ravens are circling to the {dir}."),
-            ));
-            return;
+/// The skill of throwing true.
+pub const THROWING: &str = "throwing";
+
+/// A thing thrown: what, its flight (points from the hand, `dt` seconds apart, to where it
+/// fell or struck), its mass (kg). It lies where the flight ends, or where it struck.
+pub struct Flight {
+    pub stack: Stack,
+    pub path: Vec<DVec3>,
+    pub dt: f64,
+    pub mass: f64,
+}
+
+impl Flight {
+    /// Its speed (m/s) along a segment of its flight.
+    pub fn speed_at(&self, segment: usize) -> f64 {
+        match (self.path.get(segment), self.path.get(segment + 1)) {
+            (Some(a), Some(b)) => (*b - *a).length() / self.dt,
+            _ => 0.0,
         }
     }
 }
 
 /// A direction in words, from a step east (`dx`) and south (`dz`).
-fn compass(dx: f64, dz: f64) -> &'static str {
+pub(crate) fn compass(dx: f64, dz: f64) -> &'static str {
     let a = dx.atan2(-dz).rem_euclid(std::f64::consts::TAU);
     const NAMES: [&str; 8] = [
         "north",

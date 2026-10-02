@@ -49,6 +49,8 @@ pub enum Perspective {
 pub enum Aim {
     /// A thing lying in the world.
     Item(u64),
+    /// An animal within reach of what is in hand.
+    Animal(u64),
     /// A block (a plant, water, a hearth, the ground): where, whether its top face is looked
     /// at, and the point the eyes rest on.
     Block {
@@ -182,6 +184,9 @@ pub struct Client {
     /// The animals near the player as the server last told of them, and as drawn (eased
     /// toward that between the server's word); the species they are of.
     animals: rustc_hash::FxHashMap<u64, ShownAnimal>,
+    /// The signs animals left about the player: the world's seconds they are timed by, how long
+    /// a day is (s), and the signs.
+    signs: (f64, f32, Vec<hearth_fauna::live::Sign>),
     fauna: Option<Arc<hearth_fauna::species::Catalog>>,
     /// The species' bodies and coats.
     bodies: Option<Arc<hearth_fauna::skin::Bodies>>,
@@ -323,6 +328,7 @@ impl Client {
             figure_boxes: Vec::new(),
             falling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
+            signs: (0.0, 1200.0, Vec::new()),
             fauna: None,
             bodies: None,
             base_items: None,
@@ -445,6 +451,41 @@ impl Client {
                 best = Some((t, Aim::Item(wi.id)));
             }
         }
+        // An animal within reach of what is in the right hand (a spear's length and the arm).
+        if let (Some(cat), Some(bodies)) = (&self.fauna, &self.bodies) {
+            let reach = 0.7
+                + self
+                    .carry
+                    .right
+                    .as_ref()
+                    .and_then(|s| s.property(items, "reach_m"))
+                    .unwrap_or(0.5) as f64;
+            let year_frac = self.calendar.at(self.ticks).year_frac as f32;
+            for (id, s) in &self.animals {
+                if (s.pos - eye).length() > reach + 4.0 {
+                    continue;
+                }
+                let Some(sp) = cat.species.get(s.target.species as usize) else {
+                    continue;
+                };
+                let rig = bodies.rig(s.target.species as usize, s.target.female);
+                let scale = hearth_fauna::anim::scale_of(
+                    rig,
+                    s.target.stage,
+                    year_frac,
+                    sp.life.birth_frac,
+                    sp.life.birth_mass_kg,
+                );
+                if let Some((t, _)) =
+                    hearth_fauna::wound::strikes(rig, scale, s.pos, s.yaw, eye, eye + dir * reach)
+                {
+                    let t = t as f64 * reach;
+                    if best.as_ref().is_none_or(|b| t < b.0) {
+                        best = Some((t, Aim::Animal(*id)));
+                    }
+                }
+            }
+        }
         let mut t = 0.0;
         let mut prev = eye;
         while t <= REACH_M {
@@ -495,7 +536,7 @@ impl Client {
         match self.aim {
             Some(Aim::Item(id)) => AimAt::Thing(id),
             Some(Aim::Block { pos, top, .. }) => AimAt::Block { pos, top },
-            None => AimAt::Nothing,
+            Some(Aim::Animal(_)) | None => AimAt::Nothing,
         }
     }
 
@@ -683,6 +724,11 @@ impl Client {
         if input.was_pressed(builtin::ATTACK) && self.radial.is_none() {
             if working {
                 self.server.send(ToServer::StopWork);
+            } else if let Some(Aim::Animal(_)) = self.aim {
+                // A thrust or a blow at the animal.
+                self.server.send(ToServer::Thrust {
+                    dir: self.camera.forward().as_dvec3(),
+                });
             } else {
                 self.act_chosen();
             }
@@ -695,7 +741,7 @@ impl Client {
                         self.act(d);
                     }
                 }
-                None => {}
+                Some(Aim::Animal(_)) | None => {}
             }
         }
         // A throw: wound up while the key is held, let fly when it is let go.
@@ -839,6 +885,139 @@ impl Client {
         }
     }
 
+    /// The signs animals left on the ground about the player.
+    fn sign_boxes(&mut self, view: DVec3) {
+        let (Some(cat), Some(w)) = (&self.fauna, &self.world) else {
+            return;
+        };
+        let light = |p: DVec3| {
+            let b = hearth_math::BlockPos::containing(p + DVec3::Y * 0.3);
+            (w.mirror.sky_light(b), w.mirror.block_light(b))
+        };
+        let (now, day_s, signs) = &self.signs;
+        self.figure_boxes.extend(crate::signs::instances(
+            signs, *now, *day_s, cat, view, &light,
+        ));
+    }
+
+    /// What a sign near where the eyes rest says: to one who knows tracking, whose it is, how
+    /// old and (a print) which way it went; otherwise only what it is.
+    fn sign_words(&self, at: DVec3, l: &Lang) -> Option<String> {
+        use hearth_fauna::live::SignKind;
+        let (now, day_s, signs) = &self.signs;
+        let s = signs
+            .iter()
+            .filter(|s| (s.pos - at).length() < 0.35)
+            .min_by(|a, b| (a.pos - at).length().total_cmp(&(b.pos - at).length()))?;
+        let knows = self
+            .crafting
+            .as_ref()
+            .is_some_and(|c| c.knowledge.knows("hearth:tracking"));
+        let kind = match s.kind {
+            SignKind::Print => "tracks",
+            SignKind::Blood => "blood",
+            SignKind::Droppings => "droppings",
+        };
+        if !knows {
+            return Some(l.get(&format!("sign.{kind}")).to_owned());
+        }
+        let sp = self.fauna.as_ref()?.species.get(s.species as usize)?;
+        let hours = (now - s.t) / (*day_s).max(1.0) as f64 * 24.0;
+        let age = l.get(match hours {
+            h if h < 2.0 => "sign.age.fresh",
+            h if h < 12.0 => "sign.age.hours",
+            h if h < 36.0 => "sign.age.day",
+            _ => "sign.age.days",
+        });
+        let dir = crate::workshop::compass(s.yaw.sin() as f64, s.yaw.cos() as f64);
+        Some(l.format(
+            &format!("sign.{kind}.known"),
+            &[("name", &sp.name), ("age", age), ("dir", dir)],
+        ))
+    }
+
+    /// Whether a thing is drawn as the body of an animal lying dead.
+    fn drawn_dead(&self, id: &str) -> bool {
+        self.bodies.is_some()
+            && self.fauna.as_ref().is_some_and(|cat| {
+                hearth_content::butchery::carcass_of(id)
+                    .is_some_and(|(sp, _)| cat.index(sp).is_some())
+            })
+    }
+
+    /// Carcasses lying about (and one dragged), drawn as the animal lying dead on its side in
+    /// its coat.
+    fn carcass_boxes(&mut self, view: DVec3) {
+        use hearth_content::butchery::{Carcass, YOUNG_SHARE, carcass_of};
+        let (Some(cat), Some(bodies), Some(w)) = (&self.fauna, &self.bodies, &self.world) else {
+            return;
+        };
+        let year_frac = self.calendar.at(self.now_ticks()).year_frac as f32;
+        let mut lying: Vec<(&str, DVec3, f32, u64)> = self
+            .world_items
+            .iter()
+            .map(|wi| {
+                (
+                    wi.stack.id.as_str(),
+                    DVec3::from_array(wi.pos),
+                    wi.yaw,
+                    wi.id,
+                )
+            })
+            .collect();
+        if let (Some(s), Some(at)) = (&self.carry.dragging, self.dragged_at) {
+            let along = self.mover.pos - at;
+            lying.push((s.id.as_str(), at, along.x.atan2(along.z) as f32, u64::MAX));
+        }
+        for (id, pos, yaw, seed) in lying {
+            let Some((species, which)) = carcass_of(id) else {
+                continue;
+            };
+            let Some(si) = cat.index(species) else {
+                continue;
+            };
+            if (pos - view).length() > 96.0 {
+                continue;
+            }
+            let female = which != Carcass::Male;
+            let (stage, scale) = match which {
+                Carcass::Young => (hearth_fauna::live::Stage::Juvenile, YOUNG_SHARE.cbrt()),
+                _ => (hearth_fauna::live::Stage::Adult, 1.0),
+            };
+            let southern = w.planet.latitude(pos.z) < 0.0;
+            let rig = bodies.rig(si, female);
+            let drive = hearth_fauna::anim::Drive {
+                act: hearth_fauna::live::Act::Dead,
+                speed: 0.0,
+                look: None,
+                stage,
+                female,
+                year_frac,
+                southern,
+                scale,
+                medium: hearth_fauna::live::Medium::Ground,
+            };
+            let motion = hearth_fauna::anim::Motion::new(seed);
+            let pose = hearth_fauna::anim::pose(rig, &motion, &drive, &hearth_fauna::anim::Flat);
+            let coat = bodies.coat_of(
+                si,
+                female,
+                stage,
+                hearth_fauna::skin::winter_coat(year_frac, southern),
+            );
+            let place = Affine3A::from_rotation_translation(
+                Quat::from_rotation_y(yaw),
+                (pos - view).as_vec3(),
+            );
+            let b = hearth_math::BlockPos::containing(pos + DVec3::Y * 0.3);
+            let light = (w.mirror.sky_light(b), w.mirror.block_light(b));
+            for (b, skin) in bodies.skinned(si, rig, &pose, coat) {
+                self.figure_boxes
+                    .push(hearth_character::skinned(place * b, skin, light));
+            }
+        }
+    }
+
     /// Boxes for the things lying around, held and dragged.
     fn thing_boxes(&mut self, view: DVec3) {
         let (Some(items), Some(w)) = (&self.items, &self.world) else {
@@ -853,7 +1032,7 @@ impl Client {
                 continue;
             };
             let p = DVec3::from_array(wi.pos);
-            if (p - view).length() > 96.0 {
+            if (p - view).length() > 96.0 || self.drawn_dead(&wi.stack.id) {
                 continue;
             }
             let size = glam::Vec3::from(k.size_m);
@@ -926,6 +1105,7 @@ impl Client {
         }
         if let (Some(s), Some(at)) = (&self.carry.dragging, self.dragged_at)
             && let Some(k) = s.kind(items)
+            && !self.drawn_dead(&s.id)
         {
             let size = glam::Vec3::from(k.size_m);
             let along = self.mover.pos - at;
@@ -1009,7 +1189,24 @@ impl Client {
                 };
                 Some(l.format(key, &[("name", &name)]))
             }
-            Aim::Block { pos, .. } => {
+            Aim::Animal(id) => {
+                let s = self.animals.get(&id)?;
+                let sp = self
+                    .fauna
+                    .as_ref()?
+                    .species
+                    .get(s.target.species as usize)?;
+                let key = if s.target.wounded {
+                    "aim.animal.wounded"
+                } else {
+                    "aim.animal"
+                };
+                Some(l.format(key, &[("name", &sp.name)]))
+            }
+            Aim::Block { pos, at, .. } => {
+                if let Some(words) = self.sign_words(at, l) {
+                    return Some(words);
+                }
                 let w = self.world.as_ref()?;
                 let s = w.mirror.block(pos)?;
                 let b = w.reg.block_of(s);
@@ -1798,6 +1995,7 @@ impl Client {
                 }
                 // A census is for tools and tests.
                 ToClient::Census(_) => {}
+                ToClient::Signs { now, day_s, signs } => self.signs = (now, day_s, signs),
                 ToClient::Animals(views) => {
                     // Those gone are gone; the rest ease toward where the server has them.
                     self.animals
@@ -2004,6 +2202,8 @@ impl Client {
         self.figure_boxes.clear();
         self.thing_boxes(view.pos);
         self.animal_boxes(view.pos, dt);
+        self.carcass_boxes(view.pos);
+        self.sign_boxes(view.pos);
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {

@@ -9,8 +9,9 @@
 //! grass beside it, lights it again by drilling when it goes out, and dresses for the autumn.
 //! About twenty days of the world pass in a couple of minutes; watch with `--nocapture`.
 //!
-//! Lightning is summoned at a tree near the camp (a natural event a test may force); kills turn
-//! up on their own every day or two.
+//! Lightning is summoned at a tree near the camp, and every day or two a roe deer dies of
+//! natural causes near it (natural events a test may force: the bot does not hunt).
+//! Carcasses are butchered by their species.
 
 mod common;
 
@@ -44,10 +45,21 @@ struct Bot {
     wildfire: Option<BlockPos>,
     /// Tending the fire now (gathering wood for it does not tend it again).
     tending: bool,
+    /// When next a roe deer dies near the camp.
+    next_death: u64,
 }
 
 fn id(s: &str) -> String {
     format!("hearth:{s}")
+}
+
+/// The processes that butcher a carcass, and hack at it (without the namespace).
+fn butcher(carcass: &str) -> String {
+    hearth_content::butchery::butcher_id(carcass).replacen("hearth:", "", 1)
+}
+
+fn hack(carcass: &str) -> String {
+    hearth_content::butchery::hack_id(carcass).replacen("hearth:", "", 1)
 }
 
 impl Bot {
@@ -82,6 +94,29 @@ impl Bot {
             .collect();
         v.sort_by(|a, b| a.0.total_cmp(&b.0));
         v.into_iter().map(|(_, id)| id).collect()
+    }
+
+    /// How many of a kind that have not gone off are at camp or carried.
+    fn fresh(&self, part: &str) -> u32 {
+        let mut n: u32 = self
+            .w
+            .lying
+            .iter()
+            .filter(|l| {
+                l.work.is_none()
+                    && l.stack.id.contains(part)
+                    && l.stack.decay < 0.5
+                    && self.near_camp(l.pos)
+            })
+            .map(|l| l.stack.count as u32)
+            .sum();
+        let mut c = self.w.carry.clone();
+        c.for_each_mut(&mut |s| {
+            if s.id.contains(part) && s.decay < 0.5 {
+                n += s.count as u32;
+            }
+        });
+        n
     }
 
     /// How many of a kind (by part of the id: `stick/`, `cut/meat`) are at camp or carried.
@@ -1033,9 +1068,23 @@ impl Bot {
         self.w.put_down_all();
     }
 
-    /// Brings a fresh kill lying in the world to camp (dragged).
+    /// Brings a fresh carcass lying in the world to camp (dragged). Every day or two a roe deer
+    /// dies near the camp.
     fn fetch_carcass(&mut self) -> bool {
-        for _ in 0..40 {
+        for k in 0..40 {
+            if self.w.ticks >= self.next_death {
+                self.next_death = self.w.ticks + (1.5 * self.w.ticks_per_day) as u64;
+                let a = k as f64 * 2.4;
+                let at = self.camp + DVec3::new(a.cos() * 50.0, 0.0, a.sin() * 50.0);
+                self.w.server.send(ToServer::Die {
+                    species: id("roe_deer"),
+                    at,
+                });
+                // It comes into the world as the player is near.
+                self.home();
+                self.w.run(41);
+                self.say("a roe deer dies near the camp");
+            }
             if let Some((cid, pos)) = self.look_for_carcass() {
                 self.w.put_down_all();
                 self.w.go_exact(pos + DVec3::new(1.0, 0.0, 0.0));
@@ -1051,7 +1100,8 @@ impl Bot {
         false
     }
 
-    /// A fresh kill lying about, looked for from camp and from points 70 m out.
+    /// A fresh roe deer lying about (the one forced to die: the land's own dead may be too big
+    /// to drag), looked for from camp and from points 70 m out.
     fn look_for_carcass(&mut self) -> Option<(u64, DVec3)> {
         let mut spots = vec![(0.0, 0.0)];
         for k in 0..4 {
@@ -1065,7 +1115,7 @@ impl Bot {
                 .w
                 .lying
                 .iter()
-                .filter(|l| l.stack.id.ends_with("small_carcass") && !self.near_camp(l.pos))
+                .filter(|l| l.stack.id.contains("roe_deer_carcass") && !self.near_camp(l.pos))
                 .filter(|l| l.stack.decay < 0.5)
                 .map(|l| (l.id, DVec3::from_array(l.pos)))
                 .next();
@@ -1136,16 +1186,19 @@ impl Bot {
             self.say("no kill turned up");
             return;
         }
-        if let Some(c) = self.carcass_here() {
-            self.work("butcher_small_game", AimAt::Thing(c));
+        if let Some((c, kind)) = self.carcass_here() {
+            self.work(&butcher(&kind), AimAt::Thing(c));
         }
     }
 
-    /// A carcass at camp, aimed at.
-    fn carcass_here(&self) -> Option<u64> {
-        self.at_camp(|id| id.ends_with("small_carcass"))
+    /// A carcass at camp: the thing, and what it is.
+    fn carcass_here(&self) -> Option<(u64, String)> {
+        let c = self
+            .at_camp(|id| id.contains("roe_deer_carcass"))
             .into_iter()
-            .next()
+            .next()?;
+        let kind = self.w.lying.iter().find(|l| l.id == c)?.stack.id.clone();
+        Some((c, kind))
     }
 
     /// A place on the ground beside the camp to lay something out (its ground block).
@@ -1258,6 +1311,7 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         bed: None,
         wildfire: None,
         tending: false,
+        next_death: 0,
     };
     let content = bot.w.content.clone();
     let items = bot.w.items.clone();
@@ -1460,8 +1514,8 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
             break;
         }
         assert!(bot.fetch_carcass(), "a kill turns up");
-        let c = bot.carcass_here().expect("carcass at camp");
-        bot.work("hack_at_carcass", AimAt::Thing(c));
+        let (c, kind) = bot.carcass_here().expect("carcass at camp");
+        bot.work(&hack(&kind), AimAt::Thing(c));
     }
     assert!(bot.knows("butchery"), "{:?}", bot.w.learned);
     bot.say("knows butchery");
@@ -1470,8 +1524,8 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
     // dries and the clothes are sewn.
     for _ in 0..1 {
         assert!(bot.fetch_carcass(), "a kill turns up");
-        let c = bot.carcass_here().expect("carcass at camp");
-        bot.work("butcher_small_game", AimAt::Thing(c));
+        let (c, kind) = bot.carcass_here().expect("carcass at camp");
+        bot.work(&butcher(&kind), AimAt::Thing(c));
         feed(&mut bot);
         if bot.count("sheet/rawhide") > 0 {
             let scrape = if bot.knows("hide_scraping") {
@@ -1540,7 +1594,7 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
 
     // ---- Drying: meat hung in the smoke teaches drying; a rack, and three dry days. ----
     // Fresh meat (what lay at camp from the first kill may have gone off).
-    if bot.count("cut/meat") < 3 {
+    if bot.fresh("cut/meat") < 4 {
         bot.hide_from_a_kill();
     }
     for _ in 0..6 {
@@ -1605,6 +1659,20 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
                 .any(|l| l.stack.id.ends_with("dried_meat"))
         {
             break;
+        }
+        // A batch the flies and damp spoiled: fresh meat hung again.
+        if !bot.w.lying.iter().any(|l| l.work.is_some()) {
+            bot.say("the batch spoiled: fresh meat hung again");
+            if bot.fresh("cut/meat") < 4 {
+                bot.butcher_one();
+            }
+            bot.work(
+                "dry_meat",
+                AimAt::Block {
+                    pos: rack,
+                    top: false,
+                },
+            );
         }
         // While it dries: kills for their hides (the clothes want five or six).
         if bot.count("sheet/scraped_hide") + bot.count("sheet/rawhide") < 6 {

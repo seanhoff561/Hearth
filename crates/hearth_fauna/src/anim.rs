@@ -494,6 +494,9 @@ impl Pose {
 
 /// Poses a body.
 pub fn pose(rig: &Rig, m: &Motion, d: &Drive, ground: &dyn Footing) -> Pose {
+    if d.act == Act::Dead {
+        return dead(rig, m, d);
+    }
     let mut p = Pose {
         slots: [Affine3A::IDENTITY; SLOTS],
         scale: 1.0,
@@ -531,6 +534,32 @@ pub fn pose(rig: &Rig, m: &Motion, d: &Drive, ground: &dyn Footing) -> Pose {
         Frame::Snake => snake(rig, m, &mut p),
         Frame::Frog => frog(rig, m, ground, &mut p),
         Frame::Insect => insect(rig, m, &mut p),
+    }
+    p
+}
+
+/// Lying dead on a flank: the body as it stood, its legs straight, rolled over onto the side its
+/// seed gives; a snake or an insect as it lies.
+fn dead(rig: &Rig, m: &Motion, d: &Drive) -> Pose {
+    let standing = Drive {
+        act: Act::Walk,
+        speed: 0.0,
+        look: None,
+        medium: Medium::Ground,
+        ..*d
+    };
+    let mut still = *m;
+    still.settle(rig, &standing);
+    let mut p = pose(rig, &still, &standing, &Flat);
+    p.breath = 0.0;
+    if matches!(rig.frame, Frame::Snake | Frame::Insect) {
+        return p;
+    }
+    // About the long axis, the middle of the body coming down to half its width.
+    let s = if m.seed & 1 == 0 { 1.0 } else { -1.0 };
+    let roll = tr(Vec3::new(s * rig.torso_y, rig.torso.x * 0.5, 0.0)) * rz(s * PI * 0.5);
+    for slot in p.slots.iter_mut() {
+        *slot = roll * *slot;
     }
     p
 }

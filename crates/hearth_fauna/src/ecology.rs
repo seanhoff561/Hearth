@@ -28,6 +28,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::habitat::{CELL_KM2, CELL_M, Habitat, Land};
+use crate::live::Stage;
 use crate::species::{Catalog, FORAGE_KINDS, Forage, Species};
 
 /// Cells on a side of a region.
@@ -122,6 +123,53 @@ pub enum Cause {
     Lost,
 }
 
+/// What is left where a large animal died in the abstract step: its species, age and sex,
+/// where (world x, z), when (years), how much of it was left then (a kill the hunters ate from,
+/// a death whole), how many days half of what is left lasts (the bigger the body, the longer),
+/// why it died, and when the ravens over it were last told of (years; never below zero).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Remains {
+    pub species: u16,
+    pub stage: Stage,
+    pub female: bool,
+    pub at: [f64; 2],
+    pub time: f64,
+    pub left: f32,
+    #[serde(default = "five")]
+    pub half_days: f32,
+    pub cause: Cause,
+    #[serde(default = "never")]
+    pub told: f64,
+}
+
+fn never() -> f64 {
+    -1.0
+}
+
+fn five() -> f32 {
+    5.0
+}
+
+/// How many days half of a body of `kg` lasts once dead: the hunters come back to their kill,
+/// the scavengers find the dead (a piglet is gone in a couple of days, a red deer lasts a week
+/// or so, an aurochs a fortnight and more).
+pub fn half_days(kg: f32) -> f32 {
+    1.0 + 6.0 * (kg.max(0.0) / 100.0).sqrt()
+}
+
+/// How long remains lie before the scavengers have them all (years).
+const REMAINS_KEPT: f64 = 30.0 / 365.0;
+/// The most remains a region keeps (the newest).
+const MAX_REMAINS: usize = 512;
+
+impl Remains {
+    /// What is left of it at a time.
+    pub fn left_at(&self, now: f64) -> f32 {
+        let days = ((now - self.time).max(0.0) * 365.0) as f32;
+        self.left * 0.5f32.powf(days / self.half_days.max(0.1))
+    }
+}
+
 /// A region of cells and the animals living in it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Region {
@@ -135,6 +183,9 @@ pub struct Region {
     pub avail_mean: Vec<[f32; FORAGE_KINDS]>,
     /// Carrion lying in each cell, kg.
     pub carrion: Vec<f32>,
+    /// Where large animals died lately.
+    #[serde(default)]
+    pub remains: Vec<Remains>,
     /// The small species simulated here, and per species and cell (species-major): young,
     /// adults and condition.
     pub pool_species: Vec<u16>,
@@ -728,6 +779,7 @@ impl Ecology {
             habitat,
             avail_mean,
             carrion: vec![0.0; REGION_LEN],
+            remains: Vec::new(),
             pool_species,
             young,
             adults,
@@ -913,6 +965,110 @@ impl Ecology {
         self.step_groups(r, dt, fmid, (f0, f1), &snow, &needs, &ate, &mut rng);
         self.step_pools(r, dt, fmid, f0, &snow, &needs, &ate);
         r.time = t1;
+        // Remains the scavengers have had go; the oldest first when there are many.
+        r.remains
+            .retain(|m| t1 - m.time < REMAINS_KEPT && m.left_at(t1) > 0.1);
+        if r.remains.len() > MAX_REMAINS {
+            r.remains.sort_by(|a, b| b.time.total_cmp(&a.time));
+            r.remains.truncate(MAX_REMAINS);
+        }
+    }
+
+    /// Takes the remains lying within `radius` of a place out of the populations (to lie in the
+    /// world as carcasses), each with what is left of it now.
+    pub fn take_remains(&mut self, at: [f64; 2], radius: f64, now: f64) -> Vec<Remains> {
+        let wrap = self.wrap_m();
+        let mut out = Vec::new();
+        for r in self.regions.values_mut() {
+            r.remains.retain(|m| {
+                if dist(m.at, at, wrap) > radius || m.time > now {
+                    return true;
+                }
+                out.push(Remains {
+                    left: m.left_at(now),
+                    ..*m
+                });
+                false
+            });
+        }
+        out
+    }
+
+    /// Remains of animals dead within `fresh` years and within `radius` of a place, that ravens
+    /// circle over, not told of for `again` years: told of now.
+    pub fn ravens(
+        &mut self,
+        at: [f64; 2],
+        radius: f64,
+        now: f64,
+        fresh: f64,
+        again: f64,
+    ) -> Vec<Remains> {
+        let wrap = self.wrap_m();
+        let mut out = Vec::new();
+        for r in self.regions.values_mut() {
+            for m in r.remains.iter_mut() {
+                let age = now - m.time;
+                if (0.0..fresh).contains(&age)
+                    && now - m.told >= again
+                    && dist(m.at, at, wrap) <= radius
+                    && m.left_at(now) > 0.2
+                {
+                    m.told = now;
+                    out.push(*m);
+                }
+            }
+        }
+        out
+    }
+
+    /// Records the remains of a large animal that died in a step from the region's time over
+    /// `dt` years, near `at`: the place and the time drawn from a stream of their own (the
+    /// populations' draws stay as they were).
+    #[allow(clippy::too_many_arguments)]
+    fn remains(
+        &self,
+        r: &mut Region,
+        species: u16,
+        stage: Stage,
+        female: bool,
+        at: [f64; 2],
+        left: f32,
+        cause: Cause,
+        dt: f64,
+    ) {
+        let mut rng = Rng::new(seed_of(
+            self.seed,
+            "remains",
+            &[
+                r.key.0 as u64,
+                r.key.1 as u64,
+                (r.time * 4096.0).round() as u64,
+                r.remains.len() as u64,
+                species as u64,
+            ],
+        ));
+        let wrap = self.wrap_m();
+        let a = rng.next_f64() * std::f64::consts::TAU;
+        let d = rng.next_f64() * 120.0;
+        // The young of the year die small, mostly in their first weeks.
+        let kg = self.catalog.species[species as usize].mass_kg
+            * match stage {
+                Stage::Adult => 1.0,
+                Stage::Juvenile => 0.55,
+                Stage::Young => 0.1,
+            };
+        r.remains.push(Remains {
+            species,
+            stage,
+            female,
+            at: [(at[0] + a.cos() * d).rem_euclid(wrap), at[1] + a.sin() * d],
+            time: r.time + rng.next_f64() * dt,
+            left: left.clamp(0.0, 1.0),
+            half_days: half_days(kg),
+            cause,
+            told: never(),
+        });
     }
 
     /// Carrion rots.
@@ -1046,12 +1202,27 @@ impl Ecology {
                 let e = edible(prey);
                 if prey.grouped() {
                     for _ in 0..poisson(rng, rate * dtf) {
-                        if eaten >= want || !kill_from_groups(r, pj as u16, pos, reach, wrap, rng) {
+                        if eaten >= want {
                             break;
                         }
+                        let Some((stage, female, at)) =
+                            kill_from_groups(r, pj as u16, pos, reach, wrap, rng)
+                        else {
+                            break;
+                        };
                         let take = e.min(want - eaten);
                         eaten += take;
                         let left = e - take;
+                        self.remains(
+                            r,
+                            pj as u16,
+                            stage,
+                            female,
+                            at,
+                            left / e.max(1e-6),
+                            Cause::Predation,
+                            dt,
+                        );
                         // What it cannot eat now it comes back to; the rest is carrion.
                         r.groups[gi].food += left * 0.5;
                         if let Some(c) = r.cell_at(self.cells_around, pos[0], pos[1]) {
@@ -1396,30 +1567,53 @@ impl Ecology {
             let p_juv = p(natural * 1.3 + hunger + winter + crowd);
             let p_young = p(young_rate + 2.0 * hunger + 2.0 * winter + crowd);
             let mut dead = 0u32;
-            for (n, pr) in [
+            let mut died = [0u32; 4];
+            for (k, (n, pr)) in [
                 (&mut g.females, p_adult),
                 (&mut g.males, p_adult),
                 (&mut g.juveniles, p_juv),
                 (&mut g.young, p_young),
-            ] {
-                let k = binomial(rng, *n as u32, pr);
-                *n -= k as u16;
-                dead += k;
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let x = binomial(rng, *n as u32, pr);
+                *n -= x as u16;
+                dead += x;
+                died[k] = x;
             }
             if dead > 0 {
+                let (species, at, id) = (g.species, g.pos, g.id);
                 let total = (natural + hunger + winter + crowd).max(1e-9);
-                for (cause, part) in [
+                let parts = [
                     (Cause::Natural, natural),
                     (Cause::Hunger, hunger),
                     (Cause::Winter, winter),
                     (Cause::Crowding, crowd),
-                ] {
-                    *self.deaths.entry((g.species, cause)).or_default() +=
+                ];
+                for (cause, part) in parts {
+                    *self.deaths.entry((species, cause)).or_default() +=
                         dead as f64 * (part / total) as f64;
                 }
-                // The dead feed the scavengers.
+                // The dead feed the scavengers, and lie where they died (of the likeliest
+                // cause).
                 if let Some(c) = c0 {
                     r.carrion[c] += dead as f32 * edible(sp) * 0.7;
+                }
+                let cause = parts
+                    .iter()
+                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .map_or(Cause::Natural, |p| p.0);
+                for (k, &x) in died.iter().enumerate() {
+                    let (stage, female) = match k {
+                        0 => (Stage::Adult, true),
+                        1 => (Stage::Adult, false),
+                        2 => (Stage::Juvenile, id.is_multiple_of(2)),
+                        _ => (Stage::Young, !id.is_multiple_of(2)),
+                    };
+                    for _ in 0..x {
+                        self.remains(r, species, stage, female, at, 1.0, cause, dt);
+                    }
                 }
             }
             let g = &mut r.groups[gi];
@@ -2094,7 +2288,7 @@ fn kill_from_groups(
     reach: f64,
     wrap: f64,
     rng: &mut Rng,
-) -> bool {
+) -> Option<(Stage, bool, [f64; 2])> {
     let in_reach = |g: &Group| g.species == prey && !g.live && dist(g.pos, pos, wrap) <= reach;
     let total: f32 = r
         .groups
@@ -2103,7 +2297,7 @@ fn kill_from_groups(
         .map(Group::vulnerability)
         .sum();
     if total <= 0.0 {
-        return false;
+        return None;
     }
     let mut x = rng.next_f32() * total;
     for g in r.groups.iter_mut() {
@@ -2125,19 +2319,33 @@ fn kill_from_groups(
         let mut y = rng.next_f32() * parts.iter().sum::<f32>();
         for (k, p) in parts.iter().enumerate() {
             if *p > 0.0 && y <= *p {
-                match k {
-                    0 => g.young -= 1,
-                    1 => g.juveniles -= 1,
-                    2 => g.females -= 1,
-                    _ => g.males -= 1,
-                }
-                return true;
+                // Of the young, as many females as males.
+                let half = (g.id ^ g.size() as u64).is_multiple_of(2);
+                let (stage, female) = match k {
+                    0 => {
+                        g.young -= 1;
+                        (Stage::Young, half)
+                    }
+                    1 => {
+                        g.juveniles -= 1;
+                        (Stage::Juvenile, half)
+                    }
+                    2 => {
+                        g.females -= 1;
+                        (Stage::Adult, true)
+                    }
+                    _ => {
+                        g.males -= 1;
+                        (Stage::Adult, false)
+                    }
+                };
+                return Some((stage, female, g.pos));
             }
             y -= p;
         }
-        return false;
+        return None;
     }
-    false
+    None
 }
 
 /// A new group as a species lives: a herd of mothers with young and some males, a family, a

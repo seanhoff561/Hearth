@@ -297,3 +297,82 @@ heard at once), and bodies get up to speed as they do (six metres a second every
 for a hunter's spring or a small body's dart), so an ambush from close in cover succeeds and a
 long chase of a faster deer seldom does, unless it is a calf (the young of the year run at
 seven tenths of their kind's speed). The prey killed lies dead and the hunter feeds at it.
+
+## Carcasses and butchering (`hearth_content::butchery`, the server's `fauna.rs`)
+Carcasses are generated from the species' data when the content loads, not listed. Every species
+whose butchering yields are known and whose grown female weighs a quarter of a kilogram or more
+(a red squirrel; songbirds, mice, frogs and insects are eaten whole or not at all) has a carcass
+of a grown animal; a grown male's too where the sexes differ in size (the species'
+`dimorphism`, how much heavier a male is: a red deer stag half again a hind, a capercaillie cock
+twice a hen, owls' males smaller) or where the males carry what the females do not (antlers,
+tusks); and a young one's, at two fifths of a grown female, where that is still worth working
+(mammals and birds). The species' mass range is of both sexes about its middle: a hind of 132 kg
+and a stag of 198, a calf of 53. Bodies are built at the same masses.
+
+Each carcass has two ways of working it. Butchering proper — skinning and jointing a mammal,
+plucking and drawing a bird, gutting and filleting a fish, skinning a snake — needs the
+butchery knowledge and a sharp edge, practises the butchery skill, and gives the species'
+yields as fractions of the carcass's mass: the meat (or fish), the hide (rawhide or a fur pelt),
+the bone (not a fish's or a snake's), the edible organs (offal), the sinew, the fat by the season
+(fattest in autumn, about three times what it is at winter's end) and what the animal carries:
+antlers from a stag in the seasons he has them (cast in spring), a boar's tusks, an aurochs'
+horns, a bird's feathers. Hacking at it without knowing how needs only an edge, wastes half the
+meat, the hide and the sinew, and teaches butchery when done. The work grows with the animal
+(0.15 h + 0.045 h·kg^0.8: a hare in a quarter of an hour, a roe deer in forty minutes, a red deer
+in two and a half hours, an aurochs in a day; birds four fifths of that, fish half), heavier work
+over 50 kg, and dulls an edge more the bigger the animal. The outputs of a carcass are what is
+left of it (its `condition`: a kill the hunters ate from gives less), and what goes off comes
+out as far gone as it was (meat from a carcass a few warm days dead is as near spoiled).
+
+Carcasses come from deaths. In the world: a hunter's kill lies where it fell, the hunter (and the
+pack about it) having made a meal of it — twice a day's need each — and the dead are taken from
+the animals at once to lie as carcasses. In the populations: where a large animal dies in the
+abstract step — taken by a hunter, or of age, hunger, winter or crowding — its remains are kept in
+its region (`Remains`: species, age and sex, where and when, how much was left, why), each lasting
+as its size allows (half of it gone in a day or two for a piglet, a week for a red deer, more than
+a fortnight for an aurochs; gone after a month at most). Remains within 90 m of the player come
+into the world as carcasses, gone off as their days in the air's warmth make them; by day, ravens
+circling over remains less than four days old within 2 km tell of them ("Ravens are circling to
+the north-east."), again each hour. A uniform wood holds about 150 remains in a region of 256 km²
+at a time, most of them wild boar (whose numbers turn over fast). The client draws a carcass as
+the animal lying dead on a flank, legs straight, in its coat (`dead` on the screenshot `animal=`
+key). Tests may force a natural death (`ToServer::Die`).
+
+## Hunting and wounds (`hearth_fauna::wound`, the server's throws and thrusts)
+A thrown thing flies as before (no drag; points every 20 ms), now strays from the aim as the
+thrower's practice allows (about three degrees for a novice, half a degree with practice: the
+`throwing` skill, practised by every throw), and strikes the first animal its flight passes
+through. A thrust (the primary action aimed at an animal within the reach of what is in the
+right hand: a spear's 2.3 m and the arm) strikes the same way along the look. A body is its
+rig's torso (a box), the neck and head ahead of and above the chest, and the legs under it;
+where the blow strikes is the part: the chest (the front of the torso, where the heart and
+lungs are), the belly (the middle), the haunch (the hind part), a leg, the neck, the head.
+
+A blow carries its energy (half the mass by the speed squared for a throw: a stone-tipped
+spear thrown hard about 190 J; a thrust with a spear 150 J, a blow with something in the hand
+40–130 J) and the weapon's sharpness (`piercing`). A sharp one goes in 0.25 m × piercing ×
+√(E / 100 J) and reaches the vitals if that is more than three tenths of the body's width (a
+hare's 3 cm, a red deer's 9, an aurochs' 22: a wooden point does not reach an aurochs' heart
+where a stone one does). Reached, the heart and lungs bleed out within about twenty seconds (a
+red deer runs some 140 m first); the neck sooner; the belly slowly (it runs, lies up and dies
+within a quarter hour or so); the haunch now and then cuts a great vessel and otherwise lames
+and bleeds; a leg lames; the head kills. Short of the vitals, a flesh wound bleeds a while and
+clots (never to death alone). A blunt blow (a stone) kills a small animal struck hard on the head
+or body and stuns or bruises a large one. An animal that has lost two fifths of its blood falls
+dead; before that it goes slower the more it has lost and lies down when it can go no further.
+Hurt, it knows the person (aware, running), fears people more after, and a boar, bear or other
+defender hurt and come close upon turns on them (`Provoked`). An animal killed by a person lies
+as a carcass where it fell, whole, and the person is told it falls if they are within sight.
+
+## Tracks and signs (`hearth_fauna::live`, the client's `signs.rs`)
+Animals within 80 m of the person leave signs: a print at each stride where the ground takes
+one (fresh snow plainly, sand and bare earth well; grass, moss and leaf litter not), either side
+of their line as their feet fall; drops of blood where the wounded go (the faster they bleed, the
+closer the drops); droppings now and then (a plant-eater's about a dozen times a day, a
+hunter's a couple). Prints last a day and a half (in snow twice that), blood a day, droppings
+ten days; the most recent 6,000 are kept. The client draws them on the ground — a print shaped by
+the foot in the species' `track` data and as long as its print, dark in earth and a blue-grey
+hollow in snow; blood bright when fresh; pellets or scat — and, where the eyes rest on one, says
+what it is: tracks, blood, droppings; and to one who knows tracking (learnt by noticing fresh
+prints underfoot, `see:tracks`), whose, how old and which way they went ("Red deer tracks, a
+few hours old, going north-east"). Screenshot key: `trail=species:n:prints|blood|droppings@ahead:right:yaw`.
