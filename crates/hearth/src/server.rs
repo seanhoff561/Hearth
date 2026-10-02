@@ -651,6 +651,7 @@ fn run(
                 changed: &mut gathered,
                 out: &mut outbox,
                 items_changed: &mut items_changed,
+                facing: last_moved.as_ref().map_or(0.0, |m| m.yaw),
             }
         };
     }

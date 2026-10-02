@@ -276,6 +276,9 @@ impl Content {
             &mut processes,
             &mut knowledge,
         );
+        // Putting up and taking down each construction piece.
+        let construction = load_table::<ConstructionPiece>(packs, &mut r);
+        crate::building::generate(&construction, &mut processes, &mut knowledge);
         let content = Content {
             packs: packs.to_vec(),
             materials,
@@ -294,7 +297,7 @@ impl Content {
             processes,
             knowledge,
             workstations: load_table(packs, &mut r),
-            construction: load_table(packs, &mut r),
+            construction,
             injuries: load_table(packs, &mut r),
             illnesses: load_table(packs, &mut r),
             garments,

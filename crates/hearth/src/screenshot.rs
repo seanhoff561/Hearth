@@ -158,6 +158,9 @@ pub struct ShotSpec {
     /// Blocks set on the ground in front of the camera: (block state, metres ahead, metres to
     /// the right, blocks up).
     pub place: Vec<(String, f64, f64, i32)>,
+    /// Blocks set on the ground about the camera by the compass, for things built square
+    /// whichever way the camera looks: (block state, metres east, metres south, blocks up).
+    pub put: Vec<(String, f64, f64, i32)>,
     /// The plants cut down about a point in front of the camera (radius m, metres ahead), so
     /// that what stands there is seen.
     pub mow: Option<(f64, f64)>,
@@ -259,6 +262,7 @@ impl Default for ShotSpec {
             globe: None,
             person: None,
             place: Vec::new(),
+            put: Vec::new(),
             mow: None,
             trees: Vec::new(),
             disturb: Vec::new(),
@@ -350,6 +354,16 @@ impl ShotSpec {
                     let right = n.next().unwrap_or("0").parse()?;
                     let up = n.next().unwrap_or("0").parse()?;
                     spec.place.push((state.to_owned(), ahead, right, up));
+                }
+                // `put=hearth:post/hazel_wood@-2:4:1` (east:south:up from the camera),
+                // repeatable.
+                "put" => {
+                    let (state, at) = v.split_once('@').unwrap_or((v, "0:3"));
+                    let mut n = at.split(':');
+                    let east = n.next().unwrap_or("0").parse()?;
+                    let south = n.next().unwrap_or("3").parse()?;
+                    let up = n.next().unwrap_or("0").parse()?;
+                    spec.put.push((state.to_owned(), east, south, up));
                 }
                 // `tree=english_oak:mature:2@12:-6` (species, stage, variant @ ahead:right),
                 // repeatable.
@@ -848,15 +862,24 @@ pub fn render_shot(
         }
         log::info!("  mowed {cut} plants");
     }
-    // Things set on the ground in front of the camera, lit as they would be.
-    for (state, ahead, right, up) in &spec.place {
-        let f = camera.forward().as_dvec3();
-        let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
-        let side = DVec3::new(-flat.z, 0.0, flat.x);
-        let (px, pz) = (
+    // Things set on the ground in front of the camera (or about it by the compass), lit as they
+    // would be.
+    let f = camera.forward().as_dvec3();
+    let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+    let side = DVec3::new(-flat.z, 0.0, flat.x);
+    let placed = spec.place.iter().map(|(state, ahead, right, up)| {
+        (
+            state,
             camera.pos.x + flat.x * ahead + side.x * right,
             camera.pos.z + flat.z * ahead + side.z * right,
-        );
+            up,
+        )
+    });
+    let put = spec
+        .put
+        .iter()
+        .map(|(state, east, south, up)| (state, camera.pos.x + east, camera.pos.z + south, up));
+    for (state, px, pz, up) in placed.chain(put) {
         let s = lw
             .reg
             .parse_state(state)

@@ -300,6 +300,27 @@ impl Mesher<'_> {
         self.reg.has(s, StateFlags::OPAQUE)
     }
 
+    /// Whether a block that is not a full cube still stops all light (a roof, a wall of a
+    /// building): no light is kept inside it, so its own faces take theirs from about it.
+    fn shuts_light(&self, s: BlockStateId) -> bool {
+        !self.opaque(s) && self.reg.light_opacity(s) >= 15
+    }
+
+    /// The light a block's own faces are lit by: its own, or for a block that stops all light,
+    /// the brightest about it.
+    fn own_light(&self, inp: &MeshInput, x: i32, y: i32, z: i32) -> u8 {
+        if !self.shuts_light(inp.at(x, y, z)) {
+            return inp.light_at(x, y, z);
+        }
+        let mut best = (0u8, 0u8);
+        for d in Direction::ALL {
+            let o = d.offset();
+            let l = inp.light_at(x + o.x, y + o.y, z + o.z);
+            best = (best.0.max(l >> 4), best.1.max(l & 15));
+        }
+        (best.0 << 4) | best.1
+    }
+
     /// True if the face of `s` toward `d` must be drawn given neighbour `n`.
     #[inline]
     fn face_visible(&self, s: BlockStateId, n: BlockStateId, d: Direction) -> bool {
@@ -594,7 +615,7 @@ impl Mesher<'_> {
     /// A general quad from a model quad at block (x, y, z).
     fn general(&self, inp: &MeshInput, x: i32, y: i32, z: i32, q: &ModelQuad) -> GeneralQuad {
         let base = Vec3::new(x as f32, y as f32, z as f32);
-        let own = inp.light_at(x, y, z);
+        let own = self.own_light(inp, x, y, z);
         let (tint_kind, tint) = inp.tints.get(q.tex.tint, x as usize, z as usize);
         let mut corners = [[0u32; 3]; 4];
         for (c, corner) in corners.iter_mut().enumerate() {
@@ -634,8 +655,13 @@ impl Mesher<'_> {
                         (by + dy).clamp(-1, 16),
                         (bz + dz).clamp(-1, 16),
                     );
-                    if self.opaque(inp.at(x, y, z)) {
+                    let s = inp.at(x, y, z);
+                    if self.opaque(s) {
                         solid += 1;
+                        continue;
+                    }
+                    // A roof or a wall keeps no light inside it to give.
+                    if self.shuts_light(s) {
                         continue;
                     }
                     let l = inp.light_at(x, y, z);

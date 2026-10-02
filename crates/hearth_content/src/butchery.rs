@@ -444,6 +444,7 @@ fn work(
         wear: (0.05 * (kg / 15.0).powf(0.6)).clamp(0.01, 0.6),
         harvests: None,
         treats: None,
+        places: None,
         status: a.status,
         notes: (!proper)
             .then(|| "Without knowing how, half the meat and the hide are wasted.".into()),

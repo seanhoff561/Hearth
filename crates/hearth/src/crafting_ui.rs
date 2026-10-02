@@ -61,6 +61,8 @@ pub struct Seen<'a> {
     pub carry: &'a Carry,
     pub world_items: &'a [WorldItem],
     pub aim: AimAt,
+    /// The face of the block looked at (where a piece put up goes beside it).
+    pub face: Option<hearth_math::Direction>,
     pub feet: DVec3,
     pub around: Surroundings,
     /// Seconds of play in a game day and a game year.
@@ -146,9 +148,27 @@ impl Crafting {
 
     /// What is looked at, as a process sees it.
     pub fn aimed(&self, s: &Seen) -> Option<Aimed> {
+        // Room for a piece where it would go: beside the face looked at.
+        let room = || {
+            let aim = match (s.aim, s.face) {
+                (AimAt::Block { pos, .. }, Some(face)) => AimAt::Beside { pos, face },
+                (aim, _) => aim,
+            };
+            crate::building::spot(s.mirror, s.reg, aim)
+                .is_some_and(|at| crate::building::room(s.mirror, s.reg, at, s.feet))
+        };
         match s.aim {
             AimAt::Nothing => None,
             AimAt::Thing(id) => Some(Aimed::Thing(id)),
+            AimAt::Beside { pos, .. } => {
+                let block = s.reg.block_of(s.mirror.block(pos)?);
+                Some(Aimed::Block {
+                    name: block.name.to_string(),
+                    material: block.def.material.clone(),
+                    ground: false,
+                    room: room(),
+                })
+            }
             AimAt::Block { pos, top } => {
                 let state = s.mirror.block(pos)?;
                 let block = s.reg.block_of(state);
@@ -201,6 +221,7 @@ impl Crafting {
                     name,
                     material: block.def.material.clone(),
                     ground: top && solid && open,
+                    room: room(),
                 })
             }
         }
@@ -210,7 +231,7 @@ impl Crafting {
     pub fn refresh(&mut self, s: &Seen) {
         let aimed = self.aimed(s);
         let at = match s.aim {
-            AimAt::Block { pos, .. } => {
+            AimAt::Block { pos, .. } | AimAt::Beside { pos, .. } => {
                 DVec3::new(pos.x as f64 + 0.5, pos.y as f64 + 0.5, pos.z as f64 + 0.5)
             }
             AimAt::Thing(id) => s

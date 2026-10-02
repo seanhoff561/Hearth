@@ -1057,3 +1057,29 @@ first), with the long-standing tests holding; its bounds are a twentieth to four
 capacity (the uniform wood's are a tenth), since a patchy land on the borders of realms and kinds
 of land holds its animals in pieces, and species of fewer than ten in the nine regions are left
 out (a handful of bobcats or bears is at the mercy of chance).
+
+## D91 — A construction piece is one block of its material, generated; quantities real
+Building pieces are blocks generated from the pieces' data and the materials each may be made of
+(`hearth:post/hazel_wood`), shaped as the piece sits in its block and textured from the
+material, as natural blocks and carcasses are generated rather than listed (D87). A piece is one
+block: a post or a beam a metre long, a roof the slope over a metre square; a structure is a
+pattern of blocks, which the frame's reckoning (V2-8 (b)) can treat block by block. What a piece
+takes is what it would: 56 bark strips for a metre of pitched roof laid twice over, 24 sticks for
+a metre of brush, 36 fieldstones for a block of dry-stone wall; one simplification is a pole,
+2.2 m, making one post or beam a block long (its offcut is not kept). Posts and beams look two
+sixteenths thick at least, though a sapling pole is under one, to read as members at all; their
+mass and strength keep the true size. Pieces that stop light (roofs, layers, walls) keep none in
+them, so their faces take their light from the air about them, not from inside, where it is
+dark.
+
+## D92 — A piece goes beside the face looked at; it must rest on something; a ghost shows it
+Where a piece goes is the place across the face of the block looked at (the client finds the face
+from the side of the hit box the ray came in by and sends `AimAt::Beside`), or the place of
+grass or snow that gives way to it — the ordinary way of building in blocks, which lets a roof be
+put up against the beam above an empty space. It faces the way the builder faces. Stages are
+kept by a rule of resting rather than by a fixed order: a post on what stands, a beam from a post
+or a wall beside it (never balanced on a post's top, since a beam lies across the top of its own
+block), a roof or a layer against anything, a wall on the ground, a wall or a lintel; whether it
+is strong enough is the solver's (b), so the rule only forbids what could not stay a moment. The
+ghost is the edges of the piece's boxes drawn as thin bars in the figure pass (no new pipeline),
+pale where it would rest and red where it would not, kept where the work is while it goes on.

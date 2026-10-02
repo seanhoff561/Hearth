@@ -97,6 +97,7 @@ impl Crafts {
                     wear: 0.0,
                     harvests: None,
                     treats: None,
+                    places: None,
                     status: Status::Implemented,
                     notes: None,
                     realism_source: None,
@@ -178,11 +179,13 @@ pub struct Handy<'a> {
 /// What a person looks at.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Aimed {
-    /// A block: its name and material, and whether its top is open ground to work on.
+    /// A block: its name and material, whether its top is open ground to work on, and whether
+    /// there is room for a piece to be put up where the aim puts it (V2-8).
     Block {
         name: String,
         material: Option<String>,
         ground: bool,
+        room: bool,
     },
     /// Water.
     Water,
@@ -409,7 +412,14 @@ fn target_ok(r: &Recipe, bench: &Bench) -> bool {
         (Some(Target::Water), Some(Aimed::Water)) => true,
         (Some(Target::Fire), Some(Aimed::Fire(f))) => f.lit,
         (Some(Target::Fire), Some(Aimed::Station { fire: Some(f), .. })) => f.lit,
-        (Some(Target::Ground), Some(Aimed::Block { ground, .. })) => *ground,
+        // A piece goes up where there is room for it; other work on open ground.
+        (Some(Target::Ground), Some(Aimed::Block { ground, room, .. })) => {
+            if r.def.effect == Effect::Place {
+                *room
+            } else {
+                *ground
+            }
+        }
         (Some(Target::Block(b)), Some(Aimed::Block { name, material, .. })) => {
             let m = material.as_deref().and_then(|m| c.materials.get(m));
             hearth_content::triggers::block_matches(b, name, m)

@@ -11,6 +11,18 @@
             tags: ["gatherable", "stone", "throwable"],
         ),
         (
+            // A building stone one can carry in both arms: some 25 kg.
+            id: "fieldstone", status: Implemented, name: "{material} building stone", materials: (categories: [Rock]),
+            size_m: (0.3, 0.22, 0.18), fill: 0.85, footprint: (2, 2),
+            tags: ["gatherable", "stone", "building_stone"],
+        ),
+        (
+            // A slab pried from bedded rock: too heavy to carry, dragged.
+            id: "slab", status: Implemented, name: "{material} slab", materials: (categories: [Rock]),
+            size_m: (1.2, 0.2, 0.3), fill: 1.0, footprint: (6, 2),
+            tags: ["stone", "building_stone"],
+        ),
+        (
             id: "core", status: Implemented, name: "{material} core", materials: (tags: ["knappable"]),
             size_m: (0.09, 0.07, 0.05), fill: 0.55, footprint: (1, 1),
             properties: [

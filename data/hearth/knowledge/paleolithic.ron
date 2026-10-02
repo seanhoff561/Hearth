@@ -181,14 +181,13 @@
             history: (summary: "Burned fish remains at Gesher Benot Ya'aqov suggest cooking; cooked food is softer and yields more energy.", date: "c. 780,000 years ago", years_bp: 780000),
         ),
         (
-            id: "windbreak_shelter", status: Planned, name: "Windbreak", era: 0,
+            id: "windbreak_shelter", status: Implemented, name: "Windbreak", era: 0,
             discovery: [
-                (route: Experiment, trigger: "pile:branches", insight: 0.4),
+                (route: Experiment, trigger: "build:stick", insight: 0.4, hint: "Behind the piled brush, the wind is broken."),
                 (route: Observation, trigger: "see:animal_lair", insight: 0.3),
             ],
             history: (summary: "Simple brush windbreaks and hut outlines are claimed from sites such as Terra Amata; most left no trace.", date: "c. 400,000 years ago (uncertain)", years_bp: 400000),
             uncertain: true,
-            notes: "Shelters are built with the structural building of V2-8.",
         ),
         (
             id: "telling_umbellifer", status: Implemented, name: "Telling the umbellifers apart", era: 0,
@@ -330,14 +329,13 @@
             history: (summary: "Ground red ochre, used for colour and in adhesives, appears in Africa and becomes common by 100,000 years ago.", date: "c. 300,000 years ago", years_bp: 300000),
         ),
         (
-            id: "lean_to", status: Planned, name: "Lean-to", era: 1, requires: ["windbreak_shelter"],
+            id: "lean_to", status: Implemented, name: "Lean-to", era: 1, requires: ["windbreak_shelter"],
             discovery: [
                 (route: Experiment, trigger: "lean:poles", insight: 0.4),
                 (route: Inference, trigger: "infer:lean_to", insight: 0.3),
             ],
             history: (summary: "Poles leaned against a ridge and covered with bark or brush shed rain as well as wind.", date: "Middle Paleolithic (inferred)", years_bp: 100000),
             uncertain: true,
-            notes: "Shelters are built with the structural building of V2-8.",
         ),
         (
             id: "stone_boiling", status: Implemented, name: "Stone boiling", era: 1, requires: ["fire_keeping"],

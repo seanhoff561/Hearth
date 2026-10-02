@@ -52,10 +52,11 @@ pub enum Aim {
     /// An animal within reach of what is in hand.
     Animal(u64),
     /// A block (a plant, water, a hearth, the ground): where, whether its top face is looked
-    /// at, and the point the eyes rest on.
+    /// at (and which face is), and the point the eyes rest on.
     Block {
         pos: hearth_math::BlockPos,
         top: bool,
+        face: hearth_math::Direction,
         at: DVec3,
     },
 }
@@ -221,6 +222,8 @@ pub struct Client {
     pub aim: Option<Aim>,
     dragged_at: Option<DVec3>,
     drag_was: bool,
+    /// The piece being put up and where (its ghost shows while the work goes on).
+    raising: Option<(hearth_math::BlockPos, hearth_world::BlockStateId, bool)>,
     /// A thing being drawn into the right hand from where it hangs, and how long the reach
     /// has taken; where the right hand's thing came from (to put it back).
     drawing: Option<(hearth_items::Root, f64)>,
@@ -358,6 +361,7 @@ impl Client {
             aim: None,
             dragged_at: None,
             drag_was: false,
+            raising: None,
             drawing: None,
             drawn_from: None,
             radial: None,
@@ -522,11 +526,32 @@ impl Client {
                 if let Some(top_y) = top_y {
                     if best.as_ref().is_none_or(|b| t < b.0) {
                         let top = prev.y >= bp.y as f64 + top_y - 1e-3;
+                        // The face the ray came in by: the side of the box the step before lay
+                        // furthest out of.
+                        let before = prev - DVec3::new(bp.x as f64, bp.y as f64, bp.z as f64);
+                        let (lo, hi) =
+                            hit_box.map_or((DVec3::ZERO, DVec3::ONE), |b| (b.min, b.max));
+                        let face = if top {
+                            hearth_math::Direction::Up
+                        } else {
+                            use hearth_math::Direction as D;
+                            [
+                                (lo.y - before.y, D::Down),
+                                (lo.x - before.x, D::West),
+                                (before.x - hi.x, D::East),
+                                (lo.z - before.z, D::North),
+                                (before.z - hi.z, D::South),
+                            ]
+                            .into_iter()
+                            .max_by(|a, b| a.0.total_cmp(&b.0))
+                            .map_or(D::Up, |(_, d)| d)
+                        };
                         best = Some((
                             t,
                             Aim::Block {
                                 pos: bp,
                                 top,
+                                face,
                                 at: p,
                             },
                         ));
@@ -547,6 +572,21 @@ impl Client {
             Some(Aim::Block { pos, top, .. }) => AimAt::Block { pos, top },
             Some(Aim::Animal(_)) | None => AimAt::Nothing,
         }
+    }
+
+    /// Where a piece put up now would go: beside the face looked at.
+    fn place_aim(&self) -> AimAt {
+        match self.aim {
+            Some(Aim::Block { pos, face, .. }) => AimAt::Beside { pos, face },
+            _ => self.aim_at(),
+        }
+    }
+
+    /// The piece a process puts up, if it puts one up.
+    fn places(&self, process: &str) -> Option<String> {
+        let c = self.crafting.as_ref()?;
+        let r = c.crafts.index_of(process)?;
+        c.crafts.recipes[r].def.places.as_ref().map(|p| p.0.clone())
     }
 
     /// The weather and place where the player is, as the client sees them.
@@ -608,6 +648,10 @@ impl Client {
         let (Some(w), Some(items), Some(c)) = (&self.world, &self.items, &mut self.crafting) else {
             return;
         };
+        let face = match self.aim {
+            Some(Aim::Block { face, .. }) => Some(face),
+            _ => None,
+        };
         let seen = Seen {
             reg: &w.reg,
             mirror: &w.mirror,
@@ -615,6 +659,7 @@ impl Client {
             carry: &self.carry,
             world_items: &self.world_items,
             aim,
+            face,
             feet: self.mover.pos,
             around,
             day_s,
@@ -627,11 +672,21 @@ impl Client {
     fn act(&mut self, d: Do) {
         let aim = self.aim_at();
         let m = match d {
-            Do::Process(process) => ToServer::Act {
-                process,
-                aim,
-                hand: None,
-            },
+            Do::Process(process) => {
+                // A piece goes up beside the face looked at; its ghost stays there meanwhile.
+                let aim = match self.places(&process) {
+                    Some(_) => {
+                        self.raising = self.ghost_of_chosen();
+                        self.place_aim()
+                    }
+                    None => aim,
+                };
+                ToServer::Act {
+                    process,
+                    aim,
+                    hand: None,
+                }
+            }
             Do::Eat(p) => ToServer::Eat(p),
             Do::Drink(f) => ToServer::Drink(f),
             Do::Fill(skin) => ToServer::Fill { skin, aim },
@@ -892,6 +947,48 @@ impl Client {
                     .push(hearth_character::skinned(place * b, skin, light));
             }
         }
+    }
+
+    /// The piece the chosen offer would put up, where it would go, as the builder faces: its
+    /// place, its block and whether it would rest there.
+    fn ghost_of_chosen(&self) -> Option<(hearth_math::BlockPos, hearth_world::BlockStateId, bool)> {
+        let (w, c) = (self.world.as_ref()?, self.crafting.as_ref()?);
+        let offer = c.chosen()?;
+        let Some(crate::crafting_ui::Do::Process(process)) = &offer.act else {
+            return None;
+        };
+        let piece = self.places(process)?;
+        let shape = c.content.construction.get(&piece)?.shape;
+        let at = crate::building::spot(&w.mirror, &w.reg, self.place_aim())?;
+        let state = crate::building::piece_state(
+            &w.reg,
+            &piece,
+            offer.material.as_deref()?,
+            -self.camera.yaw.to_radians(),
+        )?;
+        let rests = crate::building::rests_at(&w.mirror, &w.reg, &c.content, shape, at);
+        Some((at, state, rests))
+    }
+
+    /// The ghost of a piece where it will go: the one being put up while the work goes on,
+    /// else the one the chosen offer would put up.
+    fn ghost_boxes(&mut self, view: DVec3) {
+        let working = self
+            .crafting
+            .as_ref()
+            .and_then(|c| c.work.as_ref())
+            .is_some_and(|wk| self.places(&wk.process).is_some());
+        if !working {
+            self.raising = None;
+        }
+        let Some((at, state, rests)) = self.raising.or_else(|| self.ghost_of_chosen()) else {
+            return;
+        };
+        let Some(w) = &self.world else {
+            return;
+        };
+        self.figure_boxes
+            .extend(crate::building::ghost(&w.reg, state, at, rests, view));
     }
 
     /// The signs animals left on the ground about the player.
@@ -2225,6 +2322,7 @@ impl Client {
         self.animal_boxes(view.pos, dt);
         self.carcass_boxes(view.pos);
         self.sign_boxes(view.pos);
+        self.ghost_boxes(view.pos);
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {

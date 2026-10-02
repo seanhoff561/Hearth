@@ -110,6 +110,8 @@ pub struct Here<'a> {
     pub out: &'a mut Vec<ToClient>,
     /// The things lying about changed.
     pub items_changed: &'a mut bool,
+    /// Which way the person faces (radians: 0 toward +z, turning toward +x).
+    pub facing: f32,
 }
 
 /// Making things in the world.
@@ -338,9 +340,24 @@ impl Workshop {
 
     /// What the player looks at, as a process sees it.
     pub fn aimed(&self, h: &Here, aim: AimAt) -> Option<Aimed> {
+        let room = || {
+            crate::building::spot(&h.lw.map, &h.lw.reg, aim).is_some_and(|at| {
+                crate::building::room(&h.lw.map, &h.lw.reg, at, h.player.mover.pos)
+            })
+        };
         match aim {
             AimAt::Nothing => None,
             AimAt::Thing(id) => h.world_items.get(id).map(|_| Aimed::Thing(id)),
+            // Beside a block, to put a piece up: the block as it is, whatever it is.
+            AimAt::Beside { pos, .. } => {
+                let block = h.lw.reg.block_of(h.lw.map.block(pos)?);
+                Some(Aimed::Block {
+                    name: block.name.to_string(),
+                    material: block.def.material.clone(),
+                    ground: false,
+                    room: room(),
+                })
+            }
             AimAt::Block { pos, top } => {
                 if let Some(st) = self.station_at(pos) {
                     return Some(Aimed::Station {
@@ -367,6 +384,7 @@ impl Workshop {
                     name: block.name.to_string(),
                     material: block.def.material.clone(),
                     ground: top && solid && open,
+                    room: room(),
                 })
             }
         }
@@ -375,7 +393,7 @@ impl Workshop {
     /// Where the aim points, for things lying within reach of the work.
     fn aim_point(&self, h: &Here, aim: AimAt) -> DVec3 {
         match aim {
-            AimAt::Block { pos, .. } => center(pos),
+            AimAt::Block { pos, .. } | AimAt::Beside { pos, .. } => center(pos),
             AimAt::Thing(id) => h
                 .world_items
                 .get(id)
@@ -508,7 +526,7 @@ impl Workshop {
             ));
             return;
         }
-        if let AimAt::Block { pos, .. } = aim
+        if let Some(pos) = aim.block()
             && (center(pos) - (h.player.mover.pos + DVec3::new(0.0, 1.6, 0.0))).length() > 4.0
         {
             h.out.push(acted(process, false, "Out of reach."));
@@ -521,6 +539,10 @@ impl Workshop {
                 return;
             }
         };
+        if let Some(why) = self.piece_lacks(h, r, aim) {
+            h.out.push(acted(process, false, why));
+            return;
+        }
         let def = &self.crafts.recipes[r].def;
         if !def.attended {
             self.set_up(h, r, &p, aim);
@@ -664,6 +686,10 @@ impl Workshop {
                 return;
             }
         };
+        if let Some(why) = self.piece_lacks(h, r, aim) {
+            h.out.push(acted(&id, false, why));
+            return;
+        }
         let (skill_name, skill) = self.skill_of(h, r);
         let outcome = {
             let aimed = self.aimed(h, aim);
@@ -952,6 +978,9 @@ impl Workshop {
                 }
             }
             (Effect::Fell, AimAt::Block { pos, .. }) => self.fell(h, pos),
+            (Effect::Place, AimAt::Block { .. } | AimAt::Beside { .. }) => {
+                self.place_piece(h, &def, p.material.as_deref(), aim)
+            }
             (Effect::Lop, AimAt::Block { pos, .. }) => self.lop(h, pos),
             (Effect::Buck, AimAt::Block { pos, .. }) => self.set_block(h, pos, BlockStateId::AIR),
             (Effect::Mend, _) => {
@@ -1637,7 +1666,7 @@ impl Workshop {
     /// What sight teaches: the keys of what the player looks at.
     pub fn look(&mut self, h: &mut Here, aim: AimAt) {
         let keys = match aim {
-            AimAt::Block { pos, .. } => {
+            AimAt::Block { pos, .. } | AimAt::Beside { pos, .. } => {
                 if self.wildfires.iter().any(|w| w.pos == pos) {
                     vec![WILDFIRE.to_owned(), "fire".to_owned()]
                 } else {
@@ -2254,6 +2283,61 @@ impl Flight {
             (Some(a), Some(b)) => (*b - *a).length() / self.dt,
             _ => 0.0,
         }
+    }
+}
+
+impl Workshop {
+    /// A construction piece put up in the block over the one aimed at, of the material of what
+    /// it used, facing the way the person faces (V2-8).
+    /// Puts a piece up where the aim puts it, facing the way the builder faces.
+    fn place_piece(
+        &mut self,
+        h: &mut Here,
+        def: &hearth_content::schema::process::Process,
+        material: Option<&str>,
+        aim: AimAt,
+    ) {
+        let (Some(piece), Some(material)) = (def.places.as_ref(), material) else {
+            return;
+        };
+        let Some(at) = crate::building::spot(&h.lw.map, &h.lw.reg, aim)
+            .filter(|at| crate::building::room(&h.lw.map, &h.lw.reg, *at, h.player.mover.pos))
+        else {
+            h.out
+                .push(acted(&def.id, false, "There is no room for it there."));
+            return;
+        };
+        let Some(state) =
+            crate::building::piece_state(&h.lw.reg, piece.as_str(), material, h.facing)
+        else {
+            h.out
+                .push(acted(&def.id, false, "It cannot be made of that."));
+            return;
+        };
+        self.set_block(h, at, state);
+    }
+
+    /// Why a piece cannot go up where the aim puts it, if it cannot: it would rest on nothing
+    /// there (a roof before its frame, a post in the air).
+    fn piece_lacks(&self, h: &Here, r: usize, aim: AimAt) -> Option<&'static str> {
+        let piece = self.crafts.recipes[r].def.places.as_ref()?;
+        let shape = h.lw.content.construction.get(piece.as_str())?.shape;
+        let at = crate::building::spot(&h.lw.map, &h.lw.reg, aim)?;
+        (!crate::building::rests_at(&h.lw.map, &h.lw.reg, &h.lw.content, shape, at))
+            .then_some("It would have nothing to rest on there.")
+    }
+}
+
+/// The way (north, east, south or west) nearest a facing (radians: 0 toward +z, which is south,
+/// turning toward +x, east).
+pub(crate) fn facing_name(facing: f32) -> &'static str {
+    let a = facing.rem_euclid(std::f32::consts::TAU);
+    let q = ((a / std::f32::consts::FRAC_PI_2).round() as i32).rem_euclid(4);
+    match q {
+        0 => "south",
+        1 => "east",
+        2 => "north",
+        _ => "west",
     }
 }
 

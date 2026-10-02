@@ -182,6 +182,9 @@ pub enum ShapeKind {
     Branch,
     /// Custom boxes in sixteenths.
     Boxes(Vec<[f64; 6]>),
+    /// Custom boxes in sixteenths as they sit facing north, turned to the state's `facing`
+    /// (a construction piece).
+    Facing(Vec<[f64; 6]>),
 }
 
 /// Read-only access to a state's property values while computing its shape.
@@ -361,6 +364,10 @@ pub fn shapes_for(kind: &ShapeKind, props: &dyn PropertyLookup) -> (Shape, Shape
         }
         ShapeKind::Boxes(boxes) => {
             let s = Shape::from_px(boxes);
+            (s.clone(), s)
+        }
+        ShapeKind::Facing(boxes) => {
+            let s = Shape::from_px(boxes).rotated(props.dir("facing"));
             (s.clone(), s)
         }
     }

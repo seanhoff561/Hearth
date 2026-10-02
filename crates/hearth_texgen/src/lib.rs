@@ -47,6 +47,7 @@ pub fn textures_for(content: Option<&hearth_content::Content>) -> Vec<TexEntry> 
         .map(|c| {
             let mut v = material::natural_textures(c);
             v.extend(trees::textures(c));
+            v.extend(material::piece_textures(c));
             v
         })
         .unwrap_or_default();

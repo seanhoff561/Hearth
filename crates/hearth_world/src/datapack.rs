@@ -130,6 +130,53 @@ fn generated_blocks(packs: &[PathBuf]) -> Vec<(ResourceLocation, Map<String, Val
         obj.insert("material".into(), b.material.into());
         out.push((id, obj));
     }
+    // Construction pieces in their materials (V2-8): shaped as they sit, turned as they face;
+    // roofs, floors' layers and walls cover the sky, posts, beams and panels do not.
+    for p in hearth_content::building::piece_blocks(&content.construction, &content.materials) {
+        if p.status != hearth_content::schema::Status::Implemented {
+            continue;
+        }
+        let Ok(id) = ResourceLocation::parse(&p.id) else {
+            continue;
+        };
+        use hearth_content::schema::station::PieceShape as S;
+        let [r, g, bl] = p.map_color;
+        let mut obj = Map::new();
+        obj.insert("template".into(), "hearth:piece".into());
+        let boxes = serde_json::to_value(&p.boxes).unwrap_or(Value::Null);
+        let mut shape = Map::new();
+        if hearth_content::building::faces(p.shape) {
+            obj.insert(
+                "properties".into(),
+                Value::Array(vec!["facing:north,east,south,west".into()]),
+            );
+            shape.insert("facing".into(), boxes);
+        } else {
+            shape.insert("boxes".into(), boxes);
+        }
+        obj.insert("shape".into(), Value::Object(shape));
+        let covers = matches!(p.shape, S::Roof | S::Layer | S::Wall | S::Block);
+        obj.insert(
+            "light_opacity".into(),
+            Value::from(if covers { 15 } else { 0 }),
+        );
+        if p.shape == S::Block {
+            obj.insert("opaque".into(), Value::Bool(true));
+            obj.insert("render".into(), "cube".into());
+            obj.insert("layer".into(), "opaque".into());
+        }
+        obj.insert("hardness".into(), Value::from(p.hardness as f64));
+        obj.insert("resistance".into(), Value::from(p.hardness as f64 * 2.0));
+        obj.insert("sound".into(), p.sound.into());
+        obj.insert("flammable".into(), Value::Bool(p.flammable));
+        obj.insert(
+            "map_color".into(),
+            format!("#{r:02x}{g:02x}{bl:02x}").into(),
+        );
+        obj.insert("material".into(), p.material.into());
+        obj.insert("item".into(), Value::Bool(false));
+        out.push((id, obj));
+    }
     out
 }
 

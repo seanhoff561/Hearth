@@ -1,20 +1,58 @@
-// Construction pieces (v2 §14.1), first set for Era 0–3 shelters. Structural capacities come
-// from the materials; V2-8 adds the stability solver and the rest of the pieces.
+// Construction pieces (v2 §14.1, V2-8), the first set for Era 0–3 shelters. Each piece in each
+// material it may be made of is a block of the world (hearth_content::building); putting one up
+// uses its inputs and takes its time, taking it down gives most of them back. `size_m` is the
+// piece's own size in its one block (its mass and strength come from it and the material);
+// `shape` how it sits there. Quantities are what the piece takes: bark and hides overlap, brush
+// is mostly air, a dry-stone wall three parts stone to one of gaps. A pole makes a post or a
+// beam a block long (its offcut is not kept). Times are a practised builder's.
 (
     schema: 1,
     entries: [
-        (id: "brush_windbreak", name: "{material} brush windbreak", materials: (categories: [Wood]),
-         size_m: (2.0, 1.2, 0.4), fill: 0.08, joints: [Stacked], knowledge: "windbreak_shelter", build: (hours: 1.0),
-         insulation_r: 0.1, notes: "Piled branches and brush on the windward side of a camp."),
-        (id: "lean_to_frame", name: "{material} lean-to frame", materials: (categories: [Wood]),
-         size_m: (2.5, 1.5, 2.0), fill: 0.02, joints: [Lashed, Stacked], knowledge: "lean_to", build: (hours: 2.0)),
-        (id: "thatch_bundle", name: "{material} thatch bundle", materials: (tags: ["thatch"]),
-         size_m: (1.0, 0.3, 0.3), fill: 0.6, joints: [Lashed], knowledge: "thatching", build: (hours: 0.3),
-         sheds_rain_min_pitch_deg: 45, insulation_r: 1.5),
-        (id: "wattle_panel", name: "{material} wattle panel", materials: (tags: ["rods", "withies"]),
-         size_m: (1.0, 1.0, 0.05), fill: 0.5, joints: [Woven], knowledge: "wattle_and_daub", build: (hours: 1.5)),
-        (id: "bark_sheet", name: "{material} sheet", materials: (categories: [Bark]),
-         size_m: (1.0, 0.6, 0.004), fill: 1.0, joints: [Lashed, Stacked], knowledge: "lean_to", build: (hours: 0.2),
-         sheds_rain_min_pitch_deg: 30),
+        // ---- Brush and poles (Era 0–1) ----
+        (id: "brush_wall", status: Implemented, name: "{material} brush", materials: (categories: [Wood]),
+         shape: Panel, size_m: (1.0, 1.0, 0.3), fill: 0.04, joints: [Stacked], build: (hours: 0.25),
+         inputs: [(item: Form(form: "stick"), amount: 24)], action: "pile brush against the wind",
+         insulation_r: 0.1, notes: "Branches and brush piled into a windbreak; anyone can, and doing it teaches the windbreak."),
+        (id: "post", status: Implemented, name: "{material} post", materials: (categories: [Wood]),
+         shape: Post, size_m: (0.04, 1.0, 0.04), joints: [Lashed, Stacked], knowledge: "lean_to", build: (hours: 0.3),
+         inputs: [(item: Form(form: "pole"), amount: 1)], action: "set a post"),
+        (id: "beam", status: Implemented, name: "{material} beam", materials: (categories: [Wood]),
+         shape: Beam, size_m: (0.04, 0.04, 1.0), joints: [Lashed], knowledge: "lean_to", build: (hours: 0.3),
+         inputs: [(item: Form(form: "pole"), amount: 1)], action: "lash a beam across"),
+        // ---- Coverings ----
+        (id: "bark_roof", status: Implemented, name: "{material} roof", materials: (categories: [Bark]),
+         shape: Roof, pitch_deg: 45, size_m: (1.0, 0.006, 1.4), joints: [Lashed, Stacked], knowledge: "lean_to", build: (hours: 0.6),
+         inputs: [(item: Form(form: "strip"), amount: 56)], action: "lay bark on the slope",
+         sheds_rain_min_pitch_deg: 30, insulation_r: 0.1,
+         notes: "Bark laid overlapping down a pitch sheds rain: 1.4 m² of slope, twice over, in strips of 0.05 m²."),
+        (id: "bark_cover", status: Implemented, name: "flat {material} covering", materials: (categories: [Bark]),
+         shape: Layer, size_m: (1.0, 0.006, 1.0), joints: [Stacked], knowledge: "lean_to", build: (hours: 0.4),
+         inputs: [(item: Form(form: "strip"), amount: 40)], action: "lay bark flat",
+         insulation_r: 0.1, notes: "Laid flat, bark holds the rain in puddles and leaks."),
+        (id: "hide_wall", status: Implemented, name: "{material} cover", materials: (tags: ["hide"]),
+         shape: Panel, size_m: (1.0, 1.0, 0.005), joints: [Lashed], knowledge: "lean_to", build: (hours: 0.3),
+         inputs: [(item: Form(form: "sheet"), amount: 4)], action: "hang a hide",
+         insulation_r: 0.15),
+        (id: "hide_roof", status: Implemented, name: "{material} roof", materials: (tags: ["hide"]),
+         shape: Roof, pitch_deg: 45, size_m: (1.0, 0.005, 1.4), joints: [Lashed], knowledge: "lean_to", build: (hours: 0.4),
+         inputs: [(item: Form(form: "sheet"), amount: 7)], action: "stretch hides over the slope",
+         sheds_rain_min_pitch_deg: 20, insulation_r: 0.15),
+        (id: "thatch", status: Planned, name: "{material} thatch", materials: (tags: ["thatch"]),
+         shape: Roof, pitch_deg: 45, size_m: (1.0, 0.3, 1.4), fill: 0.6, joints: [Lashed], knowledge: "thatching", build: (hours: 1.0),
+         inputs: [(item: Form(form: "sheaf"), amount: 6)], action: "lay thatch",
+         sheds_rain_min_pitch_deg: 45, insulation_r: 1.5,
+         notes: "Bundles laid steeply shed rain for decades; laid flat they rot."),
+        (id: "wattle_panel", status: Planned, name: "{material} wattle", materials: (tags: ["rods", "withies"]),
+         shape: Panel, size_m: (1.0, 1.0, 0.05), fill: 0.5, joints: [Woven], knowledge: "wattle_and_daub", build: (hours: 1.5),
+         inputs: [(item: Form(form: "stick"), amount: 12)], action: "weave wattle between the posts"),
+        // ---- Stone ----
+        (id: "dry_stone", status: Implemented, name: "{material} dry-stone wall", materials: (categories: [Rock]),
+         shape: Wall, size_m: (1.0, 1.0, 0.5), fill: 0.75, joints: [Stacked], build: (hours: 2.0),
+         inputs: [(item: Form(form: "fieldstone"), amount: 36)], action: "lay a course of stones",
+         insulation_r: 0.3, notes: "Stones laid without mortar, each on two below; a ton to the cubic metre and a half."),
+        (id: "stone_lintel", status: Implemented, name: "{material} lintel", materials: (categories: [Rock]),
+         shape: Beam, size_m: (0.3, 0.2, 1.0), joints: [Stacked], build: (hours: 0.5),
+         inputs: [(item: Form(form: "slab"), amount: 1)], action: "lay a slab across",
+         notes: "Stone is strong pressed but weak bent: a slab spans little."),
     ],
 )

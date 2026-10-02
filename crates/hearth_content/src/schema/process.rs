@@ -51,6 +51,9 @@ pub enum BlockMatch {
     Material(MaterialFilter),
     /// Blocks whose name ends in this (`_cobbles`: loose stones of any rock).
     Suffix(String),
+    /// Blocks whose name (without its namespace) starts with this (`post/`: posts of any
+    /// wood).
+    Prefix(String),
     /// Blocks any of these accept (soils, and the turf over them).
     Any(Vec<BlockMatch>),
 }
@@ -83,6 +86,9 @@ pub enum Effect {
     Buck,
     /// The vegetation aimed at is set alight (it spreads as dry as it is).
     SetAlight,
+    /// A construction piece ([`Process::places`]) is put up over what is aimed at, facing as the
+    /// person faces, of the material of what it uses.
+    Place,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -232,6 +238,9 @@ entry! {
         /// of yarrow on a cut).
         #[serde(default)]
         pub treats: Option<String>,
+        /// The construction piece it puts up (with the `Place` effect).
+        #[serde(default)]
+        pub places: Option<IdRef>,
     }
 }
 

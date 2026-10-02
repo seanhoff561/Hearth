@@ -93,6 +93,7 @@ pub fn block_matches(b: &BlockMatch, name: &str, material: Option<&Material>) ->
         BlockMatch::Id(id) => key(id.as_str()) == key(name),
         BlockMatch::Material(f) => material.is_some_and(|m| f.matches(m.id.as_str(), m)),
         BlockMatch::Suffix(sfx) => name.ends_with(sfx.as_str()),
+        BlockMatch::Prefix(pfx) => key(name).starts_with(pfx.as_str()),
         BlockMatch::Any(list) => list.iter().any(|b| block_matches(b, name, material)),
     }
 }

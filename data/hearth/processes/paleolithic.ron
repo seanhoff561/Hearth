@@ -21,6 +21,21 @@
             notes: "Rocks too soft or brittle for an anvil give only cobbles.",
         ),
         (
+            id: "gather_fieldstones", status: Implemented, name: "Heave up building stones", action: "heave up the bigger stones",
+            verb: "gather", target: Block(Suffix("_cobbles")), effect: Remove,
+            inputs: [], duration: (hours: 0.08), mets: 6.0,
+            outputs: [(item: Form(form: "fieldstone"), amount: (1, 2)), (item: Form(form: "cobble"), amount: (1, 2))],
+            notes: "The stones of a scatter big enough to build with: one or two a patch.",
+        ),
+        (
+            id: "pry_slab", status: Implemented, name: "Pry up a slab", action: "pry a slab from the bedded rock",
+            verb: "strike", target: Block(Material((categories: [Rock]))), effect: Deplete,
+            inputs: [], tools: [(property: "hard_hammer", min: 0.4)],
+            duration: (hours: 2.0), mets: 6.0, wear: 0.1,
+            outputs: [(item: Form(form: "slab"), amount: (1, 1))],
+            notes: "Rock that lies in beds splits along them, struck and levered.",
+        ),
+        (
             id: "break_deadwood", status: Implemented, name: "Break off deadwood", action: "break off dead branches",
             verb: "break", target: Block(Material((categories: [Wood]))), harvests: Some(3),
             inputs: [], duration: (hours: 0.05), mets: 3.0,

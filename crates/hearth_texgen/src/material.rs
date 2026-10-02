@@ -134,9 +134,25 @@ pub fn texture(name: &str, a: &Appearance) -> Tex {
                 if d1 < 1.8 { scale(c, 1.06) } else { c }
             }
         }),
-        Pattern::WoodGrain | Pattern::Bark => paint(S, S, |x, y| {
+        Pattern::WoodGrain => paint(S, S, |x, y| {
             let grain = value_noise(seed, x as f32 * 3.0, y as f32 * 0.25, 2.0, fs);
             lerp(base, second, grain * 0.6)
+        }),
+        Pattern::Bark => paint(S, S, |x, y| {
+            // Fissured along the trunk, its own colour; flecked across it with the second (a
+            // birch's dark lenticels, an oak's deep cracks): runs of three or four texels.
+            let grain = value_noise(seed, x as f32 * 3.0, y as f32 * 0.25, 2.0, fs);
+            let c = lerp(
+                pal.pick(fbm(seed, x, y, S, 0.35)),
+                scale(base, 0.82),
+                grain * 0.5,
+            );
+            let run = (x + (rand01(seed ^ 0x2b, 0, y) * 4.0) as i32).div_euclid(4);
+            if rand01(seed ^ 0x1e, run, y) < 0.08 {
+                lerp(c, second, 0.85)
+            } else {
+                c
+            }
         }),
     }
 }
@@ -206,4 +222,29 @@ pub fn natural_textures(content: &Content) -> Vec<TexEntry> {
             Some(TexEntry::still(&format!("block/{path}"), tex))
         })
         .collect()
+}
+
+/// Textures of the materials construction pieces are made of (`block/material/<id>`): every
+/// piece of a material wears its material's texture.
+pub fn piece_textures(content: &Content) -> Vec<TexEntry> {
+    let mut done = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for p in hearth_content::building::piece_blocks(&content.construction, &content.materials) {
+        if !done.insert(p.material.clone()) {
+            continue;
+        }
+        let Some(m) = content.materials.get(&p.material) else {
+            continue;
+        };
+        let path = p
+            .material
+            .split_once(':')
+            .map_or(p.material.as_str(), |(_, p)| p);
+        let name = format!("material/{path}");
+        out.push(TexEntry::still(
+            &format!("block/{name}"),
+            texture(&name, &m.appearance),
+        ));
+    }
+    out
 }

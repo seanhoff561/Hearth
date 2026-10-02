@@ -841,7 +841,11 @@ fn bake_model(
         _ => {
             // Box models from the state's outline shape.
             let faces: Box<dyn Fn(Direction) -> FaceTex> =
-                if name.ends_with("_slab") || name.ends_with("_stairs") {
+                if let Some((_, m)) = name.split_once('/') {
+                    // A construction piece wears its material's texture.
+                    let t = ctx.tex(&format!("material/{m}"));
+                    Box::new(move |_| t)
+                } else if name.ends_with("_slab") || name.ends_with("_stairs") {
                     let m = material(name);
                     if m == "sandstone" || m == "red_sandstone" {
                         Box::new(side_top_bottom(

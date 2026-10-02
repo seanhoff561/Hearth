@@ -129,6 +129,21 @@ pub enum AimAt {
     },
     /// A thing lying in the world.
     Thing(u64),
+    /// The place beside a block across one of its faces: where a piece put up goes (V2-8).
+    Beside {
+        pos: hearth_math::BlockPos,
+        face: hearth_math::Direction,
+    },
+}
+
+impl AimAt {
+    /// The block looked at, if it is one.
+    pub fn block(self) -> Option<hearth_math::BlockPos> {
+        match self {
+            AimAt::Block { pos, .. } | AimAt::Beside { pos, .. } => Some(pos),
+            _ => None,
+        }
+    }
 }
 
 /// Where a drink comes from.
