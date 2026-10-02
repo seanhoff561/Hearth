@@ -139,10 +139,90 @@ fn pipeline(
         })
 }
 
+/// The texture the animals' coats are read from (one texel, white, until there are coats).
+struct Skins {
+    layout: wgpu::BindGroupLayout,
+    bind: wgpu::BindGroup,
+}
+
+impl Skins {
+    fn new(ctx: &GpuContext) -> Self {
+        let layout = ctx
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("figure coats"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                }],
+            });
+        let bind = Self::upload(ctx, &layout, 1, 1, &[[255, 255, 255, 255]]);
+        Self { layout, bind }
+    }
+
+    fn upload(
+        ctx: &GpuContext,
+        layout: &wgpu::BindGroupLayout,
+        width: u32,
+        height: u32,
+        texels: &[[u8; 4]],
+    ) -> wgpu::BindGroup {
+        let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("figure coats"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        ctx.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytemuck::cast_slice(texels),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("figure coats"),
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            }],
+        })
+    }
+}
+
 /// Bodies in the world.
 pub struct FigureRenderer {
     pipeline: wgpu::RenderPipeline,
     instances: Instances,
+    skins: Skins,
 }
 
 impl FigureRenderer {
@@ -161,22 +241,31 @@ impl FigureRenderer {
                 ),
             });
         let instances = Instances::new(ctx, "figure instances");
+        let skins = Skins::new(ctx);
         let pipeline = pipeline(
             ctx,
             "figures",
             &module,
-            &[Some(globals), Some(&instances.layout)],
+            &[Some(globals), Some(&instances.layout), Some(&skins.layout)],
             crate::post::HDR_FORMAT,
         );
         Self {
             pipeline,
             instances,
+            skins,
         }
     }
 
     /// This frame's boxes (camera-relative).
     pub fn set(&mut self, ctx: &GpuContext, instances: &[FigureInstance]) {
         self.instances.set(ctx, instances);
+    }
+
+    /// The texture of the animals' coats (sRGB texels, row by row).
+    pub fn set_coats(&mut self, ctx: &GpuContext, width: u32, height: u32, texels: &[[u8; 4]]) {
+        assert_eq!(texels.len(), (width * height) as usize, "coat texture size");
+        self.skins.bind =
+            Skins::upload(ctx, &self.skins.layout, width.max(1), height.max(1), texels);
     }
 
     pub fn count(&self) -> u32 {
@@ -190,6 +279,7 @@ impl FigureRenderer {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, globals, &[]);
         pass.set_bind_group(1, &self.instances.bind, &[]);
+        pass.set_bind_group(2, &self.skins.bind, &[]);
         pass.draw(0..36, 0..self.instances.count);
     }
 }

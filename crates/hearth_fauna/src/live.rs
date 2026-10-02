@@ -58,6 +58,18 @@ pub enum Act {
     Alert,
     /// Running away.
     Flee,
+    /// Lying asleep.
+    Sleep,
+    /// Licking or nibbling its coat.
+    Groom,
+    /// Head down at water.
+    Drink,
+    /// Up on the hind legs.
+    Rear,
+    /// Lunging, biting, butting or striking.
+    Attack,
+    /// On the wing.
+    Fly,
 }
 
 /// An animal in the world.
@@ -522,9 +534,13 @@ impl Live {
                     .map(|(s, n)| *s / *n)
                     .unwrap_or(DVec2::new(a.pos.x, a.pos.z));
                 (a.act, a.timer, a.goal) = if !up {
-                    (Act::Rest, 20.0 + r * 40.0, None)
-                } else if r < 0.55 {
+                    // Out of its hours: asleep mostly, now and then awake where it lies.
+                    let act = if r < 0.75 { Act::Sleep } else { Act::Rest };
+                    (act, 20.0 + r * 40.0, None)
+                } else if r < 0.5 {
                     (Act::Graze, 4.0 + r * 12.0, None)
+                } else if r < 0.58 {
+                    (Act::Groom, 3.0 + r * 4.0, None)
                 } else {
                     // Somewhere near the group's middle.
                     let reach = 6.0 + sp.mass_kg.sqrt() as f64;

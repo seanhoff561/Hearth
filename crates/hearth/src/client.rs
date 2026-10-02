@@ -183,6 +183,8 @@ pub struct Client {
     /// toward that between the server's word); the species they are of.
     animals: rustc_hash::FxHashMap<u64, ShownAnimal>,
     fauna: Option<Arc<hearth_fauna::species::Catalog>>,
+    /// The species' bodies and coats.
+    bodies: Option<Arc<hearth_fauna::skin::Bodies>>,
     /// The item kinds as the server has them (`items` is them as the player sees them, with
     /// look-alikes not yet told apart under their group's name).
     base_items: Option<Arc<hearth_items::Items>>,
@@ -225,12 +227,14 @@ pub struct Client {
 }
 
 /// A tree on its way down.
-/// An animal as the server last told of it, and as drawn.
+/// An animal as the server last told of it, and as drawn: where, facing, and its body's
+/// motion (posed at once the first time it is drawn).
 struct ShownAnimal {
     target: hearth_fauna::live::AnimalView,
     pos: DVec3,
     yaw: f32,
-    stride: f32,
+    motion: hearth_fauna::anim::Motion,
+    posed: bool,
 }
 
 struct Falling {
@@ -320,6 +324,7 @@ impl Client {
             falling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
             fauna: None,
+            bodies: None,
             base_items: None,
             hidden_looks: Vec::new(),
             eyes_shut: 0.0,
@@ -748,13 +753,15 @@ impl Client {
         }
     }
 
-    /// Boxes for the things lying around, held and dragged.
-    /// The animals near the player as boxes, eased toward where the server has them.
+    /// The animals near the player, eased toward where the server has them, posed on the
+    /// ground under their feet and drawn in their coats.
     fn animal_boxes(&mut self, view: DVec3, dt: f32) {
-        let (Some(cat), Some(w)) = (&self.fauna, &self.world) else {
+        let (Some(cat), Some(bodies), Some(w)) = (&self.fauna, &self.bodies, &self.world) else {
             return;
         };
         let moment = self.calendar.at(self.now_ticks());
+        let year_frac = moment.year_frac as f32;
+        let player = self.mover.pos;
         let k = 1.0 - (-dt * 12.0).exp();
         for s in self.animals.values_mut() {
             s.pos += (s.target.pos - s.pos) * k as f64;
@@ -766,35 +773,72 @@ impl Client {
                 d -= std::f32::consts::TAU;
             }
             s.yaw += d * k;
-            s.stride += (s.target.stride - s.stride) * k;
             if (s.pos - view).length() > 160.0 {
                 continue;
             }
-            let Some(sp) = cat.species.get(s.target.species as usize) else {
+            let species = s.target.species as usize;
+            let Some(sp) = cat.species.get(species) else {
                 continue;
             };
-            let look = hearth_fauna::body::Look {
-                stage: s.target.stage,
-                female: s.target.female,
+            let female = s.target.female;
+            let rig = bodies.rig(species, female);
+            let southern = w.planet.latitude(s.pos.z) < 0.0;
+            let scale = hearth_fauna::anim::scale_of(
+                rig,
+                s.target.stage,
+                year_frac,
+                sp.life.birth_frac,
+                sp.life.birth_mass_kg,
+            );
+            // Alarmed, it watches the player.
+            let look = matches!(
+                s.target.act,
+                hearth_fauna::live::Act::Alert | hearth_fauna::live::Act::Flee
+            )
+            .then(|| Quat::from_rotation_y(-s.yaw) * (player - s.pos).as_vec3() / scale);
+            let drive = hearth_fauna::anim::Drive {
                 act: s.target.act,
-                stride: s.stride,
                 speed: s.target.speed,
-                year_frac: moment.year_frac as f32,
-                southern: w.planet.latitude(s.pos.z) < 0.0,
+                look,
+                stage: s.target.stage,
+                female,
+                year_frac,
+                southern,
+                scale,
             };
+            if !s.posed {
+                s.motion.settle(rig, &drive);
+                s.posed = true;
+            }
+            s.motion.update(rig, &drive, dt);
+            let ground = crate::fauna::CubeFooting {
+                map: &w.mirror,
+                reg: &w.reg,
+                at: s.pos,
+                yaw: s.yaw,
+            };
+            let pose = hearth_fauna::anim::pose(rig, &s.motion, &drive, &ground);
+            let coat = bodies.coat_of(
+                species,
+                female,
+                s.target.stage,
+                hearth_fauna::skin::winter_coat(year_frac, southern),
+            );
             let place = Affine3A::from_rotation_translation(
                 Quat::from_rotation_y(s.yaw),
                 (s.pos - view).as_vec3(),
             );
-            let chest = hearth_math::BlockPos::containing(s.pos + DVec3::Y * 0.6);
+            let chest =
+                hearth_math::BlockPos::containing(s.pos + DVec3::Y * (rig.torso_y * scale) as f64);
             let light = (w.mirror.sky_light(chest), w.mirror.block_light(chest));
-            for b in hearth_fauna::body::boxes(sp, &look) {
+            for (b, skin) in bodies.skinned(species, rig, &pose, coat) {
                 self.figure_boxes
-                    .push(hearth_character::solid(place * b.place, b.color, light));
+                    .push(hearth_character::skinned(place * b, skin, light));
             }
         }
     }
 
+    /// Boxes for the things lying around, held and dragged.
     fn thing_boxes(&mut self, view: DVec3) {
         let (Some(items), Some(w)) = (&self.items, &self.world) else {
             return;
@@ -1676,7 +1720,9 @@ impl Client {
                     self.ended = r.ended;
                     self.base_items = Some(r.items.clone());
                     self.items = Some(r.items);
-                    self.fauna = Some(Arc::new(hearth_fauna::species::Catalog::new(&r.content)));
+                    let catalog = hearth_fauna::species::Catalog::new(&r.content);
+                    self.bodies = Some(Arc::new(hearth_fauna::skin::Bodies::new(&catalog)));
+                    self.fauna = Some(Arc::new(catalog));
                     self.animals.clear();
                     self.crafting = Some(Crafting::new(
                         r.content,
@@ -1697,6 +1743,11 @@ impl Client {
                     scene.terrain.vertical_distance = self.vertical;
                     scene.render_scale = self.render_scale;
                     scene.terrain.water.quality = self.water_quality;
+                    if let Some(b) = &self.bodies {
+                        scene
+                            .figures
+                            .set_coats(ctx, b.atlas.w, b.atlas.h, &b.atlas.px);
+                    }
                     self.scene = Some(scene);
                     self.env = Some(EnvSampler::new(r.grid, self.calendar));
                     self.status = "streaming".into();
@@ -1750,7 +1801,8 @@ impl Client {
                                 target: v,
                                 pos: v.pos,
                                 yaw: v.yaw,
-                                stride: v.stride,
+                                motion: hearth_fauna::anim::Motion::new(v.id),
+                                posed: false,
                             });
                     }
                 }

@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 hearth_content.workspace = true
 hearth_math.workspace = true
+glam.workspace = true
 png.workspace = true
 
 [lints]

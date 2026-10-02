@@ -153,3 +153,47 @@ facing, speed, what it does and its stride's phase); the client eases them betwe
 them within 160 m. A census of the groups about the player (`ToServer::Census`) serves tools and
 tests. The populations are saved with the world (`fauna.json.zst`: the regions' cells, groups
 and weather, the animals in the world folded into them).
+
+## Bodies (`hearth_fauna::rig`, `anim`, `skin`; `hearth_texgen::coats`)
+Each species is a skeleton of slots with boxes on them, at its real dimensions, built from its
+body plan and the proportions of its `shape` (neck, head and snout, tail and its thickness,
+ears and how they stand, legs, a hump, and what grows on the head: antlers with their beam and
+tines, horns with their curve, tusks), every one of which defaults by plan, so that a new
+species needs only data. Four-legged bodies have a torso of two halves (bending at the middle
+of the back), legs of two segments and a foot, a neck, a head with a snout and a jaw, two ears
+and a tail of up to three segments; the torso is as long as the length leaves after the head
+and the neck, as deep as the plan's share of the shoulder height and as wide as holds the
+animal's mass (a male's toward the top of the species' range). Birds have a body and breast,
+a short neck, a head and beak, a fanned tail, two wings of an arm and a hand, and two legs;
+snakes and fish are chains of segments; frogs sit on folded legs; insects are a head, thorax,
+abdomen and wings. A young animal is its parents' body, smaller.
+
+The bodies move by gait data rather than clips: the gait follows the Froude number of the
+speed against the hip's height (walking, trotting, galloping; hares and small rodents bound;
+bears walk and gallop), the stride's length after Alexander's relation (λ = 2.3 h Fr^0.3),
+each foot down for its share of the stride and lifted through the rest, and the leg bent to
+reach the ground under it (two segments: the foreleg's middle joint bends forward, the hind's
+hock back). The body pitches to the slope between the fore and hind feet and comes down where a
+leg cannot reach. The head nods with the walk, turns to what the animal watches, goes down to
+the ground to graze or to water (the forelegs splaying); the jaw chews; the ears stand forward
+when alert, lie back in flight and flick; the tail sways with the gait, flicks, and rises in
+alarm (a squirrel's curls over its back); the chest breathes, slower in bigger bodies. The
+poses of doing things blend in and out: lying with the legs folded under, asleep with the head
+turned back along the flank, grooming, rearing on the hind legs, lunging or butting. Birds hop
+or walk, peck, crouch, tuck the head asleep and fly with their wings beating (fewer beats in
+bigger birds); snakes wind along their path or lie coiled, the head raised in alarm; fish swim
+with a wave down the body; frogs sit and hop. A stag carries his antlers in the seasons of his
+antler yield and grows them through the season before; a boar has tusks; horns are on both
+sexes or the males as the data says.
+
+Coats are textures. Every species' boxes are unwrapped side by side into one atlas (each box
+six faces in a cross, at sixteen pixels a metre for a deer and finer for small animals so that
+a vole has a face), and `hearth_texgen::coats` paints its coats there from the recipe — the
+female's, the winter coat's, the male's where his colour differs, and the young's where they
+wear a pattern of their own — every pixel from where it lies on the body at rest: the back and
+the paler belly with the countershading line up the flanks, the throat, the points (muzzle,
+ear rims, tail tip), the legs, the rump patch and the tail's underside, the face, eyes and
+nose, hooves or paws, and the pattern (spots, stripes, grizzled hair, a badger's mask, speckled,
+pied or barred feathers, a snake's zig-zag or bands, a perch's bars, a trout's spots). The
+figure shader reads each box's faces from the atlas by its unwrap's place, so the bodies stay a
+few hundred boxes for a herd.

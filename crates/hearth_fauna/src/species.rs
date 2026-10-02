@@ -3,8 +3,9 @@
 //! into the kinds of forage a place produces, the animals they hunt and carrion.
 
 use hearth_content::Content;
+use hearth_content::schema::Season;
 use hearth_content::schema::fauna::{
-    Activity, Animal, BodyPlan, Coat, Dispersers, PopulationModel, SeasonalBehavior, Social,
+    Activity, Animal, BodyPlan, Coat, Dispersers, PopulationModel, SeasonalBehavior, Shape, Social,
 };
 use hearth_content::schema::flora::GrowthForm;
 use hearth_worldgen::realms::{RealmSet, set_of};
@@ -142,6 +143,11 @@ pub struct Species {
     /// A walking stride, m.
     pub stride: f32,
     pub coat: Option<Coat>,
+    /// The proportions of its body.
+    pub shape: Shape,
+    /// The seasons a grown male carries antlers (spring, summer, autumn, winter), from its
+    /// antler yield.
+    pub antler_seasons: [bool; 4],
 }
 
 impl Species {
@@ -546,5 +552,28 @@ fn species_of(
             .unwrap_or(a.length_m * 0.6)
             .max(0.02),
         coat: a.coat,
+        shape: a.shape.unwrap_or_default(),
+        antler_seasons: antler_seasons(a),
     }
+}
+
+/// The seasons a male carries antlers: those of its antler yield (all, where it names none).
+fn antler_seasons(a: &Animal) -> [bool; 4] {
+    let Some(extra) = a
+        .yields
+        .as_ref()
+        .and_then(|y| y.extras.iter().find(|e| e.material.0.ends_with("antler")))
+    else {
+        return [true; 4];
+    };
+    if extra.seasons.is_empty() {
+        return [true; 4];
+    }
+    let has = |s: Season| extra.seasons.contains(&s);
+    [
+        has(Season::Spring),
+        has(Season::Summer),
+        has(Season::Autumn),
+        has(Season::Winter),
+    ]
 }

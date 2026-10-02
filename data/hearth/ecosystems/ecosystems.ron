@@ -4,7 +4,7 @@
     schema: 1,
     entries: [
         (
-            id: "temperate_broadleaf_forest", name: "Temperate broadleaf forest",
+            id: "temperate_broadleaf_forest", name: "Temperate broadleaf forest", status: Implemented,
             biomes: ["broadleaf_forest", "mixed_forest", "birch_forest", "temperate_plains"],
             producers: ["english_oak", "silver_birch", "common_hazel", "stinging_nettle", "bramble", "meadow_grass"],
             consumers: [
@@ -25,7 +25,7 @@
             fire_return_years: (100, 500),
         ),
         (
-            id: "boreal_forest_ecosystem", name: "Boreal forest",
+            id: "boreal_forest_ecosystem", name: "Boreal forest", status: Implemented,
             biomes: ["boreal_forest", "snowy_taiga"],
             producers: ["norway_spruce", "silver_birch", "meadow_grass"],
             consumers: [
@@ -42,7 +42,7 @@
             fire_return_years: (50, 200),
         ),
         (
-            id: "temperate_freshwater", name: "Temperate rivers, lakes and wetlands",
+            id: "temperate_freshwater", name: "Temperate rivers, lakes and wetlands", status: Implemented,
             biomes: ["river", "lake", "wetland"],
             producers: ["osier", "white_willow", "black_alder", "meadow_grass"],
             consumers: [

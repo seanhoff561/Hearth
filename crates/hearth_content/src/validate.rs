@@ -337,6 +337,34 @@ pub fn validate(content: &Content, report: &mut Report) {
                 c.range("temperament.flight_m", t.flight_m, 0.0, 2_000.0);
                 c.range("temperament.boldness", t.boldness, 0.0, 1.0);
             }
+            if let Some(s) = &a.shape {
+                c.opt("shape.neck", s.neck, 0.0, 1.0);
+                c.opt("shape.head", s.head, 0.0, 0.6);
+                c.opt("shape.snout", s.snout, 0.0, 1.0);
+                c.opt("shape.tail", s.tail, 0.0, 2.0);
+                c.opt("shape.tail_width", s.tail_width, 0.0, 2.0);
+                c.opt("shape.ears", s.ears, 0.0, 2.0);
+                c.opt("shape.legs", s.legs, 0.3, 3.0);
+                c.opt("shape.hump", s.hump, 0.0, 0.5);
+                match s.head_gear {
+                    Some(crate::schema::fauna::HeadGear::Antlers {
+                        length_m, tines, ..
+                    }) => {
+                        c.range("shape antlers length_m", length_m, 0.0, 2.5);
+                        c.range("shape antlers tines", tines as f32, 0.0, 20.0);
+                    }
+                    Some(crate::schema::fauna::HeadGear::Horns {
+                        length_m, curve, ..
+                    }) => {
+                        c.range("shape horns length_m", length_m, 0.0, 2.5);
+                        c.range("shape horns curve", curve, 0.0, 1.0);
+                    }
+                    Some(crate::schema::fauna::HeadGear::Tusks { length_m }) => {
+                        c.range("shape tusks length_m", length_m, 0.0, 1.5);
+                    }
+                    None => {}
+                }
+            }
         },
     );
     each(

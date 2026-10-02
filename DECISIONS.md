@@ -922,3 +922,26 @@ second each in a release build: three years of spin-up at monthly steps), and th
 advance with the calendar every few days of game time in steps of at most a thirty-second of a
 year (a few milliseconds a region); making regions on a worker is left to the performance work
 of V2-7 (j). The regions are saved compressed beside the world's other state.
+
+## D83 — Bodies built from data and moved by gait data; coats painted into one atlas
+The spec asks for body plans with shared skeletons at real dimensions, procedural animation from
+gait data (walk, trot, canter, gallop, foot IK on uneven ground, head look-at, breathing, tail
+and ear motion) with a few authored clips per plan, and coats from a recipe made by
+`hearth_texgen`, so that a new species needs only data and a texture recipe. Each species'
+skeleton is built from its body plan and a `shape` of proportions, every one defaulting by plan
+(neck, head, snout, tail, ears, legs, hump, antlers, horns or tusks), rather than authored per
+species; a test holds every species' standing height and length to its data. Movement is
+computed rather than keyframed: the gait follows the Froude number against the hip height, the
+stride's length Alexander's relation, each foot's timing the gait's phase offsets and duty
+factor, and every leg is bent by two-bone IK to the ground under its foot, so that the same
+code walks a vole and an aurochs over any ground. The spec's clips (eat, drink, lie down,
+sleep, groom, rear, attack) are poses blended in by weights eased over time on the same
+skeleton and IK, rather than authored keyframes per plan, which would not follow the ground or
+fit forty bodies. Coats are painted once per species and variant (female, winter, male, young)
+into one atlas, each box unwrapped six faces to a cross and every pixel painted from where it
+lies on the body at rest so that patterns run across boxes; the figure renderer reads a box's
+faces from it by two words in its instance, so players and animals stay one instanced draw.
+The texel density is the world's sixteen a metre for large animals and finer for small ones
+(up to 160), because at sixteen a metre a vole or a robin would be a single colour; a coat is
+still a handful of pixels across, which keeps them in the blocky style.
+

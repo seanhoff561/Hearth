@@ -240,21 +240,32 @@ pub enum CoatPattern {
 /// Colours and patterns of its coat, feathers or scales (V2-7): the recipe for its texture.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Coat {
-    /// Back and flanks.
+    /// Back and flanks (a bird's back, wings and tail).
     pub base: Color,
     /// Belly, throat and inner legs.
     pub belly: Color,
-    /// Muzzle, ear rims, lower legs, tail tip.
+    /// Muzzle, ear rims, lower legs, tail tip; a bird's beak and legs.
     #[serde(default)]
     pub points: Option<Color>,
-    /// The rump patch (deer).
+    /// The rump patch (deer), and the tail's underside.
     #[serde(default)]
     pub rump: Option<Color>,
     #[serde(default)]
     pub pattern: CoatPattern,
-    /// The pattern's colour (spots, stripes, the mask).
+    /// The pattern's colour (spots, stripes, the mask); with no pattern, a bird's breast.
     #[serde(default)]
     pub marking: Option<Color>,
+    /// The face or head where it differs: a badger's white face, a bird's bare head or the
+    /// disc of an owl's face.
+    #[serde(default)]
+    pub face: Option<Color>,
+    /// The lower legs where they differ from the back (a fox's black stockings).
+    #[serde(default)]
+    pub legs: Option<Color>,
+    /// The tail's tip where it differs from the points (a fox's white tip); all of a short
+    /// tail (a cottontail's).
+    #[serde(default)]
+    pub tail_tip: Option<Color>,
     /// The winter coat's back, where it differs.
     #[serde(default)]
     pub winter: Option<Color>,
@@ -264,6 +275,75 @@ pub struct Coat {
     /// The young's pattern, where it differs.
     #[serde(default)]
     pub young: Option<CoatPattern>,
+}
+
+/// How the ears stand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum EarShape {
+    #[default]
+    Pointed,
+    Round,
+    /// A hare's.
+    Long,
+    /// Tipped with a tuft (lynx, red squirrel).
+    Tufted,
+}
+
+/// What grows on the head.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum HeadGear {
+    /// Branched antlers of bone, cast and grown again every year by the males (in the
+    /// seasons of their `antler` yield): each beam's length (m) and its tines.
+    Antlers {
+        length_m: f32,
+        tines: u8,
+        #[serde(default)]
+        palmate: bool,
+    },
+    /// Horns of keratin on a bony core, kept for life: their length along the curve (m) and
+    /// how far they curve (0 straight, 1 a half circle).
+    Horns {
+        length_m: f32,
+        curve: f32,
+        #[serde(default)]
+        both_sexes: bool,
+    },
+    /// Tusks: the length showing (m), the males'.
+    Tusks { length_m: f32 },
+}
+
+/// The proportions of its body past its length and height (V2-7 bodies), each a fraction; its
+/// body plan has the usual ones.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct Shape {
+    /// The neck's length, of the body's.
+    #[serde(default)]
+    pub neck: Option<f32>,
+    /// The head's length, of the body's.
+    #[serde(default)]
+    pub head: Option<f32>,
+    /// The snout's (a bird's beak's) length, of the head's.
+    #[serde(default)]
+    pub snout: Option<f32>,
+    /// The tail's length, of the body's.
+    #[serde(default)]
+    pub tail: Option<f32>,
+    /// The tail's thickness, of the body's width.
+    #[serde(default)]
+    pub tail_width: Option<f32>,
+    /// The ears' length, of the head's.
+    #[serde(default)]
+    pub ears: Option<f32>,
+    #[serde(default)]
+    pub ear_shape: Option<EarShape>,
+    /// The legs' thickness against the body plan's.
+    #[serde(default)]
+    pub legs: Option<f32>,
+    /// A hump over the shoulders, of the shoulder height (bison, bears, boar).
+    #[serde(default)]
+    pub hump: Option<f32>,
+    #[serde(default)]
+    pub head_gear: Option<HeadGear>,
 }
 
 /// One more thing butchering yields: antlers, tusks, a pelt.
@@ -448,6 +528,8 @@ entry! {
         pub ranging: Option<Ranging>,
         #[serde(default)]
         pub coat: Option<Coat>,
+        #[serde(default)]
+        pub shape: Option<Shape>,
         #[serde(default)]
         pub yields: Option<Yields>,
         #[serde(default)]

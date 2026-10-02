@@ -136,6 +136,15 @@ pub fn albedo(i: &FigureInstance) -> [f32; 3] {
     srgb_to_linear([i.color[0], i.color[1], i.color[2]])
 }
 
+/// A box wearing a coat: the unit cube placed by `place`, its faces read from the figures'
+/// coat texture at the place the two words give (`hearth_fauna::skin`: the unwrap's corner,
+/// and its size in pixels with the top bit set), in the light where it is.
+pub fn skinned(place: Affine3A, skin: [u32; 2], light: (u8, u8)) -> FigureInstance {
+    let mut i = solid(place, [255, 255, 255], light);
+    i.pad = skin;
+    i
+}
+
 /// A plain box: the unit cube placed (and scaled) by `place` into camera-relative space, of a
 /// colour (sRGB), in the light where it is (sky, block: 0–15).
 pub fn solid(place: Affine3A, color: [u8; 3], light: (u8, u8)) -> FigureInstance {

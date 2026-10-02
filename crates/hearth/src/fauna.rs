@@ -25,28 +25,57 @@ pub struct MapGround<'a> {
     pub lw: &'a LocalWorld,
 }
 
-impl MapGround<'_> {
-    /// The surface of the ground in the column at (x, z), searching down from `from` for `depth`
-    /// blocks: the top of a block that stops a foot with room above it.
-    fn surface(&self, x: f64, z: f64, from: i32, depth: i32) -> Option<Footing> {
-        let planet = self.map.planet();
-        let bx = planet.wrap_x(x.floor() as i32);
-        let bz = z.floor() as i32;
-        let mut above = self.map.block(BlockPos::new(bx, from + 1, bz))?;
-        for y in (from - depth..=from).rev() {
-            let s = self.map.block(BlockPos::new(bx, y, bz))?;
-            let shape = self.reg.collision_shape(s);
-            let open_above = self.reg.collision_shape(above).is_empty();
-            if !shape.is_empty() && open_above {
-                return Some(Footing {
-                    y: y as f64 + shape.top(),
-                    water: self.reg.fluid_amount(above) > 0,
-                });
-            }
-            // Standing water: the ground under it is wet footing.
-            above = s;
+/// The surface of the ground in the column at (x, z) of a map, searching down from `from` for
+/// `depth` blocks: the top of a block that stops a foot with room above it.
+pub fn surface_in(
+    map: &CubeMap,
+    reg: &BlockRegistry,
+    x: f64,
+    z: f64,
+    from: i32,
+    depth: i32,
+) -> Option<Footing> {
+    let planet = map.planet();
+    let bx = planet.wrap_x(x.floor() as i32);
+    let bz = z.floor() as i32;
+    let mut above = map.block(BlockPos::new(bx, from + 1, bz))?;
+    for y in (from - depth..=from).rev() {
+        let s = map.block(BlockPos::new(bx, y, bz))?;
+        let shape = reg.collision_shape(s);
+        let open_above = reg.collision_shape(above).is_empty();
+        if !shape.is_empty() && open_above {
+            return Some(Footing {
+                y: y as f64 + shape.top(),
+                water: reg.fluid_amount(above) > 0,
+            });
         }
-        None
+        // Standing water: the ground under it is wet footing.
+        above = s;
+    }
+    None
+}
+
+impl MapGround<'_> {
+    fn surface(&self, x: f64, z: f64, from: i32, depth: i32) -> Option<Footing> {
+        surface_in(self.map, self.reg, x, z, from, depth)
+    }
+}
+
+/// The ground under an animal's feet in a map of blocks, for its pose: heights in its frame
+/// (it stands at `at`, facing `yaw`).
+pub struct CubeFooting<'a> {
+    pub map: &'a CubeMap,
+    pub reg: &'a BlockRegistry,
+    pub at: DVec3,
+    pub yaw: f32,
+}
+
+impl hearth_fauna::anim::Footing for CubeFooting<'_> {
+    fn ground(&self, p: glam::Vec3) -> Option<f32> {
+        let w = glam::Quat::from_rotation_y(self.yaw) * p;
+        let (x, z) = (self.at.x + w.x as f64, self.at.z + w.z as f64);
+        let from = (self.at.y + p.y as f64).floor() as i32 + 2;
+        surface_in(self.map, self.reg, x, z, from, 5).map(|f| (f.y - self.at.y) as f32)
     }
 }
 

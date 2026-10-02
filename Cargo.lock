@@ -1040,6 +1040,7 @@ dependencies = [
  "glam",
  "hearth_content",
  "hearth_math",
+ "hearth_texgen",
  "hearth_world",
  "hearth_worldgen",
  "rustc-hash 2.1.3",
@@ -1194,6 +1195,7 @@ dependencies = [
 name = "hearth_texgen"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "hearth_content",
  "hearth_math",
  "png",
