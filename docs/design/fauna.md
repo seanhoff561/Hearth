@@ -27,7 +27,9 @@ has no species of its own for the climate yet (a southern temperate forest, a Ne
 on wet ground none of its three trees likes), the species of a stand-in realm fill the place:
 the Palearctic's outside the tropics, the Afrotropical's in them. They are weighted down
 (×0.02 against the natives) so that they show only where no native suits, and they are never a
-mix of two realms. A species of neither the place's realm nor its stand-in does not grow there
+mix of two realms. The understory's plants, whose odds are absolute (a plant on a column or
+none), are the stand-in's in full where the place's own would cover less than half what they
+would (D115). A species of neither the place's realm nor its stand-in does not grow there
 (the Nearctic's sugar maple, white oak and paper birch only grow in the Nearctic).
 
 ## Species data (V2-7)
@@ -93,12 +95,20 @@ its climate, its cover, and the usable production of each kind of forage — gra
 fruit, seeds, invertebrates, fungi, nectar and the invertebrates of fresh water — from the Miami
 model of net primary production shared out by the vegetation (`expected_canopy`): grass where
 the canopy lets light through, browse where young trees grow back after a clearing or a fire,
-mast under nut trees old enough to bear (their species' yields), fruit at the edges. The amounts
+mast under nut trees old enough to bear and under conifers their cone crops (their species'
+yields), fruit at the edges; where the summers are cool, part of the open ground's growth is in
+dwarf shrubs, browse rather than grass (up to half on the low-arctic tundra, D108). The amounts
 are anchored to what the reference wood's community eats at its usual densities, so that food is
 just enough at what the habitat holds. Each kind has a season (grass and twigs standing through
 the winter thinner, nuts falling in autumn and lasting into spring, fruit in its weeks), snow
 buries what lies on the ground, every year has its weather (how well plants grew, how hard the
 winter was), and nut trees mast heavily one year in three over a wide area.
+
+How well a cell **suits** a species (its quality, against the reference wood, which sets the
+numbers it holds): for a plant-eater its plants, for a hunter its prey's numbers about the cell
+with its plants for their share of its food, less where it lacks the cover it keeps to, and for a
+cold-blooded animal of the land less again where few months are warm (a frog needs months above
+8 °C, a snake above 10 °C, a third of the year for full numbers, D109).
 
 Large animals live in **groups** that keep their members — young of the year, older young,
 females and males, a condition, a home and where they are today: a herd of red deer, a family of
@@ -107,9 +117,14 @@ voles, birds, frogs, fish, snakes, bee colonies) are **numbers per cell**: young
 a shared condition. A step of the simulation (an eleventh of a month by default):
 - **Hunting**: predators take prey by a functional response whose attack rate is calibrated so
   that each meets its need at its prey's usual numbers (a specialist — a snake — at a fifth of
-  them). It is of type III for generalists (they turn from a prey grown scarce to others), and
-  prey that keeps to cover is partly hidden. The weak and the young are taken first; fish take
-  frogs only as tadpoles. A large kill's remains are carrion.
+  them). It is of type III for generalists (they turn from a prey grown scarce to others, against
+  the prey's usual numbers there), and prey that keeps to cover is partly hidden. Where the land
+  holds fewer of a hunter's prey than the reference wood (the tundra, the taiga), the hunter
+  ranges the wider (its attack rate rises with the shortfall) while the land holds the fewer of
+  it, so that a wolf of the tundra meets its needs on reindeer as a wolf of the oak woods does on
+  deer, and there are fewer of it (D109). A hunter eats at most half as much again as its need
+  in its hungriest season (a snake its year's food in the warm months). The weak and the young
+  are taken first; fish take frogs only as tadpoles. A large kill's remains are carrion.
 - **Feeding**: everyone eats what the hunt did not give them from the forage and carrion in its
   range, shared out cell by cell when there is not enough. An omnivore short of meat eats more
   plants; a hunter can only partly (an owl in a vole-poor year lives on worms, thinly).
@@ -117,7 +132,10 @@ a shared condition. A step of the simulation (an eleventh of a month by default)
   starving on half); hibernators live on their fat; the cold-blooded burn little.
 - **Deaths** from what is not simulated (the species' background survival), from hunger, from
   winter, and from disease and stress where a kind crowds past what the land about it holds
-  (judged over its home range). The dead feed the scavengers.
+  (judged over its home range; a herd alone where the land holds less than one ordinary herd is
+  not crowded by itself, and lives or starves by its food). The dead feed the scavengers.
+- **Away**: migrants winter elsewhere — away, neither eating nor eaten, while their place lies
+  frozen hard (the month below −5 °C), coming back with the thaw (D110).
 - **Births** in the species' season, fewer from mothers in poor condition, and only to the
   holders of a territory where the species keeps one; the young grow up, fewer where the place
   is already full.
@@ -142,6 +160,8 @@ of at most a thirty-second of a year. Near the player the populations become ani
 - When all its animals are beyond 150 m a group **folds** back: the living into its numbers by
   age and sex, the dead (killed by the player, so far) not at all. Small animals go back to
   their cells the same way.
+- Animals asleep for the winter (a bear in its den) or away (a snow bunting in the south) are
+  not met about.
 
 What they do in the world is the plainest life for now: grazing and wandering about the group,
 resting through the hours their kind sleeps (diurnal, nocturnal, crepuscular or about the clock),

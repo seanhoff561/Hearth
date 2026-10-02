@@ -299,6 +299,10 @@ pub enum HeadGear {
         tines: u8,
         #[serde(default)]
         palmate: bool,
+        /// The females carry them too, smaller and a season later (reindeer: the cows keep
+        /// theirs through the winter and cast them after calving).
+        #[serde(default)]
+        both_sexes: bool,
     },
     /// Horns of keratin on a bony core, kept for life: their length along the curve (m) and
     /// how far they curve (0 straight, 1 a half circle).
@@ -307,6 +311,10 @@ pub enum HeadGear {
         curve: f32,
         #[serde(default)]
         both_sexes: bool,
+        /// They sweep down beside the face from a boss across the brow before curving out and
+        /// up at the tips (a musk ox's).
+        #[serde(default)]
+        droop: bool,
     },
     /// Tusks: the length showing (m), the males'.
     Tusks { length_m: f32 },

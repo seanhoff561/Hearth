@@ -22,5 +22,22 @@
   "porcini": {"template": "plant", "material": "hearth:porcini", "replaceable": false, "map_color": "#d8c8a0"},
   "field_mushroom": {"template": "plant", "material": "hearth:field_mushroom", "replaceable": false, "map_color": "#e8e0d8"},
   "death_cap": {"template": "plant", "material": "hearth:death_cap", "replaceable": false, "map_color": "#f2f2ea"},
-  "fly_agaric": {"template": "plant", "material": "hearth:fly_agaric", "replaceable": false, "map_color": "#f2eee6"}
+  "fly_agaric": {"template": "plant", "material": "hearth:fly_agaric", "replaceable": false, "map_color": "#f2eee6"},
+  "crowberry": {"template": "plant", "material": "hearth:crowberry", "map_color": "#34502c", "replaceable": false, "drag": 0.15},
+  "marsh_labrador_tea": {"template": "plant", "material": "hearth:labrador_tea_leaves", "map_color": "#3a5a2a", "replaceable": false, "drag": 0.3},
+  "labrador_tea": {"template": "plant", "material": "hearth:labrador_tea_leaves", "map_color": "#3e5c2c", "replaceable": false, "drag": 0.3},
+  "lowbush_blueberry": {"template": "plant", "material": "hearth:blueberry", "map_color": "#4a7a34", "replaceable": false, "drag": 0.15},
+  "cloudberry": {"template": "plant", "material": "hearth:cloudberry", "map_color": "#4e7a38", "replaceable": false},
+  "bunchberry": {"template": "plant", "material": "hearth:bunchberry", "map_color": "#4a7a3a", "replaceable": false},
+  "feather_moss": {"template": "carpet", "material": "hearth:feather_moss", "map_color": "#6a8a3a", "sound": "moss", "flammable": true},
+  "sphagnum_moss": {"template": "carpet", "material": "hearth:sphagnum", "map_color": "#9aaa4a", "sound": "moss", "flammable": true},
+  "reindeer_lichen": {"template": "carpet", "material": "hearth:reindeer_lichen", "map_color": "#c9cbb2", "sound": "grass", "flammable": true},
+  "dwarf_birch": {"template": "plant", "material": "hearth:birch_wood", "map_color": "#5a7a34", "replaceable": false, "drag": 0.3},
+  "arctic_willow": {"template": "plant", "material": "hearth:arctic_willow_leaves", "map_color": "#6a8a4a", "replaceable": false, "drag": 0.1},
+  "cottongrass": {"template": "plant", "material": "hearth:cottongrass_down", "map_color": "#7a8a44", "replaceable": false, "drag": 0.2},
+  "water_sedge": {"template": "plant", "material": "hearth:sedge", "map_color": "#6a7a3a", "replaceable": false, "drag": 0.25},
+  "mountain_avens": {"template": "plant", "material": "hearth:heather", "map_color": "#4a6a3a", "replaceable": false},
+  "bearberry": {"template": "plant", "material": "hearth:bearberry", "map_color": "#3a5a2e", "replaceable": false},
+  "purple_saxifrage": {"template": "plant", "material": "hearth:saxifrage_flowers", "map_color": "#4a5a3a", "replaceable": false},
+  "arctic_poppy": {"template": "plant", "material": "hearth:dry_grass", "map_color": "#6a7a4a", "replaceable": false}
 }

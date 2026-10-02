@@ -179,6 +179,10 @@ pub enum Sprite {
     Clump,
     /// Low runners with leaves and fruit (strawberry).
     Creeper,
+    /// Grassy leaves in a tuft, its flowers or seed heads on stalks above (sedges, cottongrass).
+    Tuft,
+    /// A mat over the ground, seen from above (mosses, lichens): its block is a carpet.
+    Carpet,
 }
 
 /// Ground the understory's plants need.

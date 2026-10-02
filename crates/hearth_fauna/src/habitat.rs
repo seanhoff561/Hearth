@@ -116,6 +116,16 @@ impl Habitat {
         self.temp_c + amp * (std::f32::consts::TAU * (f - 0.07)).sin()
     }
 
+    /// The share of the year whose months are warmer than `t` °C.
+    pub fn share_above(&self, t: f32) -> f32 {
+        let amp = self.warm_c - self.temp_c;
+        if amp <= 1e-3 {
+            return if self.temp_c > t { 1.0 } else { 0.0 };
+        }
+        let x = ((t - self.temp_c) / amp).clamp(-1.0, 1.0);
+        0.5 - x.asin() / std::f32::consts::PI
+    }
+
     /// How fast plants grow at year fraction `f`, 0–1.
     pub fn growth_at(&self, f: f32) -> f32 {
         ((self.temp_at(f) - 4.0) / 12.0).clamp(0.0, 1.0)
@@ -233,7 +243,8 @@ impl TreeYields {
                 // The lower end of the yield in an ordinary year, half of it dry matter.
                 let y = part.yield_kg.map_or(0.0, |(lo, hi)| lo + 0.25 * (hi - lo)) * 0.5;
                 match part.part {
-                    PartKind::Nut => out.mast[i] += y,
+                    // Nuts, and the seed crops of the conifers' cones.
+                    PartKind::Nut | PartKind::Seed => out.mast[i] += y,
                     PartKind::Fruit => out.fruit[i] += y,
                     PartKind::Flower | PartKind::Sap => out.nectar[i] = true,
                     _ => {}
@@ -276,6 +287,17 @@ const NECTAR: f32 = 6_000.0;
 const AQUATIC: f32 = 250_000.0;
 /// A mature canopy tree's crown, m².
 const CROWN_M2: f32 = 110.0;
+/// The share of a dwarf shrub's growth (leaves, buds, catkins, shoot tips) that is usable
+/// browse, against a grass's.
+const HEATH_USE: f32 = 0.6;
+
+/// The share of open ground's growth in dwarf shrubs where the warmest month is `warm_c` (°C):
+/// none in the temperate lowlands, rising through the boreal bogs and burns to half on the
+/// low-arctic tundra (dwarf birch, willows, heaths), falling again to the cushions and mosses
+/// of the polar desert.
+pub fn dwarf_shrubs(warm_c: f32) -> f32 {
+    0.5 * smooth(warm_c, 1.0, 5.0) * (1.0 - smooth(warm_c, 11.0, 16.0))
+}
 
 impl GenLand<'_> {
     /// One column's contribution: (land, fresh, sea, forage per km², cover, ecosystems).
@@ -343,11 +365,13 @@ impl GenLand<'_> {
         let light = (1.0 - canopy).clamp(0.0, 1.0);
         let edge = 4.0 * canopy * light;
         let wet = (s.precipitation / (s.precipitation + 400.0)).clamp(0.0, 1.0);
+        let heath = dwarf_shrubs(s.t_warm);
+        let open = GRAZE_OPEN * n * light * light * 0.95;
         let f = &mut col.forage;
-        f[Forage::Graze as usize] = GRAZE_OPEN * n * (light * light * 0.95 + 0.05);
-        let _ = Forage::Aquatic;
+        f[Forage::Graze as usize] = open * (1.0 - heath) + GRAZE_OPEN * n * 0.05;
         f[Forage::Browse as usize] = n
-            * (BROWSE_OLD * (0.3 + canopy) + BROWSE_YOUNG * young + 0.1 * GRAZE_OPEN * edge * 0.1);
+            * (BROWSE_OLD * (0.3 + canopy) + BROWSE_YOUNG * young + 0.1 * GRAZE_OPEN * edge * 0.1)
+            + open * heath * HEATH_USE;
         f[Forage::Mast as usize] = mast * 0.5;
         f[Forage::Fruit as usize] =
             FRUIT_EDGE * n * (edge * 0.8 + young * 0.6 + 0.1) + fruit_tree * 0.4;

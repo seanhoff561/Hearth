@@ -132,6 +132,8 @@ pub struct Species {
     pub carrion: f32,
     pub life: Life,
     pub hibernates: bool,
+    /// Winters elsewhere: away while its place lies frozen hard.
+    pub migrates: bool,
     /// Cold-blooded: eats with the warmth (fish, frogs, snakes, insects).
     pub ectotherm: bool,
     pub activity: Activity,
@@ -553,6 +555,10 @@ fn species_of(
         carrion,
         life,
         hibernates,
+        migrates: a
+            .seasonal
+            .iter()
+            .any(|s| matches!(s, SeasonalBehavior::Migration { .. })),
         ectotherm: matches!(
             a.body_plan,
             BodyPlan::FishFusiform

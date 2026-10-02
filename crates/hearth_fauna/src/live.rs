@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::anim::scale_of;
 use crate::danger::{Attack, Cause, Hostile, Kill, blow, closes, faced_down, lean, provoked};
-use crate::ecology::{Ecology, REGION_LEN, dist};
+use crate::ecology::{Ecology, REGION_LEN, about, dist};
 use crate::habitat::CELL_M;
 use crate::mind::{Air, Presence, Sense, Wary, sense, yaw_toward};
 use crate::nav::{FISH_DEPTH, Flight, Walker, find_way, perch_near, trunk_near, water_near};
@@ -536,11 +536,22 @@ impl Live {
         let at = [player.x, player.z];
         let mut keys: Vec<(i64, i64)> = eco.regions.keys().copied().collect();
         keys.sort_unstable();
+        let (cells_around, year_offset) = (eco.cells_around, eco.year_offset);
         for key in keys {
             let r = eco.regions.get_mut(&key).expect("region");
+            // Asleep in their dens or wintering elsewhere: not met about.
+            let f = (r.time + year_offset).rem_euclid(1.0) as f32;
+            let gone: Vec<bool> = r
+                .groups
+                .iter()
+                .map(|g| {
+                    r.cell_at(cells_around, g.pos[0], g.pos[1])
+                        .is_some_and(|c| !about(&cat.species[g.species as usize], &r.habitat[c], f))
+                })
+                .collect();
             // The groups.
-            for g in r.groups.iter_mut() {
-                if g.live || dist(g.pos, at, wrap) > NEAR_M || g.size() == 0 {
+            for (gi, g) in r.groups.iter_mut().enumerate() {
+                if g.live || gone[gi] || dist(g.pos, at, wrap) > NEAR_M || g.size() == 0 {
                     continue;
                 }
                 let sp = &cat.species[g.species as usize];
@@ -628,7 +639,9 @@ impl Live {
                 let mover = mover_of(sp);
                 for c in 0..REGION_LEN {
                     let centre = r.cell_centre(c);
-                    if dist(centre, at, wrap) > SMALL_NEAR_M + CELL_M * 0.71 {
+                    if dist(centre, at, wrap) > SMALL_NEAR_M + CELL_M * 0.71
+                        || !about(sp, &r.habitat[c], f)
+                    {
                         continue;
                     }
                     // The share of the cell within reach (a lattice of its points).

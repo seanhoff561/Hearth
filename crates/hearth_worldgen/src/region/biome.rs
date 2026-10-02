@@ -99,6 +99,12 @@ impl Biome {
         Biome::Mangrove,
     ];
 
+    /// The biome of a name (`tundra`, or `hearth:tundra`).
+    pub fn from_name(name: &str) -> Option<Biome> {
+        let name = name.rsplit(':').next().unwrap_or(name);
+        Self::ALL.iter().copied().find(|b| b.name() == name)
+    }
+
     pub fn from_u8(v: u8) -> Biome {
         Self::ALL
             .get(v as usize)

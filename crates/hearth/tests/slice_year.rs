@@ -221,20 +221,7 @@ fn shelter(bot: &mut Bot, log: &mut Log) -> bool {
 
 /// A hide cape of two scraped hides tied with cord, put on.
 fn cape(bot: &mut Bot, log: &mut Log) {
-    for _ in 0..8 {
-        if bot.count("hide_cape/") > 0 || bot.count("sheet/scraped_hide") >= 2 {
-            break;
-        }
-        if bot.count("sheet/rawhide") == 0 {
-            bot.butcher_one();
-        }
-        bot.work("scrape_hide", AimAt::Nothing);
-    }
-    if bot.count("cord/") == 0 {
-        bot.work("twist_sinew", AimAt::Nothing);
-    }
-    let made = bot.count("hide_cape/") > 0 || bot.work("make_hide_cape", AimAt::Nothing);
-    let worn = made && bot.put_on("hide_cape");
+    let (made, worn) = bot::goals_cape(bot);
     log.line(bot, &format!("a hide cape: made {made}, worn {worn}"));
 }
 

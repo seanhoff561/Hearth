@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 
-use hearth_content::schema::fauna::{Dispersers, Social};
+use hearth_content::schema::fauna::{BodyPlan, Dispersers, Social};
 use hearth_math::hash::{Rng, derive_seed, hash2};
 use hearth_worldgen::realms::{Realm, native, stand_in};
 use rustc_hash::FxHashMap;
@@ -207,6 +207,14 @@ pub struct Region {
     /// Per species and block of 8 × 8 cells (2 km): the same, to judge crowding by.
     #[serde(skip)]
     pub block_capacity: Vec<f32>,
+    /// Per species and cell (species-major): how well the cell feeds the species against the
+    /// reference wood, 0 where it cannot live ([`Ecology::qualities`]).
+    #[serde(skip)]
+    pub quality: Vec<f32>,
+    /// Per species and block: how rich the land about is in a hunter's prey against the
+    /// reference wood (1 for the rest).
+    #[serde(skip)]
+    pub prey: Vec<f32>,
 }
 
 /// Cells on a side of a block (crowding is judged over the blocks about a group).
@@ -305,6 +313,27 @@ fn smoothstep(a: f32, b: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// A cold-blooded animal's need in the warmest weeks against its yearly need.
+const ECTOTHERM_PEAK: f32 = 1.6;
+/// The month's mean temperature below which a migrant is away, °C.
+const AWAY_BELOW_C: f32 = -5.0;
+
+/// Asleep in its den for the winter at year fraction `f`: a hibernator while the month is cold.
+pub fn asleep(sp: &Species, h: &Habitat, f: f32) -> bool {
+    sp.hibernates && h.temp_at(f) < 3.0
+}
+
+/// Wintering elsewhere at year fraction `f`: a migrant while its place lies frozen hard. It is
+/// fed where it is and comes back with the thaw; nothing here eats or meets it meanwhile.
+pub fn away(sp: &Species, h: &Habitat, f: f32) -> bool {
+    sp.migrates && h.temp_at(f) < AWAY_BELOW_C
+}
+
+/// About in its place at year fraction `f` (neither asleep nor away).
+pub fn about(sp: &Species, h: &Habitat, f: f32) -> bool {
+    !asleep(sp, h, f) && !away(sp, h, f)
+}
+
 /// The share of breeding females that carry young to term, from their condition.
 fn fecundity(c: f32) -> f32 {
     smoothstep(0.2, 0.6, c)
@@ -336,7 +365,7 @@ fn starving(c: f32) -> f32 {
 /// active, a slower metabolism) and more in deep snow; the cold-blooded eat with the warmth.
 fn seasonal_need(sp: &Species, h: &Habitat, f: f32, snow: f32) -> f32 {
     if sp.ectotherm {
-        1.6 * ((h.temp_at(f) - 4.0) / 12.0).clamp(0.0, 1.0)
+        ECTOTHERM_PEAK * ((h.temp_at(f) - 4.0) / 12.0).clamp(0.0, 1.0)
     } else {
         (0.75 + 0.25 * h.growth_at(f)) * (1.0 + 0.25 * snow)
     }
@@ -606,39 +635,132 @@ impl Ecology {
         }
     }
 
-    /// How well a cell feeds a species, against the reference wood (about 1 in good habitat),
-    /// less where it lacks the cover the species keeps to.
-    pub fn quality(&self, sp: &Species, h: &Habitat) -> f32 {
+    /// How much of a species' worth a cell keeps for lack of the cover it keeps to, and, for a
+    /// cold-blooded animal of the land, for want of warm weeks: a frog feeds, grows and breeds
+    /// in the months above 8 °C, a snake or a lizard in those above 10 °C; where they are
+    /// fewer than a third of the year (the far north, the mountains) it holds on in fewer
+    /// numbers, and where they are a tenth or less, not at all (the adder's northern limit is
+    /// a July of about 13 °C, the common frog's the tundra's edge).
+    fn cover_factor(sp: &Species, h: &Habitat) -> f32 {
         let cover = 1.0 - (1.0 - h.cover).max(0.0) * sp.cover * 0.5;
-        if !sp.forages() {
+        if !sp.ectotherm || sp.aquatic {
             return cover;
+        }
+        let (above, full) = match sp.plan {
+            BodyPlan::Snake | BodyPlan::Lizard | BodyPlan::Turtle | BodyPlan::Crocodilian => {
+                (10.0, 0.3)
+            }
+            _ => (8.0, 0.35),
+        };
+        let t = ((h.share_above(above) - 0.1) / (full - 0.1)).clamp(0.0, 1.0);
+        cover * t * t * (3.0 - 2.0 * t)
+    }
+
+    /// How well a cell's plants (and worms, grubs and fungi) feed a species against the
+    /// reference wood, if it eats them.
+    fn fare(&self, sp: &Species, h: &Habitat) -> Option<f32> {
+        if !sp.forages() {
+            return None;
         }
         let (mut num, mut den) = (0.0, 0.0);
         for k in 0..FORAGE_KINDS {
             num += sp.forage[k] * h.forage[k];
             den += sp.forage[k] * self.reference.forage[k];
         }
-        if den <= 0.0 {
-            cover
-        } else {
-            (num / den).clamp(0.0, 3.0) * cover
-        }
+        (den > 0.0).then(|| (num / den).clamp(0.0, 3.0))
     }
 
-    /// The animals of a species a cell holds at its usual density.
-    fn capacity_of(&self, sp: &Species, h: &Habitat) -> f32 {
-        sp.density * Self::area(sp, h) * self.quality(sp, h)
+    /// How well a cell feeds a plant-eater against the reference wood (about 1 in good
+    /// habitat), less where it lacks the cover the species keeps to. A hunter's is reckoned
+    /// with its prey, a region at a time ([`Self::qualities`]).
+    pub fn quality(&self, sp: &Species, h: &Habitat) -> f32 {
+        self.fare(sp, h).unwrap_or(1.0) * Self::cover_factor(sp, h)
+    }
+
+    /// Per species and cell of a region's habitat (species-major): how well the cell feeds the
+    /// species against the reference wood, 0 where it cannot live; and per species and block,
+    /// how rich the land about is in a hunter's prey (1 for the rest). A plant-eater's quality
+    /// is its plants' ([`Self::quality`]). A hunter's is its prey's: the meat its prey of the
+    /// realm offer about the cell (their usual numbers there, block by block, by preference)
+    /// against what they offer in the reference wood (a wolf of the tundra has a few reindeer
+    /// and musk oxen where a wolf of the oak woods has deer and boar by the dozen), with its
+    /// plants for their share of its food (a fox's berries do not make the berryless tundra a
+    /// desert to it).
+    pub fn qualities(&self, habitat: &[Habitat]) -> (Vec<f32>, Vec<f32>) {
+        let cat = &self.catalog;
+        let n = cat.len();
+        let nb = (BLOCKS * BLOCKS) as usize;
+        let mut q = vec![0.0f32; n * REGION_LEN];
+        for sp in &cat.species {
+            for (c, h) in habitat.iter().enumerate() {
+                if self.suits(sp, h) {
+                    q[sp.index * REGION_LEN + c] = self.quality(sp, h);
+                }
+            }
+        }
+        // Each species' worth over a block (as its hunters range over it).
+        let mut block = vec![0.0f32; n * nb];
+        for s in 0..n {
+            for c in 0..REGION_LEN {
+                block[s * nb + block_of(c)] += q[s * REGION_LEN + c] / (BLOCK * BLOCK) as f32;
+            }
+        }
+        let mut prey = vec![1.0f32; n * nb];
+        for sp in cat.species.iter().filter(|s| s.hunts()) {
+            let share = sp.forage_share();
+            for (c, h) in habitat.iter().enumerate() {
+                let b = block_of(c);
+                let (mut here, mut usual) = (0.0f32, 0.0f32);
+                for &(pj, pref) in &sp.prey {
+                    let p = &cat.species[pj];
+                    if !native(p.realms, h.fauna()) {
+                        continue;
+                    }
+                    let meat = pref * usual_density(p) * edible(p);
+                    usual += meat;
+                    here += meat * block[pj * nb + b];
+                }
+                let rich = if usual > 0.0 { here / usual } else { 0.0 };
+                prey[sp.index * nb + b] = rich;
+                if self.suits(sp, h) {
+                    let plants = self.fare(sp, h).unwrap_or(rich);
+                    q[sp.index * REGION_LEN + c] =
+                        ((1.0 - share) * rich + share * plants) * Self::cover_factor(sp, h);
+                }
+            }
+        }
+        (q, prey)
+    }
+
+    /// The animals of a species a cell of a region holds at its usual density.
+    fn capacity_in(r: &Region, sp: &Species, c: usize) -> f32 {
+        sp.density * Self::area(sp, &r.habitat[c]) * r.quality[sp.index * REGION_LEN + c]
+    }
+
+    /// How well a cell of a region feeds a species against the reference wood.
+    pub fn quality_in(r: &Region, species: usize, c: usize) -> f32 {
+        r.quality[species * REGION_LEN + c]
+    }
+
+    /// How rich the land about a cell of a region is in a hunter's prey against the reference
+    /// wood, for the hunt: a hunter ranges the wider (its attack rate rises) as its prey are
+    /// the fewer, so that it meets its needs at its prey's usual numbers there, while the land
+    /// holds the fewer of it ([`Self::qualities`]) — within a tenth and three times.
+    fn prey_in(r: &Region, species: usize, c: usize) -> f32 {
+        let nb = (BLOCKS * BLOCKS) as usize;
+        r.prey[species * nb + block_of(c)].clamp(0.1, 3.0)
     }
 
     /// The animals of each species the region's habitat holds at the species' density.
     pub fn compute_capacity(&self, r: &mut Region) {
+        let (quality, prey) = self.qualities(&r.habitat);
+        r.quality = quality;
+        r.prey = prey;
         let nb = (BLOCKS * BLOCKS) as usize;
         r.block_capacity = vec![0.0; self.catalog.len() * nb];
         for sp in &self.catalog.species {
-            for (c, h) in r.habitat.iter().enumerate() {
-                if self.suits(sp, h) {
-                    r.block_capacity[sp.index * nb + block_of(c)] += self.capacity_of(sp, h);
-                }
+            for c in 0..REGION_LEN {
+                r.block_capacity[sp.index * nb + block_of(c)] += Self::capacity_in(r, sp, c);
             }
         }
         r.capacity = (0..self.catalog.len())
@@ -740,31 +862,24 @@ impl Ecology {
             .map(|s| s.index as u16)
             .collect();
         let n = pool_species.len() * REGION_LEN;
+        let (quality, prey) = self.qualities(&habitat);
+        let capacity_of = |sp: &Species, c: usize| {
+            sp.density * Self::area(sp, &habitat[c]) * quality[sp.index * REGION_LEN + c]
+        };
         let (mut young, mut adults) = (vec![0.0; n], vec![0.0; n]);
         for (slot, &si) in pool_species.iter().enumerate() {
             let sp = &cat.species[si as usize];
-            for (c, h) in habitat.iter().enumerate() {
-                if self.suits(sp, h) {
-                    let k = self.capacity_of(sp, h);
-                    adults[slot * REGION_LEN + c] = 0.7 * k;
-                    young[slot * REGION_LEN + c] = 0.3 * k;
-                }
+            for c in 0..REGION_LEN {
+                let k = capacity_of(sp, c);
+                adults[slot * REGION_LEN + c] = 0.7 * k;
+                young[slot * REGION_LEN + c] = 0.3 * k;
             }
         }
         // The large species as groups, placed in suitable cells by quality.
         let mut groups = Vec::new();
         let wrap = self.wrap_m();
         for sp in cat.species.iter().filter(|s| s.grouped()) {
-            let weights: Vec<f32> = habitat
-                .iter()
-                .map(|h| {
-                    if self.suits(sp, h) {
-                        self.capacity_of(sp, h)
-                    } else {
-                        0.0
-                    }
-                })
-                .collect();
+            let weights: Vec<f32> = (0..REGION_LEN).map(|c| capacity_of(sp, c)).collect();
             let total: f32 = weights.iter().sum();
             if total <= 0.0 {
                 continue;
@@ -821,6 +936,8 @@ impl Ecology {
             winter: 1.0,
             capacity: Vec::new(),
             block_capacity: Vec::new(),
+            quality,
+            prey,
         };
         self.compute_capacity(&mut region);
         // Three years at monthly steps settle the structure and the numbers.
@@ -909,25 +1026,12 @@ impl Ecology {
                 let sp = &cat.species[si as usize];
                 let rate = ((sp.dispersal_km / 0.256).clamp(0.5, 20.0) * 0.5 * dtf).min(0.4) * 0.15;
                 for &c in &cells {
-                    let h = &r.habitat[c];
-                    if self.suits(sp, h) {
-                        r.adults[slot * REGION_LEN + c] += self.capacity_of(sp, h) * rate;
-                    }
+                    r.adults[slot * REGION_LEN + c] += Self::capacity_in(r, sp, c) * rate;
                 }
             }
             // The large species: dispersers crossing the edge, by the density beyond.
             for sp in cat.species.iter().filter(|s| s.grouped()) {
-                let k: f32 = cells
-                    .iter()
-                    .map(|&c| {
-                        let h = &r.habitat[c];
-                        if self.suits(sp, h) {
-                            self.capacity_of(sp, h)
-                        } else {
-                            0.0
-                        }
-                    })
-                    .sum();
+                let k: f32 = cells.iter().map(|&c| Self::capacity_in(r, sp, c)).sum();
                 if k <= 0.0 {
                     continue;
                 }
@@ -1123,7 +1227,7 @@ impl Ecology {
                     return 0.0;
                 };
                 let h = &r.habitat[c];
-                if g.live || (sp.hibernates && h.temp_at(fmid) < 3.0) {
+                if g.live || !about(sp, h, fmid) {
                     return 0.0;
                 }
                 g.mouths() * sp.need_kg * 365.0 * dtf * seasonal_need(sp, h, fmid, snow[c])
@@ -1136,7 +1240,7 @@ impl Ecology {
             for (c, (h, &sn)) in r.habitat.iter().zip(snow).enumerate() {
                 let i = slot * REGION_LEN + c;
                 let n = r.adults[i] + yw * r.young[i];
-                if n <= 1e-7 || (sp.hibernates && h.temp_at(fmid) < 3.0) {
+                if n <= 1e-7 || !about(sp, h, fmid) {
                     continue;
                 }
                 pools[i] = n * sp.need_kg * 365.0 * dtf * seasonal_need(sp, h, fmid, sn);
@@ -1161,9 +1265,13 @@ impl Ecology {
             .enumerate()
             .map(|(k, s)| (*s, k))
             .collect();
+        let fmid = ((r.time + 0.5 * dt + self.year_offset).rem_euclid(1.0)) as f32;
         let mut by_species: FxHashMap<u16, Vec<usize>> = FxHashMap::default();
         for (gi, g) in r.groups.iter().enumerate() {
-            if !g.live && g.size() > 0 {
+            let here = r
+                .cell_at(self.cells_around, g.pos[0], g.pos[1])
+                .is_none_or(|c| !away(&cat.species[g.species as usize], &r.habitat[c], fmid));
+            if !g.live && g.size() > 0 && here {
                 by_species.entry(g.species).or_default().push(gi);
             }
         }
@@ -1186,12 +1294,18 @@ impl Ecology {
             let mut seen: Vec<(usize, f32, f32)> = Vec::new();
             for &(pj, pref) in &sp.prey {
                 let prey = &cat.species[pj];
-                let reach_km2 = cells
-                    .iter()
-                    .filter(|&&c| self.suits(prey, &r.habitat[c]))
-                    .map(|&c| Self::area(prey, &r.habitat[c]))
-                    .sum::<f32>()
-                    .max(CELL_KM2 * 0.01);
+                // Where it can live in reach, and its usual numbers there.
+                let (mut reach_km2, mut worth) = (0.0f32, 0.0f32);
+                for &c in &cells {
+                    let h = &r.habitat[c];
+                    if self.suits(prey, h) {
+                        let a = Self::area(prey, h);
+                        reach_km2 += a;
+                        worth += a * Self::quality_in(r, pj, c);
+                    }
+                }
+                let usual = usual_density(prey) * worth / reach_km2.max(1e-9);
+                let reach_km2 = reach_km2.max(CELL_KM2 * 0.01);
                 let mut n = 0.0f32;
                 if let Some(list) = by_species.get(&(pj as u16)) {
                     for &gj in list {
@@ -1204,26 +1318,29 @@ impl Ecology {
                 if let Some(&slot) = slot_of.get(&(pj as u16)) {
                     let (wa, wy) = stage_weights(sp, prey);
                     for &c in &cells {
+                        if away(prey, &r.habitat[c], fmid) {
+                            continue;
+                        }
                         let i = slot * REGION_LEN + c;
                         let hide = 1.0 - 0.5 * r.habitat[c].cover * prey.cover;
                         n += (wa * r.adults[i] + wy * r.young[i]) * hide;
                     }
                 }
-                let d = noticed(sp, n / reach_km2, usual_density(prey));
+                let d = noticed(sp, n / reach_km2, usual);
                 if d > 0.0 {
                     seen.push((pj, pref, d));
                 }
             }
-            let realm = r
-                .cell_at(self.cells_around, pos[0], pos[1])
-                .map_or(0, |c| r.habitat[c].fauna as usize & 7);
-            // As it hunts in its own realm (a home on the border of another is still its own).
+            let home = r.cell_at(self.cells_around, pos[0], pos[1]);
+            let realm = home.map_or(0, |c| r.habitat[c].fauna as usize & 7);
+            // As it hunts in its own realm (a home on the border of another is still its own),
+            // ranging the wider as its prey are the fewer.
             let alpha = match self.attack[sp.index][realm] {
                 a if a > 0.0 => a,
                 _ => self.attack[sp.index].iter().copied().fold(0.0, f32::max),
-            };
-            let per_year = sp.need_kg * 365.0 * (1.0 - sp.forage_share());
-            let handling = |pj: usize| edible(&cat.species[pj]) / (per_year * 1.5).max(1e-6);
+            } / home.map_or(1.0, |c| Self::prey_in(r, sp.index, c));
+            let most = most_eaten(sp);
+            let handling = |pj: usize| edible(&cat.species[pj]) / most;
             let denom = 1.0
                 + seen
                     .iter()
@@ -1274,7 +1391,12 @@ impl Ecology {
                     // as grown ones: a tadpole is a mouthful of a frog).
                     let kills = (rate * dtf).min((want - eaten) / e.max(1e-9));
                     let (wa, wy) = stage_weights(sp, prey);
-                    let total: f32 = cells
+                    let here: Vec<usize> = cells
+                        .iter()
+                        .copied()
+                        .filter(|&c| !away(prey, &r.habitat[c], fmid))
+                        .collect();
+                    let total: f32 = here
                         .iter()
                         .map(|&c| {
                             let i = slot * REGION_LEN + c;
@@ -1287,7 +1409,7 @@ impl Ecology {
                     // Each stage is taken as it is offered; a young one is part of a meal.
                     let frac = (kills / total).min(0.5);
                     let mut taken = 0.0f32;
-                    for &c in &cells {
+                    for &c in &here {
                         let i = slot * REGION_LEN + c;
                         taken += take_stages(&mut r.adults[i], &mut r.young[i], frac, wa, wy);
                     }
@@ -1310,11 +1432,12 @@ impl Ecology {
             if !sp.hunts() {
                 continue;
             }
-            let per_year = sp.need_kg * 365.0 * (1.0 - sp.forage_share());
-            let handling = |pj: usize| edible(&cat.species[pj]) / (per_year * 1.5).max(1e-6);
+            let most = most_eaten(sp);
+            let handling = |pj: usize| edible(&cat.species[pj]) / most;
             for c in 0..REGION_LEN {
                 let i = slot * REGION_LEN + c;
-                let alpha = self.attack[sp.index][r.habitat[c].fauna as usize & 7];
+                let alpha = self.attack[sp.index][r.habitat[c].fauna as usize & 7]
+                    / Self::prey_in(r, sp.index, c);
                 let want = needs.pools[i] * (1.0 - sp.forage_share());
                 if want <= 0.0 {
                     continue;
@@ -1322,14 +1445,17 @@ impl Ecology {
                 let preds = r.adults[i] + sp.young_appetite() * r.young[i];
                 let mut seen: Vec<(usize, usize, f32, f32)> = Vec::new();
                 for &(pj, pref) in &sp.prey {
-                    if let Some(&ps) = slot_of.get(&(pj as u16)) {
+                    if let Some(&ps) = slot_of.get(&(pj as u16))
+                        && !away(&cat.species[pj], &r.habitat[c], fmid)
+                    {
                         let j = ps * REGION_LEN + c;
                         let prey = &cat.species[pj];
                         let hide = 1.0 - 0.5 * r.habitat[c].cover * prey.cover;
                         let (wa, wy) = stage_weights(sp, prey);
                         let n = (wa * r.adults[j] + wy * r.young[j]) * hide;
                         let area = Self::area(prey, &r.habitat[c]).max(1e-4);
-                        let d = noticed(sp, n / area, usual_density(prey));
+                        let usual = usual_density(prey) * Self::quality_in(r, pj, c);
+                        let d = noticed(sp, n / area, usual);
                         if d > 0.0 {
                             seen.push((pj, j, pref, d));
                         }
@@ -1362,6 +1488,9 @@ impl Ecology {
                     }
                 }
                 out.pools[i] = eaten;
+                let t = self.fed.entry(1000 + sp.index as u16).or_default();
+                t.0 += (eaten / want).min(1.0) as f64;
+                t.1 += 1.0;
             }
         }
         out
@@ -1540,7 +1669,9 @@ impl Ecology {
         let dtf = dt as f32;
         let wrap = self.wrap_m();
         // Crowding of each group's kind past what the land about it holds: its block of 2 km
-        // and those about it, out to its home range.
+        // and those about it, out to its home range. Where the land holds fewer than one
+        // ordinary group, a group of that size is not crowded by its own numbers: it lives or
+        // starves by its food.
         let nb = (BLOCKS * BLOCKS) as usize;
         let mut counts = vec![0.0f32; cat.len() * nb];
         let block_at =
@@ -1565,7 +1696,8 @@ impl Ecology {
                     }
                 }
             }
-            CROWDING * (n / k.max(1e-6) - 1.0).max(0.0)
+            let (lo, hi) = cat.species[species].group;
+            CROWDING * (n / k.max(0.5 * (lo + hi) as f32).max(1e-6) - 1.0).max(0.0)
         };
         let crowds: Vec<f32> = r
             .groups
@@ -1581,7 +1713,8 @@ impl Ecology {
             let sp = &cat.species[r.groups[gi].species as usize];
             let c0 = r.cell_at(self.cells_around, r.groups[gi].pos[0], r.groups[gi].pos[1]);
             let h = c0.map(|c| r.habitat[c]).unwrap_or_default();
-            let sleeping = sp.hibernates && h.temp_at(fmid) < 3.0;
+            let sleeping = asleep(sp, &h, fmid);
+            let gone = away(sp, &h, fmid);
             let ratio = if needs.groups[gi] > 0.0 {
                 ate.groups[gi] / needs.groups[gi]
             } else {
@@ -1590,7 +1723,7 @@ impl Ecology {
             let g = &mut r.groups[gi];
             g.condition = update_condition(g.condition, ratio, sleeping, sp.ectotherm, dtf);
             let c = g.condition;
-            let winter = if sleeping {
+            let winter = if sleeping || gone {
                 0.0
             } else {
                 0.6 * c0.map_or(0.0, |c| snow[c]) * smoothstep(0.6, 0.1, c)
@@ -1798,17 +1931,7 @@ impl Ecology {
         let local = |r: &Region, cells: &mut Vec<usize>, sp: &Species, p: [f64; 2]| {
             let rad = sp.range_radius_m();
             r.cells_within(self.cells_around, p, rad, cells);
-            let cap: f32 = cells
-                .iter()
-                .map(|&c| {
-                    let h = &r.habitat[c];
-                    if self.suits(sp, h) {
-                        self.capacity_of(sp, h)
-                    } else {
-                        0.0
-                    }
-                })
-                .sum();
+            let cap: f32 = cells.iter().map(|&c| Self::capacity_in(r, sp, c)).sum();
             let n: u32 = r
                 .groups
                 .iter()
@@ -1909,8 +2032,7 @@ impl Ecology {
                 }
                 continue;
             };
-            let h = &r.habitat[c];
-            if !self.suits(sp, h) || self.quality(sp, h) < 0.2 {
+            if !self.suits(sp, &r.habitat[c]) || Self::quality_in(r, sp.index, c) < 0.2 {
                 continue;
             }
             if sp.territorial
@@ -2005,7 +2127,8 @@ impl Ecology {
                     continue;
                 }
                 let h = &r.habitat[c];
-                let sleeping = sp.hibernates && h.temp_at(fmid) < 3.0;
+                let sleeping = asleep(sp, h, fmid);
+                let gone = away(sp, h, fmid);
                 let fed = if needs.pools[i] > 0.0 {
                     ate.pools[i] / needs.pools[i]
                 } else {
@@ -2013,7 +2136,7 @@ impl Ecology {
                 };
                 let cnd = update_condition(r.cond[i], fed, sleeping, sp.ectotherm, dtf);
                 r.cond[i] = cnd;
-                let winter = if sleeping {
+                let winter = if sleeping || gone {
                     0.0
                 } else {
                     0.8 * sn * smoothstep(0.6, 0.1, cnd)
@@ -2021,12 +2144,13 @@ impl Ecology {
                 let slow = if sleeping { 0.5 } else { 1.0 };
                 // Crowding: the adults against what the place holds, the young (eggs, larvae,
                 // the year's litters) among themselves, by what they eat.
-                let k_cap = self.capacity_of(sp, h).max(1e-6);
+                let q = Self::quality_in(r, sp.index, c);
+                let k_cap = (sp.density * Self::area(sp, h) * q).max(1e-6);
                 let crowd = CROWDING * (a / k_cap - 1.0).max(0.0);
                 let crowd_y =
                     CROWDING * ((a + y * sp.young_appetite()) / k_cap - 1.0).max(0.0) * 2.0;
                 let holders = if sp.territorial {
-                    2.0 * Self::area(sp, h) * self.quality(sp, h) / sp.home_range_km2
+                    2.0 * Self::area(sp, h) * q / sp.home_range_km2
                 } else {
                     f32::INFINITY
                 };
@@ -2109,7 +2233,7 @@ impl Ecology {
                     let n = (nj * REGION_CELLS + ni) as usize;
                     let h = &r.habitat[n];
                     let w = if self.suits(sp, h) {
-                        Self::area(sp, h) * (0.2 + self.quality(sp, h))
+                        Self::area(sp, h) * (0.2 + Self::quality_in(r, sp.index, n))
                     } else {
                         0.0
                     };
@@ -2518,6 +2642,14 @@ pub fn calibrate_attack(cat: &Catalog) -> Vec<[f32; 8]> {
         .collect()
 }
 
+/// The most meat a hunter can eat in a year, at the rate of its hungriest season (its handling
+/// time's limit): half as much again as its need — a cold-blooded hunter's need in the warm
+/// months, when it eats its year's food, more than half again its yearly mean.
+fn most_eaten(sp: &Species) -> f32 {
+    let peak = if sp.ectotherm { ECTOTHERM_PEAK } else { 1.0 };
+    (sp.need_kg * 365.0 * (1.0 - sp.forage_share()) * 1.5 * peak).max(1e-6)
+}
+
 fn attack_in(cat: &Catalog, sp: &Species, realm: Realm) -> f32 {
     if !sp.hunts() {
         return 0.0;
@@ -2536,7 +2668,7 @@ fn attack_in(cat: &Catalog, sp: &Species, realm: Realm) -> f32 {
         let at = if specialist(sp) { 0.2 } else { CALIBRATE_AT };
         let d = noticed(sp, at * usual, usual);
         let e = edible(prey);
-        let h = e / (need * 1.5).max(1e-6);
+        let h = e / most_eaten(sp);
         s += pref * d * e;
         t += pref * d * h;
     }

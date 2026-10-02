@@ -507,9 +507,21 @@ pub fn pose(rig: &Rig, m: &Motion, d: &Drive, ground: &dyn Footing) -> Pose {
     };
     let male_adult = !d.female && d.stage == Stage::Adult;
     // What grows on the head: antlers in their seasons (half grown, in velvet, in the season
-    // before), horns on both sexes or the males, tusks on grown males.
+    // before) — a cow's, where the species' cows carry them, smaller and a season later —
+    // horns on both sexes or the males, tusks on grown males.
     if male_adult {
         p.antlers = antler_growth(rig.antler_seasons, d.year_frac, d.southern);
+    } else if d.stage == Stage::Adult
+        && matches!(
+            rig.gear,
+            Some(hearth_content::schema::fauna::HeadGear::Antlers {
+                both_sexes: true,
+                ..
+            })
+        )
+    {
+        let [sp, su, au, wi] = rig.antler_seasons;
+        p.antlers = 0.6 * antler_growth([wi, sp, su, au], d.year_frac, d.southern);
     }
     p.horns = match rig.gear {
         Some(hearth_content::schema::fauna::HeadGear::Horns { both_sexes, .. }) => {

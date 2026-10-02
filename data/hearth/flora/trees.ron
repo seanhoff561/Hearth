@@ -73,6 +73,7 @@
             wood: "spruce_wood",
             tree: (crown: Conical, crown_ratio: 0.8, crown_width: 0.28, apical_dominance: 0.97, branch_angle_deg: 80, droop: 0.35, whorled: true, root_flare: 0.3, leaf: Needle, foliage_density: 0.85, bark: Scaly, log: "spruce_log", branch: "spruce_branch", leaves: "spruce_leaves"),
             parts: [
+                (part: Seed, material: "conifer_seed", seasons: [Autumn, Winter], edibility: Edible, yield_kg: (0.05, 1.0), uses: ["food"]),
                 (part: Resin, material: "pine_resin", edibility: Inedible, uses: ["adhesive", "torches"]),
             ],
             flammability: 0.7, appearance: (foliage: "#2e4a2c", bark: "#6b5646", crown: "conical"),
@@ -87,6 +88,7 @@
             wood: "pine_wood",
             tree: (crown: Umbrella, crown_ratio: 0.3, crown_width: 0.45, apical_dominance: 0.85, branch_angle_deg: 70, droop: 0.1, whorled: true, root_flare: 0.3, leaf: Needle, foliage_density: 0.6, bark: Scaly, log: "pine_log", branch: "pine_branch", leaves: "pine_leaves"),
             parts: [
+                (part: Seed, material: "conifer_seed", seasons: [Autumn, Winter], edibility: Edible, yield_kg: (0.05, 0.6), uses: ["food"]),
                 (part: Resin, material: "pine_resin", edibility: Inedible, uses: ["adhesive", "torches", "kindling"]),
             ],
             flammability: 0.8, appearance: (foliage: "#3b5c3a", bark: "#5c4a3e", bark2: "#c46a3a", crown: "umbrella"),

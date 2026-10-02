@@ -1,0 +1,23 @@
+# V2-10 (a) the cold lands of seed 7 on a huge planet (the standard one has only patches of
+# them, on its mountains), each at its heart (`biome=`): the boreal forest in summer and
+# autumn, the snowy taiga in winter, the tundra in summer and autumn, the polar desert (tundra
+# colder than -12 °C a year) in summer; then their animals, close. Seasons are the place's own
+# (`season=`, `@` how far into it).
+# `hearth --screenshot-list tools/shots/v210_cold.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=8, hour=11, clouds=0.3, dry=true
+biome=boreal_forest, above=5, yaw=30, pitch=6, season=summer, out=bench-out/v210/boreal_summer.png
+biome=boreal_forest, above=5, yaw=30, pitch=6, season=autumn@0.15, out=bench-out/v210/boreal_autumn.png
+biome=boreal_forest, above=40, yaw=30, pitch=25, season=autumn@0.15, out=bench-out/v210/boreal_autumn_above.png
+biome=snowy_taiga, above=5, yaw=30, pitch=6, season=winter, snow=true, out=bench-out/v210/taiga_winter.png
+biome=tundra, above=3, yaw=30, pitch=5, season=summer, herd=reindeer:14@45:-4, out=bench-out/v210/tundra_summer.png
+biome=tundra, above=3, yaw=200, pitch=5, season=autumn@0.05, herd=musk_ox:9@30:3, out=bench-out/v210/tundra_autumn.png
+biome=tundra:-12, above=3, yaw=30, pitch=5, season=summer, out=bench-out/v210/polar_desert_summer.png
+biome=tundra, above=1.2, yaw=30, pitch=2, fov=50, season=summer, out=bench-out/v210/tundra_ground.png
+biome=boreal_forest, above=1.2, yaw=30, pitch=2, fov=50, season=summer, out=bench-out/v210/boreal_floor.png
+biome=boreal_forest, above=1.8, yaw=30, pitch=3, fov=45, season=autumn@0.2, animal=moose:adult:m:alert@11:0:90, animal=moose:adult:f:graze@13:-4:120, animal=moose:young:f:walk@12:-6:110, out=bench-out/v210/moose.png
+biome=tundra, above=1.6, yaw=30, pitch=3, fov=45, season=autumn@0.2, animal=reindeer:adult:m:alert@9:-1.5:80, animal=reindeer:adult:f:graze@10:2:110, animal=reindeer:young:m:walk@8:3.5:100, out=bench-out/v210/reindeer.png
+biome=tundra, above=1.6, yaw=30, pitch=3, fov=45, season=autumn@0.2, animal=musk_ox:adult:m:alert@10:0:90, animal=musk_ox:adult:f:graze@11:3:60, out=bench-out/v210/musk_ox.png
+biome=tundra, above=1.0, yaw=30, pitch=4, fov=40, season=summer, animal=arctic_fox:adult:f:alert@5:-0.8:90, animal=norway_lemming:adult:f:alert@3:0.6:60, animal=brown_lemming:adult:f:graze@3.2:1.2:120, animal=rock_ptarmigan:adult:m:alert@4.5:1.8:100, out=bench-out/v210/tundra_small_summer.png
+biome=tundra, above=1.8, yaw=30, pitch=8, fov=40, season=winter, snow=true, animal=arctic_fox:adult:f:alert@5:-0.8:90, animal=arctic_hare:adult:f:alert@6:2:70, animal=willow_ptarmigan:adult:m:alert@4:1:100, animal=snowy_owl:adult:m:alert@7:-2.5:80, out=bench-out/v210/tundra_small_winter.png
+biome=boreal_forest, above=2.8, yaw=30, pitch=12, fov=40, season=winter, snow=true, animal=snowshoe_hare:adult:f:alert@4:-0.5:90, animal=mountain_hare:adult:f:graze@5:1.5:60, animal=ermine:adult:m:alert@3:1:120, animal=canada_lynx:adult:m:walk@8:-2:70, out=bench-out/v210/boreal_small_winter.png
+biome=boreal_forest, above=1.0, yaw=30, pitch=4, fov=40, season=summer, animal=wolverine:adult:m:walk@6:-1:80, animal=sable:adult:m:alert@4:1.5:110, animal=american_marten:adult:f:alert@4.5:-2.5:60, animal=spruce_grouse:adult:m:alert@3.5:0.5:100, animal=american_red_squirrel:adult:f:alert@3:-0.8:70, out=bench-out/v210/boreal_small_summer.png

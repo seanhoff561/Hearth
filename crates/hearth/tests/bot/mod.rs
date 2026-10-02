@@ -966,10 +966,20 @@ impl Bot {
     /// horizon): the nearest are gone to and their trunks tapped.
     pub fn resin_afar(&mut self) {
         let g = self.w.generator.clone();
+        let content = self.w.content.clone();
         let (cx, cz) = (self.camp.x.floor() as i32, self.camp.z.floor() as i32);
         let planet = g.planet();
+        // A tree whose wood is resinous (spruce, pine, larch).
+        let resin_tree = |id: &str| {
+            content
+                .plants
+                .get(id)
+                .and_then(|p| p.wood.as_ref())
+                .and_then(|w| content.materials.get(w.as_str()))
+                .is_some_and(|m| m.tags.iter().any(|t| t == "resinous"))
+        };
         let mut seen: Vec<(i64, i32, i32)> = Vec::new();
-        for r in (64..1500).step_by(48) {
+        for r in (64..4000).step_by(48) {
             let n = (r as f64 * std::f64::consts::TAU / 48.0).ceil() as i32;
             for k in 0..n {
                 let a = k as f64 * std::f64::consts::TAU / n as f64;
@@ -987,8 +997,7 @@ impl Bot {
                 else {
                     continue;
                 };
-                let id = &g.forest.templates.species[sp].id;
-                if id.ends_with("spruce") || id.ends_with("pine") {
+                if resin_tree(&g.forest.templates.species[sp].id) {
                     seen.push(((r as i64).pow(2), x, z));
                 }
             }
@@ -998,11 +1007,21 @@ impl Bot {
         }
         self.say(&format!("{} conifer stands in sight", seen.len()));
         for (_, x, z) in seen.into_iter().take(6) {
+            // Far off: there, the land let stream in before looking about.
             self.w.go(x as f64 + 0.5, z as f64 + 0.5);
+            let at = BlockPos::new(x, self.w.mover.pos.y as i32, z);
+            self.w.until(10.0, |w| w.mirror.block(at).is_some());
+            self.w.go(x as f64 + 0.5, z as f64 + 0.5);
+            self.w.run(20);
             let trunks: Vec<BlockPos> = self
                 .w
                 .find(44, |_, m| {
-                    m.is_some_and(|m| m.ends_with("spruce_wood") || m.ends_with("pine_wood"))
+                    m.is_some_and(|m| {
+                        content
+                            .materials
+                            .get(m)
+                            .is_some_and(|m| m.tags.iter().any(|t| t == "resinous"))
+                    })
                 })
                 .into_iter()
                 .filter(|p| self.w.stand_by(*p).is_some())
@@ -2142,18 +2161,9 @@ pub fn goals_sewing(bot: &mut Bot) {
     assert!(sewn && bot.count("moccasins/scraped_hide") > 0, "moccasins");
     bot.say("GOAL clothing: sewn moccasins");
     bot.put_on("moccasins");
-    // Autumn nights are cold: a cape of two hides.
-    for _ in 0..6 {
-        if bot.count("sheet/scraped_hide") >= 2 {
-            break;
-        }
-        if bot.count("sheet/rawhide") == 0 {
-            bot.butcher_one();
-        }
-        bot.work("scrape_hide", AimAt::Nothing);
-    }
-    if bot.work("make_hide_cape", AimAt::Nothing) {
-        bot.put_on("hide_cape");
+    // Autumn nights are cold: a cape of two hides, if there is none yet.
+    if bot.count("hide_cape/") == 0 {
+        goals_cape(bot);
     }
 
     // Clothes first, against the autumn nights; then the spear.
@@ -2163,15 +2173,17 @@ pub fn goals_sewing(bot: &mut Bot) {
         bot.work("whittle_spear", AimAt::Nothing);
     }
     assert!(bot.knows("stone_tipped_spear"), "{:?}", bot.w.learned);
-    // Resin from the spruces and pines.
-    let resinous = |_: &str, m: Option<&str>| {
-        m.is_some_and(|m| m.ends_with("spruce_wood") || m.ends_with("pine_wood"))
+    // Resin from the spruces, pines and larches.
+    let woods = bot.w.content.clone();
+    let resinous = move |_: &str, m: Option<&str>| {
+        m.and_then(|m| woods.materials.get(m))
+            .is_some_and(|m| m.tags.iter().any(|t| t == "resinous"))
     };
     for _ in 0..3 {
         if bot.count("pine_resin") > 0 {
             break;
         }
-        bot.gather(48, resinous, "collect_resin", 2);
+        bot.gather(48, &resinous, "collect_resin", 2);
     }
     if bot.count("pine_resin") == 0 {
         bot.resin_afar();
@@ -2196,13 +2208,37 @@ pub fn goals_sewing(bot: &mut Bot) {
     bot.say("GOAL spear: a stone-tipped spear");
 }
 
-/// Fire, the spear, clothing and dried meat, by discovery (the V2-5 acceptance's goals).
+/// A hide cape of two scraped hides tied with cord, put on against the nights (as soon as hides
+/// can be wrapped and tied: a person does not wait for the frost). Whether one was made, and
+/// whether it is worn.
+pub fn goals_cape(bot: &mut Bot) -> (bool, bool) {
+    for _ in 0..8 {
+        if bot.count("hide_cape/") > 0 || bot.count("sheet/scraped_hide") >= 2 {
+            break;
+        }
+        if bot.count("sheet/rawhide") == 0 {
+            bot.butcher_one();
+        }
+        bot.work("scrape_hide", AimAt::Nothing);
+    }
+    if bot.count("cord/") == 0 {
+        bot.work("twist_sinew", AimAt::Nothing);
+    }
+    let made = bot.count("hide_cape/") > 0 || bot.work("make_hide_cape", AimAt::Nothing);
+    let worn = made && bot.put_on("hide_cape");
+    (made, worn)
+}
+
+/// Fire, the spear, clothing and dried meat, by discovery (the V2-5 acceptance's goals), and a
+/// hide cape against the nights once hides and cord allow.
 pub fn first_goals(bot: &mut Bot) {
     goals_fire(bot);
     goals_tools(bot);
     goals_butchery(bot);
     goals_hides(bot);
     goals_cord(bot);
+    let (made, worn) = goals_cape(bot);
+    bot.say(&format!("a hide cape: made {made}, worn {worn}"));
     goals_drying(bot);
     goals_sewing(bot);
 }

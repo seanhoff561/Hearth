@@ -1243,3 +1243,92 @@ average against 652 and 1 % lows of 578–590 against 476–589 — and the base
 38-millisecond stall. The baseline was moved to the end of V2-9. A 1 % low over 600 frames is
 six frames: one stall in three runs moves it by a fifth, so the gate's 1 % lows are to be read
 with their runs' worst frames, as here.
+
+## D108 — Cone crops are mast; dwarf shrubs are browse on cold open ground
+The habitat's forage came from a temperate wood's plants: nuts from the trees that bear them,
+grass on open ground, browse from young growth and the understorey. A spruce forest therefore fed
+no seed-eater (its trees bear no nuts) and the tundra's open ground was all grass, so the cone
+squirrels, the ptarmigan and the hares of the cold lands had little to live on. A tree's seed
+crop now counts as mast as its nuts do (the conifers bear `conifer_seed`, from a few hundred
+grams to a kilogram a tree in a good year; the mast years are the habitat's), and open ground
+where the summers are cool grows dwarf shrubs as well as grass: a share of its growth rising
+from none where the warmest month is 16 °C to half on the low-arctic tundra (dwarf birch,
+willows, heaths) and falling to a quarter on the polar desert's cushions and mosses, three fifths
+of it usable browse (buds, catkins, shoot tips, leaves). Lichen is grazed as grass is, under the
+same snow.
+
+## D109 — A hunter is judged by its prey
+A hunter's place was judged as a plant-eater's (by its cover, or by its few berries), and its
+attack rate was set so that it met its needs at its prey's numbers in the reference oak wood. In
+the cold lands, where the land feeds a third to a fifth of the prey, every generalist hunter
+starved (the great grey owl from the first year), and an arctic fox's crowberries made the
+tundra a desert to it. Now a hunter's quality is its prey's — the meat its prey of the realm
+offer about the cell at their usual numbers there, against what they offer in the reference
+wood — with its plants for their share of its food; it hunts with an attack rate raised by the
+shortfall (it ranges the wider), and turns from a prey grown scarce against that prey's usual
+numbers there. So a wolf of the tundra lives on reindeer and musk oxen as a wolf of the oak woods
+does on deer, and there are a fifth as many of it; the reference wood is unchanged. Two more
+limits came with the cold: a hunter eats at most half as much again as its need in its
+hungriest season, so a snake, which eats its year's food in the warm months, is no longer held
+to the yearly mean (the timber rattlesnake about the spawn, a tenth of what the land holds since
+V2-7, now holds at nine tenths, and the adder at three quarters); and a cold-blooded animal of
+the land needs warm months (a frog months above 8 °C, a snake or a lizard above 10 °C, a third of
+the year for its full numbers, a tenth for any — the adder's northern limit is a July of about
+13 °C).
+
+## D110 — Migrants winter elsewhere; a herd alone is not crowded by itself
+Species that migrate were simulated as staying the winter, starving under the snow. A migrant is
+now away while its place lies frozen hard (the month's mean below −5 °C): it neither eats nor is
+eaten there nor dies of the winter, and comes back with the thaw. Migration is the leaving and
+the coming back, not the journey: the herds that walk between the tundra and the taiga are kept
+resident in both until animals travel between regions. Neither a migrant away nor a hibernator
+asleep in its den is met about (a bear is not seen walking in January). And a herd placed where
+the land about it holds less than one ordinary herd of its kind (a musk ox herd on a patch of
+tundra) died of crowding in its first years; crowding is now judged against at least an ordinary
+herd, so a lone herd lives or starves by its food.
+
+## D111 — A reindeer cow's antlers, a moose's palms
+Antlers were the males' alone. `Antlers { both_sexes }` gives the females antlers too, three
+fifths the size and a season later: a reindeer cow grows hers in the summer and keeps them through
+the winter to hold her dig to the lichen against the bulls, which cast theirs at the start of the
+winter. A palmate pair (a moose's) is drawn as it grows: a short beam out to each side, then a
+broad plate cupped up and out with the tines along its rim.
+
+## D112 — The cold lands tested on a huge planet; the polar bear comes with the sea
+The standard planet of seed 7 has only patches of tundra and taiga, on its mountains (some 45 km²
+of tundra in all), so the regions about a tundra's heart there hold a dozen musk oxen; the cold
+lands' fifty-year runs are made on the huge planet of the same seed, where the tundra and the
+taiga are land of their own, and the screenshot suite shows them there. The polar desert is the
+tundra's coldest reach (the generator gives it no biome of its own), so the tundra ecosystem
+covers it, thinning with the cold; the ice sheet has no life of its own. The polar bear lives on
+the sea ice and hunts seals at their breathing holes, fasting on land: it comes with the oceans'
+wave (V2-10 (f)), with the seals, the walrus and the ice.
+
+## D113 — The bots dress before the cold and look wider for resin
+Every wave adds species, and the world the bots live in shifts with them: with the cold lands'
+trees and the stand-in realm's understory (the V2-5 world's spawn is Neotropical, D115), the
+V2-5 bot's camp lost its pines, and its dried meat spoiled twice into the autumn, where
+it froze in its loincloth with the knowledge of a hide wrap and hides at camp. A person dresses
+when the nights draw in: the shared bot now makes and wears its hide cape as soon as it can tie
+one (after cord, as the year bot did), and looks for resin on any tree whose wood is resinous,
+out to four kilometres, letting the land there stream in before looking. The acceptances test
+the game's paths, not one world's accidents.
+
+## D114 — Meat drying on a rack goes off the slower the drier it gets
+Food being worked unattended went off at a quarter of its rate for as long as the work lasted,
+and was gone once rotten (D106); a rack of meat needs seventy-two dry hours, and in hot weather
+broken by showers it rotted away on the rack, batch after batch — the V2-5 bot hung meat four
+times in a row through a summer's end and never dried any. Drying is what keeps meat: as strips
+lose their water they stop rotting. Work in progress now goes off at a quarter of the rate
+times what is left of the work, so a batch half dried decays at an eighth and a dried one not
+at all; the rack's own failures (flies and damp, more in rain) still spoil batches.
+
+## D115 — A realm without plants of its own grows the stand-in realm's
+The understory's plants of a realm not their own grew at a fiftieth of their odds (as strays),
+right for a Palearctic herb in a Nearctic wood that has its own, but in a realm whose plants the
+content does not have yet (the Antarctic's tundra, the Neotropics' temperate woods) it left the
+ground bare: the huge planet's tundra heart was a lawn without a flower. The trees already
+filled such places with the stand-in realm's species (their odds are relative). Now where the
+place's own plants cover less than half what the stand-in realm's would, the stand-ins grow in
+full, as the animals of a realm without its own do; where its own hold their place (a Nearctic
+wood), the stand-ins stay strays. A plant of every realm (sphagnum) counts as the place's own.

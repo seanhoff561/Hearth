@@ -1,0 +1,111 @@
+// The tundra's own and the polar desert's few (V2-10, the first expansion wave): dwarf shrubs
+// a hand high, sedges and cottongrass of the wet ground, cushions and rosettes that flower the
+// moment the snow goes, mosses and lichens. Tundra has no trees: its woody plants are dwarf
+// shrubs of the understory. Climates from general arctic botany references: the low arctic's
+// mean −4 to −12 °C, the polar desert's −12 to −20 °C, summers above 0 °C for a month or two.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "dwarf_birch", name: "Dwarf birch", scientific: "Betula nana", form: Shrub, status: Implemented, deciduous: true,
+            climate: (temp_c: (-14, 4), precip_mm: (150, 1500), koppen: ["ET", "Dfc", "Dfd", "Dwc"]),
+            shade_tolerance: 0.1, phenology: (leaf_out: 0.12, flowering: (0.12, 0.18), leaf_fall: (0.6, 0.7)),
+            max_height_m: 0.6, lifespan_years: 80,
+            parts: [
+                (part: Wood, material: "birch_wood", seasons: [Spring, Summer, Autumn, Winter], edibility: Inedible, yield_kg: (0.2, 1.5), uses: ["firewood"]),
+            ],
+            understory: (block: "dwarf_birch", abundance: 0.8, light: (0.6, 1.0), patch_m: 20),
+            flammability: 0.6, appearance: (foliage: "#5a7a34", flower: "#a8743a", sprite: Heath),
+            realms: ["Palearctic", "Nearctic"],
+            notes: "A birch a hand high with leaves like coins; the fuel of the tundra, burning hot and green.",
+        ),
+        (
+            id: "arctic_willow", name: "Arctic willow", scientific: "Salix arctica", form: Shrub, status: Implemented, deciduous: true,
+            climate: (temp_c: (-20, 2), precip_mm: (100, 1200), koppen: ["ET", "Dfd"]),
+            shade_tolerance: 0.05, phenology: (leaf_out: 0.13, flowering: (0.13, 0.18), leaf_fall: (0.6, 0.68)),
+            max_height_m: 0.15, lifespan_years: 200,
+            parts: [
+                (part: Leaf, material: "arctic_willow_leaves", seasons: [Summer], edibility: Edible, yield_kg: (0.02, 0.15), uses: ["food"]),
+                (part: Bark, material: "willow_bark", seasons: [Summer], edibility: Inedible, uses: ["medicine"]),
+                (part: Wood, material: "willow_wood", seasons: [Spring, Summer, Autumn, Winter], edibility: Inedible, yield_kg: (0.05, 0.5), uses: ["firewood"]),
+            ],
+            understory: (block: "arctic_willow", abundance: 0.75, light: (0.6, 1.0), patch_m: 18),
+            flammability: 0.4, appearance: (foliage: "#6a8a4a", flower: "#e8d8a0", sprite: Creeper),
+            realms: ["Palearctic", "Nearctic"],
+            notes: "A tree lying on the ground: centuries old and as thick as a finger, its catkins woolly against the cold.",
+        ),
+        (
+            id: "cottongrass", name: "Tussock cottongrass", scientific: "Eriophorum vaginatum", form: Sedge, status: Implemented,
+            climate: (temp_c: (-14, 6), precip_mm: (150, 2000), koppen: ["ET", "Dfc", "Dfd", "Dwc", "Dfb"]),
+            shade_tolerance: 0.1, phenology: (flowering: (0.3, 0.4), fruiting: (0.45, 0.6)),
+            max_height_m: 0.4, lifespan_years: 100,
+            parts: [
+                (part: Seed, material: "cottongrass_down", seasons: [Summer], edibility: Inedible, yield_kg: (0.002, 0.02), uses: ["wick", "tinder", "padding"]),
+                (part: Shoot, material: "sedge", seasons: [Summer, Autumn], edibility: Inedible, yield_kg: (0.05, 0.3), uses: ["insulation", "bedding"]),
+            ],
+            understory: (block: "cottongrass", abundance: 0.85, light: (0.6, 1.0), ground: [Wet], patch_m: 30),
+            flammability: 0.5, appearance: (foliage: "#7a8a44", flower: "#f4f4ee", sprite: Tuft),
+            realms: ["Palearctic", "Nearctic"],
+            notes: "The tussocks that make tundra hard walking; in July the wet ground is white with its seed heads.",
+        ),
+        (
+            id: "water_sedge", name: "Water sedge", scientific: "Carex aquatilis", form: Sedge, status: Implemented,
+            climate: (temp_c: (-16, 8), precip_mm: (150, 2000), koppen: ["ET", "Dfc", "Dfd", "Dfb"]),
+            shade_tolerance: 0.1, phenology: (flowering: (0.35, 0.45)),
+            max_height_m: 0.6, lifespan_years: 50,
+            parts: [
+                (part: Shoot, material: "sedge", seasons: [Summer, Autumn], edibility: Inedible, yield_kg: (0.1, 0.5), uses: ["insulation", "weaving", "bedding"]),
+            ],
+            understory: (block: "water_sedge", abundance: 0.9, light: (0.6, 1.0), ground: [Wet], patch_m: 30),
+            flammability: 0.3, appearance: (foliage: "#6a7a3a", flower: "#5a4a32", sprite: Tuft),
+            realms: ["Palearctic", "Nearctic"],
+            notes: "The wet meadows' grass-that-is-not-a-grass: fodder for every grazer, boot lining for people.",
+        ),
+        (
+            id: "mountain_avens", name: "Mountain avens", scientific: "Dryas octopetala", form: Shrub, status: Implemented,
+            climate: (temp_c: (-16, 4), precip_mm: (100, 2000), koppen: ["ET", "Dfc", "Dfd"]),
+            shade_tolerance: 0.05, phenology: (flowering: (0.35, 0.45), fruiting: (0.45, 0.6)),
+            max_height_m: 0.1, lifespan_years: 100,
+            understory: (block: "mountain_avens", abundance: 0.7, light: (0.7, 1.0), ground: [Lime], patch_m: 16),
+            flammability: 0.3, appearance: (foliage: "#4a6a3a", flower: "#f4f2e0", sprite: Rosette),
+            realms: ["Palearctic", "Nearctic"],
+            notes: "Eight white petals turning to follow the sun; a mat of it on the limey gravels.",
+        ),
+        (
+            id: "bearberry", name: "Bearberry", scientific: "Arctostaphylos uva-ursi", form: Shrub, status: Implemented,
+            climate: (temp_c: (-12, 10), precip_mm: (200, 1500), koppen: ["ET", "Dfc", "Dfb", "Dfd", "Dsc"]),
+            shade_tolerance: 0.2, phenology: (flowering: (0.32, 0.42), fruiting: (0.55, 0.95)),
+            max_height_m: 0.15, lifespan_years: 50,
+            parts: [
+                (part: Fruit, material: "bearberry", seasons: [Summer, Autumn, Winter], edibility: Edible, yield_kg: (0.02, 0.2), uses: ["food"]),
+            ],
+            understory: (block: "bearberry", abundance: 0.6, light: (0.5, 1.0), ground: [Acid], patch_m: 14),
+            flammability: 0.4, appearance: (foliage: "#3a5a2e", fruit: "#b8302a", sprite: Creeper),
+            realms: ["Palearctic", "Nearctic"],
+            notes: "Mealy berries that hang on into spring for the bears just out of their dens; its leaves were smoked (kinnikinnick).",
+        ),
+        (
+            id: "purple_saxifrage", name: "Purple saxifrage", scientific: "Saxifraga oppositifolia", form: Herb, status: Implemented,
+            climate: (temp_c: (-22, 2), precip_mm: (50, 1500), koppen: ["ET", "EF"]),
+            shade_tolerance: 0.0, phenology: (flowering: (0.3, 0.38)),
+            max_height_m: 0.05, lifespan_years: 30,
+            parts: [
+                (part: Flower, material: "saxifrage_flowers", seasons: [Summer], edibility: Edible, yield_kg: (0.002, 0.01), uses: ["food"]),
+            ],
+            understory: (block: "purple_saxifrage", abundance: 0.6, light: (0.85, 1.0), patch_m: 10),
+            flammability: 0.1, appearance: (foliage: "#4a5a3a", flower: "#9a3aa0", sprite: Creeper),
+            realms: ["Palearctic", "Nearctic"],
+            notes: "The first flower of the high Arctic, open while snow still lies about it.",
+        ),
+        (
+            id: "arctic_poppy", name: "Arctic poppy", scientific: "Papaver radicatum", form: Herb, status: Implemented,
+            climate: (temp_c: (-22, 1), precip_mm: (50, 1200), koppen: ["ET", "EF"]),
+            shade_tolerance: 0.0, phenology: (flowering: (0.38, 0.5)),
+            max_height_m: 0.15, lifespan_years: 10,
+            understory: (block: "arctic_poppy", abundance: 0.4, light: (0.85, 1.0), ground: [Disturbed], patch_m: 8),
+            flammability: 0.1, appearance: (foliage: "#6a7a4a", flower: "#f0d23a", sprite: Spike),
+            realms: ["Palearctic", "Nearctic"],
+            notes: "Its yellow cup tracks the sun to warm the flower's heart for the insects that sit in it.",
+        ),
+    ],
+)

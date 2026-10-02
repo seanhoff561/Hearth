@@ -98,7 +98,7 @@
             ],
             understory: (block: "lingonberry", abundance: 0.6, light: (0.2, 0.9), ground: [Acid], patch_m: 10),
             flammability: 0.4, appearance: (foliage: "#2f5a2a", fruit: "#c0202a", sprite: Heath),
-            realms: ["Palearctic"],
+            realms: ["Palearctic", "Nearctic"],
             notes: "Keeps for months: it holds benzoic acid.",
         ),
         (
@@ -123,7 +123,7 @@
             ],
             understory: (block: "juniper", abundance: 0.06, light: (0.6, 1.0), ground: [Acid], patch_m: 0),
             flammability: 0.8, appearance: (foliage: "#3a5a40", fruit: "#3a4a6a", sprite: Bush),
-            realms: ["Palearctic"],
+            realms: ["Palearctic", "Nearctic"],
         ),
         (
             id: "heather", name: "Heather", scientific: "Calluna vulgaris", form: Shrub, status: Implemented,

@@ -1,10 +1,10 @@
 //! Textures of the understory's plants (V2-6): each species drawn by its sprite (a bush hung
 //! with fruit, a heath, a rosette, an umbel, a spike of flowers, a fern, a mushroom, a clump of
-//! leaves, a creeper) in its own foliage, flower and fruit colours. Plants two blocks tall get a
-//! bottom and a top.
+//! leaves, a creeper, a tuft of sedge, a carpet of moss or lichen) in its own foliage, flower and
+//! fruit colours. Plants two blocks tall get a bottom and a top.
 
 use hearth_content::Content;
-use hearth_content::schema::flora::Sprite;
+use hearth_content::schema::flora::{GrowthForm, Sprite};
 
 use crate::TexEntry;
 use crate::paint::{Rgb, Tex, line, rand01, scale};
@@ -291,6 +291,88 @@ fn creeper(p: Palette, seed: u64) -> Tex {
     t
 }
 
+/// Grassy leaves in a tuft, arching out; flowers or seed heads (cottongrass's white tufts) on
+/// stalks above.
+fn tuft(p: Palette, seed: u64) -> Tex {
+    let mut t = Tex::new(S, S);
+    for k in 0..9 {
+        let x0 = 5 + (k % 5);
+        let lean = (rand01(seed, k, 0) * 9.0) as i32 - 4;
+        let y1 = 5 + (rand01(seed, k, 1) * 5.0) as i32;
+        line(&mut t, x0, 15, x0 + lean, y1, shade(p.leaf, seed, k, 2));
+    }
+    if let Some(c) = p.flower.or(p.fruit) {
+        for k in 0..3 {
+            let x = 4 + k * 4 + (rand01(seed ^ 3, k, 0) * 2.0) as i32;
+            line(&mut t, x, 12, x, 3, scale(p.leaf, 0.8));
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1), (-1, 1), (0, -1)] {
+                t.set(x + dx, 2 + dy, shade(c, seed ^ 5, x + dx, dy));
+            }
+        }
+    }
+    t
+}
+
+/// A mat over the ground seen from above: moss as close-packed tiny shoots, lighter at their
+/// tips; a lichen as pale, branching clumps with dark hollows between (reindeer lichen) or a
+/// crust; whatever else lies flat as a speckled cover.
+fn carpet(p: Palette, form: GrowthForm, seed: u64) -> Tex {
+    let mut t = Tex::new(S, S);
+    for y in 0..16 {
+        for x in 0..16 {
+            let r = rand01(seed, x, y);
+            let c = match form {
+                GrowthForm::Lichen => {
+                    // Clumps of branched stalks: a lattice broken by noise, dark between.
+                    let n = rand01(seed ^ 9, x / 2, y / 2);
+                    if (x + y) % 3 == 0 && r < 0.6 || n < 0.18 {
+                        scale(p.leaf, 0.62)
+                    } else {
+                        scale(p.leaf, 0.9 + 0.25 * r)
+                    }
+                }
+                GrowthForm::Moss => {
+                    // Shoots in rows, each a darker stem and a light tip.
+                    if (x + 2 * y) % 4 == 0 {
+                        scale(p.leaf, 1.18)
+                    } else {
+                        scale(p.leaf, 0.78 + 0.3 * r)
+                    }
+                }
+                _ => shade(p.leaf, seed, x, y),
+            };
+            t.set(x, y, c);
+        }
+    }
+    if let Some(c) = p.fruit.or(p.flower) {
+        for k in 0..6 {
+            let x = (rand01(seed ^ 4, k, 0) * 16.0) as i32;
+            let y = (rand01(seed ^ 4, k, 1) * 16.0) as i32;
+            t.set(x, y, c);
+        }
+    }
+    t
+}
+
+/// A sprite drawn the height of a block, pressed down into the rows a plant `height_m` tall
+/// fills (a third again, for it to show; at least six of the sixteen).
+fn squash(t: &Tex, height_m: f32) -> Tex {
+    let rows = ((height_m * S as f32 * 1.3).round() as u32).clamp(6, S);
+    if rows >= S {
+        return t.clone();
+    }
+    let mut out = Tex::new(S, S);
+    for y in 0..rows {
+        // The row of the full drawing this one samples (nearest, bottom-anchored).
+        let from = ((y as f32 + 0.5) * S as f32 / rows as f32) as i32;
+        let to = (S - rows + y) as i32;
+        for x in 0..S as i32 {
+            out.set_rgba(x, to, t.get(x, from.min(S as i32 - 1)));
+        }
+    }
+    out
+}
+
 /// The understory's textures, by the blocks their plants name: `block/<block>`, and for plants
 /// over a metre tall `_bottom` and `_top` as well (for blocks two high).
 pub fn textures(c: &Content) -> Vec<TexEntry> {
@@ -309,7 +391,8 @@ pub fn textures(c: &Content) -> Vec<TexEntry> {
             fruit: p.appearance.fruit.map(|c| c.0),
         };
         let sd = seed(&name);
-        let tall = p.max_height_m > 1.0 && !matches!(sprite, Sprite::Mushroom | Sprite::Heath);
+        let tall = p.max_height_m > 1.0
+            && !matches!(sprite, Sprite::Mushroom | Sprite::Heath | Sprite::Carpet);
         let draw = |part: u8| -> Tex {
             match sprite {
                 Sprite::Bush => bush(pal, sd, part),
@@ -321,9 +404,22 @@ pub fn textures(c: &Content) -> Vec<TexEntry> {
                 Sprite::Mushroom => mushroom(pal, sd),
                 Sprite::Clump => clump(pal, sd),
                 Sprite::Creeper => creeper(pal, sd),
+                Sprite::Tuft => tuft(pal, sd),
+                Sprite::Carpet => carpet(pal, p.form, sd),
             }
         };
-        out.push(TexEntry::still(&format!("block/{name}"), draw(0)));
+        // A plant well under a metre is drawn at its height in the block: a cushion a hand
+        // high, a sedge to the knee (the heaths, creepers and carpets are drawn low already).
+        let whole = if tall
+            || matches!(
+                sprite,
+                Sprite::Heath | Sprite::Creeper | Sprite::Carpet | Sprite::Mushroom
+            ) {
+            draw(0)
+        } else {
+            squash(&draw(0), p.max_height_m)
+        };
+        out.push(TexEntry::still(&format!("block/{name}"), whole));
         if tall {
             out.push(TexEntry::still(&format!("block/{name}_bottom"), draw(1)));
             out.push(TexEntry::still(&format!("block/{name}_top"), draw(2)));

@@ -308,6 +308,55 @@ fn stags_carry_antlers_in_their_season_and_hinds_none() {
 }
 
 #[test]
+fn reindeer_cows_carry_antlers_a_season_later_than_the_bulls() {
+    let cat = catalog();
+    let sp = cat.get("hearth:reindeer").expect("reindeer");
+    let antlers = |female: bool, year_frac: f32| {
+        let rig = Rig::of(sp, !female);
+        let mut d = Drive::standing();
+        d.female = female;
+        d.year_frac = year_frac;
+        let mut m = Motion::new(4);
+        m.settle(&rig, &d);
+        pose(&rig, &m, &d, &Flat).antlers
+    };
+    // Late winter: the bulls have cast theirs, the cows keep them (to hold their digs to the
+    // lichen); late summer, both carry them, the cows' smaller.
+    assert_eq!(antlers(false, 0.95), 0.0, "a bull in late winter");
+    assert!(antlers(true, 0.95) > 0.5, "a cow in late winter");
+    let (bull, cow) = (antlers(false, 0.45), antlers(true, 0.45));
+    assert_eq!(bull, 1.0);
+    assert!(cow > 0.0 && cow < bull, "cow {cow}, bull {bull}");
+}
+
+#[test]
+fn a_moose_carries_broad_palms() {
+    let cat = catalog();
+    let sp = cat.get("hearth:moose").expect("moose");
+    let rig = Rig::of(sp, true);
+    let mut d = Drive::standing();
+    d.year_frac = 0.6;
+    let mut m = Motion::new(2);
+    m.settle(&rig, &d);
+    let placed = pose(&rig, &m, &d, &Flat).boxes(&rig);
+    let antler = |i: usize| rig.boxes[i].gear == hearth_fauna::rig::Gear::Antler;
+    // The palms reach out to the sides, wider than the head is long, and are broad plates.
+    let (lo, hi) = extent(&rig, &placed, antler);
+    let span = (hi.x - lo.x).max(hi.z - lo.z);
+    assert!(span > 1.0, "the antlers span {span:.2} m");
+    let widest = rig
+        .boxes
+        .iter()
+        .filter(|b| b.gear == hearth_fauna::rig::Gear::Antler)
+        .map(|b| b.size.x.max(b.size.y))
+        .fold(0.0f32, f32::max);
+    assert!(
+        widest > 0.3,
+        "the broadest antler box is {widest:.2} m across"
+    );
+}
+
+#[test]
 fn the_coats_lie_in_the_atlas_without_overlapping() {
     let cat = catalog();
     let bodies = Bodies::new(&cat);

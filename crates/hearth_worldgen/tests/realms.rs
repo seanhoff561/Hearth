@@ -195,3 +195,58 @@ fn each_realm_grows_its_own_trees() {
         );
     }
 }
+
+#[test]
+fn a_realm_without_plants_of_its_own_grows_the_stand_ins() {
+    use hearth_worldgen::WorldGenerator;
+    use hearth_worldgen::planet::climate::ClimateClass;
+    use hearth_worldgen::region::biome::Biome;
+    use hearth_worldgen::trees::{PlaceClimate, PlaceGround};
+
+    let s = WorldGenSettings {
+        seed: 7,
+        planet_size: PlanetSize::Tiny,
+        grid_resolution: 128,
+        ..WorldGenSettings::default()
+    };
+    let terrain = Arc::new(Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {}))));
+    let reg = hearth_world::datapack::load_builtin_registry().expect("base pack");
+    let content = hearth_content::Content::load_base();
+    let wg = WorldGenerator::new(terrain, &reg, &content).expect("generator blocks");
+    // Low-arctic tundra in the Palearctic, and the same in a realm with no tundra plants of its
+    // own (the Antarctic's tundra is mosses and two flowering plants, not in the content).
+    let tundra = |realm: Realm| PlaceClimate {
+        mean_c: -6.0,
+        warm_c: 8.0,
+        cold_c: -20.0,
+        precip_mm: 400.0,
+        class: ClimateClass::Tundra,
+        biome: Biome::Tundra,
+        wet: false,
+        realm,
+    };
+    let covered = |realm: Realm| {
+        let c = tundra(realm);
+        let ground = PlaceGround {
+            acid: true,
+            ..PlaceGround::default()
+        };
+        (0..4000)
+            .filter(|k| {
+                let roll = (*k as f32 + 0.5) / 4000.0;
+                wg.forest
+                    .choose_under(&c, &ground, 1.0, roll, |i, _| {
+                        ((i * 7919 + *k as usize * 104_729) % 1000) as f32 / 1000.0
+                    })
+                    .is_some()
+            })
+            .count()
+    };
+    let (own, stand_in) = (covered(Realm::Palearctic), covered(Realm::Antarctic));
+    println!("tundra plants: Palearctic {own} of 4000, Antarctic {stand_in} of 4000");
+    assert!(own > 400, "the Palearctic's tundra is covered: {own}");
+    assert_eq!(
+        stand_in, own,
+        "the stand-ins grow in full where no natives do"
+    );
+}

@@ -120,6 +120,9 @@ pub struct ShotSpec {
     pub z: Option<f64>,
     /// Pick a land spot near this latitude (degrees) when x/z aren't given.
     pub lat: Option<f64>,
+    /// Or the heart of a biome (`tundra`, `boreal_forest`; `tundra:-12` where the mean
+    /// temperature is below −12 °C).
+    pub biome: Option<String>,
     /// Height above the surface when `y` is not given.
     pub above: f64,
     pub yaw: f32,
@@ -131,6 +134,8 @@ pub struct ShotSpec {
     pub distance: i32,
     /// Season (mid-season in the place's hemisphere) or an explicit year fraction.
     pub season: Option<Season>,
+    /// How far into the season (0 its start, 1 its end; `season=autumn@0.2`).
+    pub season_at: f64,
     pub year_frac: Option<f64>,
     /// Local solar hour (0–24).
     pub hour: f64,
@@ -249,6 +254,7 @@ impl Default for ShotSpec {
             y: None,
             z: None,
             lat: None,
+            biome: None,
             above: 24.0,
             yaw: 30.0,
             pitch: 15.0,
@@ -257,6 +263,7 @@ impl Default for ShotSpec {
             height: 720,
             distance: 10,
             season: None,
+            season_at: 0.5,
             year_frac: None,
             hour: 11.0,
             clouds: None,
@@ -328,6 +335,7 @@ impl ShotSpec {
                 "y" => spec.y = Some(v.parse()?),
                 "z" => spec.z = Some(v.parse()?),
                 "lat" => spec.lat = Some(v.parse()?),
+                "biome" => spec.biome = Some(v.to_owned()),
                 "above" => spec.above = v.parse()?,
                 "yaw" => spec.yaw = v.parse()?,
                 "pitch" => spec.pitch = v.parse()?,
@@ -335,7 +343,11 @@ impl ShotSpec {
                 "w" | "width" => spec.width = v.parse()?,
                 "h" | "height" => spec.height = v.parse()?,
                 "dist" | "distance" => spec.distance = v.parse()?,
-                "season" => spec.season = Some(parse_season(v)?),
+                "season" => {
+                    let (name, at) = v.split_once('@').unwrap_or((v, "0.5"));
+                    spec.season = Some(parse_season(name)?);
+                    spec.season_at = at.parse::<f64>()?.clamp(0.0, 1.0);
+                }
                 "yf" => spec.year_frac = Some(v.parse()?),
                 "hour" => spec.hour = v.parse()?,
                 "clouds" => spec.clouds = Some(v.parse()?),
@@ -688,6 +700,34 @@ fn load_saved(
     Ok(())
 }
 
+/// Where a shot is taken: its x and z if given, else land near its latitude, else the heart of
+/// its biome, else the spawn (columns offset by `centre`).
+fn place_of(lw: &LocalWorld, spec: &ShotSpec, centre: f64) -> anyhow::Result<(f64, f64)> {
+    if let (Some(x), Some(z)) = (spec.x, spec.z) {
+        return Ok((x, z));
+    }
+    if let Some(lat) = spec.lat {
+        return land_at_latitude(lw, lat)
+            .ok_or_else(|| anyhow::anyhow!("no land near latitude {lat}"));
+    }
+    if let Some(name) = &spec.biome {
+        let (name, below) = match name.split_once(':') {
+            Some((n, t)) => (n, Some(t.parse::<f32>()?)),
+            None => (name.as_str(), None),
+        };
+        let biome = hearth_worldgen::region::biome::Biome::from_name(name)
+            .ok_or_else(|| anyhow::anyhow!("biome={name}: no such biome"))?;
+        let (x, z) = lw
+            .terrain()
+            .find_biome(biome, 12_000.0, |s| below.is_none_or(|t| s.temperature < t))
+            .ok_or_else(|| anyhow::anyhow!("biome={name}: none on this planet"))?;
+        log::info!("biome {name}: at {x}, {z}");
+        return Ok((x as f64 + centre, z as f64 + centre));
+    }
+    let (x, z) = lw.terrain().find_spawn(false);
+    Ok((x as f64 + centre, z as f64 + centre))
+}
+
 /// A gentle land spot near a latitude (scans along the parallel).
 fn land_at_latitude(lw: &LocalWorld, lat: f64) -> Option<(f64, f64)> {
     let planet = *lw.map.planet();
@@ -735,15 +775,7 @@ pub fn render_shot(
     out: &Path,
     time: Option<&TimeConfig>,
 ) -> anyhow::Result<Shot> {
-    let (mut sx, mut sz) = match (spec.x, spec.z, spec.lat) {
-        (Some(x), Some(z), _) => (x, z),
-        (_, _, Some(lat)) => land_at_latitude(lw, lat)
-            .ok_or_else(|| anyhow::anyhow!("no land near latitude {lat}"))?,
-        _ => {
-            let (x, z) = lw.terrain().find_spawn(false);
-            (x as f64 + 0.5, z as f64 + 0.5)
-        }
-    };
+    let (mut sx, mut sz) = place_of(lw, spec, 0.5)?;
     let mut yaw_override = None;
     if spec.near_water {
         let (x, z, yaw) = bank_near(lw, sx, sz)
@@ -757,8 +789,9 @@ pub fn render_shot(
     let planet = *lw.map.planet();
     let southern = planet.latitude(sz) < 0.0;
     let year_frac = spec.year_frac.unwrap_or_else(|| {
-        spec.season
-            .map_or(0.3, |s| Calendar::season_start(s, southern) + 0.125)
+        spec.season.map_or(0.3, |s| {
+            (Calendar::season_start(s, southern) + 0.25 * spec.season_at).rem_euclid(1.0)
+        })
     });
     // The populations about the place; the camera to a group sought.
     let mut seen = None;
@@ -2011,15 +2044,7 @@ fn shoot_globe(
     zoom: f32,
 ) -> anyhow::Result<()> {
     let t0 = Instant::now();
-    let (x, z) = match (spec.x, spec.z, spec.lat) {
-        (Some(x), Some(z), _) => (x, z),
-        (_, _, Some(lat)) => land_at_latitude(lw, lat)
-            .ok_or_else(|| anyhow::anyhow!("no land near latitude {lat}"))?,
-        _ => {
-            let (x, z) = lw.terrain().find_spawn(false);
-            (x as f64, z as f64)
-        }
-    };
+    let (x, z) = place_of(lw, spec, 0.0)?;
     let map = crate::globe::planet_map(lw.terrain(), crate::globe::MAP_WIDTH);
     log::info!("globe map in {:.2}s", t0.elapsed().as_secs_f64());
     let mut globe = hearth_render::globe::GlobeRenderer::new(ctx, OFFSCREEN_FORMAT);

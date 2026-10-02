@@ -11,7 +11,7 @@
 //! hangs down its slot's −y from the joint, a neck, head or jaw reaches along +z, a tail or a
 //! body segment runs back along −z, an ear stands up its +y.
 
-use glam::{Quat, Vec3};
+use glam::{Mat3, Quat, Vec3};
 use hearth_content::schema::fauna::{BodyPlan, EarShape, HeadGear};
 use hearth_texgen::coats::{SkinKind, SkinPart};
 
@@ -421,13 +421,37 @@ fn head(
             length_m,
             tines,
             palmate,
+            ..
         }) => {
             // Each beam rises from the skull's top back, outward and back, then forward; the
-            // tines point forward and up off it. Placed on the head's slot.
+            // tines point forward and up off it (a palmate pair, out to the sides and broad).
+            // Placed on the head's slot.
             let beam = length_m;
             let w = (beam * 0.07).max(0.012);
             for side in [1.0f32, -1.0] {
                 let base = Vec3::new(side * hw * 0.3, hh * 0.5, skull_l * 0.25);
+                if palmate {
+                    // A short beam out to the side, then a broad palm cupped up and out, its
+                    // rim set with tines (a moose's).
+                    let d1 = Vec3::new(side * 0.85, 0.3, -0.3).normalize();
+                    let mid = base + d1 * beam * 0.28;
+                    antler_segment(b, base, mid, w);
+                    let d2 = Vec3::new(side * 0.8, 0.5, 0.05).normalize();
+                    let l2 = beam * 0.72;
+                    let across = Vec3::new(0.0, 0.35, 1.0).normalize();
+                    let width = beam * 0.42;
+                    antler_plate(b, mid, mid + d2 * l2, across, width, w * 0.55);
+                    // The tines: along the palm's far end and its front and back edges.
+                    for k in 0..tines {
+                        let t = (k as f32 + 0.5) / tines as f32;
+                        let edge = if k % 2 == 0 { 1.0 } else { -1.0 };
+                        let along = 0.45 + 0.55 * t;
+                        let at = mid + d2 * (l2 * along) + across * (edge * width * 0.45);
+                        let dir = (d2 * 0.6 + Vec3::Y * 0.7 + across * edge * 0.4).normalize();
+                        antler_segment(b, at, at + dir * beam * 0.14, w * 0.45);
+                    }
+                    continue;
+                }
                 let d1 = Vec3::new(side * 0.45, 0.85, -0.35).normalize();
                 let d2 = Vec3::new(side * 0.3, 0.8, 0.45).normalize();
                 let l1 = beam * 0.55;
@@ -435,11 +459,7 @@ fn head(
                 let mid = base + d1 * l1;
                 let tip = mid + d2 * l2;
                 antler_segment(b, base, mid, w);
-                if palmate {
-                    antler_segment(b, mid, tip, w * 4.0);
-                } else {
-                    antler_segment(b, mid, tip, w * 0.8);
-                }
+                antler_segment(b, mid, tip, w * 0.8);
                 // The tines, spread along the beam.
                 for k in 0..tines {
                     let t = (k as f32 + 0.6) / (tines as f32 + 0.4);
@@ -451,6 +471,38 @@ fn head(
                     let tine = beam * if k == 0 { 0.28 } else { 0.22 };
                     let dir = Vec3::new(side * 0.1, 0.45, 0.9).normalize();
                     antler_segment(b, at, at + dir * tine, w * 0.6);
+                }
+            }
+        }
+        Some(HeadGear::Horns {
+            length_m,
+            curve,
+            droop: true,
+            ..
+        }) => {
+            // A boss across the brow; from it each horn sweeps down beside the face, then out,
+            // forward and up at the tip.
+            let w = (length_m * 0.16).max(0.02);
+            horn_segment(
+                b,
+                Vec3::new(-hw * 0.5, hh * 0.45, skull_l * 0.15),
+                Vec3::new(hw * 0.5, hh * 0.45, skull_l * 0.15),
+                w * 1.3,
+                SkinPart::Horn,
+                Gear::Horn,
+            );
+            for side in [1.0f32, -1.0] {
+                let mut at = Vec3::new(side * hw * 0.5, hh * 0.4, skull_l * 0.15);
+                let mut dir = Vec3::new(side * 0.55, -0.8, 0.2).normalize();
+                let segs = 4;
+                for k in 0..segs {
+                    let l = length_m / segs as f32;
+                    let next = at + dir * l;
+                    let thick = w * (1.0 - 0.22 * k as f32);
+                    horn_segment(b, at, next, thick, SkinPart::Horn, Gear::Horn);
+                    at = next;
+                    let turn = curve * 0.9;
+                    dir = (dir + Vec3::new(side * 0.2, 0.8, 0.45) * turn).normalize();
                 }
             }
         }
@@ -503,6 +555,29 @@ fn horn_segment(b: &mut Builder, from: Vec3, to: Vec3, w: f32, part: SkinPart, g
 
 fn antler_segment(b: &mut Builder, from: Vec3, to: Vec3, w: f32) {
     horn_segment(b, from, to, w, SkinPart::Antler, Gear::Antler);
+}
+
+/// A flat plate of antler (a moose's palm) from `from` to `to`, `width` across along `across`
+/// and `thick` through.
+fn antler_plate(b: &mut Builder, from: Vec3, to: Vec3, across: Vec3, width: f32, thick: f32) {
+    let d = to - from;
+    let len = d.length().max(1e-4);
+    let z = d / len;
+    let x = (across - z * across.dot(z)).normalize_or_zero();
+    let x = if x == Vec3::ZERO {
+        z.any_orthonormal_vector()
+    } else {
+        x
+    };
+    let y = z.cross(x);
+    b.boxes.push(RigBox {
+        slot: Slot::Head,
+        center: (from + to) * 0.5,
+        rot: Quat::from_mat3(&Mat3::from_cols(x, y, z)),
+        size: Vec3::new(width, thick, len).max(Vec3::splat(0.002)),
+        part: SkinPart::Antler,
+        gear: Gear::Antler,
+    });
 }
 
 fn quadruped(sp: &Species, male: bool) -> Rig {

@@ -773,6 +773,48 @@ impl Terrain {
         self.settle(x, z)
     }
 
+    /// The heart of a biome (tests, screenshots and benchmarks of a kind of land): of the points
+    /// on a lattice of the planet whose column is `biome` and passes `also`, the one with the
+    /// most of the same biome about it — on rings out to `radius` blocks — and, of those alike,
+    /// the first. Deterministic; none if the planet has no such land.
+    pub fn find_biome(
+        &self,
+        biome: biome::Biome,
+        radius: f64,
+        also: impl Fn(&ColumnSample) -> bool + Sync,
+    ) -> Option<(i32, i32)> {
+        use rayon::prelude::*;
+        let c = self.planet.circumference();
+        let step = (c / 128).max(64);
+        let zs: Vec<i32> = (-c / 2 + step..c / 2 - step)
+            .step_by(step as usize)
+            .collect();
+        let best = zs
+            .par_iter()
+            .flat_map_iter(|&z| (0..c).step_by(step as usize).map(move |x| (x, z)))
+            .filter_map(|(x, z)| {
+                let s = self.sample(x, z);
+                if s.biome != biome || !also(&s) {
+                    return None;
+                }
+                // Rings of eight at a quarter, half and the whole of the radius.
+                let mut same = 0;
+                for k in 1..=3 {
+                    let r = radius * [0.25, 0.5, 1.0][k - 1];
+                    for a in 0..8 {
+                        let t = a as f64 * std::f64::consts::FRAC_PI_4 + k as f64 * 0.3;
+                        let (dx, dz) = ((t.cos() * r) as i32, (t.sin() * r) as i32);
+                        if self.sample(x + dx, z + dz).biome == biome {
+                            same += 1;
+                        }
+                    }
+                }
+                Some((same, x, z))
+            })
+            .max_by(|a, b| a.0.cmp(&b.0).then(b.2.cmp(&a.2)).then(b.1.cmp(&a.1)))?;
+        Some(self.settle(best.1, best.2))
+    }
+
     /// A place to start at near (x, z) (v2 §16): there if it is dry, gentle land, else the
     /// nearest such column; from the sea or a lake, the nearest land on the planet (the coast).
     pub fn spawn_near(&self, x: i32, z: i32) -> (i32, i32) {

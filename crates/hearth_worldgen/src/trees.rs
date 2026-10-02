@@ -351,9 +351,11 @@ impl Forest {
             };
             match SpeciesBlocks::new(reg, form) {
                 Ok(b) => {
+                    // A conifer is a needle- or scale-leaved tree, larches (which drop their
+                    // needles) as much as spruces.
                     niches.push(Niche::of(
                         p,
-                        !p.deciduous && form.leaf != hearth_content::schema::flora::LeafKind::Broad,
+                        form.leaf != hearth_content::schema::flora::LeafKind::Broad,
                     ));
                     species.push(sp);
                     blocks.push(b);
@@ -427,8 +429,10 @@ impl Forest {
         patch_roll: impl Fn(usize, f32) -> f32,
     ) -> Option<usize> {
         let mut odds: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
+        let mut natives: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
         for (i, p) in self.understory.iter().enumerate() {
             let u = &p.understory;
+            natives.push(p.niche.native(c));
             if !ground.shrubs && matches!(p.form, GrowthForm::Shrub | GrowthForm::Vine) {
                 odds.push(0.0);
                 continue;
@@ -453,7 +457,31 @@ impl Forest {
             } else {
                 0.02 * u.abundance * fit
             };
-            odds.push(p * self.understory[i].niche.native(c));
+            odds.push(p);
+        }
+        // The place's own realm's plants; where they cover less than half what the stand-in
+        // realm's would (a realm with no tundra plants of its own but a moss of every
+        // continent's bogs), the stand-in realm's in full (as its animals do), not as rare
+        // strays.
+        let (own, stand_in) = odds
+            .iter()
+            .zip(&natives)
+            .fold((0.0f32, 0.0f32), |(o, s), (p, n)| {
+                if *n >= 1.0 {
+                    (o + p, s)
+                } else if *n > 0.0 {
+                    (o, s + p)
+                } else {
+                    (o, s)
+                }
+            });
+        let strays = own >= 0.5 * stand_in;
+        for (p, n) in odds.iter_mut().zip(&natives) {
+            *p *= if *n >= 1.0 || *n <= 0.0 || strays {
+                *n
+            } else {
+                1.0
+            };
         }
         let total: f32 = odds.iter().sum::<f32>().min(0.7);
         if roll >= total {

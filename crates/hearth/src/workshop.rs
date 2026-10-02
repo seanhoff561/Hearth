@@ -2086,22 +2086,24 @@ impl Workshop {
         }
     }
 
-    /// Food and carcasses go off; embers burn down.
+    /// Food and carcasses go off; embers burn down. What is being worked unattended (meat on
+    /// the rack) goes off at a quarter of the rate, and the less the drier it gets: dried, it
+    /// keeps.
     fn go_off(&mut self, h: &mut Here, dt_h: f32, air_c: f32) {
         let content = h.lw.content.clone();
         let items = h.items;
-        let age = |s: &mut Stack, temp: f32, drying: bool| {
+        let age = |s: &mut Stack, temp: f32, pace: f32| {
             if let Some(kind) = items.get(&s.id)
                 && let Some(keeps) = keeps_days(&content, kind)
             {
                 let rate = decay_per_hour(keeps, temp, s.wet);
-                s.decay = (s.decay + rate * dt_h * if drying { 0.25 } else { 1.0 }).min(1.6);
+                s.decay = (s.decay + rate * dt_h * pace).min(1.6);
             }
             if s.glow_h > 0.0 {
                 s.glow_h = (s.glow_h - dt_h).max(-1.0);
             }
         };
-        h.player.carry.for_each_mut(&mut |s| age(s, air_c, false));
+        h.player.carry.for_each_mut(&mut |s| age(s, air_c, 1.0));
         h.player.carry.retain(&mut |s| {
             !(s.glow_h < 0.0
                 && items
@@ -2110,8 +2112,16 @@ impl Workshop {
         });
         let before = h.world_items.items.len();
         for wi in h.world_items.items.iter_mut() {
-            let drying = wi.work.is_some();
-            age(&mut wi.stack, air_c, drying);
+            let pace = match &wi.work {
+                Some(work) => {
+                    let done = self.crafts.index_of(&work.process).map_or(0.0, |r| {
+                        work.hours / self.crafts.recipes[r].def.duration.hours.max(1e-3)
+                    });
+                    0.25 * (1.0 - done.clamp(0.0, 1.0))
+                }
+                None => 1.0,
+            };
+            age(&mut wi.stack, air_c, pace);
         }
         h.world_items.items.retain(|wi| {
             let cold = wi.stack.glow_h < 0.0

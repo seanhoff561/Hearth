@@ -530,9 +530,13 @@ impl FeatureGen {
             return next;
         }
         let soil_block = ground.is_none_or(|g| b.is_plantable(g));
-        if !above_air || !soil_block || s.temperature < -0.5 {
+        if !above_air || !soil_block {
             return next;
         }
+        // Where the year is mostly frozen only the cold's own species grow (the content's, by
+        // their climates: dwarf shrubs, sedges, mosses, lichens); the generic grasses, ferns and
+        // flowers do not.
+        let frozen = s.temperature < -0.5;
         let flower_n = self
             .flower_patch
             .noise2(x as f64 / 24.0, z as f64 / 24.0, 0) as f32;
@@ -541,6 +545,14 @@ impl FeatureGen {
             w.put(x, top, z, pair[0]);
             w.put(x, top + 1, z, pair[1]);
         };
+        if frozen
+            && !matches!(
+                s.biome,
+                Biome::Tundra | Biome::BorealForest | Biome::SnowyTaiga
+            )
+        {
+            return next;
+        }
         match s.biome {
             Biome::HotDesert | Biome::DuneSea | Biome::Mesa | Biome::ColdDesert => {
                 if r < 0.012 {
@@ -584,7 +596,13 @@ impl FeatureGen {
                 }
             }
             Biome::Tundra => {
-                if grassy && r < 0.15 {
+                // The tundra's own: dwarf shrubs, sedges, cushions, mosses and lichens; grass
+                // where it is mild enough.
+                let open = grassy || matches!(s.surface, Surface::CoarseDirt | Surface::SnowGrass);
+                if open && self.understory(w, wg, x, z, top, s, flower_n, disturbed) {
+                    return next;
+                }
+                if grassy && !frozen && r < 0.15 {
                     w.put(x, top, z, b.short_grass);
                 }
             }
@@ -613,6 +631,17 @@ impl FeatureGen {
                 }
             }
             Biome::BorealForest | Biome::SnowyTaiga | Biome::Krummholz | Biome::MontaneForest => {
+                // The taiga's own floor first (berries, heaths, feather moss, lichens); ferns
+                // and grass where it is mild enough.
+                if (grassy || s.surface == Surface::SnowGrass)
+                    && matches!(s.biome, Biome::BorealForest | Biome::SnowyTaiga)
+                    && self.understory(w, wg, x, z, top, s, flower_n, disturbed)
+                {
+                    return next;
+                }
+                if frozen {
+                    return next;
+                }
                 if r < 0.12 {
                     w.put(x, top, z, b.fern);
                 } else if r < 0.16 {
