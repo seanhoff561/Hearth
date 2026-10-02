@@ -492,7 +492,7 @@ V2-7 — Fauna framework (temperate forest first), in parts:
   Screenshots: `animal=`, `herd=`, `fauna=true`, `seek=<species>[:n]` (the camera where it
   sees the most of the nth nearest group). Test: walking to the groups about the spawn meets
   animals on the ground that move and are folded away when left behind. Deferred to (j):
-  making regions on a worker (≈0.1 s each on the server thread now).
+  making regions on a worker (done in (j)).
 - [x] (d) Bodies (D83, docs/design/fauna.md "Bodies"): skeletons built from data at real
   dimensions for every body plan in the content (four-legged, birds, snakes, fish, frogs,
   insects), their `shape` proportions defaulting by plan (antlers grown and cast by season,
@@ -579,7 +579,14 @@ V2-7 — Fauna framework (temperate forest first), in parts:
   and not in spring; the chorus at dawn in spring against noon, night and winter, owls by night.
   Deferred: birds and insects seen (flocks crossing the sky, insects over flowers) and with them
   posing on the GPU.
-- [ ] (j) Acceptance and the performance gate.
+- [x] (j) Acceptance and the performance gate (D90, docs/design/fauna.md "Acceptance"):
+  `acceptance_v2_7.rs` — fifty years of the 3 × 3 regions about the spawn stay within bounds for
+  every species held ten of or more; heavy hunting of the roe deer there thins them to a sixth
+  and they come back; every attack in seven kinds of encounter says its cause, each only where
+  it can hold. The populations' fixes it called for: the small species' young die at the first
+  year's rate only in their first year; crowding falls on the young and half-grown; prey reckoned
+  over their own habitat; a predator on a realm's border hunts as at home. Regions are made on
+  worker threads, three at a time. The performance gate run at the end.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in

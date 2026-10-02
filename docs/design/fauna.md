@@ -128,9 +128,10 @@ a shared condition. A step of the simulation (an eleventh of a month by default)
   animals as if the land beyond held its usual numbers.
 
 ## Animals in the world (`hearth_fauna::live`, the server's `fauna.rs`)
-The server keeps the regions about the player (the 3 × 3 about the one the player is in, made
-one at a time as the player comes near, or restored from the save where they were simulated
-before) and advances their populations with the calendar, every few days of game time, in steps
+The server keeps the regions about the player (the 3 × 3 about the one the player is in, made as
+the player comes near on worker threads, three at a time, the player's own first, each with a
+copy of the populations' tables and ids of its own, and taken in when made; or restored from the
+save where they were simulated before) and advances their populations with the calendar, every few days of game time, in steps
 of at most a thirty-second of a year. Near the player the populations become animals:
 - A **group** whose home is within 112 m comes into the world as its members — the young of the
   year, the older young, the females and males — placed about its home on ground they can stand
@@ -408,3 +409,26 @@ On warm nights from midsummer into autumn crickets sing (a bed of six, each chir
 a 4 kHz note), chirping as often as the warmth makes them — Dolbear's law for the tree crickets,
 seven chirps a minute for every degree less thirty — and not in the rain, the cold or a cave.
 Birds and insects seen about (flocks crossing the sky, insects over flowers) are not yet drawn.
+
+## Acceptance (V2-7)
+`crates/hearth_fauna/tests/acceptance_v2_7.rs`: the 3 × 3 regions about the spawn of seed 7 (a
+patchy land on the borders of four realms: woods, open plains, sea and fresh water) run for fifty
+years in quarter-year looks, every species the land holds ten of or more stays between a
+twentieth and four times what its habitat holds and is never gone for long (most hold near
+their capacity; the red fox about half, the timber rattlesnake about a tenth, food-limited in
+this land); a roe deer population hunted by half every year for six years falls to a sixth and
+comes back within twelve years of the hunting's end; and in seven kinds of encounter run a dozen
+times each — a sow with her cub come upon, wolves at the end of winter with the person crouched
+alone in the dark, a boar surprised, an adder walked over, a boar wounded and come up on, a stag
+in the rut walked up to, a hind and calf walked past — every attack says its cause in words, and
+each cause only where it can hold (hunger from hunters, defence of young from mothers with
+young, a snake's bite when stepped near, provocation when hurt, the rut from males).
+
+Two flaws of the populations showed in the fifty years and were mended: the small species' young
+died at the first year's rate however many years they took to grow (a timber rattlesnake takes
+seven), so slow-growing species dwindled — now the first year's rate and then the half-grown's of
+the groups, the mean over the years they are young; and crowding killed a territory's grown
+holders as readily as its young, so a pair on a patch too small for its litter died with it —
+now crowding falls on the young and the half-grown, as density does in the wild. A predator's
+prey is reckoned over the prey's own habitat in its reach (not the land of another realm beside
+it), and a predator whose home is on another realm's border hunts as it does in its own.

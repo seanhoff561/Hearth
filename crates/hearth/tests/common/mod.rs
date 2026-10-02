@@ -245,6 +245,31 @@ impl World {
         (done, words)
     }
 
+    /// Runs the world until the populations about the player are made (on workers): their
+    /// groups no more for a few looks a second apart. Returns the census of the groups.
+    pub fn census_about(&mut self) -> Vec<(u16, glam::DVec2, u32)> {
+        let mut last = (0usize, 0u32);
+        for _ in 0..300 {
+            self.run(40);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            self.census = None;
+            self.server.send(ToServer::Census);
+            if !self.until(30.0, |w| w.census.is_some()) {
+                continue;
+            }
+            let n = self.census.as_ref().map_or(0, |c| c.len());
+            if n > 0 && n == last.0 {
+                last.1 += 1;
+                if last.1 >= 3 {
+                    break;
+                }
+            } else {
+                last = (n, 0);
+            }
+        }
+        self.census.clone().unwrap_or_default()
+    }
+
     /// Gives one of a kind (development); what cannot be carried is put down by the feet.
     pub fn give(&mut self, id: &str, n: u16) {
         assert!(self.items.get(id).is_some(), "no {id}");

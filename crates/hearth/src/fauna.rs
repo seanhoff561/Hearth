@@ -22,6 +22,8 @@ use crate::scene::LocalWorld;
 
 /// The file the populations are saved in.
 const FILE: &str = "fauna.json.zst";
+/// Regions made on workers at once.
+const MAKERS: usize = 3;
 
 /// The loaded terrain as animals walk on it.
 pub struct MapGround<'a> {
@@ -239,6 +241,8 @@ pub struct Fauna {
     pub now: f64,
     /// For the calls of the animals not in the world.
     rng: hearth_math::hash::Rng,
+    /// Regions being made on workers: their keys, and where each will come.
+    making: Vec<((i64, i64), std::sync::mpsc::Receiver<Region>)>,
 }
 
 /// What is saved of the populations.
@@ -283,6 +287,7 @@ impl Fauna {
             years: at,
             now: years.max(at),
             rng: hearth_math::hash::Rng::new(seed ^ 0x000c_a115),
+            making: Vec::new(),
         }
     }
 
@@ -412,18 +417,61 @@ impl Fauna {
         let player = presence.pos;
         self.now = years;
         if tick.is_multiple_of(40) {
-            let land = GenLand {
-                wg: &lw.generator,
-                veg: &lw.vegetation,
-                catalog: &self.eco.catalog.clone(),
-                trees: &self.yields,
-            };
-            // The player's region first, then the rest, one a time (each takes a moment to
-            // make).
-            for key in self.regions_about(player) {
-                if !self.eco.regions.contains_key(&key) {
-                    self.eco.ensure_region(&land, key, self.years);
-                    break;
+            // The regions about the player, the player's own first, made on workers (each takes a
+            // tenth of a second or more), a few at a time, taken in when made.
+            let mut made = Vec::new();
+            self.making.retain(|(_, rx)| match rx.try_recv() {
+                Ok(r) => {
+                    made.push(r);
+                    false
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => false,
+                Err(std::sync::mpsc::TryRecvError::Empty) => true,
+            });
+            for r in made {
+                log::info!(
+                    "region {:?} of the populations made: {} groups",
+                    r.key,
+                    r.groups.len()
+                );
+                self.eco.adopt(r);
+            }
+            let wanted: Vec<(i64, i64)> = self
+                .regions_about(player)
+                .into_iter()
+                .filter(|k| {
+                    !self.eco.regions.contains_key(k) && self.making.iter().all(|(m, _)| m != k)
+                })
+                .take(MAKERS.saturating_sub(self.making.len()))
+                .collect();
+            for (n, key) in wanted.into_iter().enumerate() {
+                // Ids of their own, apart from the others' and from those born meanwhile.
+                let ids = self.eco.next_id + 1_000_000 * (n as u64 + 1 + self.making.len() as u64);
+                let mut maker = self.eco.maker(ids);
+                let (wg, veg, trees) = (
+                    lw.generator.clone(),
+                    lw.vegetation.clone(),
+                    self.yields.clone(),
+                );
+                let years = self.years;
+                let (tx, rx) = std::sync::mpsc::channel();
+                let spawned = std::thread::Builder::new()
+                    .name("fauna region".into())
+                    .spawn(move || {
+                        let cat = maker.catalog.clone();
+                        let land = GenLand {
+                            wg: &wg,
+                            veg: &veg,
+                            catalog: &cat,
+                            trees: &trees,
+                        };
+                        maker.ensure_region(&land, key, years);
+                        if let Some(r) = maker.regions.into_values().next() {
+                            let _ = tx.send(r);
+                        }
+                    });
+                if spawned.is_ok() {
+                    self.making.push((key, rx));
                 }
             }
             // The populations to the calendar every few days, in steps of at most 1/32 year.

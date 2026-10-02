@@ -646,6 +646,36 @@ impl Ecology {
             .collect();
     }
 
+    /// A maker of regions apart from this one (on another thread, [`Ecology::adopt`] taking
+    /// in what it makes): the same species, seed, calendar and tables, no regions, the ids of
+    /// its new groups from `ids` on.
+    pub fn maker(&self, ids: u64) -> Ecology {
+        Ecology {
+            catalog: self.catalog.clone(),
+            seed: self.seed,
+            year_offset: self.year_offset,
+            cells_around: self.cells_around,
+            rows: self.rows,
+            regions: FxHashMap::default(),
+            next_id: ids,
+            attack: self.attack.clone(),
+            deaths: FxHashMap::default(),
+            fed: FxHashMap::default(),
+            reference: self.reference,
+            forage_scale: self.forage_scale,
+            spin_up: self.spin_up,
+            emigrants: Vec::new(),
+        }
+    }
+
+    /// Takes in a region made apart: its groups' ids are beyond any here from now on.
+    pub fn adopt(&mut self, r: Region) {
+        self.next_id = self
+            .next_id
+            .max(r.groups.iter().map(|g| g.id + 1).max().unwrap_or(1));
+        self.regions.insert(r.key, r);
+    }
+
     /// Loads (creating at equilibrium the first time) the region at `key`, simulated to `time`.
     pub fn ensure_region(&mut self, land: &dyn Land, key: (i64, i64), time: f64) {
         let key = (
@@ -1151,12 +1181,14 @@ impl Ecology {
             let mut eaten = have;
             let reach = sp.range_radius_m();
             r.cells_within(self.cells_around, pos, reach, &mut cells);
-            // The prey in reach, as the hunt sees it: its numbers over the area it lives in.
+            // The prey in reach, as the hunt sees it: its numbers over the area it lives in (not
+            // the land of another realm or another kind it cannot live on).
             let mut seen: Vec<(usize, f32, f32)> = Vec::new();
             for &(pj, pref) in &sp.prey {
                 let prey = &cat.species[pj];
                 let reach_km2 = cells
                     .iter()
+                    .filter(|&&c| self.suits(prey, &r.habitat[c]))
                     .map(|&c| Self::area(prey, &r.habitat[c]))
                     .sum::<f32>()
                     .max(CELL_KM2 * 0.01);
@@ -1185,7 +1217,11 @@ impl Ecology {
             let realm = r
                 .cell_at(self.cells_around, pos[0], pos[1])
                 .map_or(0, |c| r.habitat[c].fauna as usize & 7);
-            let alpha = self.attack[sp.index][realm];
+            // As it hunts in its own realm (a home on the border of another is still its own).
+            let alpha = match self.attack[sp.index][realm] {
+                a if a > 0.0 => a,
+                _ => self.attack[sp.index].iter().copied().fold(0.0, f32::max),
+            };
             let per_year = sp.need_kg * 365.0 * (1.0 - sp.forage_share());
             let handling = |pj: usize| edible(&cat.species[pj]) / (per_year * 1.5).max(1e-6);
             let denom = 1.0
@@ -1563,9 +1599,11 @@ impl Ecology {
             let young_rate = -(sp.life.young_survival.ln()) * if sleeping { 0.5 } else { 1.0 };
             let hunger = starving(c);
             let p = |rate: f32| 1.0 - (-rate * dtf).exp();
-            let p_adult = p(natural + hunger + winter + crowd);
-            let p_juv = p(natural * 1.3 + hunger + winter + crowd);
-            let p_young = p(young_rate + 2.0 * hunger + 2.0 * winter + crowd);
+            // Crowding falls on the young and the half-grown first, as density does in the wild:
+            // the grown hold their ground (a pair keeps its territory while its cubs find none).
+            let p_adult = p(natural + hunger + winter + crowd * 0.3);
+            let p_juv = p(natural * 1.3 + hunger + winter + crowd * 1.5);
+            let p_young = p(young_rate + 2.0 * hunger + 2.0 * winter + crowd * 1.5);
             let mut dead = 0u32;
             let mut died = [0u32; 4];
             for (k, (n, pr)) in [
@@ -1945,7 +1983,14 @@ impl Ecology {
         for (slot, &si) in r.pool_species.iter().enumerate() {
             let sp = &cat.species[si as usize];
             let natural = -(sp.life.adult_survival.ln());
-            let young_rate = -(sp.life.young_survival.ln());
+            // The young die at their own rate in their first year and, for those that take
+            // longer to grow, as the half-grown of the groups do after it (a third more than the
+            // grown): over the years they are young, the mean.
+            let young_rate = {
+                let first = -(sp.life.young_survival.ln());
+                let years = sp.life.maturity_years.max(1.0);
+                (first + natural * 1.3 * (years - 1.0)) / years
+            };
             let mature = 1.0 / sp.life.maturity_years.max(0.05);
             // Births through a breeding season about the birth date, as long as the litters
             // need; a colony sends out swarms (no sexes to halve).

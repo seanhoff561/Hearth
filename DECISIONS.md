@@ -1043,3 +1043,17 @@ dawn and the rut are still windows of the calendar's day, so the chorus lasts a 
 play and is intense while it lasts. Songbirds too small to be drawn are heard from the
 populations' own numbers per cell, so the chorus is as rich as the wood, and the far calls of
 packs and stags come from their groups' places, so a howl tells truly where the wolves are.
+
+## D90 — Regions made on workers; the young bear density; acceptance on the generated land
+Making a region (its habitats from the generator and three years' spin-up) took a tenth of a
+second or more on the server thread, a hitch each time the player came near new land. Regions
+are now made on worker threads, three at a time, each from a copy of the populations' tables
+with group ids of its own a million apart (none can meet those born meanwhile), and taken in
+when made; the screenshot tool still makes them at once. The acceptance's fifty years on the
+generated land found two flaws the uniform wood had hidden — the young of slow-growing small
+species dying at the first year's rate through every year of growing, and crowding killing a
+territory's holders with its young — mended as density acts in the wild (on juvenile survival
+first), with the long-standing tests holding; its bounds are a twentieth to four times the
+capacity (the uniform wood's are a tenth), since a patchy land on the borders of realms and kinds
+of land holds its animals in pieces, and species of fewer than ten in the nine regions are left
+out (a handful of bobcats or bears is at the mercy of chance).

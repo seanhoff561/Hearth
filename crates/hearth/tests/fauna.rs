@@ -15,11 +15,7 @@ fn animals_come_into_the_world_about_the_player_and_go_as_they_leave() {
     let catalog = Catalog::new(&w.content);
     let home = w.mover.pos;
     // The populations about the spawn, once made: where their groups are.
-    w.run(80);
-    w.census = None;
-    w.server.send(hearth_protocol::ToServer::Census);
-    assert!(w.until(30.0, |w| w.census.is_some()), "no census");
-    let mut groups = w.census.clone().unwrap_or_default();
+    let mut groups = w.census_about();
     println!("{} groups about the spawn", groups.len());
     assert!(!groups.is_empty(), "the land about the spawn holds animals");
     groups.sort_by(|a, b| {
@@ -60,15 +56,19 @@ fn animals_come_into_the_world_about_the_player_and_go_as_they_leave() {
             ground.height
         );
     }
-    // They move about over a minute of play.
+    // They move about over a minute of play (watched through it: one that runs off far is
+    // folded away).
     let first: Vec<(u64, DVec3)> = met.iter().map(|v| (v.id, v.pos)).collect();
-    w.run(1200);
-    let moved = first.iter().any(|(id, p)| {
-        w.animals
-            .iter()
-            .find(|v| v.id == *id)
-            .is_some_and(|v| (v.pos - *p).length() > 0.5)
-    });
+    let mut moved = false;
+    for _ in 0..12 {
+        w.run(100);
+        moved |= first.iter().any(|(id, p)| {
+            w.animals
+                .iter()
+                .find(|v| v.id == *id)
+                .is_some_and(|v| (v.pos - *p).length() > 0.5)
+        });
+    }
     assert!(moved, "none of them moved in a minute");
     // Leaving, the player leaves them behind.
     w.go(at.x + 1500.0, at.z);
@@ -87,7 +87,7 @@ fn a_dead_deer_lies_until_found_and_is_butchered_by_its_kind() {
     use hearth_protocol::{AimAt, ToServer};
     let dir = common::temp("carcass");
     let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
-    w.run(80);
+    w.census_about();
     let home = w.mover.pos;
     // A red deer hind dies 300 m to the east: out of sight, she is not yet in the world.
     let far = home + DVec3::new(300.0, 0.0, 0.0);
@@ -143,11 +143,7 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
     let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
     let catalog = Catalog::new(&w.content);
     let home = w.mover.pos;
-    w.run(80);
-    w.census = None;
-    w.server.send(ToServer::Census);
-    assert!(w.until(30.0, |w| w.census.is_some()), "no census");
-    let mut groups = w.census.clone().unwrap_or_default();
+    let mut groups = w.census_about();
     groups.sort_by(|a, b| {
         let d = |p: glam::DVec2| (p.x - home.x).hypot(p.y - home.z);
         d(a.1).total_cmp(&d(b.1))
@@ -187,8 +183,9 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
     let side = DVec3::new(ahead.z, 0.0, -ahead.x);
     let feet = v.pos + side * 1.6;
     w.go_exact(feet);
+    // The heart and lungs: the front of the torso, a fifth of its length ahead of its feet.
     let chest =
-        v.pos + ahead * (sp.length_m as f64 * 0.12) + DVec3::Y * (sp.shoulder_m as f64 * 0.65);
+        v.pos + ahead * (sp.length_m as f64 * 0.21) + DVec3::Y * (sp.shoulder_m as f64 * 0.65);
     let n = w.acted.len();
     w.server.send(ToServer::Thrust {
         dir: chest - (feet + DVec3::new(0.0, 1.5, 0.0)),
