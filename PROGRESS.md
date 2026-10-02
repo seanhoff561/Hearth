@@ -620,11 +620,18 @@ V2-8 — Structural building & shelter, in parts (PLAN.md; v2 §14; docs/design/
   up; pieces under ground hold it and bear its weight as deep as the opening is wide (≤ 8
   blocks), so poles buckle and stone or stout timber holds (D94). Tests: clay holds a 1-wide
   tunnel and not 2, granite a hall, loam nothing; posts under clay buckle.
-- [ ] (d) Weather on buildings: roofs shed rain by pitch and material (thatch steep, bark less,
-  flat roofs leak and drip), mudbrick erodes without plaster and eaves, timber rots in ground
-  contact unless rot-resistant or on stone.
-- [ ] (e) Shelter quality: enclosure, roof, insulation and fire into the body's exposure (wind,
-  rain, radiant heat, the ground's cold); a good shelter makes winter survivable.
+- [x] (d) Weather on buildings: rain through covers (`building::cover`: a roof as steep as its
+  covering needs sheds it, flatter roofs and flat coverings let 0.4 drip); pieces of materials
+  that wear away have `decay` 0–3 (members weakened by `DECAYED`), advanced a stage a day by
+  chance (`Structures::weather`): wood rots in earth in 2 + 30·d² years (four times slower
+  rained on, never dry on stone), earth erodes in the rain (3 years), snow and ice melt in a
+  thaw; past stage 3 a piece crumbles (D95). Snow loads on roofs are left for later (snow is
+  not laid on pieces yet).
+- [x] (e) Shelter quality: seventeen rays from the eyes give enclosure, sides and heat loss
+  (`building::shelter`); the body's wind is cut by the sides, the air warmed by fires within
+  3 m by their heat over the hut's losses (≤ 25 °C), rain by the cover (D95). Tests: open
+  ground gives nothing; a hide hut with a bark roof stills the wind and a 5 kW fire warms it
+  8–25 °C.
 - [ ] (f) The builder's view: load and stress colouring, whether a placement will stand.
 - [ ] (g) Era 0–3 techniques: windbreak, lean-to, hide tent, pit house, wattle-and-daub hut,
   thatched roof, log walls, dry-stone walls, mudbrick, timber shoring — knowledge, processes.

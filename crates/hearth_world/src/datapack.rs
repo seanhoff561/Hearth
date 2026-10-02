@@ -149,14 +149,19 @@ fn generated_blocks(packs: &[PathBuf]) -> Vec<(ResourceLocation, Map<String, Val
         obj.insert("template".into(), "hearth:piece".into());
         let boxes = serde_json::to_value(&p.boxes).unwrap_or(Value::Null);
         let mut shape = Map::new();
+        let mut properties: Vec<Value> = Vec::new();
         if hearth_content::building::faces(p.shape) {
-            obj.insert(
-                "properties".into(),
-                Value::Array(vec!["facing:north,east,south,west".into()]),
-            );
+            properties.push("facing:north,east,south,west".into());
             shape.insert("facing".into(), boxes);
         } else {
             shape.insert("boxes".into(), boxes);
+        }
+        // What rots, erodes or melts wears through stages (V2-8 (d)).
+        if p.decay.is_some() {
+            properties.push("decay:0..3".into());
+        }
+        if !properties.is_empty() {
+            obj.insert("properties".into(), Value::Array(properties));
         }
         obj.insert("shape".into(), Value::Object(shape));
         let covers = matches!(p.shape, S::Roof | S::Layer | S::Wall | S::Block);

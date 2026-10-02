@@ -315,6 +315,49 @@ pub struct PieceBlock {
     pub status: Status,
     /// What it bears as a member of a structure.
     pub member: Member,
+    /// How it wears away (V2-8 (d)), if it does: its block has a `decay` stage 0–3.
+    pub decay: Option<Decay>,
+}
+
+/// How a piece's material wears away in the weather (V2-8 (d)).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Decay {
+    /// Wood, bark, hide, thatch: it rots where it is damp — in a few years to a few decades in
+    /// contact with the ground (by its durability), a quarter as fast rained on, not at all
+    /// dry under cover.
+    Rots { years_in_ground: f32 },
+    /// Earth (mudbrick, daub, rammed earth): rain washes it away where nothing covers it.
+    Erodes { years_rained_on: f32 },
+    /// Snow and ice: they melt when it thaws.
+    Melts,
+}
+
+/// What a piece's strength comes to at a stage of decay (0 sound to 3 nearly gone).
+pub const DECAYED: [f32; 4] = [1.0, 0.7, 0.4, 0.15];
+
+/// How a material wears away as a piece, if it does: organic matter rots (its life in the
+/// ground from its durability, two years for the least lasting to over thirty for the most),
+/// earth erodes, snow and ice melt; stone lasts.
+pub fn decay_of(m: &Material) -> Option<Decay> {
+    use crate::schema::material::MaterialCategory as Cat;
+    match m.category {
+        Cat::Wood
+        | Cat::Bark
+        | Cat::PlantFibre
+        | Cat::PlantTissue
+        | Cat::AnimalTissue
+        | Cat::AnimalFibre => {
+            let d = m.durability.unwrap_or(0.5).clamp(0.0, 1.0);
+            Some(Decay::Rots {
+                years_in_ground: 2.0 + 30.0 * d * d,
+            })
+        }
+        Cat::Clay | Cat::Soil | Cat::Sediment => Some(Decay::Erodes {
+            years_rained_on: 3.0,
+        }),
+        Cat::Snow | Cat::Ice => Some(Decay::Melts),
+        _ => None,
+    }
 }
 
 /// The blocks of every piece in every material it may be made of.
@@ -356,6 +399,7 @@ pub fn piece_blocks(
                 flammable,
                 status: p.status,
                 member: member(p, m, frame),
+                decay: decay_of(m),
             });
         }
     }

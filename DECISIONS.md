@@ -1120,3 +1120,17 @@ wide (at most eight blocks, the rest arching over, after Terzaghi's loosened zon
 what makes shoring a matter of stout timbers or stone, not of putting anything at all in the
 way. The surface's own blocks, which carry no material, are reckoned by their sound as turf or
 bare earth rather than given materials that would change what digging them teaches.
+
+## D95 — Decay as stages in the block; shelter from rays, warmth from the fire over the losses
+Pieces that rot, wash away or melt carry a `decay` stage (0–3) in their block state rather than
+an age kept elsewhere: it saves with the block, shows in the reckoning at once (each stage a
+weaker member), and costs four states a piece. A day's weather moves each stage on by chance at
+the rate the material sets, three stages over its life, with the chances drawn from the place
+and day so that a world weathers the same way each time; rot depends on contact with earth
+(the classic failure of posts set in the ground), not on wetness kept per block. Shelter is
+reckoned from seventeen rays (level and upward; the ground is under everyone) rather than by
+flooding the air of a room: rays cost a few hundred lookups a tick, degrade gracefully for
+lean-tos and windbreaks that enclose nothing, and see through brush by its fill. The warmth a
+fire gives a hut's air is its heat over the hut's losses — openings at 200 W/m²·K, walls by
+their insulation over a small hut's inside — capped at 25 °C; radiant heat from the fire to the
+body is kept separate, as it was.

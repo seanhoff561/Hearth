@@ -94,6 +94,174 @@ pub fn rests_at(
     rests(shape, below, beside)
 }
 
+/// The share of the rain that drips through a covering laid flatter than it sheds rain at.
+pub const LEAK: f32 = 0.4;
+
+/// What covers a place from the sky (V2-8 (d)): whether anything does (shade; the night sky
+/// shut out) and the share of the rain that comes through — none through ground, a whole block
+/// or a wall, or a roof at least as steep as its covering needs; [`LEAK`] through a roof laid
+/// flatter than that or a flat covering, which drip (a good roof over a leaking one keeps the
+/// rain off both).
+pub fn cover(
+    map: &CubeMap,
+    reg: &BlockRegistry,
+    content: &Content,
+    x: i32,
+    z: i32,
+    from_y: f64,
+) -> (bool, f32) {
+    let Some(top) = map.sky_top(x, z) else {
+        return (false, 1.0);
+    };
+    if (top as f64) < from_y {
+        return (false, 1.0);
+    }
+    let mut through = 1.0_f32;
+    let mut covered = false;
+    for y in (from_y.floor() as i32).max(top - 255)..=top {
+        let Some(s) = map.block(BlockPos::new(x, y, z)).filter(|s| !s.is_air()) else {
+            continue;
+        };
+        let piece = {
+            let name = &reg.block_of(s).name;
+            piece_of(name.path()).and_then(|(p, _)| {
+                content
+                    .construction
+                    .get(&format!("{}:{p}", name.namespace()))
+            })
+        };
+        match piece {
+            Some(p) => match p.shape {
+                PieceShape::Roof => {
+                    covered = true;
+                    let sheds = p
+                        .sheds_rain_min_pitch_deg
+                        .is_some_and(|min| p.pitch_deg.unwrap_or(45.0) >= min);
+                    through *= if sheds { 0.0 } else { LEAK };
+                }
+                PieceShape::Layer => {
+                    covered = true;
+                    through *= LEAK;
+                }
+                PieceShape::Wall | PieceShape::Block => {
+                    covered = true;
+                    through = 0.0;
+                }
+                PieceShape::Post | PieceShape::Beam | PieceShape::Panel => {}
+            },
+            None if reg.light_opacity(s) > 0 => {
+                covered = true;
+                through = 0.0;
+            }
+            None => {}
+        }
+        if through <= 0.0 {
+            break;
+        }
+    }
+    (covered, through)
+}
+
+/// How a place is sheltered (V2-8 (e)): how closed about it is on its sides and above (0 open
+/// to 1 shut in), how closed its sides are (what the wind meets), and how readily heat goes
+/// out through what closes it (W/m²·K, from the pieces' insulation; earth and rock hold heat
+/// in well). The ground under it is not counted: it is under everyone.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Shelter {
+    pub enclosure: f32,
+    pub sides: f32,
+    pub u_w_m2k: f32,
+}
+
+impl Shelter {
+    /// The surface of a small hut's inside (m²).
+    const AREA_M2: f32 = 40.0;
+
+    /// How much warmer than outside fires of `fire_kw` within it keep the air (°C): their heat
+    /// over what the walls and the openings let out (an opening loses as the warm air goes
+    /// out of it, two hundred watts a square metre for each degree), at most twenty-five.
+    pub fn warming_c(&self, fire_kw: f32) -> f32 {
+        let e = self.enclosure.clamp(0.0, 1.0);
+        let ua = Self::AREA_M2 * ((1.0 - e) * 200.0 + e * self.u_w_m2k);
+        (fire_kw * 1000.0 / ua.max(1.0)).min(25.0)
+    }
+
+    /// The share of the wind that reaches a body inside: what its sides let through.
+    pub fn wind_share(&self) -> f32 {
+        1.0 - 0.9 * self.sides.clamp(0.0, 1.0)
+    }
+}
+
+/// How sheltered the place at `eye` is: rays out in the seventeen directions level and up to
+/// four metres,
+/// each stopped (wholly or partly) by ground, a wall, a panel, a roof — brush lets the air
+/// through, hides and wattle do not — or leaves (a little).
+pub fn shelter(map: &CubeMap, reg: &BlockRegistry, content: &Content, eye: DVec3) -> Shelter {
+    let (mut closed, mut sides, mut loss) = (0.0_f32, 0.0_f32, 0.0_f32);
+    for dy in 0..=1 {
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                if (dx, dy, dz) == (0, 0, 0) {
+                    continue;
+                }
+                let dir = DVec3::new(dx as f64, dy as f64, dz as f64).normalize();
+                let start = BlockPos::containing(eye);
+                let mut hit: Option<(f32, f32)> = None;
+                for k in 1..=16 {
+                    let p = BlockPos::containing(eye + dir * (k as f64 * 0.25));
+                    if p == start {
+                        continue;
+                    }
+                    let Some(s) = map.block(p).filter(|s| !s.is_air()) else {
+                        continue;
+                    };
+                    let name = &reg.block_of(s).name;
+                    let piece = piece_of(name.path()).and_then(|(pc, _)| {
+                        content
+                            .construction
+                            .get(&format!("{}:{pc}", name.namespace()))
+                    });
+                    hit = match piece {
+                        Some(pc) => match pc.shape {
+                            PieceShape::Post | PieceShape::Beam => None,
+                            _ => Some((
+                                (pc.fill * 3.0).clamp(0.2, 1.0),
+                                pc.insulation_r.unwrap_or(0.1).max(0.02),
+                            )),
+                        },
+                        None => {
+                            let def = &reg.block_of(s).def;
+                            if def.fluid.is_some() || reg.collision_shape(s).is_empty() {
+                                None
+                            } else if def.opaque {
+                                // Earth and rock about: a metre of it holds heat well.
+                                Some((1.0, 1.0))
+                            } else {
+                                Some((0.3, 0.05))
+                            }
+                        }
+                    };
+                    if hit.is_some() {
+                        break;
+                    }
+                }
+                if let Some((tight, r)) = hit {
+                    closed += tight;
+                    loss += tight / r;
+                    if dy == 0 {
+                        sides += tight;
+                    }
+                }
+            }
+        }
+    }
+    Shelter {
+        enclosure: closed / 17.0,
+        sides: sides / 8.0,
+        u_w_m2k: if closed > 0.0 { loss / closed } else { 10.0 },
+    }
+}
+
 /// The block a piece of a material is, facing the way the builder faces (radians: 0 toward +z,
 /// turning toward +x).
 pub fn piece_state(
@@ -160,6 +328,87 @@ pub fn ghost(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pitched_roof_sheds_the_rain_and_a_flat_covering_drips() {
+        use std::sync::Arc;
+        let reg = hearth_world::datapack::load_builtin_registry().expect("registry");
+        let content = Content::load_base();
+        let mut map = CubeMap::new(
+            hearth_math::Planet::from_size(hearth_math::PlanetSize::Tiny).expect("planet"),
+        );
+        map.insert_cube(
+            hearth_math::CubePos::new(0, 0, 0),
+            Arc::new(hearth_world::Cube::filled(BlockStateId::AIR)),
+            &reg,
+        );
+        let put = |map: &mut CubeMap, x, y, z, s: &str| {
+            map.set_block(BlockPos::new(x, y, z), reg.parse_state(s).expect(s), &reg);
+        };
+        put(
+            &mut map,
+            2,
+            5,
+            2,
+            "hearth:bark_roof/birch_bark[facing=north]",
+        );
+        put(&mut map, 6, 5, 6, "hearth:bark_cover/birch_bark");
+        put(&mut map, 9, 5, 9, "hearth:post/hazel_wood");
+        assert_eq!(cover(&map, &reg, &content, 2, 2, 3.0), (true, 0.0));
+        assert_eq!(cover(&map, &reg, &content, 6, 6, 3.0), (true, LEAK));
+        assert_eq!(cover(&map, &reg, &content, 9, 9, 3.0), (false, 1.0));
+        assert_eq!(cover(&map, &reg, &content, 12, 12, 3.0), (false, 1.0));
+    }
+
+    #[test]
+    fn a_closed_hut_with_a_fire_is_warm_and_still() {
+        use std::sync::Arc;
+        let reg = hearth_world::datapack::load_builtin_registry().expect("registry");
+        let content = Content::load_base();
+        let mut map = CubeMap::new(
+            hearth_math::Planet::from_size(hearth_math::PlanetSize::Tiny).expect("planet"),
+        );
+        map.insert_cube(
+            hearth_math::CubePos::new(0, 0, 0),
+            Arc::new(hearth_world::Cube::filled(BlockStateId::AIR)),
+            &reg,
+        );
+        let eye = DVec3::new(8.5, 5.5, 8.5);
+        let open = shelter(&map, &reg, &content, eye);
+        assert!(
+            open.enclosure < 0.01 && open.wind_share() > 0.99,
+            "{open:?}"
+        );
+        assert!(open.warming_c(5.0) < 1.0);
+        // Hides hung all round two blocks out, a bark roof over.
+        let hide = |f: &str| format!("hearth:hide_wall/scraped_hide[facing={f}]");
+        for y in 4..7 {
+            for k in 6..=10 {
+                for (x, z, f) in [
+                    (k, 6, "south"),
+                    (k, 10, "north"),
+                    (6, k, "east"),
+                    (10, k, "west"),
+                ] {
+                    let s = reg.parse_state(&hide(f)).expect("hide wall");
+                    map.set_block(BlockPos::new(x, y, z), s, &reg);
+                }
+            }
+        }
+        let roof = reg
+            .parse_state("hearth:bark_cover/birch_bark")
+            .expect("roof");
+        for z in 6..=10 {
+            for x in 6..=10 {
+                map.set_block(BlockPos::new(x, 7, z), roof, &reg);
+            }
+        }
+        let hut = shelter(&map, &reg, &content, eye);
+        assert!(hut.enclosure > 0.9 && hut.wind_share() < 0.2, "{hut:?}");
+        // A small fire keeps it ten degrees and more above the cold outside.
+        let warm = hut.warming_c(5.0);
+        assert!((8.0..25.0).contains(&warm), "{warm} °C");
+    }
 
     #[test]
     fn a_ghost_has_twelve_edges_to_a_box() {

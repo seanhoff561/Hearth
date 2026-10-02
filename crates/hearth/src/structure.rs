@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use hearth_content::Content;
-use hearth_content::building::{Member, piece_of, self_span, take_down_id};
+use hearth_content::building::{DECAYED, Decay, Member, piece_of, self_span, take_down_id};
 use hearth_content::schema::process::Match;
 use hearth_math::{BlockPos, Direction};
 use hearth_world::structure::{Cell, connected, reckon};
@@ -37,12 +37,17 @@ pub struct Fell {
 
 /// The structures of the loaded world, as far as they have been reckoned.
 pub struct Structures {
-    /// The member each block (by id) is, if it is a piece.
+    /// The member each block state is, if it is a piece: weakened by its stage of decay.
     member_of: Vec<Option<u32>>,
     members: Vec<Member>,
+    /// How each piece's state wears away and its stage, by state.
+    decay_of: Vec<Option<(Decay, u8)>>,
     /// How wide an opening each natural block roofs over (m), and its weight (N), by id; none
     /// for what is not reckoned as ground (wood, leaves, plants).
     ground_of: Vec<Option<(f32, f32)>>,
+    /// Whether each block (by id) is earth: soil, clay, sediment, turf (what rots wood set in
+    /// it).
+    earth: Vec<bool>,
     /// Places changed and not yet reckoned about.
     dirty: BTreeSet<BlockPos>,
     /// How hard each piece reckoned is pressed (over one, it fails).
@@ -51,18 +56,48 @@ pub struct Structures {
 
 impl Structures {
     pub fn new(reg: &BlockRegistry, content: &Content) -> Self {
-        let mut member_of = vec![None; reg.block_count()];
+        let mut member_of = vec![None; reg.state_count()];
+        let mut decay_of = vec![None; reg.state_count()];
         let mut members = Vec::new();
         for p in hearth_content::building::piece_blocks(
             &content.construction,
             &content.materials,
             &content.forms,
         ) {
-            if let Some(id) = reg.block_id(&p.id) {
-                member_of[id.0 as usize] = Some(members.len() as u32);
-                members.push(p.member);
+            let Some(id) = reg.block_id(&p.id) else {
+                continue;
+            };
+            for s in reg.states_of(id) {
+                let stage = reg.get_int(s, "decay").unwrap_or(0).clamp(0, 3) as u8;
+                let f = DECAYED[stage as usize];
+                member_of[s.0 as usize] = Some(members.len() as u32);
+                members.push(Member {
+                    moment: p.member.moment * f,
+                    crush: p.member.crush * f,
+                    stiffness: p.member.stiffness * f,
+                    ..p.member
+                });
+                decay_of[s.0 as usize] = p.decay.map(|d| (d, stage));
             }
         }
+        let earth = reg
+            .blocks()
+            .map(|b| {
+                use hearth_content::schema::material::MaterialCategory as Cat;
+                match b
+                    .def
+                    .material
+                    .as_deref()
+                    .and_then(|m| content.materials.get(m))
+                {
+                    Some(m) => matches!(m.category, Cat::Soil | Cat::Clay | Cat::Sediment),
+                    None => {
+                        b.def.opaque
+                            && matches!(b.def.sound.as_str(), "grass" | "moss" | "soil" | "mud")
+                    }
+                }
+            })
+            .collect();
         let ground_of = reg
             .blocks()
             .map(|b| {
@@ -90,10 +125,65 @@ impl Structures {
         Structures {
             member_of,
             members,
+            decay_of,
             ground_of,
+            earth,
             dirty: BTreeSet::new(),
             stress: BTreeMap::new(),
         }
+    }
+
+    /// A day of weather on the pieces of the loaded world (V2-8 (d)): wood, bark and hide rot
+    /// where they are damp — fastest set in the earth, slower rained on, not at all dry under
+    /// cover or on stone; earth washes away where the rain reaches it; snow and ice melt in a
+    /// thaw. Each goes a stage at a time, by chance at the rate its material sets (three
+    /// stages over its life); past the last it crumbles away. `pieces` are the places to
+    /// weather (the player's changes), `air_c` the day's warmth, `days_per_year` the
+    /// calendar's and `day` the day's number (for the chances). What changes: each place and
+    /// its new block (air when it crumbles).
+    pub fn weather(
+        &self,
+        map: &CubeMap,
+        reg: &BlockRegistry,
+        pieces: impl Iterator<Item = BlockPos>,
+        air_c: f32,
+        days_per_year: f32,
+        day: u64,
+    ) -> Vec<(BlockPos, BlockStateId)> {
+        let mut out = Vec::new();
+        for p in pieces {
+            let Some(s) = map.block(p) else {
+                continue;
+            };
+            let Some(Some((decay, stage))) = self.decay_of.get(s.0 as usize).copied() else {
+                continue;
+            };
+            let in_earth = map
+                .block(p.down())
+                .is_some_and(|b| self.earth.get(reg.block_id_of(b).0 as usize) == Some(&true));
+            let open = map.sky_top(p.x, p.z).is_none_or(|t| t <= p.y);
+            let year = days_per_year.max(1.0);
+            let rate = match decay {
+                Decay::Rots { years_in_ground } if in_earth => 3.0 / (years_in_ground * year),
+                Decay::Rots { years_in_ground } if open => 3.0 / (4.0 * years_in_ground * year),
+                Decay::Rots { .. } => 0.0,
+                Decay::Erodes { years_rained_on } if open => 3.0 / (years_rained_on * year),
+                Decay::Erodes { .. } => 0.0,
+                Decay::Melts => ((air_c - 1.0) / 3.0).clamp(0.0, 1.0),
+            };
+            if rate <= 0.0 || chance(p, day) >= rate {
+                continue;
+            }
+            let next = if stage >= 3 {
+                BlockStateId::AIR
+            } else {
+                reg.with(s, "decay", &(stage + 1).to_string()).unwrap_or(s)
+            };
+            if next != s {
+                out.push((p, next));
+            }
+        }
+        out
     }
 
     /// What the reckoning sees at a place: a piece, the ground that holds (or land not
@@ -103,9 +193,9 @@ impl Structures {
     }
 
     /// Whether a block is a piece.
-    pub fn is_piece(&self, reg: &BlockRegistry, s: BlockStateId) -> bool {
+    pub fn is_piece(&self, s: BlockStateId) -> bool {
         self.member_of
-            .get(reg.block_id_of(s).0 as usize)
+            .get(s.0 as usize)
             .is_some_and(|m| m.is_some())
     }
 
@@ -269,8 +359,7 @@ fn cell(member_of: &[Option<u32>], map: &CubeMap, reg: &BlockRegistry, p: BlockP
     if s.is_air() {
         return Cell::Open;
     }
-    let id = reg.block_id_of(s);
-    if let Some(Some(m)) = member_of.get(id.0 as usize) {
+    if let Some(Some(m)) = member_of.get(s.0 as usize) {
         return Cell::Piece(*m, reg.get_dir(s, "facing").unwrap_or(Direction::North));
     }
     let def = &reg.block_of(s).def;
@@ -279,6 +368,18 @@ fn cell(member_of: &[Option<u32>], map: &CubeMap, reg: &BlockRegistry, p: BlockP
     } else {
         Cell::Ground
     }
+}
+
+/// A chance in [0, 1) for a place on a day: the same every time it is asked.
+fn chance(p: BlockPos, day: u64) -> f32 {
+    let mut h = (p.x as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (p.y as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f)
+        ^ (p.z as u64).wrapping_mul(0x1656_67b1_9e37_79f9)
+        ^ day.wrapping_mul(0x27d4_eb2f_1656_67c5);
+    h ^= h >> 31;
+    h = h.wrapping_mul(0x7fb5_d329_728e_a185);
+    h ^= h >> 27;
+    (h >> 40) as f32 / (1u64 << 24) as f32
 }
 
 /// What lies where a piece fell: half of what taking it down would give, in its material.
@@ -416,6 +517,34 @@ mod tests {
         let mut f = fixture("hearth:loam");
         f.tunnel(1);
         assert!(!f.tick().ground.is_empty());
+    }
+
+    #[test]
+    fn wood_rots_in_the_earth_not_on_stone_under_cover() {
+        // On loam a hazel post rots through in a few years; on a granite step under a granite
+        // roof it does not.
+        let mut f = fixture("hearth:loam");
+        f.set(4, 12, 4, "hearth:post/hazel_wood");
+        f.set(9, 12, 9, "hearth:granite");
+        f.set(9, 13, 9, "hearth:post/hazel_wood");
+        f.set(9, 14, 9, "hearth:granite");
+        let (earth, stone) = (BlockPos::new(4, 12, 4), BlockPos::new(9, 13, 9));
+        let year = 32.0;
+        let mut days = None;
+        for day in 0..32 * 40 {
+            for (p, s) in
+                f.s.weather(&f.map, &f.reg, [earth, stone].into_iter(), 10.0, year, day)
+            {
+                f.map.set_block(p, s, &f.reg);
+            }
+            if days.is_none() && f.map.block(earth).is_some_and(|s| s.is_air()) {
+                days = Some(day);
+            }
+        }
+        let years = days.map(|d| d as f32 / year);
+        assert!(years.is_some_and(|y| (1.0..20.0).contains(&y)), "{years:?}");
+        let post = f.map.block(stone).unwrap();
+        assert_eq!(f.reg.get(post, "decay"), Some("0"));
     }
 
     #[test]

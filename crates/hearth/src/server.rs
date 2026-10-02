@@ -279,7 +279,8 @@ fn exposure(
     let (light, w) = env.sample(moment, pos, 0.0, EnvOverrides::default());
     let head = pos.y + mover.stance.height();
     let (x, z) = (pos.x.floor() as i32, pos.z.floor() as i32);
-    let covered = lw.map.sky_top(x, z).is_some_and(|top| top as f64 >= head);
+    // Under a roof, and how much of the rain comes through it (V2-8 (d)).
+    let (covered, rain_through) = crate::building::cover(&lw.map, &lw.reg, &lw.content, x, z, head);
     // The sun's beam (about 105 lm per W) on the share of the body facing it (27 %), 70 %
     // absorbed; under cover, shade.
     let sun_lux = (light.sun_lux.x + light.sun_lux.y + light.sun_lux.z) as f64 / 3.0;
@@ -308,7 +309,7 @@ fn exposure(
         air_c: w.temperature_c as f32,
         humidity: w.humidity as f32,
         wind_m_s: (w.wind_speed_m_s * if covered { 0.3 } else { 1.0 } * lee(lw, pos)) as f32,
-        rain_mm_h: if covered { 0.0 } else { falling as f32 },
+        rain_mm_h: falling as f32 * rain_through,
         immersion: immersion as f32,
         water_c: water.temperature_c,
         radiant_w_m2: radiant as f32,
@@ -625,8 +626,9 @@ fn run(
     let opts = MeshOptions::default();
     let mut stream = Stream::default();
     let mut water = WaterSim::new(&lw.reg)?;
-    // What is built, standing or falling (V2-8 (b)).
+    // What is built, standing or falling (V2-8 (b)), and the day its weather was last told.
     let mut structures = crate::structure::Structures::new(&lw.reg, &lw.content);
+    let mut weathered_day = (ticks as f64 / calendar.ticks_per_day()) as u64;
     let mut last_moved: Option<Moved> = None;
     let mut warp = 0.0f64;
     let mut sleep_warp = 0.0f64;
@@ -1138,6 +1140,11 @@ fn run(
             let mut e = exposure(&env, &lw, &moment, &player.mover, immersion);
             // Fires warm those beside them; bedding keeps the ground's cold off a sleeper.
             e.radiant_w_m2 += workshop.radiant_w_m2(player.mover.pos + DVec3::new(0.0, 0.9, 0.0));
+            // Within walls the wind is broken and a fire warms the air (V2-8 (e)).
+            let eye = player.mover.pos + DVec3::new(0.0, player.mover.stance.height() - 0.2, 0.0);
+            let shelter = crate::building::shelter(&lw.map, &lw.reg, &lw.content, eye);
+            e.wind_m_s *= shelter.wind_share();
+            e.air_c += shelter.warming_c(workshop.fire_kw_near(eye, 3.0));
             if player.lying || player.asleep {
                 e.ground_clo = e.ground_clo.max(workshop.bedding_clo(player.mover.pos));
             }
@@ -1258,6 +1265,26 @@ fn run(
                 let days = weather_every as f64 / calendar.ticks_per_day();
                 water.weather(&mut lw.map, &lw.reg, &world_water, days as f32);
                 changed.extend_from_slice(water.changed());
+            }
+            // A day's weather on what was built: rot, wash and thaw, a stage at a time.
+            let day = (ticks as f64 / calendar.ticks_per_day()) as u64;
+            if day != weathered_day {
+                weathered_day = day;
+                let worn = structures.weather(
+                    &lw.map,
+                    &lw.reg,
+                    lw.edits.places().into_iter(),
+                    e.air_c,
+                    calendar.days_per_season as f32 * 4.0,
+                    day,
+                );
+                let reg = lw.reg.clone();
+                for (p, s) in worn {
+                    lw.map.set_block(p, s, &reg);
+                    lw.edits.set(p, s);
+                    changed.push(p);
+                    structures.changed(&[p]);
+                }
             }
             // What was built stands or falls: what fails breaks, half of it lying where it
             // fell; ground over too wide an opening falls in, loose, to the floor under it.

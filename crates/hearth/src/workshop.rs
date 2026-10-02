@@ -1505,6 +1505,18 @@ impl Workshop {
         (0.45 * facing).min(600.0) + self.blaze.radiant_w_m2(at)
     }
 
+    /// The heat the fires burning within `r` of a place give (kW): what warms the air of a hut
+    /// about them.
+    pub fn fire_kw_near(&self, at: DVec3, r: f64) -> f32 {
+        self.stations
+            .iter()
+            .filter_map(|s| {
+                let f = s.fire.as_ref()?;
+                ((center(s.pos) - at).length() <= r).then_some(f.power_kw)
+            })
+            .sum()
+    }
+
     /// What each block burns as.
     fn fuel_table(&mut self, h: &Here) -> Arc<FuelTable> {
         self.fuel

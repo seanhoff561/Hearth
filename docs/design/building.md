@@ -1,6 +1,6 @@
 # Building and structure
 
-*Status: V2-8 in progress — (a) pieces in the world, (b) stability and (c) excavation done. Pieces' data since V2-0
+*Status: V2-8 in progress — (a) pieces in the world, (b) stability, (c) excavation, (d) weather and (e) shelter done. Pieces' data since V2-0
 (`construction/`).*
 
 ## Pieces in the world (V2-8 (a))
@@ -150,7 +150,46 @@ clay roof buckle at once and the roof comes down after them, while dry stone pil
 timbers (V2-8 (g)) hold. A one-block tunnel in clay or firm soil needs nothing; in loam it
 falls; in rock a hall stands.
 
-## Planned (V2-8 (d)–(h))
-Rain shed by pitch and material, leaks, rot in ground contact and mudbrick's erosion; shelter
-quality for the body's exposure; a builder's view of load and stress; the Era 0–3 techniques
-(thatch, wattle and daub, pit house, mudbrick, snow blocks, timber shoring).
+## Weather on buildings (V2-8 (d))
+
+**Rain** (`building::cover`). What covers a body is found up its column to the sky: ground, a
+whole block or a wall keep all the rain off; a roof keeps it off if it is at least as steep as
+its covering needs (`sheds_rain_min_pitch_deg` against its `pitch_deg`: bark at 30°, hides 20°,
+thatch 45°); a roof laid flatter, or a flat covering (a layer), lets two fifths through as drips
+(`LEAK`) — a good roof over a leaky one keeps both dry. Under any cover the sun and the night
+sky are shut out as before.
+
+**Decay** (`building::decay_of`, `Structures::weather`). A piece of a material that wears away
+has a `decay` stage 0–3 in its block; each stage weakens it (`DECAYED`: its moment, crushing and
+stiffness to 0.7, 0.4 and 0.15 of new), and past the last it crumbles away (and what it held is
+reckoned). Once a game day each of the player's pieces goes on a stage by chance, at a rate its
+material sets so that three stages take its life:
+
+- wood, bark, hide and plant fibre **rot**: in contact with earth (soil, clay, sediment, turf)
+  in 2 + 30·d² years for durability d (birch under five, oak about twenty), rained on four
+  times slower, dry under cover or set on stone not at all;
+- earth (mudbrick, daub, rammed earth) **erodes** where the rain reaches it, in about three years
+  unprotected; eaves or a roof over it stop it;
+- snow and ice **melt** in a thaw, faster the warmer.
+
+The chances come from the place and the day, so the same world weathers the same way.
+
+## Shelter (V2-8 (e))
+
+How sheltered a body is comes from seventeen rays out from the eyes, level and upward, to four
+metres (`building::shelter`): each stopped by ground or rock, by a wall, panel or roof (brush
+partly, by its fill — the air goes through it — hides, wattle and bark wholly), or a little by
+leaves. Their share is the **enclosure**; the level rays' share is how closed its **sides** are;
+and what stops them sets how readily heat goes out (from the pieces' `insulation_r`; earth and
+rock about a metre's worth). The body then feels:
+
+- the wind cut to `1 - 0.9 × sides` of what reaches it outside;
+- the air warmed by fires within three metres (`Workshop::fire_kw_near`) by their heat over
+  what the hut lets out — its openings at 200 W/m²·K, its walls by their insulation over a small
+  hut's forty square metres — at most 25 °C: a closed hide hut with a small fire is ten to
+  fifteen degrees warmer inside, a lean-to hardly, the open air not at all;
+- the rain as its cover lets it through, and no night sky overhead under a roof.
+
+## Planned (V2-8 (f)–(h))
+A builder's view of load and stress; the Era 0–3 techniques (thatch, wattle and daub, pit house,
+mudbrick, snow blocks, timber shoring); acceptance.

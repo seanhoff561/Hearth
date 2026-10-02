@@ -103,6 +103,17 @@ impl Edits {
     }
 
     /// How many blocks the player has changed.
+    /// The places changed, in order.
+    pub fn places(&self) -> Vec<BlockPos> {
+        let mut v: Vec<BlockPos> = self
+            .by_cube
+            .values()
+            .flat_map(|m| m.keys().copied())
+            .collect();
+        v.sort();
+        v
+    }
+
     pub fn len(&self) -> usize {
         self.by_cube.values().map(|m| m.len()).sum()
     }
