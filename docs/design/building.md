@@ -1,6 +1,6 @@
 # Building and structure
 
-*Status: V2-8 in progress — (a) pieces in the world, (b) stability, (c) excavation, (d) weather and (e) shelter done. Pieces' data since V2-0
+*Status: V2-8 in progress — (a) pieces in the world, (b) stability, (c) excavation, (d) weather, (e) shelter and (f) the builder's view done. Pieces' data since V2-0
 (`construction/`).*
 
 ## Pieces in the world (V2-8 (a))
@@ -190,6 +190,19 @@ rock about a metre's worth). The body then feels:
   fifteen degrees warmer inside, a lean-to hardly, the open air not at all;
 - the rain as its cover lets it through, and no night sky overhead under a roof.
 
-## Planned (V2-8 (f)–(h))
-A builder's view of load and stress; the Era 0–3 techniques (thatch, wattle and daub, pit house,
-mudbrick, snow blocks, timber shoring); acceptance.
+## The builder's view (V2-8 (f))
+
+The builder's view (key V, `key.builder_view`) outlines every piece within 32 m by how hard it
+is pressed — the largest share of what it can bear that it bears, from the last reckoning —
+blue at ease, green, yellow, red at breaking (`building::stress_color`). The server tells the
+stresses of the pieces within 48 m once a second (`ToClient::Stress`) and reckons, each second,
+any piece about the player not yet reckoned since its land loaded (so a saved hut shows at
+once). The ghost of a piece about to be put up says whether it will stand: the client reckons
+the structure it would join with it in place, as the server would (`Structures::would_bear`,
+again only when the ghost moves or every half second), and shows it pale (stands), amber (stands
+but something is pressed past seven tenths) or red (rests on nothing, or something would give
+way).
+
+## Planned (V2-8 (g)–(h))
+The Era 0–3 techniques (thatch, wattle and daub, pit house, mudbrick, snow blocks, timber
+shoring); acceptance.

@@ -280,24 +280,79 @@ pub fn piece_state(
     )
 }
 
-/// The ghost of a piece where it will go: the edges of its boxes, pale where it would rest and
-/// red where it would not, relative to the eye at `view`.
+/// The ghost's colour: pale where the piece would rest and stand, amber where it would stand
+/// but hard pressed, red where it would rest on nothing or something would give way.
+pub fn ghost_color(rests: bool, worst: f32) -> [u8; 3] {
+    if !rests || worst > 1.0 {
+        [228, 84, 64]
+    } else if worst > 0.7 {
+        [236, 186, 72]
+    } else {
+        [226, 232, 238]
+    }
+}
+
+/// The builder's view's colour for a piece pressed `stress` (V2-8 (f)): blue at ease, through
+/// green and yellow, to red at what it can bear.
+pub fn stress_color(stress: f32) -> [u8; 3] {
+    const STOPS: [(f32, [f32; 3]); 4] = [
+        (0.0, [80.0, 140.0, 255.0]),
+        (0.5, [100.0, 220.0, 110.0]),
+        (0.8, [245.0, 215.0, 70.0]),
+        (1.0, [235.0, 60.0, 45.0]),
+    ];
+    let s = stress.clamp(0.0, 1.0);
+    let k = STOPS
+        .iter()
+        .rposition(|(at, _)| s >= *at)
+        .unwrap_or(0)
+        .min(2);
+    let ((a, ca), (b, cb)) = (STOPS[k], STOPS[k + 1]);
+    let t = ((s - a) / (b - a)).clamp(0.0, 1.0);
+    [0, 1, 2].map(|i| (ca[i] + (cb[i] - ca[i]) * t) as u8)
+}
+
+/// The ghost of a piece where it will go: the edges of its boxes in `color`, relative to the
+/// eye at `view`.
 pub fn ghost(
     reg: &BlockRegistry,
     state: BlockStateId,
     at: BlockPos,
-    rests: bool,
+    color: [u8; 3],
     view: DVec3,
 ) -> Vec<FigureInstance> {
-    let color = if rests {
-        [226, 232, 238]
-    } else {
-        [228, 84, 64]
+    edges(&reg.outline_shape(state).boxes, at, color, view, 0.012)
+}
+
+/// A piece's outline in the builder's view: the edges of the box about all of it.
+pub fn outline(
+    reg: &BlockRegistry,
+    state: BlockStateId,
+    at: BlockPos,
+    color: [u8; 3],
+    view: DVec3,
+) -> Vec<FigureInstance> {
+    let boxes = &reg.outline_shape(state).boxes;
+    let Some(all) = boxes.iter().copied().reduce(|a, b| hearth_math::Aabb {
+        min: a.min.min(b.min),
+        max: a.max.max(b.max),
+    }) else {
+        return Vec::new();
     };
+    edges(&[all], at, color, view, 0.03)
+}
+
+/// The edges of boxes (block-local) at a place, as bars `thin` thick (m).
+fn edges(
+    boxes: &[hearth_math::Aabb],
+    at: BlockPos,
+    color: [u8; 3],
+    view: DVec3,
+    thin: f32,
+) -> Vec<FigureInstance> {
     let origin = DVec3::new(at.x as f64, at.y as f64, at.z as f64) - view;
-    let thin = 0.012_f32;
     let mut out = Vec::new();
-    for b in &reg.outline_shape(state).boxes {
+    for b in boxes {
         let (lo, hi) = (
             (origin + b.min).as_vec3() - Vec3::splat(thin * 0.5),
             (origin + b.max).as_vec3() + Vec3::splat(thin * 0.5),
@@ -418,7 +473,9 @@ mod tests {
         )])
         .unwrap();
         let stone = reg.default_state("hearth:stone");
-        let g = ghost(&reg, stone, BlockPos::new(0, 0, 0), true, DVec3::ZERO);
+        let g = ghost(&reg, stone, BlockPos::new(0, 0, 0), [255; 3], DVec3::ZERO);
         assert_eq!(g.len(), 12);
+        assert_eq!(stress_color(0.0), [80, 140, 255]);
+        assert_eq!(stress_color(1.5), [235, 60, 45]);
     }
 }

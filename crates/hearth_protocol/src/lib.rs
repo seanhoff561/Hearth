@@ -331,6 +331,9 @@ pub enum ToClient {
     /// Built pieces give way and fall (V2-8 (b)): their blocks as they stood (gone from the
     /// world now); what is left of them arrives as things lying where they fell.
     Collapse(Vec<(hearth_math::BlockPos, hearth_world::BlockStateId)>),
+    /// How hard the built pieces about the player are pressed (V2-8 (f)): the largest share of
+    /// what each can bear that it bears (over one, it gives way).
+    Stress(Vec<(hearth_math::BlockPos, f32)>),
     /// Something learned (true) or a hunch (false): the node's name and the journal's words.
     Learned {
         name: String,

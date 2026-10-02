@@ -632,7 +632,11 @@ V2-8 — Structural building & shelter, in parts (PLAN.md; v2 §14; docs/design/
   3 m by their heat over the hut's losses (≤ 25 °C), rain by the cover (D95). Tests: open
   ground gives nothing; a hide hut with a bark roof stills the wind and a 5 kW fire warms it
   8–25 °C.
-- [ ] (f) The builder's view: load and stress colouring, whether a placement will stand.
+- [x] (f) The builder's view (key V): pieces within 32 m outlined by stress (blue → red), the
+  server telling stresses within 48 m each second and reckoning pieces not yet reckoned since
+  their land loaded; the ghost reckons the structure it would join on the client
+  (`Structures::would_bear`, cached half a second) and shows pale, amber or red. Screenshot
+  option `stress=true`.
 - [ ] (g) Era 0–3 techniques: windbreak, lean-to, hide tent, pit house, wattle-and-daub hut,
   thatched roof, log walls, dry-stone walls, mudbrick, timber shoring — knowledge, processes.
 - [ ] (h) Acceptance (a too-long stone span collapses; a timber-supported tunnel stands; thatch

@@ -199,6 +199,45 @@ impl Structures {
             .is_some_and(|m| m.is_some())
     }
 
+    /// How hard a piece put up at `at` as `state` would be pressed, and the worst pressed of
+    /// what it would join (V2-8 (f)): over one, something gives way. None if it is not a
+    /// piece.
+    pub fn would_bear(
+        &self,
+        map: &CubeMap,
+        reg: &BlockRegistry,
+        at: BlockPos,
+        state: BlockStateId,
+    ) -> Option<(f32, f32)> {
+        let m = (*self.member_of.get(state.0 as usize)?)?;
+        let facing = reg.get_dir(state, "facing").unwrap_or(Direction::North);
+        let member_of = &self.member_of;
+        let look = |p: BlockPos| {
+            if p == at {
+                Cell::Piece(m, facing)
+            } else {
+                cell(member_of, map, reg, p)
+            }
+        };
+        let pressing = |p: BlockPos| self.pressing(map, reg, p);
+        let pieces = connected(&look, &self.members, &[at]);
+        let r = reckon(&look, &pressing, &self.members, &pieces);
+        let own = r.stress.iter().find(|(p, _)| *p == at).map_or(0.0, |s| s.1);
+        let worst = r.stress.iter().map(|s| s.1).fold(0.0, f32::max);
+        Some((own, worst))
+    }
+
+    /// The pieces within `r` of a place and how hard each is pressed, as last reckoned.
+    pub fn stress_near(&self, at: BlockPos, r: i32) -> Vec<(BlockPos, f32)> {
+        let lo = BlockPos::new(at.x - r, i32::MIN, i32::MIN);
+        let hi = BlockPos::new(at.x + r, i32::MAX, i32::MAX);
+        self.stress
+            .range(lo..=hi)
+            .filter(|(p, _)| (p.y - at.y).abs() <= r && (p.z - at.z).abs() <= r)
+            .map(|(p, s)| (*p, *s))
+            .collect()
+    }
+
     /// Notes blocks changed: the structures and the ground about them are reckoned again.
     pub fn changed(&mut self, at: &[BlockPos]) {
         self.dirty.extend(at.iter().copied());

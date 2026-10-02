@@ -190,6 +190,8 @@ pub struct ShotSpec {
     pub trails: Vec<(String, usize, hearth_fauna::live::SignKind, f64, f64, f32)>,
     /// The animals the populations put about the camera.
     pub fauna: bool,
+    /// The builder's view: the pieces about the camera outlined by how hard they are pressed.
+    pub stress: bool,
     /// The camera to the nearest group of this species, looking at it from 30 m along `yaw`.
     pub seek: Option<String>,
     /// Seconds the animals live on before the shot with the camera as a person among them
@@ -274,6 +276,7 @@ impl Default for ShotSpec {
             animals: Vec::new(),
             trails: Vec::new(),
             fauna: false,
+            stress: false,
             seek: None,
             run: None,
             near_water: false,
@@ -405,6 +408,8 @@ impl ShotSpec {
                 // `fauna=true`: the animals the populations put about the camera;
                 // `seek=red_deer`: the camera to the nearest group of a species.
                 "fauna" => spec.fauna = v.parse()?,
+                // `stress=true`: the builder's view of what is built about the camera.
+                "stress" => spec.stress = v.parse()?,
                 // `run=3`: the animals live on three seconds with the camera among them.
                 "run" => spec.run = Some(v.parse()?),
                 // `near=water`: on the bank of the nearest deep water.
@@ -1259,10 +1264,18 @@ pub fn render_shot(
         }
         drawn.extend(drawn_views(&views));
     }
+    let mut boxes = Vec::new();
     if let Some((catalog, b)) = &bodies
         && (!drawn.is_empty() || !spec.trails.is_empty())
     {
-        let mut boxes = animal_instances(&drawn, catalog, b, lw, &camera, year_frac as f32);
+        boxes.extend(animal_instances(
+            &drawn,
+            catalog,
+            b,
+            lw,
+            &camera,
+            year_frac as f32,
+        ));
         let signs = trail_signs(spec, lw, catalog, &camera)?;
         let light = |p: DVec3| {
             let b = hearth_math::BlockPos::containing(p + DVec3::Y * 0.3);
@@ -1271,6 +1284,42 @@ pub fn render_shot(
         boxes.extend(crate::signs::instances(
             &signs, 0.0, 1200.0, catalog, camera.pos, &light,
         ));
+    }
+    if spec.stress {
+        // The pieces within 24 m of the camera, reckoned and outlined by their stress.
+        let mut s = crate::structure::Structures::new(&lw.reg, &lw.content);
+        let c = hearth_math::BlockPos::containing(camera.pos);
+        let mut pieces = Vec::new();
+        for dy in -24..=24 {
+            for dz in -24..=24 {
+                for dx in -24..=24 {
+                    let p = hearth_math::BlockPos::new(c.x + dx, c.y + dy, c.z + dz);
+                    if lw.map.block(p).is_some_and(|b| s.is_piece(b)) {
+                        pieces.push(p);
+                    }
+                }
+            }
+        }
+        s.changed(&pieces);
+        let fell = s.tick(&lw.map, &lw.reg);
+        log::info!(
+            "  builder's view: {} pieces, {} would fall",
+            s.stress.len(),
+            fell.pieces.len()
+        );
+        for (p, stress) in &s.stress {
+            if let Some(state) = lw.map.block(*p) {
+                boxes.extend(crate::building::outline(
+                    &lw.reg,
+                    state,
+                    *p,
+                    crate::building::stress_color(*stress),
+                    camera.pos,
+                ));
+            }
+        }
+    }
+    if !boxes.is_empty() {
         scene.figures.set(ctx, &boxes);
     }
     if let Some(name) = &spec.senses {

@@ -629,6 +629,7 @@ fn run(
     // What is built, standing or falling (V2-8 (b)), and the day its weather was last told.
     let mut structures = crate::structure::Structures::new(&lw.reg, &lw.content);
     let mut weathered_day = (ticks as f64 / calendar.ticks_per_day()) as u64;
+    let mut stress_told = false;
     let mut last_moved: Option<Moved> = None;
     let mut warp = 0.0f64;
     let mut sleep_warp = 0.0f64;
@@ -1346,6 +1347,29 @@ fn run(
                 changed.extend_from_slice(&moved);
                 structures.changed(&moved);
                 let _ = tx.send(ToClient::Collapse(told));
+            }
+            // Each second: the pieces about the player not yet reckoned since their land loaded
+            // are reckoned, and how hard those reckoned are pressed is told (V2-8 (f)).
+            if ticks.is_multiple_of(20) {
+                let here = BlockPos::containing(player.mover.pos);
+                let near = |p: &BlockPos| {
+                    (p.x - here.x).abs() <= 48
+                        && (p.y - here.y).abs() <= 48
+                        && (p.z - here.z).abs() <= 48
+                };
+                let unreckoned: Vec<BlockPos> = lw
+                    .edits
+                    .places()
+                    .into_iter()
+                    .filter(|p| near(p) && !structures.stress.contains_key(p))
+                    .filter(|p| lw.map.block(*p).is_some_and(|s| structures.is_piece(s)))
+                    .collect();
+                structures.changed(&unreckoned);
+                let stress = structures.stress_near(here, 48);
+                if !stress.is_empty() || stress_told {
+                    stress_told = !stress.is_empty();
+                    let _ = tx.send(ToClient::Stress(stress));
+                }
             }
             if !changed.is_empty()
                 && stream

@@ -224,8 +224,24 @@ pub struct Client {
     pub aim: Option<Aim>,
     dragged_at: Option<DVec3>,
     drag_was: bool,
-    /// The piece being put up and where (its ghost shows while the work goes on).
-    raising: Option<(hearth_math::BlockPos, hearth_world::BlockStateId, bool)>,
+    /// The piece being put up and where, and its ghost's colour (it shows while the work goes
+    /// on).
+    raising: Option<(hearth_math::BlockPos, hearth_world::BlockStateId, [u8; 3])>,
+    /// The builder's view (V2-8 (f)): each piece about outlined by how hard it is pressed, as
+    /// the server last told; and the client's own reckoning, for whether a ghost would stand.
+    builder_view: bool,
+    stress: Vec<(hearth_math::BlockPos, f32)>,
+    structures: Option<crate::structure::Structures>,
+    /// The ghost last judged (where, what, whether it rests), the worst pressed of what it
+    /// would join, and when.
+    #[allow(clippy::type_complexity)]
+    judged: std::cell::Cell<
+        Option<(
+            (hearth_math::BlockPos, hearth_world::BlockStateId, bool),
+            f32,
+            std::time::Instant,
+        )>,
+    >,
     /// A thing being drawn into the right hand from where it hangs, and how long the reach
     /// has taken; where the right hand's thing came from (to put it back).
     drawing: Option<(hearth_items::Root, f64)>,
@@ -383,6 +399,10 @@ impl Client {
             dragged_at: None,
             drag_was: false,
             raising: None,
+            builder_view: false,
+            stress: Vec::new(),
+            structures: None,
+            judged: std::cell::Cell::new(None),
             drawing: None,
             drawn_from: None,
             radial: None,
@@ -972,7 +992,9 @@ impl Client {
 
     /// The piece the chosen offer would put up, where it would go, as the builder faces: its
     /// place, its block and whether it would rest there.
-    fn ghost_of_chosen(&self) -> Option<(hearth_math::BlockPos, hearth_world::BlockStateId, bool)> {
+    fn ghost_of_chosen(
+        &self,
+    ) -> Option<(hearth_math::BlockPos, hearth_world::BlockStateId, [u8; 3])> {
         let (w, c) = (self.world.as_ref()?, self.crafting.as_ref()?);
         let offer = c.chosen()?;
         let Some(crate::crafting_ui::Do::Process(process)) = &offer.act else {
@@ -988,7 +1010,24 @@ impl Client {
             -self.camera.yaw.to_radians(),
         )?;
         let rests = crate::building::rests_at(&w.mirror, &w.reg, &c.content, shape, at);
-        Some((at, state, rests))
+        // Whether it would stand there, and what it joins: reckoned as the server would, again
+        // only when the ghost moves or every half second.
+        let key = (at, state, rests);
+        let worst = match self.judged.get() {
+            Some((k, worst, when)) if k == key && when.elapsed().as_secs_f32() < 0.5 => worst,
+            _ => {
+                let worst = match (&self.structures, rests) {
+                    (Some(s), true) => s
+                        .would_bear(&w.mirror, &w.reg, at, state)
+                        .map_or(0.0, |(_, worst)| worst),
+                    _ => 0.0,
+                };
+                self.judged
+                    .set(Some((key, worst, std::time::Instant::now())));
+                worst
+            }
+        };
+        Some((at, state, crate::building::ghost_color(rests, worst)))
     }
 
     /// The ghost of a piece where it will go: the one being put up while the work goes on,
@@ -1002,14 +1041,39 @@ impl Client {
         if !working {
             self.raising = None;
         }
-        let Some((at, state, rests)) = self.raising.or_else(|| self.ghost_of_chosen()) else {
+        if self.structures.is_none()
+            && let (Some(w), Some(c)) = (&self.world, &self.crafting)
+        {
+            self.structures = Some(crate::structure::Structures::new(&w.reg, &c.content));
+        }
+        // The builder's view: every piece about outlined by how hard it is pressed.
+        if self.builder_view
+            && let Some(w) = &self.world
+        {
+            for (p, s) in &self.stress {
+                let c = DVec3::new(p.x as f64 + 0.5, p.y as f64 + 0.5, p.z as f64 + 0.5);
+                if (c - view).length() > 32.0 {
+                    continue;
+                }
+                if let Some(state) = w.mirror.block(*p) {
+                    self.figure_boxes.extend(crate::building::outline(
+                        &w.reg,
+                        state,
+                        *p,
+                        crate::building::stress_color(*s),
+                        view,
+                    ));
+                }
+            }
+        }
+        let Some((at, state, color)) = self.raising.or_else(|| self.ghost_of_chosen()) else {
             return;
         };
         let Some(w) = &self.world else {
             return;
         };
         self.figure_boxes
-            .extend(crate::building::ghost(&w.reg, state, at, rests, view));
+            .extend(crate::building::ghost(&w.reg, state, at, color, view));
     }
 
     /// The signs animals left on the ground about the player.
@@ -1460,6 +1524,11 @@ impl Client {
     /// Opens or closes the Body panel.
     pub fn toggle_body_panel(&mut self) {
         self.body_panel = !self.body_panel;
+    }
+
+    /// The builder's view on or off.
+    pub fn toggle_builder_view(&mut self) {
+        self.builder_view = !self.builder_view;
     }
 
     /// The body's senses on the image (v2 §9.9): exhaustion, thirst and weakness drain colour,
@@ -2310,6 +2379,7 @@ impl Client {
                         });
                     }
                 }
+                ToClient::Stress(stress) => self.stress = stress,
                 ToClient::Collapse(blocks) => {
                     if let Some(w) = &self.world {
                         let reg = &w.reg;

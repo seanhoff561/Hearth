@@ -446,6 +446,8 @@ impl App {
                         p.shout();
                     } else if action == builtin::BODY_PANEL {
                         p.toggle_body_panel();
+                    } else if action == builtin::BUILDER_VIEW {
+                        p.toggle_builder_view();
                     } else if action == builtin::INVENTORY && p.can_handle() {
                         run.menus.open(Screen::Inventory {
                             lifted: None,

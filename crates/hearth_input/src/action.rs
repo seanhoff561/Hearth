@@ -120,10 +120,10 @@ pub mod builtin {
         DEBUG_TIME_FORWARD = 42; DEBUG_TIME_BACK = 43; DEBUG_SEASON_FORWARD = 44;
         DEBUG_TIME_WARP = 45; CRAWL = 46; DEBUG_FREE_CAMERA = 47;
         SLEEP = 48; BODY_PANEL = 49; INTERACT = 50; DRAG = 51; RADIAL = 52;
-        THROW = 53; JOURNAL = 54; SHOUT = 55;
+        THROW = 53; JOURNAL = 54; SHOUT = 55; BUILDER_VIEW = 56;
     }
     /// Number of built-in actions.
-    pub const COUNT: usize = 56;
+    pub const COUNT: usize = 57;
 
     /// Hotbar actions in slot order.
     pub const HOTBAR: [ActionId; 9] = [
@@ -237,6 +237,7 @@ impl ActionRegistry {
         add("key.throw", C::Gameplay, g, k(Key::R), H);
         add("key.journal", C::Gameplay, g, k(Key::J), H);
         add("key.shout", C::Gameplay, g, k(Key::H), H);
+        add("key.builder_view", C::Gameplay, g, k(Key::V), H);
         debug_assert_eq!(r.defs.len(), builtin::COUNT);
         r
     }
