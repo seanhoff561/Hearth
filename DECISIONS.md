@@ -1231,3 +1231,15 @@ Food left lying went rotten and stayed for ever: the year bot's camp gathered ni
 cooked meat long past eating, and a player's camp would fill with them. Anything that perishes,
 lying rotten (its decay at one and a half), is gone as carcasses already were — to the flies and
 the beetles. What is carried stays to be thrown away.
+
+## D107 — The end of V2-9's gate: the 1 % lows that fell were single stalls, not the build
+The gate at the end of V2-9 twice found the forest scene's 1 % lows down (−19.5 % and −13.5 %,
+and once the peak's by 9 %) with every average within 4 %. Each fall came from one frame of
+fifteen to forty milliseconds spent in submitting (the driver's, not the scene's: the frames
+about it took their usual GPU time, and the scene drew the same triangles and draws in both
+builds), in one run of three; nothing in V2-9 changes what these scenes draw. Alternating the
+two builds on the forest alone for four rounds of 1500 frames gave the new build 667 FPS on
+average against 652 and 1 % lows of 578–590 against 476–589 — and the baseline its own
+38-millisecond stall. The baseline was moved to the end of V2-9. A 1 % low over 600 frames is
+six frames: one stall in three runs moves it by a fifth, so the gate's 1 % lows are to be read
+with their runs' worst frames, as here.
