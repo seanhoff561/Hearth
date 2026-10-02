@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::material::MaterialFilter;
+use super::material::{MaterialFilter, Pattern};
 use super::process::{Input, ToolReq};
 use super::{Duration, entry};
 use crate::IdRef;
@@ -65,14 +65,15 @@ pub enum PieceShape {
     Post,
     /// Lying across the top of the block along the way it faces (a beam, a joist, a lintel).
     Beam,
-    /// A thin wall at the side it faces (wattle, bark, a hide, brush).
+    /// A thin wall upright across the middle, its faces toward the way it faces and away
+    /// (wattle, bark, a hide, brush).
     Panel,
     /// A layer over the block's floor (bark laid flat, floorboards).
     Layer,
     /// A pitched covering rising toward the way it faces (thatch, bark or hides on rafters).
     Roof,
-    /// A wall the block's height and half its width, at the side it faces (dry stone, log
-    /// courses, mudbrick).
+    /// A wall the block's height and its own thickness, upright across the middle like a panel
+    /// (dry stone, log courses, mudbrick).
     Wall,
     /// The whole block (snow blocks, rammed earth, stone fill).
     #[default]
@@ -124,6 +125,10 @@ entry! {
         /// What a covering lies on (a roof's rafters): the members that carry it.
         #[serde(default)]
         pub frame: Option<Frame>,
+        /// The look of its faces, if not its material's (brush is a tangle of twigs, not the
+        /// wood's grain).
+        #[serde(default)]
+        pub look: Option<Pattern>,
     }
 }
 

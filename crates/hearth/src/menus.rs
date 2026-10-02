@@ -135,6 +135,8 @@ pub enum MenuAction {
         from: hearth_items::Path,
         count: Option<u16>,
     },
+    /// Eat one of a carried thing.
+    Eat(hearth_items::Path),
     Resume,
     QuitToTitle,
     QuitGame,

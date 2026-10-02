@@ -884,6 +884,16 @@
             failures: [(chance: 0.15, min_chance: 0.02, outcome: "Burned on the outside, raw inside.", loses_inputs: false)],
         ),
         (
+            id: "roast_joint", status: Implemented, name: "Roast a joint on a spit", action: "turn the meat on a spit over the coals",
+            verb: "heat",
+            inputs: [(item: Material("meat"), amount: 2.0), (item: Form(form: "stick"), amount: 1, consumed: false)],
+            station: "campfire", conditions: [HeatAtLeastC(200)],
+            duration: (hours: 1.0), knowledge: "cooking_roasting", skill: "cooking",
+            outputs: [(item: Material("cooked_meat"), amount: (1.4, 1.8))],
+            failures: [(chance: 0.2, min_chance: 0.03, outcome: "Charred on one side, raw on the other.", loses_inputs: false)],
+            notes: "A haunch or a side turned on a green stick over a bed of coals: a day or two of meat at once.",
+        ),
+        (
             id: "cook_greens", status: Implemented, name: "Cook greens", action: "wilt the leaves on a hot stone",
             verb: "heat",
             inputs: [(item: Material("nettle_leaves"), amount: 0.2)],

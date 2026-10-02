@@ -157,6 +157,40 @@ fn a_day_costs_what_people_burn() {
 }
 
 #[test]
+fn a_hungry_body_shivers_on_its_fat_and_a_wasted_one_cannot() {
+    let cfg = config();
+    let worn = wearing(&["loincloth", "hide_cape", "moccasins"]);
+    let rest = cfg.activity("resting");
+    // A dry, breezy autumn night, nothing to burn.
+    let night = Exposure {
+        air_c: 6.0,
+        wind_m_s: 2.0,
+        ..Exposure::mild()
+    };
+    let core_after = |glycogen: f64, fat_share: f64| {
+        let mut body = Body::new(&cfg, 21);
+        body.energy.glycogen_kcal = hearth_body::energy::glycogen_max(cfg.mass_kg) * glycogen;
+        body.energy.fat_kcal = fat_share * cfg.mass_kg * hearth_body::energy::KCAL_PER_KG_FAT;
+        run(&mut body, &cfg, 4.0, |_, _| (night, worn, rest), |_| false);
+        body.thermal.core_c
+    };
+    let fed = core_after(1.0, 0.2);
+    let hungry = core_after(0.0, 0.18);
+    let wasted = core_after(0.0, 0.02);
+    println!(
+        "core after four hours: fed {fed:.2} °C, its glycogen spent {hungry:.2}, wasted {wasted:.2}"
+    );
+    // Glycogen spent, the fat still shivers nearly as warm.
+    assert!(fed - hungry < 0.8, "fed {fed:.2}, hungry {hungry:.2}");
+    assert!(hungry > 34.0, "hungry {hungry:.2}");
+    // Wasted to the last fat, it cannot keep warm.
+    assert!(
+        wasted < hungry - 0.5,
+        "hungry {hungry:.2}, wasted {wasted:.2}"
+    );
+}
+
+#[test]
 fn starving_with_water_takes_weeks() {
     let cfg = config();
     let worn = wearing(&["loincloth"]);

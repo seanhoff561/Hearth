@@ -47,6 +47,23 @@ pub struct World {
     pub signs: Vec<hearth_fauna::live::Sign>,
     /// The calls heard.
     pub calls: Vec<hearth_fauna::voices::Called>,
+    /// Whether the server said it saved since asked.
+    pub saved: bool,
+}
+
+/// Copies a directory and all in it.
+pub fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
+        let e = e?;
+        let dest = to.join(e.file_name());
+        if e.file_type()?.is_dir() {
+            copy_dir(&e.path(), &dest)?;
+        } else {
+            std::fs::copy(e.path(), dest)?;
+        }
+    }
+    Ok(())
 }
 
 pub fn temp(name: &str) -> std::path::PathBuf {
@@ -111,6 +128,7 @@ impl World {
             census: None,
             signs: Vec::new(),
             calls: Vec::new(),
+            saved: false,
         };
         let feet = w.mover.pos;
         w.until(60.0, |w| {
@@ -140,6 +158,7 @@ impl World {
                 ToClient::Census(c) => self.census = Some(c),
                 ToClient::Signs { signs, .. } => self.signs = signs,
                 ToClient::Calls(c) => self.calls.extend(c),
+                ToClient::Saved => self.saved = true,
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {
                     name,
@@ -383,6 +402,17 @@ impl World {
                 self.go_exact(DVec3::new(x, g.y as f64 + 1.0, z));
             }
         }
+    }
+
+    /// Saves the world now and copies it to `to` (a moment kept for screenshots); the world
+    /// goes on.
+    pub fn keep(&mut self, from: &std::path::Path, to: &std::path::Path) {
+        self.saved = false;
+        self.server.send(ToServer::Save);
+        assert!(self.until(60.0, |w| w.saved), "not saved");
+        let src = from.join("test");
+        let _ = std::fs::remove_dir_all(to);
+        copy_dir(&src, to).expect("copy the saved world");
     }
 
     /// Turns the player to face a way (radians: 0 toward +z, south, turning toward +x, east).

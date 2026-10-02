@@ -1,6 +1,6 @@
 //! The inventory screen round trip: drawn offscreen (`bench-out/inventory.png`), a click lifts
 //! the hand axe from the right hand and a click on the basket's first cell asks for it to move
-//! there; the move, made, puts it in the basket.
+//! there; the move, made, puts it in the basket. E on food asks to eat it where it is.
 
 use hearth::interface::Interface;
 use hearth::inventory_ui::InventoryView;
@@ -27,7 +27,8 @@ fn the_inventory_moves_things_where_they_are_put() {
         eprintln!("skipped: no GPU adapter");
         return;
     };
-    let items = Items::from_content(&Content::load_base());
+    let content = Content::load_base();
+    let items = Items::from_content(&content);
     let body_kg = 70.0;
     // A loincloth and a belt with a pouch of flakes, a basket of cobbles in the left hand, a
     // hand axe in the right.
@@ -130,6 +131,7 @@ fn the_inventory_moves_things_where_they_are_put() {
                         carry,
                         items: &items,
                         body_kg,
+                        content: Some(&content),
                     }),
                     journal: None,
                 };
@@ -183,4 +185,30 @@ fn the_inventory_moves_things_where_they_are_put() {
         .and_then(|b| b.contents())
         .map_or(0, |b| b.items.len());
     assert_eq!(in_basket, 2, "the cobble and the axe");
+
+    // Meat in the right hand: E with the pointer on it asks to eat it; on the axe, nothing.
+    carry
+        .hold(
+            &items,
+            Stack::one(&id(&items, "cooked_meat")),
+            Hand::Right,
+            body_kg,
+        )
+        .expect("meat");
+    iface.pointer_moved(140.0 * s, 47.0 * s);
+    iface.typed("e");
+    let actions = frame(&mut iface, &mut menus, &carry);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, MenuAction::Eat(p) if *p == Path::at(Root::Hand(Hand::Right)))),
+        "{actions:?}"
+    );
+    iface.pointer_moved((208.0 + 6.0) * s, (37.0 + 6.0) * s);
+    iface.typed("e");
+    let actions = frame(&mut iface, &mut menus, &carry);
+    assert!(
+        !actions.iter().any(|a| matches!(a, MenuAction::Eat(_))),
+        "{actions:?}"
+    );
 }

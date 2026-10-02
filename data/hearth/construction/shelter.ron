@@ -10,7 +10,7 @@
     entries: [
         // ---- Brush and poles (Era 0–1) ----
         (id: "brush_wall", status: Implemented, name: "{material} brush", materials: (categories: [Wood]),
-         shape: Panel, size_m: (1.0, 1.0, 0.3), fill: 0.04, joints: [Stacked], build: (hours: 0.25),
+         shape: Panel, size_m: (1.0, 1.0, 0.3), fill: 0.04, joints: [Stacked], build: (hours: 0.25), look: Brush,
          inputs: [(item: Form(form: "stick"), amount: 24)], action: "pile brush against the wind",
          insulation_r: 0.1, notes: "Branches and brush piled into a windbreak; anyone can, and doing it teaches the windbreak."),
         (id: "post", status: Implemented, name: "{material} post", materials: (categories: [Wood]),
@@ -20,6 +20,12 @@
          shape: Beam, round: true, size_m: (0.04, 0.04, 1.0), joints: [Lashed], knowledge: "lean_to", build: (hours: 0.3),
          inputs: [(item: Form(form: "pole"), amount: 1)], action: "lash a beam across"),
         // ---- Coverings ----
+        (id: "brush_roof", status: Implemented, name: "{material} bough roof", materials: (categories: [Wood]),
+         shape: Roof, pitch_deg: 45, size_m: (1.0, 0.25, 1.4), fill: 0.05, joints: [Lashed, Stacked], knowledge: "lean_to", build: (hours: 0.5),
+         inputs: [(item: Form(form: "stick"), amount: 20), (item: Form(form: "twig"), amount: 40), (item: Form(form: "pole"), amount: 2)],
+         frame: (form: "pole", count: 2, material: "willow_wood"), action: "heap boughs on the rafters", look: Brush,
+         sheds_rain_min_pitch_deg: 60, insulation_r: 0.3,
+         notes: "Leafy boughs and brush heaped on rafters: the first lean-tos' roof. It breaks the wind and some of the rain, and drips."),
         (id: "bark_roof", status: Implemented, name: "{material} roof", materials: (categories: [Bark]),
          shape: Roof, pitch_deg: 45, size_m: (1.0, 0.006, 1.4), joints: [Lashed, Stacked], knowledge: "lean_to", build: (hours: 0.6),
          inputs: [(item: Form(form: "strip"), amount: 56), (item: Form(form: "pole"), amount: 2)],
@@ -47,7 +53,7 @@
          sheds_rain_min_pitch_deg: 45, insulation_r: 1.5,
          notes: "Bundles laid steeply shed rain for decades; laid flat they rot. A foot of reed, 25 kg the square metre."),
         (id: "wattle_panel", status: Implemented, name: "{material} wattle", materials: (tags: ["rods", "withies"]),
-         shape: Panel, size_m: (1.0, 1.0, 0.05), fill: 0.5, joints: [Woven], knowledge: "wattle_and_daub", build: (hours: 1.5),
+         shape: Panel, size_m: (1.0, 1.0, 0.05), fill: 0.5, joints: [Woven], knowledge: "wattle_and_daub", build: (hours: 1.5), look: Wattle,
          inputs: [(item: Form(form: "stick", materials: (tags: ["rods", "withies"])), amount: 12)], action: "weave wattle between the posts",
          insulation_r: 0.05, notes: "Hazel or willow rods woven between stakes: a light screen, and the frame for daub."),
         (id: "daubed_wattle", status: Implemented, name: "{material} daub on wattle", materials: (categories: [Clay]),

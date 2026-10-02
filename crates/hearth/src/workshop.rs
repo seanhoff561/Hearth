@@ -2118,12 +2118,7 @@ impl Workshop {
                 && items
                     .get(&wi.stack.id)
                     .is_some_and(|k| k.property("glow_h").is_some());
-            // A carcass long rotten is gone to the scavengers.
-            let rotted = wi.stack.decay >= 1.5
-                && items
-                    .get(&wi.stack.id)
-                    .is_some_and(|k| k.has_tag("carcass"));
-            !cold && !rotted
+            !cold && !rotted_away(&content, items, &wi.stack)
         });
         if h.world_items.items.len() != before {
             *h.items_changed = true;
@@ -2342,6 +2337,15 @@ impl Workshop {
 
 /// The way (north, east, south or west) nearest a facing (radians: 0 toward +z, which is south,
 /// turning toward +x, east).
+/// Whether a thing lying about has rotted away: long rotten, a carcass is gone to the
+/// scavengers, and meat and other food to the flies and the beetles.
+pub(crate) fn rotted_away(content: &Content, items: &Items, s: &Stack) -> bool {
+    s.decay >= 1.5
+        && items
+            .get(&s.id)
+            .is_some_and(|k| k.has_tag("carcass") || keeps_days(content, k).is_some())
+}
+
 pub(crate) fn facing_name(facing: f32) -> &'static str {
     let a = facing.rem_euclid(std::f32::consts::TAU);
     let q = ((a / std::f32::consts::FRAC_PI_2).round() as i32).rem_euclid(4);
@@ -2410,4 +2414,26 @@ fn made_words(items: &Items, made: &[Stack], name: &str) -> String {
         }
     }
     format!("{name}: {}.", parts.join(", "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn food_left_to_rot_is_gone_and_a_tool_is_not() {
+        let content = Content::load_base();
+        let items = Items::from_content(&content);
+        let mut meat = Stack::one("hearth:cut/meat");
+        meat.decay = 1.2;
+        assert!(
+            !rotted_away(&content, &items, &meat),
+            "spoiled, still lying there"
+        );
+        meat.decay = 1.55;
+        assert!(rotted_away(&content, &items, &meat), "rotten, gone");
+        let mut axe = Stack::one("hearth:hand_axe/flint");
+        axe.decay = 1.6;
+        assert!(!rotted_away(&content, &items, &axe), "stone does not rot");
+    }
 }

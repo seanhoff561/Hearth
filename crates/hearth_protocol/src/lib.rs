@@ -116,6 +116,8 @@ pub enum ToServer {
     View { radius: i32, vertical: i32 },
     /// Save and stop.
     Quit,
+    /// Save now; the world goes on (tools and bots keeping its moments).
+    Save,
 }
 
 /// What the player looks at, as the server is told it.

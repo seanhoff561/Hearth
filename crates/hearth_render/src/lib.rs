@@ -9,6 +9,7 @@ mod cull;
 pub mod figure;
 pub mod globe;
 pub mod gpu;
+pub mod joints;
 pub mod lod;
 pub mod mesh;
 pub mod models;

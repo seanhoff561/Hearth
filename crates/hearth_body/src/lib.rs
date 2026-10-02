@@ -484,14 +484,19 @@ impl Body {
         let fx = self.effects(cfg);
         let r = &cfg.rates;
 
-        // Heat. Weakness caps the effort; starved bodies shiver less.
+        // Heat. Weakness caps the effort; wasted bodies shiver less.
         let met = 1.0 + (activity.met as f64 - 1.0).max(0.0) * fx.strength as f64;
         let met = if activity.met < 1.0 {
             activity.met as f64
         } else {
             met
         };
-        let fuel = 0.3 + 0.7 * self.energy.glycogen_frac(mass).max(0.3);
+        // Shivering burns glycogen hardest, but fat carries it when the glycogen is spent:
+        // people short of carbohydrate shiver as warm for hours, from fat (Haman et al. 2004);
+        // only the hardest shivering wants the glycogen. A body wasted to its last fat cannot.
+        let glycogen = self.energy.glycogen_frac(mass).clamp(0.0, 1.0);
+        let fat = ((self.energy.fat_share(mass) - 0.03) / 0.05).clamp(0.0, 1.0);
+        let fuel = (0.75 + 0.25 * glycogen) * (0.2 + 0.8 * fat);
         let shiver_met = cfg.met("shivering_max") as f64;
         // Shivering and work share one ceiling of heat production.
         let drive = Drive {
@@ -1086,7 +1091,9 @@ impl Body {
     pub fn status(&self, cfg: &BodyConfig) -> Status {
         let mass = cfg.mass_kg;
         let cap = cfg.params.stomach_capacity_l as f64;
-        let fill = self.energy.stomach.volume_l / cap.max(1e-3);
+        // Food in the stomach, not drink: a belly full of water is no meal.
+        let food_l = (self.energy.stomach.volume_l - self.energy.stomach.water_l).max(0.0);
+        let fill = food_l / cap.max(1e-3);
         let glyco = self.energy.glycogen_frac(mass);
         let hunger = if fill > 0.9 {
             Hunger::Stuffed

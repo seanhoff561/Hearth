@@ -42,6 +42,14 @@ pub struct Wear {
 }
 
 impl ItemKind {
+    /// Its box lying at rest (x along, y up, z across): on its broadest face, the longest side
+    /// along — a hide lies flat, a flake on its face, a pole along the ground.
+    pub fn resting_m(&self) -> [f32; 3] {
+        let mut d = self.size_m;
+        d.sort_by(|a, b| b.total_cmp(a));
+        [d[0], d[2], d[1]]
+    }
+
     /// How many share one grid cell.
     pub fn per_cell(&self) -> u16 {
         match self.stacking {

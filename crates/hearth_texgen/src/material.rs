@@ -138,6 +138,8 @@ pub fn texture(name: &str, a: &Appearance) -> Tex {
             let grain = value_noise(seed, x as f32 * 3.0, y as f32 * 0.25, 2.0, fs);
             lerp(base, second, grain * 0.6)
         }),
+        Pattern::Brush => brush(seed, base, second),
+        Pattern::Wattle => wattle(seed, base, second),
         Pattern::Bark => paint(S, S, |x, y| {
             // Fissured along the trunk, its own colour; flecked across it with the second (a
             // birch's dark lenticels, an oak's deep cracks): runs of three or four texels.
@@ -155,6 +157,72 @@ pub fn texture(name: &str, a: &Appearance) -> Tex {
             }
         }),
     }
+}
+
+/// Brush piled or laid: a tangle of twigs and a few sticks, bark on, weathered greyer and darker
+/// than the wood within; the light comes through the gaps, which are left clear (a cutout).
+/// Tiles: the twigs run on across the edges.
+fn brush(seed: u64, base: Rgb, second: Rgb) -> Tex {
+    let bark = lerp(scale(base, 0.55), [96, 88, 76], 0.35);
+    let pal = Palette::around(bark, 5, 0.2);
+    let mut t = Tex::new(S, S);
+    let fs = S as f32;
+    let covered = |t: &Tex| t.px.iter().filter(|p| p[3] > 0).count();
+    let mut k = 0;
+    while covered(&t) < (S * S) as usize * 3 / 5 && k < 96 {
+        let r = |i: i32| rand01(seed ^ 0xb7, k, i);
+        let (x0, y0) = (r(0) * fs, r(1) * fs);
+        // Mostly lying across, as brush settles; some steeper, crossing them.
+        let steep = if r(2) < 0.7 { 0.45 } else { 1.0 };
+        let a = (r(3) - 0.5) * std::f32::consts::PI * steep;
+        let len = 4.0 + r(4) * 9.0;
+        // Every fifth a stick among the twigs, lit along its top.
+        let stick = k % 5 == 0;
+        let c = if r(5) < 0.15 {
+            lerp(pal.pick(r(6)), second, 0.5)
+        } else {
+            pal.pick(r(6))
+        };
+        let n = (len * 1.5) as i32;
+        for s in 0..=n {
+            let f = s as f32 / n as f32 * len;
+            let x = (x0 + a.cos() * f).floor() as i32;
+            let y = (y0 + a.sin() * f).floor() as i32;
+            t.set(x, y, c);
+            if stick {
+                t.set(x, y - 1, scale(c, 1.18));
+                t.set(x, y + 1, scale(c, 0.78));
+            }
+        }
+        k += 1;
+    }
+    t
+}
+
+/// Wattle: rods two texels thick woven across upright stakes eight apart, each rod passing in
+/// front of one stake and behind the next (lit where it comes forward, shadowed where it goes
+/// behind), the rows staggered; bark on, so darker than the wood within. Tiles.
+fn wattle(seed: u64, base: Rgb, second: Rgb) -> Tex {
+    let rod = lerp(scale(base, 0.8), [138, 120, 94], 0.35);
+    let pal = Palette::around(rod, 5, 0.12);
+    let stake = scale(lerp(rod, second, 0.4), 0.7);
+    paint(S, S, |x, y| {
+        let row = y.div_euclid(2);
+        // A stake at x 3..4 and 11..12: seen only between rods going behind it.
+        let in_stake = matches!(x.rem_euclid(8), 3 | 4);
+        // Rods weave: in front of the stakes at one phase, behind at the other, row by row.
+        let front = (x.div_euclid(8) + row).rem_euclid(2) == 0;
+        if in_stake && !front {
+            return stake;
+        }
+        let c = pal.pick(rand01(seed ^ 0x3c, x.div_euclid(3), row));
+        // Rounded: the rod's top texel lit, its lower one shaded; darker toward where it bends
+        // behind a stake.
+        let lit = if y.rem_euclid(2) == 0 { 1.1 } else { 0.86 };
+        let bend = (x.rem_euclid(8) as f32 - 3.5).abs() / 4.0;
+        let towards = if front { 1.0 } else { 0.8 + 0.2 * bend };
+        scale(c, lit * towards)
+    })
 }
 
 /// Rock carrying an ore: a grey rock matrix flecked and veined with the mineral, glinting
@@ -234,9 +302,6 @@ pub fn piece_textures(content: &Content) -> Vec<TexEntry> {
         &content.materials,
         &content.forms,
     ) {
-        if !done.insert(p.material.clone()) {
-            continue;
-        }
         let Some(m) = content.materials.get(&p.material) else {
             continue;
         };
@@ -244,7 +309,25 @@ pub fn piece_textures(content: &Content) -> Vec<TexEntry> {
             .material
             .split_once(':')
             .map_or(p.material.as_str(), |(_, p)| p);
+        // A piece with a look of its own (brush) has its own texture: `piece/<piece>/<material>`.
+        if let Some(pattern) = p.look {
+            let piece = p.piece.split_once(':').map_or(p.piece.as_str(), |(_, p)| p);
+            let name = format!("piece/{piece}/{path}");
+            if done.insert(name.clone()) {
+                let look = Appearance {
+                    pattern,
+                    ..m.appearance
+                };
+                out.push(TexEntry::still(
+                    &format!("block/{name}"),
+                    texture(&name, &look),
+                ));
+            }
+        }
         let name = format!("material/{path}");
+        if !done.insert(name.clone()) {
+            continue;
+        }
         // Earth built with is dried: paler than the wet ground it came from, and grainy with
         // its straw.
         use hearth_content::schema::material::MaterialCategory as Cat;

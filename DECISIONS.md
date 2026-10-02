@@ -1134,3 +1134,100 @@ lean-tos and windbreaks that enclose nothing, and see through brush by its fill.
 fire gives a hut's air is its heat over the hut's losses — openings at 200 W/m²·K, walls by
 their insulation over a small hut's inside — capped at 25 °C; radiant heat from the fire to the
 body is kept separate, as it was.
+
+## D96 — The slice reviewed by a scripted year, its moments kept as saves for screenshots
+The vertical slice is judged by playing it, and a person cannot play a year in a session; so a
+bot plays it (the V2-5 acceptance's, shared), lenient where the acceptance is strict (a goal
+missed is logged, not failed), logging each day and copying the world at its moments. The
+copies are ordinary saves, and the screenshot tool lays a save over its world (`save=`): the
+changes, the vegetation, the things lying about, the date and hour of its clock — so what the
+review shows is the world as its player left it, rendered by the same code as the game. The
+bot is a review tool, not a test of the world: what it does badly is reported as what a careless
+player would do, and fixed in the bot.
+
+## D97 — The time since a death is reckoned in the calendar's days for going off
+Populations live on the year scale, and their dead carry the time of death in years. A carcass
+taken into the world was aged by a real year's 365 days, while going off runs on the day scale;
+in a world of eight-day seasons, a deer dead an hour was reckoned dead half a day and its meat
+was going off as it was cut. The time since a death is now reckoned in the calendar's days (its
+days per year), so meat from a fresh kill is fresh. How fast scavengers take the remains stays
+on the year scale (it is the populations' own business).
+
+## D98 — Things at rest lie on their broadest face
+Forms give their sizes in whatever order their authors thought of them (a hide 0.5 × 0.5 ×
+0.004, a brick length × height × width), and things lying about were drawn with the second
+size upright, so hides and flakes stood on edge. Rather than reorder every form, a thing at rest
+is drawn on its broadest face with its longest side along (its sizes sorted: longest along,
+least up) — which is how a loose thing settles; things in the hand were already drawn by their
+sorted sizes.
+
+## D99 — A piece may have a look of its own: brush is twigs with gaps, wattle is woven
+Pieces wore their material's texture, so a brush wall of maple looked like a maple plank and
+wattle like boards. A construction piece may now say the pattern its faces show (`look:`); such
+a piece gets its own texture per material (`piece/<piece>/<material>`), drawn as a cutout. Brush
+is a tangle of twigs and sticks with bark on — greyer and darker than the wood within — with the
+gaps between left clear, so the light shows through a windbreak and a bough roof as it does;
+wattle is rods woven over and under stakes.
+
+## D100 — Food is eaten where it is carried
+Eating was offered only for what was in the right hand, and what is picked up goes into the
+pouch first; so food picked up had to be moved to the hand to be eaten — the year bot starved
+at camp with meat in its pouch. In the inventory, E eats one of the food under the pointer
+wherever it is carried (the server always took any carried place); the tooltip says so.
+
+## D101 — Members on their blocks' middle lines, carried on to meet what they join
+Pieces stood where their own block put them: a post in the middle, a panel or a wall at the
+side it faced, a beam along the top, a roof in its own block — so a beam stopped half a block
+short of the post it rested beside, a panel never met the post it was lashed to, and a roof's
+edge hung half a block off its ridge beam. Pieces now lie on their blocks' middle lines (a panel
+or a wall upright across the middle, at its own thickness), and where a member reaches the face
+it shares with a neighbouring piece, the renderer carries it on into that block until it meets
+the piece there: a beam into the post's side, a panel to the post, a wall to the wall at a
+corner, a post up under the beam over it, a wall up under the roof, a roof's edge onto its
+ridge beam or over a gable. Straight on along its own length a member may go the whole block;
+anything else (a roof's edge, a beam's top, a floor) at most to the middle; and never where
+nothing in the block lies across its way, so nothing grows across a block it only touches. The
+joints are drawn, not built: what bears and what stands is still reckoned block by block (D93),
+which is what the player places and takes down. Joining by drawing, not by block states, keeps
+the state count flat (connections in states would be dozens per piece) and needs nothing of a
+player but to put pieces next to each other.
+
+## D102 — Roofs drawn as smooth slabs over their steps
+A roof's shape is eight steps (the frame's reckoning and walking on it want boxes), and drawn as
+steps it looked like a staircase. It is drawn instead as the smooth slab the steps stand for: the
+band over its column between the line under the steps and a parallel line its thickness above,
+two sixteenths thicker than the steps so that the steps and the ends of what meets them lie
+inside it. A thick slab passes a little above its block at the high side and below it at the
+low, so successive pieces up a slope carry one continuous roof without a notch at each row, and
+two slopes meeting at a block's edge make a ridge. A roof carried on along its length (over a
+gable, to a post) is carried on as the same slab.
+
+## D103 — Fat carries shivering when the glycogen is spent
+A body whose glycogen was spent shivered at half strength, so a hungry person in a hide cape
+lying by a dead fire on a dry 7 °C night fell from 35 to 29 °C in under four hours — how the
+year bot died, twice. People short of carbohydrate shiver as warm for hours, the fat taking
+over the fuel (Haman et al. 2004: sustained shivering with muscle glycogen low makes as much
+heat); what fails shivering is a blood sugar run out and a body wasted. Spent glycogen now takes
+only the hardest shivering (its ceiling to three quarters), and a body wasted toward its last fat
+(from 8 % of its mass down to 3 %) loses it, to a fifth. Hunger still costs warmth through the
+weakness it brings and the work it stops; it no longer freezes a person by itself.
+
+## D104 — A joint roasted on a spit
+Meat was roasted half a kilogram at a time, half an hour each, so a roe deer's thirty-odd cuts
+took a night at the fire — the year bot stood over a dying fire till its core was at 28 °C,
+and a player would click through it seventeen times. A joint (two kilograms, a haunch or a side)
+turned on a green stick over the coals for an hour (`roast_joint`, known with roasting) is how
+people roast a kill; cuts are still roasted or charred singly.
+
+## D105 — A tree's crown drips most of a rain through
+Rain cover counted any block that stops light as a roof, leaves included, so a camp under a tree
+was never rained on — the year bot's camp under birches stayed dry for a whole year, and a
+shelter there kept off the wind alone. A crown now shades and lets seven tenths of a rain drip
+through (leaves hold back a fifth to a third of a steady rain: interception), once however many
+leaves deep; a roof under it keeps the rest off.
+
+## D106 — What rots away is gone
+Food left lying went rotten and stayed for ever: the year bot's camp gathered ninety cuts of
+cooked meat long past eating, and a player's camp would fill with them. Anything that perishes,
+lying rotten (its decay at one and a half), is gone as carcasses already were — to the flies and
+the beetles. What is carried stays to be thrown away.

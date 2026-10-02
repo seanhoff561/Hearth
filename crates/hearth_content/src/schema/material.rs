@@ -67,6 +67,10 @@ pub enum Pattern {
     Bark,
     Clumpy,
     Powder,
+    /// Twigs and sticks piled or laid, with gaps between (brush walls, bough roofs).
+    Brush,
+    /// Rods woven between upright stakes (wattle).
+    Wattle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]

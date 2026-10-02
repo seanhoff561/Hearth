@@ -542,6 +542,11 @@ impl App {
                         c.put_down_from(from, count);
                     }
                 }
+                MenuAction::Eat(from) => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.eat(from);
+                    }
+                }
                 MenuAction::LiveOn(who) => {
                     if let Some(run) = &mut self.running {
                         run.menus.close_all();

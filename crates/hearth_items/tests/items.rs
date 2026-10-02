@@ -273,3 +273,15 @@ fn moving_things_round_is_all_or_nothing() {
     assert!(!c.shift(i, &pouch, None, &cell(0, 1), BODY_KG));
     assert!(c.take(i, &Path::at(Root::Worn(0)), None).is_none());
 }
+
+#[test]
+fn things_lie_on_their_broadest_face() {
+    let rest = |suffix: &str| items().get(&id(suffix)).expect("kind").resting_m();
+    // A hide lies flat, a flake on its face, a pole along the ground.
+    let [x, y, z] = rest("sheet/rawhide");
+    assert!(y < 0.01 && x >= 0.4 && z >= 0.4, "{x} {y} {z}");
+    let [x, y, z] = rest("flake/flint");
+    assert!(y <= x.min(z), "{x} {y} {z}");
+    let [x, y, _] = rest("pole/oak_wood");
+    assert!(x > 2.0 && y < 0.1, "{x} {y}");
+}

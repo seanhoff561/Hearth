@@ -187,6 +187,8 @@ impl LocalWorld {
         }
         for (p, cube) in cubes {
             self.map.insert_cube(p, Arc::new(cube), &self.reg);
+            // The player's changes, as the server lays them over the terrain.
+            self.edits.restore(&mut self.map, &self.reg, p);
             positions.push(p);
         }
         if let Some(yf) = year_frac {

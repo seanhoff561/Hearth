@@ -2,7 +2,8 @@
 //! attachment points, a drag — and a grid for every container carried (one held in a hand
 //! opens). A thing is lifted onto the pointer by a click and placed by another; the right
 //! button turns a lifted thing or lifts half a stack; a click outside puts it down on the
-//! ground. Below, what it all weighs against the body.
+//! ground; E eats one of the food the pointer rests on, wherever it is carried. Below, what it
+//! all weighs against the body.
 
 use hearth_items::{Carry, Hand, Items, Path, Root, Target};
 use hearth_ui::widgets::theme;
@@ -15,6 +16,8 @@ pub struct InventoryView<'a> {
     pub carry: &'a Carry,
     pub items: &'a Items,
     pub body_kg: f32,
+    /// What tells food from the rest (none: nothing is offered to eat).
+    pub content: Option<&'a hearth_content::Content>,
 }
 
 /// A thing on the pointer: where it is carried, and how many of a stack.
@@ -347,9 +350,29 @@ pub fn inventory_screen(
         && let Some(s) = c.get(&path)
         && let Some(k) = s.kind(items)
     {
+        // Food is eaten where it is carried: E (not only from the right hand).
+        let food = view
+            .content
+            .is_some_and(|content| hearth_craft::food::bite_of(content, k, s).is_some());
+        if food
+            && ui
+                .input
+                .text
+                .chars()
+                .any(|ch| ch.eq_ignore_ascii_case(&'e'))
+        {
+            out.push(MenuAction::Eat(path.clone()));
+        }
         let mut lines = vec![k.name.clone()];
         if s.count > 1 {
             lines.push(ui.lang.format("inv.count", &[("n", &s.count.to_string())]));
+        }
+        // Whether it is going off (what perishes keeps a decay; the rest none).
+        if let Some(key) = freshness(s.decay) {
+            lines.push(ui.t(key));
+        }
+        if food {
+            lines.push(ui.t("inv.eat"));
         }
         lines.push(ui.lang.format("inv.mass", &[("kg", &kg(s.mass(items)))]));
         let tw = lines.iter().map(|l| ui.font.width(l)).max().unwrap_or(0) as f32 + 6.0;
@@ -395,6 +418,18 @@ pub fn inventory_screen(
     let hint = ui.t("inv.hint");
     ui.label(x0, h - 11.0, &hint, theme::DIM);
     false
+}
+
+/// How fresh a perishable thing is, by how far it has gone toward spoiled (0 fresh, 1
+/// spoiled): the language key, if it perishes at all.
+pub fn freshness(decay: f32) -> Option<&'static str> {
+    match decay {
+        d if d <= 0.0 => None,
+        d if d < 0.5 => Some("inv.fresh"),
+        d if d < 1.0 => Some("inv.going_off"),
+        d if d < 1.5 => Some("inv.spoiled"),
+        _ => Some("inv.rotten"),
+    }
 }
 
 fn kg(v: f32) -> String {

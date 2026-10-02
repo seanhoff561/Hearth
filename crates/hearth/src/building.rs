@@ -97,11 +97,16 @@ pub fn rests_at(
 /// The share of the rain that drips through a covering laid flatter than it sheds rain at.
 pub const LEAK: f32 = 0.4;
 
+/// The share of the rain that comes through a tree's crown, however deep: leaves hold back a
+/// fifth to a third of a steady rain and drip the rest (interception, Crockford & Richardson
+/// 2000).
+pub const CANOPY: f32 = 0.7;
+
 /// What covers a place from the sky (V2-8 (d)): whether anything does (shade; the night sky
 /// shut out) and the share of the rain that comes through — none through ground, a whole block
 /// or a wall, or a roof at least as steep as its covering needs; [`LEAK`] through a roof laid
 /// flatter than that or a flat covering, which drip (a good roof over a leaking one keeps the
-/// rain off both).
+/// rain off both); [`CANOPY`] through a tree's crown.
 pub fn cover(
     map: &CubeMap,
     reg: &BlockRegistry,
@@ -118,6 +123,7 @@ pub fn cover(
     }
     let mut through = 1.0_f32;
     let mut covered = false;
+    let mut crown = false;
     for y in (from_y.floor() as i32).max(top - 255)..=top {
         let Some(s) = map.block(BlockPos::new(x, y, z)).filter(|s| !s.is_air()) else {
             continue;
@@ -149,6 +155,14 @@ pub fn cover(
                 }
                 PieceShape::Post | PieceShape::Beam | PieceShape::Panel => {}
             },
+            // Leaves shade, and drip most of a rain through (once for the crown).
+            None if reg.block_of(s).name.path().ends_with("_leaves") => {
+                covered = true;
+                if !crown {
+                    crown = true;
+                    through *= CANOPY;
+                }
+            }
             None if reg.light_opacity(s) > 0 => {
                 covered = true;
                 through = 0.0;
@@ -409,10 +423,25 @@ mod tests {
         );
         put(&mut map, 6, 5, 6, "hearth:bark_cover/birch_bark");
         put(&mut map, 9, 5, 9, "hearth:post/hazel_wood");
+        // A tree's crown, three leaves deep: shade, and most of the rain dripping through.
+        for y in 5..8 {
+            put(&mut map, 4, y, 12, "hearth:birch_leaves");
+        }
+        // A roof under the crown keeps it all off.
+        put(
+            &mut map,
+            4,
+            4,
+            12,
+            "hearth:bark_roof/birch_bark[facing=north]",
+        );
+        put(&mut map, 7, 7, 12, "hearth:birch_leaves");
         assert_eq!(cover(&map, &reg, &content, 2, 2, 3.0), (true, 0.0));
         assert_eq!(cover(&map, &reg, &content, 6, 6, 3.0), (true, LEAK));
         assert_eq!(cover(&map, &reg, &content, 9, 9, 3.0), (false, 1.0));
         assert_eq!(cover(&map, &reg, &content, 12, 12, 3.0), (false, 1.0));
+        assert_eq!(cover(&map, &reg, &content, 7, 12, 3.0), (true, CANOPY));
+        assert_eq!(cover(&map, &reg, &content, 4, 12, 3.0), (true, 0.0));
     }
 
     #[test]

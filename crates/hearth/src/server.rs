@@ -218,6 +218,24 @@ fn drag_friction(lw: &LocalWorld, feet: DVec3) -> f32 {
     }
 }
 
+/// The world's calendar: it starts in the morning of the starting season at the world's first
+/// spawn (where it is spring or autumn by the hemisphere); and that spawn.
+pub fn calendar_for(
+    lw: &LocalWorld,
+    starting: hearth_content::schema::Season,
+) -> (Calendar, DVec3) {
+    let planet = *lw.map.planet();
+    let (sx, sz) = lw.terrain().find_spawn(false);
+    let first_spawn = ground_at(lw, sx, sz);
+    let calendar = Calendar::from_config(&lw.content.time).start_at(
+        starting,
+        planet.latitude(first_spawn.z) < 0.0,
+        0.33,
+        planet.solar_time_offset(first_spawn.x),
+    );
+    (calendar, first_spawn)
+}
+
 /// Feet on the ground at a column: on the surface or the water, a little above.
 fn ground_at(lw: &LocalWorld, x: i32, z: i32) -> DVec3 {
     DVec3::new(
@@ -447,14 +465,7 @@ fn run(
     ));
 
     // The calendar starts in the morning of the starting season at the world's first spawn.
-    let (sx, sz) = lw.terrain().find_spawn(false);
-    let first_spawn = ground_at(&lw, sx, sz);
-    let calendar = Calendar::from_config(&content.time).start_at(
-        life.starting_season,
-        planet.latitude(first_spawn.z) < 0.0,
-        0.33,
-        planet.solar_time_offset(first_spawn.x),
-    );
+    let (calendar, first_spawn) = calendar_for(&lw, life.starting_season);
     let mut env = EnvSampler::new(lw.grid(), calendar);
 
     let saved =
@@ -953,6 +964,19 @@ fn run(
                         vertical: vertical.clamp(1, 32),
                     };
                 }
+                Ok(ToServer::Save) => {
+                    save(
+                        &mut save_state,
+                        &player,
+                        &appearance,
+                        &world_items,
+                        &workshop,
+                        &lw,
+                        &fauna,
+                        ticks,
+                    );
+                    let _ = tx.send(ToClient::Saved);
+                }
                 Ok(ToServer::Quit) | Err(TryRecvError::Disconnected) => {
                     save(
                         &mut save_state,
@@ -1047,7 +1071,8 @@ fn run(
                 if ticks.is_multiple_of(40) {
                     let air_c = env.weather_at(&moment, at).temperature_c as f32;
                     let content = lw.content.clone();
-                    lying.extend(fauna.found(&items, &content, &lw, at, 90.0, air_c));
+                    let days = calendar.days_per_year();
+                    lying.extend(fauna.found(&items, &content, &lw, at, 90.0, air_c, days));
                     if now.air.light > 0.3
                         && let Some(way) = fauna.ravens(at)
                     {

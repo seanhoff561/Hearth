@@ -104,8 +104,22 @@ pub struct BlockModels {
     tree_part: Vec<u8>,
     /// Per limb state: its thickness in pixels (bits 8..16) and the sides it joins (bits 0..6).
     limbs: Vec<u16>,
+    /// Per state: 1 + the index of its member in `members` if it is a construction piece.
+    member_of: Vec<u32>,
+    members: Vec<Member>,
     /// Average (linear-ish sRGB) colour for LOD and particles.
     pub colors: Vec<[u8; 4]>,
+}
+
+/// A construction piece as its neighbours join it (`crate::joints`): its boxes and how it is
+/// drawn.
+#[derive(Debug, Clone)]
+pub struct Member {
+    pub boxes: smallvec::SmallVec<[crate::joints::Box6; 8]>,
+    pub tex: FaceTex,
+    pub layer: RenderLayer,
+    /// A roof: the way it rises and its slab's thickness (sixteenths, upright), drawn smooth.
+    pub roof: Option<(Direction, f32)>,
 }
 
 impl BlockModels {
@@ -131,6 +145,15 @@ impl BlockModels {
     #[inline]
     pub fn is_foliage(&self, s: BlockStateId) -> bool {
         self.tree_part[s.0 as usize] == 2
+    }
+
+    /// The construction piece a state is, as its neighbours join it.
+    #[inline]
+    pub fn member(&self, s: BlockStateId) -> Option<&Member> {
+        match self.member_of[s.0 as usize] {
+            0 => None,
+            i => Some(&self.members[i as usize - 1]),
+        }
     }
 
     /// A limb's thickness in pixels (0 for anything else).
@@ -163,10 +186,35 @@ impl BlockModels {
         let mut tree_part = Vec::with_capacity(n);
         let mut limbs = Vec::with_capacity(n);
         let mut colors = Vec::with_capacity(n);
+        let mut member_of = Vec::with_capacity(n);
+        let mut members = Vec::new();
         for i in 0..n {
             let s = BlockStateId(i as u16);
             let block = reg.block_of(s);
             let model = bake(block, s, reg, atlas);
+            // A construction piece: its boxes and look, for the joints its neighbours make.
+            member_of.push(match piece_look(atlas, block.name.path()) {
+                Some((tex, layer)) => {
+                    let boxes = reg
+                        .outline_shape(s)
+                        .boxes
+                        .iter()
+                        .map(|b| {
+                            let (a, c) = (b.min.as_vec3(), b.max.as_vec3());
+                            [a.x, a.y, a.z, c.x, c.y, c.z]
+                        })
+                        .collect();
+                    let roof = roof_of(reg, s);
+                    members.push(Member {
+                        boxes,
+                        tex,
+                        layer,
+                        roof,
+                    });
+                    members.len() as u32
+                }
+                None => 0,
+            });
             let mut occ = 0u8;
             if block.def.layer == RenderLayer::Opaque && !reg.has(s, StateFlags::INVISIBLE) {
                 let shape = reg.outline_shape(s);
@@ -204,9 +252,181 @@ impl BlockModels {
             occludes,
             tree_part,
             limbs,
+            member_of,
+            members,
             colors,
         }
     }
+}
+
+/// A roof piece (its shape steps up across the block, V2-8): the way it rises and the thickness
+/// its smooth slab is drawn (sixteenths, upright): its steps' and two more, so that the steps,
+/// which bear and are walked on, and the ends of what meets them lie inside it.
+fn roof_of(reg: &BlockRegistry, s: BlockStateId) -> Option<(Direction, f32)> {
+    let shape = reg.outline_shape(s);
+    if shape.boxes.len() < 4 {
+        return None;
+    }
+    let facing = prop(reg, s, "facing")
+        .and_then(Direction::from_name)
+        .unwrap_or(Direction::North);
+    let b = shape
+        .boxes
+        .iter()
+        .min_by(|a, b| a.min.y.total_cmp(&b.min.y))?;
+    Some((facing, ((b.max.y - b.min.y) * 16.0) as f32 + 2.0))
+}
+
+/// The smooth slab of a roof rising toward the north (V2-9): the band between y = s − 2 and
+/// y = s − 2 + `t` (sixteenths; s the way from the low, south side) over the block's column,
+/// laid along x from `x0` to `x1` (0..1); then turned to rise toward `facing`. A thick slab
+/// passes a little above its block at the high side and below it at the low: so the next
+/// piece up or down the slope, which draws the band over its own column, carries it on
+/// without a notch. Its faces toward the ends of its length are its gables.
+pub(crate) fn roof_slab(
+    t: f32,
+    x0: f32,
+    x1: f32,
+    facing: Direction,
+    tex: FaceTex,
+) -> Vec<ModelQuad> {
+    // The band in (s, y) over the column, counter-clockwise.
+    let poly = [
+        Vec2::new(0.0, -2.0),
+        Vec2::new(16.0, 14.0),
+        Vec2::new(16.0, 14.0 + t),
+        Vec2::new(0.0, t - 2.0),
+    ];
+    // (s, y) in sixteenths at x (0..1) to the block's space, rising toward the north.
+    let at = |p: Vec2, x: f32| Vec3::new(x, p.y / 16.0, (16.0 - p.x) / 16.0);
+    let mut out = Vec::new();
+    let n = poly.len();
+    for i in 0..n {
+        let (a, b) = (poly[i], poly[(i + 1) % n]);
+        if (b - a).length() < 1e-4 {
+            continue;
+        }
+        // The side's outward way in (s, y), and what it is: a cut at the block's side, or the
+        // slope above or below.
+        let out_sy = Vec2::new(b.y - a.y, -(b.x - a.x)).normalize();
+        let on = |c: f32, v: f32| (c - v).abs() < 1e-4;
+        let (dir, cull) = if on(a.x, 0.0) && on(b.x, 0.0) {
+            (Direction::South, true)
+        } else if on(a.x, 16.0) && on(b.x, 16.0) {
+            (Direction::North, true)
+        } else if out_sy.y > 0.0 {
+            (Direction::Up, false)
+        } else {
+            (Direction::Down, false)
+        };
+        let outward = Vec3::new(0.0, out_sy.y, -out_sy.x);
+        // Texels down the face (a texture's width on, to keep them positive: they repeat).
+        let v = |p: Vec2| 32.0 - p.y;
+        let corners = [at(a, x0), at(a, x1), at(b, x1), at(b, x0)];
+        let uv = [
+            Vec2::new(x0 * 16.0, v(a)),
+            Vec2::new(x1 * 16.0, v(a)),
+            Vec2::new(x1 * 16.0, v(b)),
+            Vec2::new(x0 * 16.0, v(b)),
+        ];
+        out.push(facing_out(
+            corners,
+            uv,
+            outward,
+            tex,
+            Some(dir),
+            cull.then_some(dir),
+        ));
+    }
+    // The gables: the band's outline at each end, in triangles.
+    for (x, outward) in [(x0, -1.0f32), (x1, 1.0)] {
+        let dir = if outward < 0.0 {
+            Direction::West
+        } else {
+            Direction::East
+        };
+        let cull = (outward < 0.0 && x <= 1e-4) || (outward > 0.0 && x >= 1.0 - 1e-4);
+        for i in 1..n - 1 {
+            let tri = [poly[0], poly[i], poly[i + 1], poly[i + 1]];
+            let corners = tri.map(|p| at(p, x));
+            let uv = tri.map(|p| Vec2::new(16.0 - p.x, 32.0 - p.y));
+            out.push(facing_out(
+                corners,
+                uv,
+                Vec3::new(outward, 0.0, 0.0),
+                tex,
+                Some(dir),
+                cull.then_some(dir),
+            ));
+        }
+    }
+    turned(out, facing)
+}
+
+/// A quad wound so that it faces `outward` (counter-clockwise seen from there).
+fn facing_out(
+    mut pos: [Vec3; 4],
+    mut uv: [Vec2; 4],
+    outward: Vec3,
+    tex: FaceTex,
+    dir: Option<Direction>,
+    cull: Option<Direction>,
+) -> ModelQuad {
+    let mut n = (pos[1] - pos[0]).cross(pos[2] - pos[0]);
+    if n.length_squared() < 1e-12 {
+        n = (pos[2] - pos[0]).cross(pos[3] - pos[0]);
+    }
+    if n.dot(outward) < 0.0 {
+        pos.reverse();
+        uv.reverse();
+    }
+    ModelQuad {
+        pos,
+        uv,
+        tex,
+        dir,
+        cull,
+        shade: true,
+        waving: false,
+    }
+}
+
+/// Quads made rising toward the north, turned to rise toward `facing` (as the block registry
+/// turns a facing block's shape).
+fn turned(mut quads: Vec<ModelQuad>, facing: Direction) -> Vec<ModelQuad> {
+    let rot = |p: Vec3| match facing {
+        Direction::South => Vec3::new(1.0 - p.x, p.y, 1.0 - p.z),
+        Direction::East => Vec3::new(1.0 - p.z, p.y, p.x),
+        Direction::West => Vec3::new(p.z, p.y, 1.0 - p.x),
+        _ => p,
+    };
+    let way = |d: Direction| {
+        let n = d.normal();
+        let v = rot(n + Vec3::splat(0.5)) - rot(Vec3::splat(0.5));
+        Direction::nearest(v.as_dvec3())
+    };
+    for q in &mut quads {
+        q.pos = q.pos.map(rot);
+        q.dir = q.dir.map(way);
+        q.cull = q.cull.map(way);
+    }
+    quads
+}
+
+/// How a construction piece (`brush_wall/oak_wood`) is drawn: a look of its own if it has one
+/// (brush: twigs with gaps, a cutout), else its material's texture.
+fn piece_look(atlas: &TextureArray, name: &str) -> Option<(FaceTex, RenderLayer)> {
+    let (_, m) = name.split_once('/')?;
+    let own = format!("piece/{name}");
+    let ctx = Ctx {
+        atlas,
+        tint: Tint::None,
+    };
+    Some(if atlas.contains(&format!("block/{own}")) {
+        (ctx.tex(&own), RenderLayer::Cutout)
+    } else {
+        (ctx.tex(&format!("material/{m}")), RenderLayer::Opaque)
+    })
 }
 
 fn average_color(model: &StateModel, atlas: &TextureArray, block: &Block) -> [u8; 4] {
@@ -539,7 +759,7 @@ fn branch_quads(
 }
 
 /// Emits the six faces of an axis-aligned box (block-local 0..1 coordinates).
-fn box_quads(
+pub(crate) fn box_quads(
     min: Vec3,
     max: Vec3,
     tex: impl Fn(Direction) -> FaceTex,
@@ -838,12 +1058,19 @@ fn bake_model(
             }
             layer = RenderLayer::Cutout;
         }
+        _ if piece_look(ctx.atlas, name).is_some() && roof_of(reg, s).is_some() => {
+            // A roof: the smooth slab its steps stand for.
+            let (tex, look) = piece_look(ctx.atlas, name).expect("a piece");
+            let (facing, t) = roof_of(reg, s).expect("a roof");
+            layer = look;
+            quads.extend(roof_slab(t, 0.0, 1.0, facing, tex));
+        }
         _ => {
             // Box models from the state's outline shape.
             let faces: Box<dyn Fn(Direction) -> FaceTex> =
-                if let Some((_, m)) = name.split_once('/') {
-                    // A construction piece wears its material's texture.
-                    let t = ctx.tex(&format!("material/{m}"));
+                if let Some((t, look)) = piece_look(ctx.atlas, name) {
+                    // A construction piece wears its material's texture, or a look of its own.
+                    layer = look;
                     Box::new(move |_| t)
                 } else if name.ends_with("_slab") || name.ends_with("_stairs") {
                     let m = material(name);

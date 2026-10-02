@@ -137,6 +137,38 @@ fn a_dead_deer_lies_until_found_and_is_butchered_by_its_kind() {
 }
 
 #[test]
+fn a_carcass_found_hours_after_the_death_has_gone_off_by_those_hours() {
+    use hearth_protocol::ToServer;
+    let dir = common::temp("carcass-hours");
+    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
+    w.census_about();
+    let home = w.mover.pos;
+    // A roe deer dies 300 m off; six hours later she is found. Meat keeps days, not hours: she
+    // has begun to go off, but is good to butcher (the populations' years are reckoned in the
+    // calendar's days, not a real year's).
+    let far = home + DVec3::new(300.0, 0.0, 0.0);
+    w.server.send(ToServer::Die {
+        species: "hearth:roe_deer".into(),
+        at: far,
+    });
+    w.run(81);
+    w.wait_hours(6.0);
+    w.go(far.x - 1.0, far.z);
+    w.run(81);
+    let c = w
+        .lying
+        .iter()
+        .find(|l| l.stack.id == "hearth:roe_deer_carcass")
+        .expect("the carcass is found");
+    assert!(
+        (0.02..0.5).contains(&c.stack.decay),
+        "gone off {} in six hours",
+        c.stack.decay
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
     use hearth_protocol::ToServer;
     let dir = common::temp("hunt");

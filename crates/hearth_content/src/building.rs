@@ -50,15 +50,18 @@ pub fn thickness_px(p: &ConstructionPiece) -> f64 {
     (thin as f64 * 16.0).round().clamp(least, 16.0)
 }
 
-/// A piece's boxes in its block (sixteenths), as it sits facing north: a post upright in the
-/// middle, a beam across the top from north to south, a panel at the north side, a layer on the
-/// floor, a roof rising in eight steps toward the north, a wall the north half.
+/// A piece's boxes in its block (sixteenths), as it sits facing north. Members lie on the
+/// block's middle lines, so that pieces in a row, at a corner or one over another line up and
+/// meet (the renderer carries a member on into a neighbouring piece's block until it meets the
+/// piece there): a post upright in the middle, a beam across the top from north to south, a
+/// panel or a wall upright across the middle from east to west, a layer on the floor, a roof
+/// rising in eight steps toward the north, a whole block.
 pub fn boxes(shape: PieceShape, t: f64) -> Vec<[f64; 6]> {
     let (a, b) = (8.0 - t / 2.0, 8.0 + t / 2.0);
     match shape {
         PieceShape::Post => vec![[a, 0.0, a, b, 16.0, b]],
         PieceShape::Beam => vec![[a, 16.0 - t, 0.0, b, 16.0, 16.0]],
-        PieceShape::Panel => vec![[0.0, 0.0, 0.0, 16.0, 16.0, t]],
+        PieceShape::Panel | PieceShape::Wall => vec![[0.0, 0.0, a, 16.0, 16.0, b]],
         PieceShape::Layer => vec![[0.0, 0.0, 0.0, 16.0, t, 16.0]],
         PieceShape::Roof => {
             let step = 2.0;
@@ -71,7 +74,6 @@ pub fn boxes(shape: PieceShape, t: f64) -> Vec<[f64; 6]> {
                 })
                 .collect()
         }
-        PieceShape::Wall => vec![[0.0, 0.0, 0.0, 16.0, 16.0, 8.0]],
         PieceShape::Block => vec![[0.0, 0.0, 0.0, 16.0, 16.0, 16.0]],
     }
 }
@@ -317,6 +319,8 @@ pub struct PieceBlock {
     pub member: Member,
     /// How it wears away (V2-8 (d)), if it does: its block has a `decay` stage 0–3.
     pub decay: Option<Decay>,
+    /// The look of its faces, if not its material's.
+    pub look: Option<crate::schema::material::Pattern>,
 }
 
 /// How a piece's material wears away in the weather (V2-8 (d)).
@@ -400,6 +404,7 @@ pub fn piece_blocks(
                 status: p.status,
                 member: member(p, m, frame),
                 decay: decay_of(m),
+                look: p.look,
             });
         }
     }

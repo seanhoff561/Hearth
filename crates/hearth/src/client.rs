@@ -494,8 +494,9 @@ impl Client {
             if (p - eye).length() > REACH_M + 2.0 {
                 continue;
             }
-            let r = (0.5 * k.size_m[0].max(k.size_m[2]) as f64).max(0.08);
-            let h = (k.size_m[1] as f64).max(0.06);
+            let [x, y, z] = k.resting_m();
+            let r = (0.5 * x.max(z) as f64).max(0.08);
+            let h = (y as f64).max(0.06);
             let lo = p - DVec3::new(r, 0.0, r);
             let hi = p + DVec3::new(r, h, r);
             if let Some(t) = ray_box(eye, dir, lo, hi)
@@ -1226,7 +1227,7 @@ impl Client {
             if (p - view).length() > 96.0 || self.drawn_dead(&wi.stack.id) {
                 continue;
             }
-            let size = glam::Vec3::from(k.size_m);
+            let size = glam::Vec3::from(k.resting_m());
             let center = p + DVec3::new(0.0, size.y as f64 / 2.0, 0.0);
             let place = Affine3A::from_scale_rotation_translation(
                 size,
@@ -1363,7 +1364,7 @@ impl Client {
             && let Some(k) = s.kind(items)
             && !self.drawn_dead(&s.id)
         {
-            let size = glam::Vec3::from(k.size_m);
+            let size = glam::Vec3::from(k.resting_m());
             let along = self.mover.pos - at;
             let yaw = along.x.atan2(along.z) as f32 + std::f32::consts::FRAC_PI_2;
             let center = at + DVec3::new(0.0, size.y as f64 / 2.0, 0.0);
@@ -1406,7 +1407,13 @@ impl Client {
             carry: &self.carry,
             items: self.items.as_deref()?,
             body_kg: self.body_cfg.as_ref().map_or(70.0, |c| c.mass_kg as f32),
+            content: self.crafting.as_ref().map(|c| &*c.content),
         })
+    }
+
+    /// Eats one of a carried thing, wherever it is carried.
+    pub fn eat(&mut self, from: hearth_items::Path) {
+        self.act(Do::Eat(from));
     }
 
     /// Puts a carried thing down just in front of the feet.
@@ -1432,11 +1439,17 @@ impl Client {
                 let wi = self.world_items.iter().find(|w| w.id == id)?;
                 let k = wi.stack.kind(items)?;
                 let body_kg = self.body_cfg.as_ref().map_or(70.0, |c| c.mass_kg as f32);
-                let name = if wi.stack.count > 1 {
+                let mut name = if wi.stack.count > 1 {
                     format!("{} ×{}", k.name, wi.stack.count)
                 } else {
                     k.name.clone()
                 };
+                // Food going off says so before it is picked up.
+                if wi.stack.decay >= 0.5
+                    && let Some(key) = crate::inventory_ui::freshness(wi.stack.decay)
+                {
+                    name = format!("{name} ({})", l.get(key).to_lowercase());
+                }
                 let key = if wi.stack.mass(items) > hearth_items::carry::BOTH_HANDS_SHARE * body_kg
                 {
                     "aim.drag"

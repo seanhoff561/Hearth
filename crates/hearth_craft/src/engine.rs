@@ -459,7 +459,12 @@ fn condition_ok(cond: &Condition, bench: &Bench, carried_water: bool) -> Result<
         return Ok(());
     }
     Err(match cond {
-        Condition::HeatAtLeastC(t) => format!("a fire of {t:.0} °C"),
+        // What a person can see: a fire too small for the work, or one not burning.
+        Condition::HeatAtLeastC(t) => match fire_at(bench) {
+            Some(f) if f.lit => "a hotter fire (more wood on it)".into(),
+            Some(_) => "the fire lit".into(),
+            None => format!("a fire of {t:.0} °C"),
+        },
         Condition::Water => "water to hand".into(),
         Condition::Dry => "dry weather".into(),
         Condition::Daylight => "daylight".into(),

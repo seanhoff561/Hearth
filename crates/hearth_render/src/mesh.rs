@@ -559,6 +559,11 @@ impl Mesher<'_> {
                                     models[li].push(g);
                                 }
                             }
+                            // A construction piece: the members of the pieces beside it that
+                            // reach it carried on to meet it.
+                            if let Some(own) = self.models.member(s) {
+                                self.joints(inp, x, y, z, &own.boxes, &mut models);
+                            }
                         }
                         StateModel::Fluid { still, flow } => {
                             all_air = false;
@@ -603,6 +608,99 @@ impl Mesher<'_> {
             self.visibility(inp)
         };
         out
+    }
+
+    /// Draws into block (x, y, z), whose piece has boxes `own`, the ends of its neighbours'
+    /// members carried on to meet it (`crate::joints`), each as its own piece is drawn.
+    fn joints(
+        &self,
+        inp: &MeshInput,
+        x: i32,
+        y: i32,
+        z: i32,
+        own: &[crate::joints::Box6],
+        models: &mut [Vec<GeneralQuad>; 2],
+    ) {
+        let mut quads = Vec::new();
+        for d in Direction::ALL {
+            let o = d.offset();
+            let Some(nb) = self.models.member(inp.at(x + o.x, y + o.y, z + o.z)) else {
+                continue;
+            };
+            let li = if nb.layer == RenderLayer::Opaque {
+                0
+            } else {
+                1
+            };
+            let carried = crate::joints::carried(own, &nb.boxes, d);
+            // A roof carried on along its length (over a gable, to a post) goes on as its smooth
+            // slab, where all of it goes the same way.
+            if let Some((facing, t)) = nb.roof
+                && !carried.is_empty()
+                && matches!(
+                    (facing.axis(), d.axis()),
+                    (hearth_math::Axis::Z, hearth_math::Axis::X)
+                        | (hearth_math::Axis::X, hearth_math::Axis::Z)
+                )
+            {
+                let (n, far) = match d {
+                    Direction::West => (0, false),
+                    Direction::East => (0, true),
+                    Direction::North => (2, false),
+                    _ => (2, true),
+                };
+                let depth = |c: &crate::joints::Carried| c.b[n + 3] - c.b[n];
+                let first = depth(&carried[0]);
+                if carried.iter().all(|c| (depth(c) - first).abs() < 1e-4) {
+                    let met = carried.iter().all(|c| c.met);
+                    let (lo, hi) = if far {
+                        (1.0 - first, 1.0)
+                    } else {
+                        (0.0, first)
+                    };
+                    // Along the slab's length in its own (rising north) frame.
+                    let (x0, x1) = match facing {
+                        Direction::South | Direction::West => (1.0 - hi, 1.0 - lo),
+                        _ => (lo, hi),
+                    };
+                    for q in crate::models::roof_slab(t, x0, x1, facing, nb.tex) {
+                        if q.dir == Some(d) || (met && q.dir == Some(d.opposite())) {
+                            continue;
+                        }
+                        models[li].push(self.general(inp, x, y, z, &q));
+                    }
+                    continue;
+                }
+            }
+            for c in carried {
+                quads.clear();
+                let [x0, y0, z0, x1, y1, z1] = c.b;
+                crate::models::box_quads(
+                    Vec3::new(x0, y0, z0),
+                    Vec3::new(x1, y1, z1),
+                    |_| nb.tex,
+                    true,
+                    &mut quads,
+                );
+                for q in &quads {
+                    // Not the end against the neighbour's member, nor the end against this
+                    // piece where it meets it.
+                    if q.dir == Some(d) || (c.met && q.dir == Some(d.opposite())) {
+                        continue;
+                    }
+                    if let Some(cd) = q.cull {
+                        let co = cd.offset();
+                        if self
+                            .models
+                            .occludes(inp.at(x + co.x, y + co.y, z + co.z), cd.opposite())
+                        {
+                            continue;
+                        }
+                    }
+                    models[li].push(self.general(inp, x, y, z, q));
+                }
+            }
+        }
     }
 
     fn water_model(&self) -> Option<(FaceTex, FaceTex)> {

@@ -192,6 +192,13 @@ pub struct ShotSpec {
     pub fauna: bool,
     /// The builder's view: the pieces about the camera outlined by how hard they are pressed.
     pub stress: bool,
+    /// A saved world to show as its player left it (its seed, planet, date, changes and things
+    /// lying about), the camera at the player.
+    pub save: Option<PathBuf>,
+    /// Metres the camera stands back from where it would be, along the way it looks.
+    pub back: f64,
+    /// Things lying about, drawn as boxes: middle, size, colour, turn (from a save).
+    pub lying: Vec<(DVec3, glam::Vec3, [u8; 3], f32)>,
     /// The camera to the nearest group of this species, looking at it from 30 m along `yaw`.
     pub seek: Option<String>,
     /// Seconds the animals live on before the shot with the camera as a person among them
@@ -277,6 +284,9 @@ impl Default for ShotSpec {
             trails: Vec::new(),
             fauna: false,
             stress: false,
+            save: None,
+            back: 0.0,
+            lying: Vec::new(),
             seek: None,
             run: None,
             near_water: false,
@@ -410,6 +420,9 @@ impl ShotSpec {
                 "fauna" => spec.fauna = v.parse()?,
                 // `stress=true`: the builder's view of what is built about the camera.
                 "stress" => spec.stress = v.parse()?,
+                // `save=path/to/world`: that world as its player left it.
+                "save" => spec.save = Some(PathBuf::from(v)),
+                "back" => spec.back = v.parse()?,
                 // `run=3`: the animals live on three seconds with the camera among them.
                 "run" => spec.run = Some(v.parse()?),
                 // `near=water`: on the bank of the nearest deep water.
@@ -570,12 +583,28 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
             .out
             .clone()
             .unwrap_or_else(|| default_dir.join(format!("shot_{:03}.png", i + 1)));
+        // A saved world keeps its own seed and planet.
+        let mut spec = spec.clone();
+        let saved = match &spec.save {
+            Some(dir) => {
+                let (d, meta, _) = hearth_save::WorldDir::open(dir)?;
+                spec.seed = meta.settings.planet.seed;
+                spec.planet = meta.settings.planet.planet_size;
+                Some((d, meta))
+            }
+            None => None,
+        };
         let key = (spec.seed, spec.planet, spec.resolution);
         if world.as_ref().is_none_or(|w| (w.0, w.1, w.2) != key) {
             let lw = LocalWorld::create(spec.seed, spec.planet, spec.resolution, cache_dir)?;
             world = Some((spec.seed, spec.planet, spec.resolution, lw));
         }
         let lw = &mut world.as_mut().expect("created above").3;
+        lw.edits = crate::edits::Edits::default();
+        if let Some((d, meta)) = &saved {
+            load_saved(lw, &mut spec, d, meta)?;
+        }
+        let spec = &spec;
         let (atlas, lod) = atlas.get_or_insert_with(|| {
             let entries = hearth_texgen::textures_for(Some(&lw.content));
             (
@@ -592,6 +621,69 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
         "{} screenshot(s) in {:.2}s",
         specs.len(),
         t0.elapsed().as_secs_f64()
+    );
+    Ok(())
+}
+
+/// Lays a saved world over `lw` and points `spec` at its player: the changes they made, the
+/// vegetation as they left it, the things lying about, the date and hour of its clock.
+fn load_saved(
+    lw: &mut LocalWorld,
+    spec: &mut ShotSpec,
+    d: &hearth_save::WorldDir,
+    meta: &hearth_save::WorldMeta,
+) -> anyhow::Result<()> {
+    if let Ok(Some(e)) = d.read_json::<crate::edits::EditsSave>("blocks.json") {
+        lw.edits = crate::edits::Edits::load(e, &lw.reg);
+    }
+    if let Ok(Some(v)) =
+        d.read_json::<hearth_worldgen::vegetation::VegetationSave>("vegetation.json")
+    {
+        let planet = *lw.map.planet();
+        lw.vegetation =
+            hearth_worldgen::vegetation::Vegetation::new(&v, planet.circumference(), 0.0);
+    }
+    #[derive(serde::Deserialize)]
+    struct Saved {
+        player: hearth_player::Player,
+    }
+    let feet = match d.read_json::<Saved>("player.json") {
+        Ok(Some(p)) => p.player.mover.pos,
+        _ => anyhow::bail!("save={}: no player", d.root.display()),
+    };
+    let (calendar, _) = crate::server::calendar_for(lw, meta.settings.life.starting_season);
+    let m = calendar.at(meta.clock.ticks);
+    let planet = *lw.map.planet();
+    spec.year_frac = Some(m.year_frac);
+    spec.season = None;
+    spec.hour = m.local_time(planet.solar_time_offset(feet.x)) * 24.0;
+    let (sy, cy) = (spec.yaw as f64).to_radians().sin_cos();
+    spec.x = Some(feet.x + sy * spec.back);
+    spec.z = Some(feet.z - cy * spec.back);
+    spec.y = Some(feet.y + spec.above);
+    let items = hearth_items::Items::from_content(&lw.content);
+    if let Ok(Some(lying)) = d.read_json::<hearth_items::WorldItems>("items.json") {
+        spec.lying = lying
+            .items
+            .iter()
+            .filter_map(|w| {
+                let k = w.stack.kind(&items)?;
+                let p = DVec3::from_array(w.pos);
+                ((p - feet).length() < 64.0).then(|| {
+                    let size = glam::Vec3::from(k.resting_m());
+                    (p + DVec3::Y * (size.y as f64 / 2.0), size, k.color, w.yaw)
+                })
+            })
+            .collect();
+    }
+    log::info!(
+        "save {}: {} changes, {} things lying about, the player at {:.1}, {:.1}, {:.1}",
+        d.root.display(),
+        lw.edits.len(),
+        spec.lying.len(),
+        feet.x,
+        feet.y,
+        feet.z
     );
     Ok(())
 }
@@ -1318,6 +1410,20 @@ pub fn render_shot(
                 ));
             }
         }
+    }
+    // Things lying about (from a save).
+    for (c, size, color, yaw) in &spec.lying {
+        let b = hearth_math::BlockPos::containing(*c + DVec3::Y * 0.3);
+        let place = glam::Affine3A::from_scale_rotation_translation(
+            *size,
+            glam::Quat::from_rotation_y(*yaw),
+            (*c - camera.pos).as_vec3(),
+        );
+        boxes.push(hearth_character::solid(
+            place,
+            *color,
+            (lw.map.sky_light(b), lw.map.block_light(b)),
+        ));
     }
     if !boxes.is_empty() {
         scene.figures.set(ctx, &boxes);

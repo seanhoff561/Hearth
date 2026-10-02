@@ -172,7 +172,7 @@
         ),
         (
             id: "cooking_roasting", status: Implemented, name: "Roasting", era: 0, requires: ["fire_keeping"],
-            enables: ["roast_meat", "cook_greens"],
+            enables: ["roast_meat", "roast_joint", "cook_greens"],
             skill: "cooking",
             discovery: [
                 (route: Experiment, trigger: "heat:meat", insight: 0.5, hint: "The meat held in the flames is easier to chew, and smells good."),
@@ -331,7 +331,7 @@
         (
             id: "lean_to", status: Implemented, name: "Lean-to", era: 1, requires: ["windbreak_shelter"],
             discovery: [
-                (route: Experiment, trigger: "lean:poles", insight: 0.4),
+                (route: Experiment, trigger: "build:stick", insight: 0.25, hint: "Brush leaned on a pole would keep off the rain as well as the wind."),
                 (route: Inference, trigger: "infer:lean_to", insight: 0.3),
             ],
             history: (summary: "Poles leaned against a ridge and covered with bark or brush shed rain as well as wind.", date: "Middle Paleolithic (inferred)", years_bp: 100000),

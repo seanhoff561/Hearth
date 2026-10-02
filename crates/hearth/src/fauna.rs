@@ -572,6 +572,9 @@ impl Fauna {
     /// The remains of the populations' dead lying within `radius` of the player, taken into the
     /// world as carcasses: with what is left of them and how far they have gone off at
     /// `air_c`, where (on the ground of the column), which way they lie. The rotted are gone.
+    /// Going off runs on the day scale: the time since a death, in the populations' years, is
+    /// reckoned in the calendar's days (`days_per_year` of them to the year).
+    #[allow(clippy::too_many_arguments)]
     pub fn found(
         &mut self,
         items: &Items,
@@ -580,6 +583,7 @@ impl Fauna {
         at: DVec3,
         radius: f64,
         air_c: f32,
+        days_per_year: f64,
     ) -> Vec<(Stack, DVec3, f32)> {
         let mut out = Vec::new();
         for m in self.eco.take_remains([at.x, at.z], radius, self.now) {
@@ -589,7 +593,7 @@ impl Fauna {
             let Some(kind) = items.get(&id) else {
                 continue;
             };
-            let hours = ((self.now - m.time).max(0.0) * 365.0 * 24.0) as f32;
+            let hours = ((self.now - m.time).max(0.0) * days_per_year * 24.0) as f32;
             let decay = hearth_craft::food::keeps_days(content, kind).map_or(0.0, |keeps| {
                 hearth_craft::food::decay_per_hour(keeps, air_c, 0.0) * hours
             });
