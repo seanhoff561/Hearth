@@ -8,9 +8,11 @@ use std::sync::Arc;
 use glam::DVec3;
 use hearth_fauna::ecology::{Ecology, REGION_CELLS, Region};
 use hearth_fauna::habitat::{GenLand, TreeYields};
-use hearth_fauna::live::{AnimalView, Cell, Footing, Ground, Live};
+use hearth_fauna::live::{AnimalView, Cell, Footing, Ground, Live, Now};
+use hearth_fauna::mind::Presence;
 use hearth_fauna::species::Catalog;
 use hearth_math::BlockPos;
+use hearth_physics::{Mover, Stance};
 use hearth_world::{BlockRegistry, BlockStateId, CubeMap};
 
 use crate::scene::LocalWorld;
@@ -47,7 +49,7 @@ pub fn cells_of(reg: &BlockRegistry) -> Vec<Cell> {
             } else if path.ends_with("_leaves") {
                 Cell::Leaves
             } else if reg.collision_shape(s).is_empty() {
-                Cell::Open
+                Cell::Plant
             } else {
                 Cell::Solid
             }
@@ -268,17 +270,71 @@ impl Fauna {
         }
     }
 
+    /// How the animals sense a person from how they move: the noise of their going (by gait
+    /// and the ground underfoot, as the player hears their own steps), how plain they stand
+    /// (upright, crouched or crawling; moving or still; among plants), how high.
+    pub fn presence_of(&self, mover: &Mover, map: &CubeMap, reg: &BlockRegistry) -> Presence {
+        use hearth_audio::Surface as S;
+        let speed = glam::DVec2::new(mover.vel.x, mover.vel.z).length() as f32;
+        let (gait, plain, height) = match mover.stance {
+            Stance::Crouching => (if speed > 0.2 { 0.3 } else { 0.05 }, 0.5, 1.0),
+            Stance::Crawling => (if speed > 0.1 { 0.3 } else { 0.03 }, 0.3, 0.4),
+            Stance::Swimming => (0.45, 0.6, 0.5),
+            Stance::Climbing => (0.45, 1.0, 1.7),
+            Stance::Standing => (
+                if speed < 0.2 {
+                    0.05
+                } else if speed < 2.0 {
+                    0.55
+                } else if speed < 4.0 {
+                    0.8
+                } else {
+                    1.0
+                },
+                1.0,
+                1.7,
+            ),
+        };
+        let loud: f32 = match crate::hearing::surface_under(map, reg, mover.pos) {
+            S::Leaves => 1.35,
+            S::Gravel | S::Shallow => 1.2,
+            S::Stone | S::Wood | S::Ice => 1.0,
+            S::Soil | S::Mud | S::Sand => 0.85,
+            S::Grass => 0.8,
+            S::Snow => 0.6,
+            S::Moss => 0.5,
+        };
+        let still = if speed < 0.2 { 0.45 } else { 1.0 };
+        // Among plants up to the body: hidden in part, the more as it is low.
+        let among = map
+            .block(BlockPos::containing(mover.pos + DVec3::Y * 0.5))
+            .and_then(|s| self.cells.get(s.0 as usize))
+            .is_some_and(|c| matches!(c, Cell::Plant | Cell::Leaves));
+        let cover = match (among, height < 1.2) {
+            (true, true) => 0.45,
+            (true, false) => 0.8,
+            _ => 1.0,
+        };
+        Presence {
+            pos: mover.pos,
+            noise: (gait * loud).min(1.0),
+            plain: plain * still * cover,
+            height,
+        }
+    }
+
     /// A tick of `dt` seconds at `years` (since the world began) and the local `hour` (0–1)
     /// with the player at `player`; `tick` counts ticks.
     pub fn tick(
         &mut self,
         lw: &LocalWorld,
-        player: DVec3,
+        presence: &Presence,
+        now: &Now,
         years: f64,
-        hour: f32,
         dt: f32,
         tick: u64,
     ) {
+        let player = presence.pos;
         if tick.is_multiple_of(40) {
             let land = GenLand {
                 wg: &lw.generator,
@@ -314,7 +370,7 @@ impl Fauna {
             lw,
             cells: &self.cells,
         };
-        self.live.step(&self.eco, &ground, Some(player), hour, dt);
+        self.live.step(&self.eco, &ground, Some(presence), now, dt);
     }
 
     /// The animals near the player, for the client.

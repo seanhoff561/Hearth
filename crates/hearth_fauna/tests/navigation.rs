@@ -7,7 +7,8 @@ use std::sync::Arc;
 use glam::DVec3;
 use hearth_fauna::ecology::Ecology;
 use hearth_fauna::habitat::{Uniform, temperate_wood};
-use hearth_fauna::live::{Act, Cell, Footing, Ground, Live, Medium, Stage};
+use hearth_fauna::live::{Act, Cell, Footing, Ground, Live, Medium, Now, Stage};
+use hearth_fauna::mind::Presence;
 use hearth_fauna::species::Catalog;
 
 /// Level ground at 64, a river across x 20..26 (its bed at 62.5, its surface at 63.8), and a
@@ -92,7 +93,13 @@ fn a_deer_swims_a_river_to_get_away() {
     let player = DVec3::new(10.0, 64.0, 0.5);
     let mut swam = false;
     for _ in 0..600 {
-        live.step(&eco, &ground, Some(player), 0.4, 0.05);
+        live.step(
+            &eco,
+            &ground,
+            Some(&Presence::walking(player)),
+            &Now::day(0.4),
+            0.05,
+        );
         let a = live.animals.iter().find(|a| a.id == id).expect("the deer");
         if a.medium == Medium::Water {
             swam = true;
@@ -122,7 +129,13 @@ fn a_squirrel_runs_up_a_tree() {
     let player = DVec3::new(-4.5, 64.0, 3.5);
     let mut up = 0.0f64;
     for _ in 0..400 {
-        live.step(&eco, &ground, Some(player), 0.4, 0.05);
+        live.step(
+            &eco,
+            &ground,
+            Some(&Presence::walking(player)),
+            &Now::day(0.4),
+            0.05,
+        );
         let a = live
             .animals
             .iter()
@@ -159,7 +172,13 @@ fn a_crow_flies_to_a_tree_away_from_a_person() {
     let mut highest = 0.0f64;
     let mut perched = None;
     for _ in 0..1200 {
-        live.step(&eco, &ground, Some(player), 0.4, 0.05);
+        live.step(
+            &eco,
+            &ground,
+            Some(&Presence::walking(player)),
+            &Now::day(0.4),
+            0.05,
+        );
         let a = live.animals.iter().find(|a| a.id == id).expect("the crow");
         if a.medium == Medium::Air {
             flew = true;
@@ -192,7 +211,13 @@ fn a_trout_keeps_to_its_stream() {
     let mut moved = 0.0f64;
     let mut last = DVec3::new(22.5, 63.0, 0.5);
     for _ in 0..600 {
-        live.step(&eco, &ground, Some(player), 0.4, 0.05);
+        live.step(
+            &eco,
+            &ground,
+            Some(&Presence::walking(player)),
+            &Now::day(0.4),
+            0.05,
+        );
         let a = live.animals.iter().find(|a| a.id == id).expect("the trout");
         assert!(
             RIVER.contains(&(a.pos.x.floor() as i32)),

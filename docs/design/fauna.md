@@ -224,3 +224,36 @@ after all (the ground changed) sends it looking again a second later.
 
 The client draws each one in its medium: swimming, climbing (the body upright against the
 trunk, the feet gripping it), perched or on the wing.
+
+## Minds (`hearth_fauna::mind`)
+An animal senses a person by sight, hearing and scent, each raising its suspicion at a rate
+that grows as the person comes nearer within the sense's reach; with nothing sensed the
+suspicion fades over a quarter of a minute or so.
+- **Sight** reaches its species' distance in daylight and its night vision's share of it in the
+  dark, within the field its eyes watch (all about but behind it for prey, ahead for hunters),
+  as far as the person is plain: upright and moving in the open plainest, still, crouched or
+  crawling less, among plants less again; the ground and trunks between hide them, foliage and
+  tall plants half hide them, every half metre along the line of sight.
+- **Hearing** reaches the species' distance for a person running over dry leaves, and as the
+  square of the noise for quieter going: a walk on grass a third as loud is heard a ninth as
+  far, a crouched step on moss hardly at all. The noise comes from the person's gait and the
+  ground underfoot, as the player hears their own steps.
+- **Scent** is carried by the wind: downwind it reaches far (the farther as the wind is brisker,
+  up to the species' distance), upwind not at all, all about but near in a calm.
+- Very close, an animal is startled whatever it sensed.
+
+A little suspicion makes an animal stop, look up and watch toward where it believes the person
+is; full suspicion makes it aware, and an aware animal runs when the person is within its flight
+distance (shorter for the bold), along a way, up a tree or on the wing as it goes. One that
+hides (the roe deer) keeps still instead until the person is within half that distance. The
+first of a herd to run warns the rest within a hundred and twenty metres, which run with it.
+
+At its ease, an animal chooses what to do next by how much each suits it now (a utility AI), a
+little at random: grazing; looking up from it now and then (the less as its herd is bigger);
+grooming; wandering about its group's middle (the more as it has strayed from it); going to the
+nearest water within a hundred and twenty metres when thirsty (about once a day) and drinking at
+the bank; a young one following its mother when it has fallen behind. The weights are the
+species' `habits` (vigilance, grooming, roaming, sociability), defaulting by its diet and how it
+lives; out of its hours it sleeps. So from downwind a stalker gets within a hundred metres of a
+grazing red deer that would scent them at three hundred from upwind, and crouched and slow
+within a hundred where running is heard at three hundred.

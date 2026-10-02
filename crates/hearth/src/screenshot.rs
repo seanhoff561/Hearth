@@ -678,8 +678,13 @@ pub fn render_shot(
             let centre = DVec3::new(at.x, lw.surface_y(at.x, at.y), at.y);
             f.live.materialize(&mut f.eco, &ground, centre);
             for _ in 0..200 {
-                f.live
-                    .step(&f.eco, &ground, None, (spec.hour / 24.0) as f32, 0.05);
+                f.live.step(
+                    &f.eco,
+                    &ground,
+                    None,
+                    &hearth_fauna::live::Now::day((spec.hour / 24.0) as f32),
+                    0.05,
+                );
             }
             let back = f.eco.catalog.species[s].shoulder_m as f64 * 0.8;
             let backs: Vec<DVec3> = f
@@ -1141,8 +1146,13 @@ pub fn render_shot(
         f.live.materialize(&mut f.eco, &ground, camera.pos);
         if spec.seek.is_none() {
             for _ in 0..200 {
-                f.live
-                    .step(&f.eco, &ground, None, (spec.hour / 24.0) as f32, 0.05);
+                f.live.step(
+                    &f.eco,
+                    &ground,
+                    None,
+                    &hearth_fauna::live::Now::day((spec.hour / 24.0) as f32),
+                    0.05,
+                );
             }
         }
         if let Some(seconds) = spec.run {
@@ -1153,8 +1163,10 @@ pub fn render_shot(
                 f.live.step(
                     &f.eco,
                     &ground,
-                    Some(camera.pos),
-                    (spec.hour / 24.0) as f32,
+                    Some(&hearth_fauna::mind::Presence::walking(
+                        camera.pos - DVec3::Y * spec.above.min(1.6),
+                    )),
+                    &hearth_fauna::live::Now::day((spec.hour / 24.0) as f32),
                     0.05,
                 );
             }

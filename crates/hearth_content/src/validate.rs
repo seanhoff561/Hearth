@@ -337,6 +337,12 @@ pub fn validate(content: &Content, report: &mut Report) {
                 c.range("temperament.flight_m", t.flight_m, 0.0, 2_000.0);
                 c.range("temperament.boldness", t.boldness, 0.0, 1.0);
             }
+            if let Some(h) = &a.habits {
+                c.opt("habits.vigilance", h.vigilance, 0.0, 10.0);
+                c.opt("habits.grooming", h.grooming, 0.0, 10.0);
+                c.opt("habits.roaming", h.roaming, 0.0, 10.0);
+                c.opt("habits.sociability", h.sociability, 0.0, 10.0);
+            }
             if let Some(s) = &a.shape {
                 c.opt("shape.neck", s.neck, 0.0, 1.0);
                 c.opt("shape.head", s.head, 0.0, 0.6);

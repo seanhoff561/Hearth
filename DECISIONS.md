@@ -963,3 +963,22 @@ tree. Fish are searched as walkers that may only step into water deep enough. Tr
 limbs and foliage are told apart by their blocks' names (`_log`, `_branch`, `_leaves`), as the
 renderer already does for the crowns.
 
+## D85 — Suspicion from senses as rates; habits as utility weights
+The spec asks for senses (sight with field of view, acuity and night vision; hearing of the
+player's noise; smell carried by the wind) to be real stealth mechanics, and for a utility AI
+with weights in data. Each sense gives a rate at which suspicion grows rather than a yes or no,
+so that a person at the edge of a sense's reach is noticed only if they linger, close by at
+once, and suspicion fades when nothing is sensed; two thresholds (watching, aware) turn it into
+behaviour, and awareness rather than distance alone sets an animal running, so an unnoticed
+stalker gets close. Hearing falls with the square of the noise so that quiet going is heard
+much nearer than loud (as sound energy falls with distance squared), and scent is a cone
+downwind whose length grows with the wind, as the spec's "approaching from downwind matters"
+asks. The player's noise is computed from their gait and the ground underfoot the same way
+their own footsteps are sounded. The choice of what to do at ease is a utility over a few
+behaviours scored from the animal's state (thirst, its mother's distance, its distance from
+its group's middle, its herd's size) and weighted by the species' habits, which default by diet
+and social life so that only species unlike their kind need data; the alarm that sends a herd
+running with its first runner is how herds share vigilance. Predators, hunting and the calls
+the alarms will sound with come in (g)–(i). Clothing colour does not yet change how plain a
+person stands (nothing records clothing colour beyond its look).
+

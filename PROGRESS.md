@@ -518,7 +518,16 @@ V2-7 — Fauna framework (temperate forest first), in parts:
   wall, across a river for swimmers and not for others, fish in the water, flights over a
   crown to a perch; a deer swims a river to get away, a squirrel runs up a tree, a crow flies
   to a tree's crown, a trout keeps to its stream.
-- [ ] (f) Minds: senses (sight, hearing, scent on the wind), needs, utility AI, herds, packs.
+- [x] (f) Minds (D85, docs/design/fauna.md "Minds"): sight (field of view, daylight and night
+  vision, how plain the person stands, cover along the line of sight), hearing (the noise of the
+  player's gait and the ground underfoot), scent carried downwind, startle; suspicion rising and
+  fading; watching, running when aware within flight distance, freezing for those that hide;
+  the herd running with the first to run; the young following their mothers; thirst and going
+  to water to drink; a utility choice of what to do at ease weighted by the species' `habits`
+  (data). The server senses the player from their mover and the weather's wind and daylight.
+  Tests: downwind against upwind, crouched against running, still at night against by day, the
+  herd running together, a calf following, a roe deer freezing then running, a thirsty deer
+  drinking. Packs hunting together come with the predators of (g).
 - [ ] (g) Predators and dangerous herbivores with logged causes; counterplay.
 - [ ] (h) Hunting, wounds, tracks, carcasses and butchering by species (the kill stand-in
   goes).

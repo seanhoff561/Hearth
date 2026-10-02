@@ -7,7 +7,8 @@ use std::sync::Arc;
 use glam::DVec3;
 use hearth_fauna::ecology::{Ecology, REGION_M};
 use hearth_fauna::habitat::{Uniform, temperate_wood};
-use hearth_fauna::live::{Act, Footing, Ground, Live, NEAR_M};
+use hearth_fauna::live::{Act, Footing, Ground, Live, NEAR_M, Now};
+use hearth_fauna::mind::Presence;
 use hearth_fauna::species::Catalog;
 
 /// Flat ground at y = 64 everywhere within reach.
@@ -86,7 +87,7 @@ fn groups_come_into_the_world_and_fold_back() {
     }
     // A minute of life: they move, and none flees from no one.
     for _ in 0..1200 {
-        live.step(&eco, &Flat, None, 0.4, 0.05);
+        live.step(&eco, &Flat, None, &Now::day(0.4), 0.05);
     }
     assert!(live.animals.iter().any(|a| a.stride > 0.0), "some walked");
     assert!(live.animals.iter().all(|a| a.act != Act::Flee));
@@ -123,7 +124,13 @@ fn a_person_coming_near_puts_them_to_flight() {
     // Someone 40 m away (inside a red deer's flight distance).
     let person = at + DVec3::new(40.0, 0.0, 0.0);
     for _ in 0..100 {
-        live.step(&eco, &Flat, Some(person), 0.4, 0.05);
+        live.step(
+            &eco,
+            &Flat,
+            Some(&Presence::walking(person)),
+            &Now::day(0.4),
+            0.05,
+        );
     }
     let a = live.animals.iter().find(|a| a.id == id).expect("the deer");
     assert_eq!(a.act, Act::Flee);

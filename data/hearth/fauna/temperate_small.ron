@@ -22,6 +22,7 @@
             ranging: (home_range_km2: 0.3, dispersal_km: 2, dispersers: Both, cover: 0.2, model: Density),
             coat: (base: "#8a6a48", belly: "#ece4d4", points: "#1e1814", pattern: Grizzled),
             shape: (neck: 0.06, head: 0.24, snout: 0.35, tail: 0.1, tail_width: 0.4, ears: 1.0, ear_shape: Long, legs: 1.0),
+            habits: (vigilance: 1.4),
             yields: (meat: 0.45, fat: 0.02, organs: 0.05, bone: 0.12, hide: 0.08, sinew: 0.002, hide_material: "fur_pelt"),
             track: (foot: Hopping, length_cm: 6, stride_m: 1.2),
             calls: [(kind: Scream, when: Distress, loudness_db: 90, pitch_hz: (800, 3000), seconds: 1.0)],

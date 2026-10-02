@@ -5,7 +5,8 @@
 use hearth_content::Content;
 use hearth_content::schema::Season;
 use hearth_content::schema::fauna::{
-    Activity, Animal, BodyPlan, Coat, Dispersers, PopulationModel, SeasonalBehavior, Shape, Social,
+    Activity, Animal, BodyPlan, Coat, DietKind, Dispersers, PopulationModel, SeasonalBehavior,
+    Senses, Shape, Social,
 };
 use hearth_content::schema::flora::GrowthForm;
 use hearth_worldgen::realms::{RealmSet, set_of};
@@ -150,6 +151,22 @@ pub struct Species {
     pub antler_seasons: [bool; 4],
     /// Climbs trees.
     pub climbs: bool,
+    /// How far it sees, hears and smells.
+    pub senses: Senses,
+    /// How bold (0 shy … 1 bold) and whether it freezes rather than runs.
+    pub boldness: f32,
+    pub freezes: bool,
+    /// Its habits' weights, filled in.
+    pub habits: Habits,
+}
+
+/// How an animal spends its time when nothing troubles it: weights about 1.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Habits {
+    pub vigilance: f32,
+    pub grooming: f32,
+    pub roaming: f32,
+    pub sociability: f32,
 }
 
 impl Species {
@@ -557,6 +574,21 @@ fn species_of(
         shape: a.shape.unwrap_or_default(),
         antler_seasons: antler_seasons(a),
         climbs: a.climbs,
+        senses: a.senses,
+        boldness: a.temperament.map_or(0.3, |t| t.boldness),
+        freezes: a.temperament.is_some_and(|t| t.freezes),
+        habits: {
+            // Prey watches, hunters roam, herds keep together.
+            let h = a.habits.unwrap_or_default();
+            let hunts = matches!(a.diet.kind, DietKind::Carnivore | DietKind::Piscivore);
+            let together = !matches!(a.social, Social::Solitary | Social::Pair);
+            Habits {
+                vigilance: h.vigilance.unwrap_or(if hunts { 0.3 } else { 1.0 }),
+                grooming: h.grooming.unwrap_or(1.0),
+                roaming: h.roaming.unwrap_or(if hunts { 1.5 } else { 1.0 }),
+                sociability: h.sociability.unwrap_or(if together { 1.0 } else { 0.3 }),
+            }
+        },
     }
 }
 

@@ -346,6 +346,23 @@ pub struct Shape {
     pub head_gear: Option<HeadGear>,
 }
 
+/// How an animal spends its time when nothing troubles it (V2-7 minds): weights about 1 on
+/// what its utility AI chooses among; its kind has the usual ones.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct Habits {
+    /// Looking up from feeding to watch.
+    #[serde(default)]
+    pub vigilance: Option<f32>,
+    #[serde(default)]
+    pub grooming: Option<f32>,
+    /// Going about rather than staying put.
+    #[serde(default)]
+    pub roaming: Option<f32>,
+    /// Keeping near its group.
+    #[serde(default)]
+    pub sociability: Option<f32>,
+}
+
 /// One more thing butchering yields: antlers, tusks, a pelt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExtraYield {
@@ -533,6 +550,8 @@ entry! {
         /// Climbs trees (to flee, to feed, to rest).
         #[serde(default)]
         pub climbs: bool,
+        #[serde(default)]
+        pub habits: Option<Habits>,
         #[serde(default)]
         pub yields: Option<Yields>,
         #[serde(default)]

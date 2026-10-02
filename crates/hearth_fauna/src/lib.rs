@@ -5,6 +5,7 @@ pub mod anim;
 pub mod ecology;
 pub mod habitat;
 pub mod live;
+pub mod mind;
 pub mod nav;
 pub mod rig;
 pub mod skin;

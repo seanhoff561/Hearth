@@ -274,7 +274,7 @@ pub fn canopy(ground: &dyn Ground, x: f64, z: f64) -> Option<f64> {
     let base = f.level().floor() as i32;
     for y in (base..base + 40).rev() {
         match ground.cell(ix, y, iz) {
-            Some(Cell::Open | Cell::Water) | None => continue,
+            Some(Cell::Open | Cell::Plant | Cell::Water) | None => continue,
             Some(_) => return Some(y as f64 + 1.0),
         }
     }
@@ -376,9 +376,9 @@ pub fn perch_near(ground: &dyn Ground, at: DVec2, radius: f64) -> Option<DVec3> 
             let g = f.level().floor() as i32;
             for y in (g + 2..g + 30).rev() {
                 match ground.cell(ix, y, iz) {
-                    Some(Cell::Open) | None => continue,
+                    Some(Cell::Open | Cell::Plant) | None => continue,
                     Some(Cell::Leaves | Cell::Limb) => {
-                        if ground.cell(ix, y + 1, iz) == Some(Cell::Open) {
+                        if matches!(ground.cell(ix, y + 1, iz), Some(Cell::Open | Cell::Plant)) {
                             let p = DVec3::new(ix as f64 + 0.5, y as f64 + 1.0, iz as f64 + 0.5);
                             best = Some((d2, p));
                         }
@@ -390,6 +390,40 @@ pub fn perch_near(ground: &dyn Ground, at: DVec2, radius: f64) -> Option<DVec3> 
         }
     }
     best.map(|b| b.1)
+}
+
+/// Water to drink near a place: the nearest water within `radius` (looked for every two
+/// metres, ring by ring), and the dry ground at its edge toward the place.
+pub fn water_near(ground: &dyn Ground, at: DVec3, radius: f64) -> Option<(DVec3, DVec3)> {
+    let mut r = 2.0;
+    while r <= radius {
+        let n = ((r * std::f64::consts::TAU / 2.0).ceil() as usize).max(6);
+        for k in 0..n {
+            let a = k as f64 / n as f64 * std::f64::consts::TAU;
+            let (x, z) = (at.x + a.cos() * r, at.z + a.sin() * r);
+            let Some(f) = ground.footing(x, z, at.y) else {
+                continue;
+            };
+            if !f.water || f.depth < 0.1 {
+                continue;
+            }
+            // Back toward the place to dry ground.
+            let back = DVec2::new(at.x - x, at.z - z).normalize_or(DVec2::X);
+            let mut d = 0.5;
+            while d < r {
+                let (bx, bz) = (x + back.x * d, z + back.y * d);
+                match ground.footing(bx, bz, at.y) {
+                    Some(b) if !b.water => {
+                        return Some((DVec3::new(bx, b.y, bz), DVec3::new(x, f.level(), z)));
+                    }
+                    Some(_) => d += 0.5,
+                    None => break,
+                }
+            }
+        }
+        r += 2.0;
+    }
+    None
 }
 
 /// A tree to climb near a place: the middle of its trunk's column where it meets the ground,

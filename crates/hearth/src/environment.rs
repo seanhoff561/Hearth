@@ -81,6 +81,29 @@ impl EnvSampler {
         w
     }
 
+    /// How light it is at a place to see by (0 a dark night … 1 day): the sun's height through
+    /// dusk and dawn, a little light of the moon and stars at night.
+    pub fn daylight(&self, m: &Moment, at: DVec3) -> f32 {
+        let lat = self.planet.latitude_deg(at.z);
+        let local = self.local_time(m, at.x);
+        let sun = astro::sun(lat, m.year_frac, local, self.calendar.axial_tilt_deg);
+        let s = ((sun.dir.y + 0.1) / 0.2).clamp(0.0, 1.0);
+        (s * s * (3.0 - 2.0 * s)).max(0.04) as f32
+    }
+
+    /// The air as the animals sense by it at a place: the way the wind blows, how hard, and the
+    /// light.
+    pub fn air_at(&self, m: &Moment, at: DVec3) -> hearth_fauna::mind::Air {
+        let w = self.weather_at(m, at);
+        // The wind blows toward `wind_dir` (0 north, which is -z; a quarter turn east, +x).
+        let wind = glam::DVec2::new(w.wind_dir.sin(), -w.wind_dir.cos());
+        hearth_fauna::mind::Air {
+            wind,
+            wind_speed: w.wind_speed_m_s as f32,
+            light: self.daylight(m, at),
+        }
+    }
+
     /// Whether the sun is up at a place.
     pub fn sun_up(&self, m: &Moment, at: DVec3) -> bool {
         let lat = self.planet.latitude_deg(at.z);

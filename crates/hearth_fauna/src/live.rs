@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ecology::{Ecology, REGION_LEN, dist};
 use crate::habitat::CELL_M;
-use crate::nav::{FISH_DEPTH, Flight, Walker, find_way, perch_near, trunk_near};
+use crate::mind::{Air, Presence, Sense, Wary, sense, yaw_toward};
+use crate::nav::{FISH_DEPTH, Flight, Walker, find_way, perch_near, trunk_near, water_near};
 use crate::rig::{Frame, frame_of};
 use crate::species::Species;
 
@@ -48,8 +49,10 @@ impl Footing {
 /// What fills a block, as animals go over, through and up it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cell {
-    /// Air, or plants a body pushes through.
+    /// Air.
     Open,
+    /// Grass, herbs and bushes a body pushes through (and is half hidden in).
+    Plant,
     Solid,
     Water,
     /// A tree's trunk (climbable).
@@ -176,6 +179,13 @@ pub struct Animal {
     pub repath: f32,
     pub climb: Option<Climb>,
     pub flying: Option<Flying>,
+    /// Its wariness of a person.
+    pub wary: Wary,
+    /// A young one's mother, whom it follows.
+    pub mother: Option<u64>,
+    /// How thirsty (a day without water is 1), and the water it is going to drink at.
+    pub thirst: f32,
+    pub water: Option<DVec3>,
 }
 
 impl Animal {
@@ -212,6 +222,31 @@ impl Animal {
             repath: 0.0,
             climb: None,
             flying: None,
+            wary: Wary::default(),
+            mother: None,
+            // Some drank lately, some not.
+            thirst: (id % 7) as f32 * 0.1,
+            water: None,
+        }
+    }
+}
+
+/// When and in what weather the animals live a step: the local hour (0–1), how long a day is
+/// (real seconds), the air.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Now {
+    pub hour: f32,
+    pub day_s: f32,
+    pub air: Air,
+}
+
+impl Now {
+    /// A still, light hour of a day of 48 minutes.
+    pub fn day(hour: f32) -> Self {
+        Self {
+            hour,
+            day_s: 2880.0,
+            air: Air::calm_day(),
         }
     }
 }
@@ -390,12 +425,13 @@ impl Live {
                     placed.push((stage, female, pos));
                 }
                 g.live = true;
+                let mut made = Vec::with_capacity(placed.len());
                 for (stage, female, pos) in placed {
                     let id = self.next_id;
                     self.next_id += 1;
                     let yaw = self.rng.next_f32() * std::f32::consts::TAU;
                     let timer = 2.0 + self.rng.next_f32() * 10.0;
-                    self.animals.push(Animal::new(
+                    made.push(Animal::new(
                         id,
                         g.species,
                         Some(g.id),
@@ -408,6 +444,24 @@ impl Live {
                         Medium::Ground,
                     ));
                 }
+                // The young of the year each with a mother among the females, beside her.
+                let mothers: Vec<(u64, DVec3)> = made
+                    .iter()
+                    .filter(|a| a.stage == Stage::Adult && a.female)
+                    .map(|a| (a.id, a.pos))
+                    .collect();
+                let young = made.iter_mut().filter(|a| a.stage == Stage::Young);
+                for (k, a) in young.enumerate() {
+                    if let Some(&(m, at)) = mothers.get(k % mothers.len().max(1)) {
+                        a.mother = Some(m);
+                        if let Some(f) = ground.footing(at.x + 1.2, at.z + 0.8, at.y)
+                            && !f.water
+                        {
+                            a.pos = DVec3::new(at.x + 1.2, f.y, at.z + 0.8);
+                        }
+                    }
+                }
+                self.animals.extend(made);
             }
             // The small species of the cells near the player.
             for (slot, &si) in r.pool_species.iter().enumerate() {
@@ -658,29 +712,36 @@ impl Live {
         }
     }
 
-    /// One step of `dt` seconds: grazing, wandering, resting by the hours of their kind, and
-    /// away from a person who comes too near — along a way found over the ground (swimming
-    /// where they must and can), up a tree for a climber, on the wing for a bird, through the
-    /// water for a fish.
+    /// One step of `dt` seconds: what each senses of the person and what it does about it —
+    /// watching, freezing, running (a herd with the first of it to run) along a way found over
+    /// the ground, up a tree for a climber, on the wing for a bird, through the water for a
+    /// fish — and otherwise grazing, wandering, following its mother, going to water, resting by
+    /// the hours of its kind.
     pub fn step(
         &mut self,
         eco: &Ecology,
         ground: &dyn Ground,
-        player: Option<DVec3>,
-        hour: f32,
+        presence: Option<&Presence>,
+        now: &Now,
         dt: f32,
     ) {
         let cat = eco.catalog.clone();
-        // Where each group's members are, about.
+        // Where each group's members are, about, and how many; where every animal is.
         let mut centres: FxHashMap<u64, (DVec2, f64)> = FxHashMap::default();
+        let mut whereabouts: FxHashMap<u64, DVec3> = FxHashMap::default();
         for a in &self.animals {
-            if let (Some(g), false) = (a.group, a.dead) {
+            if a.dead {
+                continue;
+            }
+            whereabouts.insert(a.id, a.pos);
+            if let Some(g) = a.group {
                 let e = centres.entry(g).or_insert((DVec2::ZERO, 0.0));
                 e.0 += DVec2::new(a.pos.x, a.pos.z);
                 e.1 += 1.0;
             }
         }
         let mut searches = SEARCHES_PER_STEP;
+        let mut alarms: Vec<(u64, DVec3, DVec3)> = Vec::new();
         for a in self.animals.iter_mut() {
             if a.dead {
                 continue;
@@ -688,14 +749,33 @@ impl Live {
             let sp = &cat.species[a.species as usize];
             let mover = mover_of(sp);
             let walker = Walker::of(sp);
-            let flight = sp.flight_m() as f64;
             a.repath = (a.repath - dt).max(0.0);
-            // A person too near: away.
-            if let Some(p) = player {
-                let d = hdist(a.pos, p);
-                let away = DVec2::new(a.pos.x - p.x, a.pos.z - p.z).normalize_or_zero();
+            a.thirst = (a.thirst + dt / now.day_s.max(1.0)).min(2.0);
+            // What it senses of the person.
+            match presence {
+                Some(p) => {
+                    let sensed = sense(sp, a.pos, a.yaw, p, &now.air, ground);
+                    a.wary.update(sensed, p.pos, dt);
+                }
+                None => a.wary.update(None, a.pos, dt),
+            }
+            // What it does about it.
+            if let Some(threat) = a.wary.threat.filter(|_| a.wary.watching()) {
+                let d = hdist(a.pos, threat);
+                let away = DVec2::new(a.pos.x - threat.x, a.pos.z - threat.z).normalize_or_zero();
                 let away = if away == DVec2::ZERO { DVec2::X } else { away };
-                if d < flight {
+                let flight = sp.flight_m() as f64 * (1.15 - 0.3 * sp.boldness as f64);
+                let warned = a.wary.how == Some(Sense::Alarm);
+                let runs = a.wary.aware() && (d < flight || (warned && d < flight * 2.5));
+                let running = matches!(a.act, Act::Flee | Act::Fly);
+                if runs && sp.freezes && !warned && !running && d > flight * 0.45 {
+                    // One that hides keeps still until it is too close.
+                    a.act = Act::Alert;
+                    a.timer = a.timer.max(1.0);
+                    a.goal = None;
+                    a.way.clear();
+                    a.water = None;
+                } else if runs {
                     flee(
                         a,
                         mover,
@@ -706,35 +786,48 @@ impl Live {
                         &mut searches,
                         &mut self.rng,
                     );
-                } else if d < flight * 1.6
-                    && !matches!(a.act, Act::Flee | Act::Fly)
-                    && a.medium != Medium::Air
-                {
+                    a.water = None;
+                    if !running
+                        && matches!(a.act, Act::Flee | Act::Fly)
+                        && let Some(g) = a.group
+                    {
+                        alarms.push((g, threat, a.pos));
+                    }
+                } else if !running && a.medium != Medium::Air {
+                    // Watching: head up, toward it.
                     a.act = Act::Alert;
                     a.timer = a.timer.max(2.0);
-                    a.yaw = turn_toward(
-                        a.yaw,
-                        (p.x - a.pos.x) as f32,
-                        (p.z - a.pos.z) as f32,
-                        4.0 * dt,
-                    );
+                    a.goal = None;
+                    a.way.clear();
+                    a.water = None;
+                    if a.climb.is_none() {
+                        a.yaw = turn_toward(
+                            a.yaw,
+                            (threat.x - a.pos.x) as f32,
+                            (threat.z - a.pos.z) as f32,
+                            4.0 * dt,
+                        );
+                    }
                 }
             }
             a.timer -= dt;
             if a.timer <= 0.0 {
-                let centre = a
+                let (centre, herd) = a
                     .group
                     .and_then(|g| centres.get(&g))
-                    .map(|(s, n)| *s / *n)
-                    .unwrap_or(DVec2::new(a.pos.x, a.pos.z));
+                    .map(|(s, n)| (*s / *n, *n))
+                    .unwrap_or((DVec2::new(a.pos.x, a.pos.z), 1.0));
+                let mother = a.mother.and_then(|m| whereabouts.get(&m).copied());
                 next_act(
                     a,
                     sp,
                     mover,
                     &walker,
                     ground,
-                    awake(sp.activity, hour),
+                    awake(sp.activity, now.hour),
                     centre,
+                    herd,
+                    mother,
                     &mut searches,
                     &mut self.rng,
                 );
@@ -754,6 +847,18 @@ impl Live {
                 ),
             };
             a.stride += moved / sp.stride_m().max(0.05);
+        }
+        // Warned: the herd runs with the first of it to run.
+        for (g, threat, from) in alarms {
+            for a in self
+                .animals
+                .iter_mut()
+                .filter(|a| a.group == Some(g) && !a.dead)
+            {
+                if hdist(a.pos, from) < 120.0 && !matches!(a.act, Act::Flee | Act::Fly) {
+                    a.wary.alarm(threat);
+                }
+            }
         }
     }
 
@@ -936,7 +1041,10 @@ fn take_off(a: &mut Animal, ground: &dyn Ground, toward: DVec2, perch: bool) {
     a.climb = None;
 }
 
-/// What an animal does next when its act is done.
+/// What an animal does next when its act is done: of what it might do, what suits it most
+/// now — asleep out of its hours; a young one after its mother; to water when thirsty; grazing
+/// (in a herd, looking up now and then, the less as the herd is bigger); grooming; wandering
+/// near the middle of its group.
 #[allow(clippy::too_many_arguments)]
 fn next_act(
     a: &mut Animal,
@@ -946,6 +1054,8 @@ fn next_act(
     ground: &dyn Ground,
     up: bool,
     centre: DVec2,
+    herd: f64,
+    mother: Option<DVec3>,
     searches: &mut usize,
     rng: &mut Rng,
 ) {
@@ -1014,27 +1124,128 @@ fn next_act(
                 a.timer = 20.0 + r * 40.0;
                 a.goal = None;
                 a.way.clear();
-            } else if r < 0.5 {
-                a.act = Act::Graze;
-                a.timer = 4.0 + r * 12.0;
-                a.goal = None;
-                a.way.clear();
-            } else if r < 0.58 {
-                a.act = Act::Groom;
-                a.timer = 3.0 + r * 4.0;
-                a.goal = None;
-                a.way.clear();
-            } else {
-                // Somewhere near the group's middle.
-                let reach = 6.0 + sp.mass_kg.sqrt() as f64;
-                let ang = rng.next_f64() * std::f64::consts::TAU;
-                let goal = centre + DVec2::new(ang.cos(), ang.sin()) * reach * rng.next_f64();
-                way_to(a, walker, ground, goal, WALK_BUDGET, searches);
-                a.act = Act::Walk;
-                a.timer = 20.0;
+                return;
+            }
+            // What it might do, each as much as it suits it now (its habits' weights from its
+            // species), a little at random.
+            let h = sp.habits;
+            let reach = 6.0 + sp.mass_kg.sqrt() as f64;
+            let off_centre = (here.distance(centre) / reach) as f32;
+            let behind = mother.map_or(0.0, |m| hdist(m, a.pos) as f32);
+            let herding = herd > 1.5;
+            let choices = [
+                (Choice::Graze, 1.0),
+                (
+                    Choice::Look,
+                    if herding {
+                        0.45 * h.vigilance / (herd as f32).sqrt()
+                    } else {
+                        0.15 * h.vigilance
+                    },
+                ),
+                (Choice::Groom, 0.12 * h.grooming),
+                (
+                    Choice::Wander,
+                    0.45 * h.roaming + h.sociability * off_centre * off_centre,
+                ),
+                (
+                    Choice::Drink,
+                    if a.thirst > 0.6 && mover != Mover::Fish {
+                        a.thirst * 1.5
+                    } else {
+                        0.0
+                    },
+                ),
+                (
+                    Choice::Follow,
+                    if behind > 4.0 {
+                        2.0 + behind * 0.1
+                    } else {
+                        0.0
+                    },
+                ),
+            ];
+            let choice = choices
+                .iter()
+                .map(|(c, u)| (*c, u * (0.6 + 0.8 * rng.next_f32())))
+                .fold(
+                    (Choice::Graze, f32::MIN),
+                    |b, c| if c.1 > b.1 { c } else { b },
+                )
+                .0;
+            match choice {
+                Choice::Follow => {
+                    let m = mother.unwrap_or(a.pos);
+                    let goal = DVec2::new(
+                        m.x + rng.next_f64() * 2.0 - 1.0,
+                        m.z + rng.next_f64() * 2.0 - 1.0,
+                    );
+                    way_to(a, walker, ground, goal, 400, searches);
+                    a.act = Act::Walk;
+                    a.timer = 6.0;
+                }
+                Choice::Drink => match water_near(ground, a.pos, 120.0) {
+                    Some((bank, water)) => {
+                        way_to(
+                            a,
+                            walker,
+                            ground,
+                            DVec2::new(bank.x, bank.z),
+                            WALK_BUDGET,
+                            searches,
+                        );
+                        a.water = Some(water);
+                        a.act = Act::Walk;
+                        a.timer = 90.0;
+                    }
+                    None => {
+                        // None near: it lives on the water in its food.
+                        a.thirst = 0.3;
+                        a.act = Act::Graze;
+                        a.timer = 4.0;
+                    }
+                },
+                Choice::Graze => {
+                    a.act = Act::Graze;
+                    a.timer = 4.0 + r * 12.0;
+                    a.goal = None;
+                    a.way.clear();
+                }
+                Choice::Look => {
+                    // Head up from feeding to watch a while.
+                    a.act = Act::Alert;
+                    a.timer = 1.5 + rng.next_f32();
+                    a.goal = None;
+                    a.way.clear();
+                }
+                Choice::Groom => {
+                    a.act = Act::Groom;
+                    a.timer = 3.0 + r * 4.0;
+                    a.goal = None;
+                    a.way.clear();
+                }
+                Choice::Wander => {
+                    // Somewhere near the group's middle.
+                    let ang = rng.next_f64() * std::f64::consts::TAU;
+                    let goal = centre + DVec2::new(ang.cos(), ang.sin()) * reach * rng.next_f64();
+                    way_to(a, walker, ground, goal, WALK_BUDGET, searches);
+                    a.act = Act::Walk;
+                    a.timer = 20.0;
+                }
             }
         }
     }
+}
+
+/// What an animal at its ease may do next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Choice {
+    Graze,
+    Look,
+    Groom,
+    Wander,
+    Drink,
+    Follow,
 }
 
 /// Along the way to the goal over the ground or through the water: a step at the speed of
@@ -1080,6 +1291,15 @@ fn go(
         }
         // There.
         a.goal = None;
+        if let Some(w) = a.water.take() {
+            // At the water: a drink.
+            a.yaw = yaw_toward(a.pos, w);
+            a.act = Act::Drink;
+            a.timer = 8.0 + rng.next_f32() * 10.0;
+            a.thirst = 0.0;
+            a.speed = 0.0;
+            return 0.0;
+        }
         if let Some(c) = a.climb {
             // At the tree: up it.
             let side = DVec2::new(a.pos.x - c.trunk.x, a.pos.z - c.trunk.z).normalize_or(DVec2::X);

@@ -890,15 +890,14 @@ fn run(
             workshop.tick(&mut here!(), advanced);
             {
                 let moment = calendar.at(ticks);
-                let hour = env.local_time(&moment, player.mover.pos.x) as f32;
-                fauna.tick(
-                    &lw,
-                    player.mover.pos,
-                    years_at(ticks),
-                    hour,
-                    TICK_S as f32,
-                    ticks,
-                );
+                let at = player.mover.pos;
+                let now = hearth_fauna::live::Now {
+                    hour: env.local_time(&moment, at.x) as f32,
+                    day_s: (calendar.ticks_per_day() * TICK_S) as f32,
+                    air: env.air_at(&moment, at),
+                };
+                let presence = fauna.presence_of(&player.mover, &lw.map, &lw.reg);
+                fauna.tick(&lw, &presence, &now, years_at(ticks), TICK_S as f32, ticks);
                 if ticks.is_multiple_of(2) {
                     let views = fauna.views();
                     if !views.is_empty() || animals_shown {
