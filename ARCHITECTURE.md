@@ -16,6 +16,9 @@ hearth_core ─┼─> hearth_content (data packs → typed tables, lint, graphs
              │        │                 └─> hearth_env (calendar, sun/moon/stars, seasonal
              │        │                      climate, weather, snow & ice, phenology, sky
              │        │                      radiometry in lux) [math, content, worldgen]
+             │        │                 └─> hearth_fauna (species, habitats, populations,
+             │        │                      animals in the world, their bodies)
+             │        │                      [math, content, worldgen]
              │        │                 │
              │        └──> hearth_entity (hecs ECS, physics, AI, pathfinding)
              │                 │
@@ -148,7 +151,12 @@ and 64-byte general quads for models, fluids and translucent surfaces. The verte
 expands quads from the buffers (vertex pulling) with one shared quad index buffer. Translucent
 quads of cubes near the camera are re-sorted back to front when the camera changes block.
 `hearth --screenshot` renders the same frame graph offscreen (software adapter fallback) and
-can verify that GPU culling never changes a pixel.
+can verify that GPU culling never changes a pixel. Its keys place things in the shot (blocks,
+trees, a fire, a person, animals: `animal=red_deer:adult:f:graze@12:2:90`,
+`herd=wild_boar:5@15:0`), or bring in the populations' own animals about the camera
+(`fauna=true`), or take the camera to a species' nearest group (`seek=red_deer`, `seek=lynx:2`
+for the second nearest): it stands where it sees the most of them past the trees and the lie of
+the ground, through a 40° lens unless `fov` is given.
 
 ## 8. Client/server
 

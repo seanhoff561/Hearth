@@ -483,7 +483,16 @@ V2-7 — Fauna framework (temperate forest first), in parts:
   of animals. Tests: a uniform wood holds every species for 30 years; heavy hunting of red
   deer depletes and they recover; a generated temperate region feeds its animals. (Saving
   regions and the 50-year run on a generated region come with (c) and (j).)
-- [ ] (c) Animals in the world: materialization and folding, entities, movement, protocol.
+- [x] (c) Animals in the world (D82, docs/design/fauna.md "Animals in the world"): the server
+  keeps the 3 × 3 regions about the player, advances them with the calendar and saves them
+  (`fauna.json.zst`); groups within 112 m come into the world as their members and fold back
+  beyond 150 m (the dead staying dead), small walking species drawn from the cells within 80 m;
+  grazing, wandering, resting by their hours and fleeing within their flight distance; the
+  `Animals` and `Census` messages; the client eases and draws them (box bodies until (d)).
+  Screenshots: `animal=`, `herd=`, `fauna=true`, `seek=<species>[:n]` (the camera where it
+  sees the most of the nth nearest group). Test: walking to the groups about the spawn meets
+  animals on the ground that move and are folded away when left behind. Deferred to (j):
+  making regions on a worker (≈0.1 s each on the server thread now).
 - [ ] (d) Bodies: rigs at real dimensions, coats, procedural gaits, instanced rendering.
 - [ ] (e) Navigation: walking, swimming, climbing, flying.
 - [ ] (f) Minds: senses (sight, hearing, scent on the wind), needs, utility AI, herds, packs.

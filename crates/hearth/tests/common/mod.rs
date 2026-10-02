@@ -39,6 +39,10 @@ pub struct World {
     pub body: Option<hearth_protocol::BodyView>,
     /// The world's terrain as the client has it (for the landscape seen from afar).
     pub generator: Arc<hearth_worldgen::WorldGenerator>,
+    /// The animals near the player as the server last told of them.
+    pub animals: Vec<hearth_fauna::live::AnimalView>,
+    /// The last census of the groups about the player.
+    pub census: Option<Vec<(u16, glam::DVec2, u32)>>,
 }
 
 pub fn temp(name: &str) -> std::path::PathBuf {
@@ -99,6 +103,8 @@ impl World {
             working: false,
             body: None,
             generator: ready.generator.clone(),
+            animals: Vec::new(),
+            census: None,
         };
         let feet = w.mover.pos;
         w.until(60.0, |w| {
@@ -124,6 +130,8 @@ impl World {
                 ToClient::Placed(m) => self.mover = m,
                 ToClient::Work(w) => self.working = w.is_some(),
                 ToClient::Body(b) => self.body = Some(*b),
+                ToClient::Animals(v) => self.animals = v,
+                ToClient::Census(c) => self.census = Some(c),
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {
                     name,

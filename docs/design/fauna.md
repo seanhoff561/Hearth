@@ -126,3 +126,30 @@ a shared condition. A step of the simulation (an eleventh of a month by default)
   region or the next; crowded herds send some mothers and young to nearby land with room (which
   is how the deer come back to land emptied by hunting); the edges of the simulated land take in
   animals as if the land beyond held its usual numbers.
+
+## Animals in the world (`hearth_fauna::live`, the server's `fauna.rs`)
+The server keeps the regions about the player (the 3 × 3 about the one the player is in, made
+one at a time as the player comes near, or restored from the save where they were simulated
+before) and advances their populations with the calendar, every few days of game time, in steps
+of at most a thirty-second of a year. Near the player the populations become animals:
+- A **group** whose home is within 112 m comes into the world as its members — the young of the
+  year, the older young, the females and males — placed about its home on ground they can stand
+  on (the loaded blocks; the generated heights where the blocks are not loaded yet).
+- The **small species** that walk (hares, squirrels, voles, mice, hedgehogs, snakes, frogs) are
+  drawn from the numbers of the cells within 80 m, the share of each cell within reach, at most
+  three to a cell, the same way each day.
+- When all its animals are beyond 150 m a group **folds** back: the living into its numbers by
+  age and sex, the dead (killed by the player, so far) not at all. Small animals go back to
+  their cells the same way.
+
+What they do in the world is the plainest life for now: grazing and wandering about the group,
+resting through the hours their kind sleeps (diurnal, nocturnal, crepuscular or about the clock),
+fleeing a person who comes within their species' flight distance, standing alert after. They walk
+and run at their species' speeds, step up and down what their legs allow and turn back from
+water and drops; their minds (senses, scent on the wind, needs, herds and packs), their bodies
+and their gaits replace this in parts (d)–(f). The server tells the client of the animals near
+the player ten times a second (`ToClient::Animals`: each one's species, stage, sex, place,
+facing, speed, what it does and its stride's phase); the client eases them between and draws
+them within 160 m. A census of the groups about the player (`ToServer::Census`) serves tools and
+tests. The populations are saved with the world (`fauna.json.zst`: the regions' cells, groups
+and weather, the animals in the world folded into them).

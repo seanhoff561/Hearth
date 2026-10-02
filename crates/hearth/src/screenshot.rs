@@ -176,6 +176,27 @@ pub struct ShotSpec {
     pub body: bool,
     /// The body's senses on the image: `hurt`, `cold`, `hot`, `exhausted` or `faint`.
     pub senses: Option<String>,
+    /// Animals on the ground in front of the camera: (species, stage, female, what it does,
+    /// metres ahead, metres to the right, its facing in degrees from the camera's).
+    pub animals: Vec<ShotAnimal>,
+    /// The animals the populations put about the camera.
+    pub fauna: bool,
+    /// The camera to the nearest group of this species, looking at it from 30 m along `yaw`.
+    pub seek: Option<String>,
+    /// The camera's pitch aimed at the group sought (a `seek` without a `pitch`).
+    pub aim: bool,
+}
+
+/// An animal placed in a screenshot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShotAnimal {
+    pub species: String,
+    pub stage: hearth_fauna::live::Stage,
+    pub female: bool,
+    pub act: hearth_fauna::live::Act,
+    pub ahead: f64,
+    pub right: f64,
+    pub yaw: f32,
 }
 
 impl Default for ShotSpec {
@@ -217,6 +238,10 @@ impl Default for ShotSpec {
             taa: false,
             body: false,
             senses: None,
+            animals: Vec::new(),
+            fauna: false,
+            seek: None,
+            aim: false,
         }
     }
 }
@@ -235,11 +260,13 @@ impl ShotSpec {
     /// Parses `key=value` pairs separated by commas.
     pub fn parse(s: &str) -> anyhow::Result<Self> {
         let mut spec = Self::default();
+        let mut given = Vec::new();
         for kv in s.split(',').map(str::trim).filter(|p| !p.is_empty()) {
             let (k, v) = kv
                 .split_once('=')
                 .ok_or_else(|| anyhow::anyhow!("expected key=value, got {kv:?}"))?;
             let v = v.trim();
+            given.push(k.trim().to_owned());
             match k.trim() {
                 "seed" => spec.seed = v.parse()?,
                 "planet" => {
@@ -323,8 +350,97 @@ impl ShotSpec {
                 "taa" => spec.taa = v.parse()?,
                 "body" => spec.body = v.parse()?,
                 "senses" => spec.senses = Some(v.to_owned()),
+                // `fauna=true`: the animals the populations put about the camera;
+                // `seek=red_deer`: the camera to the nearest group of a species.
+                "fauna" => spec.fauna = v.parse()?,
+                "seek" => {
+                    spec.fauna = true;
+                    spec.seek = Some(v.to_owned());
+                }
+                // `animal=red_deer:adult:m:graze@20:-3:90` (species, stage, sex, what it does @
+                // metres ahead : to the right : facing in degrees from the camera's),
+                // repeatable; `herd=red_deer:9@25:0` a herd about a point.
+                "animal" => {
+                    use hearth_fauna::live::{Act, Stage};
+                    let (what, at) = v.split_once('@').unwrap_or((v, "15"));
+                    let mut w = what.split(':');
+                    let species = w.next().unwrap_or("red_deer").to_owned();
+                    let stage = match w.next().unwrap_or("adult") {
+                        "young" => Stage::Young,
+                        "juvenile" => Stage::Juvenile,
+                        _ => Stage::Adult,
+                    };
+                    let female = w.next().unwrap_or("f") != "m";
+                    let act = match w.next().unwrap_or("graze") {
+                        "walk" => Act::Walk,
+                        "rest" => Act::Rest,
+                        "alert" => Act::Alert,
+                        "flee" | "run" => Act::Flee,
+                        _ => Act::Graze,
+                    };
+                    let mut n = at.split(':');
+                    let ahead = n.next().unwrap_or("15").parse()?;
+                    let right = n.next().unwrap_or("0").parse()?;
+                    let yaw = n.next().unwrap_or("90").parse()?;
+                    spec.animals.push(ShotAnimal {
+                        species,
+                        stage,
+                        female,
+                        act,
+                        ahead,
+                        right,
+                        yaw,
+                    });
+                }
+                "herd" => {
+                    use hearth_fauna::live::{Act, Stage};
+                    let (what, at) = v.split_once('@').unwrap_or((v, "25"));
+                    let (species, count) = what.split_once(':').unwrap_or((what, "8"));
+                    let count: usize = count.parse()?;
+                    let mut n = at.split(':');
+                    let ahead: f64 = n.next().unwrap_or("25").parse()?;
+                    let right: f64 = n.next().unwrap_or("0").parse()?;
+                    for k in 0..count {
+                        // A herd's mothers, a stag or two, the year's young; grazing, some
+                        // walking, one looking up.
+                        let u = (k as f64 * 0.618_034).fract();
+                        let v2 = (k as f64 * 0.414_214).fract();
+                        let r = (count as f64).sqrt() * 2.2 * u.sqrt();
+                        let a = v2 * std::f64::consts::TAU;
+                        let (stage, female) = match k % 5 {
+                            0 if k > 0 => (Stage::Adult, false),
+                            3 => (Stage::Young, k % 2 == 0),
+                            _ => (Stage::Adult, true),
+                        };
+                        let act = match k % 4 {
+                            1 => Act::Walk,
+                            3 if k == 3 => Act::Alert,
+                            _ => Act::Graze,
+                        };
+                        spec.animals.push(ShotAnimal {
+                            species: species.to_owned(),
+                            stage,
+                            female,
+                            act,
+                            ahead: ahead + r * a.cos(),
+                            right: right + r * a.sin(),
+                            yaw: (v2 * 360.0) as f32,
+                        });
+                    }
+                }
                 other => anyhow::bail!("unknown screenshot key {other:?}"),
             }
+        }
+        // Seeking a group, the camera stands a little above the ground, looking at it through
+        // a longer lens.
+        if spec.seek.is_some() {
+            if !given.iter().any(|k| k == "above") {
+                spec.above = 4.0;
+            }
+            if !given.iter().any(|k| k == "fov") {
+                spec.fov = 40.0;
+            }
+            spec.aim = !given.iter().any(|k| k == "pitch");
         }
         Ok(spec)
     }
@@ -443,7 +559,7 @@ pub fn render_shot(
     out: &Path,
     time: Option<&TimeConfig>,
 ) -> anyhow::Result<Shot> {
-    let (sx, sz) = match (spec.x, spec.z, spec.lat) {
+    let (mut sx, mut sz) = match (spec.x, spec.z, spec.lat) {
         (Some(x), Some(z), _) => (x, z),
         (_, _, Some(lat)) => land_at_latitude(lw, lat)
             .ok_or_else(|| anyhow::anyhow!("no land near latitude {lat}"))?,
@@ -452,15 +568,6 @@ pub fn render_shot(
             (x as f64 + 0.5, z as f64 + 0.5)
         }
     };
-    let sy = spec.y.unwrap_or_else(|| lw.surface_y(sx, sz) + spec.above);
-    let mut camera = Camera {
-        pos: DVec3::new(sx, sy, sz),
-        yaw: spec.yaw,
-        pitch: spec.pitch,
-        fov_y: spec.fov,
-        near: 0.05,
-        jitter: glam::Vec2::ZERO,
-    };
     // Date and time: season (mid-season in this hemisphere) or year fraction; local hour.
     let planet = *lw.map.planet();
     let southern = planet.latitude(sz) < 0.0;
@@ -468,6 +575,102 @@ pub fn render_shot(
         spec.season
             .map_or(0.3, |s| Calendar::season_start(s, southern) + 0.125)
     });
+    // The populations about the place; the camera to a group sought.
+    let mut seen = None;
+    let mut herd = None;
+    let mut fauna = None;
+    if spec.fauna {
+        let made = std::time::Instant::now();
+        let mut f = crate::fauna::Fauna::new(lw, spec.seed, 0.0, year_frac, None);
+        f.ensure_about(lw, DVec3::new(sx, 0.0, sz));
+        log::info!(
+            "{} regions of populations made in {:.2}s",
+            f.eco.regions.len(),
+            made.elapsed().as_secs_f64()
+        );
+        if let Some(seek) = &spec.seek {
+            // `red_deer` or `red_deer:3` (the third nearest group).
+            let (name, nth) = match seek.split_once(':') {
+                Some((name, n)) => (name, n.parse::<usize>()?.max(1)),
+                None => (seek.as_str(), 1),
+            };
+            let s = f
+                .eco
+                .catalog
+                .index(name)
+                .ok_or_else(|| anyhow::anyhow!("seek={name}: no such species"))?;
+            let mut groups: Vec<_> = f
+                .census()
+                .into_iter()
+                .filter(|g| g.0 as usize == s)
+                .collect();
+            let d = |p: glam::DVec2| (p.x - sx).hypot(p.y - sz);
+            groups.sort_by(|a, b| d(a.1).total_cmp(&d(b.1)));
+            let Some(&(_, at, n)) = groups.get(nth - 1) else {
+                anyhow::bail!("seek={seek}: {} groups about", groups.len());
+            };
+            log::info!(
+                "seeking {name}: group {nth} of {} ({n} head) {:.0} m off",
+                groups.len(),
+                d(at)
+            );
+            // The group brought into the world (on the generated ground: the blocks are not
+            // loaded yet) a few seconds into their day; the camera where it sees most of them.
+            let ground = crate::fauna::MapGround {
+                map: &lw.map,
+                reg: &lw.reg,
+                lw,
+            };
+            let centre = DVec3::new(at.x, lw.surface_y(at.x, at.y), at.y);
+            f.live.materialize(&mut f.eco, &ground, centre);
+            for _ in 0..200 {
+                f.live
+                    .step(&f.eco, &ground, None, (spec.hour / 24.0) as f32, 0.05);
+            }
+            let back = f.eco.catalog.species[s].shoulder_m as f64 * 0.8;
+            let backs: Vec<DVec3> = f
+                .views()
+                .iter()
+                .filter(|v| {
+                    v.species as usize == s && (v.pos.x - at.x).hypot(v.pos.z - at.y) < 80.0
+                })
+                .map(|v| v.pos + DVec3::Y * back)
+                .collect();
+            if backs.is_empty() {
+                anyhow::bail!("seek={seek}: the group did not come into the world");
+            }
+            // A first view to load the blocks about; the best once they are.
+            let h = Herd::new(backs);
+            let (eye, yaw) = h.first_view(lw, spec.yaw, spec.above);
+            (sx, sz) = (eye.x, eye.z);
+            seen = Some((eye, yaw, h.mid));
+            herd = Some(h);
+        }
+        fauna = Some(f);
+    }
+    let (pos, yaw, pitch) = match seen {
+        Some((eye, yaw, mid)) => {
+            let pitch = if spec.aim {
+                let off = (mid.x - eye.x).hypot(mid.z - eye.z);
+                ((eye.y - mid.y) as f32).atan2(off as f32).to_degrees()
+            } else {
+                spec.pitch
+            };
+            (eye, yaw, pitch)
+        }
+        None => {
+            let sy = spec.y.unwrap_or_else(|| lw.surface_y(sx, sz) + spec.above);
+            (DVec3::new(sx, sy, sz), spec.yaw, spec.pitch)
+        }
+    };
+    let mut camera = Camera {
+        pos,
+        yaw,
+        pitch,
+        fov_y: spec.fov,
+        near: 0.05,
+        jitter: glam::Vec2::ZERO,
+    };
     let mut calendar = time.map_or_else(|| Calendar::new(48, 8, 23.44), Calendar::from_config);
     calendar.year_offset = year_frac;
     calendar.day_offset = (spec.hour / 24.0 - planet.solar_time_offset(sx)).rem_euclid(1.0);
@@ -475,9 +678,9 @@ pub fn render_shot(
     log::info!(
         "shot {} at {:.1}, {:.1}, {:.1} (lat {:.1}°, year {:.3}, {:.1} h)",
         out.display(),
-        sx,
-        sy,
-        sz,
+        camera.pos.x,
+        camera.pos.y,
+        camera.pos.z,
         planet.latitude_deg(sz),
         year_frac,
         spec.hour
@@ -510,6 +713,22 @@ pub fn render_shot(
         );
     }
     let positions = lw.load_area(camera.pos, spec.distance, 2, spec.snow.then_some(year_frac));
+    if let Some(h) = &herd {
+        let (eye, yaw, n) = h.best_view(lw, spec.yaw, spec.above);
+        log::info!(
+            "  seen from {:.1}, {:.1}, {:.1} looking along {yaw:.0}°: {n} of {} in sight",
+            eye.x,
+            eye.y,
+            eye.z,
+            h.backs.len()
+        );
+        camera.pos = eye;
+        camera.yaw = yaw;
+        if spec.aim {
+            let off = (h.mid.x - eye.x).hypot(h.mid.z - eye.z);
+            camera.pitch = ((eye.y - h.mid.y) as f32).atan2(off as f32).to_degrees();
+        }
+    }
     // Things set on the ground in front of the camera, lit as they would be.
     for (state, ahead, right, up) in &spec.place {
         let f = camera.forward().as_dvec3();
@@ -799,6 +1018,51 @@ pub fn render_shot(
         );
         scene.figures.set(ctx, &boxes);
     }
+    let mut animal_boxes = Vec::new();
+    if !spec.animals.is_empty() {
+        animal_boxes = shot_animals(spec, lw, &camera, year_frac as f32)?;
+    }
+    if let Some(f) = &mut fauna {
+        let ground = crate::fauna::MapGround {
+            map: &lw.map,
+            reg: &lw.reg,
+            lw,
+        };
+        // Those already in the world (a group sought) onto the blocks now loaded; the rest
+        // about the camera, a few seconds into their day.
+        f.live.settle(&ground);
+        f.live.materialize(&mut f.eco, &ground, camera.pos);
+        if spec.seek.is_none() {
+            for _ in 0..200 {
+                f.live
+                    .step(&f.eco, &ground, None, (spec.hour / 24.0) as f32, 0.05);
+            }
+        }
+        let views = f.views();
+        log::info!("{} animals about the camera", views.len());
+        for v in &views {
+            let d = v.pos - camera.pos;
+            log::debug!(
+                "  {} {:?} {:?}: {:.0} m east, {:.0} m south, {:+.1} m up",
+                f.eco.catalog.species[v.species as usize].name,
+                v.stage,
+                v.act,
+                d.x,
+                d.z,
+                d.y
+            );
+        }
+        animal_boxes.extend(view_boxes(
+            &views,
+            &f.eco.catalog,
+            lw,
+            &camera,
+            year_frac as f32,
+        ));
+    }
+    if !animal_boxes.is_empty() {
+        scene.figures.set(ctx, &animal_boxes);
+    }
     if let Some(name) = &spec.senses {
         use hearth_render::post::Senses;
         scene.senses = match name.as_str() {
@@ -895,6 +1159,216 @@ pub fn render_shot(
         terrain: scene.terrain.stats,
         lod: scene.lod.stats,
     })
+}
+
+/// The least distance from a group sought the camera stands (m).
+const SEEK_M: f64 = 20.0;
+
+/// A group sought (the backs of its animals), and how far off to stand to have most of it in a
+/// 40° lens (at least SEEK_M).
+struct Herd {
+    backs: Vec<DVec3>,
+    mid: DVec3,
+    off: f64,
+}
+
+impl Herd {
+    fn new(backs: Vec<DVec3>) -> Self {
+        let mid = backs.iter().copied().sum::<DVec3>() / backs.len().max(1) as f64;
+        let mut far: Vec<f64> = backs
+            .iter()
+            .map(|p| (p.x - mid.x).hypot(p.z - mid.z))
+            .collect();
+        far.sort_by(f64::total_cmp);
+        let wide = far.get(far.len() * 4 / 5).copied().unwrap_or(0.0);
+        Self {
+            backs,
+            mid,
+            off: SEEK_M.max(wide * 1.4 + 4.0),
+        }
+    }
+
+    /// The sixteen ways to look at it, the first along `yaw`.
+    fn yaws(yaw: f32) -> impl Iterator<Item = f32> {
+        (0..16).map(move |k| yaw + k as f32 * 22.5)
+    }
+
+    /// Where to stand looking at it along `yaw`: `off` from its middle, as high above the
+    /// ground as it takes to look down on it and to see three in four of its animals over the
+    /// generated ground between (1.5 m over it for what grows there, narrowing to nothing at
+    /// each animal).
+    fn stand(&self, lw: &LocalWorld, yaw: f32, above: f64) -> DVec3 {
+        // The generated ground as the blocks have it (their tops at the rounded height).
+        let ground_at = |x: f64, z: f64| lw.surface_y(x, z).round();
+        // The camera's forward on the ground is (-sin yaw, cos yaw).
+        let (s, c) = (yaw as f64).to_radians().sin_cos();
+        let (cx, cz) = (self.mid.x + s * self.off, self.mid.z - c * self.off);
+        let ground = ground_at(cx, cz);
+        let mut needs: Vec<f64> = self
+            .backs
+            .iter()
+            .map(|p| {
+                let mut need = above;
+                for i in 1..24 {
+                    let t = i as f64 / 24.0;
+                    let h = ground_at(cx + (p.x - cx) * t, cz + (p.z - cz) * t) + 1.5 * (1.0 - t);
+                    need = need.max((h - p.y * t) / (1.0 - t) - ground);
+                }
+                need
+            })
+            .collect();
+        needs.sort_by(f64::total_cmp);
+        let need = needs
+            .get(needs.len() * 3 / 4)
+            .copied()
+            .unwrap_or(above)
+            .max(self.mid.y + 2.0 - ground);
+        DVec3::new(cx, ground + need, cz)
+    }
+
+    /// Before the blocks are loaded: of the sixteen ways, the one standing least high (the
+    /// first unless another is much lower).
+    fn first_view(&self, lw: &LocalWorld, yaw: f32, above: f64) -> (DVec3, f32) {
+        let mut best = (self.stand(lw, yaw, above), yaw);
+        for y in Self::yaws(yaw).skip(1) {
+            let eye = self.stand(lw, y, above);
+            if eye.y - lw.surface_y(eye.x, eye.z)
+                < best.0.y - lw.surface_y(best.0.x, best.0.z) - 2.0
+            {
+                best = (eye, y);
+            }
+        }
+        best
+    }
+
+    /// With the blocks loaded: of the sixteen ways, each as high as it asks and 3 and 6 m
+    /// higher, the one seeing the most of the animals past the trees, bushes and the lie of the
+    /// ground (the first of those seeing as many).
+    fn best_view(&self, lw: &LocalWorld, yaw: f32, above: f64) -> (DVec3, f32, usize) {
+        let mut best = (DVec3::ZERO, yaw, 0, false);
+        for y in Self::yaws(yaw) {
+            let eye = self.stand(lw, y, above);
+            for lift in [0.0, 3.0, 6.0] {
+                let e = eye + DVec3::Y * lift;
+                let n = self
+                    .backs
+                    .iter()
+                    .filter(|&&p| clear(lw, e, p + DVec3::Y * 0.2))
+                    .count();
+                if !best.3 || n > best.2 {
+                    best = (e, y, n, true);
+                }
+            }
+        }
+        (best.0, best.1, best.2)
+    }
+}
+
+/// Whether only air and water lie between two points (the last half metre aside: what the
+/// thing seen stands in).
+fn clear(lw: &LocalWorld, from: DVec3, to: DVec3) -> bool {
+    let planet = lw.map.planet();
+    let d = to - from;
+    let n = (d.length() / 0.25).ceil().max(1.0) as usize;
+    let near = 0.5 / d.length().max(0.5);
+    (1..n).all(|i| {
+        let t = i as f64 / n as f64;
+        if t > 1.0 - near {
+            return true;
+        }
+        let p = from + d * t;
+        let at = hearth_math::BlockPos::new(
+            planet.wrap_x(p.x.floor() as i32),
+            p.y.floor() as i32,
+            p.z.floor() as i32,
+        );
+        lw.map
+            .block(at)
+            .is_none_or(|s| s.is_air() || lw.reg.fluid_amount(s) > 0)
+    })
+}
+
+/// The boxes of animals in the world, camera-relative.
+fn view_boxes(
+    views: &[hearth_fauna::live::AnimalView],
+    catalog: &hearth_fauna::species::Catalog,
+    lw: &LocalWorld,
+    camera: &hearth_render::camera::Camera,
+    year_frac: f32,
+) -> Vec<hearth_character::FigureInstance> {
+    let mut out = Vec::new();
+    for v in views {
+        let Some(sp) = catalog.species.get(v.species as usize) else {
+            continue;
+        };
+        let look = hearth_fauna::body::Look {
+            stage: v.stage,
+            female: v.female,
+            act: v.act,
+            stride: v.stride,
+            speed: v.speed,
+            year_frac,
+            southern: lw.map.planet().latitude(v.pos.z) < 0.0,
+        };
+        let place = glam::Affine3A::from_rotation_translation(
+            glam::Quat::from_rotation_y(v.yaw),
+            (v.pos - camera.pos).as_vec3(),
+        );
+        let chest = hearth_math::BlockPos::containing(v.pos + DVec3::Y * 0.6);
+        let light = (lw.map.sky_light(chest), lw.map.block_light(chest));
+        for b in hearth_fauna::body::boxes(sp, &look) {
+            out.push(hearth_character::solid(place * b.place, b.color, light));
+        }
+    }
+    out
+}
+
+/// The boxes of the animals placed in a shot, camera-relative.
+fn shot_animals(
+    spec: &ShotSpec,
+    lw: &LocalWorld,
+    camera: &hearth_render::camera::Camera,
+    year_frac: f32,
+) -> anyhow::Result<Vec<hearth_character::FigureInstance>> {
+    use hearth_fauna::body::{Look, boxes};
+    let catalog = hearth_fauna::species::Catalog::new(&lw.content);
+    let f = camera.forward().as_dvec3();
+    let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+    let right = DVec3::new(-flat.z, 0.0, flat.x);
+    let cam_yaw = flat.x.atan2(flat.z) as f32;
+    let mut out = Vec::new();
+    for a in &spec.animals {
+        let sp = catalog
+            .get(&a.species)
+            .ok_or_else(|| anyhow::anyhow!("animal={}: no such species", a.species))?;
+        let p = camera.pos + flat * a.ahead + right * a.right;
+        let feet = DVec3::new(p.x, lw.surface_y(p.x, p.z), p.z);
+        let speed = match a.act {
+            hearth_fauna::live::Act::Walk => sp.walk_m_s,
+            hearth_fauna::live::Act::Flee => sp.run_m_s,
+            _ => 0.0,
+        };
+        let look = Look {
+            stage: a.stage,
+            female: a.female,
+            act: a.act,
+            stride: ((a.ahead * 0.37 + a.right * 0.21).fract()) as f32,
+            speed,
+            year_frac,
+            southern: lw.map.planet().latitude(feet.z) < 0.0,
+        };
+        let yaw = cam_yaw + a.yaw.to_radians();
+        let place = glam::Affine3A::from_rotation_translation(
+            glam::Quat::from_rotation_y(yaw),
+            (feet - camera.pos).as_vec3(),
+        );
+        let chest = hearth_math::BlockPos::containing(feet + DVec3::Y * 0.6);
+        let light = (lw.map.sky_light(chest), lw.map.block_light(chest));
+        for b in boxes(sp, &look) {
+            out.push(hearth_character::solid(place * b.place, b.color, light));
+        }
+    }
+    Ok(out)
 }
 
 fn shoot(

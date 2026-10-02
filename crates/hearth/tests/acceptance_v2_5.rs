@@ -1516,6 +1516,13 @@ fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
         "{:?}",
         bot.w.learned
     );
+    // A hide to drape (the scraping may have ruined the last one).
+    for _ in 0..3 {
+        if bot.count("sheet/rawhide") + bot.count("sheet/scraped_hide") > 0 {
+            break;
+        }
+        bot.hide_from_a_kill();
+    }
     bot.until_known("hide_wrap_clothing", "drape_hide", AimAt::Nothing, 6);
     // Raw hides keep only a few days; scraped, they keep for weeks until there is a needle.
     for _ in 0..6 {

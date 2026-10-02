@@ -360,24 +360,28 @@ fn crossed(a0: f64, a1: f64, b: f64) -> bool {
     }
 }
 
-/// The realm whose animals live in a cell: its own where the catalog has natives of that realm
+/// The realm whose animals live in a cell: its own where the catalog has a fauna of that realm
 /// for the cell's ecosystems, else the stand-in's for its climate (the Afrotropical's in the
-/// tropics, the Palearctic's elsewhere).
+/// tropics, the Palearctic's elsewhere) — a realm with only a species or two of its own for the
+/// place (a honey bee in a southern temperate wood) has none yet.
 pub fn fauna_realm(cat: &Catalog, h: &Habitat) -> Realm {
     let realm = h.realm();
-    let has_native = cat
-        .species
-        .iter()
-        .any(|s| s.habitats & h.ecosystems != 0 && s.realms != 0 && native(s.realms, realm));
-    if has_native {
+    let tropical = h.temp_c - (h.warm_c - h.temp_c) > 15.0;
+    let other = stand_in(if tropical {
+        hearth_worldgen::planet::climate::ClimateClass::TropicalRainforest
+    } else {
+        hearth_worldgen::planet::climate::ClimateClass::Oceanic
+    });
+    let natives = |r: Realm| {
+        cat.species
+            .iter()
+            .filter(|s| s.habitats & h.ecosystems != 0 && s.realms != 0 && native(s.realms, r))
+            .count()
+    };
+    if realm == other || natives(realm) * 4 >= natives(other) {
         realm
     } else {
-        let tropical = h.temp_c - (h.warm_c - h.temp_c) > 15.0;
-        stand_in(if tropical {
-            hearth_worldgen::planet::climate::ClimateClass::TropicalRainforest
-        } else {
-            hearth_worldgen::planet::climate::ClimateClass::Oceanic
-        })
+        other
     }
 }
 
@@ -604,19 +608,47 @@ impl Ecology {
         self.regions.insert(key, r);
     }
 
-    fn create_region(&mut self, land: &dyn Land, key: (i64, i64), time: f64) -> Region {
-        let cat = self.catalog.clone();
+    /// The habitats of a region's cells, with the realm of their animals.
+    fn habitats(&self, land: &dyn Land, key: (i64, i64)) -> Vec<Habitat> {
         let (i0, j0) = (key.0 * REGION_CELLS, key.1 * REGION_CELLS);
-        let habitat: Vec<Habitat> = (0..REGION_LEN as i64)
+        let mut habitat: Vec<Habitat> = (0..REGION_LEN as i64)
             .map(|idx| land.habitat((i0 + idx % REGION_CELLS, j0 + idx / REGION_CELLS)))
             .collect();
-        let mut habitat = habitat;
         let mut known: FxHashMap<(u8, u32), u8> = FxHashMap::default();
         for h in habitat.iter_mut() {
             h.fauna = *known
                 .entry((h.realm, h.ecosystems))
-                .or_insert_with(|| fauna_realm(&cat, h) as u8);
+                .or_insert_with(|| fauna_realm(&self.catalog, h) as u8);
         }
+        habitat
+    }
+
+    /// Puts back a saved region: its habitats made again from the land (they are not saved),
+    /// its animals as they were.
+    pub fn restore(&mut self, land: &dyn Land, mut r: Region) {
+        r.habitat = self.habitats(land, r.key);
+        r.avail_mean = r
+            .habitat
+            .iter()
+            .map(|h| Forage::ALL.map(|k| h.avail_mean(k)))
+            .collect();
+        if r.carrion.len() != REGION_LEN {
+            r.carrion = vec![0.0; REGION_LEN];
+        }
+        self.compute_capacity(&mut r);
+        for g in r.groups.iter_mut() {
+            g.live = false;
+        }
+        self.next_id = self
+            .next_id
+            .max(r.groups.iter().map(|g| g.id + 1).max().unwrap_or(1));
+        self.regions.insert(r.key, r);
+    }
+
+    fn create_region(&mut self, land: &dyn Land, key: (i64, i64), time: f64) -> Region {
+        let cat = self.catalog.clone();
+        let (i0, j0) = (key.0 * REGION_CELLS, key.1 * REGION_CELLS);
+        let habitat = self.habitats(land, key);
         let mut rng = Rng::new(seed_of(self.seed, "fauna", &[key.0 as u64, key.1 as u64]));
         // The small species: each cell's share of the species' density.
         let pool_species: Vec<u16> = cat

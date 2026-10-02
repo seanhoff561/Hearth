@@ -11,6 +11,7 @@ pub mod content_state;
 pub mod crafting_ui;
 pub mod edits;
 pub mod environment;
+pub mod fauna;
 pub mod frame_limiter;
 pub mod gamepad;
 pub mod globe;

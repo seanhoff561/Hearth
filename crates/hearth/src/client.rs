@@ -179,6 +179,10 @@ pub struct Client {
     figure_boxes: Vec<FigureInstance>,
     /// Trees falling: drawn as boxes turning about their stump until they come to rest.
     falling: Vec<Falling>,
+    /// The animals near the player as the server last told of them, and as drawn (eased
+    /// toward that between the server's word); the species they are of.
+    animals: rustc_hash::FxHashMap<u64, ShownAnimal>,
+    fauna: Option<Arc<hearth_fauna::species::Catalog>>,
     /// The item kinds as the server has them (`items` is them as the player sees them, with
     /// look-alikes not yet told apart under their group's name).
     base_items: Option<Arc<hearth_items::Items>>,
@@ -221,6 +225,14 @@ pub struct Client {
 }
 
 /// A tree on its way down.
+/// An animal as the server last told of it, and as drawn.
+struct ShownAnimal {
+    target: hearth_fauna::live::AnimalView,
+    pos: DVec3,
+    yaw: f32,
+    stride: f32,
+}
+
 struct Falling {
     /// Its blocks: middle, size and colour.
     parts: Vec<(DVec3, glam::Vec3, [u8; 3])>,
@@ -306,6 +318,8 @@ impl Client {
             view_bobbing: options.video.view_bobbing,
             figure_boxes: Vec::new(),
             falling: Vec::new(),
+            animals: rustc_hash::FxHashMap::default(),
+            fauna: None,
             base_items: None,
             hidden_looks: Vec::new(),
             eyes_shut: 0.0,
@@ -735,6 +749,52 @@ impl Client {
     }
 
     /// Boxes for the things lying around, held and dragged.
+    /// The animals near the player as boxes, eased toward where the server has them.
+    fn animal_boxes(&mut self, view: DVec3, dt: f32) {
+        let (Some(cat), Some(w)) = (&self.fauna, &self.world) else {
+            return;
+        };
+        let moment = self.calendar.at(self.now_ticks());
+        let k = 1.0 - (-dt * 12.0).exp();
+        for s in self.animals.values_mut() {
+            s.pos += (s.target.pos - s.pos) * k as f64;
+            if (s.target.pos - s.pos).length() > 8.0 {
+                s.pos = s.target.pos;
+            }
+            let mut d = (s.target.yaw - s.yaw).rem_euclid(std::f32::consts::TAU);
+            if d > std::f32::consts::PI {
+                d -= std::f32::consts::TAU;
+            }
+            s.yaw += d * k;
+            s.stride += (s.target.stride - s.stride) * k;
+            if (s.pos - view).length() > 160.0 {
+                continue;
+            }
+            let Some(sp) = cat.species.get(s.target.species as usize) else {
+                continue;
+            };
+            let look = hearth_fauna::body::Look {
+                stage: s.target.stage,
+                female: s.target.female,
+                act: s.target.act,
+                stride: s.stride,
+                speed: s.target.speed,
+                year_frac: moment.year_frac as f32,
+                southern: w.planet.latitude(s.pos.z) < 0.0,
+            };
+            let place = Affine3A::from_rotation_translation(
+                Quat::from_rotation_y(s.yaw),
+                (s.pos - view).as_vec3(),
+            );
+            let chest = hearth_math::BlockPos::containing(s.pos + DVec3::Y * 0.6);
+            let light = (w.mirror.sky_light(chest), w.mirror.block_light(chest));
+            for b in hearth_fauna::body::boxes(sp, &look) {
+                self.figure_boxes
+                    .push(hearth_character::solid(place * b.place, b.color, light));
+            }
+        }
+    }
+
     fn thing_boxes(&mut self, view: DVec3) {
         let (Some(items), Some(w)) = (&self.items, &self.world) else {
             return;
@@ -1616,6 +1676,8 @@ impl Client {
                     self.ended = r.ended;
                     self.base_items = Some(r.items.clone());
                     self.items = Some(r.items);
+                    self.fauna = Some(Arc::new(hearth_fauna::species::Catalog::new(&r.content)));
+                    self.animals.clear();
                     self.crafting = Some(Crafting::new(
                         r.content,
                         r.crafts,
@@ -1672,6 +1734,24 @@ impl Client {
                 ToClient::Vegetation(v) => {
                     if let (Some(lod), Some(s)) = (&mut self.lod, &self.scene) {
                         lod.set_vegetation(v, &s.lod);
+                    }
+                }
+                // A census is for tools and tests.
+                ToClient::Census(_) => {}
+                ToClient::Animals(views) => {
+                    // Those gone are gone; the rest ease toward where the server has them.
+                    self.animals
+                        .retain(|id, _| views.iter().any(|v| v.id == *id));
+                    for v in views {
+                        self.animals
+                            .entry(v.id)
+                            .and_modify(|s| s.target = v)
+                            .or_insert(ShownAnimal {
+                                target: v,
+                                pos: v.pos,
+                                yaw: v.yaw,
+                                stride: v.stride,
+                            });
                     }
                 }
                 ToClient::Smoke(plumes) => {
@@ -1862,6 +1942,7 @@ impl Client {
         });
         self.figure_boxes.clear();
         self.thing_boxes(view.pos);
+        self.animal_boxes(view.pos, dt);
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {

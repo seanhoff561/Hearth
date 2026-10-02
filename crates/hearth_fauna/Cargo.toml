@@ -11,6 +11,7 @@ publish.workspace = true
 hearth_content.workspace = true
 hearth_math.workspace = true
 hearth_worldgen.workspace = true
+glam.workspace = true
 rustc-hash.workspace = true
 serde.workspace = true
 

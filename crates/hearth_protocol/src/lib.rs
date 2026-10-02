@@ -101,6 +101,9 @@ pub enum ToServer {
     },
     /// Stop the clock and the body (a single-player menu is open), or go on.
     Pause(bool),
+    /// Asks for a census of the groups of animals in the regions about the player (tools,
+    /// tests, the debug map).
+    Census,
     /// How much terrain to keep around the player (cubes).
     View { radius: i32, vertical: i32 },
     /// Save and stop.
@@ -249,6 +252,10 @@ pub enum ToClient {
     Heights(Box<SkyHeights>, Box<WaterHeights>),
     /// The smoke of the fires burning in the vegetation (empty: none).
     Smoke(Vec<Plume>),
+    /// The animals near the player (ten times a second while there are any).
+    Animals(Vec<hearth_fauna::live::AnimalView>),
+    /// The groups of animals in the regions about the player: species, where, how many.
+    Census(Vec<(u16, glam::DVec2, u32)>),
     /// The vegetation the distant terrain is grown with (when it changes, and as the years
     /// turn).
     Vegetation(hearth_worldgen::vegetation::Vegetation),

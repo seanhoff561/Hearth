@@ -374,11 +374,13 @@ fn save(
     world_items: &hearth_items::WorldItems,
     workshop: &Workshop,
     lw: &LocalWorld,
+    fauna: &crate::fauna::Fauna,
     ticks: u64,
 ) {
     let Some(s) = save else {
         return;
     };
+    fauna.save(&s.dir.root);
     s.meta.clock.ticks = ticks;
     s.meta.last_played_unix = hearth_save::meta::unix_now();
     let player = PlayerSave {
@@ -551,6 +553,16 @@ fn run(
         vegetation_year(&calendar, ticks),
     );
     let mut workshop = Workshop::new(&content, &items, mode, workshop_save, seed, ticks);
+    // The animals: the populations about the player, saved with the world.
+    let years_at = |t: u64| calendar.days(t) / calendar.days_per_year();
+    let mut fauna = crate::fauna::Fauna::new(
+        &lw,
+        seed,
+        calendar.year_offset,
+        years_at(ticks),
+        save_state.as_ref().map(|s| s.dir.root.as_path()),
+    );
+    let mut animals_shown = false;
     if mode == hearth_craft::Mode::Open {
         player.knowledge.known = hearth_craft::KnowledgeState::open(&workshop.graph, ticks).known;
     }
@@ -816,6 +828,9 @@ fn run(
                 }
                 Ok(ToServer::TimeWarp(w)) => warp = w.max(0.0),
                 Ok(ToServer::Pause(p)) => paused = p,
+                Ok(ToServer::Census) => {
+                    let _ = tx.send(ToClient::Census(fauna.census()));
+                }
                 Ok(ToServer::Run(n)) => {
                     lockstep = true;
                     owed += n;
@@ -855,6 +870,7 @@ fn run(
                         &world_items,
                         &workshop,
                         &lw,
+                        &fauna,
                         ticks,
                     );
                     let _ = tx.send(ToClient::Saved);
@@ -872,6 +888,25 @@ fn run(
             next_tick = Instant::now() + Duration::from_secs_f64(TICK_S);
         } else if (lockstep && owed > 0) || (!lockstep && Instant::now() >= next_tick) {
             workshop.tick(&mut here!(), advanced);
+            {
+                let moment = calendar.at(ticks);
+                let hour = env.local_time(&moment, player.mover.pos.x) as f32;
+                fauna.tick(
+                    &lw,
+                    player.mover.pos,
+                    years_at(ticks),
+                    hour,
+                    TICK_S as f32,
+                    ticks,
+                );
+                if ticks.is_multiple_of(2) {
+                    let views = fauna.views();
+                    if !views.is_empty() || animals_shown {
+                        animals_shown = !views.is_empty();
+                        let _ = tx.send(ToClient::Animals(views));
+                    }
+                }
+            }
             // The vegetation for the distant terrain: when it changes, and as the years turn.
             if ticks.is_multiple_of(20)
                 && veg_told.as_ref().is_none_or(|v| {
@@ -979,6 +1014,7 @@ fn run(
                         &world_items,
                         &workshop,
                         &lw,
+                        &fauna,
                         ticks,
                     );
                     let _ = tx.send(ToClient::Ended(summary));
@@ -1036,6 +1072,7 @@ fn run(
                     &world_items,
                     &workshop,
                     &lw,
+                    &fauna,
                     ticks,
                 );
                 return Ok(());
@@ -1086,6 +1123,7 @@ fn run(
                     &world_items,
                     &workshop,
                     &lw,
+                    &fauna,
                     ticks,
                 );
                 return Ok(());
@@ -1099,6 +1137,7 @@ fn run(
                     &world_items,
                     &workshop,
                     &lw,
+                    &fauna,
                     ticks,
                 );
                 let _ = tx.send(ToClient::Saved);
@@ -1151,6 +1190,7 @@ fn run(
                     &world_items,
                     &workshop,
                     &lw,
+                    &fauna,
                     ticks,
                 );
                 return Ok(());

@@ -4,7 +4,7 @@
 
 use hearth_content::Content;
 use hearth_content::schema::fauna::{
-    Activity, Animal, BodyPlan, Dispersers, PopulationModel, SeasonalBehavior, Social,
+    Activity, Animal, BodyPlan, Coat, Dispersers, PopulationModel, SeasonalBehavior, Social,
 };
 use hearth_content::schema::flora::GrowthForm;
 use hearth_worldgen::realms::{RealmSet, set_of};
@@ -129,6 +129,19 @@ pub struct Species {
     pub activity: Activity,
     /// Yearly growth at low density from the content (a check on the simulation).
     pub growth_rate: Option<f32>,
+    /// Length nose to rump and height at the shoulder (to the back for a bird), m.
+    pub length_m: f32,
+    pub shoulder_m: f32,
+    /// Walking, running, swimming and flying speeds, m/s.
+    pub walk_m_s: f32,
+    pub run_m_s: f32,
+    pub swim_m_s: Option<f32>,
+    pub fly_m_s: Option<f32>,
+    /// The distance at which a person makes it flee, m.
+    pub flight_distance_m: f32,
+    /// A walking stride, m.
+    pub stride: f32,
+    pub coat: Option<Coat>,
 }
 
 impl Species {
@@ -169,6 +182,29 @@ impl Species {
     /// of fish and frogs, half for the rest.
     pub fn young_appetite(&self) -> f32 {
         (4.0 * self.life.birth_mass_kg / self.mass_kg).clamp(0.02, 0.5)
+    }
+
+    pub fn walk_speed(&self) -> f32 {
+        self.walk_m_s
+    }
+
+    pub fn run_speed(&self) -> f32 {
+        self.run_m_s
+    }
+
+    /// The distance at which a person makes it flee, m.
+    pub fn flight_m(&self) -> f32 {
+        self.flight_distance_m
+    }
+
+    /// A walking stride, m.
+    pub fn stride_m(&self) -> f32 {
+        self.stride
+    }
+
+    /// The highest step it takes in its stride (deer bound up banks), m.
+    pub fn climb_m(&self) -> f32 {
+        (self.shoulder_m * 1.2).max(0.55)
     }
 
     /// The radius of its home range, m.
@@ -447,6 +483,12 @@ fn species_of(
         a.body_plan,
         BodyPlan::FishFusiform | BodyPlan::FishFlat | BodyPlan::Eel
     );
+    let shoulder = a.shoulder_height_m.unwrap_or(match a.body_plan {
+        BodyPlan::Snake | BodyPlan::Eel => a.length_m * 0.05,
+        BodyPlan::FishFusiform | BodyPlan::FishFlat => a.length_m * 0.25,
+        _ => a.length_m * 0.5,
+    });
+    let walk = a.speed.walk_m_s.max(0.05);
     Species {
         index,
         id: a.id.clone(),
@@ -488,5 +530,21 @@ fn species_of(
         ),
         activity: a.activity,
         growth_rate: a.growth_rate,
+        length_m: a.length_m.max(0.01),
+        shoulder_m: shoulder.max(0.01),
+        walk_m_s: walk,
+        run_m_s: a.speed.run_m_s.unwrap_or(walk * 3.0).max(walk),
+        swim_m_s: a.speed.swim_m_s,
+        fly_m_s: a.speed.fly_m_s,
+        flight_distance_m: a
+            .temperament
+            .map_or(15.0 + 12.0 * mass.powf(0.33), |t| t.flight_m),
+        stride: a
+            .track
+            .map(|t| t.stride_m)
+            .filter(|s| *s > 0.0)
+            .unwrap_or(a.length_m * 0.6)
+            .max(0.02),
+        coat: a.coat,
     }
 }

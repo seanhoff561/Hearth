@@ -903,3 +903,22 @@ standard planet can span the tropics and two continents). A uniform wood of four
 all of its species between a seventh and two and a half times what the habitat holds for thirty
 years, and heavy hunting of its red deer takes them down and they come back
 (`crates/hearth_fauna/tests/populations.rs`).
+
+## D82 — Animals come into the world from their groups and fold back into them
+The spec asks for animals to be simulated as populations far from the player and as individuals
+near, with the two agreeing. The groups of D81 make that exact for large animals: a group near
+the player becomes its members (by stage and sex), and folding them back puts the living into
+the group's numbers and leaves out the dead, so a herd met twice is the same herd less what was
+killed, and the hunting the populations feel is the player's. Small species, kept as numbers per
+cell, are drawn from the cells about the player the same way each day (the share of each cell
+within reach, three at most to a cell, as a sample rather than every vole) and subtracted from
+the cell while out. Materializing at 112 m and folding at 150 m gives the gap that keeps a group
+at the edge from flickering in and out. Where the blocks are not loaded the generated heights
+(their rounded tops, as the blocks have them) serve as ground, so that a group at the edge of the
+loaded land is not held back or placed in the air. The server owns the animals and sends their
+state ten times a second, as for every other moving thing; the client only eases and draws.
+Regions are made one at a time, one per two seconds, on the server thread (about a tenth of a
+second each in a release build: three years of spin-up at monthly steps), and the populations
+advance with the calendar every few days of game time in steps of at most a thirty-second of a
+year (a few milliseconds a region); making regions on a worker is left to the performance work
+of V2-7 (j). The regions are saved compressed beside the world's other state.

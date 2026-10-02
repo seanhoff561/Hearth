@@ -928,6 +928,7 @@ dependencies = [
  "hearth_core",
  "hearth_craft",
  "hearth_env",
+ "hearth_fauna",
  "hearth_flora",
  "hearth_input",
  "hearth_items",
@@ -950,6 +951,7 @@ dependencies = [
  "serde_json",
  "wgpu",
  "winit",
+ "zstd",
 ]
 
 [[package]]
@@ -1035,6 +1037,7 @@ dependencies = [
 name = "hearth_fauna"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "hearth_content",
  "hearth_math",
  "hearth_world",
@@ -1134,6 +1137,7 @@ dependencies = [
  "hearth_content",
  "hearth_craft",
  "hearth_env",
+ "hearth_fauna",
  "hearth_items",
  "hearth_lod",
  "hearth_math",
