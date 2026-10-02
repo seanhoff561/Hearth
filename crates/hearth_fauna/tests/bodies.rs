@@ -5,7 +5,7 @@
 use glam::{Affine3A, Vec3};
 use hearth_content::Content;
 use hearth_fauna::anim::{Drive, Flat, Footing, Motion, pose, rest_pose};
-use hearth_fauna::live::{Act, Stage};
+use hearth_fauna::live::{Act, Medium, Stage};
 use hearth_fauna::rig::{Frame, Rig, Slot};
 use hearth_fauna::skin::Bodies;
 use hearth_fauna::species::Catalog;
@@ -151,6 +151,10 @@ fn every_act_poses_every_species_whole() {
                     year_frac: 0.3,
                     southern: false,
                     scale: if stage == Stage::Young { 0.4 } else { 1.0 },
+                    medium: match act {
+                        Act::Fly => Medium::Air,
+                        _ => Medium::Ground,
+                    },
                 };
                 let mut m = Motion::new(7);
                 m.settle(&rig, &d);

@@ -805,6 +805,7 @@ impl Client {
                 year_frac,
                 southern,
                 scale,
+                medium: s.target.medium,
             };
             if !s.posed {
                 s.motion.settle(rig, &drive);

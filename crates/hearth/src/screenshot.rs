@@ -186,8 +186,16 @@ pub struct ShotSpec {
     pub fauna: bool,
     /// The camera to the nearest group of this species, looking at it from 30 m along `yaw`.
     pub seek: Option<String>,
+    /// Seconds the animals live on before the shot with the camera as a person among them
+    /// (they see it, and flee it).
+    pub run: Option<f64>,
+    /// The camera to the bank of the nearest water at least a metre and a half deep, looking
+    /// out over it.
+    pub near_water: bool,
     /// The camera's pitch aimed at the group sought (a `seek` without a `pitch`).
     pub aim: bool,
+    /// Whether `yaw` was given (a `near` place faces its sight otherwise).
+    pub yaw_given: bool,
 }
 
 /// An animal placed in a screenshot.
@@ -201,8 +209,10 @@ pub struct ShotAnimal {
     pub ahead: f64,
     pub right: f64,
     pub yaw: f32,
-    /// Above the ground (a bird on the wing).
+    /// Above the ground (a bird on the wing, a squirrel up a trunk).
     pub up: f64,
+    /// On the ground, swimming, on the wing, up a tree (from what it does).
+    pub medium: hearth_fauna::live::Medium,
 }
 
 /// How fast an animal placed in a shot goes.
@@ -257,6 +267,9 @@ impl Default for ShotSpec {
             animals: Vec::new(),
             fauna: false,
             seek: None,
+            run: None,
+            near_water: false,
+            yaw_given: false,
             aim: false,
         }
     }
@@ -374,6 +387,10 @@ impl ShotSpec {
                 // `fauna=true`: the animals the populations put about the camera;
                 // `seek=red_deer`: the camera to the nearest group of a species.
                 "fauna" => spec.fauna = v.parse()?,
+                // `run=3`: the animals live on three seconds with the camera among them.
+                "run" => spec.run = Some(v.parse()?),
+                // `near=water`: on the bank of the nearest deep water.
+                "near" if v == "water" => spec.near_water = true,
                 "seek" => {
                     spec.fauna = true;
                     spec.seek = Some(v.to_owned());
@@ -394,7 +411,7 @@ impl ShotSpec {
                         _ => Stage::Adult,
                     };
                     let female = w.next().unwrap_or("f") != "m";
-                    let (act, pace) = act_of(w.next().unwrap_or("graze"))?;
+                    let (act, pace, medium) = act_of(w.next().unwrap_or("graze"))?;
                     let mut n = at.split(':');
                     let ahead = n.next().unwrap_or("15").parse()?;
                     let right = n.next().unwrap_or("0").parse()?;
@@ -410,6 +427,7 @@ impl ShotSpec {
                         right,
                         yaw,
                         up,
+                        medium,
                     });
                 }
                 "herd" => {
@@ -447,6 +465,7 @@ impl ShotSpec {
                             right: right + r * a.sin(),
                             yaw: (v2 * 360.0) as f32,
                             up: 0.0,
+                            medium: hearth_fauna::live::Medium::Ground,
                         });
                     }
                 }
@@ -464,6 +483,7 @@ impl ShotSpec {
             }
             spec.aim = !given.iter().any(|k| k == "pitch");
         }
+        spec.yaw_given = given.iter().any(|k| k == "yaw");
         Ok(spec)
     }
 
@@ -590,6 +610,15 @@ pub fn render_shot(
             (x as f64 + 0.5, z as f64 + 0.5)
         }
     };
+    let mut yaw_override = None;
+    if spec.near_water {
+        let (x, z, yaw) = bank_near(lw, sx, sz)
+            .ok_or_else(|| anyhow::anyhow!("near=water: no deep water within 3 km"))?;
+        (sx, sz) = (x, z);
+        if !spec.yaw_given {
+            yaw_override = Some(yaw);
+        }
+    }
     // Date and time: season (mid-season in this hemisphere) or year fraction; local hour.
     let planet = *lw.map.planet();
     let southern = planet.latitude(sz) < 0.0;
@@ -600,6 +629,7 @@ pub fn render_shot(
     // The populations about the place; the camera to a group sought.
     let mut seen = None;
     let mut herd = None;
+    let mut sought = None;
     let mut fauna = None;
     if spec.fauna {
         let made = std::time::Instant::now();
@@ -621,6 +651,7 @@ pub fn render_shot(
                 .catalog
                 .index(name)
                 .ok_or_else(|| anyhow::anyhow!("seek={name}: no such species"))?;
+            sought = Some(s);
             let mut groups: Vec<_> = f
                 .census()
                 .into_iter()
@@ -642,6 +673,7 @@ pub fn render_shot(
                 map: &lw.map,
                 reg: &lw.reg,
                 lw,
+                cells: &f.cells,
             };
             let centre = DVec3::new(at.x, lw.surface_y(at.x, at.y), at.y);
             f.live.materialize(&mut f.eco, &ground, centre);
@@ -682,7 +714,11 @@ pub fn render_shot(
         }
         None => {
             let sy = spec.y.unwrap_or_else(|| lw.surface_y(sx, sz) + spec.above);
-            (DVec3::new(sx, sy, sz), spec.yaw, spec.pitch)
+            (
+                DVec3::new(sx, sy, sz),
+                yaw_override.unwrap_or(spec.yaw),
+                spec.pitch,
+            )
         }
     };
     let mut camera = Camera {
@@ -1089,7 +1125,7 @@ pub fn render_shot(
         scene
             .figures
             .set_coats(ctx, b.atlas.w, b.atlas.h, &b.atlas.px);
-        drawn = placed_animals(spec, lw, &catalog, &b, &camera)?;
+        drawn = placed_animals(spec, lw, &catalog, &b, &camera, year_frac as f32)?;
         bodies = Some((catalog, b));
     }
     if let Some(f) = &mut fauna {
@@ -1097,6 +1133,7 @@ pub fn render_shot(
             map: &lw.map,
             reg: &lw.reg,
             lw,
+            cells: &f.cells,
         };
         // Those already in the world (a group sought) onto the blocks now loaded; the rest
         // about the camera, a few seconds into their day.
@@ -1106,6 +1143,46 @@ pub fn render_shot(
             for _ in 0..200 {
                 f.live
                     .step(&f.eco, &ground, None, (spec.hour / 24.0) as f32, 0.05);
+            }
+        }
+        if let Some(seconds) = spec.run {
+            // On with the camera among them, timed (the ways they look for are most of it).
+            let steps = (seconds / 0.05).round().max(1.0) as usize;
+            let started = std::time::Instant::now();
+            for _ in 0..steps {
+                f.live.step(
+                    &f.eco,
+                    &ground,
+                    Some(camera.pos),
+                    (spec.hour / 24.0) as f32,
+                    0.05,
+                );
+            }
+            let ms = started.elapsed().as_secs_f64() * 1000.0;
+            log::info!(
+                "  {} animals lived {seconds} s with the camera among them: {:.3} ms a step",
+                f.live.animals.len(),
+                ms / steps as f64,
+            );
+            // The camera after the group sought, where it has gone.
+            if let Some(s) = sought {
+                let near: Vec<DVec3> = f
+                    .live
+                    .animals
+                    .iter()
+                    .filter(|a| a.species as usize == s && !a.dead)
+                    .map(|a| a.pos)
+                    .filter(|p| (p.x - camera.pos.x).hypot(p.z - camera.pos.z) < 200.0)
+                    .collect();
+                if !near.is_empty() {
+                    let mid = near.iter().copied().sum::<DVec3>() / near.len() as f64;
+                    let d = mid - camera.pos;
+                    camera.yaw = (-d.x as f32).atan2(d.z as f32).to_degrees();
+                    if spec.aim {
+                        let flat = d.x.hypot(d.z);
+                        camera.pitch = ((-d.y + 0.8) as f32).atan2(flat as f32).to_degrees();
+                    }
+                }
             }
         }
         let views = f.views();
@@ -1355,10 +1432,52 @@ fn clear(lw: &LocalWorld, from: DVec3, to: DVec3) -> bool {
     })
 }
 
+/// The bank of the nearest water at least a metre and a half deep within three kilometres:
+/// a dry place four metres back from its edge (where it is half a metre deep, toward where the
+/// search began), and the yaw that looks out over the water from it.
+fn bank_near(lw: &LocalWorld, x: f64, z: f64) -> Option<(f64, f64, f32)> {
+    let t = lw.terrain();
+    let depth = |x: f64, z: f64| {
+        let s = t.sample(x.floor() as i32, z.floor() as i32);
+        if s.water.is_finite() {
+            (s.water - s.height) as f64
+        } else {
+            0.0
+        }
+    };
+    for r in (0..3000).step_by(8) {
+        let r = r as f64;
+        let n = ((r * std::f64::consts::TAU / 8.0).ceil() as usize).max(1);
+        for k in 0..n {
+            let a = k as f64 / n as f64 * std::f64::consts::TAU;
+            let (wx, wz) = (x + a.cos() * r, z + a.sin() * r);
+            if depth(wx, wz) < 1.5 {
+                continue;
+            }
+            // Back toward where the search began until it is shallow, then four metres more.
+            let back = glam::DVec2::new(x - wx, z - wz).normalize_or(glam::DVec2::X);
+            let mut d = 0.0;
+            while d < 200.0 && depth(wx + back.x * d, wz + back.y * d) > 0.5 {
+                d += 1.0;
+            }
+            if d >= 200.0 {
+                continue;
+            }
+            let (bx, bz) = (wx + back.x * (d + 4.0), wz + back.y * (d + 4.0));
+            // The camera's forward (-sin yaw, cos yaw) out over the water.
+            let yaw = (back.x as f32).atan2(-back.y as f32).to_degrees();
+            return Some((bx, bz, yaw));
+        }
+    }
+    None
+}
+
 /// What an animal in a shot does, by name.
-fn act_of(name: &str) -> anyhow::Result<(hearth_fauna::live::Act, Pace)> {
-    use hearth_fauna::live::Act;
-    Ok(match name {
+fn act_of(
+    name: &str,
+) -> anyhow::Result<(hearth_fauna::live::Act, Pace, hearth_fauna::live::Medium)> {
+    use hearth_fauna::live::{Act, Medium};
+    let (act, pace) = match name {
         "graze" | "eat" => (Act::Graze, Pace::Still),
         "walk" => (Act::Walk, Pace::Walk),
         "trot" => (Act::Walk, Pace::Trot),
@@ -1371,8 +1490,18 @@ fn act_of(name: &str) -> anyhow::Result<(hearth_fauna::live::Act, Pace)> {
         "rear" => (Act::Rear, Pace::Still),
         "attack" => (Act::Attack, Pace::Still),
         "fly" => (Act::Fly, Pace::Run),
+        "swim" => (Act::Walk, Pace::Walk),
+        "climb" => (Act::Flee, Pace::Walk),
+        "perch" => (Act::Alert, Pace::Still),
         other => anyhow::bail!("an animal cannot {other:?}"),
-    })
+    };
+    let medium = match name {
+        "fly" => Medium::Air,
+        "swim" => Medium::Water,
+        "climb" | "perch" => Medium::Tree,
+        _ => Medium::Ground,
+    };
+    Ok((act, pace, medium))
 }
 
 /// An animal to draw in a shot: what it is and does, where, facing, how fast, and its
@@ -1386,6 +1515,7 @@ struct Drawn {
     yaw: f32,
     speed: f32,
     phase: f32,
+    medium: hearth_fauna::live::Medium,
 }
 
 /// The boxes of animals in a shot, posed on the ground under their feet in their coats,
@@ -1428,6 +1558,7 @@ fn animal_instances(
             year_frac,
             southern,
             scale,
+            medium: a.medium,
         };
         let mut m = Motion::new(a.species as u64 * 7919 + (a.pos.x.to_bits() >> 20));
         m.settle(rig, &drive);
@@ -1473,6 +1604,7 @@ fn drawn_views(views: &[hearth_fauna::live::AnimalView]) -> Vec<Drawn> {
             yaw: v.yaw,
             speed: v.speed,
             phase: v.stride.rem_euclid(1.0),
+            medium: v.medium,
         })
         .collect()
 }
@@ -1484,6 +1616,7 @@ fn placed_animals(
     catalog: &hearth_fauna::species::Catalog,
     bodies: &hearth_fauna::skin::Bodies,
     camera: &hearth_render::camera::Camera,
+    year_frac: f32,
 ) -> anyhow::Result<Vec<Drawn>> {
     let f = camera.forward().as_dvec3();
     let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
@@ -1507,7 +1640,42 @@ fn placed_animals(
         )
         .map_or_else(|| lw.surface_y(p.x, p.z), |g| g.y);
         let hip = rig.legs.iter().map(|l| l.joint.y).fold(0.1f32, f32::max);
+        // A swimmer's back at the water's surface, where there is water.
+        let ground = match a.medium {
+            hearth_fauna::live::Medium::Water => crate::fauna::surface_in(
+                &lw.map,
+                &lw.reg,
+                p.x,
+                p.z,
+                lw.surface_y(p.x, p.z).floor() as i32 + 3,
+                10,
+            )
+            .filter(|f| f.water)
+            .map_or(ground, |f| {
+                if hearth_fauna::live::mover_of(sp) == hearth_fauna::live::Mover::Fish {
+                    // A fish halfway down.
+                    f.y + f.depth * 0.5
+                } else {
+                    // The back just out of the water, as big as it is.
+                    let scale = hearth_fauna::anim::scale_of(
+                        rig,
+                        a.stage,
+                        year_frac,
+                        sp.life.birth_frac,
+                        sp.life.birth_mass_kg,
+                    );
+                    f.level() - (sp.shoulder_m * scale) as f64 * 0.85
+                }
+            }),
+            _ => ground,
+        };
+        let speed = if a.medium == hearth_fauna::live::Medium::Water {
+            sp.swim_m_s.unwrap_or(0.8) * 0.7
+        } else {
+            0.0
+        };
         let speed = match a.pace {
+            _ if speed > 0.0 => speed,
             Pace::Still => 0.0,
             Pace::Walk => sp.walk_m_s,
             Pace::Trot => (1.2 * 9.81 * hip).sqrt(),
@@ -1522,6 +1690,7 @@ fn placed_animals(
             yaw: cam_yaw + a.yaw.to_radians(),
             speed,
             phase: ((a.ahead * 0.37 + a.right * 0.21).rem_euclid(1.0)) as f32,
+            medium: a.medium,
         });
     }
     Ok(out)

@@ -257,7 +257,7 @@
             realism_source: "general mammal references; review",
         ),
         (
-            id: "american_black_bear", name: "American black bear", scientific: "Ursus americanus", body_plan: Bear, status: Implemented,
+            id: "american_black_bear", name: "American black bear", scientific: "Ursus americanus", body_plan: Bear, status: Implemented, climbs: true,
             mass_kg: (60, 250), length_m: 1.6, shoulder_height_m: 0.9,
             speed: (walk_m_s: 1.1, run_m_s: 13, swim_m_s: 1.5),
             senses: (vision_m: 100, hearing_m: 700, smell_m: 3000, night_vision: 0.8),

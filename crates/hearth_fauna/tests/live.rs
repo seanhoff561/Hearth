@@ -15,10 +15,7 @@ struct Flat;
 
 impl Ground for Flat {
     fn footing(&self, _x: f64, _z: f64, _y: f64) -> Option<Footing> {
-        Some(Footing {
-            y: 64.0,
-            water: false,
-        })
+        Some(Footing::dry(64.0))
     }
 
     fn top(&self, x: f64, z: f64) -> Option<Footing> {

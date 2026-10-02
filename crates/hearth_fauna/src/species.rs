@@ -148,6 +148,8 @@ pub struct Species {
     /// The seasons a grown male carries antlers (spring, summer, autumn, winter), from its
     /// antler yield.
     pub antler_seasons: [bool; 4],
+    /// Climbs trees.
+    pub climbs: bool,
 }
 
 impl Species {
@@ -554,6 +556,7 @@ fn species_of(
         coat: a.coat,
         shape: a.shape.unwrap_or_default(),
         antler_seasons: antler_seasons(a),
+        climbs: a.climbs,
     }
 }
 

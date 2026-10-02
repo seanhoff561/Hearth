@@ -8,10 +8,10 @@ use std::sync::Arc;
 use glam::DVec3;
 use hearth_fauna::ecology::{Ecology, REGION_CELLS, Region};
 use hearth_fauna::habitat::{GenLand, TreeYields};
-use hearth_fauna::live::{AnimalView, Footing, Ground, Live};
+use hearth_fauna::live::{AnimalView, Cell, Footing, Ground, Live};
 use hearth_fauna::species::Catalog;
 use hearth_math::BlockPos;
-use hearth_world::{BlockRegistry, CubeMap};
+use hearth_world::{BlockRegistry, BlockStateId, CubeMap};
 
 use crate::scene::LocalWorld;
 
@@ -23,6 +23,36 @@ pub struct MapGround<'a> {
     pub map: &'a CubeMap,
     pub reg: &'a BlockRegistry,
     pub lw: &'a LocalWorld,
+    /// What each block state is to an animal ([`cells_of`]).
+    pub cells: &'a [Cell],
+}
+
+/// What each block state is to an animal: a tree's trunk, limbs and foliage by their names
+/// (`_log`, `_branch`, `_leaves`), water, the solid, and the open (air and the plants a body
+/// pushes through).
+pub fn cells_of(reg: &BlockRegistry) -> Vec<Cell> {
+    (0..reg.state_count())
+        .map(|i| {
+            let s = BlockStateId(i as u16);
+            if s.is_air() {
+                return Cell::Open;
+            }
+            let path = reg.block_of(s).name.path();
+            if reg.fluid_amount(s) > 0 {
+                Cell::Water
+            } else if path.ends_with("_log") {
+                Cell::Trunk
+            } else if path.ends_with("_branch") {
+                Cell::Limb
+            } else if path.ends_with("_leaves") {
+                Cell::Leaves
+            } else if reg.collision_shape(s).is_empty() {
+                Cell::Open
+            } else {
+                Cell::Solid
+            }
+        })
+        .collect()
 }
 
 /// The surface of the ground in the column at (x, z) of a map, searching down from `from` for
@@ -44,9 +74,22 @@ pub fn surface_in(
         let shape = reg.collision_shape(s);
         let open_above = reg.collision_shape(above).is_empty();
         if !shape.is_empty() && open_above {
+            // The water over it, as deep as it stands.
+            let mut depth = 0.0;
+            if reg.fluid_amount(above) > 0 {
+                for k in 1..6 {
+                    match map.block(BlockPos::new(bx, y + k, bz)) {
+                        Some(w) if reg.fluid_amount(w) > 0 => {
+                            depth = k as f64 + 1.0 - shape.top();
+                        }
+                        _ => break,
+                    }
+                }
+            }
             return Some(Footing {
                 y: y as f64 + shape.top(),
-                water: reg.fluid_amount(above) > 0,
+                water: depth > 0.0,
+                depth,
             });
         }
         // Standing water: the ground under it is wet footing.
@@ -84,9 +127,11 @@ impl MapGround<'_> {
     /// the distant terrain shows the same heights): the top of the ground or the water.
     fn generated(&self, x: f64, z: f64) -> Footing {
         let s = self.lw.terrain().sample(x.floor() as i32, z.floor() as i32);
+        let depth = s.water_i().saturating_sub(s.height_i()).max(0) as f64;
         Footing {
-            y: s.height_i().max(s.water_i()) as f64,
-            water: s.water_i() > s.height_i(),
+            y: s.height_i() as f64,
+            water: depth > 0.0,
+            depth,
         }
     }
 
@@ -106,7 +151,26 @@ impl Ground for MapGround<'_> {
         if !self.loaded(x, z, y) {
             return Some(self.generated(x, z));
         }
-        self.surface(x, z, y.floor() as i32 + 2, 6)
+        self.surface(x, z, y.floor() as i32 + 2, 8)
+    }
+
+    fn cell(&self, x: i32, y: i32, z: i32) -> Option<Cell> {
+        let p = BlockPos::new(self.map.planet().wrap_x(x), y, z);
+        match self.map.block(p) {
+            Some(s) => self.cells.get(s.0 as usize).copied(),
+            None => {
+                // Not loaded: the generated ground, its water, and air.
+                let f = self.generated(x as f64 + 0.5, z as f64 + 0.5);
+                let y = y as f64;
+                Some(if y < f.y {
+                    Cell::Solid
+                } else if y < f.level() {
+                    Cell::Water
+                } else {
+                    Cell::Open
+                })
+            }
+        }
     }
 
     fn top(&self, x: f64, z: f64) -> Option<Footing> {
@@ -123,6 +187,8 @@ impl Ground for MapGround<'_> {
 pub struct Fauna {
     pub eco: Ecology,
     pub live: Live,
+    /// What each block state is to an animal.
+    pub cells: Vec<Cell>,
     yields: TreeYields,
     /// Years since the world began the populations are simulated to.
     pub years: f64,
@@ -165,6 +231,7 @@ impl Fauna {
         Self {
             eco,
             live: Live::new(seed),
+            cells: cells_of(&lw.reg),
             yields,
             years: at,
         }
@@ -236,6 +303,7 @@ impl Fauna {
                 map: &lw.map,
                 reg: &lw.reg,
                 lw,
+                cells: &self.cells,
             };
             self.live.fold(&mut self.eco, player);
             self.live.materialize(&mut self.eco, &ground, player);
@@ -244,6 +312,7 @@ impl Fauna {
             map: &lw.map,
             reg: &lw.reg,
             lw,
+            cells: &self.cells,
         };
         self.live.step(&self.eco, &ground, Some(player), hour, dt);
     }

@@ -18,7 +18,7 @@
 use glam::{Affine3A, Quat, Vec2, Vec3};
 use hearth_content::schema::fauna::BodyPlan;
 
-use crate::live::{Act, Stage};
+use crate::live::{Act, Medium, Stage};
 use crate::rig::{Frame, Gear, MAX_SEGS, Rig, SLOTS, Slot};
 
 const G: f32 = 9.81;
@@ -40,6 +40,8 @@ pub struct Drive {
     pub southern: bool,
     /// Its size against a grown one.
     pub scale: f32,
+    /// On the ground, swimming, on the wing, up a tree.
+    pub medium: Medium,
 }
 
 impl Drive {
@@ -53,6 +55,7 @@ impl Drive {
             year_frac: 0.4,
             southern: false,
             scale: 1.0,
+            medium: Medium::Ground,
         }
     }
 }
@@ -104,6 +107,8 @@ pub struct Motion {
     pub rear: f32,
     pub attack: f32,
     pub fly: f32,
+    pub swim: f32,
+    pub climb: f32,
     /// Wingbeats.
     pub flap: f32,
     /// Where the head looks (yaw, pitch; radians from straight ahead), eased.
@@ -126,6 +131,8 @@ struct Weights {
     rear: f32,
     attack: f32,
     fly: f32,
+    swim: f32,
+    climb: f32,
 }
 
 fn weights(d: &Drive) -> Weights {
@@ -140,7 +147,15 @@ fn weights(d: &Drive) -> Weights {
         rear: 0.0,
         attack: 0.0,
         fly: 0.0,
+        swim: 0.0,
+        climb: 0.0,
     };
+    match d.medium {
+        Medium::Water => w.swim = 1.0,
+        Medium::Tree => w.climb = 1.0,
+        Medium::Air => w.fly = 1.0,
+        Medium::Ground => {}
+    }
     let still = d.speed < 0.3;
     match d.act {
         Act::Graze if still => w.graze = 1.0,
@@ -178,6 +193,8 @@ impl Motion {
             rear: 0.0,
             attack: 0.0,
             fly: 0.0,
+            swim: 0.0,
+            climb: 0.0,
             flap: 0.0,
             look: Vec2::ZERO,
             time: (seed % 7919) as f32 * 0.01,
@@ -200,6 +217,8 @@ impl Motion {
         self.rear = w.rear;
         self.attack = w.attack;
         self.fly = w.fly;
+        self.swim = w.swim;
+        self.climb = w.climb;
         self.look = look_angles(rig, d.look);
     }
 
@@ -222,6 +241,8 @@ impl Motion {
         ease(&mut self.rear, w.rear, 3.0);
         ease(&mut self.attack, w.attack, 8.0);
         ease(&mut self.fly, w.fly, 4.0);
+        ease(&mut self.swim, w.swim, 4.0);
+        ease(&mut self.climb, w.climb, 4.0);
         let look = look_angles(rig, d.look);
         self.look += (look - self.look) * k(4.0);
         self.phase = (self.phase + self.speed / stride_of(rig, self.speed) * dt).rem_euclid(1.0);
@@ -560,8 +581,10 @@ fn quadruped(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
     // The ground under the fore and hind feet; the body pitched to the slope between.
     let at = |x: f32, z: f32| ground.ground(Vec3::new(x, 0.0, z));
     let fz = tl * 0.36;
-    let gf = at(0.0, fz).unwrap_or(0.0);
-    let gh = at(0.0, -fz).unwrap_or(0.0);
+    // Swimming or up a tree, the ground under it is nothing to it.
+    let grounded = 1.0 - m.swim.max(m.climb);
+    let gf = at(0.0, fz).unwrap_or(0.0) * grounded;
+    let gh = at(0.0, -fz).unwrap_or(0.0) * grounded;
     let slope = -((gf - gh) / (2.0 * fz).max(1e-3)).atan().clamp(-0.45, 0.45);
     let base = (gf + gh) * 0.5;
     // The gait: two neighbouring gaits blended, the stride, the body's bob and rock.
@@ -587,7 +610,7 @@ fn quadruped(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
     } else {
         0.0
     };
-    let rear = m.rear * 0.85 + sit;
+    let rear = m.rear * 0.85 + sit + m.climb * 1.35;
     let mut body_y = base + bob + lie_y * m.lie;
     let pitch = slope + rock + m.attack * 0.12;
     let middle = Vec3::Y * rig.torso_y;
@@ -603,7 +626,7 @@ fn quadruped(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
             * tr(Vec3::Y * rig.torso_y)
     };
     // Where a leg cannot reach the ground under it, the body comes down to it.
-    if m.lie < 0.5 && m.rear < 0.5 {
+    if m.lie < 0.5 && m.rear < 0.5 && grounded > 0.5 {
         let trial = place(body_y);
         let mut short = 0.0f32;
         for leg in &rig.legs {
@@ -662,6 +685,22 @@ fn quadruped(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
             };
             target = target.lerp(folded, m.lie);
         }
+        // Swimming: the legs paddle under the body.
+        if m.swim > 0.0 {
+            let reach = leg.upper + leg.lower;
+            let p = (TAU * (m.phase + [0.25, 0.75, 0.0, 0.5][li])).sin();
+            let paddle = joint + Vec3::new(0.0, -reach * 0.75, reach * 0.3 * p);
+            target = target.lerp(paddle, m.swim);
+        }
+        // Climbing: the feet gripping the trunk in front.
+        if m.climb > 0.0 {
+            let grip = Vec3::new(
+                leg.joint.x * 1.6,
+                joint.y - leg.upper * 0.2,
+                rig.shoulder * 0.3,
+            );
+            target = target.lerp(grip, m.climb);
+        }
         // Rearing: the forelegs lifted and bent.
         if leg.fore && m.rear > 0.0 {
             let up = joint + Vec3::new(0.0, -leg.upper * 0.7, leg.upper * 0.5);
@@ -698,6 +737,7 @@ fn quadruped(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
         + nod
         + m.look.y * 0.5;
     neck_up -= 0.35 * m.groom + 0.2 * m.sleep;
+    neck_up += 0.35 * m.swim;
     neck_up = neck_up * (1.0 - m.lie * 0.4) + m.lie * 0.15 * (1.0 - m.sleep);
     let neck_yaw = m.look.x * 0.55 + groom_side * (1.6 * m.groom + 1.9 * m.sleep);
     let neck = chest * tr(spine(rig.neck_base)) * ry(neck_yaw) * rx(-neck_up);

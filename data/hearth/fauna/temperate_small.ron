@@ -52,7 +52,7 @@
             realism_source: "general mammal references; review",
         ),
         (
-            id: "red_squirrel", name: "Red squirrel", scientific: "Sciurus vulgaris", body_plan: Rodent, status: Implemented,
+            id: "red_squirrel", name: "Red squirrel", scientific: "Sciurus vulgaris", body_plan: Rodent, status: Implemented, climbs: true,
             mass_kg: (0.25, 0.35), length_m: 0.22, shoulder_height_m: 0.09,
             speed: (walk_m_s: 0.8, run_m_s: 6),
             senses: (vision_m: 100, hearing_m: 100, smell_m: 30, night_vision: 0.3),
@@ -76,7 +76,7 @@
             realism_source: "general mammal references; review",
         ),
         (
-            id: "eastern_gray_squirrel", name: "Eastern gray squirrel", scientific: "Sciurus carolinensis", body_plan: Rodent, status: Implemented,
+            id: "eastern_gray_squirrel", name: "Eastern gray squirrel", scientific: "Sciurus carolinensis", body_plan: Rodent, status: Implemented, climbs: true,
             mass_kg: (0.4, 0.65), length_m: 0.26, shoulder_height_m: 0.1,
             speed: (walk_m_s: 0.8, run_m_s: 7),
             senses: (vision_m: 100, hearing_m: 100, smell_m: 30, night_vision: 0.3),

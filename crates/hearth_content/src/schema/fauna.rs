@@ -530,6 +530,9 @@ entry! {
         pub coat: Option<Coat>,
         #[serde(default)]
         pub shape: Option<Shape>,
+        /// Climbs trees (to flee, to feed, to rest).
+        #[serde(default)]
+        pub climbs: bool,
         #[serde(default)]
         pub yields: Option<Yields>,
         #[serde(default)]

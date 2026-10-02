@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ecology::{Ecology, REGION_LEN, dist};
 use crate::habitat::CELL_M;
+use crate::nav::{FISH_DEPTH, Flight, Walker, find_way, perch_near, trunk_near};
+use crate::rig::{Frame, frame_of};
 use crate::species::Species;
 
 /// Where an animal can stand.
@@ -24,6 +26,38 @@ pub struct Footing {
     pub y: f64,
     /// Water stands over it.
     pub water: bool,
+    /// How deep (m; 0 where dry).
+    pub depth: f64,
+}
+
+impl Footing {
+    pub fn dry(y: f64) -> Self {
+        Self {
+            y,
+            water: false,
+            depth: 0.0,
+        }
+    }
+
+    /// The level a body moves at: the ground, or the water's surface over it.
+    pub fn level(&self) -> f64 {
+        self.y + self.depth
+    }
+}
+
+/// What fills a block, as animals go over, through and up it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cell {
+    /// Air, or plants a body pushes through.
+    Open,
+    Solid,
+    Water,
+    /// A tree's trunk (climbable).
+    Trunk,
+    /// A tree's limb (a perch).
+    Limb,
+    /// Foliage (a perch on top, cover within).
+    Leaves,
 }
 
 /// The ground animals walk on: the loaded terrain.
@@ -33,6 +67,19 @@ pub trait Ground {
     fn footing(&self, x: f64, z: f64, y: f64) -> Option<Footing>;
     /// The highest ground at (x, z) (under the trees' foliage); None where not loaded.
     fn top(&self, x: f64, z: f64) -> Option<Footing>;
+    /// What fills the block at (x, y, z); None where not loaded. By default, the ground with
+    /// water and open air over it.
+    fn cell(&self, x: i32, y: i32, z: i32) -> Option<Cell> {
+        let f = self.footing(x as f64 + 0.5, z as f64 + 0.5, y as f64)?;
+        let y = y as f64;
+        Some(if y < f.y {
+            Cell::Solid
+        } else if y < f.level() {
+            Cell::Water
+        } else {
+            Cell::Open
+        })
+    }
 }
 
 /// An animal's age.
@@ -72,6 +119,31 @@ pub enum Act {
     Fly,
 }
 
+/// Where an animal is: on the ground, in the water (swimming), on the wing, up a tree (a
+/// climber on its trunk, a bird on a perch).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Medium {
+    Ground,
+    Water,
+    Air,
+    Tree,
+}
+
+/// A climb: the foot of the trunk and the height to climb to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Climb {
+    pub trunk: DVec3,
+    pub to: f64,
+}
+
+/// A flight under way: the flight, how far along it (m), and whether it ends on a perch.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Flying {
+    pub flight: Flight,
+    pub flown: f64,
+    pub perch: bool,
+}
+
 /// An animal in the world.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Animal {
@@ -97,6 +169,51 @@ pub struct Animal {
     /// The gait's phase: strides taken.
     pub stride: f32,
     pub dead: bool,
+    pub medium: Medium,
+    /// The way it follows to its goal (the next point first): empty where it goes straight.
+    pub way: Vec<DVec3>,
+    /// Seconds before it looks for a way again (after a step it could not take).
+    pub repath: f32,
+    pub climb: Option<Climb>,
+    pub flying: Option<Flying>,
+}
+
+impl Animal {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        id: u64,
+        species: u16,
+        group: Option<u64>,
+        cell: Option<((i64, i64), usize)>,
+        stage: Stage,
+        female: bool,
+        pos: DVec3,
+        yaw: f32,
+        timer: f32,
+        medium: Medium,
+    ) -> Self {
+        Self {
+            id,
+            species,
+            group,
+            cell,
+            stage,
+            female,
+            pos,
+            yaw,
+            speed: 0.0,
+            act: Act::Graze,
+            timer,
+            goal: None,
+            stride: 0.0,
+            dead: false,
+            medium,
+            way: Vec::new(),
+            repath: 0.0,
+            climb: None,
+            flying: None,
+        }
+    }
 }
 
 /// An animal as the client draws it.
@@ -111,6 +228,7 @@ pub struct AnimalView {
     pub speed: f32,
     pub act: Act,
     pub stride: f32,
+    pub medium: Medium,
 }
 
 /// The animals near the player.
@@ -153,6 +271,44 @@ pub fn walks(sp: &Species) -> bool {
             B::BirdPerching | B::Raptor | B::Waterfowl | B::Seabird | B::Insect | B::Snake
         )
 }
+
+/// How a species goes about the world.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mover {
+    /// Over the ground (swimming where it must and can).
+    Walker,
+    /// Over the ground and up trees.
+    Climber,
+    /// On the wing, to perches and the ground.
+    Bird,
+    /// In the water.
+    Fish,
+}
+
+pub fn mover_of(sp: &Species) -> Mover {
+    match frame_of(sp.plan) {
+        Frame::Bird if sp.fly_m_s.is_some() => Mover::Bird,
+        Frame::Fish => Mover::Fish,
+        _ if sp.climbs => Mover::Climber,
+        _ => Mover::Walker,
+    }
+}
+
+/// Whether a small species is drawn into the world about the player: those that walk, the
+/// birds big enough to see as they forage and fly (crows, owls), the fish of the streams.
+pub fn drawn(sp: &Species) -> bool {
+    match mover_of(sp) {
+        Mover::Fish => sp.mass_kg >= 0.1,
+        Mover::Bird => sp.mass_kg >= SMALL_MIN_KG,
+        _ => walks(sp),
+    }
+}
+
+/// Ways looked for in one step (each a bounded search); the others wait for the next.
+const SEARCHES_PER_STEP: usize = 6;
+/// The columns a way's search looks at: going somewhere near, and running away.
+const WALK_BUDGET: usize = 1500;
+const FLEE_BUDGET: usize = 700;
 
 /// Whether an animal of its kind is up and about at the hour (0–1, local solar time).
 pub fn awake(activity: Activity, hour: f32) -> bool {
@@ -238,30 +394,28 @@ impl Live {
                     let id = self.next_id;
                     self.next_id += 1;
                     let yaw = self.rng.next_f32() * std::f32::consts::TAU;
-                    self.animals.push(Animal {
+                    let timer = 2.0 + self.rng.next_f32() * 10.0;
+                    self.animals.push(Animal::new(
                         id,
-                        species: g.species,
-                        group: Some(g.id),
-                        cell: None,
+                        g.species,
+                        Some(g.id),
+                        None,
                         stage,
                         female,
                         pos,
                         yaw,
-                        speed: 0.0,
-                        act: Act::Graze,
-                        timer: 2.0 + self.rng.next_f32() * 10.0,
-                        goal: None,
-                        stride: 0.0,
-                        dead: false,
-                    });
+                        timer,
+                        Medium::Ground,
+                    ));
                 }
             }
             // The small species of the cells near the player.
             for (slot, &si) in r.pool_species.iter().enumerate() {
                 let sp = &cat.species[si as usize];
-                if !walks(sp) {
+                if !drawn(sp) {
                     continue;
                 }
+                let mover = mover_of(sp);
                 for c in 0..REGION_LEN {
                     let centre = r.cell_centre(c);
                     if dist(centre, at, wrap) > SMALL_NEAR_M + CELL_M * 0.71 {
@@ -305,49 +459,70 @@ impl Live {
                         self.drawn.insert(k, (0, 0));
                         continue;
                     }
+                    // Where they are: fish in water deep enough, the rest on dry ground (a bird,
+                    // as often as not, on a perch in a tree near it).
                     let mut spots = Vec::new();
-                    for _ in 0..(na + ny) {
+                    let mut unloaded = false;
+                    for _ in 0..(na + ny) * 4 {
+                        if spots.len() >= (na + ny) as usize {
+                            break;
+                        }
                         let p = inside[self.rng.below(inside.len() as u32) as usize];
                         let x = p[0] + (self.rng.next_f64() - 0.5) * CELL_M / 4.0;
                         let z = p[1] + (self.rng.next_f64() - 0.5) * CELL_M / 4.0;
-                        if let Some(f) = ground.top(x, z)
-                            && !f.water
-                        {
-                            spots.push(DVec3::new(x, f.y, z));
+                        let Some(f) = ground.top(x, z) else {
+                            unloaded = true;
+                            continue;
+                        };
+                        match mover {
+                            Mover::Fish if f.water && f.depth >= FISH_DEPTH => {
+                                spots.push((DVec3::new(x, f.y + f.depth * 0.5, z), Medium::Water));
+                            }
+                            Mover::Fish => {}
+                            _ if f.water => {}
+                            Mover::Bird if self.rng.next_f32() < 0.5 => {
+                                match perch_near(ground, DVec2::new(x, z), 8.0) {
+                                    Some(p) => spots.push((p, Medium::Tree)),
+                                    None => spots.push((DVec3::new(x, f.y, z), Medium::Ground)),
+                                }
+                            }
+                            _ => spots.push((DVec3::new(x, f.y, z), Medium::Ground)),
                         }
                     }
-                    if spots.len() < (na + ny) as usize {
+                    if spots.len() < (na + ny) as usize && unloaded {
                         // Not loaded yet: wait.
                         continue;
                     }
+                    // As many as found room (fish where the water is too shallow for all).
+                    let na = na.min(spots.len() as u32);
+                    let ny = ny.min(spots.len() as u32 - na);
                     r.adults[i] = (r.adults[i] - na as f32).max(0.0);
                     r.young[i] = (r.young[i] - ny as f32).max(0.0);
                     self.drawn.insert(k, (na, ny));
-                    for (n, pos) in spots.into_iter().enumerate() {
+                    for (n, (pos, medium)) in spots.into_iter().take((na + ny) as usize).enumerate()
+                    {
                         let id = self.next_id;
                         self.next_id += 1;
                         let yaw = self.rng.next_f32() * std::f32::consts::TAU;
                         let female = self.rng.next_f32() < 0.5;
-                        self.animals.push(Animal {
+                        let stage = if (n as u32) < na {
+                            Stage::Adult
+                        } else {
+                            Stage::Young
+                        };
+                        let timer = 2.0 + self.rng.next_f32() * 8.0;
+                        self.animals.push(Animal::new(
                             id,
-                            species: si,
-                            group: None,
-                            cell: Some((key, c)),
-                            stage: if (n as u32) < na {
-                                Stage::Adult
-                            } else {
-                                Stage::Young
-                            },
+                            si,
+                            None,
+                            Some((key, c)),
+                            stage,
                             female,
                             pos,
                             yaw,
-                            speed: 0.0,
-                            act: Act::Graze,
-                            timer: 2.0 + self.rng.next_f32() * 8.0,
-                            goal: None,
-                            stride: 0.0,
-                            dead: false,
-                        });
+                            timer,
+                            medium,
+                        ));
                     }
                 }
             }
@@ -467,17 +642,26 @@ impl Live {
         });
     }
 
-    /// One step of `dt` seconds: grazing, wandering, resting by the hour of their kind,
-    /// fleeing a person who comes too near.
-    /// Every animal onto the ground under it (where the ground has changed or loaded since).
+    /// Every animal onto the ground under it (where the ground has changed or loaded since):
+    /// a walker on it, a swimmer and a fish in its water; those on the wing and up trees stay.
     pub fn settle(&mut self, ground: &dyn Ground) {
         for a in &mut self.animals {
+            if matches!(a.medium, Medium::Air | Medium::Tree) {
+                continue;
+            }
             if let Some(f) = ground.footing(a.pos.x, a.pos.z, a.pos.y) {
                 a.pos.y = f.y;
+                if a.medium == Medium::Water {
+                    a.pos.y = f.y + f.depth * 0.5;
+                }
             }
         }
     }
 
+    /// One step of `dt` seconds: grazing, wandering, resting by the hours of their kind, and
+    /// away from a person who comes too near — along a way found over the ground (swimming
+    /// where they must and can), up a tree for a climber, on the wing for a bird, through the
+    /// water for a fish.
     pub fn step(
         &mut self,
         eco: &Ecology,
@@ -496,24 +680,36 @@ impl Live {
                 e.1 += 1.0;
             }
         }
+        let mut searches = SEARCHES_PER_STEP;
         for a in self.animals.iter_mut() {
             if a.dead {
                 continue;
             }
             let sp = &cat.species[a.species as usize];
-            let walk = sp.walk_speed();
-            let run = sp.run_speed();
-            let flight = sp.flight_m();
-            // A person within its flight distance: away, as fast as it goes.
+            let mover = mover_of(sp);
+            let walker = Walker::of(sp);
+            let flight = sp.flight_m() as f64;
+            a.repath = (a.repath - dt).max(0.0);
+            // A person too near: away.
             if let Some(p) = player {
                 let d = hdist(a.pos, p);
-                if d < flight as f64 {
-                    let away = DVec2::new(a.pos.x - p.x, a.pos.z - p.z).normalize_or_zero();
-                    let away = if away == DVec2::ZERO { DVec2::X } else { away };
-                    a.goal = Some(DVec2::new(a.pos.x, a.pos.z) + away * (flight as f64 * 1.5));
-                    a.act = Act::Flee;
-                    a.timer = 6.0;
-                } else if d < flight as f64 * 1.6 && a.act != Act::Flee {
+                let away = DVec2::new(a.pos.x - p.x, a.pos.z - p.z).normalize_or_zero();
+                let away = if away == DVec2::ZERO { DVec2::X } else { away };
+                if d < flight {
+                    flee(
+                        a,
+                        mover,
+                        &walker,
+                        ground,
+                        away,
+                        flight,
+                        &mut searches,
+                        &mut self.rng,
+                    );
+                } else if d < flight * 1.6
+                    && !matches!(a.act, Act::Flee | Act::Fly)
+                    && a.medium != Medium::Air
+                {
                     a.act = Act::Alert;
                     a.timer = a.timer.max(2.0);
                     a.yaw = turn_toward(
@@ -526,79 +722,37 @@ impl Live {
             }
             a.timer -= dt;
             if a.timer <= 0.0 {
-                let up = awake(sp.activity, hour);
-                let r = self.rng.next_f32();
                 let centre = a
                     .group
                     .and_then(|g| centres.get(&g))
                     .map(|(s, n)| *s / *n)
                     .unwrap_or(DVec2::new(a.pos.x, a.pos.z));
-                (a.act, a.timer, a.goal) = if !up {
-                    // Out of its hours: asleep mostly, now and then awake where it lies.
-                    let act = if r < 0.75 { Act::Sleep } else { Act::Rest };
-                    (act, 20.0 + r * 40.0, None)
-                } else if r < 0.5 {
-                    (Act::Graze, 4.0 + r * 12.0, None)
-                } else if r < 0.58 {
-                    (Act::Groom, 3.0 + r * 4.0, None)
-                } else {
-                    // Somewhere near the group's middle.
-                    let reach = 6.0 + sp.mass_kg.sqrt() as f64;
-                    let ang = self.rng.next_f64() * std::f64::consts::TAU;
-                    let goal =
-                        centre + DVec2::new(ang.cos(), ang.sin()) * reach * self.rng.next_f64();
-                    (Act::Walk, 20.0, Some(goal))
-                };
+                next_act(
+                    a,
+                    sp,
+                    mover,
+                    &walker,
+                    ground,
+                    awake(sp.activity, hour),
+                    centre,
+                    &mut searches,
+                    &mut self.rng,
+                );
             }
-            // Moving toward the goal.
-            let target_speed = match a.act {
-                Act::Walk => walk,
-                Act::Flee => run,
-                _ => 0.0,
+            let moved = match a.medium {
+                Medium::Air => fly(a, sp, dt, &mut self.rng),
+                Medium::Tree => climb(a, sp, dt),
+                _ => go(
+                    a,
+                    sp,
+                    mover,
+                    &walker,
+                    ground,
+                    dt,
+                    &mut searches,
+                    &mut self.rng,
+                ),
             };
-            let mut moved = 0.0f32;
-            if let (Some(goal), true) = (a.goal, target_speed > 0.0) {
-                let to = goal - DVec2::new(a.pos.x, a.pos.z);
-                let d = to.length();
-                if d < 0.5 {
-                    a.goal = None;
-                    a.act = if a.act == Act::Flee {
-                        Act::Alert
-                    } else {
-                        Act::Graze
-                    };
-                    a.timer = 3.0 + self.rng.next_f32() * 6.0;
-                } else {
-                    a.yaw = turn_toward(a.yaw, to.x as f32, to.y as f32, 5.0 * dt);
-                    a.speed += (target_speed - a.speed) * (1.0 - (-4.0 * dt).exp());
-                    let dir = DVec2::new(a.yaw.sin() as f64, a.yaw.cos() as f64);
-                    let step = dir * (a.speed * dt) as f64;
-                    let (nx, nz) = (a.pos.x + step.x, a.pos.z + step.y);
-                    let climb = sp.climb_m() as f64;
-                    match ground.footing(nx, nz, a.pos.y) {
-                        Some(f) if !f.water || sp.aquatic => {
-                            if (f.y - a.pos.y).abs() <= climb {
-                                a.pos = DVec3::new(nx, f.y, nz);
-                                moved = step.length() as f32;
-                            } else {
-                                // Too steep that way: turn and try elsewhere.
-                                a.goal = None;
-                                a.act = Act::Graze;
-                                a.timer = 1.0;
-                                a.yaw += std::f32::consts::FRAC_PI_2;
-                            }
-                        }
-                        _ => {
-                            a.goal = None;
-                            a.act = Act::Graze;
-                            a.timer = 1.0;
-                            a.yaw += std::f32::consts::PI * 0.75;
-                        }
-                    }
-                }
-            } else {
-                a.speed *= (-6.0 * dt).exp();
-            }
             a.stride += moved / sp.stride_m().max(0.05);
         }
     }
@@ -618,6 +772,7 @@ impl Live {
                 speed: a.speed,
                 act: a.act,
                 stride: a.stride,
+                medium: a.medium,
             })
             .collect()
     }
@@ -634,22 +789,18 @@ impl Live {
     /// cell, so it is gone when it folds.
     pub fn place(&mut self, species: u16, stage: Stage, female: bool, pos: DVec3, yaw: f32) -> u64 {
         let id = self.id();
-        self.animals.push(Animal {
+        self.animals.push(Animal::new(
             id,
             species,
-            group: None,
-            cell: None,
+            None,
+            None,
             stage,
             female,
             pos,
             yaw,
-            speed: 0.0,
-            act: Act::Graze,
-            timer: 5.0,
-            goal: None,
-            stride: 0.0,
-            dead: false,
-        });
+            5.0,
+            Medium::Ground,
+        ));
         id
     }
 }
@@ -665,4 +816,396 @@ fn turn_toward(yaw: f32, dx: f32, dz: f32, max: f32) -> f32 {
         d -= std::f32::consts::TAU;
     }
     yaw + d.clamp(-max, max)
+}
+
+/// A way to a goal for an animal, if it may look for one this step; it goes straight
+/// otherwise (and looks again later).
+fn way_to(
+    a: &mut Animal,
+    walker: &Walker,
+    ground: &dyn Ground,
+    goal: DVec2,
+    budget: usize,
+    searches: &mut usize,
+) {
+    a.goal = Some(goal);
+    a.way.clear();
+    if *searches > 0 {
+        *searches -= 1;
+        a.way = find_way(ground, a.pos, goal, walker, budget).points;
+    }
+}
+
+/// Away from a threat: a bird takes wing for a tree or farther ground; a climber makes for a
+/// tree and up it; a fish darts off; the rest run, along a way found over the ground.
+#[allow(clippy::too_many_arguments)]
+fn flee(
+    a: &mut Animal,
+    mover: Mover,
+    walker: &Walker,
+    ground: &dyn Ground,
+    away: DVec2,
+    flight: f64,
+    searches: &mut usize,
+    rng: &mut Rng,
+) {
+    let here = DVec2::new(a.pos.x, a.pos.z);
+    let fresh = !matches!(a.act, Act::Flee | Act::Fly);
+    match mover {
+        Mover::Bird => {
+            if a.medium != Medium::Air {
+                take_off(a, ground, here + away * (flight * 2.0 + 15.0), true);
+            }
+        }
+        Mover::Climber if a.medium == Medium::Tree => {
+            // Safe up the tree: it watches.
+            a.act = Act::Alert;
+            a.timer = a.timer.max(8.0);
+            if let Some(c) = &mut a.climb {
+                c.to = c.to.max(a.pos.y);
+            }
+        }
+        Mover::Climber if fresh || (a.climb.is_none() && a.way.is_empty() && a.repath <= 0.0) => {
+            match trunk_near(ground, a.pos, 12.0) {
+                Some((foot, height)) => {
+                    let to = foot.y + (height * 0.7).clamp(2.0, 9.0) * (0.6 + 0.4 * rng.next_f64());
+                    a.climb = Some(Climb { trunk: foot, to });
+                    way_to(
+                        a,
+                        walker,
+                        ground,
+                        DVec2::new(foot.x, foot.z),
+                        FLEE_BUDGET,
+                        searches,
+                    );
+                    a.act = Act::Flee;
+                    a.timer = 30.0;
+                }
+                None => run_from(a, walker, ground, here + away * (flight * 1.5), searches),
+            }
+        }
+        Mover::Fish if fresh => {
+            run_from(a, walker, ground, here + away * 6.0, searches);
+            a.timer = 3.0;
+        }
+        Mover::Walker if fresh || (a.way.is_empty() && a.repath <= 0.0) => {
+            run_from(a, walker, ground, here + away * (flight * 1.5), searches);
+        }
+        _ => {}
+    }
+}
+
+fn run_from(
+    a: &mut Animal,
+    walker: &Walker,
+    ground: &dyn Ground,
+    goal: DVec2,
+    searches: &mut usize,
+) {
+    way_to(a, walker, ground, goal, FLEE_BUDGET, searches);
+    a.act = Act::Flee;
+    a.timer = 8.0;
+}
+
+/// Into the air for a perch near `toward` (when `perch`) or the ground there.
+fn take_off(a: &mut Animal, ground: &dyn Ground, toward: DVec2, perch: bool) {
+    let dest = if perch {
+        perch_near(ground, toward, 18.0).map(|p| (p, true))
+    } else {
+        None
+    };
+    let dest = dest.or_else(|| {
+        ground
+            .top(toward.x, toward.y)
+            .filter(|f| !f.water)
+            .map(|f| (DVec3::new(toward.x, f.y, toward.y), false))
+    });
+    let Some((to, perch)) = dest else {
+        return;
+    };
+    a.flying = Some(Flying {
+        flight: Flight::plan(ground, a.pos, to),
+        flown: 0.0,
+        perch,
+    });
+    a.medium = Medium::Air;
+    a.act = Act::Fly;
+    a.timer = 60.0;
+    a.way.clear();
+    a.goal = None;
+    a.climb = None;
+}
+
+/// What an animal does next when its act is done.
+#[allow(clippy::too_many_arguments)]
+fn next_act(
+    a: &mut Animal,
+    sp: &Species,
+    mover: Mover,
+    walker: &Walker,
+    ground: &dyn Ground,
+    up: bool,
+    centre: DVec2,
+    searches: &mut usize,
+    rng: &mut Rng,
+) {
+    let r = rng.next_f32();
+    let here = DVec2::new(a.pos.x, a.pos.z);
+    let near = |rng: &mut Rng, reach: f64| {
+        let ang = rng.next_f64() * std::f64::consts::TAU;
+        here + DVec2::new(ang.cos(), ang.sin()) * reach * (0.3 + 0.7 * rng.next_f64())
+    };
+    match (mover, a.medium) {
+        (_, Medium::Air) => a.timer = 1.0,
+        // Down from the tree again.
+        (Mover::Climber, Medium::Tree) => {
+            if let Some(c) = &mut a.climb {
+                c.to = c.trunk.y;
+            }
+            a.act = Act::Walk;
+            a.timer = 20.0;
+        }
+        (Mover::Bird, Medium::Tree) => {
+            if !up {
+                a.act = Act::Sleep;
+                a.timer = 30.0 + r * 60.0;
+            } else if r < 0.3 {
+                // Down to forage.
+                take_off(a, ground, near(rng, 15.0), false);
+            } else {
+                a.act = if r < 0.6 { Act::Alert } else { Act::Groom };
+                a.timer = 5.0 + r * 10.0;
+            }
+        }
+        (Mover::Bird, _) => {
+            if !up {
+                // To roost in a tree.
+                take_off(a, ground, here, true);
+                if a.medium != Medium::Air {
+                    a.act = Act::Sleep;
+                    a.timer = 30.0;
+                }
+            } else if r < 0.5 {
+                a.act = Act::Graze;
+                a.timer = 3.0 + r * 8.0;
+            } else if r < 0.62 {
+                take_off(a, ground, near(rng, 20.0), true);
+            } else {
+                // Hopping or walking a few steps.
+                way_to(a, walker, ground, near(rng, 3.0), 200, searches);
+                a.act = Act::Walk;
+                a.timer = 6.0;
+            }
+        }
+        (Mover::Fish, _) => {
+            if r < 0.5 {
+                a.act = Act::Graze;
+                a.timer = 3.0 + r * 6.0;
+            } else {
+                way_to(a, walker, ground, near(rng, 8.0), 400, searches);
+                a.act = Act::Walk;
+                a.timer = 15.0;
+            }
+        }
+        _ => {
+            if !up {
+                // Out of its hours: asleep mostly, now and then awake where it lies.
+                a.act = if r < 0.75 { Act::Sleep } else { Act::Rest };
+                a.timer = 20.0 + r * 40.0;
+                a.goal = None;
+                a.way.clear();
+            } else if r < 0.5 {
+                a.act = Act::Graze;
+                a.timer = 4.0 + r * 12.0;
+                a.goal = None;
+                a.way.clear();
+            } else if r < 0.58 {
+                a.act = Act::Groom;
+                a.timer = 3.0 + r * 4.0;
+                a.goal = None;
+                a.way.clear();
+            } else {
+                // Somewhere near the group's middle.
+                let reach = 6.0 + sp.mass_kg.sqrt() as f64;
+                let ang = rng.next_f64() * std::f64::consts::TAU;
+                let goal = centre + DVec2::new(ang.cos(), ang.sin()) * reach * rng.next_f64();
+                way_to(a, walker, ground, goal, WALK_BUDGET, searches);
+                a.act = Act::Walk;
+                a.timer = 20.0;
+            }
+        }
+    }
+}
+
+/// Along the way to the goal over the ground or through the water: a step at the speed of
+/// what it does, if the ground there takes it. The distance gone.
+#[allow(clippy::too_many_arguments)]
+fn go(
+    a: &mut Animal,
+    sp: &Species,
+    mover: Mover,
+    walker: &Walker,
+    ground: &dyn Ground,
+    dt: f32,
+    searches: &mut usize,
+    rng: &mut Rng,
+) -> f32 {
+    let swimming = a.medium == Medium::Water;
+    let target = match (a.act, mover) {
+        (Act::Walk, Mover::Fish) => sp.swim_m_s.unwrap_or(0.5) * 0.4,
+        (Act::Flee, Mover::Fish) => sp.swim_m_s.unwrap_or(1.0),
+        (Act::Walk, _) if swimming => sp.swim_m_s.unwrap_or(0.5) * 0.7,
+        (Act::Flee, _) if swimming => sp.swim_m_s.unwrap_or(0.5),
+        (Act::Walk, _) => sp.walk_speed(),
+        (Act::Flee, _) => sp.run_speed(),
+        _ => 0.0,
+    };
+    let Some(goal) = a.goal.filter(|_| target > 0.0) else {
+        a.speed *= (-6.0 * dt).exp();
+        return 0.0;
+    };
+    // A way, when it has none and may look again.
+    if a.way.is_empty() && a.repath <= 0.0 && *searches > 0 && a.act == Act::Flee {
+        let here = DVec2::new(a.pos.x, a.pos.z);
+        if here.distance(goal) > 2.0 {
+            way_to(a, walker, ground, goal, FLEE_BUDGET, searches);
+        }
+    }
+    let next = a.way.first().map_or(goal, |p| DVec2::new(p.x, p.z));
+    let to = next - DVec2::new(a.pos.x, a.pos.z);
+    if to.length() < 0.6 {
+        if !a.way.is_empty() {
+            a.way.remove(0);
+            return 0.0;
+        }
+        // There.
+        a.goal = None;
+        if let Some(c) = a.climb {
+            // At the tree: up it.
+            let side = DVec2::new(a.pos.x - c.trunk.x, a.pos.z - c.trunk.z).normalize_or(DVec2::X);
+            let off = 0.5 + sp.shoulder_m as f64 * 0.3;
+            a.pos.x = c.trunk.x + side.x * off;
+            a.pos.z = c.trunk.z + side.y * off;
+            a.medium = Medium::Tree;
+            a.timer = 15.0 + rng.next_f32() * 20.0;
+            return 0.0;
+        }
+        a.act = if a.act == Act::Flee {
+            Act::Alert
+        } else {
+            Act::Graze
+        };
+        a.timer = 3.0 + rng.next_f32() * 6.0;
+        return 0.0;
+    }
+    a.yaw = turn_toward(a.yaw, to.x as f32, to.y as f32, 5.0 * dt);
+    a.speed += (target - a.speed) * (1.0 - (-4.0 * dt).exp());
+    let dir = DVec2::new(a.yaw.sin() as f64, a.yaw.cos() as f64);
+    let step = dir * (a.speed * dt) as f64;
+    let (nx, nz) = (a.pos.x + step.x, a.pos.z + step.y);
+    let level = if swimming {
+        ground
+            .footing(a.pos.x, a.pos.z, a.pos.y)
+            .map_or(a.pos.y, |f| Walker::level(&f))
+    } else {
+        a.pos.y
+    };
+    let next = ground
+        .footing(nx, nz, level)
+        .filter(|f| walker.step(level, f).is_some());
+    match next {
+        Some(f) => {
+            let deep = f.water && (walker.fish || f.depth > walker.wade);
+            a.medium = if deep { Medium::Water } else { Medium::Ground };
+            a.pos = DVec3::new(
+                nx,
+                if walker.fish {
+                    f.y + f.depth * 0.5
+                } else if deep {
+                    // Swimming: the back just out of the water (a young one's lower).
+                    let size = match a.stage {
+                        Stage::Adult => 1.0,
+                        Stage::Juvenile => 0.82,
+                        Stage::Young => 0.55,
+                    };
+                    f.level() - sp.shoulder_m as f64 * 0.85 * size
+                } else {
+                    f.y
+                },
+                nz,
+            );
+            step.length() as f32
+        }
+        None => {
+            // That way is closed: look again in a moment, and turn meanwhile.
+            a.way.clear();
+            a.repath = 1.0;
+            a.yaw += std::f32::consts::FRAC_PI_2 * if rng.next_f32() < 0.5 { 1.0 } else { -1.0 };
+            if a.act != Act::Flee && a.climb.is_none() {
+                a.goal = None;
+                a.act = Act::Graze;
+                a.timer = 1.0;
+            }
+            0.0
+        }
+    }
+}
+
+/// On along a flight; landing at its end. The distance flown.
+fn fly(a: &mut Animal, sp: &Species, dt: f32, rng: &mut Rng) -> f32 {
+    let Some(f) = a.flying else {
+        a.medium = Medium::Ground;
+        return 0.0;
+    };
+    let speed = sp.fly_m_s.unwrap_or(8.0);
+    a.speed = speed;
+    let flown = f.flown + (speed * dt) as f64;
+    let p = f.flight.at(flown);
+    let d = p - a.pos;
+    if d.x.abs() + d.z.abs() > 1e-6 {
+        a.yaw = turn_toward(a.yaw, d.x as f32, d.z as f32, 0.6);
+    }
+    a.pos = p;
+    if flown >= f.flight.length() {
+        a.flying = None;
+        a.medium = if f.perch {
+            Medium::Tree
+        } else {
+            Medium::Ground
+        };
+        a.act = Act::Alert;
+        a.timer = 2.0 + rng.next_f32() * 4.0;
+        a.speed = 0.0;
+    } else {
+        a.flying = Some(Flying { flown, ..f });
+    }
+    speed * dt
+}
+
+/// Up or down the trunk to where it climbs; on the ground again at its foot. The distance gone.
+fn climb(a: &mut Animal, sp: &Species, dt: f32) -> f32 {
+    let Some(c) = a.climb else {
+        // A bird on its perch.
+        a.speed *= (-6.0 * dt).exp();
+        return 0.0;
+    };
+    let to = DVec2::new(c.trunk.x - a.pos.x, c.trunk.z - a.pos.z);
+    a.yaw = turn_toward(a.yaw, to.x as f32, to.y as f32, 8.0 * dt);
+    let dy = c.to - a.pos.y;
+    let speed = (sp.walk_speed() * 0.8).max(0.3) as f64;
+    if dy.abs() < 0.02 {
+        a.speed = 0.0;
+        if c.to <= c.trunk.y + 0.01 {
+            // Down: away from the trunk a little, on the ground.
+            a.medium = Medium::Ground;
+            a.climb = None;
+            a.act = Act::Graze;
+            a.timer = 4.0;
+        }
+        return 0.0;
+    }
+    let step = (speed * dt as f64).min(dy.abs());
+    a.pos.y += step * dy.signum();
+    a.speed = speed as f32;
+    step as f32
 }

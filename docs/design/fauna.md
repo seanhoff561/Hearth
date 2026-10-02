@@ -197,3 +197,30 @@ nose, hooves or paws, and the pattern (spots, stripes, grizzled hair, a badger's
 pied or barred feathers, a snake's zig-zag or bands, a perch's bars, a trout's spots). The
 figure shader reads each box's faces from the atlas by its unwrap's place, so the bodies stay a
 few hundred boxes for a herd.
+
+## Finding the way (`hearth_fauna::nav`)
+Animals go where they are going along ways searched on the loaded blocks a column at a time
+(A*): a body steps to a neighbouring column if the ground there is within the step it climbs or
+drops (its species' climb), and not in water deeper than it wades (three fifths of its shoulder
+height) unless it swims; steps between two diagonal columns only where both sides are open, so
+that it does not cut between trunks; water costs more than dry ground, swimming more again. A
+search is bounded (1500 columns to walk somewhere, 700 to run away; six searches a step at the
+most, the others going straight until their turn), and goes as near as it found when it cannot
+reach; the way is then drawn straight wherever the ground between allows. A step it cannot take
+after all (the ground changed) sends it looking again a second later.
+
+- **Walkers** run from a person within their flight distance along such a way, and swim where
+  the water is deep — the back just out of it, the legs paddling, the head up.
+- **Climbers** (squirrels, the black bear) make for the nearest trunk within twelve metres and
+  climb it to a good part of its height, watch from there, and come down when the danger is
+  long gone; trunks, limbs and foliage are known by their blocks' names.
+- **Birds** big enough to see as they go about (crows, ravens, owls, capercaillie and turkey)
+  forage on the ground, perch on the tops of trees (owls roosting there by day), and take
+  wing — from a person, to roost, down to forage: a flight goes up as steeply as the trees
+  near its start ask, level a few metres over the highest trees on its way, and down to a
+  perch on a crown or to the ground.
+- **Fish** (trout, perch) are drawn from the stream cells into water deep enough, keep to it,
+  wander and dart away from a person at the edge.
+
+The client draws each one in its medium: swimming, climbing (the body upright against the
+trunk, the feet gripping it), perched or on the wing.

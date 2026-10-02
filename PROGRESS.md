@@ -507,7 +507,17 @@ V2-7 — Fauna framework (temperate forest first), in parts:
   slope, gaits by speed, antlers by season, the atlas without overlaps. Deferred: posing on the
   GPU (the CPU poses a herd in well under a millisecond; revisit with the ambient flocks of
   (i)); coats from resource packs.
-- [ ] (e) Navigation: walking, swimming, climbing, flying.
+- [x] (e) Navigation (D84, docs/design/fauna.md "Finding the way"): ways searched by A* on the
+  loaded blocks a column at a time with each body's step, wading and swimming rules, bounded
+  per search and per step, drawn straight where the ground allows; walkers run from a person
+  along them and swim where they must; climbers (squirrels, the black bear) run up the nearest
+  trunk; birds big enough to see (crows, ravens, owls, capercaillie, turkey) forage, perch on
+  crowns and fly over the trees; fish keep to the streams. The client draws swimming, climbing,
+  perched and flying bodies. Screenshot keys: `run=` (the animals live on with the camera among
+  them), `near=water`, and the `swim`, `climb`, `perch` and `fly` acts. Tests: ways round a
+  wall, across a river for swimmers and not for others, fish in the water, flights over a
+  crown to a perch; a deer swims a river to get away, a squirrel runs up a tree, a crow flies
+  to a tree's crown, a trout keeps to its stream.
 - [ ] (f) Minds: senses (sight, hearing, scent on the wind), needs, utility AI, herds, packs.
 - [ ] (g) Predators and dangerous herbivores with logged causes; counterplay.
 - [ ] (h) Hunting, wounds, tracks, carcasses and butchering by species (the kill stand-in

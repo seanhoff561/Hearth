@@ -945,3 +945,21 @@ The texel density is the world's sixteen a metre for large animals and finer for
 (up to 160), because at sixteen a metre a vole or a robin would be a single colour; a coat is
 still a handful of pixels across, which keeps them in the blocky style.
 
+## D84 — Ways searched on block columns, bounded; flights and climbs as their own media
+The spec asks for pathfinding on a navigation grid extended for swimming, flying and climbing.
+There was no navigation grid (the planned `hearth_entity` crate was never built), so the ways
+are searched directly on the loaded blocks through the `Ground` the animals already stand on:
+a column at a time, its footing found near the level searched from, with the step rules of the
+body (the climb and drop of its legs, the water it wades, whether it swims). A cached grid would
+need rebuilding wherever blocks change; searching the blocks needs nothing kept, and its cost is
+bounded per search and per step (six searches a step, each at most 1500 columns), measured at
+about two tenths of a millisecond a step with a herd of twenty-nine fleeing (release build).
+Ways are searched only when an animal takes a new goal and again after a step fails, and drawn
+straight where the ground allows, so that animals do not zig-zag along grid cells. Flight is
+not searched: birds fly over the trees (a flight's height is set by the tallest crowns sampled
+along it, its climb by those near its ends), which is how birds go and costs a few dozen block
+lookups. Climbing is a medium of its own (to a trunk by a way, then up it), as is perching in a
+tree. Fish are searched as walkers that may only step into water deep enough. Trees' trunks,
+limbs and foliage are told apart by their blocks' names (`_log`, `_branch`, `_leaves`), as the
+renderer already does for the crowns.
+
