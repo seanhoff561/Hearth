@@ -999,6 +999,12 @@ fn run(
                     &lw.reg,
                 );
                 fauna.tick(&lw, &presence, &now, years_at(ticks), TICK_S as f32, ticks);
+                // What the animals called, in the world and about it.
+                let mut calls = std::mem::take(&mut fauna.live.calls);
+                calls.extend(fauna.chorus(at, &now, TICK_S as f32));
+                if !calls.is_empty() {
+                    let _ = tx.send(ToClient::Calls(calls));
+                }
                 // What the animals did to the player: hurt them, or made them stop and think;
                 // and why.
                 for at in fauna.live.attacks.clone() {

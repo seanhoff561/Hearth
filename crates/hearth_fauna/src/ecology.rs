@@ -365,7 +365,7 @@ fn normal(rng: &mut Rng) -> f32 {
 }
 
 /// Draws from a Poisson distribution.
-fn poisson(rng: &mut Rng, mean: f32) -> u32 {
+pub fn poisson(rng: &mut Rng, mean: f32) -> u32 {
     if mean <= 0.0 {
         return 0;
     }
@@ -581,7 +581,7 @@ impl Ecology {
         (ci.div_euclid(REGION_CELLS), cj.div_euclid(REGION_CELLS))
     }
 
-    fn wrap_m(&self) -> f64 {
+    pub fn wrap_m(&self) -> f64 {
         self.cells_around as f64 * CELL_M
     }
 

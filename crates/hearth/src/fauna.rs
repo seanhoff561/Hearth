@@ -12,6 +12,7 @@ use hearth_fauna::habitat::{GenLand, TreeYields};
 use hearth_fauna::live::{AnimalView, Cell, Footing, Ground, Live, Now, Stage};
 use hearth_fauna::mind::Presence;
 use hearth_fauna::species::Catalog;
+use hearth_fauna::voices::Called;
 use hearth_items::{Items, Stack};
 use hearth_math::BlockPos;
 use hearth_physics::{Mover, Stance};
@@ -236,6 +237,8 @@ pub struct Fauna {
     pub years: f64,
     /// Years since the world began now (the populations go on a few days at a time behind).
     pub now: f64,
+    /// For the calls of the animals not in the world.
+    rng: hearth_math::hash::Rng,
 }
 
 /// What is saved of the populations.
@@ -279,6 +282,7 @@ impl Fauna {
             yields,
             years: at,
             now: years.max(at),
+            rng: hearth_math::hash::Rng::new(seed ^ 0x000c_a115),
         }
     }
 
@@ -448,6 +452,12 @@ impl Fauna {
     /// The animals near the player, for the client.
     pub fn views(&self) -> Vec<AnimalView> {
         self.live.views()
+    }
+
+    /// The calls of the animals about the player that are not in the world, this step of `dt`
+    /// seconds ([`hearth_fauna::voices::chorus`]).
+    pub fn chorus(&mut self, at: DVec3, now: &Now, dt: f32) -> Vec<Called> {
+        hearth_fauna::voices::chorus(&self.eco, at, now, dt, &mut self.rng)
     }
 
     /// The carcass an animal leaves, if it is big enough to work (a male of a species whose

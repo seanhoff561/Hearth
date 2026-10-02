@@ -30,6 +30,9 @@ going through without a number on screen.
   - **the heart**: "lub" and "dub" a systole apart (a third of a second at rest, shorter as it
     quickens), at the rate the body sets;
   - **the breath**: in, out and a pause, trembling when shivering.
+- **Animals' calls** (V2-7): `Sound::Call` makes a call of one of nineteen kinds from its
+  species' pitch range and length (docs/design/fauna.md "Calls and ambient life"); **crickets**
+  are a bed of six singers chirping at the warmth's rate on summer nights.
 - **The mixer** sums sounds into buses that carry the options' volume categories (weather,
   blocks, players, ambient, hostile, friendly, interface, music) and a master. The world's
   sounds (not the interface's) are muffled under water, echo when shut in (a reverberator of

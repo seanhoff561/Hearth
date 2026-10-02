@@ -187,6 +187,8 @@ pub struct Client {
     /// The signs animals left about the player: the world's seconds they are timed by, how long
     /// a day is (s), and the signs.
     signs: (f64, f32, Vec<hearth_fauna::live::Sign>),
+    /// How many crickets sing about (0–1), and the air's warmth (°C).
+    insects: (f32, f32),
     fauna: Option<Arc<hearth_fauna::species::Catalog>>,
     /// The species' bodies and coats.
     bodies: Option<Arc<hearth_fauna::skin::Bodies>>,
@@ -249,6 +251,12 @@ struct Falling {
     axis: DVec3,
     started: std::time::Instant,
     seconds: f32,
+}
+
+/// 0 below `lo`, 1 above `hi`, smoothly between.
+fn smooth(lo: f32, hi: f32, x: f32) -> f32 {
+    let t = ((x - lo) / (hi - lo)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// A block's map colour (`#rrggbb`) as RGB.
@@ -329,6 +337,7 @@ impl Client {
             falling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
             signs: (0.0, 1200.0, Vec::new()),
+            insects: (0.0, 15.0),
             fauna: None,
             bodies: None,
             base_items: None,
@@ -1553,8 +1562,14 @@ impl Client {
         let underwater =
             self.mode == CameraMode::Body && self.last_report.is_some_and(|r| r.eyes_under);
         let paused = self.paused || self.world.is_none();
-        self.hearing
-            .ambience(self.weather, sheltered, underwater, paused, dt)
+        self.hearing.ambience(
+            self.weather,
+            sheltered,
+            underwater,
+            paused,
+            self.insects,
+            dt,
+        )
     }
 
     /// Takes changed options: the view, distances and detail.
@@ -1996,6 +2011,12 @@ impl Client {
                 // A census is for tools and tests.
                 ToClient::Census(_) => {}
                 ToClient::Signs { now, day_s, signs } => self.signs = (now, day_s, signs),
+                ToClient::Calls(calls) => {
+                    if let Some(cat) = &self.fauna {
+                        let facing = -self.camera.yaw.to_radians();
+                        self.hearing.calls(&calls, cat, self.camera.pos, facing);
+                    }
+                }
                 ToClient::Animals(views) => {
                     // Those gone are gone; the rest ease toward where the server has them.
                     self.animals
@@ -2239,6 +2260,17 @@ impl Client {
             _ => 0.0,
         };
         self.weather = (weather.wind_speed_m_s as f32, rain as f32);
+        // Crickets sing on warm nights from midsummer into autumn, not in the rain.
+        let f = if env.planet.latitude(view.pos.z) < 0.0 {
+            (moment.year_frac + 0.5).rem_euclid(1.0)
+        } else {
+            moment.year_frac
+        } as f32;
+        let season = smooth(0.2, 0.28, f) * (1.0 - smooth(0.55, 0.62, f));
+        let dark = 1.0 - smooth(0.2, 0.6, env.daylight(&moment, view.pos));
+        let warm = smooth(11.0, 17.0, weather.temperature_c as f32);
+        let dry = 1.0 - smooth(0.2, 1.0, rain as f32);
+        self.insects = (season * dark * warm * dry, weather.temperature_c as f32);
         scene.vertical_scale = self.vertical_scale;
         match &self.lod {
             Some(lod) if self.lod_distance > 0 => {

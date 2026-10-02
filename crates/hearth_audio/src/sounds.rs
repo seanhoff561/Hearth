@@ -58,6 +58,54 @@ impl Surface {
     ];
 }
 
+/// The kind of an animal's call (as its species' data names it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cry {
+    Roar,
+    Bark,
+    Grunt,
+    Squeal,
+    Howl,
+    Growl,
+    Hiss,
+    Hoot,
+    Song,
+    Caw,
+    Drum,
+    Croak,
+    Scream,
+    Bellow,
+    Gobble,
+    Chatter,
+    Rattle,
+    Huff,
+    Buzz,
+}
+
+impl Cry {
+    pub const ALL: [Cry; 19] = [
+        Cry::Roar,
+        Cry::Bark,
+        Cry::Grunt,
+        Cry::Squeal,
+        Cry::Howl,
+        Cry::Growl,
+        Cry::Hiss,
+        Cry::Hoot,
+        Cry::Song,
+        Cry::Caw,
+        Cry::Drum,
+        Cry::Croak,
+        Cry::Scream,
+        Cry::Bellow,
+        Cry::Gobble,
+        Cry::Chatter,
+        Cry::Rattle,
+        Cry::Huff,
+        Cry::Buzz,
+    ];
+}
+
 /// A sound to play once.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Sound {
@@ -81,6 +129,15 @@ pub enum Sound {
     Rustle { force: f32 },
     /// The interface: a press.
     Click,
+    /// An animal's call: its kind, its pitch's range (Hz), how long (s), and its own variety
+    /// (a species' song keeps its notes).
+    Call {
+        cry: Cry,
+        lo_hz: f32,
+        hi_hz: f32,
+        seconds: f32,
+        variety: u32,
+    },
 }
 
 impl Sound {
@@ -395,6 +452,240 @@ fn build(sound: Sound, b: &mut Build) -> f32 {
             b.tone(3700.0, 3500.0, 0.01, sh(0.0, 0.0005, 0.003), 0.04);
             b.noise(High, 4500.0, 0.7, sh(0.0, 0.0003, 0.002), 0.03);
             0.3
+        }
+        Sound::Call {
+            cry,
+            lo_hz,
+            hi_hz,
+            seconds,
+            variety,
+        } => {
+            let lo = lo_hz.clamp(20.0, 12_000.0);
+            let hi = hi_hz.clamp(lo, 16_000.0);
+            let secs = seconds.clamp(0.05, 6.0);
+            call(b, cry, lo, hi, secs, variety);
+            secs + 1.5
+        }
+    }
+}
+
+/// A number 0–1 from a species' variety and a note's place in its call (its song keeps its
+/// notes).
+fn note(variety: u32, k: u32) -> f32 {
+    let h = (variety ^ k.wrapping_mul(0x9e37_79b9)).wrapping_mul(0x85eb_ca6b);
+    let h = h ^ (h >> 13);
+    (h.wrapping_mul(0xc2b2_ae35) >> 8) as f32 / (1u32 << 24) as f32
+}
+
+/// An animal's call, from its kind, pitch and length: a red deer's roar a long rough bellow
+/// from the chest, a fox's bark a sharp yelp, a wolf's howl a long rising and falling tone, an
+/// owl's hoot a soft quavering note or three, a songbird's song quick notes up and down its
+/// range, a crow's caw a harsh call or two, a woodpecker's drumming a roll of blows, a
+/// rattlesnake's rattle a dry whirr.
+fn call(b: &mut Build, cry: Cry, lo: f32, hi: f32, secs: f32, variety: u32) {
+    let mid = (lo * hi).sqrt();
+    match cry {
+        Cry::Roar => {
+            b.tone(
+                lo * 1.3,
+                lo,
+                secs * 0.5,
+                sh(0.0, secs * 0.15, secs * 0.45),
+                0.14,
+            );
+            b.tone(
+                lo * 2.6,
+                lo * 2.0,
+                secs * 0.5,
+                sh(0.0, secs * 0.15, secs * 0.4),
+                0.07,
+            );
+            b.tone(
+                lo * 3.9,
+                lo * 3.0,
+                secs * 0.5,
+                sh(0.0, secs * 0.15, secs * 0.35),
+                0.035,
+            );
+            b.noise(Band, lo * 2.5, 0.8, sh(0.0, secs * 0.2, secs * 0.45), 0.05);
+            b.crackle(
+                Low,
+                lo * 2.0,
+                0.7,
+                35.0,
+                0.012,
+                sh(0.0, secs * 0.15, secs * 0.45),
+                0.04,
+            );
+        }
+        Cry::Bellow => {
+            b.tone(mid, lo, secs * 0.6, sh(0.0, secs * 0.2, secs * 0.5), 0.12);
+            b.tone(
+                mid * 2.0,
+                lo * 2.0,
+                secs * 0.6,
+                sh(0.0, secs * 0.2, secs * 0.45),
+                0.05,
+            );
+            b.noise(Band, mid * 1.5, 1.0, sh(0.0, secs * 0.2, secs * 0.4), 0.03);
+        }
+        Cry::Bark => {
+            b.noise(Band, mid, 1.4, sh(0.0, 0.004, 0.07), 0.16);
+            b.tone(hi, lo, 0.04, sh(0.0, 0.003, 0.06), 0.12);
+            b.tone(hi * 2.0, lo * 2.0, 0.04, sh(0.0, 0.003, 0.05), 0.05);
+        }
+        Cry::Huff => {
+            b.noise(High, 900.0, 0.7, sh(0.0, 0.01, 0.12), 0.1);
+            b.noise(Band, 1800.0, 1.0, sh(0.0, 0.01, 0.1), 0.05);
+        }
+        Cry::Grunt => {
+            for k in 0..(1 + (secs > 0.4) as u32) {
+                let d = k as f32 * 0.22;
+                b.tone(lo * 1.2, lo, 0.05, sh(d, 0.008, 0.08), 0.14);
+                b.noise(Low, lo * 3.0, 0.8, sh(d, 0.005, 0.07), 0.08);
+            }
+        }
+        Cry::Squeal => {
+            b.tone(lo, hi, secs * 0.4, sh(0.0, 0.02, secs * 0.4), 0.08);
+            b.tone(
+                lo * 2.0,
+                hi * 2.0,
+                secs * 0.4,
+                sh(0.0, 0.02, secs * 0.35),
+                0.03,
+            );
+            b.noise(Band, hi, 2.0, sh(0.0, 0.02, secs * 0.3), 0.02);
+        }
+        Cry::Howl => {
+            // Rising, held, falling away.
+            b.tone(lo, hi, secs * 0.25, sh(0.0, secs * 0.15, secs * 0.35), 0.1);
+            b.tone(
+                hi,
+                lo * 0.9,
+                secs * 0.3,
+                sh(secs * 0.5, 0.2, secs * 0.3),
+                0.08,
+            );
+            b.tone(
+                lo * 2.0,
+                hi * 2.0,
+                secs * 0.25,
+                sh(0.0, secs * 0.15, secs * 0.3),
+                0.02,
+            );
+            b.noise(Band, mid, 4.0, sh(0.0, secs * 0.2, secs * 0.4), 0.006);
+        }
+        Cry::Growl => {
+            b.noise(Low, lo * 2.0, 0.9, sh(0.0, 0.05, secs * 0.5), 0.1);
+            b.crackle(
+                Low,
+                lo * 3.0,
+                0.8,
+                28.0,
+                0.015,
+                sh(0.0, 0.05, secs * 0.5),
+                0.06,
+            );
+            b.tone(lo, lo * 0.9, secs, sh(0.0, 0.05, secs * 0.5), 0.05);
+        }
+        Cry::Hiss => {
+            b.noise(Band, mid.max(2000.0), 0.6, sh(0.0, 0.03, secs * 0.5), 0.07);
+        }
+        Cry::Hoot => {
+            // A soft note and, after a pause, a quavering run.
+            for (k, d) in [0.0, 0.5, 0.62, 0.74].into_iter().enumerate() {
+                let f = mid * (1.02 - 0.04 * k as f32);
+                b.tone(f, f * 0.95, 0.15, sh(d * secs, 0.04, 0.12), 0.1);
+            }
+        }
+        Cry::Song => {
+            // Quick notes up and down its range, the same for its kind.
+            let n = 7;
+            for k in 0..n {
+                let f = lo + (hi - lo) * note(variety, k);
+                let g = 0.85 + 0.35 * note(variety, k + 31);
+                let dur = 0.03 + 0.07 * note(variety, k + 57);
+                b.tone(
+                    f,
+                    f * g,
+                    0.03,
+                    sh(k as f32 * secs / n as f32, 0.004, dur),
+                    0.045,
+                );
+            }
+        }
+        Cry::Caw => {
+            for k in 0..2 {
+                let d = k as f32 * 0.4;
+                b.noise(Band, mid, 3.5, sh(d, 0.01, 0.16), 0.08);
+                b.tone(lo * 1.1, lo, 0.1, sh(d, 0.01, 0.13), 0.06);
+                b.tone(lo * 2.2, lo * 2.0, 0.1, sh(d, 0.01, 0.1), 0.04);
+            }
+        }
+        Cry::Drum => {
+            b.crackle(
+                Band,
+                1200.0,
+                1.5,
+                17.0,
+                0.006,
+                sh(0.0, 0.01, secs * 0.7),
+                0.2,
+            );
+        }
+        Cry::Croak => {
+            b.crackle(
+                Low,
+                lo * 1.5,
+                1.0,
+                20.0,
+                0.015,
+                sh(0.0, 0.02, secs * 0.4),
+                0.08,
+            );
+            b.tone(lo, lo * 0.95, secs, sh(0.0, 0.02, secs * 0.4), 0.05);
+        }
+        Cry::Scream => {
+            b.tone(hi, mid, secs * 0.5, sh(0.0, 0.02, secs * 0.4), 0.1);
+            b.tone(
+                hi * 2.0,
+                mid * 2.0,
+                secs * 0.5,
+                sh(0.0, 0.02, secs * 0.35),
+                0.04,
+            );
+            b.noise(Band, hi, 1.2, sh(0.0, 0.02, secs * 0.35), 0.04);
+        }
+        Cry::Gobble => {
+            b.crackle(Band, mid, 2.0, 14.0, 0.03, sh(0.0, 0.02, secs * 0.4), 0.12);
+            b.tone(mid, mid * 0.9, secs, sh(0.0, 0.02, secs * 0.4), 0.03);
+        }
+        Cry::Chatter => {
+            b.crackle(
+                Band,
+                hi * 0.8,
+                1.5,
+                13.0,
+                0.02,
+                sh(0.0, 0.01, secs * 0.45),
+                0.08,
+            );
+        }
+        Cry::Rattle => {
+            b.crackle(
+                High,
+                5000.0,
+                0.7,
+                50.0,
+                0.005,
+                sh(0.0, 0.05, secs * 0.6),
+                0.07,
+            );
+        }
+        Cry::Buzz => {
+            b.tone(mid, mid, 1.0, sh(0.0, 0.05, secs * 0.5), 0.03);
+            b.tone(mid * 2.0, mid * 2.0, 1.0, sh(0.0, 0.05, secs * 0.5), 0.02);
+            b.tone(mid * 3.0, mid * 3.0, 1.0, sh(0.0, 0.05, secs * 0.5), 0.01);
         }
     }
 }

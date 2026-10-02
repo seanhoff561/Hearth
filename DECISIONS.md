@@ -1032,3 +1032,14 @@ blood, droppings) are produced only within 80 m of the player and kept for days 
 a world of tracks everywhere would cost much and be seen nowhere; prints only where the ground
 takes them, so a summer wood shows few and snow shows all. Reading them takes the tracking
 knowledge, learnt by noticing them.
+
+## D89 — Calls from the species' data, at the animals' own pace; the chorus from the numbers
+Calls are made from each species' data rather than recordings or hand-made sounds per species,
+as every other sound is (D69): a recipe per kind of call, pitched and timed by the species. The
+occasions come from the data too; what was decided is the pace: call rates are per real hour, as
+the animal lives second by second, not per hour of the compressed calendar, since a robin that
+sang thirty times faster because the day passes in forty-eight minutes was absurd to hear. The
+dawn and the rut are still windows of the calendar's day, so the chorus lasts a few minutes of
+play and is intense while it lasts. Songbirds too small to be drawn are heard from the
+populations' own numbers per cell, so the chorus is as rich as the wood, and the far calls of
+packs and stags come from their groups' places, so a howl tells truly where the wolves are.

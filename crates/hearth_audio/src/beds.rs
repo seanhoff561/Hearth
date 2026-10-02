@@ -1,6 +1,6 @@
 //! The sounds that go on: wind (gusting, whistling when strong), rain (hiss, patter and drops,
-//! drumming on a roof when sheltered), the hush under water, and the body's own rhythms (the
-//! heart and the breath), each easing toward what the world says.
+//! drumming on a roof when sheltered), the hush under water, crickets on warm nights, and the
+//! body's own rhythms (the heart and the breath), each easing toward what the world says.
 
 use std::f32::consts::{PI, TAU};
 
@@ -35,6 +35,24 @@ pub struct Ambience {
     pub shiver: f32,
     /// The world is paused: its sounds fade (the interface still sounds).
     pub paused: bool,
+    /// Crickets singing about (0 none … 1 a summer night's chorus), and the air's warmth (°C),
+    /// by which they chirp faster.
+    pub crickets: f32,
+    pub air_c: f32,
+}
+
+/// Crickets heard in a chorus.
+const CRICKETS: usize = 6;
+
+/// A cricket: where it is in its chirp, how long its chirps are apart against the chorus's
+/// (it keeps its own time), its pitch, the phase of its note, and how it is heard by each ear.
+#[derive(Debug, Clone, Copy)]
+struct Cricket {
+    t: f32,
+    spacing: f32,
+    hz: f32,
+    phase: f32,
+    ears: [f32; 2],
 }
 
 /// Samples between updates of the slow parameters.
@@ -83,6 +101,10 @@ pub(crate) struct Beds {
     breath_in: [Biquad; 2],
     breath_out: Biquad,
     breath_norm: [f32; 3],
+    // Crickets.
+    crickets: Smooth,
+    chirps_s: f32,
+    chorus: [Cricket; CRICKETS],
 }
 
 impl Beds {
@@ -139,6 +161,19 @@ impl Beds {
                 1.0 / noise_rms(FilterKind::Band, 2800.0, 4.0, rate),
                 1.0 / noise_rms(FilterKind::Band, 900.0, 1.0, rate),
             ],
+            crickets: Smooth::new(0.0, 3.0, rate),
+            chirps_s: 0.0,
+            chorus: std::array::from_fn(|k| {
+                let u = (k as f32 * 0.618_034).fract();
+                let pan = (k as f32 * 0.414_214).fract() * 2.0 - 1.0;
+                Cricket {
+                    t: u,
+                    spacing: 0.9 + 0.2 * u,
+                    hz: 3900.0 + 700.0 * (k as f32 * 0.732_05).fract(),
+                    phase: 0.0,
+                    ears: [(1.0 - pan) * 0.5 + 0.25, (1.0 + pan) * 0.5 + 0.25],
+                }
+            }),
         }
     }
 
@@ -153,6 +188,13 @@ impl Beds {
         self.shiver.target = a.shiver.clamp(0.0, 1.0);
         self.heart_bpm = a.heart_bpm.clamp(20.0, 220.0);
         self.breath_rate = a.breaths_per_min.clamp(4.0, 60.0);
+        self.crickets.target = if a.underwater {
+            0.0
+        } else {
+            a.crickets.clamp(0.0, 1.0)
+        };
+        // Dolbear's law for the tree crickets: chirps a minute seven times the degrees less 30.
+        self.chirps_s = ((7.0 * a.air_c - 30.0) / 60.0).clamp(0.0, 4.0);
     }
 
     /// The slow parameters, every `CONTROL` samples.
@@ -163,6 +205,7 @@ impl Beds {
         let shelter = self.shelter.advance(CONTROL);
         let buried = self.buried.advance(CONTROL);
         let under = self.under.advance(CONTROL);
+        self.crickets.advance(CONTROL);
         self.heart.advance(CONTROL);
         self.breath.advance(CONTROL);
         self.shiver.advance(CONTROL);
@@ -253,6 +296,30 @@ impl Beds {
                 let s = self.under_f.process(rng.white()) * self.under_amp;
                 ambient[2 * i] += s;
                 ambient[2 * i + 1] += s;
+            }
+            // Crickets: each chirp three pulses of a high note, a chirp as often as the warmth
+            // makes it.
+            let level = self.crickets.value;
+            if level > 0.001 && self.chirps_s > 0.0 {
+                let period = 1.0 / self.chirps_s;
+                for c in self.chorus.iter_mut() {
+                    c.t += self.inv_rate;
+                    if c.t >= period * c.spacing {
+                        c.t = 0.0;
+                    }
+                    if c.t < 0.06 {
+                        let pulse = (c.t / 0.02).fract();
+                        let e = if pulse < 0.6 {
+                            (PI * pulse / 0.6).sin()
+                        } else {
+                            0.0
+                        };
+                        c.phase = (c.phase + c.hz * self.inv_rate).fract();
+                        let s = (TAU * c.phase).sin() * e * level * 0.006;
+                        ambient[2 * i] += s * c.ears[0];
+                        ambient[2 * i + 1] += s * c.ears[1];
+                    }
+                }
             }
             // The heart: "lub" as the valves close, "dub" a systole later.
             let heart = self.heart.value;

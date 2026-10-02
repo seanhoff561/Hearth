@@ -8,7 +8,7 @@
 //! minds (senses, needs, the utility AI, herds and packs) replace it in V2-7 (f).
 
 use glam::{DVec2, DVec3};
-use hearth_content::schema::fauna::Activity;
+use hearth_content::schema::fauna::{Activity, CallWhen};
 use hearth_math::hash::{Rng, derive_seed, hash2};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,7 @@ use crate::mind::{Air, Presence, Sense, Wary, sense, yaw_toward};
 use crate::nav::{FISH_DEPTH, Flight, Walker, find_way, perch_near, trunk_near, water_near};
 use crate::rig::{Frame, Rig, frame_of};
 use crate::species::{Catalog, Species};
+use crate::voices::{Called, call_for, calls_now};
 use crate::wound::{Blow, Hurt, Part, strikes, wound};
 
 /// Where an animal can stand.
@@ -217,6 +218,8 @@ pub struct Animal {
     /// drop of blood (m).
     pub printed: f32,
     pub drip: f32,
+    /// What it was doing the step before (a run begun is an alarm called).
+    pub was: Act,
 }
 
 /// What a sign is: a print of a foot, a drop of blood, droppings.
@@ -349,6 +352,7 @@ impl Animal {
             hurt: Hurt::default(),
             printed: 0.0,
             drip: 0.0,
+            was: Act::Graze,
         }
     }
 }
@@ -416,6 +420,8 @@ pub struct Live {
     /// timed by.
     pub signs: Vec<Sign>,
     pub clock: f64,
+    /// The calls they made since these were last taken.
+    pub calls: Vec<Called>,
 }
 
 /// Within this distance of the player groups become animals.
@@ -513,6 +519,7 @@ impl Live {
             kills: Vec::new(),
             signs: Vec::new(),
             clock: 0.0,
+            calls: Vec::new(),
         }
     }
 
@@ -1199,6 +1206,13 @@ impl Live {
                 .count()
                 .saturating_sub(1);
             if let Some(v) = self.animals.iter_mut().find(|v| v.id == prey && !v.dead) {
+                if let Some(c) = call_for(&cat.species[v.species as usize], CallWhen::Distress) {
+                    self.calls.push(Called {
+                        species: v.species,
+                        call: c,
+                        pos: v.pos,
+                    });
+                }
                 v.dead = true;
                 v.speed = 0.0;
                 v.hunt = None;
@@ -1236,6 +1250,7 @@ impl Live {
             }
         }
         self.leave_signs(&cat, ground, presence, now, dt);
+        self.make_calls(&cat, now, dt);
         // Warned: the herd runs with the first of it to run.
         for (g, threat, from) in alarms {
             for a in self
@@ -1248,6 +1263,95 @@ impl Live {
                 }
             }
         }
+    }
+
+    /// The calls they make this step: the alarm of one that starts to run (half of them), the
+    /// threat of one that turns on the person, and those of habit while their occasion holds (a
+    /// stag in the rut, a herd's contact, a pack's howl taken up by the others about the first,
+    /// an owl's hoot, a bird's song).
+    fn make_calls(&mut self, cat: &Catalog, now: &Now, dt: f32) {
+        // Calls come as the animals live, second by second, whatever the calendar's pace.
+        let hour_s = 3600.0;
+        let season = {
+            let f = if now.southern {
+                (now.year_frac + 0.5).rem_euclid(1.0)
+            } else {
+                now.year_frac
+            };
+            ((f * 4.0).floor() as usize).min(3)
+        };
+        let mut out: Vec<Called> = Vec::new();
+        let mut packs: Vec<(u64, u16, u8, DVec3)> = Vec::new();
+        let rng = &mut self.rng;
+        for a in self.animals.iter_mut() {
+            if a.dead {
+                continue;
+            }
+            let sp = &cat.species[a.species as usize];
+            let was = std::mem::replace(&mut a.was, a.act);
+            if sp.calls.is_empty() {
+                continue;
+            }
+            let mut call = |c: Option<u8>| {
+                if let Some(c) = c {
+                    out.push(Called {
+                        species: a.species,
+                        call: c,
+                        pos: a.pos,
+                    });
+                }
+            };
+            if a.act == Act::Flee && was != Act::Flee && rng.next_f32() < 0.5 {
+                call(call_for(sp, CallWhen::Alarm));
+                continue;
+            }
+            if a.hostile.is_some_and(|h| h.t <= dt) {
+                call(call_for(sp, CallWhen::Threat));
+                continue;
+            }
+            if matches!(a.act, Act::Flee | Act::Attack | Act::Sleep) || a.hurt.wounded() {
+                continue;
+            }
+            let male_adult = !a.female && a.stage == Stage::Adult;
+            for when in [
+                CallWhen::Rut,
+                CallWhen::Contact,
+                CallWhen::Territory,
+                CallWhen::Dawn,
+                CallWhen::Night,
+            ] {
+                let Some(c) = call_for(sp, when) else {
+                    continue;
+                };
+                let p = calls_now(sp, when, male_adult, season, now) * dt / hour_s;
+                if rng.next_f32() < p {
+                    call(Some(c));
+                    if when == CallWhen::Territory
+                        && let Some(g) = a.group
+                    {
+                        packs.push((g, a.species, c, a.pos));
+                    }
+                    break;
+                }
+            }
+        }
+        // A pack takes up the howl of the first of it.
+        for (g, species, c, from) in packs {
+            for a in self
+                .animals
+                .iter()
+                .filter(|a| a.group == Some(g) && !a.dead && hdist(a.pos, from) < 200.0)
+            {
+                if a.pos != from {
+                    out.push(Called {
+                        species,
+                        call: c,
+                        pos: a.pos,
+                    });
+                }
+            }
+        }
+        self.calls.extend(out);
     }
 
     /// The signs the animals about the person leave this step: a print at each stride where
@@ -1432,6 +1536,15 @@ impl Live {
         a.wary.alarm(from);
         a.fear = (a.fear + 0.5).min(1.0);
         let name = sp.name.to_lowercase();
+        if !w.killed
+            && let Some(c) = call_for(sp, CallWhen::Distress)
+        {
+            self.calls.push(Called {
+                species: a.species,
+                call: c,
+                pos: a.pos,
+            });
+        }
         let words = if w.killed {
             a.dead = true;
             a.speed = 0.0;

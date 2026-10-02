@@ -11,6 +11,7 @@ pub mod nav;
 pub mod rig;
 pub mod skin;
 pub mod species;
+pub mod voices;
 pub mod wound;
 
 pub use ecology::{Cause, Ecology, Group, Region};

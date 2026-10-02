@@ -19,7 +19,7 @@ use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 
 pub use beds::Ambience;
 pub use mixer::{BUSES, Bus, Command, Mixer};
-pub use sounds::{Sound, Surface};
+pub use sounds::{Cry, Sound, Surface};
 
 /// The game's sound output.
 pub struct Audio {

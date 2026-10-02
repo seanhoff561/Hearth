@@ -575,3 +575,71 @@ fn sounds_to_listen_to() {
     assert!(out.iter().all(|x| x.is_finite() && x.abs() <= 1.0));
     write_wav(&dir.join("walk.wav"), &out);
 }
+
+/// Animal calls (V2-7 (i)) as the species' data gives them: kind, pitch range, length.
+fn calls() -> Vec<(&'static str, Sound)> {
+    use hearth_audio::Cry;
+    let c = |cry, lo, hi, seconds| Sound::Call {
+        cry,
+        lo_hz: lo,
+        hi_hz: hi,
+        seconds,
+        variety: 7,
+    };
+    vec![
+        ("red deer roar", c(Cry::Roar, 90.0, 250.0, 2.5)),
+        ("aurochs bellow", c(Cry::Bellow, 80.0, 200.0, 1.5)),
+        ("fox bark", c(Cry::Bark, 600.0, 1500.0, 0.3)),
+        ("deer huff", c(Cry::Huff, 200.0, 2000.0, 0.6)),
+        ("boar grunt", c(Cry::Grunt, 90.0, 300.0, 0.5)),
+        ("piglet squeal", c(Cry::Squeal, 800.0, 2500.0, 0.5)),
+        ("wolf howl", c(Cry::Howl, 300.0, 1000.0, 4.0)),
+        ("bear growl", c(Cry::Growl, 60.0, 200.0, 1.5)),
+        ("adder hiss", c(Cry::Hiss, 2000.0, 8000.0, 1.0)),
+        ("owl hoot", c(Cry::Hoot, 250.0, 600.0, 3.0)),
+        ("robin song", c(Cry::Song, 2000.0, 7000.0, 2.0)),
+        ("crow caw", c(Cry::Caw, 500.0, 1500.0, 0.5)),
+        ("woodpecker drum", c(Cry::Drum, 500.0, 2000.0, 1.0)),
+        ("frog croak", c(Cry::Croak, 300.0, 700.0, 1.0)),
+        ("hare scream", c(Cry::Scream, 800.0, 3000.0, 1.0)),
+        ("turkey gobble", c(Cry::Gobble, 300.0, 1500.0, 1.0)),
+        ("squirrel chatter", c(Cry::Chatter, 1000.0, 6000.0, 1.0)),
+        ("rattlesnake rattle", c(Cry::Rattle, 4000.0, 9000.0, 2.0)),
+        ("bee buzz", c(Cry::Buzz, 200.0, 260.0, 1.0)),
+    ]
+}
+
+#[test]
+fn every_call_is_heard_and_ends() {
+    for (name, sound) in calls() {
+        let Sound::Call { seconds, .. } = sound else {
+            continue;
+        };
+        let mut m = Mixer::new(RATE, 5);
+        play(&mut m, sound, Bus::Friendly);
+        let out = render(&mut m, seconds + 2.5);
+        assert!(out.iter().all(|x| x.is_finite()), "{name}: not finite");
+        let p = peak(&out);
+        eprintln!(
+            "{name:20} peak {p:.3} ({:+.0} dBFS)",
+            20.0 * p.max(1e-9).log10()
+        );
+        assert!((0.01..0.95).contains(&p), "{name}: peak {p}");
+        assert_eq!(m.voices(), 0, "{name}: still calling");
+    }
+}
+
+#[test]
+fn a_roar_and_a_hoot_are_low_and_a_song_high() {
+    let bright = |i: usize| {
+        let mut m = Mixer::new(RATE, 6);
+        play(&mut m, calls()[i].1, Bus::Friendly);
+        brightness(&render(&mut m, 1.0))
+    };
+    let (roar, hoot, song) = (bright(0), bright(9), bright(10));
+    eprintln!("brightness: roar {roar:.3}, hoot {hoot:.3}, song {song:.3}");
+    assert!(
+        roar < 0.2 && hoot < 0.2 && song > 3.0 * roar.max(hoot),
+        "{roar} {hoot} {song}"
+    );
+}

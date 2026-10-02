@@ -100,6 +100,8 @@ pub struct Species {
     pub dimorphism: f32,
     /// The tracks it leaves.
     pub track: Option<hearth_content::schema::fauna::Track>,
+    /// Its calls.
+    pub calls: Vec<hearth_content::schema::fauna::Call>,
     pub model: PopulationModel,
     pub social: Social,
     /// Usual group size (1 for solitary animals).
@@ -531,6 +533,7 @@ fn species_of(
         mass_range: a.mass_kg,
         dimorphism: a.dimorphism.unwrap_or(1.0),
         track: a.track,
+        calls: a.calls.clone(),
         model,
         social: a.social,
         group,

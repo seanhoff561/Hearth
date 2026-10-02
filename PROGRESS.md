@@ -567,7 +567,18 @@ V2-7 — Fauna framework (temperate forest first), in parts:
   come as sheets of a kilogram; a large animal's is many) and hide-working times by area;
   drying spoiled meat still makes good dried meat; prints spaced by the walking stride at every
   gait.
-- [ ] (i) Calls, the dawn chorus, ambient birds and insects.
+- [x] (i) Calls, the dawn chorus, ambient birds and insects (D89, docs/design/fauna.md
+  "Calls and ambient life"): calls made from each species' data (19 kinds of call synthesized:
+  roars, barks, howls, hoots, songs, caws, drumming, rattles…), heard by distance, air and
+  direction with captions; animals call for alarm, distress, threat, the rut, contact,
+  territory, the dawn and the night at real-time rates, a pack taking up a howl together; the
+  populations' songbirds, owls and woodpeckers sing about the player (the dawn chorus), and far
+  packs howl and stags roar from their groups; crickets on warm summer nights by Dolbear's law.
+  Tests: every call heard and ending, low and high calls; a deer put to flight barks, a struck
+  hare screams; a pack howls by night together and not by day; a stag roars in the autumn rut
+  and not in spring; the chorus at dawn in spring against noon, night and winter, owls by night.
+  Deferred: birds and insects seen (flocks crossing the sky, insects over flowers) and with them
+  posing on the GPU.
 - [ ] (j) Acceptance and the performance gate.
 
 ## Next steps

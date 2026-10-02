@@ -1,7 +1,8 @@
 //! What the player hears (V2-3): footsteps by the ground underfoot and the gait, landings,
 //! splashes and strokes, the weather where they stand (dulled under a roof), the echo of a
 //! cave, and their own heart and breath as the body labours, bleeds, is chilled or holds its
-//! breath under water. Captions say the same in words when the options ask for them.
+//! breath under water; the animals' calls from where they are, and crickets on warm nights
+//! (V2-7). Captions say the same in words when the options ask for them.
 
 use glam::DVec3;
 use hearth_audio::{Ambience, Bus, Command, Sound, Surface};
@@ -377,17 +378,72 @@ impl Hearing {
         }
     }
 
+    /// Animals' calls (V2-7): each as loud as its species makes it at a metre, fainter with
+    /// the distance (6 dB each time it doubles, and the air taking half a decibel every
+    /// hundred metres), from the way it came (`facing`: the way the listener looks, 0 toward
+    /// +z turning toward +x).
+    pub fn calls(
+        &mut self,
+        calls: &[hearth_fauna::voices::Called],
+        catalog: &hearth_fauna::species::Catalog,
+        ear: DVec3,
+        facing: f32,
+    ) {
+        use hearth_content::schema::fauna::CallWhen;
+        let right = glam::DVec2::new(-(facing.cos() as f64), facing.sin() as f64);
+        for c in calls {
+            let Some(sp) = catalog.species.get(c.species as usize) else {
+                continue;
+            };
+            let Some(call) = sp.calls.get(c.call as usize) else {
+                continue;
+            };
+            let d = (c.pos - ear).length().max(1.0) as f32;
+            let level = call.loudness_db - 20.0 * d.log10() - 0.005 * d;
+            let gain = 10f32.powf((level - 95.0) / 20.0);
+            // Fainter than this is lost in the wood's own quiet.
+            if gain < 0.0005 {
+                continue;
+            }
+            let to = glam::DVec2::new(c.pos.x - ear.x, c.pos.z - ear.z).normalize_or_zero();
+            let (cry, caption) = cry_of(call.kind);
+            self.out.push(Command::Play {
+                sound: Sound::Call {
+                    cry,
+                    lo_hz: call.pitch_hz.0,
+                    hi_hz: call.pitch_hz.1,
+                    seconds: call.seconds,
+                    variety: (c.species as u32).wrapping_mul(2_654_435_761),
+                },
+                bus: if call.when == CallWhen::Threat {
+                    Bus::Hostile
+                } else {
+                    Bus::Friendly
+                },
+                gain: gain.min(1.0),
+                pan: to.dot(right) as f32,
+            });
+            self.caption(caption);
+        }
+    }
+
     /// The surroundings to sound: `weather` is the wind (m/s) and the rain (mm/h of water) at
-    /// the place, `sheltered` whether a roof is overhead.
+    /// the place, `sheltered` whether a roof is overhead, `insects` how many crickets sing about
+    /// (0–1) and the air's warmth (°C).
+    #[allow(clippy::too_many_arguments)]
     pub fn ambience(
         &mut self,
         weather: (f32, f32),
         sheltered: bool,
         underwater: bool,
         paused: bool,
+        insects: (f32, f32),
         dt: f64,
     ) -> Ambience {
         let (wind, rain) = weather;
+        if insects.0 > 0.2 && !underwater && !paused {
+            self.caption("subtitles.crickets");
+        }
         if !underwater && !paused {
             if wind >= 12.0 {
                 self.caption("subtitles.wind.strong");
@@ -421,7 +477,36 @@ impl Hearing {
             breath: r.breath,
             shiver: r.shiver,
             paused,
+            crickets: if self.buried > 0.5 { 0.0 } else { insects.0 },
+            air_c: insects.1,
         }
+    }
+}
+
+/// The sound of a kind of call, and its caption.
+fn cry_of(kind: hearth_content::schema::fauna::CallKind) -> (hearth_audio::Cry, &'static str) {
+    use hearth_audio::Cry;
+    use hearth_content::schema::fauna::CallKind as K;
+    match kind {
+        K::Roar => (Cry::Roar, "subtitles.call.roar"),
+        K::Bark => (Cry::Bark, "subtitles.call.bark"),
+        K::Grunt => (Cry::Grunt, "subtitles.call.grunt"),
+        K::Squeal => (Cry::Squeal, "subtitles.call.squeal"),
+        K::Howl => (Cry::Howl, "subtitles.call.howl"),
+        K::Growl => (Cry::Growl, "subtitles.call.growl"),
+        K::Hiss => (Cry::Hiss, "subtitles.call.hiss"),
+        K::Hoot => (Cry::Hoot, "subtitles.call.hoot"),
+        K::Song => (Cry::Song, "subtitles.call.song"),
+        K::Caw => (Cry::Caw, "subtitles.call.caw"),
+        K::Drum => (Cry::Drum, "subtitles.call.drum"),
+        K::Croak => (Cry::Croak, "subtitles.call.croak"),
+        K::Scream => (Cry::Scream, "subtitles.call.scream"),
+        K::Bellow => (Cry::Bellow, "subtitles.call.bellow"),
+        K::Gobble => (Cry::Gobble, "subtitles.call.gobble"),
+        K::Chatter => (Cry::Chatter, "subtitles.call.chatter"),
+        K::Rattle => (Cry::Rattle, "subtitles.call.rattle"),
+        K::Huff => (Cry::Huff, "subtitles.call.huff"),
+        K::Buzz => (Cry::Buzz, "subtitles.call.buzz"),
     }
 }
 

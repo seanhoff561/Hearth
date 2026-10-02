@@ -376,3 +376,35 @@ hollow in snow; blood bright when fresh; pellets or scat — and, where the eyes
 what it is: tracks, blood, droppings; and to one who knows tracking (learnt by noticing fresh
 prints underfoot, `see:tracks`), whose, how old and which way they went ("Red deer tracks, a
 few hours old, going north-east"). Screenshot key: `trail=species:n:prints|blood|droppings@ahead:right:yaw`.
+
+## Calls and ambient life (`hearth_fauna::voices`, `hearth_audio`'s `Sound::Call` and crickets)
+Each species' `calls` data (a kind, an occasion, a loudness at a metre, a pitch range and a
+length) is what it says and when. In the world an animal calls: the alarm of one that starts to
+run (half of them: a red deer's bark, a white-tailed deer's huff), the distress of one struck or
+caught (a hare's scream, a boar's squeal), the threat of one that turns on a person (a bear's
+huff, a snake's rattle or hiss), and those of habit while their occasion holds, at rates as the
+animal lives them second by second whatever the calendar's pace: a stag in the rut about once a
+minute at dusk, by night and at dawn; a herd's contact calls; a wolf pack's howl a few times an
+hour by night, taken up by every wolf of the pack within 200 m; an owl's hoot; a fox's bark. The
+animals not in the world are heard too: the small birds of the cells within 200 m sing, the males
+of each cell's numbers, every ten seconds or so at dawn (a fifth as often through the day) in
+spring, less in summer, hardly in autumn and winter, never in the dark — the dawn chorus; owls
+hoot by night; woodpeckers drum on spring mornings; and from as far as 3 km the packs howl by
+night and the stags roar in the rut, where their groups are (only calls of 95 dB or more carry
+so far).
+
+The client hears each call as loud as its species makes it, 6 dB fainter each time the distance
+doubles and half a decibel fainter every hundred metres for the air, from the way it came, and
+not at all below the wood's own quiet (−66 dB of full scale). The sound is made from its kind:
+a roar a long rough bellow of low harmonics and breathy noise falling away, a bellow a lower
+held note, a bark a sharp yelp, a huff a blast of air, grunts low and short, a squeal a rising
+high note, a howl rising, held and falling, a growl a low rumble, a hiss high noise, a hoot a soft
+note and a quavering run, a song quick notes up and down its range (the same notes for its kind),
+a caw two harsh calls, drumming a roll of seventeen blows a second, a croak a pulsed low note, a
+scream a falling cry, a gobble a pulsed note, chatter quick clicks, a rattle a dry whirr, a buzz a
+hum. Captions name what is heard ("Birdsong", "Howling", "An owl hoots").
+
+On warm nights from midsummer into autumn crickets sing (a bed of six, each chirp three pulses of
+a 4 kHz note), chirping as often as the warmth makes them — Dolbear's law for the tree crickets,
+seven chirps a minute for every degree less thirty — and not in the rain, the cold or a cave.
+Birds and insects seen about (flocks crossing the sky, insects over flowers) are not yet drawn.
