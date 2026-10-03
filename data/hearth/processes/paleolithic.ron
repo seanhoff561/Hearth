@@ -970,6 +970,14 @@
             duration: (hours: 24.0), knowledge: "leaching_bitter_foods",
             outputs: [(item: Material("leached_acorn_meal"), amount: (0.6, 0.7))],
         ),
+        (
+            id: "wash_sago", status: Implemented, name: "Wash sago", action: "pound the pith and wash the starch out of it over a mat",
+            verb: "soak", target: Water, attended: true,
+            inputs: [(item: Material("sago_pith"), amount: 5.0)],
+            tools: [(property: "hard_hammer", min: 0.2)],
+            duration: (hours: 6.0), knowledge: "leaching_bitter_foods",
+            outputs: [(item: Material("sago"), amount: (0.9, 1.1))],
+        ),
         // ---- Glues and pigments ----
         (
             id: "smoulder_bark", status: Implemented, name: "Smoulder birch bark", action: "bury birch bark in the hot ash",

@@ -293,6 +293,7 @@
                 (food: "snowshoe_hare", preference: 0.1), (food: "mountain_hare", preference: 0.05), (food: "willow_ptarmigan", preference: 0.05),
                 (food: "insect_larvae", preference: 0.05),
                 (food: "snow_vole", preference: 1.0), (food: "plateau_pika", preference: 0.4), (food: "american_pika", preference: 0.5),
+                (food: "water_vole", preference: 0.5), (food: "muskrat", preference: 0.1),
             ]),
             social: Solitary, activity: Cathemeral,
             habitat: ["boreal_forest_ecosystem", "tundra_ecosystem", "temperate_grassland"],

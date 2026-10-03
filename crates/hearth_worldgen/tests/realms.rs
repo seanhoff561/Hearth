@@ -235,9 +235,14 @@ fn a_realm_without_plants_of_its_own_grows_the_stand_ins() {
             .filter(|k| {
                 let roll = (*k as f32 + 0.5) / 4000.0;
                 wg.forest
-                    .choose_under(&c, &ground, 1.0, roll, |i, _| {
-                        ((i * 7919 + *k as usize * 104_729) % 1000) as f32 / 1000.0
-                    })
+                    .choose_under(
+                        &c,
+                        &ground,
+                        1.0,
+                        roll,
+                        |i, _| ((i * 7919 + *k as usize * 104_729) % 1000) as f32 / 1000.0,
+                        None,
+                    )
                     .is_some()
             })
             .count()

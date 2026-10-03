@@ -7,7 +7,7 @@
 
 mod biomes;
 
-use biomes::{about_the_heart_in, check, fifty_years, uniform, world};
+use biomes::{about_the_heart_in, check, fifty_years, fifty_years_in, uniform, world};
 use hearth_fauna::ecology::Ecology;
 use hearth_fauna::habitat::reference_land;
 use hearth_worldgen::realms::Realm;
@@ -34,7 +34,7 @@ fn reference(ecosystem: &str, realm: Realm) -> Ecology {
 #[test]
 fn fifty_years_of_african_savanna() {
     let mut eco = heart(Biome::Savanna, Realm::Afrotropical);
-    let (present, failures) = fifty_years(&mut eco, Biome::Savanna);
+    let (present, failures) = fifty_years_in(&mut eco, Biome::Savanna, Realm::Afrotropical);
     check(
         "African savanna",
         &present,
@@ -57,7 +57,7 @@ fn fifty_years_of_african_savanna() {
 #[test]
 fn fifty_years_of_indian_savanna() {
     let mut eco = heart(Biome::Savanna, Realm::Indomalayan);
-    let (present, failures) = fifty_years(&mut eco, Biome::Savanna);
+    let (present, failures) = fifty_years_in(&mut eco, Biome::Savanna, Realm::Indomalayan);
     check(
         "Indian savanna",
         &present,
@@ -78,7 +78,7 @@ fn fifty_years_of_indian_savanna() {
 #[test]
 fn fifty_years_of_american_savanna() {
     let mut eco = heart(Biome::Savanna, Realm::Neotropical);
-    let (present, failures) = fifty_years(&mut eco, Biome::Savanna);
+    let (present, failures) = fifty_years_in(&mut eco, Biome::Savanna, Realm::Neotropical);
     check(
         "American savanna",
         &present,
@@ -96,7 +96,8 @@ fn fifty_years_of_american_savanna() {
 #[test]
 fn fifty_years_of_african_rainforest() {
     let mut eco = heart(Biome::TropicalRainforest, Realm::Afrotropical);
-    let (present, failures) = fifty_years(&mut eco, Biome::TropicalRainforest);
+    let (present, failures) =
+        fifty_years_in(&mut eco, Biome::TropicalRainforest, Realm::Afrotropical);
     check(
         "African rainforest",
         &present,
@@ -142,7 +143,8 @@ fn fifty_years_of_asian_rainforest() {
 #[test]
 fn fifty_years_of_american_rainforest() {
     let mut eco = heart(Biome::TropicalRainforest, Realm::Neotropical);
-    let (present, failures) = fifty_years(&mut eco, Biome::TropicalRainforest);
+    let (present, failures) =
+        fifty_years_in(&mut eco, Biome::TropicalRainforest, Realm::Neotropical);
     check(
         "American rainforest",
         &present,
@@ -166,7 +168,8 @@ fn fifty_years_of_american_rainforest() {
 #[test]
 fn fifty_years_of_mediterranean_scrub() {
     let mut eco = heart(Biome::MediterraneanScrub, Realm::Palearctic);
-    let (present, failures) = fifty_years(&mut eco, Biome::MediterraneanScrub);
+    let (present, failures) =
+        fifty_years_in(&mut eco, Biome::MediterraneanScrub, Realm::Palearctic);
     check(
         "Mediterranean scrub",
         &present,

@@ -177,12 +177,40 @@
         (
             id: "temperate_freshwater", name: "Temperate rivers, lakes and wetlands", status: Implemented,
             biomes: ["river", "lake", "wetland"],
-            producers: ["osier", "white_willow", "black_alder", "meadow_grass"],
+            producers: [
+                "osier", "white_willow", "black_alder", "meadow_grass", "bald_cypress", "common_reed", "cattail", "wild_rice",
+                "arrowhead", "yellow_flag", "watercress", "marsh_marigold", "bog_cranberry", "white_water_lily",
+                "fragrant_water_lily", "sphagnum_moss", "cottongrass",
+            ],
             consumers: [
                 "brown_trout", "brook_trout", "european_perch", "yellow_perch", "common_frog", "wood_frog",
-                "red_deer", "aurochs", "wild_boar",
+                "eurasian_beaver", "american_beaver", "muskrat", "eurasian_otter", "north_american_river_otter", "american_mink",
+                "water_vole", "mallard", "greylag_goose", "canada_goose", "mute_swan", "grey_heron", "great_blue_heron",
+                "white_stork", "common_crane", "osprey", "common_kingfisher", "northern_pike", "common_carp", "wels_catfish",
+                "european_eel", "channel_catfish", "common_snapping_turtle", "european_pond_turtle", "american_bullfrog",
+                "common_toad",
+                "red_deer", "aurochs", "wild_boar", "moose",
             ],
-            notes: "Fish densities are per km² of water; the land animals come to drink.",
+            reference: (temp_c: 8, warm_c: 18, precip_mm: 800, canopy: 0.25, young: 0.1, fresh: 0.3, realms: ["Palearctic", "Nearctic"]),
+            notes: "The rivers, lakes, marshes and bogs of the temperate and northern lands: reed beds and lily ponds, willow and alder carrs, the bogs' sphagnum. Fish densities are per km² of water, the rest per km² of the land about it; the land's animals come to drink.",
+        ),
+        (
+            id: "tropical_freshwater", name: "Tropical rivers, lakes and swamps", status: Implemented,
+            biomes: ["river", "lake", "wetland"],
+            producers: [
+                "common_reed", "papyrus", "sacred_lotus", "blue_lotus", "giant_water_lily", "raffia_palm", "moriche_palm",
+                "sago_palm",
+            ],
+            consumers: [
+                "hippopotamus", "nile_crocodile", "sitatunga", "african_fish_eagle", "shoebill", "nile_tilapia",
+                "african_sharptooth_catfish", "grey_heron",
+                "capybara", "spectacled_caiman", "green_anaconda", "giant_otter", "marsh_deer", "wattled_jacana",
+                "red_bellied_piranha", "arapaima",
+                "wild_water_buffalo", "mugger_crocodile", "gharial", "smooth_coated_otter", "fishing_cat", "sarus_crane",
+                "snakehead",
+            ],
+            reference: (temp_c: 26, warm_c: 28, precip_mm: 1600, canopy: 0.2, young: 0.05, fruit_kg: 150, fresh: 0.3, realms: ["Afrotropical", "Neotropical", "Indomalayan"]),
+            notes: "The rivers, floodplains, lakes and swamps of the tropics: papyrus and lotus, the Pantanal's and the llanos' flooded grass, the swamp palms. Fish densities are per km² of water, the rest per km² of the land about it; the savanna's and the forest's animals come to drink, and the crocodiles wait for them.",
         ),
         (
             id: "savanna_woodland", name: "Savanna–woodland mosaic", status: Implemented,

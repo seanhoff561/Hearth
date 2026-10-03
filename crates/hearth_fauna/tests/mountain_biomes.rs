@@ -7,7 +7,7 @@
 
 mod biomes;
 
-use biomes::{about_the_heart_in, check, fifty_years, uniform, world};
+use biomes::{about_the_heart_in, check, fifty_years, fifty_years_in, uniform, world};
 use hearth_fauna::ecology::Ecology;
 use hearth_fauna::habitat::reference_land;
 use hearth_worldgen::realms::Realm;
@@ -29,7 +29,7 @@ fn reference(ecosystem: &str, realm: Realm) -> Ecology {
 #[test]
 fn fifty_years_of_montane_forest() {
     let (mut eco, _) = about_the_heart_in(Biome::MontaneForest, Realm::Palearctic);
-    let (present, failures) = fifty_years(&mut eco, Biome::MontaneForest);
+    let (present, failures) = fifty_years_in(&mut eco, Biome::MontaneForest, Realm::Palearctic);
     check(
         "montane forest",
         &present,

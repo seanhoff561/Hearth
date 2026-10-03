@@ -121,8 +121,13 @@ pub struct Species {
     /// gives against the best of these).
     pub core: u32,
     pub realms: RealmSet,
+    /// The coldest month it bears (°C), if it is bound by one.
+    pub cold_limit: Option<f32>,
     /// Lives in water (its density is per km² of water).
     pub aquatic: bool,
+    /// Lives by the water, its lands those of the waters alone (a beaver, an otter, a heron, a
+    /// hippo): of a cell's land it has the share the water about it gives.
+    pub waterside: bool,
     /// Its density counts colonies (honey bees).
     pub colony: bool,
     /// Food a day: dry matter for plant-eaters, fresh for the rest, kg.
@@ -384,10 +389,21 @@ impl Catalog {
             .enumerate()
             .map(|(i, a)| (a.id.clone(), i))
             .collect();
+        // The ecosystems of the waters alone (rivers, lakes, wetlands).
+        let water = ecosystems
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| {
+                !e.biomes.is_empty()
+                    && e.biomes
+                        .iter()
+                        .all(|b| matches!(b.as_str(), "river" | "lake" | "wetland"))
+            })
+            .fold(0u32, |m, (i, _)| m | (1 << i));
         let species = animals
             .iter()
             .enumerate()
-            .map(|(i, a)| species_of(c, a, i, &by_id, &eco_bit))
+            .map(|(i, a)| species_of(c, a, i, &by_id, &eco_bit, water))
             .collect();
         Self {
             species,
@@ -432,6 +448,7 @@ fn species_of(
     index: usize,
     by_id: &FxHashMap<String, usize>,
     eco_bit: &dyn Fn(&str) -> u32,
+    water: u32,
 ) -> Species {
     let mass = 0.5 * (a.mass_kg.0 + a.mass_kg.1).max(1e-6);
     let model = a.ranging.and_then(|r| r.model).unwrap_or(if mass >= 5.0 {
@@ -555,7 +572,9 @@ fn species_of(
         habitats,
         core,
         realms: set_of(&a.realms),
+        cold_limit: a.min_coldest_month_c,
         aquatic,
+        waterside: !aquatic && core != 0 && core & !water == 0,
         colony: matches!(a.social, Social::Colony { .. }),
         need_kg: need,
         forage,

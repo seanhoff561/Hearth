@@ -91,6 +91,17 @@ glacier buttercup, edelweiss, gentians, asters, blue poppies); the Afroalpine's 
 and lobelias, tree heath, everlastings and lady's mantle; the páramo's and the puna's frailejón
 and polylepis, ichu and páramo grass, lupines, chuquiragua, werneria and yareta.
 
+The wetlands (V2-10 (e)) lie along the rivers' flat banks, on the cool, wet lowlands too flat to
+drain (bogs and fens, their ground sphagnum where the summers are cool) and on the tropics'
+rain-soaked lowlands (swamps), with pools in their hollows (D143). A plant of the understory can
+grow in water as deep as it says (D144): standing up out of the shallows (`Emergent`: the
+common reed of every realm, cattail, papyrus, wild rice, arrowhead, yellow flag, watercress),
+its stalks under the surface a water-filled block of their own, or with its leaves afloat
+(`Floating`: the water lilies, the lotus, the giant water lily), drawn as the lily pad lies in
+the plant's own colours. The swamps' trees are the bald cypress, the raffia, moriche and sago
+palms, with the alders and willows of the north's carrs; marsh marigold and bog cranberry grow
+on the wet ground.
+
 ### Useful, edible, medicinal and poisonous plants
 The temperate understory has 26 species: berries (raspberry, bilberry, lingonberry, wild
 strawberry, bramble, dog rose), greens and herbs (wild garlic, wood sorrel, dandelion, ribwort

@@ -208,6 +208,12 @@ impl Habitat {
         self.raw_avail(k, f) / mean.max(1e-6) * buried * crop
     }
 
+    /// The coldest month's mean temperature (°C), as far as the year's mean and its warmest
+    /// month tell it.
+    pub fn coldest_c(&self) -> f32 {
+        2.0 * self.temp_c - self.warm_c
+    }
+
     /// Land area of the cell, km².
     pub fn land_km2(&self) -> f32 {
         self.land * CELL_KM2
@@ -483,6 +489,12 @@ pub fn reference_land(
     );
     h.forage = forage;
     h.cover = cover;
+    if r.fresh > 0.0 {
+        h.fresh = r.fresh.clamp(0.0, 0.9);
+        h.land = 1.0 - h.fresh;
+        h.forage[Forage::Aquatic as usize] =
+            AQUATIC * (miami_npp(r.temp_c, r.precip_mm) / 1200.0).min(1.5);
+    }
     h
 }
 

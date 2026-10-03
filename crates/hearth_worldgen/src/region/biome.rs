@@ -250,6 +250,8 @@ pub struct BiomeInputs {
     pub vertical_scale: f32,
     /// 0..1: how sheltered the coast is from waves (bays, estuaries, behind barriers).
     pub shelter: f32,
+    /// On a river's banks, outside its channel.
+    pub bank: bool,
 }
 
 /// How high (m) a tree line stands that is a mountain's rather than the arctic's.
@@ -346,6 +348,36 @@ pub fn select(i: &BiomeInputs) -> Biome {
     // Wetlands: flat, wet, poorly drained lowlands next to water.
     let near_water = i.water.is_finite() && i.height < i.water + 3.0;
     if near_water && i.slope < 0.06 && i.precipitation > 700.0 && i.temperature > -2.0 {
+        return Biome::Wetland;
+    }
+    let lowland_m = i.height / i.vertical_scale;
+    // Marshes along the rivers where their banks lie flat and the rain is enough.
+    if i.bank && i.slope < 0.05 && i.precipitation > 500.0 && i.temperature > -2.0 {
+        return Biome::Wetland;
+    }
+    // Peat: cool, wet lowlands too flat to drain the rain their summers do not dry (the bogs
+    // and fens of the boreal plains, the blanket bogs of the wet oceanic lands), in patches
+    // where the ground holds the water.
+    let cool_wet = matches!(
+        i.climate,
+        ClimateClass::Subarctic | ClimateClass::HumidContinental | ClimateClass::Oceanic
+    ) && i.t_warm < 20.0
+        && i.precipitation > 400.0 + 25.0 * i.temperature.max(0.0);
+    if cool_wet && i.slope < 0.035 && lowland_m < 300.0 && i.variation2 < 0.45 {
+        return Biome::Wetland;
+    }
+    // Swamps: the tropics' flat, rain-soaked lowlands, flooded every wet season (the Congo's
+    // swamp forests, the Amazon's varzea, the Pantanal, the Sudd).
+    let tropical = matches!(
+        i.climate,
+        ClimateClass::TropicalRainforest | ClimateClass::TropicalSavanna
+    );
+    if tropical
+        && i.slope < 0.03
+        && lowland_m < 200.0
+        && i.variation2 < 0.42
+        && i.precipitation > 1000.0
+    {
         return Biome::Wetland;
     }
     if i.above_tree_line > -40.0 && i.above_tree_line <= 0.0 {
@@ -538,6 +570,7 @@ mod tests {
             variation2: 0.5,
             vertical_scale: 0.25,
             shelter: 0.0,
+            bank: false,
         }
     }
 
@@ -584,6 +617,31 @@ mod tests {
         arctic.climate = ClimateClass::Subarctic;
         arctic.above_tree_line = -20.0;
         assert_ne!(select(&arctic), Biome::Krummholz, "the arctic's tree line");
+    }
+
+    #[test]
+    fn wetlands_on_banks_bogs_and_swamps() {
+        // A river's flat bank.
+        let mut bank = inputs(ClimateClass::Oceanic);
+        bank.bank = true;
+        bank.slope = 0.02;
+        assert_eq!(select(&bank), Biome::Wetland, "a marsh by the river");
+        bank.slope = 0.3;
+        assert_ne!(select(&bank), Biome::Wetland, "a steep bank");
+        // A flat, cool, wet lowland where the ground holds the water: a bog.
+        let mut bog = inputs(ClimateClass::Subarctic);
+        (bog.temperature, bog.t_warm, bog.precipitation) = (-1.0, 15.0, 600.0);
+        (bog.slope, bog.height, bog.variation2) = (0.01, 20.0, 0.1);
+        assert_eq!(select(&bog), Biome::Wetland, "a boreal bog");
+        bog.variation2 = 0.6;
+        assert_eq!(select(&bog), Biome::BorealForest, "the forest about it");
+        // A flat tropical lowland in the rains: a swamp.
+        let mut swamp = inputs(ClimateClass::TropicalRainforest);
+        (swamp.temperature, swamp.t_warm, swamp.precipitation) = (26.0, 28.0, 2200.0);
+        (swamp.slope, swamp.height, swamp.variation2) = (0.01, 15.0, 0.1);
+        assert_eq!(select(&swamp), Biome::Wetland, "a swamp forest");
+        swamp.height = 400.0;
+        assert_ne!(select(&swamp), Biome::Wetland, "the hills above it");
     }
 
     #[test]

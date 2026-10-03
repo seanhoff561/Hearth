@@ -185,6 +185,9 @@ pub enum Sprite {
     Carpet,
     /// Spined green paddles one on another (a prickly pear).
     Cactus,
+    /// Round leaves lying flat on the water with a flower among them (a water lily), seen from
+    /// above.
+    Pad,
 }
 
 /// Ground the understory's plants need.
@@ -216,6 +219,20 @@ pub struct Understory {
     /// It grows in patches this wide (m); 0 scattered.
     #[serde(default)]
     pub patch_m: f32,
+    /// It grows in the water: standing up out of the shallows or with its leaves afloat.
+    #[serde(default)]
+    pub water: Option<WaterHabit>,
+}
+
+/// How a plant of the water grows in it.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum WaterHabit {
+    /// Rooted in the shallows and standing up out of them, in water as deep as `depth_m`
+    /// (reeds, papyrus, wild rice); on the wet ground about them as well.
+    Emergent { depth_m: f32 },
+    /// Rooted on the bottom in water as deep as `depth_m`, its leaves afloat on the surface
+    /// (water lilies, lotus).
+    Floating { depth_m: f32 },
 }
 
 /// Crown shapes of the growth model.

@@ -4,7 +4,7 @@
 //! fruit colours. Plants two blocks tall get a bottom and a top.
 
 use hearth_content::Content;
-use hearth_content::schema::flora::{GrowthForm, Sprite};
+use hearth_content::schema::flora::{GrowthForm, Sprite, WaterHabit};
 
 use crate::TexEntry;
 use crate::paint::{Rgb, Tex, line, rand01, scale};
@@ -243,6 +243,46 @@ fn mushroom(p: Palette, seed: u64) -> Tex {
     t
 }
 
+/// Round leaves afloat, notched to the middle, and a flower among them, seen from above.
+fn pad(p: Palette, seed: u64) -> Tex {
+    let mut t = Tex::new(S, S);
+    for (cx, cy, r) in [(6.5f32, 7.5f32, 6.2f32), (12.0, 12.5, 3.2)] {
+        for y in 0..S as i32 {
+            for x in 0..S as i32 {
+                let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+                let notch = dx > 0.0 && dy.abs() < 0.9 && dx < r;
+                if (dx * dx + dy * dy).sqrt() < r && !notch {
+                    t.set(x, y, shade(p.leaf, seed, x, y));
+                }
+            }
+        }
+    }
+    if let Some(c) = p.flower {
+        for (dx, dy) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1)] {
+            t.set(5 + dx, 6 + dy, shade(c, seed ^ 7, dx, dy));
+        }
+        t.set(5, 6, [236, 200, 60]);
+    }
+    t
+}
+
+/// The stalks of a plant standing in water, below the surface.
+fn stalks(p: Palette, seed: u64) -> Tex {
+    let mut t = Tex::new(S, S);
+    for k in 0..5 {
+        let x = 2 + k * 3 + (rand01(seed, k, 3) * 2.0) as i32;
+        line(
+            &mut t,
+            x,
+            15,
+            x + (k % 2) * 2 - 1,
+            0,
+            shade(scale(p.leaf, 0.75), seed, k, 4),
+        );
+    }
+    t
+}
+
 /// Strap-shaped leaves in a clump, with flower heads.
 fn clump(p: Palette, seed: u64) -> Tex {
     let mut t = Tex::new(S, S);
@@ -431,7 +471,7 @@ pub fn textures(c: &Content) -> Vec<TexEntry> {
         let tall = p.max_height_m > 1.0
             && !matches!(
                 sprite,
-                Sprite::Mushroom | Sprite::Heath | Sprite::Carpet | Sprite::Cactus
+                Sprite::Mushroom | Sprite::Heath | Sprite::Carpet | Sprite::Cactus | Sprite::Pad
             );
         let draw = |part: u8| -> Tex {
             match sprite {
@@ -447,6 +487,7 @@ pub fn textures(c: &Content) -> Vec<TexEntry> {
                 Sprite::Tuft => tuft(pal, sd),
                 Sprite::Carpet => carpet(pal, p.form, sd),
                 Sprite::Cactus => cactus(pal, sd),
+                Sprite::Pad => pad(pal, sd),
             }
         };
         // A plant well under a metre is drawn at its height in the block: a cushion a hand
@@ -454,7 +495,7 @@ pub fn textures(c: &Content) -> Vec<TexEntry> {
         let whole = if tall
             || matches!(
                 sprite,
-                Sprite::Heath | Sprite::Creeper | Sprite::Carpet | Sprite::Mushroom
+                Sprite::Heath | Sprite::Creeper | Sprite::Carpet | Sprite::Mushroom | Sprite::Pad
             ) {
             draw(0)
         } else {
@@ -464,6 +505,13 @@ pub fn textures(c: &Content) -> Vec<TexEntry> {
         if tall {
             out.push(TexEntry::still(&format!("block/{name}_bottom"), draw(1)));
             out.push(TexEntry::still(&format!("block/{name}_top"), draw(2)));
+        }
+        // What stands under the water of a plant of the shallows.
+        if let Some(WaterHabit::Emergent { .. }) = u.water {
+            out.push(TexEntry::still(
+                &format!("block/{name}_stem"),
+                stalks(pal, sd),
+            ));
         }
     }
     out

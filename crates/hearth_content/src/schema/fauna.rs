@@ -588,6 +588,10 @@ entry! {
         pub density_per_km2: Option<f32>,
         #[serde(default)]
         pub realms: Vec<String>,
+        /// The coldest month it bears (°C, a warm-blooded animal of the tropics): it does not
+        /// live where the winters are colder, and thins out over the 4 °C above.
+        #[serde(default)]
+        pub min_coldest_month_c: Option<f32>,
         #[serde(default)]
         pub first_appearance_ya: Option<f64>,
         #[serde(default)]

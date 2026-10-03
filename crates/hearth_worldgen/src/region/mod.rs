@@ -458,6 +458,7 @@ impl Terrain {
             variation2,
             vertical_scale: self.v,
             shelter,
+            bank: river_hit.is_some_and(|r| r.distance >= r.width * 0.5),
         };
         let biome = if polar > 0.5 {
             if h < 1.0 {
@@ -468,6 +469,17 @@ impl Terrain {
         } else {
             biome::select(&inputs)
         };
+
+        // Pools in the wetlands: hollows of standing water a block or two deep among the sedges
+        // and the reeds.
+        if biome == Biome::Wetland && !(water.is_finite() && h < water - 0.5) {
+            let pool = self.noise.patch.sample2(xf + 5_000.0, zf - 3_000.0) as f32;
+            if pool > 0.2 {
+                let ground = h.round();
+                water = water.max(ground);
+                h = ground - if pool > 0.5 { 2.0 } else { 1.0 };
+            }
+        }
 
         // ------------------------------------------------------------ materials
         let (surface, filler, soil_depth) = if reef {
@@ -670,7 +682,10 @@ impl Terrain {
             Biome::IceSheet | Biome::Glacier => (Snow, Ice),
             Biome::AlpineRock => (if patch > 0.2 { Gravel } else { Stone }, Stone),
             Biome::AlpineMeadow => (Grass, Dirt),
-            Biome::Wetland => (if patch > 0.0 { Mud } else { Grass }, Mud),
+            // The bogs' sphagnum over their peat where the summers are cool; the marshes' and
+            // the swamps' mud and grass.
+            Biome::Wetland if temperature < 8.0 => (if patch > -0.4 { Moss } else { Grass }, Mud),
+            Biome::Wetland => (if patch > 0.25 { Mud } else { Grass }, Mud),
             Biome::TropicalRainforest => (if patch > 0.6 { Moss } else { Grass }, Dirt),
             Biome::TemperateRainforest => (if patch > 0.35 { Moss } else { Grass }, Dirt),
             Biome::Volcanic => (if patch > 0.0 { Tuff } else { Stone }, Stone),

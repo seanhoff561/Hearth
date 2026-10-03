@@ -54,7 +54,7 @@
             speed: (walk_m_s: 0, swim_m_s: 2),
             senses: (vision_m: 8, hearing_m: 10, smell_m: 10, night_vision: 0.3),
             diet: (kind: Carnivore, daily_food_kg: 0.008, foods: [
-                (food: "insect_larvae"), (food: "european_perch", preference: 0.3), (food: "common_frog", preference: 0.1),
+                (food: "insect_larvae"), (food: "european_perch", preference: 0.3), (food: "common_frog", preference: 0.02),
             ]),
             social: School(size: (10, 200)), activity: Diurnal,
             habitat: ["temperate_freshwater"],

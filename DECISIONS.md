@@ -1643,3 +1643,81 @@ yellowwood; it had been given 200, and outlived the test's two centuries.
 And the distant terrain's test, comparing its canopy with the cubes', looked for leaves no more
 than 40 blocks over the ground: the deodars and silver firs now in its forest stand fifty
 metres, and it looks as high as the tallest species grows.
+
+## D143 — Wetlands where the land holds the water
+The wetland biome was chosen only where a column carried a water level, at the edges of the
+rivers' channels and the lakes' shores: a twentieth of a percent of the vast planet's land, one
+place in the Afrotropical. Wetlands now lie along the rivers' banks where they are flat and the
+rain is enough (marshes); on cool, wet lowlands too flat to drain what their summers do not dry
+(the bogs and fens of the boreal plains and the blanket bogs of the oceanic lands: flatter than
+1 in 30, under 300 m, the warmest month under 20 °C, the rain over 400 mm and 25 mm more for each
+degree of the year's warmth), in the patches of the land where the ground holds the water; and on
+the tropics' flat, rain-soaked lowlands under 200 m (swamps). They are some 2 % of the land: the
+Earth's are 6 %, its coastal and seasonal ones not drawn yet. In them the hollows hold pools a
+block or two deep; where the summers are cool their ground is sphagnum over the peat.
+
+## D144 — Plants in the water
+A plant of the understory can grow in water, as deep as it says: standing up out of the shallows
+(reeds, cattail, papyrus, wild rice, arrowhead, yellow flag, watercress), its stalks under the
+surface drawn in a water-filled block of their own, or with its leaves afloat (the water lilies,
+the lotus, the giant water lily of the Amazon), drawn as the lily pad lies but in the plant's own
+colours. The shallows of fresh water choose theirs as the land's understory does, by the climate
+and the realm, the realm's own before the stand-ins (D136); where none grows the old lily pad
+does. The swamps' trees are the bald cypress (North America), the raffia palm (Africa), the
+moriche palm (South America) and the sago palm (tropical Asia), the wet ground's own as the alder
+and the willow are; the sago's pith is washed into starch.
+
+## D145 — The waters' ecosystems by warmth, each with its land
+Rivers, lakes and wetlands hold two ecosystems: the temperate waters' (the Palearctic's and the
+Nearctic's beavers, otters, ducks, herons, pike and turtles) and the tropical waters' (Africa's,
+South America's and tropical Asia's hippos, crocodiles, otters, swamp deer and antelope, and
+their fish). Each has its reference land, a marsh with three tenths of it under water: a
+reference land can hold water now (`fresh`), whose fish are counted per km² of it and whose
+water-weed and the life of the shallows are the aquatic forage. The hunters of the land about
+the waters (wolf, fox, ermine, lynx, coyote, bobcat, jaguar, tiger, leopard, lion) live there as
+well and take the beavers, voles, muskrats, ducks, capybaras, caimans, water buffalo and
+sitatungas.
+
+## D146 — The tropics' warm-blooded animals keep to mild winters
+The planet's realms reach into lands the Earth's do not: the Afrotropical's southern lands lie at
+35 to 55 degrees, with a year's mean of 5 to 8 °C and wetlands, where hippos and sitatungas would
+have lived in the bogs. A species can name the coldest month it bears (`min_coldest_month_c`): it
+lives nowhere colder, and thins out over the 4 °C above (the hippo's is 12 °C, the capybara's
+6 °C, the giant otter's 14 °C). The tropical fish name theirs too (the tilapia's 12 °C, the
+arapaima's 18 °C): the rule of the warm months that keeps the cold-blooded of the land to their
+latitudes (D110) does not bind what lives in the water.
+
+## D147 — The bullfrog lives on insects; the wetlands' runs
+Bullfrogs, 150 to the km², took wood frogs for a third of their meat and ate them out; the
+bullfrog in fact lives on insects and crayfish, and the wood frog breeds in the vernal pools it
+leaves alone. The Old World's wetland is run about its heart on seed 7's vast planet (its reed
+beds, pools and bogs, the lakes' fish in them); the Nearctic's, Africa's, South America's and
+tropical Asia's on uniform land of their ecosystem's reference (D138), their wetlands being only
+in the cold of their southern lands or not at all. A lake's heart is nearly all water, with room
+on its shores for six families of beavers, too few for fifty years to judge: the wetland's run
+holds the lakes' fish.
+
+## D148 — The waterside's animals live along the water
+A cell holds the waters' ecosystems wherever a river runs by or a wetland lies, and its land
+animals counted their numbers per km² of all its land: the reference temperate wood, with three
+hundredths of it under water, held the waters' storks, herons, ducks and water voles as thick as
+a marsh, and they ate its frogs out and fed its foxes and owls onto its bank voles. An animal whose
+lands are the waters' alone (a beaver, an otter, a heron, a hippopotamus) now lives on the share
+of a cell's land the water gives it: all of it where a seventh of the cell is water (a marsh's
+pools and channels, a river's reach with its banks), a sliver along a stream. Where the waters are
+patches in dry land, a territorial hunter of them holds on in few numbers (the Old World wetland's
+otters, a few to a patch). The ermine is not a waterside animal and does
+not go to the waters (it had come into the wood with them); the perch, the pike, the wels and the
+eel take few of the common frog's tadpoles, which are raised in the ponds the fish do not reach.
+
+## D149 — A realm's run judges its own animals
+The runs about a realm's heart of a biome make the regions about it, and their edges reach into
+the next realm's land: a patch of Africa's savanna with some twenty warthogs in it lay at the end
+of the regions about India's savanna, and dwindled to nothing on its own as a lone patch does.
+The runs simulate everything in the regions and judge the realm's own animals (`fifty_years_in`).
+
+## D150 — The hunting test follows its quarry
+The world about the V2-5 spawn has wetlands now, and the first grown roe deer the hunting test
+met walked on down into a pool's hollow as the hunter came up beside it: the thrust went where
+it had stood. The test follows it, coming up beside it again where it stands until it is within
+the spear's reach, and thrusts from where the hunter stands, at a grown animal's heart (D113).

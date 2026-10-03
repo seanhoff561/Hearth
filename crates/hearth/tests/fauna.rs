@@ -208,9 +208,11 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
         w.go(at.x, at.y);
         for _ in 0..4 {
             w.run(40);
+            // A grown one: the thrust is aimed where a grown one's heart is.
             if let Some(v) = w.animals.iter().find(|v| {
                 catalog.species[v.species as usize].mass_kg >= 10.0
                     && v.medium == hearth_fauna::live::Medium::Ground
+                    && v.stage == hearth_fauna::live::Stage::Adult
             }) {
                 quarry = Some(*v);
                 break 'walk;
@@ -219,24 +221,31 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
     }
     let mut v = quarry.expect("an animal to hunt");
     let sp = &catalog.species[v.species as usize];
-    // Up beside it, and a thrust behind its shoulder (where it stands now: it may have walked
-    // on a step).
-    let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
-    let side = DVec3::new(ahead.z, 0.0, -ahead.x);
-    w.go_exact(v.pos + side * 1.6);
-    if let Some(x) = w.animals.iter().find(|x| x.id == v.id) {
-        v = *x;
+    // Up beside it, and a thrust behind its shoulder where it stands now: it may walk on as the
+    // hunter comes up (down into a hollow, along a bank), and is followed.
+    let mut chest = v.pos;
+    for _ in 0..4 {
+        if let Some(x) = w.animals.iter().find(|x| x.id == v.id) {
+            v = *x;
+        }
+        let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
+        let side = DVec3::new(ahead.z, 0.0, -ahead.x);
+        w.go_exact(v.pos + side * 1.2);
+        if let Some(x) = w.animals.iter().find(|x| x.id == v.id) {
+            v = *x;
+        }
+        let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
+        // The heart and lungs: the front of the torso, a fifth of its length ahead of its feet.
+        chest =
+            v.pos + ahead * (sp.length_m as f64 * 0.21) + DVec3::Y * (sp.shoulder_m as f64 * 0.65);
+        if (chest - (w.mover.pos + DVec3::new(0.0, 1.5, 0.0))).length() < 2.0 {
+            break;
+        }
     }
-    let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
-    let side = DVec3::new(ahead.z, 0.0, -ahead.x);
-    let feet = v.pos + side * 1.6;
-    w.go_exact(feet);
-    // The heart and lungs: the front of the torso, a fifth of its length ahead of its feet.
-    let chest =
-        v.pos + ahead * (sp.length_m as f64 * 0.21) + DVec3::Y * (sp.shoulder_m as f64 * 0.65);
     let n = w.acted.len();
+    // From where the hunter stands (the bank or a reed bed may have stopped it short).
     w.server.send(ToServer::Thrust {
-        dir: chest - (feet + DVec3::new(0.0, 1.5, 0.0)),
+        dir: chest - (w.mover.pos + DVec3::new(0.0, 1.5, 0.0)),
     });
     w.run(2);
     let said: Vec<String> = w.acted[n..].iter().map(|(_, _, s)| s.clone()).collect();

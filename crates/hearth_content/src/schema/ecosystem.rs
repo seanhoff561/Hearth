@@ -39,6 +39,10 @@ pub struct ReferenceLand {
     /// Its trees flower for the bees.
     #[serde(default)]
     pub flowers: bool,
+    /// The share of it under fresh water (a marsh's pools and channels, a lake's shore), whose
+    /// fish and water-weed are counted per km² of the water.
+    #[serde(default)]
+    pub fresh: f32,
     /// The realms whose animals live on it, each anchoring its forage to their needs as a land
     /// of its own (the African, the American and the Asian rainforest); the Palearctic when
     /// none are named.

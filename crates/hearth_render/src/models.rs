@@ -957,6 +957,25 @@ fn bake_model(
             });
             layer = RenderLayer::Cutout;
         }
+        // Leaves afloat on the water, in the block's own colours (a water lily, a lotus).
+        _ if matches!(block.def.shape, hearth_world::ShapeKind::LilyPad) => {
+            let tex = ctx.tex(block.name.path());
+            let (p, uv) = face_corners(
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.06, 1.0),
+                Direction::Up,
+            );
+            quads.push(ModelQuad {
+                pos: p,
+                uv,
+                tex,
+                dir: Some(Direction::Up),
+                cull: None,
+                shade: true,
+                waving: false,
+            });
+            layer = RenderLayer::Cutout;
+        }
         "sugar_cane" => {
             let tex = ctx.own(&cross_texture(name, s, reg));
             quads = cross(tex, true);

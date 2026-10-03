@@ -458,6 +458,11 @@ impl FeatureGen {
         let r2 = unit_f32(h.rotate_left(21));
         if s.is_underwater() {
             let depth = s.water_i() - top;
+            // Reeds and lilies in fresh water's shallows.
+            let fresh = matches!(s.biome, Biome::Wetland | Biome::Lake | Biome::River);
+            if fresh && depth <= 3 && self.aquatic(w, wg, x, z, top, s, depth) {
+                return next;
+            }
             let floor_ok = matches!(
                 s.surface,
                 Surface::Sand | Surface::Gravel | Surface::Dirt | Surface::Clay
@@ -685,6 +690,10 @@ impl FeatureGen {
                 }
             }
             Biome::Wetland => {
+                // The marsh's and the bog's own plants first.
+                if self.understory(w, wg, x, z, top, s, flower_n, disturbed) {
+                    return next;
+                }
                 if r < 0.35 {
                     w.put(x, top, z, b.short_grass);
                 } else if r < 0.45 {
@@ -813,13 +822,81 @@ impl FeatureGen {
                 z.div_euclid(size),
             ))
         };
-        let Some(i) = forest.choose_under(&climate, &ground, light, roll, patch) else {
+        let Some(i) = forest.choose_under(&climate, &ground, light, roll, patch, None) else {
             return false;
         };
         let p = &forest.understory[i];
         w.put(x, top, z, p.lower);
         if let Some(up) = p.upper {
             w.put(x, top + 1, z, up);
+        }
+        true
+    }
+
+    /// A plant of fresh water's shallows over a bottom at `top`, the water `depth` blocks deep:
+    /// one afloat on the surface, or one standing up out of it on its stalks. Whether one grew.
+    #[allow(clippy::too_many_arguments)]
+    fn aquatic(
+        &self,
+        w: &mut Writer<'_>,
+        wg: &WorldGenerator,
+        x: i32,
+        z: i32,
+        top: i32,
+        s: &ColumnSample,
+        depth: i32,
+    ) -> bool {
+        use hearth_content::schema::flora::WaterHabit;
+        let forest = &wg.forest;
+        let climate = crate::trees::PlaceClimate {
+            mean_c: s.temperature,
+            warm_c: s.t_warm,
+            cold_c: 2.0 * s.temperature - s.t_warm,
+            precip_mm: s.precipitation,
+            class: s.climate,
+            biome: s.biome,
+            wet: true,
+            realm: s.realm,
+        };
+        let ground = crate::trees::PlaceGround {
+            wet: true,
+            rich: true,
+            acid: matches!(s.surface, Surface::Podzol | Surface::Moss),
+            disturbed: false,
+            shrubs: true,
+        };
+        let seed = self.seed;
+        let roll = unit_f32(hash_2d(seed ^ 0xa9a7, x, z));
+        let patch = |i: usize, size: f32| {
+            let size = size.max(2.0) as i32;
+            unit_f32(hash_3d(
+                seed ^ 0x9a7c,
+                x.div_euclid(size),
+                i as i32,
+                z.div_euclid(size),
+            ))
+        };
+        let Some(i) = forest.choose_under(&climate, &ground, 1.0, roll, patch, Some(depth as f32))
+        else {
+            return false;
+        };
+        let p = &forest.understory[i];
+        let surface = s.water_i();
+        match p.understory.water {
+            Some(WaterHabit::Floating { .. }) => w.put(x, surface, z, p.lower),
+            Some(WaterHabit::Emergent { .. }) => {
+                let Some(stem) = p.stem else {
+                    return false;
+                };
+                for y in top..surface {
+                    w.put(x, y, z, stem);
+                }
+                w.put(x, surface, z, p.lower);
+                if let Some(up) = p.upper {
+                    w.put(x, surface + 1, z, up);
+                }
+            }
+            None => return false,
         }
         true
     }

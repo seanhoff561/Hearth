@@ -164,6 +164,8 @@ pub struct UnderPlant {
     /// Its block, and the upper half's for plants two blocks tall.
     pub lower: BlockStateId,
     pub upper: Option<BlockStateId>,
+    /// For a plant standing in the shallows, the block of its stalks under the water.
+    pub stem: Option<BlockStateId>,
 }
 
 /// The ground under a place, as the understory reads it.
@@ -356,7 +358,14 @@ impl Niche {
                 }
             }
             Biome::Wetland => {
-                if is(&["alder", "willow", "osier"]) {
+                if is(&[
+                    "alder",
+                    "willow",
+                    "osier",
+                    "cypress",
+                    "raffia_palm",
+                    "moriche_palm",
+                ]) {
                     4.0
                 } else {
                     0.5
@@ -418,6 +427,18 @@ impl Forest {
                     }
                 },
             };
+            let stem = match u.water {
+                Some(hearth_content::schema::flora::WaterHabit::Emergent { .. }) => {
+                    match reg.parse_state(&format!("{block}_stem")) {
+                        Ok(s) => Some(s),
+                        Err(e) => {
+                            log::warn!("plant `{}` stands in no water: {e}", p.id);
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            };
             understory.push(UnderPlant {
                 id: p.id.clone(),
                 form: p.form,
@@ -425,6 +446,7 @@ impl Forest {
                 understory: u.clone(),
                 lower,
                 upper,
+                stem,
             });
         }
         let charred = match SpeciesBlocks::named(
@@ -455,7 +477,8 @@ impl Forest {
     /// A plant of the understory for a column, or none: each species as likely as its climate,
     /// the light under the canopy (0 deep shade … 1 open), the ground and its abundance say,
     /// in patches of its own size where it grows in patches. `roll` and `patch_roll` (by
-    /// species and patch) are the column's and the patches' draws.
+    /// species and patch) are the column's and the patches' draws. In water `depth_m` deep, a
+    /// plant of the water that grows so deep; on land (`None`), any but those afloat.
     pub fn choose_under(
         &self,
         c: &PlaceClimate,
@@ -463,7 +486,9 @@ impl Forest {
         light: f32,
         roll: f32,
         patch_roll: impl Fn(usize, f32) -> f32,
+        depth_m: Option<f32>,
     ) -> Option<usize> {
+        use hearth_content::schema::flora::WaterHabit;
         let mut odds: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
         // What each would cover over the place, its patches as they fall anywhere.
         let mut expect: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
@@ -471,7 +496,18 @@ impl Forest {
         for (i, p) in self.understory.iter().enumerate() {
             let u = &p.understory;
             natives.push(p.niche.native(c));
-            if !ground.shrubs && matches!(p.form, GrowthForm::Shrub | GrowthForm::Vine) {
+            let grows_here = match (depth_m, u.water) {
+                (None, Some(WaterHabit::Floating { .. })) => false,
+                (None, _) => true,
+                (
+                    Some(d),
+                    Some(WaterHabit::Emergent { depth_m } | WaterHabit::Floating { depth_m }),
+                ) => d <= depth_m,
+                (Some(_), None) => false,
+            };
+            if !grows_here
+                || (!ground.shrubs && matches!(p.form, GrowthForm::Shrub | GrowthForm::Vine))
+            {
                 odds.push(0.0);
                 expect.push(0.0);
                 continue;
@@ -505,7 +541,12 @@ impl Forest {
         // rain against the warmth): a sixth of it in the driest deserts, a third in the wetter
         // ones, all there is room for on a steppe or in a wood.
         let aridity = c.precip_mm / (c.mean_c + 10.0).max(1.0);
-        let cover = 0.7 * (aridity / 20.0).clamp(0.2, 1.0);
+        let cover = if depth_m.is_some() {
+            // The water's own plants want no rain.
+            0.6
+        } else {
+            0.7 * (aridity / 20.0).clamp(0.2, 1.0)
+        };
         // The place's own realm's plants; where they would cover less than half what the
         // stand-in realm's would, and less than the ground there is (a realm with no tundra
         // plants of its own but a moss of every continent's bogs), the stand-in realm's in full

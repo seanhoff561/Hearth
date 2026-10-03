@@ -172,6 +172,21 @@ pub fn uniform(habitat: Habitat) -> Ecology {
 /// about a place reach far: the species of other kinds of land in them are left to their own
 /// tests.
 pub fn fifty_years(eco: &mut Ecology, biome: Biome) -> (Vec<String>, Vec<String>) {
+    fifty_years_of(eco, biome, None)
+}
+
+/// The same about a realm's own heart of a biome, judging that realm's animals: a neighbouring
+/// realm's in the edge of the regions about it are a few strays there (a patch of Africa's
+/// warthogs at the end of India's savanna), not the run's to judge.
+pub fn fifty_years_in(eco: &mut Ecology, biome: Biome, realm: Realm) -> (Vec<String>, Vec<String>) {
+    fifty_years_of(eco, biome, Some(realm))
+}
+
+fn fifty_years_of(
+    eco: &mut Ecology,
+    biome: Biome,
+    realm: Option<Realm>,
+) -> (Vec<String>, Vec<String>) {
     let cat = eco.catalog.clone();
     let mine = cat.ecosystems_of_biome(biome.name());
     let present: Vec<usize> = (0..cat.len())
@@ -179,6 +194,7 @@ pub fn fifty_years(eco: &mut Ecology, biome: Biome) -> (Vec<String>, Vec<String>
             let sp = &cat.species[s];
             let groups = (sp.group.0 + sp.group.1) as f64;
             sp.habitats & mine != 0
+                && realm.is_none_or(|r| hearth_worldgen::realms::native(sp.realms, r))
                 && eco.capacity(s) >= 10.0f64.max(if sp.grouped() { groups } else { 0.0 })
         })
         .collect();

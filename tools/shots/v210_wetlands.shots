@@ -1,0 +1,16 @@
+# V2-10 (e) the wetlands on the huge planet of seed 7, each at a place in its realm (`x=`, `z=`):
+# the Old World's fen of reeds, cattails, alder and willow with its pools and geese, and the same
+# from above (the lilies on the pools); a cool bog; Africa's papyrus swamp with hippos; the
+# Amazon's swamp of moriche palms with capybaras; tropical Asia's floodplain with water buffalo;
+# then their animals, close. `hearth --screenshot-list tools/shots/v210_wetlands.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=8, hour=11, clouds=0.25, dry=true
+x=41216, z=-41984, above=4, yaw=210, pitch=10, season=summer@0.5, herd=greylag_goose:8@10:0, out=bench-out/v210e/fen.png
+x=41216, z=-41984, above=25, yaw=30, pitch=50, season=summer@0.5, out=bench-out/v210e/fen_from_above.png
+x=216576, z=-45312, above=4, yaw=30, pitch=10, season=summer@0.5, out=bench-out/v210e/bog.png
+x=170496, z=-2560, above=4, yaw=210, pitch=10, season=summer@0.5, herd=hippopotamus:6@12:0, out=bench-out/v210e/african_swamp.png
+x=52992, z=3072, above=4, yaw=30, pitch=10, season=summer@0.5, herd=capybara:8@10:0, out=bench-out/v210e/amazon_swamp.png
+x=44800, z=-9984, above=4, yaw=30, pitch=10, season=summer@0.5, herd=wild_water_buffalo:6@14:0, out=bench-out/v210e/asian_floodplain.png
+x=41216, z=-41984, above=1.8, yaw=210, pitch=6, fov=45, season=summer, animal=eurasian_beaver:adult:f:graze@5:-1.2:80, animal=eurasian_otter:adult:m:alert@6:1:110, animal=grey_heron:adult:m:alert@8:-2:60, animal=white_stork:adult:f:walk@9:2.5:130, animal=mute_swan:adult:m:alert@10:0:90, out=bench-out/v210e/north_animals.png
+x=170496, z=-2560, above=4, yaw=210, pitch=18, fov=45, season=summer, animal=hippopotamus:adult:m:alert@12:-2:80, animal=nile_crocodile:adult:m:walk@7:1.5:110, animal=sitatunga:adult:m:alert@10:3:60, animal=shoebill:adult:f:alert@6:-1.5:130, animal=african_fish_eagle:adult:f:alert@5:0.5:90, out=bench-out/v210e/africa_animals.png
+x=52992, z=3072, above=5, yaw=210, pitch=20, fov=45, season=summer, animal=capybara:adult:f:graze@6:-1:80, animal=spectacled_caiman:adult:m:walk@5:1:110, animal=giant_otter:adult:m:alert@7:2:60, animal=marsh_deer:adult:m:alert@10:-2.5:130, animal=wattled_jacana:adult:f:alert@4:-0.4:90, animal=green_anaconda:adult:f:walk@8:0.5:20, out=bench-out/v210e/amazon_animals.png
+x=44800, z=-9984, above=2.2, yaw=30, pitch=6, fov=45, season=summer, animal=wild_water_buffalo:adult:m:alert@12:-2:80, animal=mugger_crocodile:adult:m:walk@6:1.5:110, animal=gharial:adult:m:walk@8:-1:60, animal=sarus_crane:adult:f:alert@9:3:130, animal=fishing_cat:adult:m:alert@5:-0.8:90, out=bench-out/v210e/asia_animals.png

@@ -83,8 +83,12 @@ The Tier 1 temperate forest set (Appendix B) has both northern realms:
 | Venomous snake | common European adder | timber rattlesnake |
 | Honey bee | western honey bee | — (not native to the Americas) |
 
-Freshwater species live in the `temperate_freshwater` ecosystem (rivers, lakes, wetlands);
-their densities are per km² of water. A colony species' density counts colonies.
+Freshwater species live in the `temperate_freshwater` and `tropical_freshwater` ecosystems
+(rivers, lakes, wetlands, D145); fish densities are per km² of water, and an animal whose lands
+are the waters' alone (a beaver, an otter, a heron, a hippopotamus) lives on the share of a
+cell's land the water gives it, all of it where a seventh of the cell is water (D148). A colony
+species' density counts colonies. A species of the warm lands can name the coldest month it
+bears (`min_coldest_month_c`, D146).
 
 The expansion waves (V2-10) bring each biome's own ecosystems, with species of both northern
 realms (a realm without its own takes the stand-in realm's, D115): the boreal forest and the
@@ -124,6 +128,12 @@ Ethiopia's gelada, Ethiopian wolf, giant mole rat, walia ibex, mountain nyala, k
 hyrax and Verreaux's eagle; with the golden eagle, foxes, wolves, bears, wolverine, ermine,
 hares, ptarmigan, deer, lynxes, capercaillie, squirrels, raven, moose and leopard of the lands
 below. A pack's home range is its share of the land, its size over the species' density (D139).
+The waters (wave e): the north's beavers, muskrat, otters, mink and water vole, mallard, geese
+and swan, herons, stork, crane, osprey and kingfisher, pike, carp, wels, eel and catfish,
+snapping and pond turtles, bullfrog and toad; Africa's hippopotamus, Nile crocodile, sitatunga,
+fish eagle, shoebill, tilapia and catfish; South America's capybara, spectacled caiman,
+anaconda, giant otter, marsh deer, jacana, piranha and arapaima; tropical Asia's water buffalo,
+mugger, gharial, smooth-coated otter, fishing cat, sarus crane and snakehead.
 
 ## Populations (`hearth_fauna`)
 The land is divided into **ecological cells** of 256 m, gathered in **regions** of 64 × 64

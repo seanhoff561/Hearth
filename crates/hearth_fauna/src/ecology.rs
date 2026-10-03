@@ -707,17 +707,23 @@ impl Ecology {
         if sp.habitats & h.ecosystems == 0 || !native(sp.realms, h.fauna()) {
             return false;
         }
-        if sp.aquatic {
-            h.fresh > 0.0
+        if sp.cold_limit.is_some_and(|m| h.coldest_c() < m) {
+            return false;
+        }
+        if sp.aquatic || sp.waterside {
+            h.fresh > 0.0 && (sp.aquatic || h.land > 0.0)
         } else {
             h.land > 0.0
         }
     }
 
-    /// The living area of a species in a cell, km² (land, or water for fish).
+    /// The living area of a species in a cell, km² (land, or water for fish; for an animal of
+    /// the waterside, the land along the water, all of it where a quarter of the cell is water).
     fn area(sp: &Species, h: &Habitat) -> f32 {
         if sp.aquatic {
             h.fresh_km2()
+        } else if sp.waterside {
+            h.land_km2() * waterside_share(h.fresh)
         } else {
             h.land_km2()
         }
@@ -759,7 +765,14 @@ impl Ecology {
     /// D116), less where it lacks the cover the species keeps to. A hunter's is reckoned with
     /// its prey, a region at a time ([`Self::qualities`]).
     pub fn quality(&self, sp: &Species, h: &Habitat) -> f32 {
-        self.fare(sp, h).unwrap_or(1.0) * Self::cover_factor(sp, h)
+        self.fare(sp, h).unwrap_or(1.0) * Self::cover_factor(sp, h) * Self::warmth(sp, h)
+    }
+
+    /// How much of its worth a cell keeps for an animal of the warm lands where the winter
+    /// comes near the coldest it bears: none at its limit, all 4 °C above it.
+    fn warmth(sp: &Species, h: &Habitat) -> f32 {
+        sp.cold_limit
+            .map_or(1.0, |m| ((h.coldest_c() - m) / 4.0).clamp(0.0, 1.0))
     }
 
     /// Per species and cell of a region's habitat (species-major): how well the cell feeds the
@@ -2722,6 +2735,13 @@ pub fn reference_realms(
 /// realm's, at their usual densities) eat over [`USED`]: the habitat's formulas give the
 /// relative amounts from place to place, the animals' needs the absolute. None for a kind its
 /// animals do not eat.
+/// The share of a cell's land an animal of the waterside lives on, with a share `fresh` of the
+/// cell under water: the banks of a stream are a sliver of the land about it, a marsh's pools
+/// and channels leave it all within reach.
+pub fn waterside_share(fresh: f32) -> f32 {
+    (fresh / 0.15).clamp(0.0, 1.0)
+}
+
 pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [Option<f32>; FORAGE_KINDS] {
     let mut prod = reference.forage;
     let mut eaten = [false; FORAGE_KINDS];
@@ -2735,9 +2755,12 @@ pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [Option<f32>; FORAGE_
             if total <= 0.0 {
                 continue;
             }
-            // Per km² of the reference land (of its water for fish).
+            // Per km² of the reference land (of its water for fish, of its waterside for the
+            // animals of the waterside).
             let area = if sp.aquatic {
                 reference.fresh / reference.land.max(1e-6)
+            } else if sp.waterside {
+                waterside_share(reference.fresh)
             } else {
                 1.0
             };
