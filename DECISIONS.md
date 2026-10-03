@@ -1892,3 +1892,43 @@ boundary v1 §2 set up:
   own player.
 What already assumes one player (the fauna's presence, the server's player state, sleep) predates
 the rule and is R1–R3's to generalize.
+
+## D167 — Death ends in a choice
+The user's Addendum B (2026-10-03, after Addendum A in `docs/spec/v2.1-realistic-humans.md`)
+replaces v2 §9.8's death rules and V2.1 §16's Legacy. A character's death is a real event — the
+body stays, its people mourn and inherit as their culture has it — a death screen tells the life
+lived, and the player chooses (`docs/design/humans/life-after-death.md`): **inhabit** another
+living person, adult or child (never another player's character; another player's immediate
+family only with their consent; no one fighting, chased, dying or giving birth; within a scope
+setting — *Anyone* by default alone, *Kin, group and region* by default in multiplayer, *Kin
+only*, *None*), taking their whole life with a "Who you are" briefing and their looks unseen
+before; **be born again** (Addendum A's flow alone, Remembered Childhood in multiplayer);
+**restart** (replay the world from its beginning or start a new one, the old save archived,
+deleted only when asked); or **spectate** (the Observer alone; an unperceived free camera in
+multiplayer, speaking to the living off by default). What carries over is the setting "Knowledge
+after death": *their knowledge only* (Authentic), *head start* (past lives' discoveries become the
+knowledge state's quick-returning legends), *keep everything* at a beginner's skill (Hardy);
+skills, relationships, reputation and possessions are always the new person's. Permadeath becomes
+a preset (no inhabiting, no rebirth). v2's three rules map onto these when H9 retires them:
+Legacy → *Anyone* with *head start*, Hardy → *keep everything*, Permadeath → the preset. It lands
+in H3 (the death, the life story, spectating, restarting, inhabiting an adult), H8 (rebirth,
+inhabiting a child, eligibility), H9 (the full flow, the settings, the preset) and R3.
+
+## D168 — Births in multiplayer
+Addendum B §3–4 (`docs/design/humans/multiplayer-births.md`): a shared world has one clock, so
+friends may **start together** — as twins (fraternal; identical only by choice, a liberty),
+siblings, cousins, neighbours or apart, drawn from real households (the closest fit, said so) —
+and share a childhood whose moments they play together and whose years pass for the whole world
+until the youngest comes of age; a player joining a running world lives **Remembered Childhood**:
+a real young person no player has met, born thirteen to sixteen years before, whose childhood is
+played as vignettes in private, seeded instances of the past that may shape what they learned and
+how warm their ties are but never contradict fixed facts or anything a player witnessed, the
+results committed to their record. Friends may also be born as one another's existing siblings or
+cousins (with consent), into one another's group, or as a player pair's child after waiting out
+the pregnancy. Children among the players can be harmed by nothing, in any PvP setting; families
+between players are real families. It is Phase R's (R3), so the H milestones keep its groundwork
+per player and on the server's side (D166): each player's person record and control (H3), who
+any player has met (H2, H4), what players witnessed (H2, H8), each young person's recorded
+upbringing (H7, H8). The superseded passages of v2 (§9.1's profiles, §9.8), V2.1 (§16's Arrival
+and Legacy) and Amendment R (§1.5's character creator, now a Profile step; §3.5; §3.6; §9.2's guide
+sections) are marked in place, their history kept.

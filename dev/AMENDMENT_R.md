@@ -75,7 +75,7 @@ Pick the defaults below so work can proceed, but record each one in `DECISIONS.m
 1.5 Easy setup (players who've never used GitHub)
 
 * Download from the Releases page, unzip or install, double-click. No Rust, no command line.
-* First-run wizard: language → hardware check (GPU and VRAM detection, picks a graphics preset, runs a 10-second benchmark flythrough and offers to adjust) → controls overview → optional AI setup (§4.6) → optional microphone setup (§5.6) → character creator → main menu. Every step is skippable and reachable later in Settings.
+* First-run wizard: language → hardware check (GPU and VRAM detection, picks a graphics preset, runs a 10-second benchmark flythrough and offers to adjust) → controls overview → optional AI setup (§4.6) → optional microphone setup (§5.6) → ~~character creator~~ **Profile** (display name and identity key only; your body comes from birth — *superseded by V2.1 Addendum B §1*) → main menu. Every step is skippable and reachable later in Settings.
 * System requirements (minimum/recommended), measured on real configurations and stated in the README; Linux runtime dependencies (Vulkan driver, ALSA/PipeWire, udev) listed with one-line install commands per major distro.
 * Troubleshooting built in: a Settings → Diagnostics page shows GPU/backend in use, driver info, audio devices, network test to a server, AI/voice provider test buttons, and "copy diagnostics".
 * For developers: `git clone`, `cargo xtask run` works on all three platforms; `CONTRIBUTING.md` lists anything else needed.
@@ -118,12 +118,12 @@ A full multiplayer mode, playable on LAN and over the internet, with the whole s
 
 * Sleep policy (server setting): All sleeping (default; time accelerates only when every online player is asleep or resting), Majority, or No acceleration (sleep is a fade that restores fatigue while time passes normally). Players who sleep while others are awake see a brief "resting" fade and wake when they choose.
 * Players' characters are Persons in the world (V2.1). When a player logs off, their character stays where they were by default as a sleeping person (server option: disappear, or stay in a safe camp state). Their body is still in the world: weather, hunger and danger apply at a reduced, server-configurable rate.
-* Death follows the world's death rules (v2 §9.8, V2.1 §16) per player.
+* ~~Death follows the world's death rules (v2 §9.8, V2.1 §16) per player.~~ *Superseded by V2.1 Addendum B §2 and §4 (the death choices, per player).*
 
 3.6 Players, people and society
 
 * Each player is a distinct Person with their own genome, knowledge, relationships and reputation. Agents remember each player individually.
-* New players choose their spawn on the globe (v2 §16) if the server allows; otherwise the host sets spawn regions. Hosts can let new players join an existing player's group as an arriving adult.
+* ~~New players choose their spawn on the globe (v2 §16) if the server allows; otherwise the host sets spawn regions. Hosts can let new players join an existing player's group as an arriving adult.~~ *Superseded by V2.1 Addendum B §3 (shared start, Remembered Childhood, being born into a friend's family).*
 * Player pair bonds require explicit mutual confirmation from both players through a UI prompt, follow V2.1 §1.3 (abstracted, no sexual content), and can be dissolved by either player. Children of player pairs are agents raised in the world; players can later continue as their adult children (V2.1 §16).
 * PvP setting: Off / Consent (both players must enable, e.g., for duels or alliances at war) / On. In every setting, children can never be harmed (V2.1 §1.2).
 * Text chat: proximity chat (spoken in-world, subject to the speaker's language like speech; §5.4) and an optional out-of-character global channel (server setting).
@@ -266,7 +266,7 @@ In this order:
 9.2 `GUIDE.md` (how every system works, in simple terms)
 A complete player's guide, also built into a docs website (mdBook, deployed to GitHub Pages by CI) and shipped in-game as a searchable Field Guide from the pause menu.
 Writing rules: plain language, short sentences, everyday words, about an 8th-grade reading level (CI checks the readability score per section and fails above the target); explain what it is, why it matters, how to use it, and tips; start every section with an "In short:" one-liner; use concrete examples ("a naked person in cold rain gets hypothermia within a couple of hours of game time"); screenshots or GIFs from the screenshot suite; no jargon without a one-line explanation; label anything not implemented as "Coming later".
-Sections (one per system, in this order):
+Sections (one per system, in this order). *V2.1 Addendum B: sections 1, 6, 17 and 19 must describe birth, childhood, the death choices and multiplayer births as Addendum B specifies.*
 
 1. Getting started (first hour: what to do, what to avoid).
 2. Controls (generated table, §9.3).

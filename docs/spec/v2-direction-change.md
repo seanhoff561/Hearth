@@ -315,7 +315,7 @@ A **Character** screen in the main menu (and at world creation), with a live, ro
 - **Hair:** styles (short crop, buzzed, shoulder-length, long straight, long wavy, curly, coily/afro, braids, locs, tied back, bald) and facial hair options (for any body), with natural hair colors (black, dark brown, brown, light brown, auburn, red, strawberry blonde, blonde, platinum, grey, white) plus a fine color picker.
 - **Eyes:** brown, dark brown, hazel, amber, green, blue, grey.
 - **Name** (optional).
-- Saved as profiles; a profile can be picked when creating a world or respawning (§9.8).
+- ~~Saved as profiles; a profile can be picked when creating a world or respawning (§9.8).~~ *Superseded by V2.1 Addendum A: the player is born, and looks come from the parents' genes.*
 - The character starts wearing only a **loincloth** (plain hide or plant fibre).
 - Hair (and beard) grows slowly over calendar time and can be cut or tied back with the right tools (nice-to-have).
 
@@ -348,6 +348,10 @@ Core body temperature from a simple heat-balance model: metabolic heat, clothing
 Short-term stamina for sprinting, swimming, climbing and heavy work, recovered by rest; long-term endurance limited by energy and hydration. Carrying load (§10) affects speed, stamina drain, balance on slopes and ice, swimming (heavy loads can drown you) and noise.
 
 ### 9.8 Death & respawn
+> **Superseded by V2.1 Addendum B §2** (`docs/spec/v2.1-realistic-humans.md`, 2026-10-03): death
+> ends in a choice — inhabit another living person, be born again, restart the world, or
+> spectate — and Permadeath is a preset of it. The rules below are kept as history.
+
 Death is a big event, with configurable rules:
 - **Legacy (default):** your body and belongings remain where you died. You continue as a **new person** (pick or create a character profile) who arrives in the same region, at your last campsite if one exists, carrying only a loincloth. Knowledge learned by the previous character is **partly kept** as journal notes (the "legend" of what they learned), so technique knowledge must be re-practiced but not rediscovered from scratch.
 - **Permadeath:** the world ends with a summary of your life (days survived, places reached, technologies discovered).

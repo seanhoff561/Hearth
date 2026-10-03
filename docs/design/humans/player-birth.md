@@ -1,8 +1,14 @@
 # The player is born
 
-*V2.1 Addendum A (user direction, 2026-10-03); D163–D164. Milestones: H1 (the genome from two
-parents, no appearance chosen), H3 (born into a family, the childhood), H8 (birth options from
-the area's peoples), H9 (stepping in from the Observer as a birth).*
+*V2.1 Addendum A (user direction, 2026-10-03); D163–D164; extended by Addendum B (D167–D168:
+[life-after-death.md](life-after-death.md), [multiplayer-births.md](multiplayer-births.md)).
+Milestones: H1 (the genome from two parents, no appearance chosen), H3 (born into a family, the
+childhood), H8 (birth options from the area's peoples; being born again), H9 (stepping in from the
+Observer as a birth), R3 (births in multiplayer).*
+
+This is the single-player birth. In a shared world the clock cannot run fast for one player:
+friends may **start together** and share a childhood, and a player joining a running world lives
+a real young person's childhood **as memories** ([multiplayer-births.md](multiplayer-births.md)).
 
 The player does not arrive grown and made to measure. They are born — a baby of two parents who
 live in the world — grow up in that family and its people, and come of age as an adult, quicker
@@ -43,7 +49,8 @@ windbreak. Everything beyond is the player's to discover, as Wild Earth always m
 offered are the families within reach of the place chosen (differing by what their country
 gives: a shore family, a family of the river woods, one following the herds); where no family
 could live without what Wild Earth does not know, the globe says so and suggests the nearest
-place where one does.
+place where one does. The more players a world expects, the more such families it holds (still
+far apart unless players choose to be born together; Addendum B §3.5).
 
 ## Growing up
 
@@ -75,7 +82,10 @@ world's clock is fast between **moments**, and at normal speed in them.
 The player can skip ahead at any time (to the next moment, or to coming of age): the skipped
 childhood is reckoned at the household tier.
 
-## Later: Legacy and stepping in
+## After death, and stepping in
 
-When the player dies with grown children, they may go on as one of them (V2.1 §16, v2 §9.8). The
+When the player dies the death is real, and then they choose (Addendum B,
+[life-after-death.md](life-after-death.md)): inhabit another living person — adult or child, a
+child's remaining childhood following this flow from its age — be **born again** through this
+flow, restart the world, or spectate. (This replaces V2.1 §16's and v2 §9.8's Legacy.) The
 Observer's **step in** (§15.4) is a birth too: into a household the player picks on the map.

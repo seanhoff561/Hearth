@@ -3,7 +3,8 @@
 The game follows `docs/spec/v2-direction-change.md` (v2), which overrides the original build
 spec `docs/spec/v1-build-prompt.md` (v1) where they conflict. `MIGRATION.md` maps every v1
 milestone and subsystem to its fate. Since 2026-10-03 the amendment
-`docs/spec/v2.1-realistic-humans.md` (V2.1, with its Addendum A: the player is born) replaces
+`docs/spec/v2.1-realistic-humans.md` (V2.1, with its Addenda: A, the player is born; B, births
+in multiplayer and life after death) replaces
 v2 §8.4 and §17 and milestone V2-11 with milestones H0–H13 (simulated people, from genes to
 societies); `MIGRATION_HUMANS.md` maps what V2-11 had built onto them (D162). Each milestone ends with: design doc(s) in
 `docs/design/` updated, data added, tests, `scripts/check.sh` and `hearth content lint` green,
@@ -202,9 +203,15 @@ content lint, the performance gate, `PROGRESS.md` with its **Humans Status** tab
 - **The player is born** (Addendum A, `docs/design/humans/player-birth.md`): into a family of the
   world — in Wild Earth one of its few wandering families (D164) — growing up at the childhood
   pace through moments and the years between, and coming of age.
+- **Death** (Addendum B §2, `docs/design/humans/life-after-death.md`, D167): the death as an event
+  of the world, the death screen and the life story; **Spectate** (the Observer's entry: a free
+  camera following any person or animal, its controls with H9); **Restart** (replay the world or
+  start a new one, the old save archived); **Inhabit an adult** (body, knowledge, relationships
+  taken over; the "Who you are" briefing).
 - *Accept:* a 200-year forager run meets V2.1 §14.3's targets; children visibly learn by
   imitation and play; families persist across generations; a scripted player is born, grows up
-  through its moments and comes of age in its family.
+  through its moments and comes of age in its family; a scripted player dies, reads its life
+  story and goes on as a grown kinsman.
 
 ## H4 — Social systems
 - Kinship systems, households, relationships and obligations, cooperation and sharing norms,
@@ -240,17 +247,21 @@ content lint, the performance gate, `PROGRESS.md` with its **Humans Status** tab
   spawn; species profiles of *H. erectus*, Neanderthals and *H. sapiens* implemented; Lower,
   Middle and Upper Paleolithic era profiles (routines, camps, seasonal rounds, aggregation); the
   era selector enables them; **birth options**: two to four households of the chosen area to be
-  born into (Addendum A).
+  born into (Addendum A); after death **be born again** and **inhabit a child** (its childhood
+  from its age), with the eligibility rules and scope filters; Wild Earth's families as many as
+  the players a world expects (Addendum B).
 - *Accept:* `docs/review/era-*.md` reviews for the three eras; dispersal plausible on the
   planet's geography; births offered at places across the eras.
 
 ## H9 — Observer mode and the player in society
 - The Chronicle mode (time controls, overlays, following people, stepping in as a birth into a
-  chosen household); obligations, family and children, Legacy as a descendant, joining another
-  group; the interaction UI (speech-act wheel, gestures, give and trade, asking to be taught,
-  teaching).
-- *Accept:* a scripted player, born into a band, is taught, forms a family and continues as a
-  child after death; the Observer's fast-forward meets its budget.
+  chosen household); obligations, family and children, joining another group; the interaction UI
+  (speech-act wheel, gestures, give and trade, asking to be taught, teaching).
+- **Life after death in full** (Addendum B §2): the inhabiting flow (filters, consent prompts, the
+  "not right now" rules), the **Knowledge after death** setting, the **Permadeath** preset, v2's
+  death rules retired with a save migration (D167).
+- *Accept:* a scripted player, born into a band, is taught, forms a family and goes on as their
+  grown child after death; the Observer's fast-forward meets its budget.
 
 ## H10 — Optional conversation backend
 - The `ConversationBackend` trait (none / local / remote, off by default), prompts built from a
@@ -324,7 +335,11 @@ channel, no simulation assuming a single player. When V2-16 is done: re-read the
   150 ms latency and 2 % loss without desyncs; controls feel immediate.
 - **R3 — Hosting, joining and administration.** Host & Play, dedicated server and Docker image,
   `server.toml`, LAN discovery, UPnP, invite codes, relay, community list protocol, roles and the
-  admin panel, block/mute/report, PvP and sleep settings, mod sync, logging off and death.
+  admin panel, block/mute/report, PvP and sleep settings, mod sync; **births and deaths in
+  multiplayer** (Addendum B, `docs/design/humans/multiplayer-births.md`, D168): the shared start
+  lobby and shared childhood, Remembered Childhood, family links between players with consent, a
+  player pair's child invitations, the death choices and spectators, the birth settings, logging
+  off (resting, or living on quietly).
   *Accept:* a 32-bot soak on a dedicated server meets budgets; join flows work across platforms.
 - **R4 — AI Bridge.** Providers, capability levels, the Agent Bridge (WebSocket + MCP) with
   examples, guardrails, decision journal, budgets and fallbacks, AI settings and wizard step.
@@ -346,14 +361,17 @@ channel, no simulation assuming a single player. When V2-16 is done: re-read the
   `RELEASE_PLAN.md`; the working files (`PROGRESS.md`, `PLAN.md`, `MIGRATION*.md`,
   `DECISIONS.md`) into `dev/`. *Accept:* a fresh clone builds and runs on all three platforms in
   CI; no secrets or foreign trademarks; licenses complete.
-- **R7 — Packaging, CI and releases.** R §1.3, §1.5 (first-run wizard, diagnostics), the update
+- **R7 — Packaging, CI and releases.** R §1.3, §1.5 (first-run wizard — with a Profile step,
+  name and identity key, where a character creator was: Addendum B — diagnostics), the update
   check, measured system requirements. *Accept:* a test tag produces every artifact; each
   installs and runs on a clean VM per OS; Releases page to playing in under five minutes.
 - **R8 — README, guide, docs site and in-game Field Guide.** R §9 in full, with generated tables,
-  feature anchors and readability checks. *Accept:* every docs check passes; every implemented
+  feature anchors and readability checks; birth, childhood, the death choices and births in
+  multiplayer told plainly (Addendum B). *Accept:* every docs check passes; every implemented
   system has a guide section; nothing unimplemented described as available.
 - **R9 — Branding, press kit and trailers.** R §8 and §10: the cinematic system, every trailer
-  cut, thumbnail, descriptions, the review loop. *Accept:* trailers rendered and reviewed;
+  cut (a birth or childhood moment in the launch trailer's people beat if it reads well:
+  Addendum B), thumbnail, descriptions, the review loop. *Accept:* trailers rendered and reviewed;
   `trailer/REVIEW.md` complete; licenses recorded.
 - **R10 — Launch readiness review.** Fresh-machine installs, the guide followed literally,
   security and privacy reviews, a performance re-check, `dev/LAUNCH_REPORT.md` with the owner's
