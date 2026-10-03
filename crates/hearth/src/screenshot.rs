@@ -1476,8 +1476,8 @@ pub fn render_shot(
     }
     let mut boxes = Vec::new();
     for v in &hominin_views {
-        let figure = hearth_character::Figure::hominin(crate::hominins::looks(v));
-        let drive = crate::hominins::drive(v);
+        let figure = crate::people::figure(v);
+        let drive = crate::people::drive(v);
         let pose = figure.animator.pose(&figure.rig, drive.activity, &drive);
         let chest = hearth_math::BlockPos::containing(v.pos + DVec3::Y * 0.8);
         hearth_character::instances(
@@ -2057,23 +2057,40 @@ fn placed_animals(
     Ok(out)
 }
 
+/// The standing height (m) of one of a species profile's sex and age class (a year old, six,
+/// grown), as `hearth_people::Species` reckons it.
+fn stature(
+    profile: &hearth_content::schema::humans::Species,
+    female: bool,
+    stage: hearth_fauna::live::Stage,
+) -> f32 {
+    use hearth_fauna::live::Stage;
+    let range = profile.body.height_m.of(female);
+    let maturity = profile.life.maturity_years.max(1.0);
+    let age = match stage {
+        Stage::Young => 0.5,
+        Stage::Juvenile => (maturity * 0.5).min(6.0),
+        Stage::Adult => maturity + 5.0,
+    };
+    let t = (age / maturity).min(1.0);
+    let growth = 0.05 + 0.95 * t.powf(1.1);
+    (range.0 + range.1) / 2.0 * growth.powf(0.4)
+}
+
 /// The hominins placed in a shot, on the ground in front of the camera.
 fn placed_hominins(
     spec: &ShotSpec,
     lw: &LocalWorld,
     camera: &hearth_render::camera::Camera,
-) -> Vec<hearth_agent::AgentView> {
-    use hearth_agent::Doing;
+) -> Vec<hearth_people::PersonView> {
     use hearth_fauna::live::Medium;
+    use hearth_people::Doing;
     if spec.hominins.is_empty() {
         return Vec::new();
     }
-    let height = lw
-        .content
-        .hominins
-        .iter()
-        .find(|h| h.population.is_some())
-        .map_or(1.2, |h| (h.height_m.0 + h.height_m.1) / 2.0);
+    let Some(profile) = lw.content.species.iter().find(|h| h.population.is_some()) else {
+        return Vec::new();
+    };
     let f = camera.forward().as_dvec3();
     let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
     let right = DVec3::new(-flat.z, 0.0, flat.x);
@@ -2102,11 +2119,9 @@ fn placed_hominins(
                 "sleep" => (Doing::Sleeping, 0.0, Medium::Ground),
                 _ => (Doing::Idle, 0.0, Medium::Ground),
             };
-            let sex: f32 = if h.female { 0.93 } else { 1.07 };
-            let growth = hearth_agent::growth_of(h.stage);
-            hearth_agent::AgentView {
+            hearth_people::PersonView {
                 id: i as u64 + 1,
-                kind: 0,
+                plan: profile.body.plan,
                 female: h.female,
                 stage: h.stage,
                 pos: DVec3::new(p.x, ground + h.up, p.z),
@@ -2114,7 +2129,7 @@ fn placed_hominins(
                 speed,
                 medium,
                 doing,
-                height_m: height * sex * growth.powf(0.4),
+                height_m: stature(profile, h.female, h.stage),
             }
         })
         .collect()
@@ -2122,7 +2137,7 @@ fn placed_hominins(
 
 /// What a hominin group sought comes to: its agents as drawn, and where to stand to see most
 /// of them (the eye, its yaw and its pitch).
-type Living = (Vec<hearth_agent::AgentView>, Option<(DVec3, f32, f32)>);
+type Living = (Vec<hearth_people::PersonView>, Option<(DVec3, f32, f32)>);
 
 /// The agents of a hominin group sought, drawn out about its place as the game draws them and
 /// living a while of their day (`run` seconds, half a minute without) with no one about.
@@ -2143,7 +2158,7 @@ fn hominins_living(
         hearth_body::Rates::authentic(),
         hearth_content::TimeScales::defaults(&content.time),
     );
-    let mut agents = crate::hominins::Agents::new(&content, &graph, &body, spec.seed);
+    let mut agents = crate::people::PeopleNear::new(&content, &graph, &body, spec.seed, None);
     let mut lying = hearth_items::WorldItems::default();
     let mut changed = Vec::new();
     let hour = spec.hour as f32;
@@ -2172,13 +2187,18 @@ fn hominins_living(
             exposure,
             around.clone(),
             year_frac,
-            centre,
-            None,
-            hearth_agent::Now { tick: t, hour },
+            &[centre],
+            &[],
+            hearth_people::Now {
+                tick: t,
+                hour,
+                day: t as f64 * 0.05 / 2880.0,
+                year_days: 32.0,
+            },
             0.05,
         );
     }
-    let views = agents.views();
+    let views = agents.views(centre);
     log::info!(
         "  {} hominins lived {seconds} s: {:.3} ms a step; {} things lying, {} nests",
         views.len(),

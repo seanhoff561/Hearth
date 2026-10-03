@@ -12,10 +12,11 @@ use crate::id::IdRef;
 use crate::schema::body::{BodyParams, Garment, Illness, Injury};
 use crate::schema::config::{BalanceKey, BalancePreset, TimeConfig, Units};
 use crate::schema::ecosystem::Ecosystem;
-use crate::schema::era::{Era, Hominin};
+use crate::schema::era::Era;
 use crate::schema::fauna::Animal;
 use crate::schema::flora::Plant;
 use crate::schema::geology::{Deposit, Mineral, Province, Rock, Soil};
+use crate::schema::humans::Species;
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
 use crate::schema::material::Material;
@@ -134,7 +135,7 @@ pub struct Content {
     pub plants: Table<Plant>,
     pub animals: Table<Animal>,
     pub ecosystems: Table<Ecosystem>,
-    pub hominins: Table<Hominin>,
+    pub species: Table<Species>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -290,7 +291,7 @@ impl Content {
             plants: load_table(packs, &mut r),
             animals,
             ecosystems: load_table(packs, &mut r),
-            hominins: load_table(packs, &mut r),
+            species: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
@@ -370,7 +371,7 @@ impl Content {
         u(&self.plants, &mut out);
         u(&self.animals, &mut out);
         u(&self.ecosystems, &mut out);
-        u(&self.hominins, &mut out);
+        u(&self.species, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
         u(&self.knowledge, &mut out);
@@ -398,7 +399,7 @@ impl Content {
             c("Plant species", &self.plants),
             c("Animal species", &self.animals),
             c("Ecosystems", &self.ecosystems),
-            c("Hominin species", &self.hominins),
+            c("Species of person", &self.species),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),
             c("Knowledge nodes", &self.knowledge),

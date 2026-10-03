@@ -37,13 +37,13 @@ fn the_population_is_the_hominins() {
     let s = catalog
         .get("australopithecus")
         .expect("the hominin's population");
-    assert!(s.hominin, "its groups are the hominin's agents");
+    assert!(s.hominin, "its groups are the species' persons");
     assert!(!hearth_fauna::live::drawn(s), "not drawn as animals");
     let h = content
-        .hominins
+        .species
         .iter()
         .find(|h| h.id.ends_with("australopithecus"))
-        .expect("the hominin");
+        .expect("the species");
     assert!(
         h.population
             .as_ref()

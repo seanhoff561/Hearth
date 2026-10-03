@@ -1932,3 +1932,31 @@ any player has met (H2, H4), what players witnessed (H2, H8), each young person'
 upbringing (H7, H8). The superseded passages of v2 (§9.1's profiles, §9.8), V2.1 (§16's Arrival
 and Legacy) and Amendment R (§1.5's character creator, now a Profile step; §3.5; §3.6; §9.2's guide
 sections) are marked in place, their history kept.
+
+## D169 — People decide together, then act one by one
+V2.1 §3 asks that parallel updates never change results. A step of the people has two phases.
+Deciding — sensing, fearing, choosing — reads only the state as the step found it (everyone's
+place and doing in a snapshot, the bands' places, the world through `Senses`, which is read-only
+and shared) and writes only the person deciding, drawing from that person's own random stream
+(seeded from the world's seed and its id, and saved with it); so it runs on every thread at once
+and nobody's choice depends on whose was made first. Acting — moving, taking up and laying down
+things, working the player's processes, calling, bending nests — touches the shared world and
+runs in the order of the persons' ids. The same seed and inputs make the same people on one
+thread or four (`hearth_people/tests/determinism.rs`). The V2-11 agents drew from one stream and
+saw the choices made earlier in the same step; the bands' days are otherwise as they were.
+
+## D170 — A band met again is the same people
+Until H7's household tier, a band away from the player lives on as numbers in the ecological
+cells (D161), and its persons' records wait, dormant. When the player comes near again it is
+drawn out as the same persons: the cells' numbers are reconciled with the records by their total
+— those the cells lost died while the player was away (the frailest first: the young of the year,
+the old, then the half-grown; recorded as having died away, their records kept), those they
+gained were born to the band's mothers since (or, with no mother among them, one of the
+dispersing sex joined) — and the persons' age classes are written back to the cells, the records
+being the truth of who is how old. Ages run from each person's day of birth on the calendar, so a
+band met after half a year is half a year older; growth is continuous from a newborn's twentieth
+of a grown body to all of it at maturity. A band away for more than a day comes back rested and
+fed, its injuries kept. How well a band tolerates each player is kept in its record by the
+player's identity (D166), so the cells' groups no longer carry V2-11's single tolerance. Saving
+folds every band back in a copy, so a reloaded world draws them out again as themselves
+(`hearth_people/tests/persist.rs`).

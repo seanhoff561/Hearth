@@ -12,6 +12,7 @@ the amendment, written and updated with the milestone that builds it (`PLAN.md`,
 | [life-after-death.md](life-after-death.md) | Addendum B §2: death, the life story, and the choice — inhabit another person, be born again, restart, spectate | H3, H8, H9, R3 |
 | [multiplayer-births.md](multiplayer-births.md) | Addendum B §3–4: a shared start and childhood, Remembered Childhood, being born into a friend's family | R3 |
 | [persons.md](persons.md) | §2–3: the Person composition, species profiles, the registry, determinism, saves, the inspector | H0 |
+| [australopithecus.md](australopithecus.md) | The first species profile: its population, its days, its traces, learning by watching it | H0 (V2-11) |
 
 Planned with their milestones: `genetics.md` (H1), `psyche.md` and `mind.md` (H2), `life.md`
 (H3), `social.md` (H4), `culture.md` and `language.md` (H5), `learning.md` (H6), `tiers.md` (H7),

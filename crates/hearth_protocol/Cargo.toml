@@ -22,7 +22,7 @@ hearth_physics.workspace = true
 hearth_env.workspace = true
 hearth_save.workspace = true
 hearth_fauna.workspace = true
-hearth_agent.workspace = true
+hearth_people.workspace = true
 serde.workspace = true
 glam.workspace = true
 

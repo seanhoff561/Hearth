@@ -259,7 +259,7 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
             );
         }
     }
-    for (e, o) in c.hominins.iter_with_origin() {
+    for (e, o) in c.species.iter_with_origin() {
         for h in &e.habitat {
             r.check(&c.ecosystems, "ecosystem", h, o, e.id());
         }
@@ -273,7 +273,7 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
                 Some(o.file.clone()),
                 o.line,
                 format!(
-                    "hominin `{}` has no population in the ecological cells",
+                    "species `{}` has no population in the ecological cells",
                     e.id()
                 ),
             ),
@@ -367,8 +367,8 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
         }
     }
     for (e, o) in c.eras.iter_with_origin() {
-        for h in &e.hominins {
-            r.check(&c.hominins, "hominin", h, o, e.id());
+        for h in &e.species {
+            r.check(&c.species, "species", h, o, e.id());
         }
         for k in &e.knowledge_baseline {
             r.check(&c.knowledge, "knowledge", k, o, e.id());

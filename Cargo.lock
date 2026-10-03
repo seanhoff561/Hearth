@@ -921,7 +921,6 @@ dependencies = [
  "env_logger",
  "gilrs",
  "glam",
- "hearth_agent",
  "hearth_audio",
  "hearth_body",
  "hearth_character",
@@ -935,6 +934,7 @@ dependencies = [
  "hearth_items",
  "hearth_lod",
  "hearth_math",
+ "hearth_people",
  "hearth_physics",
  "hearth_player",
  "hearth_protocol",
@@ -953,21 +953,6 @@ dependencies = [
  "wgpu",
  "winit",
  "zstd",
-]
-
-[[package]]
-name = "hearth_agent"
-version = "0.1.0"
-dependencies = [
- "glam",
- "hearth_body",
- "hearth_content",
- "hearth_craft",
- "hearth_fauna",
- "hearth_items",
- "hearth_math",
- "log",
- "serde",
 ]
 
 [[package]]
@@ -1123,6 +1108,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "hearth_people"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hearth_body",
+ "hearth_content",
+ "hearth_craft",
+ "hearth_fauna",
+ "hearth_items",
+ "hearth_math",
+ "log",
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hearth_physics"
 version = "0.1.0"
 dependencies = [
@@ -1150,7 +1152,6 @@ name = "hearth_protocol"
 version = "0.1.0"
 dependencies = [
  "glam",
- "hearth_agent",
  "hearth_body",
  "hearth_character",
  "hearth_content",
@@ -1160,6 +1161,7 @@ dependencies = [
  "hearth_items",
  "hearth_lod",
  "hearth_math",
+ "hearth_people",
  "hearth_physics",
  "hearth_render",
  "hearth_save",

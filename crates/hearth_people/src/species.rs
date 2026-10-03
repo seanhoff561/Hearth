@@ -1,0 +1,192 @@
+//! Species (V2.1 §2): a species profile as its persons are made — bodies of its size and build,
+//! by sex, in its coat; how it grows, ages and lives; what its bands know and the techniques that
+//! knowledge opens; what it does.
+
+use hearth_body::BodyConfig;
+use hearth_body::clothing::Worn;
+use hearth_content::Content;
+use hearth_content::schema::Status;
+use hearth_content::schema::humans::{
+    Behavior, BodyPlan, Coat, Cognition, LifeParams, SocialDefaults,
+};
+use hearth_craft::Graph;
+use hearth_fauna::live::Stage;
+
+/// A newborn's share of a grown one's mass (a chimpanzee's 1.8 kg of 40, a human's 3.4 of 60).
+const NEWBORN: f32 = 0.05;
+
+/// A species, as its persons are made and lived.
+#[derive(Debug, Clone)]
+pub struct Species {
+    pub id: String,
+    pub name: String,
+    pub plan: BodyPlan,
+    /// A grown female's and male's height (m) and mass (kg): the middle of the profile's ranges.
+    pub height_m: [f32; 2],
+    pub mass_kg: [f32; 2],
+    pub climbs: bool,
+    pub cognition: Cognition,
+    pub life: LifeParams,
+    pub social: SocialDefaults,
+    pub behaviors: Vec<Behavior>,
+    /// What its bands know and practise (knowledge nodes)…
+    pub knowledge: Vec<String>,
+    /// …and the processes that knowledge opens: its bands' techniques.
+    pub techniques: Vec<String>,
+    /// Its population in the ecological cells (an animal species), if it has one.
+    pub population: Option<String>,
+    /// Its bodies: the player's physiology at a grown female's and a grown male's size.
+    pub bodies: [BodyConfig; 2],
+    /// Its coat of hair, or bare skin, covering the body as clothes do.
+    pub coat: Worn,
+}
+
+fn sex(female: bool) -> usize {
+    if female { 0 } else { 1 }
+}
+
+impl Species {
+    pub fn does(&self, b: Behavior) -> bool {
+        self.behaviors.contains(&b)
+    }
+
+    /// The physiology of one of its grown females or males.
+    pub fn body(&self, female: bool) -> &BodyConfig {
+        &self.bodies[sex(female)]
+    }
+
+    /// How grown one of an age is: the share of a grown one's mass, from a newborn's to all of
+    /// it at maturity.
+    pub fn growth(&self, age_years: f64) -> f32 {
+        let t = (age_years.max(0.0) as f32 / self.life.maturity_years.max(1.0)).min(1.0);
+        NEWBORN + (1.0 - NEWBORN) * t.powf(1.1)
+    }
+
+    /// The mass (kg) of one of its persons of a sex and age.
+    pub fn mass_kg(&self, female: bool, age_years: f64) -> f32 {
+        self.mass_kg[sex(female)] * self.growth(age_years)
+    }
+
+    /// The standing height (m) of one of a sex and age (height goes as mass to the 0.4).
+    pub fn height_m(&self, female: bool, age_years: f64) -> f32 {
+        self.height_m[sex(female)] * self.growth(age_years).powf(0.4)
+    }
+
+    /// The age class of an age, as the ecological cells count them: the young of the year, the
+    /// young not yet grown, the grown.
+    pub fn stage(&self, age_years: f64) -> Stage {
+        if age_years < 1.0 {
+            Stage::Young
+        } else if age_years < self.life.maturity_years as f64 {
+            Stage::Juvenile
+        } else {
+            Stage::Adult
+        }
+    }
+
+    /// Whether one of an age is weaned (and has begun to learn its band's ways).
+    pub fn weaned(&self, age_years: f64) -> bool {
+        age_years >= self.life.weaning_years as f64
+    }
+}
+
+/// The player's physiology for a body of `mass_kg` and `height_m`: its skin area by DuBois, its
+/// resting metabolism by Kleiber's three-quarter power, its gaits by its legs' length (the walk
+/// that costs least goes as the square root of the leg).
+pub fn body_of(base: &BodyConfig, mass_kg: f64, height_m: f64) -> BodyConfig {
+    let mut c = base.clone();
+    let legs = (height_m / base.height_m).sqrt() as f32;
+    c.params.walk_m_s *= legs;
+    c.params.jog_m_s *= legs;
+    c.params.sprint_m_s *= legs;
+    c.bmr_w = base.bmr_w * (mass_kg / base.mass_kg).powf(0.75);
+    c.area_m2 = 0.007184 * mass_kg.powf(0.425) * (height_m * 100.0).powf(0.725);
+    c.mass_kg = mass_kg;
+    c.height_m = height_m;
+    c
+}
+
+/// A coat of hair over all the body: about half a clo of insulation (a chimpanzee's), keeping
+/// off some of the wind and a little of the rain.
+fn hair() -> Worn {
+    let mut w = Worn::naked();
+    for r in w.regions.iter_mut() {
+        r.clo = 0.5;
+        r.wind = 0.3;
+        r.water = 0.2;
+    }
+    w
+}
+
+/// Every species whose persons the game lives.
+#[derive(Debug, Clone, Default)]
+pub struct SpeciesSet {
+    pub list: Vec<Species>,
+}
+
+impl SpeciesSet {
+    /// The implemented species profiles of the content, with bodies made from the player's
+    /// `base`.
+    pub fn from_content(c: &Content, graph: &Graph, base: &BodyConfig) -> Self {
+        let node = |id: &str| {
+            graph
+                .node(id)
+                .or_else(|| graph.node(&format!("hearth:{id}")))
+        };
+        let mid = |r: (f32, f32)| (r.0 + r.1) / 2.0;
+        let list = c
+            .species
+            .iter()
+            .filter(|s| s.status == Status::Implemented)
+            .map(|s| {
+                let height_m = [mid(s.body.height_m.female), mid(s.body.height_m.male)];
+                let mass_kg = [mid(s.body.mass_kg.female), mid(s.body.mass_kg.male)];
+                let knowledge: Vec<String> = s
+                    .knowledge
+                    .iter()
+                    .filter_map(|k| node(k.as_str()).map(|n| n.id.clone()))
+                    .collect();
+                let mut techniques: Vec<String> = knowledge
+                    .iter()
+                    .filter_map(|k| node(k))
+                    .flat_map(|n| n.enables.iter().cloned())
+                    .collect();
+                techniques.sort();
+                techniques.dedup();
+                let bodies = [0, 1].map(|k| body_of(base, mass_kg[k] as f64, height_m[k] as f64));
+                Species {
+                    id: s.id.clone(),
+                    name: s.name.clone(),
+                    plan: s.body.plan,
+                    height_m,
+                    mass_kg,
+                    climbs: s.body.climbs,
+                    cognition: s.cognition.clone(),
+                    life: s.life.clone(),
+                    social: s.social.clone(),
+                    behaviors: s.behaviors.clone(),
+                    knowledge,
+                    techniques,
+                    population: s.population.as_ref().map(|p| p.to_string()),
+                    bodies,
+                    coat: match s.body.coat {
+                        Coat::Hair => hair(),
+                        Coat::Bare => Worn::naked(),
+                    },
+                }
+            })
+            .collect();
+        Self { list }
+    }
+
+    /// The index of a species by `namespace:path` or bare path.
+    pub fn index_of(&self, id: &str) -> Option<usize> {
+        self.list
+            .iter()
+            .position(|k| k.id == id || k.id.ends_with(&format!(":{id}")))
+    }
+
+    pub fn get(&self, id: &str) -> Option<&Species> {
+        self.index_of(id).map(|i| &self.list[i])
+    }
+}

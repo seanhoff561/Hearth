@@ -187,8 +187,11 @@ pub struct Client {
     /// The animals near the player as the server last told of them, and as drawn (eased
     /// toward that between the server's word); the species they are of.
     animals: rustc_hash::FxHashMap<u64, ShownAnimal>,
-    /// The hominins near the player, as drawn.
-    hominins: rustc_hash::FxHashMap<u64, ShownHominin>,
+    /// The people near the player, as drawn.
+    people: rustc_hash::FxHashMap<u64, ShownPerson>,
+    /// The person the developer's inspector looks at (F3), and their record.
+    inspecting: Option<u64>,
+    inspected: Option<Box<hearth_people::inspect::Report>>,
     /// The signs animals left about the player: the world's seconds they are timed by, how long
     /// a day is (s), and the signs.
     signs: (f64, f32, Vec<hearth_fauna::live::Sign>),
@@ -256,10 +259,10 @@ pub struct Client {
     pub knap_request: Option<crate::knapping_ui::KnapScreen>,
 }
 
-/// A hominin as the server last told of it, and as drawn: where, facing, and its figure (a
-/// biped's frame at its size, in its coat) with its animation.
-struct ShownHominin {
-    target: hearth_agent::AgentView,
+/// A person as the server last told of it, and as drawn: where, facing, and its figure (its
+/// species' frame at its size, in its coat) with its animation.
+struct ShownPerson {
+    target: hearth_people::PersonView,
     pos: DVec3,
     yaw: f32,
     figure: Figure,
@@ -387,7 +390,9 @@ impl Client {
             falling: Vec::new(),
             tumbling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
-            hominins: rustc_hash::FxHashMap::default(),
+            people: rustc_hash::FxHashMap::default(),
+            inspecting: None,
+            inspected: None,
             signs: (0.0, 1200.0, Vec::new()),
             insects: (0.0, 15.0),
             fauna: None,
@@ -917,14 +922,41 @@ impl Client {
         }
     }
 
-    /// The hominins near the player, eased toward where the server has them, their figures
+    /// The developer's inspector (F3): the person looked at — the nearest within 40 m whose
+    /// middle lies within a few degrees of where the eye looks — told to the server when it
+    /// changes; none when the debug screen is shut.
+    fn inspect_target(&mut self) {
+        let target = if self.debug_overlay {
+            let eye = self.camera.pos;
+            let ahead = self.camera.forward().as_dvec3();
+            self.people
+                .iter()
+                .filter_map(|(id, s)| {
+                    let to = s.pos + DVec3::Y * (s.target.height_m as f64 * 0.6) - eye;
+                    let d = to.length();
+                    let cos = to.dot(ahead) / d.max(1e-6);
+                    (d < 40.0 && cos > 0.995).then_some((*id, d))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|(id, _)| id)
+        } else {
+            None
+        };
+        if target != self.inspecting {
+            self.inspecting = target;
+            self.inspected = None;
+            self.server.send(ToServer::Inspect(target));
+        }
+    }
+
+    /// The people near the player, eased toward where the server has them, their figures
     /// walking, climbing, crouched at their work, lying asleep in their nests.
-    fn hominin_boxes(&mut self, view: DVec3, dt: f32) {
+    fn people_boxes(&mut self, view: DVec3, dt: f32) {
         let Some(w) = &self.world else {
             return;
         };
         let k = 1.0 - (-dt * 12.0).exp();
-        for s in self.hominins.values_mut() {
+        for s in self.people.values_mut() {
             s.pos += (s.target.pos - s.pos) * k as f64;
             if (s.target.pos - s.pos).length() > 8.0 {
                 s.pos = s.target.pos;
@@ -937,7 +969,7 @@ impl Client {
             if (s.pos - view).length() > 160.0 {
                 continue;
             }
-            let drive = crate::hominins::drive(&s.target);
+            let drive = crate::people::drive(&s.target);
             let pose = s.figure.animator.update(&s.figure.rig, &drive, dt);
             let place = Affine3A::from_rotation_translation(
                 Quat::from_rotation_y(s.yaw),
@@ -2337,17 +2369,18 @@ impl Client {
                         self.hearing.calls(&calls, cat, self.camera.pos, facing);
                     }
                 }
-                ToClient::Hominins(views) => {
-                    self.hominins
+                ToClient::Inspected(r) => self.inspected = r,
+                ToClient::People(views) => {
+                    self.people
                         .retain(|id, _| views.iter().any(|v| v.id == *id));
                     for v in views {
-                        match self.hominins.get_mut(&v.id) {
+                        match self.people.get_mut(&v.id) {
                             Some(s) => s.target = v,
                             None => {
-                                let figure = Figure::hominin(crate::hominins::looks(&v));
-                                self.hominins.insert(
+                                let figure = crate::people::figure(&v);
+                                self.people.insert(
                                     v.id,
-                                    ShownHominin {
+                                    ShownPerson {
                                         pos: v.pos,
                                         yaw: v.yaw,
                                         target: v,
@@ -2632,7 +2665,8 @@ impl Client {
         self.figure_boxes.clear();
         self.thing_boxes(view.pos);
         self.animal_boxes(view.pos, dt);
-        self.hominin_boxes(view.pos, dt);
+        self.people_boxes(view.pos, dt);
+        self.inspect_target();
         self.carcass_boxes(view.pos);
         self.sign_boxes(view.pos);
         self.ghost_boxes(view.pos);
@@ -2818,6 +2852,29 @@ impl Client {
             );
             for (k, line) in lines.iter().enumerate() {
                 ui.label(3.0, 3.0 + k as f32 * lh, line, Rgba::WHITE);
+            }
+        }
+        if self.debug_overlay
+            && let Some(r) = &self.inspected
+        {
+            // The inspected person's record, beside the debug lines on the right.
+            let mut lines = vec![r.title.clone()];
+            for sec in &r.sections {
+                lines.push(format!("— {}", sec.name));
+                lines.extend(sec.lines.iter().map(|l| format!("  {l}")));
+            }
+            let width = lines.iter().map(|l| ui.font.width(l)).max().unwrap_or(0) as f32;
+            let lh = hearth_ui::font::LINE as f32;
+            let x = ui.size.0 - width - 5.0;
+            ui.draw.rect(
+                x - 2.0,
+                1.0,
+                width + 4.0,
+                lines.len() as f32 * lh + 3.0,
+                Rgba([0, 0, 0, veil]),
+            );
+            for (k, line) in lines.iter().enumerate() {
+                ui.label(x, 3.0 + k as f32 * lh, line, Rgba::WHITE);
             }
         }
     }

@@ -1,16 +1,17 @@
-//! Minds: what an agent needs, what it knows of the moment about it, and what it chooses to do —
-//! each thing it could do weighed by what it needs and what it fears (a utility choice), within
-//! what its kind ever does.
+//! Minds: what a person needs, what it knows of the moment about it, and what it chooses to do —
+//! each thing it could do weighed by what it needs and what it fears (a utility choice, the third
+//! of V2.1 §6's layers, which H2 builds the others about), within what its species ever does.
 
 use glam::DVec3;
 use hearth_body::{Body, BodyConfig, Hunger, Thirst, Tiredness};
-use hearth_content::schema::era::Behavior;
+use hearth_content::schema::humans::Behavior;
+use serde::{Deserialize, Serialize};
 
-use crate::kind::Kind;
+use crate::species::Species;
 use crate::work::REACH_M;
 
-/// Why an agent goes somewhere.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Why a person goes somewhere.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Intent {
     /// To feed where food grows.
     Feed,
@@ -26,8 +27,8 @@ pub enum Intent {
     Roam,
 }
 
-/// What an agent is doing.
-#[derive(Debug, Clone, PartialEq, Default)]
+/// What a person is doing.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub enum Doing {
     /// Looking about, about to choose.
     #[default]
@@ -70,7 +71,7 @@ pub enum Doing {
     },
 }
 
-/// How pressing an agent's needs are, 0 not at all … 1 desperately.
+/// How pressing a person's needs are, 0 not at all … 1 desperately.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Needs {
     pub hunger: f32,
@@ -133,7 +134,7 @@ pub struct Offer {
     pub feeds: bool,
 }
 
-/// What an agent knows of the moment about it: what its senses tell it and its group remembers.
+/// What a person knows of the moment about it: what its senses tell it and its group remembers.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Situation {
     /// Where its feet are.
@@ -168,8 +169,9 @@ pub struct Situation {
     pub grown: bool,
 }
 
-/// What an agent keeps in mind between moments.
-#[derive(Debug, Clone, PartialEq, Default)]
+/// What a person keeps in mind between moments (the layered mind of H2 replaces it).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Mind {
     pub doing: Doing,
     /// Seconds of play before it looks about and chooses again (danger interrupts at once).
@@ -180,7 +182,7 @@ pub struct Mind {
     pub seen: Vec<(DVec3, f64)>,
 }
 
-/// How far an agent strays from its group's middle before it goes back to them (m).
+/// How far a person strays from its group's middle before it goes back to them (m).
 const STRAY_M: f32 = 30.0;
 /// Night, by the local solar hour: from dusk to dawn they are in their nests.
 const DUSK_H: f32 = 18.5;
@@ -191,14 +193,14 @@ const DAWN_H: f32 = 6.0;
 /// its nest at night, then the others if it has strayed, then the most pressing of its needs —
 /// drinking, feeding, a work that feeds it — and otherwise rest and company. `roll` (0–1) varies
 /// the idle choices.
-pub fn choose(kind: &Kind, needs: &Needs, s: &Situation, roll: f32) -> Doing {
+pub fn choose(species: &Species, needs: &Needs, s: &Situation, roll: f32) -> Doing {
     let night = s.hour < DAWN_H || s.hour >= DUSK_H;
     if let Some(t) = s.threat {
         if t.dist < s.flight_m {
             // A hunter that enough grown ones face is mobbed; a nearer one, or a lone one, is
             // fled — up a tree if there is one.
             let mob = t.hunter
-                && kind.does(Behavior::MobThreat)
+                && species.does(Behavior::MobThreat)
                 && s.grown
                 && s.grown_near >= 4
                 && t.dist > 6.0
@@ -209,7 +211,7 @@ pub fn choose(kind: &Kind, needs: &Needs, s: &Situation, roll: f32) -> Doing {
             if s.in_tree {
                 return Doing::Watching { at: t.at };
             }
-            if kind.does(Behavior::FleeToTrees)
+            if species.does(Behavior::FleeToTrees)
                 && let Some(tree) = s.tree
             {
                 return Doing::Fleeing { to: tree };
@@ -219,7 +221,7 @@ pub fn choose(kind: &Kind, needs: &Needs, s: &Situation, roll: f32) -> Doing {
                 to: s.pos + away * 40.0,
             };
         }
-        if t.hunter && s.grown && kind.does(Behavior::AlarmCall) && !s.alarm_raised {
+        if t.hunter && s.grown && species.does(Behavior::AlarmCall) && !s.alarm_raised {
             return Doing::Alarm { at: t.at };
         }
         return Doing::Watching { at: t.at };
@@ -228,7 +230,7 @@ pub fn choose(kind: &Kind, needs: &Needs, s: &Situation, roll: f32) -> Doing {
         if s.in_nest {
             return Doing::Sleeping;
         }
-        if s.in_tree && kind.does(Behavior::TreeNest) {
+        if s.in_tree && species.does(Behavior::TreeNest) {
             return Doing::Nesting;
         }
         if let Some(tree) = s.tree {

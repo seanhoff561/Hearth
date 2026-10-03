@@ -1,30 +1,38 @@
-//! The hominins about the player (V2-11 (c)): the agents of `hearth_agent`, drawn out of the
-//! ecology's hominin groups as the player comes near and folded back as the player goes, living
-//! in the world as the game has it — the loaded ground, its trees and water, the things lying
-//! about, the fruit and nut trees in their season, the weather on their bodies, the fauna's
-//! hunters about them — their calls heard with the animals', their nests bent into the trees.
-//! Where a group is drawn out for the first time, its site lies under the nearest nut tree: an
-//! anvil with its hammers and the cobbles of the place, and the flakes and cores of its work
-//! before (V2-11 (d)).
+//! The people about the player (V2.1, H0): the persons of `hearth_people`, their bands drawn out
+//! of the ecology's groups as the player comes near — the same persons each time — and folded
+//! back as the player goes; living in the world as the game has it — the loaded ground, its trees
+//! and water, the things lying about, the fruit and nut trees in their season, the weather on
+//! their bodies, the fauna's hunters about them — their calls heard with the animals', their
+//! nests bent into the trees; saved with the world. Where a band is drawn out for the first time,
+//! its site lies under the nearest nut tree: an anvil with its hammers and the cobbles of the
+//! place, and the flakes and cores of its work before.
+
+use std::path::Path;
 
 use glam::DVec3;
-use hearth_agent::Things;
-use hearth_agent::live::{AgentView, AgentWorld, FoodHere, Hominins, Now, Person};
-use hearth_agent::{Kind, Kinds};
 use hearth_body::{BodyConfig, Exposure};
-use hearth_character::{Activity, Drive};
+use hearth_character::{Activity, Drive, Figure};
 use hearth_content::Content;
 use hearth_content::schema::flora::PartKind;
+use hearth_content::schema::humans::BodyPlan;
 use hearth_craft::engine::Surroundings;
 use hearth_craft::{Crafts, Graph};
 use hearth_fauna::live::Ground;
 use hearth_items::{Items, Stack, WorldItems};
 use hearth_math::BlockPos;
+use hearth_people::inspect::Report;
+use hearth_people::{
+    FoodHere, Now, People, PersonView, PlayerSeen, Senses, Species, SpeciesSet, Things,
+    World as PeopleWorld,
+};
 
 use crate::fauna::{Fauna, MapGround};
 use crate::scene::LocalWorld;
 
-/// A fruit or nut tree about the agents: where its crown stands over the ground, and what it
+/// The people's file in a world's folder.
+const FILE: &str = "people.json.zst";
+
+/// A fruit or nut tree about the people: where its crown stands over the ground, and what it
 /// gives now (its fruit in season; the stones of its nuts lying under it all year).
 #[derive(Debug, Clone)]
 struct FoodTree {
@@ -42,24 +50,29 @@ const TREES_REFRESH_M: f64 = 60.0;
 const TREES_M: i32 = 160;
 /// What the open savanna's ground gives a forager a minute (kg): seeds and grubs, thinly.
 const GROUND_KG_MIN: f32 = 0.02;
-/// How far from a group's place the nut tree of its site may stand (m): within the reach in
-/// which a group drawn out knows its anvils.
+/// How far from a band's place the nut tree of its site may stand (m): within the reach in which
+/// a band drawn out knows its anvils.
 const SITE_M: f64 = 70.0;
 /// No second site is laid within this of an anvil already lying (m).
 const SITE_APART_M: f64 = 25.0;
+/// How far about a player its client is told of the people (m).
+const VIEW_M: f64 = 200.0;
 
-/// The hominins about the player.
-pub struct Agents {
-    pub live: Hominins,
-    pub kinds: Kinds,
+/// The people about the player, and everyone ever met.
+pub struct PeopleNear {
+    pub live: People,
+    pub species: SpeciesSet,
     trees: Vec<FoodTree>,
-    trees_at: Option<(DVec3, u64)>,
+    /// Where the players were and the tick when the trees were last looked over.
+    trees_at: Option<(Vec<DVec3>, u64)>,
     /// They were in sight at the last sending.
     pub shown: bool,
+    /// The moment of the last tick.
+    now: Option<Now>,
 }
 
-/// The world as the agents live in it, for one tick.
-struct World<'a> {
+/// The world as the people live in it, for one tick.
+struct Surrounds<'a> {
     ground: MapGround<'a>,
     things: OnTheGround<'a>,
     items: &'a Items,
@@ -71,7 +84,7 @@ struct World<'a> {
     nests: Vec<BlockPos>,
 }
 
-/// The things lying in the world, as the agents reach them.
+/// The things lying in the world, as the people reach them.
 struct OnTheGround<'a> {
     items: &'a mut WorldItems,
     lw: &'a LocalWorld,
@@ -114,13 +127,17 @@ impl Things for OnTheGround<'_> {
     }
 }
 
-impl AgentWorld for World<'_> {
-    fn ground(&self) -> &dyn Ground {
+impl Senses for Surrounds<'_> {
+    fn ground(&self) -> &(dyn Ground + Sync) {
         &self.ground
     }
 
-    fn things(&mut self) -> &mut dyn Things {
-        &mut self.things
+    fn things_near(&self, at: DVec3, reach: f64) -> Vec<(u64, Stack)> {
+        self.things.near(at, reach)
+    }
+
+    fn place_of(&self, id: u64) -> Option<DVec3> {
+        self.things.place(id)
     }
 
     fn food_at(&self, at: DVec3) -> Option<FoodHere> {
@@ -182,6 +199,12 @@ impl AgentWorld for World<'_> {
             .filter(|h| (*h - at).length() < within)
             .collect()
     }
+}
+
+impl PeopleWorld for Surrounds<'_> {
+    fn things(&mut self) -> &mut dyn Things {
+        &mut self.things
+    }
 
     fn call(&mut self, at: DVec3, alarm: bool) {
         self.calls.push((at, alarm));
@@ -200,8 +223,8 @@ impl AgentWorld for World<'_> {
         ))
     }
 
-    fn settle(&mut self, at: DVec3, _kind: &Kind) {
-        // Under the nut tree nearest the group's place.
+    fn settle(&mut self, at: DVec3, _species: &Species) {
+        // Under the nut tree nearest the band's place.
         let Some(tree) = self
             .trees
             .iter()
@@ -253,7 +276,7 @@ impl AgentWorld for World<'_> {
     }
 }
 
-/// The stones of a hominin site.
+/// The stones of a band's site.
 struct Stones {
     anvil: String,
     hammer: String,
@@ -262,7 +285,7 @@ struct Stones {
     flake: String,
 }
 
-impl World<'_> {
+impl Surrounds<'_> {
     /// The stones of a site at a place: the place's own rock where it makes them (an anvil,
     /// hammers where it is hard, cobbles to knap where it breaks well), else what river gravels
     /// give (quartzite) and the rift's basalt for the anvil.
@@ -302,33 +325,87 @@ impl World<'_> {
     }
 }
 
-impl Agents {
-    pub fn new(content: &Content, graph: &Graph, body: &BodyConfig, seed: u64) -> Self {
+impl PeopleNear {
+    /// The people of a world: as saved in `dir`, or none met yet.
+    pub fn new(
+        content: &Content,
+        graph: &Graph,
+        body: &BodyConfig,
+        seed: u64,
+        dir: Option<&Path>,
+    ) -> Self {
+        let live = dir
+            .and_then(|d| load(&d.join(FILE)))
+            .map_or_else(|| People::new(seed), |s| People::from_save(seed, s));
         Self {
-            live: Hominins::new(seed),
-            kinds: Kinds::from_content(content, graph, body),
+            live,
+            species: SpeciesSet::from_content(content, graph, body),
             trees: Vec::new(),
             trees_at: None,
             shown: false,
+            now: None,
         }
     }
 
-    /// The fruit and nut trees about a place, and what each gives at this time of the year.
-    fn look_for_trees(&mut self, lw: &LocalWorld, at: DVec3, year_frac: f32, tick: u64) {
-        let fresh = self.trees_at.is_some_and(|(p, t)| {
-            (p - at).length() < TREES_REFRESH_M && tick.saturating_sub(t) < 2400
+    /// Saves the people into `dir` with the animals: every band folded back into its numbers in
+    /// a copy, as if the player were far away, the records waiting for the player's return.
+    pub fn save(&self, fauna: &Fauna, dir: &Path) {
+        let mut people = self.live.clone();
+        let species = &self.species;
+        let now = self.now;
+        fauna.save_with(dir, |eco| {
+            if let Some(now) = now {
+                people.fold_all(eco, species, now);
+            }
+        });
+        let json = match hearth_people::save::to_json(&people.to_save()) {
+            Ok(j) => j,
+            Err(e) => {
+                log::error!("people not saved: {e}");
+                return;
+            }
+        };
+        match zstd::encode_all(json.as_slice(), 3) {
+            Ok(z) => {
+                if let Err(e) = std::fs::write(dir.join(FILE), z) {
+                    log::error!("people not saved: {e}");
+                }
+            }
+            Err(e) => log::error!("people not saved: {e}"),
+        }
+    }
+
+    /// The fruit and nut trees about each player, and what each gives at this time of the year.
+    fn look_for_trees(&mut self, lw: &LocalWorld, players: &[DVec3], year_frac: f32, tick: u64) {
+        let fresh = self.trees_at.as_ref().is_some_and(|(was, t)| {
+            was.len() == players.len()
+                && was
+                    .iter()
+                    .zip(players)
+                    .all(|(a, b)| (*a - *b).length() < TREES_REFRESH_M)
+                && tick.saturating_sub(*t) < 2400
         });
         if fresh {
             return;
         }
-        self.trees_at = Some((at, tick));
-        let (x, z) = (at.x.floor() as i32, at.z.floor() as i32);
-        let placed = lw.generator.features().trees_in(
-            &lw.generator,
-            &lw.vegetation,
-            (x - TREES_M, z - TREES_M),
-            (x + TREES_M, z + TREES_M),
-        );
+        self.trees_at = Some((players.to_vec(), tick));
+        let mut placed = Vec::new();
+        for at in players {
+            let (x, z) = (at.x.floor() as i32, at.z.floor() as i32);
+            for t in lw.generator.features().trees_in(
+                &lw.generator,
+                &lw.vegetation,
+                (x - TREES_M, z - TREES_M),
+                (x + TREES_M, z + TREES_M),
+            ) {
+                if !placed
+                    .iter()
+                    .any(|q: &hearth_worldgen::cubegen::features::PlacedTree| q.foot == t.foot)
+                {
+                    placed.push(t);
+                }
+            }
+        }
         let forest = &lw.generator.forest;
         self.trees = placed
             .iter()
@@ -368,10 +445,10 @@ impl Agents {
             .collect();
     }
 
-    /// A tick of `dt` seconds of play: every 40 ticks the groups near the player are drawn out
-    /// and those far folded back; every tick the agents live, with the person among them (if
-    /// any) to notice. Blocks it changed (nests) go into `changed`; true when the things lying
-    /// about changed.
+    /// A tick of `dt` seconds of play: every 40 ticks the bands near any of the regions lived in
+    /// full (the players' places) are drawn out and those far from all of them folded back; every
+    /// tick the people in full live, with the players among them to notice. Blocks it changed
+    /// (nests) go into `changed`; true when the things lying about changed.
     #[allow(clippy::too_many_arguments)]
     pub fn tick(
         &mut self,
@@ -385,22 +462,25 @@ impl Agents {
         exposure: Exposure,
         around: Surroundings,
         year_frac: f32,
-        player: DVec3,
-        person: Option<Person>,
+        regions: &[DVec3],
+        players: &[PlayerSeen],
         now: Now,
         dt: f32,
     ) -> bool {
+        self.now = Some(now);
+        let at = regions;
         let every = now.tick.is_multiple_of(40);
-        if self.live.groups.is_empty() && !every {
+        let out = self.live.full().next().is_some();
+        if !out && !every {
             return false;
         }
-        // The fruit and nut trees about them, while there are agents to feed at them or groups
+        // The fruit and nut trees about them, while there are people to feed at them or bands
         // about to be drawn out.
-        if every && (!self.live.groups.is_empty() || coming(fauna, player)) {
-            self.look_for_trees(lw, player, year_frac, now.tick);
+        if every && (out || coming(fauna, at)) {
+            self.look_for_trees(lw, at, year_frac, now.tick);
         }
-        // The hunters about: the fauna's animals that take a hominin.
-        let hominin_species: Vec<usize> = fauna
+        // The hunters about: the fauna's animals that take a person.
+        let people_species: Vec<usize> = fauna
             .eco
             .catalog
             .species
@@ -413,18 +493,18 @@ impl Agents {
             .live
             .animals
             .iter()
-            .filter(|a| !a.dead && (a.pos - player).length() < 260.0)
+            .filter(|a| !a.dead && at.iter().any(|p| (a.pos - *p).length() < 260.0))
             .filter(|a| {
                 fauna.eco.catalog.species[a.species as usize]
                     .prey
                     .iter()
-                    .any(|(p, _)| hominin_species.contains(p))
+                    .any(|(p, _)| people_species.contains(p))
             })
             .map(|a| a.pos)
             .collect();
         let content = lw.content.clone();
         let (calls, nests, items_changed) = {
-            let mut world = World {
+            let mut world = Surrounds {
                 ground: MapGround {
                     map: &lw.map,
                     reg: &lw.reg,
@@ -444,26 +524,26 @@ impl Agents {
                 calls: Vec::new(),
                 nests: Vec::new(),
             };
-            if now.tick.is_multiple_of(40) {
-                self.live.fold(&mut fauna.eco, player);
-                self.live.materialize(
+            if every {
+                self.live.fold(&mut fauna.eco, &self.species, at, now);
+                self.live.draw_out(
                     &mut fauna.eco,
-                    &self.kinds,
+                    &self.species,
                     graph,
                     items,
                     &mut world,
-                    player,
-                    now.tick,
+                    at,
+                    now,
                 );
             }
-            if !self.live.agents.is_empty() {
+            if self.live.full().next().is_some() {
                 self.live.step(
-                    &self.kinds,
+                    &self.species,
                     crafts,
                     &content,
                     items,
                     &mut world,
-                    person,
+                    players,
                     now,
                     dt,
                 );
@@ -472,7 +552,7 @@ impl Agents {
         };
         // Their calls, heard as the animals' are: the population's alarm.
         for (at, alarm) in calls {
-            let Some(sp) = hominin_species.first().copied() else {
+            let Some(sp) = people_species.first().copied() else {
                 break;
             };
             let when = if alarm {
@@ -503,7 +583,7 @@ impl Agents {
         items_changed
     }
 
-    /// What the person watching sees done this tick, and whether they stand by a scatter of
+    /// What the player watching sees done this tick, and whether they stand by a scatter of
     /// knapped stone: the triggers to hear.
     pub fn watched(
         &self,
@@ -513,23 +593,50 @@ impl Agents {
         eye: DVec3,
         yaw: f32,
     ) -> Vec<String> {
-        if self.live.agents.is_empty() {
+        if self.live.full().next().is_none() {
             return Vec::new();
         }
-        let mut out = hearth_agent::seen(&self.live.done, graph, crafts, eye, yaw);
+        let mut out = hearth_people::seen(&self.live.done, graph, crafts, eye, yaw);
         let lying = world_items
             .items
             .iter()
             .map(|w| (DVec3::from_array(w.pos), w.stack.id.as_str(), w.stack.count));
-        if hearth_agent::scatter_near(lying, eye) {
+        if hearth_people::scatter_near(lying, eye) {
             out.push(STUDY_SCATTER.to_owned());
         }
         out
     }
 
-    /// The agents as the client draws them.
-    pub fn views(&self) -> Vec<AgentView> {
-        self.live.views(&self.kinds)
+    /// The people in full about a player, as that player's client draws them.
+    pub fn views(&self, near: DVec3) -> Vec<PersonView> {
+        self.now.map_or_else(Vec::new, |now| {
+            self.live.views(&self.species, &now, near, VIEW_M)
+        })
+    }
+
+    /// A person's record for the inspector.
+    pub fn inspect(&self, id: u64, graph: &Graph) -> Option<Report> {
+        let now = self.now?;
+        hearth_people::inspect::report(&self.live, &self.species, graph, id, &now)
+    }
+}
+
+/// The people's save in a world's folder.
+fn load(path: &Path) -> Option<hearth_people::PeopleSave> {
+    let bytes = std::fs::read(path).ok()?;
+    let json = match zstd::decode_all(bytes.as_slice()) {
+        Ok(j) => j,
+        Err(e) => {
+            log::error!("the people's save is unreadable ({e}); starting without them");
+            return None;
+        }
+    };
+    match hearth_people::save::from_json(&json) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            log::error!("the people's save is unreadable ({e}); starting without them");
+            None
+        }
     }
 }
 
@@ -591,20 +698,30 @@ fn nest_spot(lw: &LocalWorld, at: DVec3, nest: hearth_world::BlockStateId) -> Op
 /// The trigger of studying a scatter of knapped stone.
 const STUDY_SCATTER: &str = "study:tool_scatter";
 
-/// Whether a hominin group not yet drawn out is near enough the player to be soon.
-fn coming(fauna: &Fauna, player: DVec3) -> bool {
+/// Whether a band not yet drawn out is near enough any player to be soon.
+fn coming(fauna: &Fauna, players: &[DVec3]) -> bool {
     fauna.eco.regions.values().any(|r| {
         r.groups.iter().any(|g| {
             !g.live
                 && fauna.eco.catalog.species[g.species as usize].hominin
-                && (g.pos[0] - player.x).hypot(g.pos[1] - player.z)
-                    < hearth_agent::live::NEAR_M + 20.0
+                && players.iter().any(|p| {
+                    (g.pos[0] - p.x).hypot(g.pos[1] - p.z) < hearth_people::sim::NEAR_M + 20.0
+                })
         })
     })
 }
 
-/// How a hominin looks: its height and sex, dark-skinned under a coat of brown hair.
-pub fn looks(v: &AgentView) -> hearth_character::Appearance {
+/// A person's figure: its species' body plan at its height and sex.
+pub fn figure(v: &PersonView) -> Figure {
+    match v.plan {
+        BodyPlan::Australopith => Figure::hominin(looks(v)),
+        BodyPlan::Erectus | BodyPlan::Neanderthal | BodyPlan::Modern => Figure::starting(looks(v)),
+    }
+}
+
+/// How a person looks (until H1's phenotypes): its height and sex; an australopith
+/// dark-skinned under a coat of brown hair.
+pub fn looks(v: &PersonView) -> hearth_character::Appearance {
     hearth_character::Appearance {
         body: if v.female {
             hearth_character::BodyType::Female
@@ -621,10 +738,10 @@ pub fn looks(v: &AgentView) -> hearth_character::Appearance {
     }
 }
 
-/// How a hominin's figure moves for what it is doing: walking and running, climbing its tree,
+/// How a person's figure moves for what it is doing: walking and running, climbing its tree,
 /// crouched at its work or its food, lying asleep in its nest, standing to watch or to call.
-pub fn drive(v: &AgentView) -> Drive {
-    use hearth_agent::Doing;
+pub fn drive(v: &PersonView) -> Drive {
+    use hearth_people::Doing;
     let in_tree = v.medium == hearth_fauna::live::Medium::Tree;
     let activity = match &v.doing {
         Doing::Sleeping => Activity::Lie,

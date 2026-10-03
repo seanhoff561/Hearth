@@ -5,7 +5,7 @@
         (
             id: "wild_earth", name: "Wild Earth", order: 0, available: true, wild_ancestors: true,
             description: "A timeless wild Earth with no civilisation: present-day wild plants and animals, the wild ancestors of domesticated species, and rare groups of Australopithecus.",
-            hominins: ["australopithecus"],
+            species: ["australopithecus"],
             systems: ["geology", "seasons", "flora", "fauna", "physiology", "processes", "knowledge", "building"],
         ),
         (

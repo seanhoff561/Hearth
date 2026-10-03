@@ -1,6 +1,6 @@
 [package]
-name = "hearth_agent"
-description = "Agents: bodies, minds, what they know and carry, their groups and their groups' ways; hominins now, people later."
+name = "hearth_people"
+description = "People (V2.1): persons as compositions of components under species profiles, their registry and saves, their days lived in full near the player."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,7 +16,9 @@ hearth_fauna.workspace = true
 hearth_math.workspace = true
 log.workspace = true
 glam.workspace = true
+rayon.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

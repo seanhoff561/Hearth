@@ -670,10 +670,17 @@ impl Fauna {
     /// Saves the populations into `dir` (the animals in the world folded back first, in a
     /// copy).
     pub fn save(&self, dir: &Path) {
+        self.save_with(dir, |_| {});
+    }
+
+    /// Saves the populations into `dir`, the animals in the world folded back first and then
+    /// whatever else lives on in the cells' numbers (the people's bands, by `fold`), in a copy.
+    pub fn save_with(&self, dir: &Path, fold: impl FnOnce(&mut Ecology)) {
         let mut eco = self.eco.clone();
         let mut live = self.live.clone();
         // Everything folds, as if the player were far away.
         live.fold(&mut eco, DVec3::new(f64::MAX / 4.0, 0.0, f64::MAX / 4.0));
+        fold(&mut eco);
         let mut regions: Vec<Region> = eco.regions.into_values().collect();
         regions.sort_by_key(|r| r.key);
         let saved = Saved {

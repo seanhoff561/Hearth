@@ -137,8 +137,9 @@ pub enum Act {
 
 /// Where an animal is: on the ground, in the water (swimming), on the wing, up a tree (a
 /// climber on its trunk, a bird on a perch).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Medium {
+    #[default]
     Ground,
     Water,
     Air,

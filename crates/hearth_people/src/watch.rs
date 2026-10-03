@@ -9,7 +9,7 @@ use glam::DVec3;
 use hearth_content::schema::knowledge::Route;
 use hearth_craft::{Crafts, Graph};
 
-use crate::live::Done;
+use crate::sim::Done;
 
 /// How far off a person sees the work of hands (m).
 pub const WATCH_M: f64 = 40.0;

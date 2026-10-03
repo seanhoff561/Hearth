@@ -127,8 +127,8 @@ pub struct Species {
     pub aquatic: bool,
     /// Lives in the sea, its lands the sea's alone (its density is per km² of the sea).
     pub marine: bool,
-    /// The population of a hominin (`hominins/`): its groups are drawn out near the player as
-    /// that hominin's agents, not as animals.
+    /// The population of a species of person (`humans/species/`): its groups are drawn out near
+    /// the player as that species' persons, not as animals.
     pub hominin: bool,
     /// Lives by the water, its lands those of the waters alone (a beaver, an otter, a heron, a
     /// hippo): of a cell's land it has the share the water about it gives.
@@ -445,7 +445,7 @@ impl Catalog {
             .map(|(i, a)| species_of(c, a, i, &by_id, &eco_bit, water, sea))
             .collect();
         // The hominins' populations.
-        for h in c.hominins.iter() {
+        for h in c.species.iter() {
             let Some(p) = &h.population else {
                 continue;
             };

@@ -23,11 +23,17 @@ use hearth_render::water::WaterHeights;
 use hearth_world::{BlockRegistry, Cube};
 use hearth_worldgen::{PlanetGrid, WorldGenerator};
 
+/// The version of the messages between the client and the server, raised with every change to
+/// them (D166); the network handshake checks it (Amendment R, R1).
+pub const PROTOCOL: u32 = 1;
+
 /// From the client.
 #[derive(Debug, Clone)]
 pub enum ToServer {
     /// Where the player's own movement took them, and what it did since the last report.
     Moved(Moved),
+    /// The person the developer's inspector looks at (F3), or none.
+    Inspect(Option<u64>),
     /// Lie down to sleep (true) or get up.
     Sleep(bool),
     /// Put the player at a place (the globe's choice, a debug move): the server finds solid
@@ -281,8 +287,10 @@ pub enum ToClient {
     Smoke(Vec<Plume>),
     /// The animals near the player (ten times a second while there are any).
     Animals(Vec<hearth_fauna::live::AnimalView>),
-    /// The hominins near the player (ten times a second while there are any).
-    Hominins(Vec<hearth_agent::AgentView>),
+    /// The people near the player (ten times a second while there are any).
+    People(Vec<hearth_people::PersonView>),
+    /// The record of the person the developer's inspector looks at (F3), once a second.
+    Inspected(Option<Box<hearth_people::inspect::Report>>),
     /// Calls the animals made (those in the world and those about it).
     Calls(Vec<hearth_fauna::voices::Called>),
     /// The signs animals left near the player (tracks, blood, droppings), with the world's

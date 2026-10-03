@@ -1,0 +1,1636 @@
+//! The people (V2.1 §2–3, §17; H0): the registry of everyone ever drawn out and their bands; the
+//! bands of the ecological cells drawn out near the player as persons — the same persons each
+//! time — and folded back into their numbers as the player goes; and their days, lived a step at
+//! a time in two phases so that neither the order of the persons nor the number of threads
+//! changes what happens:
+//!
+//! 1. **Deciding** (in parallel): each person in full senses what is about it — the world, read
+//!    only, and the others as the step found them — and, when its choice has run its time or
+//!    danger interrupts, chooses again, drawing from its own random stream.
+//! 2. **Acting** (in the persons' order): each does what it chose — walking, climbing, feeding,
+//!    drinking, working the player's processes, calling, nesting — touching the shared world one
+//!    at a time; and its body lives the moment.
+//!
+//! The world is the game's: it answers through [`Senses`] and [`World`] what lies where, what
+//! there is to eat, the weather on a body, the hunters about, and takes their calls and nests.
+
+use glam::{DVec2, DVec3};
+use hearth_body::Food;
+use hearth_content::Content;
+use hearth_content::schema::humans::{Behavior, BodyPlan, Disperser};
+use hearth_craft::engine::Aimed;
+use hearth_craft::{Crafts, Graph};
+use hearth_fauna::ecology::Ecology;
+use hearth_fauna::habitat::CELL_M;
+use hearth_fauna::live::{Cell, Ground, Medium, Stage};
+use hearth_fauna::nav::{trunk_near, water_near};
+use hearth_items::{Items, Stack};
+use hearth_math::hash::Rng;
+use rayon::prelude::*;
+
+use crate::band::{Band, Culture, Places};
+use crate::mind::{Doing, Intent, Needs, Offer, Situation, Threat, choose};
+use crate::person::{Cause, Died, Event, Person, PersonId, Tier};
+use crate::species::{Species, SpeciesSet};
+use crate::work::{REACH_M, finish_work, plan_work};
+use crate::world::{Now, PlayerSeen, Senses, World};
+use serde::{Deserialize, Serialize};
+
+/// A band within this of the player is drawn out as persons (m); one whose persons are all
+/// beyond [`FAR_M`] is folded back into its numbers.
+pub const NEAR_M: f64 = 112.0;
+pub const FAR_M: f64 = 150.0;
+/// How far a person looks about for a tree, water or food it does not yet know (m).
+const LOOK_M: f64 = 40.0;
+/// How far it sees a hunter or the player (m), by day.
+const SEE_M: f64 = 120.0;
+/// How far a hunter or the player may come before it runs, when it has not come to tolerate them.
+const FLIGHT_M: f32 = 60.0;
+/// A calm player holds its eye within this many times its flight distance; beyond, it goes about
+/// its day.
+const HEED: f32 = 1.5;
+/// How long the bodies go between their steps (seconds of play).
+const BODY_S: f32 = 1.0;
+/// Food eaten a second of feeding, of a minute's worth (kg a minute → per second).
+const PER_MIN: f32 = 1.0 / 60.0;
+/// Water drunk a second at the water (l).
+const DRINK_L_S: f64 = 0.05;
+/// Seconds of play of a calm player's company within sight that bring a band to be at ease with
+/// them (a play day and a half); and of a player running at them or hunting near them that undo
+/// it.
+const HABITUATE_S: f32 = 1.5 * 2880.0;
+const UNLEARN_S: f32 = 60.0;
+/// How far about its place a band knows the anvils lying (m).
+const ANVILS_M: f64 = 80.0;
+/// A band dormant longer than this (days) comes back rested and fed.
+const REFRESH_DAYS: f64 = 1.0;
+
+/// Something a person did that someone could see: the process and its triggers, where.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Done {
+    pub person: PersonId,
+    pub at: DVec3,
+    pub recipe: usize,
+    pub triggers: Vec<String>,
+}
+
+/// A person as the client draws it (a message's payload: serializable, D166).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PersonView {
+    pub id: PersonId,
+    /// Its species' body plan, for its figure.
+    pub plan: BodyPlan,
+    pub female: bool,
+    pub stage: Stage,
+    pub pos: DVec3,
+    pub yaw: f32,
+    pub speed: f32,
+    pub medium: Medium,
+    pub doing: Doing,
+    /// Its height (m), for its figure.
+    pub height_m: f32,
+}
+
+/// A band's numbers as the ecological cells count them: the young of the year, the young not yet
+/// grown, the grown females and males.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Numbers {
+    pub young: u16,
+    pub juveniles: u16,
+    pub females: u16,
+    pub males: u16,
+}
+
+impl Numbers {
+    pub fn total(&self) -> usize {
+        (self.young + self.juveniles + self.females + self.males) as usize
+    }
+}
+
+/// A person as the others see it at the start of a step.
+#[derive(Debug, Clone, Copy)]
+struct Glimpse {
+    id: PersonId,
+    band: u64,
+    pos: DVec3,
+    grown: bool,
+    alive: bool,
+    alarm: bool,
+}
+
+/// Everyone ever drawn out, and their bands.
+#[derive(Debug, Clone, PartialEq)]
+pub struct People {
+    /// Every person, in the order of their ids (they are only ever added).
+    pub persons: Vec<Person>,
+    pub bands: Vec<Band>,
+    pub next_id: u64,
+    /// The world's seed: every person's and band's own stream comes from it.
+    pub seed: u64,
+    /// Seconds of play to the bodies' next step.
+    pub(crate) body_s: f32,
+    /// What was done in the last step that someone could have watched.
+    pub done: Vec<Done>,
+}
+
+/// The horizontal distance between two places on the planet (wrapping in x).
+fn hdist(a: DVec3, b: DVec3, wrap: f64) -> f64 {
+    let mut dx = (a.x - b.x).abs();
+    if wrap > 0.0 {
+        dx = dx.min(wrap - dx);
+    }
+    dx.hypot(a.z - b.z)
+}
+
+/// A band's own stream, from the world's seed and its id.
+fn band_stream(seed: u64, id: u64) -> Rng {
+    Rng::new(hearth_math::hash::hash2(seed ^ 0x00ba_4d5e_ed00_0000, id))
+}
+
+impl People {
+    pub fn new(seed: u64) -> Self {
+        Self {
+            persons: Vec::new(),
+            bands: Vec::new(),
+            next_id: 1,
+            seed,
+            body_s: 0.0,
+            done: Vec::new(),
+        }
+    }
+
+    /// A person by id.
+    pub fn get(&self, id: PersonId) -> Option<&Person> {
+        self.persons
+            .binary_search_by_key(&id, |p| p.id)
+            .ok()
+            .map(|i| &self.persons[i])
+    }
+
+    /// The persons of a band.
+    pub fn members(&self, band: u64) -> impl Iterator<Item = &Person> {
+        self.persons.iter().filter(move |p| p.social.band == band)
+    }
+
+    /// The persons lived in full now.
+    pub fn full(&self) -> impl Iterator<Item = &Person> {
+        self.persons
+            .iter()
+            .filter(|p| p.tier == Tier::Full && p.alive())
+    }
+
+    fn band_index(&self, id: u64) -> Option<usize> {
+        self.bands.iter().position(|b| b.id == id)
+    }
+
+    fn take_id(&mut self) -> PersonId {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    /// A band's living members counted as the ecological cells count them.
+    pub fn numbers(&self, band: u64, species: &Species, now: &Now) -> Numbers {
+        let mut n = Numbers::default();
+        for p in self.members(band).filter(|p| p.alive()) {
+            match (p.stage(species, now), p.life.female) {
+                (Stage::Young, _) => n.young += 1,
+                (Stage::Juvenile, _) => n.juveniles += 1,
+                (Stage::Adult, true) => n.females += 1,
+                (Stage::Adult, false) => n.males += 1,
+            }
+        }
+        n
+    }
+
+    /// Draws out as persons the hominin groups of the ecology within [`NEAR_M`] of any player
+    /// that are not out: a band met before as the same persons (reconciled with what the cells
+    /// did with its numbers meanwhile), a new one as persons of the ages and sexes its numbers
+    /// say, knowing the water, the trees and the anvils about it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_out(
+        &mut self,
+        eco: &mut Ecology,
+        species: &SpeciesSet,
+        graph: &Graph,
+        items: &Items,
+        world: &mut dyn World,
+        players: &[DVec3],
+        now: Now,
+    ) {
+        let wrap = eco.cells_around as f64 * CELL_M;
+        let cat = eco.catalog.clone();
+        // The groups to draw out, in the order of their ids.
+        let mut groups: Vec<(u64, usize, Numbers, [f64; 2], [f64; 2], f64)> = Vec::new();
+        for r in eco.regions.values() {
+            for g in &r.groups {
+                let sp = &cat.species[g.species as usize];
+                if !sp.hominin || g.live || g.size() == 0 {
+                    continue;
+                }
+                let at = DVec3::new(g.pos[0], 0.0, g.pos[1]);
+                if !players.iter().any(|p| hdist(at, *p, wrap) <= NEAR_M) {
+                    continue;
+                }
+                let Some(si) = species
+                    .list
+                    .iter()
+                    .position(|k| k.population.as_deref().is_some_and(|p| p == sp.id))
+                else {
+                    continue;
+                };
+                let n = Numbers {
+                    young: g.young,
+                    juveniles: g.juveniles,
+                    females: g.females,
+                    males: g.males,
+                };
+                let range_m = (sp.home_range_km2 as f64 / std::f64::consts::PI).sqrt() * 1000.0;
+                groups.push((g.id, si, n, g.pos, g.home, range_m));
+            }
+        }
+        groups.sort_by_key(|g| g.0);
+        let mut drawn = Vec::new();
+        for (gid, si, want, pos, home, range_m) in groups {
+            let sp = &species.list[si];
+            let Some(centre) = world.ground().top(pos[0], pos[1]) else {
+                // Not loaded yet: it waits.
+                continue;
+            };
+            let here = DVec3::new(pos[0], centre.level(), pos[1]);
+            let bi = match self
+                .bands
+                .iter()
+                .position(|b| b.population_group == Some(gid))
+            {
+                Some(bi) => {
+                    self.redraw(bi, sp, graph, want, here, now);
+                    bi
+                }
+                None => {
+                    let bi = self.found(sp, graph, gid, want, here, DVec2::from_array(home), now);
+                    self.bands[bi].range_m = range_m;
+                    self.bands[bi].population_group = Some(gid);
+                    world.settle(here, sp);
+                    bi
+                }
+            };
+            self.onto_the_ground(bi, &*world, here);
+            know_about(&mut self.bands[bi], world, items, here);
+            drawn.push(gid);
+        }
+        for r in eco.regions.values_mut() {
+            for g in r.groups.iter_mut().filter(|g| drawn.contains(&g.id)) {
+                g.live = true;
+            }
+        }
+    }
+
+    /// Founds a band of a species at a place: persons of the ages and sexes its numbers say, the
+    /// young and half-grown with mothers among its grown females. Its index.
+    #[allow(clippy::too_many_arguments)]
+    fn found(
+        &mut self,
+        sp: &Species,
+        graph: &Graph,
+        id: u64,
+        n: Numbers,
+        here: DVec3,
+        home: DVec2,
+        now: Now,
+    ) -> usize {
+        let mut rng = band_stream(self.seed, id);
+        let maturity = sp.life.maturity_years as f64;
+        let prime = (sp.life.adult_death_years.0 as f64).max(maturity + 5.0);
+        let mut ages: Vec<(f64, bool)> = Vec::new();
+        ages.extend((0..n.females).map(|_| (maturity + (prime - maturity) * rng.next_f64(), true)));
+        ages.extend((0..n.males).map(|_| (maturity + (prime - maturity) * rng.next_f64(), false)));
+        for _ in 0..n.juveniles {
+            let age = 1.0 + (maturity - 1.0) * rng.next_f64();
+            ages.push((age, rng.next_f32() < 0.5));
+        }
+        for _ in 0..n.young {
+            ages.push((rng.next_f64(), rng.next_f32() < 0.5));
+        }
+        let band = Band {
+            id,
+            species: sp.id.clone(),
+            members: Vec::new(),
+            home,
+            range_m: 2000.0,
+            places: Places::default(),
+            tolerance: Vec::new(),
+            culture: Culture {
+                techniques: sp.techniques.clone(),
+                traditions: Vec::new(),
+            },
+            population_group: None,
+            tier: Tier::Full,
+            dormant_since: None,
+            rng,
+        };
+        self.bands.push(band);
+        let bi = self.bands.len() - 1;
+        for (age, female) in ages {
+            let born = now.day - age * now.year_days;
+            let pos = self.scatter(bi, here, 2.0, 10.0);
+            let pid = self.take_id();
+            let mut p = Person::new(pid, sp, graph, id, female, born, pos, now, self.seed);
+            p.place.yaw = self.bands[bi].rng.next_f32() * std::f32::consts::TAU;
+            p.mind.timer = self.bands[bi].rng.next_f32() * 5.0;
+            p.record(now.day, Event::Found { band: id });
+            self.bands[bi].members.push(pid);
+            self.persons.push(p);
+        }
+        self.mothers(bi, sp, now);
+        bi
+    }
+
+    /// Gives the band's young and half-grown without a mother one among its grown females old
+    /// enough to have borne them, the least burdened first.
+    fn mothers(&mut self, bi: usize, sp: &Species, now: Now) {
+        let band = self.bands[bi].id;
+        let maturity = sp.life.maturity_years as f64;
+        let mut females: Vec<(PersonId, f64, usize)> = self
+            .persons
+            .iter()
+            .filter(|p| p.social.band == band && p.alive() && p.life.female)
+            .filter(|p| p.stage(sp, &now) == Stage::Adult)
+            .map(|p| (p.id, p.age(&now), 0))
+            .collect();
+        for i in 0..self.persons.len() {
+            let p = &self.persons[i];
+            if p.social.band != band || !p.alive() || p.life.mother.is_some() {
+                continue;
+            }
+            if p.stage(sp, &now) == Stage::Adult {
+                continue;
+            }
+            let age = p.age(&now);
+            let mother = females
+                .iter_mut()
+                .filter(|(_, a, _)| *a - age >= maturity)
+                .min_by_key(|(id, _, k)| (*k, *id));
+            if let Some((m, _, k)) = mother {
+                *k += 1;
+                self.persons[i].life.mother = Some(*m);
+            }
+        }
+    }
+
+    /// Sets a band's living members down on the ground they stand over (not in the water).
+    fn onto_the_ground(&mut self, bi: usize, world: &dyn Senses, here: DVec3) {
+        let band = self.bands[bi].id;
+        for p in self
+            .persons
+            .iter_mut()
+            .filter(|p| p.social.band == band && p.alive() && p.tier == Tier::Full)
+        {
+            let q = p.place.pos;
+            p.place.pos = world
+                .ground()
+                .footing(q.x, q.z, here.y)
+                .filter(|f| !f.water)
+                .map_or(here, |f| DVec3::new(q.x, f.y, q.z));
+        }
+    }
+
+    /// A place about `here`, from the band's stream.
+    fn scatter(&mut self, bi: usize, here: DVec3, near: f64, far: f64) -> DVec3 {
+        let rng = &mut self.bands[bi].rng;
+        let a = rng.next_f64() * std::f64::consts::TAU;
+        let d = near + rng.next_f64() * (far - near);
+        DVec3::new(here.x + a.cos() * d, here.y, here.z + a.sin() * d)
+    }
+
+    /// A band met before, drawn out again as the same persons: those the cells lost while the
+    /// player was away have died (the frailest first: the young of the year, the old, then the
+    /// half-grown), those they gained are born to its mothers or join it; everyone back about its
+    /// place, rested and fed if it has been long.
+    fn redraw(
+        &mut self,
+        bi: usize,
+        sp: &Species,
+        graph: &Graph,
+        want: Numbers,
+        here: DVec3,
+        now: Now,
+    ) {
+        let band = self.bands[bi].id;
+        let living: Vec<usize> = (0..self.persons.len())
+            .filter(|&i| self.persons[i].social.band == band && self.persons[i].alive())
+            .collect();
+        let have = living.len();
+        let target = want.total();
+        let old_age = sp.life.adult_death_years.0 as f64;
+        if have > target {
+            let mut frail: Vec<(f64, usize)> = living
+                .iter()
+                .map(|&i| {
+                    let p = &self.persons[i];
+                    let age = p.age(&now);
+                    let base = if age < 1.0 {
+                        3.0
+                    } else if age > old_age {
+                        2.0
+                    } else if p.stage(sp, &now) != Stage::Adult {
+                        1.0
+                    } else {
+                        0.0
+                    };
+                    (base + self.bands[bi].rng.next_f64(), i)
+                })
+                .collect();
+            frail.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+            for &(_, i) in frail.iter().take(have - target) {
+                let p = &mut self.persons[i];
+                p.life.died = Some(Died {
+                    day: now.day,
+                    cause: Cause::WhileAway,
+                });
+                p.record(
+                    now.day,
+                    Event::Died {
+                        cause: Cause::WhileAway,
+                    },
+                );
+            }
+        }
+        let away_days = self.bands[bi]
+            .dormant_since
+            .map_or(0.0, |d| (now.day - d).max(0.0));
+        if target > have {
+            let mothers: Vec<PersonId> = self
+                .persons
+                .iter()
+                .filter(|p| p.social.band == band && p.alive() && p.life.female)
+                .filter(|p| p.stage(sp, &now) == Stage::Adult)
+                .map(|p| p.id)
+                .collect();
+            for k in 0..target - have {
+                let pid = self.take_id();
+                let pos = self.scatter(bi, here, 2.0, 10.0);
+                let rng = &mut self.bands[bi].rng;
+                let (female, born, event, mother) = if mothers.is_empty() {
+                    // None to bear it: one of the dispersing sex has come from another band.
+                    let female = match sp.social.disperses {
+                        Disperser::Females => true,
+                        Disperser::Males => false,
+                        Disperser::Both => rng.next_f32() < 0.5,
+                    };
+                    let age = sp.life.maturity_years as f64 + 3.0 * rng.next_f64();
+                    (
+                        female,
+                        now.day - age * now.year_days,
+                        Event::Joined { band },
+                        None,
+                    )
+                } else {
+                    let since = away_days.min(now.year_days) * rng.next_f64();
+                    (
+                        rng.next_f32() < 0.5,
+                        now.day - since,
+                        Event::Born { band },
+                        Some(mothers[k % mothers.len()]),
+                    )
+                };
+                let mut p = Person::new(pid, sp, graph, band, female, born, pos, now, self.seed);
+                p.life.mother = mother;
+                p.record(born.min(now.day), event);
+                self.bands[bi].members.push(pid);
+                self.persons.push(p);
+            }
+        }
+        // Everyone back about its place.
+        let members: Vec<usize> = (0..self.persons.len())
+            .filter(|&i| self.persons[i].social.band == band && self.persons[i].alive())
+            .collect();
+        for i in members {
+            let pos = self.scatter(bi, here, 2.0, 10.0);
+            let p = &mut self.persons[i];
+            p.tier = Tier::Full;
+            p.place.pos = pos;
+            p.place.medium = Medium::Ground;
+            p.place.perch = None;
+            p.place.speed = 0.0;
+            p.mind = crate::mind::Mind::default();
+            if away_days > REFRESH_DAYS {
+                let seed = p.rng.next_u64();
+                let injuries = std::mem::take(&mut p.body.injuries);
+                p.body = hearth_body::Body::new(sp.body(p.life.female), seed);
+                p.body.injuries = injuries;
+            }
+        }
+        self.bands[bi].tier = Tier::Full;
+        self.bands[bi].dormant_since = None;
+    }
+
+    /// Sets a band of a species down at a place (a test's, a screenshot's): its grown females and
+    /// males, half-grown and young, knowing the places about it. Its id.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_band(
+        &mut self,
+        species: &SpeciesSet,
+        graph: &Graph,
+        items: &Items,
+        world: &mut dyn World,
+        si: usize,
+        members: [u16; 4],
+        at: DVec3,
+        now: Now,
+    ) -> u64 {
+        let sp = &species.list[si];
+        let id = 1_000_000_000 + self.next_id;
+        let [females, males, juveniles, young] = members;
+        let n = Numbers {
+            young,
+            juveniles,
+            females,
+            males,
+        };
+        let bi = self.found(sp, graph, id, n, at, DVec2::new(at.x, at.z), now);
+        self.onto_the_ground(bi, &*world, at);
+        know_about(&mut self.bands[bi], world, items, at);
+        id
+    }
+
+    /// Lays a band to rest: its persons' records wait, dormant. Its numbers as the cells count
+    /// them and the middle of where its living members were.
+    pub fn rest(&mut self, band: u64, species: &SpeciesSet, now: Now) -> Option<(Numbers, DVec3)> {
+        let bi = self.band_index(band)?;
+        self.bands[bi].tier = Tier::Dormant;
+        self.bands[bi].dormant_since = Some(now.day);
+        let sp = species.get(&self.bands[bi].species)?;
+        let n = self.numbers(band, sp, &now);
+        let (mut sum, mut k) = (DVec3::ZERO, 0.0);
+        for p in self.persons.iter_mut().filter(|p| p.social.band == band) {
+            p.tier = Tier::Dormant;
+            if p.alive() {
+                sum += p.place.pos;
+                k += 1.0;
+            }
+        }
+        Some((n, if k > 0.0 { sum / k } else { DVec3::ZERO }))
+    }
+
+    /// Wakes a band met before at a place, its numbers being `want` now: the same persons,
+    /// reconciled with those numbers (see `redraw`), back on the ground about the place, knowing
+    /// what lies about it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn wake(
+        &mut self,
+        band: u64,
+        species: &SpeciesSet,
+        graph: &Graph,
+        world: &mut dyn World,
+        items: &Items,
+        want: Numbers,
+        here: DVec3,
+        now: Now,
+    ) {
+        let Some(bi) = self.band_index(band) else {
+            return;
+        };
+        let Some(sp) = species.get(&self.bands[bi].species) else {
+            return;
+        };
+        self.redraw(bi, sp, graph, want, here, now);
+        self.onto_the_ground(bi, &*world, here);
+        know_about(&mut self.bands[bi], world, items, here);
+    }
+
+    /// Folds back into their numbers the bands whose persons are all beyond [`FAR_M`] of every
+    /// player (or dead): their records wait, dormant; the cells count them again.
+    pub fn fold(&mut self, eco: &mut Ecology, species: &SpeciesSet, players: &[DVec3], now: Now) {
+        let wrap = eco.cells_around as f64 * CELL_M;
+        let far: Vec<usize> = (0..self.bands.len())
+            .filter(|&bi| self.bands[bi].tier == Tier::Full)
+            .filter(|&bi| {
+                let id = self.bands[bi].id;
+                self.members(id)
+                    .filter(|p| p.alive())
+                    .all(|p| players.iter().all(|q| hdist(p.place.pos, *q, wrap) > FAR_M))
+            })
+            .collect();
+        for bi in far {
+            self.demote(bi, eco, species, now);
+        }
+    }
+
+    /// Folds every band back (a save's copy: as if the player were far away).
+    pub fn fold_all(&mut self, eco: &mut Ecology, species: &SpeciesSet, now: Now) {
+        for bi in 0..self.bands.len() {
+            if self.bands[bi].tier == Tier::Full {
+                self.demote(bi, eco, species, now);
+            }
+        }
+    }
+
+    fn demote(&mut self, bi: usize, eco: &mut Ecology, species: &SpeciesSet, now: Now) {
+        let id = self.bands[bi].id;
+        let Some((n, middle)) = self.rest(id, species, now) else {
+            return;
+        };
+        let wrap = eco.cells_around as f64 * CELL_M;
+        let Some(gid) = self.bands[bi].population_group else {
+            return;
+        };
+        let alive = n.total() > 0;
+        for r in eco.regions.values_mut() {
+            if let Some(g) = r.groups.iter_mut().find(|g| g.id == gid) {
+                g.young = n.young;
+                g.juveniles = n.juveniles;
+                g.females = n.females;
+                g.males = n.males;
+                if alive {
+                    g.pos = [middle.x.rem_euclid(wrap.max(1.0)), middle.z];
+                }
+                g.live = false;
+            }
+        }
+    }
+
+    /// The persons in full within `within` m of a place (a player's), as their client draws them.
+    pub fn views(
+        &self,
+        species: &SpeciesSet,
+        now: &Now,
+        near: DVec3,
+        within: f64,
+    ) -> Vec<PersonView> {
+        self.full()
+            .filter(|p| (p.place.pos - near).length() <= within)
+            .filter_map(|p| {
+                let sp = species.get(&p.species)?;
+                Some(PersonView {
+                    id: p.id,
+                    plan: sp.plan,
+                    female: p.life.female,
+                    stage: p.stage(sp, now),
+                    pos: p.place.pos,
+                    yaw: p.place.yaw,
+                    speed: p.place.speed,
+                    medium: p.place.medium,
+                    doing: p.mind.doing.clone(),
+                    height_m: p.height_m(sp, now),
+                })
+            })
+            .collect()
+    }
+
+    /// Lives `dt` seconds of play: the bands come to tolerate each calm player about them or
+    /// unlearn it; every person in full decides (in parallel, from the step's start) and then
+    /// acts (in order); the bodies step.
+    #[allow(clippy::too_many_arguments)]
+    pub fn step(
+        &mut self,
+        species: &SpeciesSet,
+        crafts: &Crafts,
+        content: &Content,
+        items: &Items,
+        world: &mut dyn World,
+        players: &[PlayerSeen],
+        now: Now,
+        dt: f32,
+    ) {
+        self.done.clear();
+        self.body_s -= dt;
+        let body_step = self.body_s <= 0.0;
+        if body_step {
+            self.body_s += BODY_S;
+        }
+        self.habituate(species, players, dt);
+        // The others as the step finds them.
+        let glimpses: Vec<Glimpse> = self
+            .persons
+            .iter()
+            .filter(|p| p.tier == Tier::Full)
+            .map(|p| Glimpse {
+                id: p.id,
+                band: p.social.band,
+                pos: p.place.pos,
+                grown: species
+                    .get(&p.species)
+                    .is_some_and(|sp| p.stage(sp, &now) == Stage::Adult),
+                alive: p.alive(),
+                alarm: matches!(p.mind.doing, Doing::Alarm { .. }),
+            })
+            .collect();
+        // 1. Deciding, everyone at once.
+        {
+            let senses: &dyn Senses = &*world;
+            let bands = &self.bands;
+            self.persons
+                .par_iter_mut()
+                .filter(|p| p.tier == Tier::Full && p.alive())
+                .for_each(|p| {
+                    let Some(sp) = species.get(&p.species) else {
+                        return;
+                    };
+                    let Some(band) = bands.iter().find(|b| b.id == p.social.band) else {
+                        return;
+                    };
+                    decide(
+                        p, sp, band, &glimpses, senses, crafts, content, items, players, now, dt,
+                    );
+                });
+        }
+        // 2. Acting, one at a time in the persons' order.
+        for i in 0..self.persons.len() {
+            let p = &self.persons[i];
+            if p.tier != Tier::Full || !p.alive() {
+                continue;
+            }
+            let Some(sp) = species.get(&p.species) else {
+                continue;
+            };
+            let Some(bi) = self.band_index(p.social.band) else {
+                continue;
+            };
+            self.act(i, bi, sp, crafts, content, items, world, now, dt);
+            let p = &mut self.persons[i];
+            if body_step {
+                let cfg = sp.body(p.life.female);
+                let activity = cfg.activity(activity_of(&p.mind.doing, p.place.speed));
+                let exposure = world.exposure(p.place.pos, p.place.medium == Medium::Tree);
+                p.body
+                    .step(cfg, BODY_S as f64, &exposure, &sp.coat, &activity);
+                if let Some(d) = &p.body.dead
+                    && p.life.died.is_none()
+                {
+                    let cause = Cause::Body(format!("{d:?}"));
+                    p.life.died = Some(Died {
+                        day: now.day,
+                        cause: cause.clone(),
+                    });
+                    p.record(now.day, Event::Died { cause });
+                }
+            }
+        }
+    }
+
+    /// A band comes in time to tolerate each player who keeps calm within its sight, and soon
+    /// unlearns it of one who runs at it or hunts near it.
+    fn habituate(&mut self, species: &SpeciesSet, players: &[PlayerSeen], dt: f32) {
+        for b in self.bands.iter_mut().filter(|b| b.tier == Tier::Full) {
+            if !species
+                .get(&b.species)
+                .is_some_and(|sp| sp.does(Behavior::Habituate))
+            {
+                continue;
+            }
+            for p in players {
+                let noticed = SEE_M * p.plain.clamp(0.1, 1.0) as f64;
+                let seen = self.persons.iter().any(|a| {
+                    a.social.band == b.id
+                        && a.tier == Tier::Full
+                        && a.alive()
+                        && a.mind.doing != Doing::Sleeping
+                        && (a.place.pos - p.pos).length() < noticed
+                });
+                if !seen {
+                    continue;
+                }
+                let t = b.tolerance_of(p.id);
+                let t = if p.running || p.hunting {
+                    t - dt / UNLEARN_S
+                } else {
+                    t + dt / HABITUATE_S
+                };
+                b.set_tolerance(p.id, t);
+            }
+        }
+    }
+
+    /// Does what a person chose, for `dt`.
+    #[allow(clippy::too_many_arguments)]
+    fn act(
+        &mut self,
+        i: usize,
+        bi: usize,
+        sp: &Species,
+        crafts: &Crafts,
+        content: &Content,
+        items: &Items,
+        world: &mut dyn World,
+        now: Now,
+        dt: f32,
+    ) {
+        let doing = self.persons[i].mind.doing.clone();
+        let cfg = sp.body(self.persons[i].life.female);
+        let walk = cfg.params.walk_m_s * self.persons[i].growth(sp, &now).powf(0.3);
+        let run = cfg.params.jog_m_s * 1.5;
+        match doing {
+            Doing::Going { to, then } => {
+                if self.persons[i].place.medium == Medium::Tree {
+                    climb_down(&mut self.persons[i], &*world, dt);
+                    return;
+                }
+                if move_toward(&mut self.persons[i], &*world, to, walk, dt) {
+                    let p = &mut self.persons[i];
+                    p.place.speed = 0.0;
+                    p.mind.doing = match then {
+                        Intent::Feed => Doing::Feeding,
+                        Intent::Drink => Doing::Drinking,
+                        Intent::Work(r) => Doing::Working { recipe: r },
+                        Intent::Nest => Doing::Nesting,
+                        Intent::Rejoin | Intent::Roam => Doing::Idle,
+                    };
+                    p.mind.timer = hold_for(&p.mind.doing);
+                    if then == Intent::Drink {
+                        let w = p.place.pos;
+                        Places::remember(&mut self.bands[bi].places.water, w, 10.0, 6);
+                    }
+                }
+            }
+            Doing::Feeding => {
+                let p = &mut self.persons[i];
+                p.place.speed = 0.0;
+                if let Some(f) = world.food_at(p.place.pos) {
+                    eat(p, cfg, content, &f.material, f.kg_min * PER_MIN * dt);
+                    // A handful of marula stones to crack later, now and then.
+                    if let Some(nuts) = &f.nuts
+                        && p.rng.next_f32() < 0.02 * dt
+                        && p.stage(sp, &now) == Stage::Adult
+                        && let Some(id) = items_of(items, nuts)
+                    {
+                        let mass = p.mass_kg(sp, &now);
+                        let _ = p.possessions.carry.stow(items, Stack::of(&id, 4), mass);
+                    }
+                    let here = p.place.pos;
+                    Places::remember(&mut self.bands[bi].places.food, here, 15.0, 12);
+                }
+                if Needs::of(&self.persons[i].body, cfg, 0.0).hunger <= 0.0 {
+                    self.persons[i].mind.timer = 0.0;
+                }
+            }
+            Doing::Drinking => {
+                let p = &mut self.persons[i];
+                p.place.speed = 0.0;
+                p.body.drink(cfg, DRINK_L_S * dt as f64, 0.0, 0.0);
+                if Needs::of(&p.body, cfg, 0.0).thirst <= 0.0 {
+                    p.mind.timer = 0.0;
+                }
+            }
+            Doing::Working { recipe } => {
+                self.persons[i].place.speed = 0.0;
+                self.work(i, bi, recipe, sp, crafts, content, items, world, now, dt);
+            }
+            Doing::Nesting => {
+                let p = &mut self.persons[i];
+                if p.place.medium != Medium::Tree || p.climbing() {
+                    // Up the tree to its place in the crown first.
+                    if !climb_up(p, &*world, dt) {
+                        p.place.speed = 0.0;
+                        p.mind.doing = Doing::Sleeping;
+                    }
+                    return;
+                }
+                p.place.speed = 0.0;
+                if p.mind.timer <= hold_for(&Doing::Nesting) * 0.5 {
+                    let at = p.place.pos;
+                    if let Some(bed) = world.nest(at) {
+                        p.place.pos = bed;
+                        p.place.perch = Some(bed);
+                    }
+                    p.mind.doing = Doing::Sleeping;
+                    p.mind.timer = hold_for(&Doing::Sleeping);
+                    Places::remember(&mut self.bands[bi].places.sleep, at, 6.0, 12);
+                }
+            }
+            Doing::Sleeping => {
+                let p = &mut self.persons[i];
+                p.place.speed = 0.0;
+                // Morning: down from the tree.
+                if (6.0..18.5).contains(&now.hour) {
+                    p.mind.timer = 0.0;
+                }
+            }
+            Doing::Resting | Doing::Grooming { .. } | Doing::Idle => {
+                self.persons[i].place.speed = 0.0;
+            }
+            Doing::Watching { at } => {
+                let p = &mut self.persons[i];
+                p.place.speed = 0.0;
+                p.place.yaw = yaw_toward(p.place.pos, at);
+            }
+            Doing::Alarm { at } => {
+                let p = &mut self.persons[i];
+                p.place.speed = 0.0;
+                p.place.yaw = yaw_toward(p.place.pos, at);
+                if p.mind.timer > hold_for(&Doing::Alarm { at }) * 0.6 {
+                    world.call(p.place.pos, true);
+                    p.mind.timer = hold_for(&Doing::Alarm { at }) * 0.6;
+                }
+            }
+            Doing::Mobbing { at } => {
+                // Up to a stone's throw, shouting and brandishing.
+                let p = &mut self.persons[i];
+                let d = (at - p.place.pos).length();
+                if d > 9.0 {
+                    let to = at + (p.place.pos - at).normalize_or(DVec3::X) * 8.0;
+                    move_toward(p, &*world, to, walk, dt);
+                } else {
+                    p.place.speed = 0.0;
+                    p.place.yaw = yaw_toward(p.place.pos, at);
+                    if p.rng.next_f32() < 0.5 * dt {
+                        world.call(p.place.pos, true);
+                    }
+                }
+            }
+            Doing::Fleeing { to } => {
+                let p = &mut self.persons[i];
+                if p.place.medium == Medium::Tree {
+                    if p.climbing() {
+                        climb_up(p, &*world, dt);
+                    } else {
+                        p.place.speed = 0.0;
+                    }
+                    return;
+                }
+                if move_toward(p, &*world, to, run, dt)
+                    && trunk_near(world.ground(), p.place.pos, 2.0).is_some()
+                {
+                    climb_up(p, &*world, dt);
+                }
+            }
+        }
+    }
+
+    /// Works a process at hand: the engine's plan with what it carries and what lies within
+    /// reach, done to the thing it needs (an anvil) when there is one; finished when its time is
+    /// up, what it made eaten, kept or laid down.
+    #[allow(clippy::too_many_arguments)]
+    fn work(
+        &mut self,
+        i: usize,
+        bi: usize,
+        recipe: usize,
+        sp: &Species,
+        crafts: &Crafts,
+        content: &Content,
+        items: &Items,
+        world: &mut dyn World,
+        now: Now,
+        dt: f32,
+    ) {
+        let pos = self.persons[i].place.pos;
+        // The hammerstone left by the anvil, into its hand.
+        let lying = world.things_near(pos, REACH_M);
+        let took = take_up_tools(
+            &mut self.persons[i],
+            sp,
+            crafts,
+            recipe,
+            &lying,
+            items,
+            &now,
+        );
+        for id in &took {
+            world.things().take(*id, None);
+        }
+        let lying = world.things_near(pos, REACH_M);
+        let aimed = aim_for(crafts, content, recipe, &lying, items);
+        let around = world.surroundings(pos);
+        let plan = plan_work(
+            crafts,
+            content,
+            items,
+            &self.persons[i],
+            recipe,
+            &lying,
+            aimed.clone(),
+            around.clone(),
+        );
+        let Ok(plan) = plan else {
+            // It cannot here (the nuts eaten, the stone gone): it puts down what it took up and
+            // looks about again.
+            lay_down_tools(&mut self.persons[i], world, pos);
+            self.persons[i].mind.doing = Doing::Idle;
+            return;
+        };
+        let p = &mut self.persons[i];
+        // The work's length: its real hours on the day's scale, as the player's.
+        let cfg = sp.body(p.life.female);
+        let total = (plan.hours as f64 * 3600.0 * cfg.scales.factor(plan.scale)) as f32;
+        let total = total.clamp(4.0, 120.0);
+        if p.mind.timer > total {
+            p.mind.timer = total;
+        }
+        if p.mind.timer > dt {
+            return;
+        }
+        let mut rng = Rng::new(p.rng.next_u64());
+        let outcome = finish_work(
+            crafts,
+            content,
+            items,
+            sp,
+            p,
+            &now,
+            &plan,
+            &lying,
+            aimed,
+            around,
+            world.things(),
+            &mut rng,
+        );
+        if outcome.done {
+            Places::remember(&mut self.bands[bi].places.anvils, pos, 8.0, 8);
+        }
+        self.done.push(Done {
+            person: self.persons[i].id,
+            at: pos,
+            recipe,
+            triggers: outcome.triggers,
+        });
+        // The hammerstone back by the anvil for the next time.
+        let p = &mut self.persons[i];
+        lay_down_tools(p, world, pos);
+        p.mind.doing = Doing::Idle;
+        p.mind.timer = 0.0;
+    }
+}
+
+/// Decides for a person, from the step's start: its fear, and — when its choice has run its time,
+/// danger interrupts or it has nothing to do — what to do now.
+#[allow(clippy::too_many_arguments)]
+fn decide(
+    p: &mut Person,
+    sp: &Species,
+    band: &Band,
+    glimpses: &[Glimpse],
+    senses: &dyn Senses,
+    crafts: &Crafts,
+    content: &Content,
+    items: &Items,
+    players: &[PlayerSeen],
+    now: Now,
+    dt: f32,
+) {
+    let (threat, flight_m) = threat_of(p, band, senses, players);
+    // Fear rises at a threat and fades in safety.
+    let scare = threat.map_or(0.0, |t| {
+        ((flight_m * 1.5 - t.dist) / (flight_m * 1.5)).clamp(0.0, 1.0)
+    });
+    p.mind.fear = p.mind.fear.max(scare) * (1.0 - 0.05 * dt);
+    let danger = threat.is_some_and(|t| t.dist < flight_m);
+    let calm_while_fleeing = matches!(p.mind.doing, Doing::Fleeing { .. }) && !danger;
+    p.mind.timer -= dt;
+    let interrupt = danger
+        && !matches!(
+            p.mind.doing,
+            Doing::Fleeing { .. } | Doing::Mobbing { .. } | Doing::Watching { .. }
+        );
+    let choosing =
+        p.mind.timer <= 0.0 || interrupt || calm_while_fleeing || p.mind.doing == Doing::Idle;
+    if !choosing {
+        return;
+    }
+    let mut s = situation(p, sp, band, glimpses, senses, crafts, content, items, now);
+    s.threat = threat;
+    s.flight_m = flight_m;
+    let needs = Needs::of(&p.body, sp.body(p.life.female), p.mind.fear);
+    let roll = p.rng.next_f32();
+    p.mind.doing = choose(sp, &needs, &s, roll);
+    p.mind.timer = hold_for(&p.mind.doing) * (0.75 + 0.5 * p.rng.next_f32());
+}
+
+/// The nearest threat a person sees (a hunter of people, else the player it is most wary of),
+/// and how near it may come before it runs: its flight distance, less for a player its band has
+/// come to tolerate.
+fn threat_of(
+    p: &Person,
+    band: &Band,
+    senses: &dyn Senses,
+    players: &[PlayerSeen],
+) -> (Option<Threat>, f32) {
+    let pos = p.place.pos;
+    let hunter: Option<Threat> = senses
+        .hunters_near(pos, SEE_M)
+        .into_iter()
+        .map(|h| Threat {
+            at: h,
+            dist: (h - pos).length() as f32,
+            hunter: true,
+        })
+        .min_by(|x, y| x.dist.total_cmp(&y.dist));
+    if hunter.is_some() {
+        return (hunter, FLIGHT_M);
+    }
+    // Of the players it notices, the one nearest to its flight distance.
+    let mut worst: Option<(f32, Threat, f32)> = None;
+    for q in players {
+        let d = (q.pos - pos).length() as f32;
+        // Unnoticed: too far, or crouched and crawling in the grass.
+        if d >= SEE_M as f32 * q.plain.clamp(0.1, 1.0) {
+            continue;
+        }
+        // A player coming on fast, or hunting near them, is a hunter for the while; a calm one
+        // may come nearer the more the band has come to tolerate them, and beyond what holds its
+        // eye is let be.
+        let hunting = q.running || q.hunting;
+        let tolerated = FLIGHT_M * (1.0 - 0.85 * band.tolerance_of(q.id));
+        if !hunting && d > tolerated * HEED {
+            continue;
+        }
+        let flight = if hunting { FLIGHT_M } else { tolerated };
+        let threat = Threat {
+            at: q.pos,
+            dist: d,
+            hunter: hunting,
+        };
+        let margin = d / flight.max(1.0);
+        if worst.as_ref().is_none_or(|w| margin < w.0) {
+            worst = Some((margin, threat, flight));
+        }
+    }
+    worst.map_or((None, FLIGHT_M), |(_, t, f)| (Some(t), f))
+}
+
+/// What a person knows of the moment about it (its threat filled in by the caller): the others
+/// as the step found them, the places its band knows, what it senses.
+#[allow(clippy::too_many_arguments)]
+fn situation(
+    p: &Person,
+    sp: &Species,
+    band: &Band,
+    glimpses: &[Glimpse],
+    senses: &dyn Senses,
+    crafts: &Crafts,
+    content: &Content,
+    items: &Items,
+    now: Now,
+) -> Situation {
+    let pos = p.place.pos;
+    let grown = p.stage(sp, &now) == Stage::Adult;
+    // The band: its middle, its grown ones near, an alarm raised, the mother.
+    let (mut cx, mut cz, mut cn) = (0.0, 0.0, 0.0);
+    let mut grown_near = 0u16;
+    let mut alarm_raised = false;
+    let mut mother: Option<DVec3> = None;
+    for b in glimpses
+        .iter()
+        .filter(|b| b.band == p.social.band && b.alive && b.id != p.id)
+    {
+        cx += b.pos.x;
+        cz += b.pos.z;
+        cn += 1.0;
+        if b.grown && (b.pos - pos).length() < 20.0 {
+            grown_near += 1;
+        }
+        if b.alarm {
+            alarm_raised = true;
+        }
+        if !grown && p.life.mother == Some(b.id) {
+            mother = Some(b.pos);
+        }
+    }
+    let group_at = if cn > 0.0 {
+        mother.or(Some(DVec3::new(cx / cn, pos.y, cz / cn)))
+    } else {
+        None
+    };
+    let from_group_m = group_at.map_or(0.0, |g| {
+        let d = (g - pos).length() as f32;
+        // The young keep to their mothers.
+        if grown { d } else { d * 3.0 }
+    });
+    // Trees, water and food it knows of, or sees.
+    let tree = Places::nearest(&band.places.sleep, pos)
+        .filter(|t| (*t - pos).length() < LOOK_M * 2.0)
+        .or_else(|| trunk_near(senses.ground(), pos, 12.0).map(|(t, _)| t));
+    let water = Places::nearest(&band.places.water, pos);
+    let water_here = water.is_some_and(|w| (w - pos).length() < 2.0);
+    let food_here = senses.food_at(pos).is_some();
+    let food = if food_here {
+        None
+    } else {
+        senses.food_near(pos, LOOK_M)
+    };
+    // What it could do with what lies about: crack nuts at an anvil, strike a flake.
+    let offers = if grown {
+        offers_for(p, sp, crafts, content, items, senses, &band.places, &now)
+    } else {
+        Vec::new()
+    };
+    Situation {
+        pos,
+        hour: now.hour,
+        threat: None,
+        flight_m: FLIGHT_M,
+        in_tree: p.place.medium == Medium::Tree,
+        in_nest: p.place.medium == Medium::Tree && p.mind.doing == Doing::Sleeping,
+        tree,
+        water,
+        water_here,
+        food,
+        food_here,
+        offers,
+        alarm_raised,
+        grown_near,
+        group_at,
+        from_group_m,
+        grown,
+    }
+}
+
+/// A step toward a place on the ground; true when there.
+fn move_toward(p: &mut Person, senses: &dyn Senses, to: DVec3, speed: f32, dt: f32) -> bool {
+    let d = DVec2::new(to.x - p.place.pos.x, to.z - p.place.pos.z);
+    if d.length() < 1.0 {
+        p.place.speed = 0.0;
+        return true;
+    }
+    p.place.yaw = (d.x as f32).atan2(d.y as f32);
+    p.place.speed = speed;
+    let step = d.normalize() * (speed * dt) as f64;
+    let (nx, nz) = (p.place.pos.x + step.x, p.place.pos.z + step.y);
+    match senses.ground().footing(nx, nz, p.place.pos.y) {
+        Some(f) if (f.y - p.place.pos.y).abs() < 1.2 && !(f.water && f.depth > 0.8) => {
+            p.place.pos = DVec3::new(nx, f.y, nz);
+            p.place.medium = Medium::Ground;
+            false
+        }
+        _ => {
+            // Blocked: around it, a little to the side.
+            let side = DVec2::new(-step.y, step.x);
+            let (sx, sz) = (p.place.pos.x + side.x, p.place.pos.z + side.y);
+            if let Some(f) = senses.ground().footing(sx, sz, p.place.pos.y)
+                && (f.y - p.place.pos.y).abs() < 1.2
+                && !f.water
+            {
+                p.place.pos = DVec3::new(sx, f.y, sz);
+            }
+            false
+        }
+    }
+}
+
+/// A step up the tree it is by toward its place in the crown (found as it starts up: each to its
+/// own place on the limbs where the crown begins — the crown is shared); whether there is a tree
+/// to climb.
+fn climb_up(p: &mut Person, senses: &dyn Senses, dt: f32) -> bool {
+    if p.place.medium != Medium::Tree || p.place.perch.is_none() {
+        let Some((foot, height)) = trunk_near(senses.ground(), p.place.pos, 2.5) else {
+            return false;
+        };
+        let perch = crown_perch(senses.ground(), foot, height, p.id as f64);
+        p.place.pos.x = perch.x;
+        p.place.pos.z = perch.z;
+        p.place.pos.y = p.place.pos.y.max(foot.y);
+        p.place.perch = Some(perch);
+        p.place.medium = Medium::Tree;
+    }
+    let top = p.place.perch.map_or(p.place.pos.y, |q| q.y);
+    if p.place.pos.y < top {
+        p.place.speed = 0.4;
+        p.place.pos.y = (p.place.pos.y + 0.6 * dt as f64).min(top);
+    } else {
+        p.place.speed = 0.0;
+    }
+    true
+}
+
+/// Down the tree to its foot.
+fn climb_down(p: &mut Person, senses: &dyn Senses, dt: f32) {
+    let q = p.place.pos;
+    let ground = senses
+        .ground()
+        .footing(q.x, q.z, q.y - 1.0)
+        .or_else(|| senses.ground().top(q.x, q.z));
+    let floor = ground.map_or(q.y - 1.0, |f| f.y);
+    p.place.speed = 0.4;
+    p.place.pos.y -= 0.8 * dt as f64;
+    if p.place.pos.y <= floor {
+        p.place.pos.y = floor;
+        p.place.medium = Medium::Ground;
+        p.place.perch = None;
+        p.place.speed = 0.0;
+    }
+}
+
+/// Where one climbs to in a tree: onto one of the limbs where its crown begins (each its own, by
+/// `k`), or, a tree with none in reach, beside the trunk up near its top.
+fn crown_perch(ground: &dyn Ground, foot: DVec3, height: f64, k: f64) -> DVec3 {
+    let top = trunk_top(ground, foot, height);
+    let (cx, cz) = (foot.x.floor() as i32, foot.z.floor() as i32);
+    let mut limbs: Vec<DVec3> = Vec::new();
+    for y in foot.y.floor() as i32 + 2..=top.ceil() as i32 + 3 {
+        for dz in -3..=3 {
+            for dx in -3..=3 {
+                let (x, z) = (cx + dx, cz + dz);
+                let room = matches!(
+                    ground.cell(x, y + 1, z),
+                    Some(Cell::Open | Cell::Leaves | Cell::Plant)
+                );
+                if ground.cell(x, y, z) == Some(Cell::Limb) && room {
+                    limbs.push(DVec3::new(x as f64 + 0.5, y as f64 + 0.6, z as f64 + 0.5));
+                }
+            }
+        }
+        // The crown's lowest limbs.
+        if limbs.len() >= 6 {
+            break;
+        }
+    }
+    if !limbs.is_empty() {
+        let pick = ((k * 0.618).fract() * limbs.len() as f64) as usize;
+        return limbs[pick.min(limbs.len() - 1)];
+    }
+    let turn = k * 2.399_963;
+    let out = 0.8 + 0.9 * (k * 0.371).fract();
+    let high = (top - foot.y - 1.0).max(2.0);
+    DVec3::new(
+        foot.x + turn.cos() * out,
+        foot.y + high - (k * 0.618).fract() * (high * 0.4).min(3.0),
+        foot.z + turn.sin() * out,
+    )
+}
+
+/// How high (y) a tree's trunk runs where it is climbed: the tallest of its columns within two
+/// blocks of the foot found (a broad trunk's middle runs up into the crown, its flared foot and
+/// buttresses not).
+fn trunk_top(ground: &dyn Ground, foot: DVec3, height: f64) -> f64 {
+    let (cx, cz, y0) = (
+        foot.x.floor() as i32,
+        foot.z.floor() as i32,
+        foot.y.floor() as i32,
+    );
+    let mut best = foot.y + height;
+    for dz in -2..=2 {
+        for dx in -2..=2 {
+            let (x, z) = (cx + dx, cz + dz);
+            let Some(base) = (y0 - 1..=y0 + 2).find(|y| ground.cell(x, *y, z) == Some(Cell::Trunk))
+            else {
+                continue;
+            };
+            let mut top = base;
+            while top < base + 40 && ground.cell(x, top + 1, z) == Some(Cell::Trunk) {
+                top += 1;
+            }
+            best = best.max((top + 1) as f64);
+        }
+    }
+    best
+}
+
+/// Learns the places about a band as it is drawn out: the water, the trees to sleep in, the
+/// anvils lying about.
+fn know_about(band: &mut Band, world: &mut dyn World, items: &Items, here: DVec3) {
+    if let Some((bank, _)) = water_near(world.ground(), here, 80.0) {
+        Places::remember(&mut band.places.water, bank, 10.0, 6);
+    }
+    let anvils: Vec<DVec3> = world
+        .things_near(here, ANVILS_M)
+        .into_iter()
+        .filter(|(_, s)| {
+            items
+                .get(&s.id)
+                .and_then(|k| k.property("anvil"))
+                .is_some_and(|v| v > 0.0)
+        })
+        .filter_map(|(id, _)| world.place_of(id))
+        .collect();
+    for at in anvils {
+        Places::remember(&mut band.places.anvils, at, 4.0, 8);
+    }
+    for (dx, dz) in [
+        (0.0, 0.0),
+        (15.0, 0.0),
+        (-15.0, 0.0),
+        (0.0, 15.0),
+        (0.0, -15.0),
+    ] {
+        let at = here + DVec3::new(dx, 0.0, dz);
+        if let Some((t, _)) = trunk_near(world.ground(), at, 10.0) {
+            Places::remember(&mut band.places.sleep, t, 3.0, 12);
+        }
+    }
+}
+
+/// How long it keeps at a choice before looking about again (seconds of play).
+fn hold_for(d: &Doing) -> f32 {
+    match d {
+        Doing::Idle => 1.0,
+        Doing::Going { .. } => 60.0,
+        Doing::Feeding => 40.0,
+        Doing::Drinking => 15.0,
+        Doing::Working { .. } => 120.0,
+        Doing::Resting => 20.0,
+        Doing::Grooming { .. } => 15.0,
+        Doing::Nesting => 20.0,
+        Doing::Sleeping => 60.0,
+        Doing::Watching { .. } => 6.0,
+        Doing::Alarm { .. } => 4.0,
+        Doing::Mobbing { .. } => 12.0,
+        Doing::Fleeing { .. } => 15.0,
+    }
+}
+
+/// The body's activity for what it is doing (the content's table of METs).
+fn activity_of(d: &Doing, speed: f32) -> &'static str {
+    match d {
+        Doing::Sleeping => "sleeping",
+        Doing::Resting | Doing::Grooming { .. } | Doing::Feeding | Doing::Drinking => "resting",
+        Doing::Watching { .. } | Doing::Alarm { .. } | Doing::Idle => "standing",
+        Doing::Working { .. } | Doing::Nesting => "carrying_heavy",
+        Doing::Going { .. } | Doing::Mobbing { .. } | Doing::Fleeing { .. } => {
+            if speed > 2.0 {
+                "jogging"
+            } else if speed > 0.1 {
+                "walking"
+            } else {
+                "standing"
+            }
+        }
+    }
+}
+
+/// The yaw facing from one place to another.
+fn yaw_toward(from: DVec3, to: DVec3) -> f32 {
+    ((to.x - from.x) as f32).atan2((to.z - from.z) as f32)
+}
+
+/// Eats `kg` of a material.
+fn eat(p: &mut Person, cfg: &hearth_body::BodyConfig, content: &Content, material: &str, kg: f32) {
+    let Some(m) = content.materials.get(material) else {
+        return;
+    };
+    let Some(b) = hearth_craft::food::bite(m, kg, 0.0) else {
+        return;
+    };
+    let f = Food {
+        kcal: b.kcal as f64,
+        protein_g: b.protein_g as f64,
+        fat_g: b.fat_g as f64,
+        carb_g: b.carb_g as f64,
+        water_l: b.water_l as f64,
+        volume_l: b.volume_l as f64,
+        fresh_days: b.fresh_days as f64,
+    };
+    let _ = p.body.eat(cfg, &f);
+}
+
+/// The item of a material's bulk form.
+fn items_of(items: &Items, material: &str) -> Option<String> {
+    let key = material.rsplit(':').next().unwrap_or(material);
+    items
+        .iter()
+        .find(|k| k.material.as_deref().is_some_and(|m| m.ends_with(key)) && k.has_tag("bulk"))
+        .map(|k| k.id.clone())
+}
+
+/// Takes up in its hands, from what lies within reach, the tools a process needs that it does
+/// not hold (the hammerstone by the anvil): the ids of what it took.
+fn take_up_tools(
+    p: &mut Person,
+    sp: &Species,
+    crafts: &Crafts,
+    recipe: usize,
+    lying: &[(u64, Stack)],
+    items: &Items,
+    now: &Now,
+) -> Vec<u64> {
+    let def = &crafts.recipes[recipe].def;
+    // As strong as the engine reckons it (its quality and wear told).
+    let strong =
+        |s: &Stack, prop: &str, min: f32| s.property(items, prop).is_some_and(|v| v >= min);
+    let mut took = Vec::new();
+    let mass = p.mass_kg(sp, now);
+    for t in &def.tools {
+        let carry = &p.possessions.carry;
+        let held = [carry.right.as_ref(), carry.left.as_ref()]
+            .into_iter()
+            .flatten()
+            .any(|s| strong(s, &t.property, t.min));
+        if held {
+            continue;
+        }
+        let found = lying
+            .iter()
+            .find(|(id, s)| !took.contains(id) && strong(s, &t.property, t.min));
+        if let Some((id, s)) = found {
+            let hand = if p.possessions.carry.right.is_none() {
+                hearth_items::Hand::Right
+            } else {
+                hearth_items::Hand::Left
+            };
+            if p.possessions
+                .carry
+                .hold(items, s.clone(), hand, mass)
+                .is_ok()
+            {
+                took.push(*id);
+            }
+        }
+    }
+    took
+}
+
+/// Lays down beside it what it holds in its hands (its tools, after the work).
+fn lay_down_tools(p: &mut Person, world: &mut dyn World, at: DVec3) {
+    for hand in [hearth_items::Hand::Right, hearth_items::Hand::Left] {
+        if let Some(s) = p.possessions.carry.release(hand) {
+            world.things().lay(at + DVec3::new(0.3, 0.0, 0.2), s);
+        }
+    }
+}
+
+/// The thing a process is done to, among what lies at hand (an anvil stone for cracking), if it
+/// needs one.
+fn aim_for(
+    crafts: &Crafts,
+    content: &Content,
+    recipe: usize,
+    lying: &[(u64, Stack)],
+    items: &Items,
+) -> Option<Aimed> {
+    use hearth_content::schema::process::Target;
+    match &crafts.recipes[recipe].def.target {
+        Some(Target::Thing(m)) => lying
+            .iter()
+            .find(|(_, s)| {
+                items
+                    .get(&s.id)
+                    .is_some_and(|k| hearth_craft::engine::matches(m, k, content))
+            })
+            .map(|(id, _)| Aimed::Thing(*id)),
+        _ => None,
+    }
+}
+
+/// The processes a grown person could do here with what it carries and what lies within reach:
+/// its band's techniques that the engine would plan now.
+#[allow(clippy::too_many_arguments)]
+fn offers_for(
+    p: &Person,
+    sp: &Species,
+    crafts: &Crafts,
+    content: &Content,
+    items: &Items,
+    senses: &dyn Senses,
+    places: &Places,
+    now: &Now,
+) -> Vec<Offer> {
+    let mut out = Vec::new();
+    // Here, and at the band's anvils it carries nuts to.
+    let mut spots = vec![p.place.pos];
+    if let Some(anvil) = Places::nearest(&places.anvils, p.place.pos) {
+        spots.push(anvil);
+    }
+    for spot in spots {
+        let lying = senses.things_near(spot, REACH_M);
+        let around = senses.surroundings(spot);
+        for t in &sp.techniques {
+            let Some(r) = crafts.index_of(t).or_else(|| {
+                crafts.index_of(&format!("hearth:{}", t.rsplit(':').next().unwrap_or(t)))
+            }) else {
+                continue;
+            };
+            // They strike new flakes rather than mend the old (retouch is rare before the
+            // later Oldowan).
+            if crafts.recipes[r].def.effect == hearth_content::schema::process::Effect::Mend {
+                continue;
+            }
+            if out.iter().any(|o: &Offer| o.recipe == r) {
+                continue;
+            }
+            // At the anvil it stands by the things there, the tools lying by it in its hands.
+            let mut at = p.clone();
+            at.place.pos = spot;
+            let took = take_up_tools(&mut at, sp, crafts, r, &lying, items, now);
+            let rest: Vec<(u64, Stack)> = lying
+                .iter()
+                .filter(|(id, _)| !took.contains(id))
+                .cloned()
+                .collect();
+            let aimed = aim_for(crafts, content, r, &rest, items);
+            if plan_work(crafts, content, items, &at, r, &rest, aimed, around.clone()).is_ok() {
+                let feeds = crafts.recipes[r]
+                    .def
+                    .outputs
+                    .iter()
+                    .any(|o| output_is_food(content, &o.item));
+                out.push(Offer {
+                    recipe: r,
+                    at: spot,
+                    feeds,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Whether what a process makes is food.
+fn output_is_food(content: &Content, m: &hearth_content::schema::process::Match) -> bool {
+    use hearth_content::schema::process::Match;
+    match m {
+        Match::Material(id) => content
+            .materials
+            .get(id.as_str())
+            .is_some_and(|mat| mat.tags.iter().any(|t| t == "food")),
+        _ => false,
+    }
+}

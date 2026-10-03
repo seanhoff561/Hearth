@@ -57,8 +57,9 @@ pub fn unit_f32(h: u64) -> f32 {
     (h >> 40) as f32 * (1.0 / (1u32 << 24) as f32)
 }
 
-/// Small, fast, seedable PRNG (xoshiro256++). Deterministic across platforms.
-#[derive(Debug, Clone)]
+/// Small, fast, seedable PRNG (xoshiro256++). Deterministic across platforms; its state saves
+/// (a person's own stream goes on where it left off).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rng {
     s: [u64; 4],
 }

@@ -394,12 +394,13 @@ fn save(
     workshop: &Workshop,
     lw: &LocalWorld,
     fauna: &crate::fauna::Fauna,
+    people: &crate::people::PeopleNear,
     ticks: u64,
 ) {
     let Some(s) = save else {
         return;
     };
-    fauna.save(&s.dir.root);
+    people.save(fauna, &s.dir.root);
     s.meta.clock.ticks = ticks;
     s.meta.last_played_unix = hearth_save::meta::unix_now();
     let player = PlayerSave {
@@ -576,8 +577,16 @@ fn run(
         life.hominin_range == hearth_save::HomininRange::SingleCradleRegion,
     );
     let mut animals_shown = false;
-    // The hominins about the player: agents drawn out of the populations' hominin groups.
-    let mut hominins = crate::hominins::Agents::new(&content, &workshop.graph, &cfg, seed);
+    // The people about the player: persons drawn out of the populations' bands, and everyone
+    // met before, as saved; and the person the developer's inspector looks at.
+    let mut people = crate::people::PeopleNear::new(
+        &content,
+        &workshop.graph,
+        &cfg,
+        seed,
+        save_state.as_ref().map(|s| s.dir.root.as_path()),
+    );
+    let mut inspecting: Option<u64> = None;
     // How readily the animals turn on people: the world's Predator Behavior setting.
     fauna.live.aggression = match life.predator_behavior {
         hearth_save::PredatorBehavior::Authentic => 1.0,
@@ -933,6 +942,7 @@ fn run(
                 Ok(ToServer::Pause(p)) => paused = p,
                 Ok(ToServer::Shout) => shouted = ticks,
                 Ok(ToServer::Die { species, at }) => fauna.die(&species, at),
+                Ok(ToServer::Inspect(id)) => inspecting = id,
                 Ok(ToServer::Census) => {
                     let _ = tx.send(ToClient::Census(fauna.census()));
                 }
@@ -976,6 +986,7 @@ fn run(
                         &workshop,
                         &lw,
                         &fauna,
+                        &people,
                         ticks,
                     );
                     let _ = tx.send(ToClient::Saved);
@@ -989,6 +1000,7 @@ fn run(
                         &workshop,
                         &lw,
                         &fauna,
+                        &people,
                         ticks,
                     );
                     let _ = tx.send(ToClient::Saved);
@@ -1032,24 +1044,28 @@ fn run(
                     &lw.reg,
                 );
                 fauna.tick(&lw, &presence, &now, years_at(ticks), TICK_S as f32, ticks);
-                // The hominins about the player live their tick, their calls heard with the
+                // The people about the player live their tick, their calls heard with the
                 // animals'.
                 {
                     let e = exposure(&env, &lw, &moment, &player.mover, 0.0);
                     let around = workshop.around(&here!(), at);
-                    let person = hearth_agent::Person {
+                    let seen = hearth_people::PlayerSeen {
+                        // The one player of a single-player world (R1 gives each player their own).
+                        id: 0,
                         pos: at,
                         running: presence.running,
                         hunting: false,
                         plain: presence.plain,
                     };
-                    let agents_now = hearth_agent::Now {
+                    let people_now = hearth_people::Now {
                         tick: ticks,
                         hour: now.hour * 24.0,
+                        day: calendar.days(ticks),
+                        year_days: calendar.days_per_year(),
                     };
                     let crafts = workshop.crafts.clone();
                     let graph = workshop.graph.clone();
-                    if hominins.tick(
+                    if people.tick(
                         &mut lw,
                         &mut fauna,
                         &mut world_items,
@@ -1060,9 +1076,9 @@ fn run(
                         e,
                         around,
                         now.year_frac,
-                        at,
-                        Some(person),
-                        agents_now,
+                        &[at],
+                        &[seen],
+                        people_now,
                         TICK_S as f32,
                     ) {
                         items_changed = true;
@@ -1073,7 +1089,7 @@ fn run(
                         let yaw = last_moved.as_ref().map_or(0.0, |m| m.yaw);
                         let eye = at + DVec3::Y * player.mover.stance.height();
                         let hour = (calendar.ticks_per_day() / 24.0) as u64;
-                        for t in hominins.watched(&crafts, &graph, &world_items, eye, yaw) {
+                        for t in people.watched(&crafts, &graph, &world_items, eye, yaw) {
                             workshop.hear_now_and_then(&mut here!(), t, hour);
                         }
                     }
@@ -1172,16 +1188,22 @@ fn run(
                         );
                     }
                 }
+                if ticks.is_multiple_of(20)
+                    && let Some(id) = inspecting
+                {
+                    let report = people.inspect(id, &workshop.graph).map(Box::new);
+                    let _ = tx.send(ToClient::Inspected(report));
+                }
                 if ticks.is_multiple_of(2) {
                     let views = fauna.views();
                     if !views.is_empty() || animals_shown {
                         animals_shown = !views.is_empty();
                         let _ = tx.send(ToClient::Animals(views));
                     }
-                    let views = hominins.views();
-                    if !views.is_empty() || hominins.shown {
-                        hominins.shown = !views.is_empty();
-                        let _ = tx.send(ToClient::Hominins(views));
+                    let views = people.views(player.mover.pos);
+                    if !views.is_empty() || people.shown {
+                        people.shown = !views.is_empty();
+                        let _ = tx.send(ToClient::People(views));
                     }
                 }
             }
@@ -1298,6 +1320,7 @@ fn run(
                         &workshop,
                         &lw,
                         &fauna,
+                        &people,
                         ticks,
                     );
                     let _ = tx.send(ToClient::Ended(summary));
@@ -1463,6 +1486,7 @@ fn run(
                     &workshop,
                     &lw,
                     &fauna,
+                    &people,
                     ticks,
                 );
                 return Ok(());
@@ -1514,6 +1538,7 @@ fn run(
                     &workshop,
                     &lw,
                     &fauna,
+                    &people,
                     ticks,
                 );
                 return Ok(());
@@ -1528,6 +1553,7 @@ fn run(
                     &workshop,
                     &lw,
                     &fauna,
+                    &people,
                     ticks,
                 );
                 let _ = tx.send(ToClient::Saved);
@@ -1581,6 +1607,7 @@ fn run(
                     &workshop,
                     &lw,
                     &fauna,
+                    &people,
                     ticks,
                 );
                 return Ok(());

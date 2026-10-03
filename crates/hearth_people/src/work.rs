@@ -1,4 +1,4 @@
-//! Work: an agent doing a process — the same data and the same engine as the player. What it has
+//! Work: a person doing a process — the same data and the same engine as the player. What it has
 //! at hand is what it carries and what lies within reach; what the doing changes is applied to it
 //! and to the things about it: what it used is taken from its hands and the ground, what it made
 //! goes into its hands, into its mouth when it is food and it is hungry, or down beside it (a
@@ -14,14 +14,15 @@ use hearth_craft::{Crafts, food};
 use hearth_items::{Items, Stack};
 use hearth_math::hash::Rng;
 
-use crate::agent::Agent;
-use crate::kind::Kind;
+use crate::person::Person;
+use crate::species::Species;
+use crate::world::Now;
 
-/// How far (m) an agent reaches: what lies within it is at hand (the player's reach).
+/// How far (m) a person reaches: what lies within it is at hand (the player's reach).
 pub const REACH_M: f64 = 2.5;
 
-/// Things lying about that an agent can reach and change: the world's things in play, a pile in a
-/// test.
+/// Things lying about that a person can reach and change: the world's things in play, a pile in
+/// a test.
 pub trait Things {
     /// The things lying within `reach` m of `at`: their ids and stacks.
     fn near(&self, at: DVec3, reach: f64) -> Vec<(u64, Stack)>;
@@ -85,7 +86,7 @@ impl Things for Pile {
     }
 }
 
-/// Whether an agent can do a process here, and how: the engine's plan with what it carries and
+/// Whether a person can do a process here, and how: the engine's plan with what it carries and
 /// what lies within reach (`lying`), done to what it aims at; or what it lacks — knowledge first,
 /// as the player's.
 #[allow(clippy::too_many_arguments)]
@@ -93,7 +94,7 @@ pub fn plan_work(
     crafts: &Crafts,
     content: &Content,
     items: &Items,
-    agent: &Agent,
+    agent: &Person,
     recipe: usize,
     lying: &[(u64, Stack)],
     aimed: Option<Aimed>,
@@ -109,7 +110,7 @@ pub fn plan_work(
     let bench = Bench::new(
         content,
         items,
-        &agent.carry,
+        &agent.possessions.carry,
         lying.iter().map(|(id, s)| (*id, s)),
         aimed,
         around,
@@ -117,8 +118,8 @@ pub fn plan_work(
     engine::plan(crafts, recipe, &bench, skill_for(crafts, agent, recipe))
 }
 
-/// The agent's skill at a process (a middling hand where it names none).
-fn skill_for(crafts: &Crafts, agent: &Agent, recipe: usize) -> f32 {
+/// The person's skill at a process (a middling hand where it names none).
+fn skill_for(crafts: &Crafts, agent: &Person, recipe: usize) -> f32 {
     crafts.recipes[recipe]
         .def
         .skill
@@ -126,28 +127,30 @@ fn skill_for(crafts: &Crafts, agent: &Agent, recipe: usize) -> f32 {
         .map_or(0.5, |s| agent.knowledge.skill(s))
 }
 
-/// Does a planned process: the engine rolls it, and what came of it is applied to the agent and
+/// Does a planned process: the engine rolls it, and what came of it is applied to the person and
 /// the things about it. Returns the outcome; its triggers are what someone watching sees done.
 #[allow(clippy::too_many_arguments)]
 pub fn finish_work(
     crafts: &Crafts,
     content: &Content,
     items: &Items,
-    kind: &Kind,
-    agent: &mut Agent,
+    species: &Species,
+    agent: &mut Person,
+    now: &Now,
     plan: &Plan,
     lying: &[(u64, Stack)],
     aimed: Option<Aimed>,
     around: Surroundings,
     things: &mut dyn Things,
     rng: &mut Rng,
-    tick: u64,
 ) -> Outcome {
+    let tick = now.tick;
+    let body = species.body(agent.life.female);
     let outcome = {
         let bench = Bench::new(
             content,
             items,
-            &agent.carry,
+            &agent.possessions.carry,
             lying.iter().map(|(id, s)| (*id, s)),
             aimed,
             around,
@@ -162,11 +165,11 @@ pub fn finish_work(
     // Tools wear; one worn through breaks and is dropped.
     for (s, wear) in &outcome.wear {
         if let Source::Carried(path) = s
-            && let Some(stack) = agent.carry.get_mut(path)
+            && let Some(stack) = agent.possessions.carry.get_mut(path)
         {
             stack.condition = (stack.condition - wear).max(0.0);
             if stack.condition <= 0.0 {
-                agent.carry.take(items, path, Some(1));
+                agent.possessions.carry.take(items, path, Some(1));
             }
         }
     }
@@ -178,7 +181,7 @@ pub fn finish_work(
         };
         agent
             .body
-            .injure(&kind.body, injury, BodyRegion::Hand, side, 0.25);
+            .injure(body, injury, BodyRegion::Hand, side, 0.25);
     }
     // What it used, from its hands and the ground (carried paths deepest first, so that taking
     // one does not move another).
@@ -190,7 +193,7 @@ pub fn finish_work(
     for (s, n) in &used {
         match s {
             Source::Carried(path) => {
-                agent.carry.take(items, path, Some(*n));
+                agent.possessions.carry.take(items, path, Some(*n));
             }
             Source::Lying(id) => {
                 things.take(*id, Some(*n));
@@ -199,8 +202,8 @@ pub fn finish_work(
     }
     // What it made: eaten if it is food and it is hungry, kept if its hands take it, else laid
     // down beside it.
-    let mass = agent.mass_kg(kind);
-    let hungry = crate::mind::Needs::of(&agent.body, &kind.body, 0.0).hunger > 0.1;
+    let mass = agent.mass_kg(species, now);
+    let hungry = crate::mind::Needs::of(&agent.body, body, 0.0).hunger > 0.1;
     for stack in outcome.made.clone() {
         let bite = items
             .get(&stack.id)
@@ -217,7 +220,7 @@ pub fn finish_work(
                     volume_l: b.volume_l as f64,
                     fresh_days: b.fresh_days as f64,
                 };
-                if agent.body.eat(&kind.body, &f).is_err() {
+                if agent.body.eat(body, &f).is_err() {
                     break;
                 }
                 left -= 1;
@@ -236,9 +239,16 @@ pub fn finish_work(
 }
 
 /// Into its hands or down beside it.
-fn keep_or_lay(agent: &mut Agent, items: &Items, mass: f32, stack: Stack, things: &mut dyn Things) {
-    if let Err(stack) = agent.carry.stow(items, stack, mass) {
-        let side = glam::DVec3::new(agent.yaw.cos() as f64, 0.0, -agent.yaw.sin() as f64) * 0.4;
-        things.lay(agent.pos + side, stack);
+fn keep_or_lay(
+    agent: &mut Person,
+    items: &Items,
+    mass: f32,
+    stack: Stack,
+    things: &mut dyn Things,
+) {
+    if let Err(stack) = agent.possessions.carry.stow(items, stack, mass) {
+        let yaw = agent.place.yaw;
+        let side = glam::DVec3::new(yaw.cos() as f64, 0.0, -yaw.sin() as f64) * 0.4;
+        things.lay(agent.place.pos + side, stack);
     }
 }

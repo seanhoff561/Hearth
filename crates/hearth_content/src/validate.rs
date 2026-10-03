@@ -512,13 +512,44 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
-        &content.hominins,
+        &content.species,
         report,
         |e| &e.id,
         |h, c| {
-            c.pair("height_m", h.height_m, 0.5, 2.5);
-            c.pair("mass_kg", h.mass_kg, 10.0, 200.0);
-            c.pair("group_size", h.group_size, 1.0, 1_000.0);
+            for (name, r) in [
+                ("body.height_m.female", h.body.height_m.female),
+                ("body.height_m.male", h.body.height_m.male),
+            ] {
+                c.pair(name, r, 0.5, 2.5);
+            }
+            for (name, r) in [
+                ("body.mass_kg.female", h.body.mass_kg.female),
+                ("body.mass_kg.male", h.body.mass_kg.male),
+            ] {
+                c.pair(name, r, 10.0, 200.0);
+            }
+            c.pair("social.group_size", h.social.group_size, 1.0, 1_000.0);
+            c.range("life.gestation_days", h.life.gestation_days, 150.0, 330.0);
+            c.range("life.weaning_years", h.life.weaning_years, 0.5, 8.0);
+            c.range("life.maturity_years", h.life.maturity_years, 5.0, 25.0);
+            c.pair(
+                "life.adult_death_years",
+                h.life.adult_death_years,
+                20.0,
+                110.0,
+            );
+            c.range(
+                "life.birth_interval_years",
+                h.life.birth_interval_years,
+                1.0,
+                8.0,
+            );
+            c.range(
+                "cognition.planning_depth",
+                h.cognition.planning_depth as f32,
+                0.0,
+                12.0,
+            );
         },
     );
     each(
