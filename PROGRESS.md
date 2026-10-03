@@ -773,6 +773,10 @@ generated land of each of its biomes, and a screenshot suite):
 - In this environment presents never block (FIFO on both Vulkan and DX12 ran at ~1.5–2k FPS
   with terrain), most likely because the window is occluded. Re-check pacing on a visible
   window; the frame limiter covers the vsync-off case.
+- Animals (V2-10 (c)): a lion's mane is not drawn (the male is a darker lioness), nor a peacock's
+  train (both sexes carry a middling tail); the hippo's plan waits for the wetlands (e). Trees'
+  thin limbs under a dense crown are drawn nearly black (the lighting gives them no sky), so a
+  strangler fig's lattice of stems reads as a dark scaffold.
 
 ## Deferred
 - Fauna (V2-7): birds and insects seen (flocks crossing the sky, insects over flowers) and

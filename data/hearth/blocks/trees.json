@@ -91,7 +91,7 @@
   "tamarisk_log": {"template": "log", "material": "hearth:tamarisk_wood", "map_color": "#7a4a3a"},
   "tamarisk_branch": {"template": "branch", "material": "hearth:tamarisk_wood"},
   "tamarisk_leaves": {"template": "foliage", "material": "hearth:tamarisk_wood", "tint": "foliage", "drag": 0.4, "map_color": "#7a9a7a"},
-  "acacia_log": {"template": "log", "material": "hearth:acacia_wood", "map_color": "#4b3b2e"},
+  "acacia_log": {"template": "log", "material": "hearth:acacia_wood", "map_color": "#7a6a58"},
   "acacia_branch": {"template": "branch", "material": "hearth:acacia_wood"},
   "acacia_leaves": {"template": "foliage", "material": "hearth:acacia_wood", "tint": "foliage", "drag": 0.4, "map_color": "#6b7d3a"},
   "baobab_log": {"template": "log", "material": "hearth:baobab_wood", "map_color": "#8f8173"},

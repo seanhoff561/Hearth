@@ -7,7 +7,7 @@
         // ---- The plant-eaters ----
         (
             id: "african_forest_elephant", name: "African forest elephant", scientific: "Loxodonta cyclotis", body_plan: Elephant, status: Implemented,
-            mass_kg: (1700, 5000), dimorphism: 1.6, length_m: 5.0, shoulder_height_m: 2.4,
+            mass_kg: (1700, 5000), dimorphism: 1.6, length_m: 3.8, shoulder_height_m: 2.4,
             speed: (walk_m_s: 1.4, run_m_s: 6, swim_m_s: 0.8),
             senses: (vision_m: 30, hearing_m: 2000, smell_m: 4000, night_vision: 0.5),
             diet: (kind: MixedFeeder, daily_food_kg: 50, foods: [

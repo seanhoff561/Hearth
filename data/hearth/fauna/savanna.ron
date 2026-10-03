@@ -7,7 +7,7 @@
         // ---- The great plant-eaters ----
         (
             id: "african_bush_elephant", name: "African bush elephant", scientific: "Loxodonta africana", body_plan: Elephant, status: Implemented,
-            mass_kg: (2600, 6000), dimorphism: 1.8, length_m: 6.0, shoulder_height_m: 3.2,
+            mass_kg: (2600, 6000), dimorphism: 1.8, length_m: 4.6, shoulder_height_m: 3.2,
             speed: (walk_m_s: 1.6, run_m_s: 7, swim_m_s: 0.8),
             senses: (vision_m: 50, hearing_m: 2500, smell_m: 5000, night_vision: 0.5),
             diet: (kind: MixedFeeder, daily_food_kg: 75, foods: [
