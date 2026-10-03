@@ -39,5 +39,10 @@
     "opaque": false, "render": "model", "cushion": 0.5,
     "sound": "wool", "flammable": true, "map_color": "#9a7a56"
   },
+  "leaf_nest": {
+    "hardness": 0.2, "resistance": 0.2, "shape": {"boxes": [[0, 0, 0, 16, 5, 16]]},
+    "opaque": false, "render": "model", "layer": "cutout", "cushion": 0.5,
+    "sound": "grass", "flammable": true, "item": false, "map_color": "#5d6a2e"
+  },
   "spoil": {"template": "falling_soil", "material": "hearth:loam", "map_color": "#7a5a3c"}
 }

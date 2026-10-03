@@ -1,7 +1,36 @@
 //! Eras (`eras/`) and hominin species (`hominins/`), v2 §8 and §17.
 
+use serde::{Deserialize, Serialize};
+
 use super::{Range, entry};
 use crate::IdRef;
+
+/// What a hominin does, of what the agent framework knows how to do (v2 §8.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Behavior {
+    /// Picks fruit, nuts, pods and seeds, turns over stones for grubs.
+    Forage,
+    /// Digs roots and tubers with a stick.
+    DigTubers,
+    /// Cracks hard nuts with a hammerstone on an anvil.
+    CrackNuts,
+    /// Fishes termites from their mound with a twig.
+    FishTermites,
+    /// Cuts meat from a carcass and cracks its bones for the marrow.
+    Scavenge,
+    /// Strikes sharp flakes from a stone.
+    KnapFlakes,
+    /// Bends branches into a nest in a tree to sleep.
+    TreeNest,
+    /// Calls out at a hunter.
+    AlarmCall,
+    /// Faces a threat together: shouting, brandishing sticks, throwing stones.
+    MobThreat,
+    /// Runs up into the trees.
+    FleeToTrees,
+    /// Comes to tolerate a calm, patient person.
+    Habituate,
+}
 
 entry! {
     /// A historical setting a world can be created in.
@@ -48,8 +77,13 @@ entry! {
         pub habitat: Vec<IdRef>,
         /// Knowledge nodes it practises.
         pub knowledge: Vec<IdRef>,
-        /// Behaviours in words the agent framework implements.
-        pub behaviors: Vec<String>,
+        /// What it does, of what the agent framework knows how to do.
+        pub behaviors: Vec<Behavior>,
+        /// Its population in the ecological cells: the animal entry that says what it eats, how
+        /// it lives and dies and how far it ranges (its groups are drawn out as agents near the
+        /// player).
+        #[serde(default)]
+        pub population: Option<IdRef>,
         #[serde(default)]
         pub first_appearance_ya: Option<f64>,
         #[serde(default)]

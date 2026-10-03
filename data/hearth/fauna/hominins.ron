@@ -1,0 +1,41 @@
+// The hominins as populations of the ecological cells (V2-11 (a), v2 §8.4): what a hominin
+// species eats, how it lives and dies and how far it ranges, as an animal's. Near the player its
+// groups are drawn out as agents of the hominin of the same name (`hominins/`), each with a body,
+// a mind, what it knows and what it carries; far off they live here as numbers.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "australopithecus", name: "Australopithecus", scientific: "Australopithecus sp.", body_plan: Primate, status: Implemented, climbs: true,
+            mass_kg: (29, 45), dimorphism: 1.4, length_m: 1.2, shoulder_height_m: 1.0,
+            speed: (walk_m_s: 1.0, run_m_s: 5, swim_m_s: 0.5),
+            senses: (vision_m: 800, hearing_m: 400, smell_m: 50, night_vision: 0.2),
+            diet: (kind: Omnivore, daily_food_kg: 1.0, foods: [
+                (food: "marula_fruit"), (food: "wild_figs"), (food: "marula_nut", preference: 0.8), (food: "baobab_fruit", preference: 0.7),
+                (food: "acacia_pod", preference: 0.5), (food: "insect_larvae", preference: 0.6), (food: "grass_seed", preference: 0.3),
+                (food: "meat", preference: 0.4),
+            ]),
+            social: Herd(size: (5, 25)), activity: Diurnal,
+            habitat: ["savanna_woodland"],
+            also_in: ["tropical_freshwater"],
+            seasonal: [],
+            danger: (defensive: true, aggression: 0.3),
+            growth_rate: 0.1, density_per_km2: 0.15, realms: ["Afrotropical", "Indomalayan", "Neotropical", "Australasian"], min_coldest_month_c: 10,
+            life: (maturity_years: 11, lifespan_years: 40, litter: (1, 1), births_per_year: 0.22, birth_day: 150, adult_survival: 0.95, young_survival: 0.8, birth_mass_kg: 1.6),
+            ranging: (home_range_km2: 15, dispersal_km: 15, dispersers: Females, cover: 0.3),
+            coat: (base: "#5a4632", belly: "#6a5642", points: "#3a2a1e", face: "#4a3a2e"),
+            shape: (neck: 0.08, head: 0.2, snout: 0.25, tail: 0.0, ears: 0.12, ear_shape: Round, legs: 1.0),
+            habits: (vigilance: 1.0),
+            yields: (meat: 0.45, fat: 0.04, organs: 0.05, bone: 0.12, hide: 0.08, sinew: 0.01),
+            track: (foot: Plantigrade, length_cm: 18, stride_m: 0.9),
+            calls: [
+                (kind: Scream, when: Alarm, loudness_db: 95, pitch_hz: (400, 2500), seconds: 0.8),
+                (kind: Grunt, when: Contact, loudness_db: 55, pitch_hz: (100, 500), seconds: 0.4),
+            ],
+            temperament: (flight_m: 60, boldness: 0.5),
+            notes: "The population of the hominin of the same name: groups of five to twenty-five that forage over the savanna–woodland and along the gallery forests by day, never far from water and the trees they sleep in. Rare and wary; the leopard, the big cats, the hyenas, the crocodiles and the crowned eagle take them.",
+            realism_source: "general paleoanthropology references (chimpanzee and baboon ecology as analogues); review",
+            uncertain: true,
+        ),
+    ],
+)

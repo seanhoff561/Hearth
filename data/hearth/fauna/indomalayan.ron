@@ -205,6 +205,7 @@
                 (food: "indian_muntjac", preference: 0.3), (food: "rhesus_macaque", preference: 0.05), (food: "asian_elephant", preference: 0.02),
                 (food: "meat", preference: 0.3),
                 (food: "wild_water_buffalo", preference: 0.5),
+                (food: "australopithecus", preference: 0.05),
             ]),
             social: Solitary, activity: Crepuscular,
             habitat: ["tropical_rainforest", "savanna_woodland"],

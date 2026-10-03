@@ -127,6 +127,9 @@ pub struct Species {
     pub aquatic: bool,
     /// Lives in the sea, its lands the sea's alone (its density is per km² of the sea).
     pub marine: bool,
+    /// The population of a hominin (`hominins/`): its groups are drawn out near the player as
+    /// that hominin's agents, not as animals.
+    pub hominin: bool,
     /// Lives by the water, its lands those of the waters alone (a beaver, an otter, a heron, a
     /// hippo): of a cell's land it has the share the water about it gives.
     pub waterside: bool,
@@ -436,11 +439,23 @@ impl Catalog {
                     })
             })
             .fold(0u32, |m, (i, _)| m | (1 << i));
-        let species = animals
+        let mut species: Vec<Species> = animals
             .iter()
             .enumerate()
             .map(|(i, a)| species_of(c, a, i, &by_id, &eco_bit, water, sea))
             .collect();
+        // The hominins' populations.
+        for h in c.hominins.iter() {
+            let Some(p) = &h.population else {
+                continue;
+            };
+            let at = by_id
+                .get(p.as_str())
+                .or_else(|| by_id.get(&format!("hearth:{}", p.as_str())));
+            if let Some(&i) = at {
+                species[i].hominin = true;
+            }
+        }
         Self {
             species,
             ecosystems,
@@ -450,6 +465,16 @@ impl Catalog {
 
     pub fn get(&self, id: &str) -> Option<&Species> {
         self.index(id).map(|i| &self.species[i])
+    }
+
+    /// The hominins kept to their cradle, Africa: the Hominin range setting's single cradle
+    /// region (v2 §8.1); by default they live in suitable habitat the world over.
+    pub fn hominins_in_cradle(&mut self) {
+        for sp in &mut self.species {
+            if sp.hominin {
+                sp.realms = hearth_worldgen::realms::Realm::Afrotropical.bit();
+            }
+        }
     }
 
     /// The index of a species by `namespace:path` or bare path.
@@ -614,6 +639,7 @@ fn species_of(
         cold_limit: a.min_coldest_month_c,
         aquatic,
         marine,
+        hominin: false,
         waterside: !aquatic && !marine && core != 0 && core & !water == 0,
         colony: matches!(a.social, Social::Colony { .. }),
         need_kg: need,

@@ -573,8 +573,11 @@ fn run(
         calendar.year_offset,
         years_at(ticks),
         save_state.as_ref().map(|s| s.dir.root.as_path()),
+        life.hominin_range == hearth_save::HomininRange::SingleCradleRegion,
     );
     let mut animals_shown = false;
+    // The hominins about the player: agents drawn out of the populations' hominin groups.
+    let mut hominins = crate::hominins::Agents::new(&content, &workshop.graph, &cfg, seed);
     // How readily the animals turn on people: the world's Predator Behavior setting.
     fauna.live.aggression = match life.predator_behavior {
         hearth_save::PredatorBehavior::Authentic => 1.0,
@@ -1029,6 +1032,52 @@ fn run(
                     &lw.reg,
                 );
                 fauna.tick(&lw, &presence, &now, years_at(ticks), TICK_S as f32, ticks);
+                // The hominins about the player live their tick, their calls heard with the
+                // animals'.
+                {
+                    let e = exposure(&env, &lw, &moment, &player.mover, 0.0);
+                    let around = workshop.around(&here!(), at);
+                    let person = hearth_agent::Person {
+                        pos: at,
+                        running: presence.running,
+                        hunting: false,
+                        plain: presence.plain,
+                    };
+                    let agents_now = hearth_agent::Now {
+                        tick: ticks,
+                        hour: now.hour * 24.0,
+                    };
+                    let crafts = workshop.crafts.clone();
+                    let graph = workshop.graph.clone();
+                    if hominins.tick(
+                        &mut lw,
+                        &mut fauna,
+                        &mut world_items,
+                        &items,
+                        &crafts,
+                        &graph,
+                        &mut gathered,
+                        e,
+                        around,
+                        now.year_frac,
+                        at,
+                        Some(person),
+                        agents_now,
+                        TICK_S as f32,
+                    ) {
+                        items_changed = true;
+                    }
+                    // What the player, awake, sees them do (and the scatters they leave), heard
+                    // an hour apart at most.
+                    if !player.asleep && player.body.dead.is_none() {
+                        let yaw = last_moved.as_ref().map_or(0.0, |m| m.yaw);
+                        let eye = at + DVec3::Y * player.mover.stance.height();
+                        let hour = (calendar.ticks_per_day() / 24.0) as u64;
+                        for t in hominins.watched(&crafts, &graph, &world_items, eye, yaw) {
+                            workshop.hear_now_and_then(&mut here!(), t, hour);
+                        }
+                    }
+                }
                 // What the animals called, in the world and about it.
                 let mut calls = std::mem::take(&mut fauna.live.calls);
                 calls.extend(fauna.chorus(at, &now, TICK_S as f32));
@@ -1128,6 +1177,11 @@ fn run(
                     if !views.is_empty() || animals_shown {
                         animals_shown = !views.is_empty();
                         let _ = tx.send(ToClient::Animals(views));
+                    }
+                    let views = hominins.views();
+                    if !views.is_empty() || hominins.shown {
+                        hominins.shown = !views.is_empty();
+                        let _ = tx.send(ToClient::Hominins(views));
                     }
                 }
             }

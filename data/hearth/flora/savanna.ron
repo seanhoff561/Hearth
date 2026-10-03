@@ -48,7 +48,7 @@
             tree: (crown: Spreading, crown_ratio: 0.55, crown_width: 0.9, apical_dominance: 0.3, branch_angle_deg: 55, droop: 0.05, root_flare: 0.2, foliage_density: 0.55, bark: Scaly, log: "marula_log", branch: "marula_branch", leaves: "marula_leaves"),
             parts: [
                 (part: Fruit, material: "marula_fruit", seasons: [Summer], edibility: Edible, yield_kg: (50, 500), uses: ["food", "drink"]),
-                (part: Nut, material: "marula_nut", seasons: [Summer, Autumn], edibility: Edible, yield_kg: (2, 20), uses: ["food", "oil"]),
+                (part: Nut, material: "marula_stone", seasons: [Summer, Autumn, Winter], edibility: AfterProcess("crack_marula_stones"), yield_kg: (5, 40), uses: ["food", "oil"]),
             ],
             flammability: 0.3, appearance: (foliage: "#5a7a3a", bark: "#8a8070", crown: "spreading"),
             realms: ["Afrotropical"],

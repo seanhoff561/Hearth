@@ -266,6 +266,19 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
         for k in &e.knowledge {
             r.check(&c.knowledge, "knowledge", k, o, e.id());
         }
+        match &e.population {
+            Some(p) => r.check(&c.animals, "animal", p, o, e.id()),
+            None if e.status == crate::schema::Status::Implemented => r.report.error(
+                "no-population",
+                Some(o.file.clone()),
+                o.line,
+                format!(
+                    "hominin `{}` has no population in the ecological cells",
+                    e.id()
+                ),
+            ),
+            None => {}
+        }
     }
     for (e, o) in c.forms.iter_with_origin() {
         for m in &e.materials.ids {

@@ -187,6 +187,8 @@ pub struct Client {
     /// The animals near the player as the server last told of them, and as drawn (eased
     /// toward that between the server's word); the species they are of.
     animals: rustc_hash::FxHashMap<u64, ShownAnimal>,
+    /// The hominins near the player, as drawn.
+    hominins: rustc_hash::FxHashMap<u64, ShownHominin>,
     /// The signs animals left about the player: the world's seconds they are timed by, how long
     /// a day is (s), and the signs.
     signs: (f64, f32, Vec<hearth_fauna::live::Sign>),
@@ -252,6 +254,15 @@ pub struct Client {
     pub crafting: Option<Crafting>,
     /// Knapping by hand asked for (the app opens its screen).
     pub knap_request: Option<crate::knapping_ui::KnapScreen>,
+}
+
+/// A hominin as the server last told of it, and as drawn: where, facing, and its figure (a
+/// biped's frame at its size, in its coat) with its animation.
+struct ShownHominin {
+    target: hearth_agent::AgentView,
+    pos: DVec3,
+    yaw: f32,
+    figure: Figure,
 }
 
 /// A tree on its way down.
@@ -376,6 +387,7 @@ impl Client {
             falling: Vec::new(),
             tumbling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
+            hominins: rustc_hash::FxHashMap::default(),
             signs: (0.0, 1200.0, Vec::new()),
             insects: (0.0, 15.0),
             fauna: None,
@@ -902,6 +914,49 @@ impl Client {
             *at += (behind - *at) * (1.0 - (-dt * 4.0).exp());
         } else {
             self.dragged_at = None;
+        }
+    }
+
+    /// The hominins near the player, eased toward where the server has them, their figures
+    /// walking, climbing, crouched at their work, lying asleep in their nests.
+    fn hominin_boxes(&mut self, view: DVec3, dt: f32) {
+        let Some(w) = &self.world else {
+            return;
+        };
+        let k = 1.0 - (-dt * 12.0).exp();
+        for s in self.hominins.values_mut() {
+            s.pos += (s.target.pos - s.pos) * k as f64;
+            if (s.target.pos - s.pos).length() > 8.0 {
+                s.pos = s.target.pos;
+            }
+            let mut d = (s.target.yaw - s.yaw).rem_euclid(std::f32::consts::TAU);
+            if d > std::f32::consts::PI {
+                d -= std::f32::consts::TAU;
+            }
+            s.yaw += d * k;
+            if (s.pos - view).length() > 160.0 {
+                continue;
+            }
+            let drive = crate::hominins::drive(&s.target);
+            let pose = s.figure.animator.update(&s.figure.rig, &drive, dt);
+            let place = Affine3A::from_rotation_translation(
+                Quat::from_rotation_y(s.yaw),
+                (s.pos - view).as_vec3(),
+            );
+            let chest = hearth_math::BlockPos::containing(s.pos + DVec3::Y * 0.8);
+            let show = Show {
+                hide_head: false,
+                sky_light: w.mirror.sky_light(chest),
+                block_light: w.mirror.block_light(chest),
+            };
+            hearth_character::instances(
+                &s.figure.rig,
+                &s.figure.palette,
+                &pose,
+                place,
+                show,
+                &mut self.figure_boxes,
+            );
         }
     }
 
@@ -2282,6 +2337,27 @@ impl Client {
                         self.hearing.calls(&calls, cat, self.camera.pos, facing);
                     }
                 }
+                ToClient::Hominins(views) => {
+                    self.hominins
+                        .retain(|id, _| views.iter().any(|v| v.id == *id));
+                    for v in views {
+                        match self.hominins.get_mut(&v.id) {
+                            Some(s) => s.target = v,
+                            None => {
+                                let figure = Figure::hominin(crate::hominins::looks(&v));
+                                self.hominins.insert(
+                                    v.id,
+                                    ShownHominin {
+                                        pos: v.pos,
+                                        yaw: v.yaw,
+                                        target: v,
+                                        figure,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
                 ToClient::Animals(views) => {
                     // Those gone are gone; the rest ease toward where the server has them.
                     self.animals
@@ -2556,6 +2632,7 @@ impl Client {
         self.figure_boxes.clear();
         self.thing_boxes(view.pos);
         self.animal_boxes(view.pos, dt);
+        self.hominin_boxes(view.pos, dt);
         self.carcass_boxes(view.pos);
         self.sign_boxes(view.pos);
         self.ghost_boxes(view.pos);

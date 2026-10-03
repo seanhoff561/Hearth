@@ -254,15 +254,21 @@ struct Saved {
 }
 
 impl Fauna {
-    /// The world's animals: as saved in `dir`, or new.
+    /// The world's animals: as saved in `dir`, or new; the hominins in Africa alone when
+    /// `cradle` (the Hominin range setting).
     pub fn new(
         lw: &LocalWorld,
         seed: u64,
         year_offset: f64,
         years: f64,
         dir: Option<&Path>,
+        cradle: bool,
     ) -> Self {
-        let catalog = Arc::new(Catalog::new(&lw.content));
+        let mut catalog = Catalog::new(&lw.content);
+        if cradle {
+            catalog.hominins_in_cradle();
+        }
+        let catalog = Arc::new(catalog);
         let yields = TreeYields::new(&lw.generator, &lw.content);
         let land = GenLand {
             wg: &lw.generator,

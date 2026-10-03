@@ -31,6 +31,7 @@ hearth_items = { path = "crates/hearth_items" }
 hearth_craft = { path = "crates/hearth_craft" }
 hearth_flora = { path = "crates/hearth_flora" }
 hearth_fauna = { path = "crates/hearth_fauna" }
+hearth_agent = { path = "crates/hearth_agent" }
 hearth_render = { path = "crates/hearth_render" }
 hearth_lod = { path = "crates/hearth_lod" }
 

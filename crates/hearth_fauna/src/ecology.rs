@@ -84,6 +84,10 @@ pub struct Group {
     /// Its animals stand in the world near the player; the abstract step leaves it be.
     #[serde(default)]
     pub live: bool,
+    /// How used it is to people, 0 (wary) to 1 (at ease): a hominin group comes in time to
+    /// tolerate a person who keeps calm about it.
+    #[serde(default)]
+    pub tolerance: f32,
 }
 
 impl Group {
@@ -2718,6 +2722,7 @@ fn founding_group(sp: &Species, rng: &mut Rng, id: u64, p: [f64; 2]) -> Group {
         condition: 0.75,
         food: 0.0,
         live: false,
+        tolerance: 0.0,
     }
 }
 

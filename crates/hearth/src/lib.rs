@@ -17,6 +17,7 @@ pub mod frame_limiter;
 pub mod gamepad;
 pub mod globe;
 pub mod hearing;
+pub mod hominins;
 pub mod interface;
 pub mod inventory_ui;
 pub mod journal_ui;

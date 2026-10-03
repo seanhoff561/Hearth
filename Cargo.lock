@@ -921,6 +921,7 @@ dependencies = [
  "env_logger",
  "gilrs",
  "glam",
+ "hearth_agent",
  "hearth_audio",
  "hearth_body",
  "hearth_character",
@@ -952,6 +953,21 @@ dependencies = [
  "wgpu",
  "winit",
  "zstd",
+]
+
+[[package]]
+name = "hearth_agent"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hearth_body",
+ "hearth_content",
+ "hearth_craft",
+ "hearth_fauna",
+ "hearth_items",
+ "hearth_math",
+ "log",
+ "serde",
 ]
 
 [[package]]
@@ -1134,6 +1150,7 @@ name = "hearth_protocol"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "hearth_agent",
  "hearth_body",
  "hearth_character",
  "hearth_content",

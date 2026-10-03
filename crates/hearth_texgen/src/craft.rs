@@ -250,6 +250,34 @@ fn fur_bed(seed: u64) -> Tex {
     })
 }
 
+/// A sleeping nest bent from a crown's branches: twigs woven over, the leaves still green on
+/// them, browning where they broke.
+fn leaf_nest(seed: u64) -> Tex {
+    let mut t = paint(S, S, |x, y| {
+        let n = fbm(seed, x, y, S, 0.5);
+        lerp([62, 72, 34], [96, 104, 46], n)
+    });
+    for b in 0..26 {
+        let x0 = (rand01(seed, b, 0) * 16.0) as i32;
+        let y0 = (rand01(seed, b, 1) * 16.0) as i32;
+        let dx = (rand01(seed, b, 2) * 10.0) as i32 - 5;
+        let dy = (rand01(seed, b, 3) * 6.0) as i32 - 3;
+        let c = scale([92, 66, 40], 0.8 + rand01(seed, b, 4) * 0.35);
+        line(&mut t, x0, y0, x0 + dx, y0 + dy, c);
+    }
+    for b in 0..30 {
+        let x = (rand01(seed ^ 9, b, 0) * 16.0) as i32;
+        let y = (rand01(seed ^ 9, b, 1) * 16.0) as i32;
+        let c = if rand01(seed ^ 9, b, 2) < 0.25 {
+            [138, 116, 58]
+        } else {
+            scale([74, 108, 40], 0.85 + rand01(seed ^ 9, b, 3) * 0.3)
+        };
+        line(&mut t, x, y, x + 1, y, c);
+    }
+    t
+}
+
 /// Loose earth thrown up from digging: clods and crumbs.
 fn spoil(seed: u64) -> Tex {
     paint(S, S, |x, y| {
@@ -281,6 +309,7 @@ pub fn textures() -> Vec<TexEntry> {
     add("fat_lamp", fat_lamp(h("lamp")));
     add("grass_bed", grass_bed(h("grassbed")));
     add("fur_bed", fur_bed(h("furbed")));
+    add("leaf_nest", leaf_nest(h("leafnest")));
     add("spoil", spoil(h("spoil")));
     let frames = 8;
     let flame: Vec<Tex> = (0..frames)

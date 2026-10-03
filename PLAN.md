@@ -1,8 +1,11 @@
-# Plan (v2)
+# Plan (v2, with V2.1)
 
 The game follows `docs/spec/v2-direction-change.md` (v2), which overrides the original build
 spec `docs/spec/v1-build-prompt.md` (v1) where they conflict. `MIGRATION.md` maps every v1
-milestone and subsystem to its fate. Each milestone ends with: design doc(s) in
+milestone and subsystem to its fate. Since 2026-10-03 the amendment
+`docs/spec/v2.1-realistic-humans.md` (V2.1, with its Addendum A: the player is born) replaces
+v2 §8.4 and §17 and milestone V2-11 with milestones H0–H13 (simulated people, from genes to
+societies); `MIGRATION_HUMANS.md` maps what V2-11 had built onto them (D162). Each milestone ends with: design doc(s) in
 `docs/design/` updated, data added, tests, `scripts/check.sh` and `hearth content lint` green,
 the performance gate `scripts/perf-gate.sh` passed (or a regression over 5 % justified in
 `DECISIONS.md` and the baseline moved with `--accept`, D59), `PROGRESS.md` (incl. the Content
@@ -151,12 +154,110 @@ that needs it (marked **Engine**), keeping v1's acceptance criteria for it.
   wetlands/rivers/lakes → oceans (coasts, reefs, kelp, open ocean, deep sea bioluminescence).
 - *Accept:* per-wave 50-year stability runs and screenshot suites.
 
-## V2-11 — *Australopithecus* & the agent framework
-- Agent framework (Body, Mind, KnowledgeState, Inventory, SocialGroup, Culture) using the same
-  process system; hominin groups, tool use, tree nests, traces, habituation, observation
-  learning; group-level abstract simulation.
-- *Accept:* groups persist for decades in suitable habitat; a scripted observer gains knapping
-  insight by watching.
+## V2-11 — *Australopithecus* & the agent framework (superseded by V2.1)
+- Parts (a)–(d) done and kept (`MIGRATION_HUMANS.md`): the population and its hunters, the agent
+  crate on the player's body, knowledge, carrying and process engine, hominins drawn out near the
+  player with their days, nests, alarms and flight, sites, habituation and learning by watching;
+  its acceptance met (decades in suitable habitat; a scripted observer gains knapping insight).
+  Part (e) (docs and the gate) folds into H0.
+
+The H milestones each end as every milestone does (docs, data, tests, `scripts/check.sh`, the
+content lint, the performance gate, `PROGRESS.md` with its **Humans Status** table, a commit).
+*Australopithecus* keeps working throughout: it is the first species profile on the framework.
+
+## H0 — Framework migration
+- `MIGRATION_HUMANS.md`; the **Person** composition with versioned components (body, mind,
+  knowledge, social, life history, possessions now; genome, phenotype and psyche joining with
+  H1–H2); **species profiles** in `data/hearth/humans/species/` (*Australopithecus*
+  implemented; *Homo erectus*, *H. neanderthalensis*, *H. sapiens* as data); one random stream
+  per person; a step that reads the state before it, so neither order nor thread count changes
+  the outcome; the **persons registry**, saved with the world under a version with migrations;
+  the developer **inspector** (F3 mode) for any person; *Australopithecus* ported onto it.
+- *Accept:* *Australopithecus* behave at least as well as before (the V2-11 tests on the new
+  framework); save/load round-trips persons; the determinism test (same seed and inputs, and one
+  thread or many, give the same persons after a run) passes.
+
+## H1 — Genetics engine
+- Genome (23 chromosome pairs, a few hundred loci), meiosis with crossovers, mutation,
+  inbreeding, lineage and kinship coefficients; genotype → phenotype for appearance, health,
+  temperament (personality model chosen in `DECISIONS.md`) and aptitude; heritability
+  calibration; the ancestry lint (ground rule 1); phenotype-driven figures, so families look
+  related.
+- **The player's genome is a child's of two parents** (Addendum A): the character creator loses
+  its appearance editor (name and sex stay); until families live in the world (H3) the parents
+  are drawn from the spawn region's gene pool and shown.
+- *Accept:* V2.1 §18's genetics tests; family resemblance visible in a generated
+  three-generation family screenshot set.
+
+## H2 — Psyche and mind core
+- Personality and its behaviour mappings, appraisal emotions, mood and stress, values;
+  perception; episodic and semantic memory, beliefs; routines, utility selection and HTN
+  planning on the process engine; budgets.
+- *Accept:* agents complete multi-step plans (a hafted spear from scratch, knowing how); modest
+  trait–behaviour correlations; emotions visible and contagious.
+
+## H3 — Life course and demography
+- Pair bonds (abstracted), pregnancy, birth, the life stages from infant to elder with child body
+  models and animations, development, ageing, death, mourning and inheritance; life tables.
+- **The player is born** (Addendum A, `docs/design/humans/player-birth.md`): into a family of the
+  world — in Wild Earth one of its few wandering families (D164) — growing up at the childhood
+  pace through moments and the years between, and coming of age.
+- *Accept:* a 200-year forager run meets V2.1 §14.3's targets; children visibly learn by
+  imitation and play; families persist across generations; a scripted player is born, grows up
+  through its moments and comes of age in its family.
+
+## H4 — Social systems
+- Kinship systems, households, relationships and obligations, cooperation and sharing norms,
+  reputation and gossip, norms and sanctions, status and group decisions, conflict escalation
+  and de-escalation, strangers.
+- *Accept:* V2.1 §18's social tests; a group debates and decides where to move camp; a norm
+  violation produces gossip and sanctions.
+
+## H5 — Culture and language
+- The culture generator and model, transmission and evolution; generated languages, families and
+  drift, names; speech acts, gestures, subtitles with partial translation; the player learning a
+  language.
+- *Accept:* two cultures from one ancestor diverge after a split with related languages and
+  customs; the player learns a language over play.
+
+## H6 — Knowledge and social learning
+- Observation (generalized from the hominins'), teaching, apprenticeship, storytelling, agents'
+  own discoveries, the collective brain's retention and loss, diffusion between groups, the
+  anachronism guard.
+- *Accept:* knowledge is lost in an isolated small population and kept in a large connected one;
+  the player is taught a technique faster than discovering it.
+
+## H7 — Tiers and persistence
+- Household and demographic tiers, promotion and demotion conserving state, individuals
+  instantiated from populations with synthesized genealogies, persistent persons, pruning to
+  genealogy stubs, budgets.
+- *Accept:* leaving a band and coming back finds it consistent; a population instantiated on
+  approach has coherent families; budgets met.
+
+## H8 — History simulation and Paleolithic eras
+- The deep-time layer (dispersal from the cradle over the planet's real geography, gene pools,
+  cultures, languages, knowledge geography, the chronicle) and the recent-history layer about the
+  spawn; species profiles of *H. erectus*, Neanderthals and *H. sapiens* implemented; Lower,
+  Middle and Upper Paleolithic era profiles (routines, camps, seasonal rounds, aggregation); the
+  era selector enables them; **birth options**: two to four households of the chosen area to be
+  born into (Addendum A).
+- *Accept:* `docs/review/era-*.md` reviews for the three eras; dispersal plausible on the
+  planet's geography; births offered at places across the eras.
+
+## H9 — Observer mode and the player in society
+- The Chronicle mode (time controls, overlays, following people, stepping in as a birth into a
+  chosen household); obligations, family and children, Legacy as a descendant, joining another
+  group; the interaction UI (speech-act wheel, gestures, give and trade, asking to be taught,
+  teaching).
+- *Accept:* a scripted player, born into a band, is taught, forms a family and continues as a
+  child after death; the Observer's fast-forward meets its budget.
+
+## H10 — Optional conversation backend
+- The `ConversationBackend` trait (none / local / remote, off by default), prompts built from a
+  person's own state, player free text parsed into speech acts, anachronism and knowledge
+  filters.
+- *Accept:* disabled, nothing changes; enabled, a conversation suite never leaks unknown facts or
+  anachronisms and never changes state outside speech acts.
 
 ## V2-12 — Neolithic
 - Plant and animal domestication across generations, farming (soils, seasons, weeds, pests,
@@ -165,28 +266,42 @@ that needs it (marked **Engine**), keeping v1's acceptance criteria for it.
 - *Accept:* a bot domesticates a grain and sees yields rise; a sheep lineage becomes docile and
   woolly; under-fired pottery fails.
 
+## H11 — Neolithic society
+- Villages, farming and herding households, lineages, storage, feasting, early inequality, crowd
+  diseases; the Neolithic era profile.
+
 ## V2-13 — Metallurgy & mining
 - Prospecting, mining with supports, ore processing, charcoal, furnaces, bellows, crucibles,
   casting, alloying, bloomery, smithing, heat treatment; metal tools and armour.
 - *Accept:* realistic yields; bronze needs copper and tin sources; iron needs a bloomery and
   forging; measurable tool quality differences.
 
+## H12 — Bronze Age society
+- Specialists, exchange and markets, chiefdoms and early states, temples, towns, organized
+  conflict (abstracted, ground rule 4); the Bronze Age era profile.
+
 ## V2-14 — Late scope: Iron Age & Classical
 - Lime mortar and concrete, arches/vaults/domes, cranes and pulleys, lathe, glassblowing, water
   wheel with a minimal mechanical power network, advanced boats and sails, carts with draft
   animals; `docs/design/future-systems.md` ready for Era 6.
 
+## H13 — Iron Age / Classical society
+- Kingdoms and city-states, coinage, law, cities; the era profile.
+
 ## V2-15 — World creation & menus
-- Full §16 flow: planet settings, life & time settings, era selector, globe spawn picker with
-  region info, character selection; map with exploration memory.
+- Full §16 flow: planet settings, life & time settings, era selector with the deep-time
+  progress, globe spawn picker with region info, the birth options (Addendum A; no appearance
+  editor), the Observer's entry; map with exploration memory.
 - **Engine (v1 M11/M12 remainder):** remaining screens, resource packs with hot reload, WASM
   mod API + examples, `MODDING.md`.
 - *Accept:* UI tests; spawning at chosen points across climates works.
 
 ## V2-16 — Long-run balance, performance & cohesion QA
-- 100-year headless planet runs; §21 budgets and v1 frame-rate targets verified
+- 100-year headless planet runs and 500-year planet history runs with the era reviews (V2.1);
+  §21 budgets and v1 frame-rate targets verified
   (`BENCHMARKS.md`); interaction matrix fully checked; screenshot suite across ecosystems,
   seasons and times of day; "survive two years in three climates" bot run;
   `docs/review/v2-final.md`.
 - **Engine (v1 M13/M14):** profiling, zero steady-state allocations, software-adapter run,
   README/BUILDING/MODDING/ASSETS_LICENSES, fresh-clone build, soak test.
+

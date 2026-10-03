@@ -28,6 +28,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Flora | [flora.md](flora.md) | planned (V2-6) |
 | Fauna and ecosystems | [fauna.md](fauna.md) | planned (V2-7) |
 | Building and structure | [building.md](building.md) | planned (V2-8) |
+| Agents: hominins, simulated humans (body, mind, knowledge, group, culture) | [agents.md](agents.md) | partial (V2-11) |
 | Interaction matrix | [interactions.md](interactions.md) | living document |
 | Future systems (Eras 6–8) | [future-systems.md](future-systems.md) | design only |
 | Future humanity (eras, simulated humans) | [future-humanity.md](future-humanity.md) | design only |

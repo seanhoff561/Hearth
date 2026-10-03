@@ -281,6 +281,8 @@ pub enum ToClient {
     Smoke(Vec<Plume>),
     /// The animals near the player (ten times a second while there are any).
     Animals(Vec<hearth_fauna::live::AnimalView>),
+    /// The hominins near the player (ten times a second while there are any).
+    Hominins(Vec<hearth_agent::AgentView>),
     /// Calls the animals made (those in the world and those about it).
     Calls(Vec<hearth_fauna::voices::Called>),
     /// The signs animals left near the player (tracks, blood, droppings), with the world's

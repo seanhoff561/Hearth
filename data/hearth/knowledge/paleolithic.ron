@@ -28,7 +28,7 @@
         ),
         (
             id: "nut_cracking", status: Implemented, name: "Cracking nuts", era: 0, requires: ["anvil_use"],
-            enables: ["crack_nuts"],
+            enables: ["crack_nuts", "crack_marula_stones"],
             discovery: [
                 (route: Experiment, trigger: "strike:nut", insight: 0.5, hint: "The hazelnut shells are too hard for teeth."),
                 (route: Observation, trigger: "watch:hominin_nut_cracking", insight: 0.6),

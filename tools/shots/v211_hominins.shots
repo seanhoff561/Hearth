@@ -1,0 +1,10 @@
+# V2-11 Australopithecus on the huge planet of seed 7, in the African savanna of the V2-10 shots
+# (`x=`, `z=`): a group placed close (a mother and her young, a male walking, one at work, one
+# feeding) in a patch cleared of the tall plants; then a group of the population sought and drawn
+# out as the game draws them, living half a minute of its morning about its site under a nut
+# tree; and at dusk up in the trees, nesting.
+# `hearth --screenshot-list tools/shots/v211_hominins.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=8, hour=10, clouds=0.25, dry=true
+x=215040, z=10240, above=1.3, yaw=30, pitch=2, fov=40, season=summer, mow=7@5, hominin=f:adult:stand@4.5:-0.9:200, hominin=f:young:stand@4.2:-0.4:190, hominin=m:adult:walk@6:1.6:250, hominin=f:adult:work@5.5:-2.4:140, hominin=m:juvenile:feed@3.8:1.0:170, out=bench-out/v211/hominins_close.png
+x=215040, z=10240, above=1.8, back=-9, season=summer, seek=australopithecus, run=30, out=bench-out/v211/hominins_group.png
+x=215040, z=10240, above=1.8, season=summer, hour=18.6, back=-6, seek=australopithecus, run=90, out=bench-out/v211/hominins_dusk.png

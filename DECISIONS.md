@@ -1809,3 +1809,66 @@ wetlands and the seas: 315 animals and 168 plants more than V2-9's) cost the qui
 two per cent: the lowland forest's average −0.2 % and 1 % lows −1.4 %, the peak's −1.2 % and
 −1.1 %, the cave's −1.9 % and +1.7 %, three alternating rounds each on the RTX 4060 laptop.
 The baseline moves to the end of V2-10.
+
+## D161 — A hominin's population is an animal's
+v2 §8.4 asks that hominins be agents, not special-case animals, and that away from the player
+they live in the ecological cells as a population with needs and a range. The hominin entry
+names its population (`population`): an animal entry with the hominin's diet, life history,
+density and range, so the ecology feeds it, breeds it, kills it and its hunters take it as they
+do any group-living animal, and the hunters' diets name it as prey. Near the player its groups
+are not drawn out as animals but as the hominin's agents (V2-11 (c)); until then they live on
+only as numbers. *Australopithecus* lives in the savanna–woodland and along the tropical waters
+of Africa, tropical Asia, South America and Australia by default (v2 §8.1's period liberty), at
+0.15 to the km² in groups of 5–25; the Hominin range setting's single cradle keeps it to Africa.
+Fifty years of the savannas of Africa, India and South America hold it at about half what their
+land would (the groups' fixed sizes and a birth every four and a half years).
+
+## D162 — V2.1 replaces the agent framework with people
+The amendment V2.1 (`docs/spec/v2.1-realistic-humans.md`, 2026-10-03) replaces v2 §8.4 (the
+agent framework) and §17 (future eras and simulated humanity) and milestone V2-11 with milestones
+H0–H13: a simulation of people from genes to societies, on which *Australopithecus* becomes the
+first species profile. V2-11 had built four of its five parts — the hominin population and its
+hunters (D161), the agent crate on the player's body, knowledge, carrying and process engine, the
+hominins' days near the player, and learning by watching them — and met its acceptance (groups
+persist for decades; a scripted observer gains insight toward knapping). Nothing of it is thrown
+away: `MIGRATION_HUMANS.md` marks each piece Keep, Refactor or Replace with the milestone that
+moves it; its fifth part (docs and the gate) folds into H0.
+
+## D163 — The player is born
+The user's Addendum A to V2.1: the player is born a baby to two parents of the world, grows up to
+an adult at a faster pace, chooses at the start between a couple of births the chosen place
+offers, and no longer chooses what they look like — that comes from the parents' genes. It
+supersedes V2.1 §4.6 (a genotype solved from a chosen appearance) and §16's arrival as a stranger,
+and v2 §9.1's appearance editor. What stays a choice is whether the child is a daughter or a son
+(or chance): the father's gamete is drawn conditioned on it, and nothing else of the child is
+chosen or previewed. It lands in steps (`docs/design/humans/player-birth.md`): H1 removes the
+appearance editor and gives the player a child's genome of two parents drawn from the spawn
+region's gene pool; H3 makes the player a newborn in a family of the world, growing up through
+moments played at normal speed and the years between reckoned at the household tier, at a
+childhood pace of about two hours of play by default; H8 offers two to four households of the
+area to be born into, differing in way of life as far as the area allows; H9's Observer steps in
+by a birth. As a child the player is never a target (ground rule 2): nothing attacks them, and
+whoever is minding them fetches them back.
+
+## D164 — Wild Earth's few families
+Wild Earth, the default era, has no peoples, only sporadic *Australopithecus* — yet every player
+is now born to parents. So Wild Earth holds a few wandering families of people, far apart: the
+era's one liberty besides the hominins, as the player always was. A family is a household of four
+to ten (parents, children, perhaps a grandparent) living by foraging, knowing what living in its
+country takes and no more — where it is warm the stone hammer, sharp flakes and cutting with them,
+the digging stick, throwing stones, carrying bundles and tracking; where it is cold also keeping
+and making fire, hide wraps and a windbreak — so the child learns those from its family and
+everything beyond is still the player's to discover, as Wild Earth meant. Where no family could
+live by that knowledge (the ice caps), the globe says so and points to the nearest place where
+one does.
+
+## D165 — A person is a record of components, not an archetype ECS
+V2.1 §2 asks for persons as compositions of components, data-driven and versioned. They are
+records whose fields are the components, each its own type with defaults for fields added later
+(so a save from before a component grew still loads), in a registry indexed by id, rather than an
+archetype ECS: the people lived in full are hundreds, the household tier's records (H7) are
+compact copies of the same components, and the player — whose state the server already holds as
+`Body`, `KnowledgeState` and `Carry` — keeps the very same component types, so every system
+written for a person's body, knowledge or possessions also works on the player's. Components that
+arrive with later milestones (genome, phenotype, psyche, culture) join as fields of the record.
+

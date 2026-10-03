@@ -372,3 +372,48 @@ fn garments_dress_the_body() {
         "{bare} hair boxes, {hooded} under the hood (the beard)"
     );
 }
+
+#[test]
+fn a_hominin_is_small_long_armed_and_hairy() {
+    let a = Appearance {
+        height_m: 1.25,
+        hair: HairStyle::ShortCrop,
+        ..Appearance::default()
+    };
+    let f = Figure::hominin(a);
+    let rest = Pose::rest(&f.rig);
+    let (lo, hi) = extent(&f.rig, &rest, |_| true);
+    // On its feet, about its height (its legs short, the top of its head under the stature).
+    assert!(lo.y.abs() < 0.02, "feet at {}", lo.y);
+    let tall = hi.y - lo.y;
+    assert!((1.0..1.3).contains(&tall), "{tall:.2} m tall");
+    // Arms long for its height: the hands hang near the knees.
+    let joints = rest.joints(&f.rig);
+    let wrist = joints[Joint::WristL.index()].translation.y;
+    let knee = joints[Joint::KneeL.index()].translation.y;
+    assert!(
+        wrist < knee + 0.25 * tall,
+        "wrist {wrist:.2}, knee {knee:.2}"
+    );
+    // Its coat: hair over the body, bare face and hands.
+    let hairy = |j: Joint| {
+        f.rig
+            .parts
+            .iter()
+            .any(|p| p.joint == j && p.stuff == Stuff::Hair)
+    };
+    assert!(hairy(Joint::Chest) && hairy(Joint::HipL) && hairy(Joint::ShoulderR));
+    assert!(
+        f.rig
+            .parts
+            .iter()
+            .filter(|p| p.joint == Joint::WristL)
+            .all(|p| p.stuff != Stuff::Hair),
+        "bare hands"
+    );
+    // A person's frame is as it was.
+    let p = Figure::new(Appearance::default());
+    let r = Pose::rest(&p.rig);
+    let (plo, phi) = extent(&p.rig, &r, |_| true);
+    assert!((phi.y - plo.y - 1.75).abs() < 0.05);
+}

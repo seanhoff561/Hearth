@@ -4,11 +4,12 @@
     schema: 1,
     entries: [
         (
-            id: "australopithecus", name: "Australopithecus", scientific: "Australopithecus sp.",
+            id: "australopithecus", name: "Australopithecus", scientific: "Australopithecus sp.", status: Implemented,
             height_m: (1.0, 1.5), mass_kg: (29, 45), group_size: (5, 25),
-            habitat: ["savanna_woodland"],
+            habitat: ["savanna_woodland", "tropical_freshwater"],
+            population: "australopithecus",
             knowledge: ["stone_as_hammer", "anvil_use", "nut_cracking", "sharp_flake", "flake_cutting", "digging_stick", "termite_probe", "throwing_stones"],
-            behaviors: ["forage", "dig_tubers", "crack_nuts", "fish_termites", "scavenge", "knap_flakes", "tree_nest", "alarm_call", "mob_threat", "flee_to_trees", "habituate"],
+            behaviors: [Forage, DigTubers, CrackNuts, FishTermites, Scavenge, KnapFlakes, TreeNest, AlarmCall, MobThreat, FleeToTrees, Habituate],
             first_appearance_ya: 4200000, extinction_ya: 2000000,
             realism_source: "general paleoanthropology references (Lomekwi 3, Dikika, Oldowan); review",
             uncertain: true,

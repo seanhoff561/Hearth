@@ -425,6 +425,14 @@
             outputs: [(item: Material("nut_kernel"), amount: (0.18, 0.22))],
         ),
         (
+            id: "crack_marula_stones", status: Implemented, name: "Crack marula stones", action: "crack the stones on the anvil",
+            verb: "strike", target: Thing(Form(form: "anvil_stone")),
+            inputs: [(item: Material("marula_stone"), amount: 1.5)],
+            tools: [(property: "hard_hammer", min: 0.3)],
+            duration: (hours: 0.75), knowledge: "nut_cracking",
+            outputs: [(item: Material("marula_nut"), amount: (0.24, 0.28))],
+        ),
+        (
             id: "smash_bone", status: Implemented, name: "Smash a bone", action: "smash the bone with a stone",
             verb: "strike",
             inputs: [(item: Material("bone"), amount: 0.4)],

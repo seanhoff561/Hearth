@@ -1,0 +1,305 @@
+//! Minds: what an agent needs, what it knows of the moment about it, and what it chooses to do —
+//! each thing it could do weighed by what it needs and what it fears (a utility choice), within
+//! what its kind ever does.
+
+use glam::DVec3;
+use hearth_body::{Body, BodyConfig, Hunger, Thirst, Tiredness};
+use hearth_content::schema::era::Behavior;
+
+use crate::kind::Kind;
+use crate::work::REACH_M;
+
+/// Why an agent goes somewhere.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Intent {
+    /// To feed where food grows.
+    Feed,
+    /// To the water to drink.
+    Drink,
+    /// To do a process there (its recipe).
+    Work(usize),
+    /// Up a tree to make its nest and sleep.
+    Nest,
+    /// Back to the others.
+    Rejoin,
+    /// About its range.
+    Roam,
+}
+
+/// What an agent is doing.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Doing {
+    /// Looking about, about to choose.
+    #[default]
+    Idle,
+    /// On its way to a place.
+    Going {
+        to: DVec3,
+        then: Intent,
+    },
+    /// Picking and eating what grows where it is.
+    Feeding,
+    Drinking,
+    /// A process under way (its recipe).
+    Working {
+        recipe: usize,
+    },
+    Resting,
+    /// Grooming another (or itself).
+    Grooming {
+        other: Option<u64>,
+    },
+    /// Bending branches into a nest in its tree.
+    Nesting,
+    Sleeping,
+    /// Watching something it is wary or curious of.
+    Watching {
+        at: DVec3,
+    },
+    /// Calling out at a hunter it has seen.
+    Alarm {
+        at: DVec3,
+    },
+    /// Facing a threat with the others: shouting, brandishing sticks, throwing stones.
+    Mobbing {
+        at: DVec3,
+    },
+    /// Running for a tree, or away.
+    Fleeing {
+        to: DVec3,
+    },
+}
+
+/// How pressing an agent's needs are, 0 not at all … 1 desperately.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Needs {
+    pub hunger: f32,
+    pub thirst: f32,
+    pub tiredness: f32,
+    pub fear: f32,
+}
+
+impl Needs {
+    /// From its body (hungry, thirsty and tired as the player's body feels it) and its fear.
+    pub fn of(body: &Body, cfg: &BodyConfig, fear: f32) -> Self {
+        let s = body.status(cfg);
+        let hunger = match s.hunger {
+            Hunger::Stuffed | Hunger::Full => 0.0,
+            Hunger::Satisfied => 0.1,
+            Hunger::Peckish => 0.35,
+            Hunger::Hungry => 0.6,
+            Hunger::VeryHungry => 0.85,
+            Hunger::Starving => 1.0,
+        };
+        let thirst = match s.thirst {
+            Thirst::Sated => 0.0,
+            Thirst::Fine => 0.15,
+            Thirst::Thirsty => 0.5,
+            Thirst::VeryThirsty => 0.8,
+            Thirst::Parched | Thirst::Dying => 1.0,
+        };
+        let tiredness = match s.tiredness {
+            Tiredness::Rested => 0.0,
+            Tiredness::Awake => 0.2,
+            Tiredness::Tired => 0.5,
+            Tiredness::VeryTired => 0.8,
+            Tiredness::Exhausted => 1.0,
+        };
+        Self {
+            hunger,
+            thirst,
+            tiredness,
+            fear: fear.clamp(0.0, 1.0),
+        }
+    }
+}
+
+/// A hunter or a person it has noticed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Threat {
+    pub at: DVec3,
+    /// How far (m).
+    pub dist: f32,
+    /// A hunter that takes its kind (not a person).
+    pub hunter: bool,
+}
+
+/// A process it could do here, offered by what lies about it: the recipe, where it is done, and
+/// whether what it makes is food.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Offer {
+    pub recipe: usize,
+    pub at: DVec3,
+    pub feeds: bool,
+}
+
+/// What an agent knows of the moment about it: what its senses tell it and its group remembers.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Situation {
+    /// Where its feet are.
+    pub pos: DVec3,
+    /// Local solar time, hours.
+    pub hour: f32,
+    pub threat: Option<Threat>,
+    /// How near (m) a threat may come before it runs: its kind's flight distance, the less for a
+    /// person its group has come to tolerate.
+    pub flight_m: f32,
+    pub in_tree: bool,
+    pub in_nest: bool,
+    /// The nearest tree it could climb into (its sleeping trees first).
+    pub tree: Option<DVec3>,
+    /// The nearest water it knows of.
+    pub water: Option<DVec3>,
+    /// Water where it stands.
+    pub water_here: bool,
+    /// The nearest place with food to pick (fruit underfoot, a fruiting tree).
+    pub food: Option<DVec3>,
+    /// Food where it stands.
+    pub food_here: bool,
+    pub offers: Vec<Offer>,
+    /// Another of its group is calling the alarm.
+    pub alarm_raised: bool,
+    /// Grown ones of its group within a stone's throw.
+    pub grown_near: u16,
+    /// The middle of its group, and how far it is from it (m).
+    pub group_at: Option<DVec3>,
+    pub from_group_m: f32,
+    /// It is grown (the young keep to their mothers).
+    pub grown: bool,
+}
+
+/// What an agent keeps in mind between moments.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Mind {
+    pub doing: Doing,
+    /// Seconds of play before it looks about and chooses again (danger interrupts at once).
+    pub timer: f32,
+    /// How afraid it is now: it rises at a threat and fades in safety.
+    pub fear: f32,
+    /// Where and when (seconds of play) it last saw hunters.
+    pub seen: Vec<(DVec3, f64)>,
+}
+
+/// How far an agent strays from its group's middle before it goes back to them (m).
+const STRAY_M: f32 = 30.0;
+/// Night, by the local solar hour: from dusk to dawn they are in their nests.
+const DUSK_H: f32 = 18.5;
+const DAWN_H: f32 = 6.0;
+
+/// Chooses what to do now, from what it needs and what it knows of the moment: danger first (to
+/// face a hunter with the others, to flee up a tree or away, to call the alarm, to watch), then
+/// its nest at night, then the others if it has strayed, then the most pressing of its needs —
+/// drinking, feeding, a work that feeds it — and otherwise rest and company. `roll` (0–1) varies
+/// the idle choices.
+pub fn choose(kind: &Kind, needs: &Needs, s: &Situation, roll: f32) -> Doing {
+    let night = s.hour < DAWN_H || s.hour >= DUSK_H;
+    if let Some(t) = s.threat {
+        if t.dist < s.flight_m {
+            // A hunter that enough grown ones face is mobbed; a nearer one, or a lone one, is
+            // fled — up a tree if there is one.
+            let mob = t.hunter
+                && kind.does(Behavior::MobThreat)
+                && s.grown
+                && s.grown_near >= 4
+                && t.dist > 6.0
+                && needs.fear < 0.9;
+            if mob {
+                return Doing::Mobbing { at: t.at };
+            }
+            if s.in_tree {
+                return Doing::Watching { at: t.at };
+            }
+            if kind.does(Behavior::FleeToTrees)
+                && let Some(tree) = s.tree
+            {
+                return Doing::Fleeing { to: tree };
+            }
+            let away = (s.pos - t.at).normalize_or(DVec3::X);
+            return Doing::Fleeing {
+                to: s.pos + away * 40.0,
+            };
+        }
+        if t.hunter && s.grown && kind.does(Behavior::AlarmCall) && !s.alarm_raised {
+            return Doing::Alarm { at: t.at };
+        }
+        return Doing::Watching { at: t.at };
+    }
+    if night {
+        if s.in_nest {
+            return Doing::Sleeping;
+        }
+        if s.in_tree && kind.does(Behavior::TreeNest) {
+            return Doing::Nesting;
+        }
+        if let Some(tree) = s.tree {
+            return Doing::Going {
+                to: tree,
+                then: Intent::Nest,
+            };
+        }
+        return Doing::Sleeping;
+    }
+    if s.from_group_m > STRAY_M
+        && let Some(at) = s.group_at
+    {
+        return Doing::Going {
+            to: at,
+            then: Intent::Rejoin,
+        };
+    }
+    let near = |p: DVec3| (p - s.pos).length() <= REACH_M;
+    let mut best = (Doing::Resting, 0.2 + 0.5 * needs.tiredness);
+    let mut consider = |d: Doing, score: f32| {
+        if score > best.1 {
+            best = (d, score);
+        }
+    };
+    if needs.thirst > 0.25 {
+        if s.water_here {
+            consider(Doing::Drinking, 0.5 + 3.0 * needs.thirst);
+        } else if let Some(w) = s.water {
+            let go = Doing::Going {
+                to: w,
+                then: Intent::Drink,
+            };
+            consider(go, 0.4 + 3.0 * needs.thirst);
+        }
+    }
+    if needs.hunger > 0.1 {
+        if s.food_here {
+            consider(Doing::Feeding, 0.3 + 2.5 * needs.hunger);
+        } else if let Some(f) = s.food {
+            let go = Doing::Going {
+                to: f,
+                then: Intent::Feed,
+            };
+            consider(go, 0.2 + 2.4 * needs.hunger);
+        }
+    }
+    for o in &s.offers {
+        // A work that feeds is worth a little more than picking (the kernels are rich); one
+        // that does not (a flake struck) is done now and then.
+        let score = if o.feeds {
+            if needs.hunger > 0.1 {
+                0.4 + 2.6 * needs.hunger
+            } else {
+                0.0
+            }
+        } else {
+            0.25 + 0.35 * roll
+        };
+        let d = if near(o.at) {
+            Doing::Working { recipe: o.recipe }
+        } else {
+            Doing::Going {
+                to: o.at,
+                then: Intent::Work(o.recipe),
+            }
+        };
+        consider(d, score);
+    }
+    if s.grown_near > 0 {
+        consider(Doing::Grooming { other: None }, 0.2 + 0.4 * roll);
+    }
+    best.0
+}

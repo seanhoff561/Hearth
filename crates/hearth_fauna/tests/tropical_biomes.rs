@@ -1,5 +1,5 @@
 //! V2-10 (c) acceptance (PLAN.md): fifty years of generated savanna in the realms of Africa,
-//! India and South America, of rainforest in Africa's and South America's, and of Mediterranean
+//! India and South America (with the groups of *Australopithecus*, V2-11 (a)), of rainforest in Africa's and South America's, and of Mediterranean
 //! scrub about the Mediterranean, stay within plausible bounds for every species each holds, and
 //! each holds the animals that belong to it; and so do a uniform rainforest of tropical Asia and
 //! a uniform chaparral of the Nearctic (the generated world of seed 7 has only specks of the one
@@ -50,6 +50,7 @@ fn fifty_years_of_african_savanna() {
             &["leopard", "cheetah", "african_wild_dog"],
             &["ostrich", "helmeted_guineafowl"],
             &["natal_multimammate_mouse"],
+            &["australopithecus"],
         ],
     );
 }
@@ -71,6 +72,7 @@ fn fifty_years_of_indian_savanna() {
             &["indian_peafowl", "red_junglefowl"],
             &["ricefield_rat"],
             &["rhesus_macaque"],
+            &["australopithecus"],
         ],
     );
 }
@@ -89,6 +91,7 @@ fn fifty_years_of_american_savanna() {
             &["collared_peccary"],
             &["hairy_tailed_bolo_mouse"],
             &["jaguar", "ocelot", "maned_wolf"],
+            &["australopithecus"],
         ],
     );
 }
