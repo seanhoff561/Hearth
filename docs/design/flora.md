@@ -20,7 +20,8 @@ Each species has its growth form, climate envelope, soil and light preferences, 
 phenology, dispersal, growth rate, maximum height and trunk diameter, lifespan, wood, usable
 parts by season with edibility, flammability and appearance (v2 §6.1). Trees and woody shrubs
 add a **form** for the growth model:
-- crown: spreading, ovoid, conical, columnar, weeping, umbrella, multi-stemmed;
+- crown: spreading, ovoid, conical, columnar, weeping, umbrella, multi-stemmed, and palm (one
+  unbranched stem, leaning and curving up, crowned by a rosette of great arching fronds, V2-10);
 - live crown ratio (crown length ÷ height) and crown width ratio (crown width ÷ height);
 - apical dominance (0 a broad decurrent crown of forking limbs, 1 one straight leader);
 - branch angle from the stem, droop, whorled branching (conifers), trunk taper, root flare,

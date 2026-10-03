@@ -119,7 +119,10 @@ fn forest(w: &World) -> (i32, i32) {
                 s.biome,
                 Biome::BroadleafForest | Biome::MixedForest | Biome::BirchForest
             );
-            if woods && !s.is_underwater() && s.tree_density > 0.5 && s.temperature > 6.0 {
+            // Temperate: a warm broadleaf forest grows the tropics' trees, its understory without
+            // the wood's shrubs.
+            let temperate = (6.0..16.0).contains(&s.temperature);
+            if woods && !s.is_underwater() && s.tree_density > 0.5 && temperate {
                 near.push((i * i + j * j, x, z));
             }
         }
@@ -172,7 +175,9 @@ fn a_cleared_area_goes_through_succession_over_simulated_years() {
         let want = w.ticks + (hours / 24.0 * w.ticks_per_day) as u64;
         w.server.send(ToServer::SkipHours(hours));
         w.server.send(ToServer::Run(1));
-        assert!(w.until(60.0, |w| w.ticks >= want), "the clock moved on");
+        // The populations about the player are caught up through the skipped years as well
+        // (some three tenths of a second a year in a debug build).
+        assert!(w.until(180.0, |w| w.ticks >= want), "the clock moved on");
         // The terrain about the player grows again.
         w.run(30);
         table.push((target, census(&w, at, r)));

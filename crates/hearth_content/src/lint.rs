@@ -211,7 +211,7 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
                 r.material(&x.material, o, e.id());
             }
         }
-        for h in &e.habitat {
+        for h in e.habitat.iter().chain(&e.also_in) {
             r.check(&c.ecosystems, "ecosystem", h, o, e.id());
         }
         if e.habitat.is_empty() {
@@ -892,8 +892,11 @@ fn food_webs(c: &Content, report: &mut Report) {
             );
         }
     }
+    let lives_in = |a: &crate::schema::fauna::Animal, h: &crate::IdRef| {
+        a.habitat.contains(h) || a.also_in.contains(h)
+    };
     for (a, o) in c.animals.iter_with_origin() {
-        for h in &a.habitat {
+        for h in a.habitat.iter().chain(&a.also_in) {
             let Some(eco) = c.ecosystems.get(h.as_str()) else {
                 continue;
             };
@@ -903,15 +906,18 @@ fn food_webs(c: &Content, report: &mut Report) {
                 .filter_map(|p| c.plants.get(p.as_str()))
                 .flat_map(|p| p.parts.iter().map(|x| x.material.to_string()))
                 .collect();
+            // Carrion is wherever other animals live.
+            let carrion = c.animals.iter().any(|x| x.id() != a.id() && lives_in(x, h));
             let has_food = a.diet.foods.iter().any(|f| {
                 eco.producers.contains(&f.food)
                     || c.animals
                         .get(f.food.as_str())
-                        .is_some_and(|prey| prey.habitat.contains(h))
+                        .is_some_and(|prey| lives_in(prey, h))
                     || edible_materials.contains(f.food.as_str())
-                    || c.materials
-                        .get(f.food.as_str())
-                        .is_some_and(|m| m.tags.iter().any(|t| t == "natural"))
+                    || c.materials.get(f.food.as_str()).is_some_and(|m| {
+                        m.tags.iter().any(|t| t == "natural")
+                            || (carrion && m.tags.iter().any(|t| t == "meat"))
+                    })
             });
             if !has_food {
                 report.warning(

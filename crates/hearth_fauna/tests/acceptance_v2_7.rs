@@ -8,7 +8,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use hearth_content::schema::fauna::BodyPlan;
 use hearth_fauna::danger::Cause;
-use hearth_fauna::ecology::Ecology;
+use hearth_fauna::ecology::{Cause as Death, Ecology};
 use hearth_fauna::habitat::{GenLand, TreeYields};
 use hearth_fauna::live::{Footing, Ground, Live, Now, Stage};
 use hearth_fauna::mind::{Air, Presence};
@@ -55,17 +55,24 @@ fn spawn_region() -> (Ecology, (i64, i64), [f64; 2]) {
 fn fifty_years_about_the_spawn_stay_within_plausible_bounds() {
     let (mut eco, _, _) = spawn_region();
     let cat = eco.catalog.clone();
-    // The species the land holds ten of at least, and two groups' worth of one that lives in
-    // groups (a wolf pack ranges over far more than these regions, a handful of bobcats or bears
-    // is at the mercy of chance, and so is a lone herd of onagers or a flock of bustards).
+    // The species the land holds fifty of at least, two groups' worth of one that lives in
+    // groups, and the land of one's range at least (a wolf pack ranges over far more than these
+    // regions, a handful of bobcats or bears is at the mercy of chance, and so is a lone herd of
+    // onagers or a flock of bustards, the few dozen tapirs of a patch of rainforest in the mosaic
+    // about the spawn, or saiga herds roaming ten times the steppe there is: each biome's own runs
+    // judge its animals where it is wide, D131).
     let present: Vec<usize> = (0..cat.len())
         .filter(|&s| {
             let sp = &cat.species[s];
             let groups = (sp.group.0 + sp.group.1) as f64;
-            eco.capacity(s) >= 10.0f64.max(if sp.grouped() { groups } else { 0.0 })
+            let cap = eco.capacity(s);
+            cap >= 50.0f64.max(if sp.grouped() { groups } else { 0.0 })
+                && cap / sp.density.max(1e-6) as f64 >= sp.home_range_km2 as f64
         })
         .collect();
     let start = eco.regions.values().map(|r| r.time).fold(0.0, f64::max);
+    eco.deaths.clear();
+    eco.kills.clear();
     let mut series = vec![Vec::new(); present.len()];
     for y in 0..50 {
         let mut sums = vec![0.0; present.len()];
@@ -89,15 +96,39 @@ fn fifty_years_about_the_spawn_stay_within_plausible_bounds() {
         let (lo, hi) = tail
             .iter()
             .fold((f64::INFINITY, 0.0f64), |(a, b), x| (a.min(*x), b.max(*x)));
+        let died = |c: Death| eco.deaths.get(&(s as u16, c)).copied().unwrap_or(0.0) / 50.0;
         println!(
-            "{:<26} capacity {:>9.0}  mean {:>9.0} ({:>4.2})  range {:>9.0} .. {:>9.0}",
+            "{:<26} capacity {:>9.0}  mean {:>9.0} ({:>4.2})  range {:>9.0} .. {:>9.0}  \
+             deaths/yr: natural {:.0} hunger {:.0} winter {:.0} crowding {:.0} predation {:.0} \
+             lost {:.0}",
             sp.name,
             cap,
             mean,
             mean / cap,
             lo,
-            hi
+            hi,
+            died(Death::Natural),
+            died(Death::Hunger),
+            died(Death::Winter),
+            died(Death::Crowding),
+            died(Death::Predation),
+            died(Death::Lost),
         );
+        let mut by: Vec<(f64, &str)> = eco
+            .kills
+            .iter()
+            .filter(|((_, prey), _)| *prey as usize == s)
+            .map(|((hunter, _), n)| (*n / 50.0, cat.species[*hunter as usize].name.as_str()))
+            .collect();
+        by.sort_by(|a, b| b.0.total_cmp(&a.0));
+        if !by.is_empty() {
+            let top: Vec<String> = by
+                .iter()
+                .take(4)
+                .map(|(n, name)| format!("{name} {n:.0}"))
+                .collect();
+            println!("      killed a year by {}", top.join(", "));
+        }
         // Within a twentieth and four times what the land holds (its patches, on the borders of
         // realms and kinds of land, hold fewer than a whole wood would), never gone for long (one
         // rare here may vanish a while and come back from the land beyond).

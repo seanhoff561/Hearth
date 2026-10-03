@@ -58,6 +58,14 @@ pub fn envelope(crown: Crown, t: f32) -> f32 {
             }
         }
         Crown::MultiStemmed => 0.45 + 0.55 * t.sqrt() * (1.0 - 0.3 * t),
+        // All its leaves are in the rosette at the top.
+        Crown::Palm => {
+            if t > 0.9 {
+                1.0
+            } else {
+                0.05
+            }
+        }
     }
 }
 
@@ -164,9 +172,82 @@ pub fn grow(sp: &Species, stage: Stage, variant: u32) -> Skeleton {
                 plan.diameter / (stems as f32).sqrt(),
             )
         };
-        stem(&plan, &mut rng, &mut out, base, lean, height, diameter);
+        if plan.crown == Crown::Palm {
+            palm(&plan, &mut rng, &mut out, base, lean, height, diameter);
+        } else {
+            stem(&plan, &mut rng, &mut out, base, lean, height, diameter);
+        }
     }
     out
+}
+
+/// A palm: one stem, unbranched and hardly tapering, leaning as it rises and curving back
+/// toward the light (a coconut's, which droops, far), crowned with fronds that arch out and
+/// down from its top, the old ones hanging, the young ones standing up.
+fn palm(
+    plan: &Plan,
+    rng: &mut Rng,
+    out: &mut Skeleton,
+    base: Vec3,
+    lean: Vec3,
+    height: f32,
+    diameter: f32,
+) {
+    let r0 = diameter / 2.0;
+    // The fronds, as long as the crown is broad (a young one's in proportion to it), rise about
+    // half their length above the stem's top: the stem ends where the crown begins.
+    let length = plan.radius.max(1.2).min(height * 0.55);
+    let height = (height - length * 0.55 - 0.3).max(height * 0.3);
+    let steps = (height / 0.9).ceil().max(1.0) as usize;
+    let tilt = Vec3::new(lean.x, 0.0, lean.z).normalize_or_zero() * (0.15 + plan.droop * 0.6);
+    let mut d = (Vec3::Y + tilt).normalize();
+    let mut p = base;
+    for i in 1..=steps {
+        let t0 = (i - 1) as f32 / steps as f32;
+        let t1 = i as f32 / steps as f32;
+        // Curving back up toward the light.
+        d = (d + Vec3::Y * 0.05).normalize();
+        let q = p + d * (height / steps as f32);
+        let ra = r0 * (1.0 - 0.25 * t0) * if i == 1 { 1.0 + plan.flare * 0.4 } else { 1.0 };
+        out.wood.push(Seg {
+            a: p,
+            b: q,
+            ra,
+            rb: r0 * (1.0 - 0.25 * t1),
+            order: 0,
+        });
+        p = q;
+    }
+    if plan.snag {
+        return;
+    }
+    // The heart of the crown, and the fronds about it.
+    out.foliage.push(Blob {
+        a: p,
+        b: p + Vec3::Y * 0.6,
+        r: (r0 * 1.6).clamp(0.4, 0.9),
+    });
+    let n = 10 + rng.below(7) as usize;
+    let az0 = rng.range_f32(0.0, std::f32::consts::TAU);
+    for k in 0..n {
+        let az = az0 + k as f32 * std::f32::consts::TAU / n as f32 + rng.range_f32(-0.2, 0.2);
+        // Young fronds stand up, old ones lie out.
+        let rise = rng.range_f32(0.0, 1.0);
+        let mut fd = dir(az, 0.35 + 1.0 * (1.0 - rise));
+        let mut q0 = p + Vec3::Y * 0.3;
+        let segs = 3;
+        for _ in 0..segs {
+            let q1 = q0 + fd * (length * rng.range_f32(0.85, 1.1) / segs as f32);
+            out.foliage.push(Blob {
+                a: q0,
+                b: q1,
+                r: 0.3 + 0.15 * plan.density,
+            });
+            // Each frond bends down along its length.
+            fd = (fd - Vec3::Y * (0.25 + 0.5 * plan.droop)).normalize();
+            q0 = q1;
+        }
+    }
 }
 
 /// Radius (m) of a stem of foot radius `r0` at a share `t` of its height.
@@ -521,6 +602,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_palm_is_one_stem_and_a_crown_of_fronds() {
+        let mut sp = crate::growth::tests::oak();
+        sp.form.crown = Crown::Palm;
+        sp.form.crown_width = 0.45;
+        sp.form.droop = 0.5;
+        sp.max_height_m = 25.0;
+        let t = grow(&sp, crate::growth::Stage::Mature, 3);
+        // Wood is the stem alone, rising from the foot to the top.
+        assert!(
+            t.wood.iter().all(|s| s.order == 0),
+            "a palm has no branches"
+        );
+        let top = t.wood.iter().map(|s| s.b.y).fold(0.0f32, f32::max);
+        assert!(top > t.height * 0.75, "{top} of {}", t.height);
+        // The crown above it, its fronds reaching about the palm's height.
+        let crown = t
+            .foliage
+            .iter()
+            .map(|b| b.a.y.max(b.b.y) + b.r)
+            .fold(0.0f32, f32::max);
+        assert!(
+            (t.height * 0.9..t.height * 1.1).contains(&crown),
+            "crown to {crown} of {}",
+            t.height
+        );
+        // Its leaves are all up in the crown, spreading wide about the stem's top.
+        assert!(t.foliage.len() >= 30, "{} pieces of frond", t.foliage.len());
+        assert!(t.foliage.iter().all(|b| b.a.y > top - 4.0));
+        let spread = t
+            .foliage
+            .iter()
+            .map(|b| (b.b.x * b.b.x + b.b.z * b.b.z).sqrt())
+            .fold(0.0f32, f32::max);
+        assert!(spread > 3.0, "fronds reach {spread} m");
+    }
+
+    #[test]
     fn crown_envelopes_have_their_shapes() {
         // A spire is widest at its foot, an umbrella near its top, a dome in its lower middle.
         assert!(envelope(Crown::Conical, 0.0) > envelope(Crown::Conical, 0.8));
@@ -536,6 +654,7 @@ mod tests {
             Crown::Weeping,
             Crown::Umbrella,
             Crown::MultiStemmed,
+            Crown::Palm,
         ] {
             for k in 0..=10 {
                 let e = envelope(c, k as f32 / 10.0);

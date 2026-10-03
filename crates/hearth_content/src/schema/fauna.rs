@@ -287,6 +287,8 @@ pub enum EarShape {
     Long,
     /// Tipped with a tuft (lynx, red squirrel).
     Tufted,
+    /// Great flaps hanging beside the head (an elephant's).
+    Fan,
 }
 
 /// What grows on the head.
@@ -316,8 +318,16 @@ pub enum HeadGear {
         #[serde(default)]
         droop: bool,
     },
-    /// Tusks: the length showing (m), the males'.
-    Tusks { length_m: f32 },
+    /// Horns on the nose, one behind the other along the snout's top (a rhinoceros's): the
+    /// front one's length (m), on both sexes.
+    NasalHorns { length_m: f32 },
+    /// Tusks: the length showing (m), the males' (and the females', smaller, where they carry
+    /// them too: an African elephant's).
+    Tusks {
+        length_m: f32,
+        #[serde(default)]
+        both_sexes: bool,
+    },
 }
 
 /// The proportions of its body past its length and height (V2-7 bodies), each a fraction; its
@@ -426,6 +436,10 @@ pub enum Foot {
     BirdToes,
     /// A trail of a body (snakes).
     Slither,
+    /// One rounded hoof (horses, zebras, asses; a tapir's and a rhino's three toes about a pad).
+    Hoof,
+    /// A great round pad with nail marks at its front (elephants).
+    Pad,
 }
 
 /// The tracks it leaves (V2-7).
@@ -531,8 +545,13 @@ entry! {
         pub diet: Diet,
         pub social: Social,
         pub activity: Activity,
-        /// Ecosystems it lives in.
+        /// Ecosystems it lives in, whose lands its density describes.
         pub habitat: Vec<IdRef>,
+        /// Ecosystems it lives in besides, at what their land gives it against the best of its
+        /// own (a wild boar of the oak woods in the Mediterranean scrub and the monsoon forests),
+        /// its density not being measured there.
+        #[serde(default)]
+        pub also_in: Vec<IdRef>,
         #[serde(default)]
         pub seasonal: Vec<SeasonalBehavior>,
         #[serde(default)]
@@ -576,7 +595,7 @@ entry! {
 }
 
 /// Words naming a place or a people, which keep their capital in running text.
-const PROPER: [&str; 14] = [
+const PROPER: [&str; 25] = [
     "Eurasian",
     "European",
     "American",
@@ -591,6 +610,17 @@ const PROPER: [&str; 14] = [
     "Arabian",
     "Japanese",
     "Himalayan",
+    "Central",
+    "Oriental",
+    "California",
+    "Natal",
+    "Gaboon",
+    "Montpellier",
+    "Thomson's",
+    "Emin's",
+    "Jackson's",
+    "Tome's",
+    "Hermann's",
 ];
 
 /// A species' name as it reads in running text: its first word in small letters unless it names

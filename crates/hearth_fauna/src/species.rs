@@ -117,6 +117,9 @@ pub struct Species {
     pub density: f32,
     /// Bits of the catalog's ecosystems it lives in.
     pub habitats: u32,
+    /// Bits of those whose lands its density describes (the rest it lives in at what their land
+    /// gives against the best of these).
+    pub core: u32,
     pub realms: RealmSet,
     /// Lives in water (its density is per km² of water).
     pub aquatic: bool,
@@ -363,7 +366,7 @@ impl Catalog {
             .map(|e| EcosystemDef {
                 id: e.id.clone(),
                 biomes: e.biomes.clone(),
-                reference: e.reference,
+                reference: e.reference.clone(),
             })
             .collect();
         ecosystems.sort_by(|a, b| a.id.cmp(&b.id));
@@ -518,7 +521,8 @@ fn species_of(
         .seasonal
         .iter()
         .any(|s| matches!(s, SeasonalBehavior::Hibernation));
-    let habitats = a.habitat.iter().fold(0, |m, h| m | eco_bit(h.as_str()));
+    let core = a.habitat.iter().fold(0, |m, h| m | eco_bit(h.as_str()));
+    let habitats = a.also_in.iter().fold(core, |m, h| m | eco_bit(h.as_str()));
     let aquatic = matches!(
         a.body_plan,
         BodyPlan::FishFusiform | BodyPlan::FishFlat | BodyPlan::Eel
@@ -549,6 +553,7 @@ fn species_of(
         cover,
         density: a.density_per_km2.unwrap_or(1.0).max(0.0),
         habitats,
+        core,
         realms: set_of(&a.realms),
         aquatic,
         colony: matches!(a.social, Social::Colony { .. }),

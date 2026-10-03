@@ -18,7 +18,7 @@ pub struct SuccessionStage {
 /// The land an ecosystem's animals' densities describe (V2-10): its climate and its trees. A
 /// species' density is that of the richest of the reference lands of the ecosystems it lives in;
 /// an ecosystem without one is measured against the reference temperate wood.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ReferenceLand {
     /// Yearly mean and warmest month, °C; rain a year, mm.
     pub temp_c: f32,
@@ -39,6 +39,11 @@ pub struct ReferenceLand {
     /// Its trees flower for the bees.
     #[serde(default)]
     pub flowers: bool,
+    /// The realms whose animals live on it, each anchoring its forage to their needs as a land
+    /// of its own (the African, the American and the Asian rainforest); the Palearctic when
+    /// none are named.
+    #[serde(default)]
+    pub realms: Vec<String>,
 }
 
 entry! {

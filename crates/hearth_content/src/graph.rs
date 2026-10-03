@@ -153,11 +153,12 @@ pub fn food_web(c: &Content, ecosystem: &str) -> Option<Graph> {
             .to_owned();
         g.node(p.as_str(), &label, Kind::Plant, false);
     }
-    for a in c
-        .animals
-        .iter()
-        .filter(|a| a.habitat.iter().any(|h| h.as_str() == eco.id()))
-    {
+    for a in c.animals.iter().filter(|a| {
+        a.habitat
+            .iter()
+            .chain(&a.also_in)
+            .any(|h| h.as_str() == eco.id())
+    }) {
         let an = g.node(a.id(), &a.name, Kind::Animal, a.status == Status::Planned);
         for f in &a.diet.foods {
             let food = if let Some(p) = c.plants.get(f.food.as_str()) {

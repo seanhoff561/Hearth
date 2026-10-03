@@ -11,6 +11,7 @@
 //! that a temperate mixed wood feeds its fauna at the densities the species data give.
 
 use hearth_worldgen::WorldGenerator;
+use hearth_worldgen::planet::climate::{ClimateClass, dry_season};
 use hearth_worldgen::realms::Realm;
 use hearth_worldgen::vegetation::{DisturbanceKind, Vegetation};
 use serde::{Deserialize, Serialize};
@@ -49,6 +50,10 @@ pub struct Habitat {
     pub precip_mm: f32,
     /// South of the equator (seasons half a year on).
     pub southern: bool,
+    /// Its dry season ([`dry_season`]): none, in the months of the low sun (the savannas), or in
+    /// the hot months (the Mediterranean's).
+    #[serde(default)]
+    pub dry: u8,
 }
 
 impl Default for Habitat {
@@ -67,6 +72,7 @@ impl Default for Habitat {
             warm_c: 18.0,
             precip_mm: 700.0,
             southern: false,
+            dry: dry_season::NONE,
         }
     }
 }
@@ -126,9 +132,23 @@ impl Habitat {
         0.5 - x.asin() / std::f32::consts::PI
     }
 
-    /// How fast plants grow at year fraction `f`, 0–1.
+    /// How fast plants grow at year fraction `f`, 0–1: by the warmth, and the moisture of the
+    /// season ([`Self::wet_at`]).
     pub fn growth_at(&self, f: f32) -> f32 {
-        ((self.temp_at(f) - 4.0) / 12.0).clamp(0.0, 1.0)
+        ((self.temp_at(f) - 4.0) / 12.0).clamp(0.0, 1.0) * self.wet_at(f)
+    }
+
+    /// How moist the season is for growing at year fraction `f`, 0–1: all year where it rains
+    /// all year; where the low sun's months are dry (the savannas) the grass browns from the
+    /// rains' end to their return, and where the summer is (the Mediterranean) the hot months
+    /// stand still.
+    pub fn wet_at(&self, f: f32) -> f32 {
+        let lf = self.local_frac(f);
+        match self.dry {
+            dry_season::WINTER => 0.1 + 0.9 * bell(lf, 0.3, 0.13),
+            dry_season::SUMMER => 1.0 - 0.8 * bell(lf, 0.33, 0.1),
+            _ => 1.0,
+        }
     }
 
     /// Snow lying at year fraction `f`, 0 (none) to about 1.5 (deep).
@@ -157,7 +177,9 @@ impl Habitat {
             Forage::Fruit => 0.1 + bell(lf, 0.42, 0.08),
             Forage::Seeds => 0.3 + bell(lf, 0.45, 0.1),
             Forage::Invertebrates => {
-                (0.25 + 0.75 * ((self.temp_at(f) - 2.0) / 10.0).clamp(0.0, 1.0)) * wet
+                (0.25 + 0.75 * ((self.temp_at(f) - 2.0) / 10.0).clamp(0.0, 1.0))
+                    * wet
+                    * (0.4 + 0.6 * self.wet_at(f))
             }
             Forage::Fungi => 0.05 + bell(lf, 0.55, 0.07) * wet,
             Forage::Nectar => bell(lf, 0.25, 0.1) * growth,
@@ -299,6 +321,16 @@ pub fn dwarf_shrubs(warm_c: f32) -> f32 {
     0.5 * smooth(warm_c, 1.0, 5.0) * (1.0 - smooth(warm_c, 11.0, 16.0))
 }
 
+/// The dry season of a climate: the savannas' and the hot steppes' in the months of the low sun,
+/// the Mediterranean's in its summer.
+pub fn dry_of(climate: ClimateClass) -> u8 {
+    match climate {
+        ClimateClass::TropicalSavanna | ClimateClass::HotSteppe => dry_season::WINTER,
+        ClimateClass::Mediterranean => dry_season::SUMMER,
+        _ => dry_season::NONE,
+    }
+}
+
 /// The share of open ground's growth in shrubs where the year's rain is `precip_mm`: a little
 /// in the steppes, half in the deserts (creosote, sagebrush, saltbush, saxaul).
 pub fn desert_shrubs(precip_mm: f32) -> f32 {
@@ -315,6 +347,7 @@ impl GenLand<'_> {
             warm_c: s.t_warm,
             precip_mm: s.precipitation,
             realm: s.realm,
+            dry: dry_of(s.climate),
             ..Column::default()
         };
         if s.ocean && s.is_underwater() {
@@ -425,12 +458,12 @@ impl Stand {
     }
 }
 
-/// The habitat of an ecosystem's reference land (its own ecosystem's, the animals of the
-/// Palearctic).
+/// The habitat of an ecosystem's reference land (its own ecosystem's, the animals of a realm).
 pub fn reference_land(
     catalog: &Catalog,
     r: &hearth_content::schema::ecosystem::ReferenceLand,
     ecosystem: &str,
+    realm: Realm,
 ) -> Habitat {
     let stand = Stand {
         canopy: r.canopy.clamp(0.0, 1.0),
@@ -446,7 +479,7 @@ pub fn reference_land(
         r.warm_c,
         r.precip_mm,
         &[ecosystem],
-        Realm::Palearctic,
+        realm,
     );
     h.forage = forage;
     h.cover = cover;
@@ -489,6 +522,7 @@ pub fn open_land(
         warm_c,
         precip_mm,
         southern: false,
+        dry: dry_season::NONE,
     }
 }
 
@@ -504,6 +538,7 @@ struct Column {
     temp_c: f32,
     warm_c: f32,
     precip_mm: f32,
+    dry: u8,
 }
 
 impl Default for Column {
@@ -519,6 +554,7 @@ impl Default for Column {
             temp_c: 0.0,
             warm_c: 0.0,
             precip_mm: 0.0,
+            dry: dry_season::NONE,
         }
     }
 }
@@ -540,6 +576,7 @@ impl Land for GenLand<'_> {
         let mut sum = Column::default();
         let mut eco = 0u32;
         let mut realms = [0u8; 8];
+        let mut dry = [0u8; 3];
         for (k, (dx, dz)) in [(64, 64), (192, 64), (64, 192), (192, 192)]
             .into_iter()
             .enumerate()
@@ -563,6 +600,7 @@ impl Land for GenLand<'_> {
             sum.precip_mm += col.precip_mm;
             eco |= col.ecosystems;
             realms[col.realm as usize] += 1;
+            dry[(col.dry as usize).min(2)] += 1;
         }
         let land = sum.land / 4.0;
         let per_land = |v: f32| if sum.land > 0.0 { v / sum.land } else { 0.0 };
@@ -592,6 +630,7 @@ impl Land for GenLand<'_> {
             warm_c: sum.warm_c / 4.0,
             precip_mm: sum.precip_mm / 4.0,
             southern: planet.latitude_deg(zc) < 0.0,
+            dry: (0..3).max_by_key(|&d| dry[d]).unwrap_or(0) as u8,
         }
     }
 
@@ -672,5 +711,6 @@ pub fn temperate_wood(catalog: &Catalog) -> Habitat {
         warm_c: 18.0,
         precip_mm: 850.0,
         southern: false,
+        dry: dry_season::NONE,
     }
 }

@@ -237,6 +237,9 @@ pub enum Crown {
     Umbrella,
     /// Several stems from the ground (hazel, elder, osier).
     MultiStemmed,
+    /// One stem, unbranched, crowned by a rosette of great fronds (palms; `droop` how far they
+    /// arch down, `crown_width` their spread).
+    Palm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

@@ -398,7 +398,8 @@ mod builtin_tests {
     fn base_pack_loads_and_builds() {
         let reg = load_builtin_registry().expect("base data pack is valid");
         assert!(reg.block_count() > 50, "{} blocks", reg.block_count());
-        assert!(reg.state_count() < 16_000, "{} states", reg.state_count());
+        // Ids are 16 bits; a tree species' limbs take some 260 states (D133).
+        assert!(reg.state_count() < 40_000, "{} states", reg.state_count());
         for name in [
             "granite",
             "chalk",

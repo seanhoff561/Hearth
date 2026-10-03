@@ -24,9 +24,10 @@ fn animals_come_into_the_world_about_the_player_and_go_as_they_leave() {
     });
     // Walking to the nearest groups until some are met (the large animals of the groups, not
     // only the small ones drawn about: a souslik stands and watches a person in the open as
-    // long as they stand there).
+    // long as they stand there), two at least (a red brocket alone freezes in its cover the
+    // whole minute a person stands beside it).
     let mut met = Vec::new();
-    'walk: for (_, at, _) in groups.iter().take(6) {
+    'walk: for (_, at, _) in groups.iter().take(12) {
         w.go(at.x, at.y);
         for _ in 0..4 {
             w.run(40);
@@ -36,7 +37,7 @@ fn animals_come_into_the_world_about_the_player_and_go_as_they_leave() {
                 .filter(|v| catalog.species[v.species as usize].grouped())
                 .cloned()
                 .collect();
-            if !large.is_empty() {
+            if large.len() >= 2 {
                 met = large;
                 break 'walk;
             }
@@ -216,9 +217,16 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
             }
         }
     }
-    let v = quarry.expect("an animal to hunt");
+    let mut v = quarry.expect("an animal to hunt");
     let sp = &catalog.species[v.species as usize];
-    // Up beside it, and a thrust behind its shoulder.
+    // Up beside it, and a thrust behind its shoulder (where it stands now: it may have walked
+    // on a step).
+    let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
+    let side = DVec3::new(ahead.z, 0.0, -ahead.x);
+    w.go_exact(v.pos + side * 1.6);
+    if let Some(x) = w.animals.iter().find(|x| x.id == v.id) {
+        v = *x;
+    }
     let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
     let side = DVec3::new(ahead.z, 0.0, -ahead.x);
     let feet = v.pos + side * 1.6;
@@ -246,9 +254,16 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
     w.go(last.x, last.z);
     w.run(81);
     let carcass = format!("{}_carcass", sp.id);
-    assert!(
-        w.lying.iter().any(|l| l.stack.id.starts_with(&carcass)),
-        "no {carcass} where it fell"
-    );
+    let found = |w: &World| w.lying.iter().any(|l| l.stack.id.starts_with(&carcass));
+    if !found(&w) {
+        // Struck in the belly, it lies up and dies within the hour.
+        w.wait_hours(1.0);
+        if let Some(x) = w.animals.iter().find(|x| x.id == v.id) {
+            last = x.pos;
+        }
+        w.go(last.x, last.z);
+        w.run(81);
+    }
+    assert!(found(&w), "no {carcass} where it fell");
     let _ = std::fs::remove_dir_all(&dir);
 }

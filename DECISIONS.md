@@ -1417,3 +1417,122 @@ spear may hinge off short and thick: the bot knaps again from fresh cobbles, as 
 test of animals coming into the world watches the groups' large animals it walks to, not the
 sousliks drawn about, which stand and watch a person in the open as long as they stand there
 (D113: the tests try the game's paths, not one world's accidents).
+
+## D124 — The tropics' and the Mediterranean's dry seasons
+Plants grew as the warmth allowed, which in the tropics is all year: the savanna's grass never
+cured, the Mediterranean's never stopped in the summer drought. A place now knows its climate's
+dry season (`Habitat::dry`): in the savanna and the hot steppe the winter is dry, the growth of
+grass, browse and fruit a tenth of the rains' at its driest; in the Mediterranean scrub the
+summer is, its growth a fifth at the height of the drought; the invertebrates follow the rains
+as well. The year's food is what it was — when it comes is what changes (a kind's availability
+keeps its yearly mean), so the grazers' lean season is the dry one.
+
+## D125 — Palms
+The tree growth model branched every crown, and a palm has none: one stem, leaning a little and
+curving up, thinning a quarter to its top, crowned by a heart and a rosette of ten to sixteen
+fronds of three segments that arch out and droop (`Crown::Palm`): the oil palm, the açaí, the
+date palm.
+
+## D126 — Elephants, giraffes and rhinoceroses have bodies of their own
+They were drawn as deer. The elephant has its pillar legs, a skull that is the whole of its head
+with the trunk hanging from its front in four curving segments (its `snout` is the trunk's
+length against the head, up to three times it), fan ears hung beside the head, and tusks that
+sweep forward and down and curve up; the African elephant's cows carry tusks too, smaller
+(`Tusks { both_sexes }`, as the warthog's and the red river hog's). The giraffe's neck is most
+of its height and carried steeply, with ossicones on its crown; the rhinoceros is a barrel on
+stumps with two horns on its nose (`NasalHorns`); the hippo's plan waits for the wetlands. A
+horse's, a zebra's or a tapir's print is one rounded hoof, an elephant's or a rhino's a great
+pad with nail marks (`Foot::Hoof`, `Foot::Pad`). Primates have their own proportions — a round
+head, a flat face — and walk on flat hands and feet; lizards (and the crocodilians to come) are
+low-slung with the tail carried level, where they had the four-legged frame's tail angled down
+into the ground (an iguana's is twice its body). A species name keeps the capital of a place
+or a person in running text (Thomson's gazelle, the Natal multimammate mouse, the Gaboon viper).
+
+## D127 — A reference land names its realms
+A reference land's animals were the Palearctic's: the savanna's and the rainforest's, all of
+other realms, would have anchored nothing. A reference land now names the realms whose animals
+live on it (`realms`, the Palearctic when none are named), each a land of its own anchoring the
+forage (D117) by its own community: the savanna's and the rainforest's three (Africa's, the
+Americas', tropical Asia's), the Mediterranean scrub's two (about the Mediterranean, and the
+chaparral). The rainforest's fruit-eaters eat many times more of what its formula gives than
+the tundra's (until now the most) do, and so set the fruit's anchor: the older lands' fruit is
+now as plentiful against their eaters' needs as their browse and mast already were. Food beyond the
+need is not more animals — the land holds what its quality gives — and the fifty-year runs of the
+older lands held.
+
+## D128 — A species lives in some lands its density does not describe
+A species' density is that of the best of the reference lands of its ecosystems (D116); taking
+the wild boar of the oak woods into the savanna, whose grass is richer for it, would have made
+the savanna its best land and cut its numbers in the woods by a quarter, and the red deer's in
+the woods by two fifths for the Mediterranean scrub. An animal now lists the ecosystems whose
+lands its density describes (`habitat`) apart from those it lives in besides, at what their land
+gives it against the best of its own (`also_in`): the boar in the scrub and the monsoon forests,
+the red deer, badger, fox, wolf, golden eagle, coyote, bobcat, deer mouse and jackrabbit in the
+scrub. Nothing measured on the older lands changes.
+
+## D129 — The new lands' animals eat as the older ones do, and their hunters are as many as they feed
+The new plant-eaters' food a day was set from field figures of fresh weight for some: at two to
+seven per cent of the body's mass, the savanna's grazers would have eaten three quarters of the
+grass that grows. They now eat about two per cent of their mass a day, three for the small, as
+the older species do, and the small mammals as their metabolism asks (a paca or an agouti half
+what it had: the American forest's fruit ran short and its macaws and toucans, slow to breed,
+lost it to the rodents). The savanna's hunters at the densities of the Serengeti, where a million
+and a half wildebeest migrate, needed twice the meat its resident herds could give, and held
+the impala and gazelles at a twentieth of their numbers: the herds are now at the numbers of a
+good park without a migration (wildebeest twelve and zebra six to the km², the kudu, hartebeest
+and eland with them) and the lion, hyena, leopard and cheetah at what such herds feed. And their
+yearly survival is, as the older species' is, that from what the populations do not simulate
+(disease, accident, age): the field figures first given counted the lions' and hyenas' kills, so
+that a fawn died twice over and Thomson's gazelles, impala and brockets barely replaced
+themselves. The Iberian lynx lives only where rabbits are more than one to the hectare: the
+scrub's rabbits are 150 to the km², and a lynx that had settled where foxes and badgers had
+eaten its few rabbits starved.
+
+## D130 — A numerous omnivore's meat is carrion
+A coati's fifth of a meal of spiny rats, and an opossum's twentieth, were, over thirty and sixty
+of them to the km², more rats than the rats could breed: the commonest rodent of the American
+forest floor fell to a hundredth of its numbers. Where an omnivore lives in such numbers and
+takes a vertebrate now and then, its meat is carrion rather than a named prey, and the forest's
+small hunters have the opossum and the iguana to live on besides the rats.
+
+## D131 — The tropical runs: a realm's own heart, and uniform land where the world has none
+The heart of a biome in a realm was the place most surrounded by that biome, but on the border
+of another realm its regions held the other's animals as much as its own: the tropical Asian
+rainforest's held the Americas' (its own a speck of twenty km²), the Indian savanna's a patch
+of warthogs that died out by chance. A realm's heart is now the place whose land, out to the
+24 km the regions about it reach, is most of that biome in that realm (`about_the_heart_in`).
+The world of seed 7 has only specks of rainforest in tropical Asia and no Mediterranean scrub in
+the Nearctic: those run on uniform land of their reference (as the Nearctic prairie does, D121).
+The runs print what killed each species, by hunter. The fifty years about the V2-7 spawn, a mosaic
+of every kind of land in a few patches each, judge the species the land holds fifty of, two
+groups' worth and the land of one range: the tapirs and rheas of its patch of tropical forest and
+savanna, a few dozen, and its saiga, roaming ten times the steppe there is, are at the mercy of
+chance, and their own biomes' runs judge them.
+
+## D132 — The game in the new world: a brand from the lowest flames, two animals met, a temperate wood, a trunk across the herbs
+The V2-5 world's camp has a tropical tree beside it now, and lightning set its crown burning five
+metres up: the bot reached for the first flames it saw and was told they were out of reach. It now
+takes its brand from the flames lowest on the tree, waiting a while for the fire to come down the
+trunk, as a person would (D113: the tests try the game's paths, not one world's accidents). And
+the test of animals coming into the world walks on until it has met two large animals at least:
+the first it met now was a red brocket alone, which froze in its cover the whole minute the
+player stood beside it, as a brocket does. The succession acceptance looks for a temperate wood
+(a mean of 6 to 16 °C): the nearest dense broadleaf forest to the spawn is now a warm one on a
+plateau, grown with Brazil nut, cacao and strangler fig and floored with herbs, not the wood's
+shrubs; and the test's helper finds the ground of a place far above the player from the
+generated height rather than from where the player stands. Its two-century skip catches up the
+populations about the player too, some three tenths of a second a year in a debug build: the
+wait for the clock is three minutes, not one. And a felled tree comes to rest across the herbs
+and low shrubs in its way, flattening them, where it had lain only in air and grass and so in
+pieces about the scrub's rosemary: what a person walks through, a falling trunk crushes. The
+hunting test's spear aims where its quarry stands when the thrust is made, not where it stood a
+step before, and a deer struck in the belly is looked for again an hour on, when it has lain up
+and died.
+
+## D133 — The block registry holds up to 40,000 states
+Each tree species' limbs are a block of some 260 states (four thicknesses, joins on six sides),
+and the tropics and the Mediterranean brought 26 more trees: the registry's states rose past the
+16,000 the base pack's test allowed since M2. Nothing is sized by that figure — block state ids
+are 16 bits, and the tables built per state are a few bytes each — so the test's sanity cap is
+now 40,000, room for the waves to come. A stem's block is named for its limbs (`bamboo_log` for
+`bamboo_branch`): a limb is drawn with its stem's bark.

@@ -383,7 +383,15 @@ impl World {
             .find(|p| self.solid(*p));
         let feet = match top {
             Some(p) => DVec3::new(x, p.y as f64 + 1.0, z),
-            None => DVec3::new(x, self.mover.pos.y, z),
+            // Not loaded yet: about the generated ground there (a plateau may stand far above).
+            None => {
+                let ground = self
+                    .generator
+                    .terrain
+                    .sample(x.floor() as i32, z.floor() as i32)
+                    .height;
+                DVec3::new(x, ground as f64 + 1.0, z)
+            }
         };
         let mut m = self.mover;
         m.pos = feet;

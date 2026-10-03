@@ -175,21 +175,61 @@ struct PlanShape {
 fn plan_shape(plan: BodyPlan) -> PlanShape {
     let deg = f32::to_radians;
     match plan {
-        BodyPlan::Ungulate | BodyPlan::Giraffe | BodyPlan::Elephant | BodyPlan::Hippo => {
-            PlanShape {
-                neck: 0.3,
-                head: 0.22,
-                snout: 0.45,
-                tail: 0.1,
-                tail_width: 0.25,
-                ears: 0.4,
-                ear_shape: EarShape::Pointed,
-                legs: 1.0,
-                depth: 0.42,
-                neck_pitch: deg(48.0),
-                tail_pitch: deg(70.0),
-            }
-        }
+        // Pillar legs, a short neck, the trunk (its `snout`, against the head) and fan ears.
+        BodyPlan::Elephant => PlanShape {
+            neck: 0.06,
+            head: 0.17,
+            snout: 1.6,
+            tail: 0.2,
+            tail_width: 0.08,
+            ears: 0.85,
+            ear_shape: EarShape::Fan,
+            legs: 1.5,
+            depth: 0.52,
+            neck_pitch: deg(8.0),
+            tail_pitch: deg(80.0),
+        },
+        // The neck most of its height, carried steeply.
+        BodyPlan::Giraffe => PlanShape {
+            neck: 0.6,
+            head: 0.12,
+            snout: 0.45,
+            tail: 0.25,
+            tail_width: 0.08,
+            ears: 0.3,
+            ear_shape: EarShape::Pointed,
+            legs: 0.85,
+            depth: 0.3,
+            neck_pitch: deg(62.0),
+            tail_pitch: deg(75.0),
+        },
+        // A barrel on stumps, the head a great block.
+        BodyPlan::Hippo => PlanShape {
+            neck: 0.06,
+            head: 0.27,
+            snout: 0.45,
+            tail: 0.08,
+            tail_width: 0.15,
+            ears: 0.12,
+            ear_shape: EarShape::Round,
+            legs: 1.6,
+            depth: 0.68,
+            neck_pitch: deg(5.0),
+            tail_pitch: deg(80.0),
+        },
+        BodyPlan::Ungulate => PlanShape {
+            neck: 0.3,
+            head: 0.22,
+            snout: 0.45,
+            tail: 0.1,
+            tail_width: 0.25,
+            ears: 0.4,
+            ear_shape: EarShape::Pointed,
+            legs: 1.0,
+            depth: 0.42,
+            neck_pitch: deg(48.0),
+            tail_pitch: deg(70.0),
+        },
         BodyPlan::Bear => PlanShape {
             neck: 0.12,
             head: 0.2,
@@ -202,6 +242,34 @@ fn plan_shape(plan: BodyPlan) -> PlanShape {
             depth: 0.55,
             neck_pitch: deg(12.0),
             tail_pitch: deg(45.0),
+        },
+        // Low-slung, the head held level and the tail carried along the ground behind.
+        BodyPlan::Lizard | BodyPlan::Crocodilian => PlanShape {
+            neck: 0.08,
+            head: 0.18,
+            snout: 0.4,
+            tail: 1.0,
+            tail_width: 0.4,
+            ears: 0.0,
+            ear_shape: EarShape::Round,
+            legs: 0.8,
+            depth: 0.6,
+            neck_pitch: deg(5.0),
+            tail_pitch: deg(0.0),
+        },
+        // A round head on a short neck, a flat face, long hands and feet flat on the ground.
+        BodyPlan::Primate => PlanShape {
+            neck: 0.06,
+            head: 0.22,
+            snout: 0.25,
+            tail: 0.6,
+            tail_width: 0.12,
+            ears: 0.15,
+            ear_shape: EarShape::Round,
+            legs: 0.95,
+            depth: 0.5,
+            neck_pitch: deg(12.0),
+            tail_pitch: deg(25.0),
         },
         BodyPlan::Rodent => PlanShape {
             neck: 0.04,
@@ -376,7 +444,30 @@ fn head(
         Vec3::new(hw, hh, skull_l),
         SkinPart::Head,
     );
-    if snout_l > 0.0 {
+    if r.plan == BodyPlan::Elephant {
+        // The trunk: from the face down and a little forward, curling at its tip; under it
+        // the lip.
+        let mut at = Vec3::new(0.0, -hh * 0.05, skull_l * 0.98);
+        let dirs = [
+            Vec3::new(0.0, -0.45, 0.9),
+            Vec3::new(0.0, -0.9, 0.35),
+            Vec3::new(0.0, -1.0, 0.1),
+            Vec3::new(0.0, -0.6, 0.6),
+        ];
+        for (k, d) in dirs.iter().enumerate() {
+            let l = snout_l * [0.22, 0.28, 0.32, 0.18][k];
+            let next = at + d.normalize() * l;
+            let w = hw * (0.42 - 0.07 * k as f32);
+            horn_segment(b, at, next, w, SkinPart::Snout, Gear::None);
+            at = next;
+        }
+        b.put(
+            Slot::Jaw,
+            Vec3::new(0.0, -hh * 0.05, -skull_l * 0.15),
+            Vec3::new(hw * 0.4, hh * 0.18, skull_l * 0.3),
+            SkinPart::Jaw,
+        );
+    } else if snout_l > 0.0 {
         b.put(
             Slot::Head,
             Vec3::new(0.0, -hh * 0.12, skull_l + snout_l * 0.5),
@@ -396,15 +487,18 @@ fn head(
         EarShape::Pointed | EarShape::Tufted => Vec3::new(hw * 0.2, el, hw * 0.07),
         EarShape::Round => Vec3::new(hw * 0.28, el.max(hw * 0.2), hw * 0.07),
         EarShape::Long => Vec3::new(hw * 0.26, el, hw * 0.09),
+        EarShape::Fan => Vec3::new(hw * 0.06, el, el * 0.85),
     };
     if el > 0.0 {
         for s in 0..2u8 {
-            b.put(
-                Slot::Ear(s),
-                Vec3::new(0.0, size.y * 0.5, 0.0),
-                size,
-                SkinPart::Ear,
-            );
+            // A fan hangs down and back from the top of the head, outside it.
+            let at = if ear_shape == EarShape::Fan {
+                let side = if s == 0 { 1.0 } else { -1.0 };
+                Vec3::new(side * hw * 0.35, -size.y * 0.3, -size.z * 0.3)
+            } else {
+                Vec3::new(0.0, size.y * 0.5, 0.0)
+            };
+            b.put(Slot::Ear(s), at, size, SkinPart::Ear);
             if ear_shape == EarShape::Tufted {
                 b.put(
                     Slot::Ear(s),
@@ -506,6 +600,23 @@ fn head(
                 }
             }
         }
+        Some(HeadGear::Horns { length_m, .. }) if r.plan == BodyPlan::Giraffe => {
+            // Ossicones: two knobbed stubs of skin-covered bone straight up from the crown.
+            let w = (length_m * 0.35).max(0.02);
+            for side in [1.0f32, -1.0] {
+                let at = Vec3::new(side * hw * 0.25, hh * 0.45, skull_l * 0.3);
+                let tip = at + Vec3::new(side * 0.12, 1.0, -0.15).normalize() * length_m;
+                horn_segment(b, at, tip, w, SkinPart::Horn, Gear::Horn);
+                horn_segment(
+                    b,
+                    tip,
+                    tip + Vec3::Y * w * 0.5,
+                    w * 1.4,
+                    SkinPart::Horn,
+                    Gear::Horn,
+                );
+            }
+        }
         Some(HeadGear::Horns {
             length_m, curve, ..
         }) => {
@@ -527,7 +638,37 @@ fn head(
                 }
             }
         }
-        Some(HeadGear::Tusks { length_m }) => {
+        Some(HeadGear::NasalHorns { length_m }) => {
+            // The front horn from the snout's tip, up and a little forward; the second behind
+            // it, half its length.
+            let tip_z = skull_l + snout_l * 0.75;
+            for (k, (z, l)) in [
+                (tip_z, length_m),
+                (skull_l + snout_l * 0.2, length_m * 0.45),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let w = (l * 0.3).max(0.03);
+                let at = Vec3::new(0.0, hh * if k == 0 { 0.2 } else { 0.35 }, z);
+                let mid = at + Vec3::new(0.0, 0.95, 0.3).normalize() * l * 0.55;
+                let tip = mid + Vec3::new(0.0, 0.85, -0.25).normalize() * l * 0.45;
+                horn_segment(b, at, mid, w, SkinPart::Horn, Gear::Horn);
+                horn_segment(b, mid, tip, w * 0.55, SkinPart::Horn, Gear::Horn);
+            }
+        }
+        Some(HeadGear::Tusks { length_m, .. }) if r.plan == BodyPlan::Elephant => {
+            // From under the eyes forward and down beside the trunk, curving up at the tips.
+            let w = (length_m * 0.11).max(0.02);
+            for side in [1.0f32, -1.0] {
+                let at = Vec3::new(side * hw * 0.22, -hh * 0.3, skull_l * 0.9);
+                let mid = at + Vec3::new(side * 0.12, -0.5, 0.86).normalize() * length_m * 0.6;
+                let tip = mid + Vec3::new(side * 0.1, 0.35, 0.93).normalize() * length_m * 0.4;
+                horn_segment(b, at, mid, w, SkinPart::Tusk, Gear::Tusk);
+                horn_segment(b, mid, tip, w * 0.8, SkinPart::Tusk, Gear::Tusk);
+            }
+        }
+        Some(HeadGear::Tusks { length_m, .. }) => {
             let w = (length_m * 0.18).max(0.008);
             for side in [1.0f32, -1.0] {
                 let at = Vec3::new(side * hw * 0.3, -hh * 0.2, skull_l + snout_l * 0.75);
@@ -639,7 +780,7 @@ fn quadruped(sp: &Species, male: bool) -> Rig {
     // Legs: the joints low in the torso, the feet under them; standing a little flexed.
     let lw = (tw * 0.24 * legs_f).clamp(0.006, th * 0.6);
     let lagomorph = plan == BodyPlan::Lagomorph;
-    let plantigrade = plan == BodyPlan::Bear;
+    let plantigrade = matches!(plan, BodyPlan::Bear | BodyPlan::Primate);
     for l in 0..4u8 {
         let fore = l < 2;
         let side = if l % 2 == 0 { 1.0 } else { -1.0 };
@@ -701,9 +842,13 @@ fn quadruped(sp: &Species, male: bool) -> Rig {
         Vec3::new(nw, nh, r.neck_len + nh * 0.3),
         SkinPart::Neck,
     );
-    // The head.
+    // The head (an elephant's skull is the whole of it, the trunk hanging from its front).
     let snout_l = head_l * snout_f;
-    let skull_l = head_l - snout_l;
+    let skull_l = if plan == BodyPlan::Elephant {
+        head_l
+    } else {
+        head_l - snout_l
+    };
     let hw = (tw * 0.5).clamp(head_l * 0.3, head_l * 0.7);
     let hh = hw * 0.95;
     r.head_len = head_l;

@@ -9,16 +9,22 @@ use hearth_math::BlockPos;
 use hearth_protocol::AimAt;
 
 /// The foot of a slim standing trunk near the player (a limb-thick stem on the ground with wood
-/// above it, so it is felled in under an hour with a stone axe).
+/// above it, so it is felled in under an hour with a stone axe), as thick for two blocks above
+/// the cut (what falls is a stem, not a whip).
 fn trunk(w: &World) -> Option<BlockPos> {
-    let stem = |p: BlockPos| {
+    let thick = |p: BlockPos| {
         w.mirror.block(p).is_some_and(|s| {
             w.reg.block_of(s).name.path().ends_with("_branch")
                 && w.reg
                     .get(s, "thickness")
                     .is_some_and(|t| t == "8" || t == "12")
-                && w.reg.get(s, "up") == Some("true")
         })
+    };
+    let stem = |p: BlockPos| {
+        thick(p)
+            && w.mirror
+                .block(p)
+                .is_some_and(|s| w.reg.get(s, "up") == Some("true"))
     };
     w.find(40, |n, _| n.ends_with("_branch"))
         .into_iter()
@@ -27,7 +33,9 @@ fn trunk(w: &World) -> Option<BlockPos> {
             (1..=4).all(|k| {
                 w.block(BlockPos::new(p.x, p.y + k, p.z))
                     .is_some_and(|b| b.ends_with("_branch") || b.ends_with("_leaves"))
-            }) && w.stand_by(*p).is_some()
+            }) && thick(p.up())
+                && thick(p.up().up())
+                && w.stand_by(*p).is_some()
         })
 }
 

@@ -658,7 +658,7 @@ impl Workshop {
             self.falls = going;
             for (_, blocks) in done {
                 for (p, st) in blocks {
-                    if Self::open(h, p) || Self::foliage(h, p) {
+                    if Self::crushed(h, p) || Self::foliage(h, p) {
                         self.set_block(h, p, st);
                     }
                 }
@@ -1154,6 +1154,18 @@ impl Workshop {
         let standing = here.is_some_and(|s| h.lw.map.block(pos) == Some(s))
             && foot.is_some_and(|(p, s)| h.lw.map.block(p) == Some(s));
         standing.then_some(t)
+    }
+
+    /// What a falling tree flattens where it comes to rest: anything a person walks through
+    /// (grass, herbs, a low shrub), not water.
+    fn crushed(h: &Here, p: BlockPos) -> bool {
+        h.lw.map.block(p).is_some_and(|s| {
+            s.is_air() || {
+                let reg = &h.lw.reg;
+                reg.block_of(s).def.fluid.is_none()
+                    && !reg.has(s, hearth_world::StateFlags::HAS_COLLISION)
+            }
+        })
     }
 
     fn foliage(h: &Here, p: BlockPos) -> bool {

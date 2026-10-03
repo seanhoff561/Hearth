@@ -574,9 +574,9 @@ impl FeatureGen {
             }
             Biome::Mangrove => {}
             Biome::Steppe | Biome::Savanna => {
-                // The steppe's own grasses, sages and flowers first; dry grass between.
-                if s.biome == Biome::Steppe
-                    && (grassy || matches!(s.surface, Surface::CoarseDirt))
+                // The steppe's and the savanna's own grasses, shrubs and flowers first; dry
+                // grass between.
+                if (grassy || matches!(s.surface, Surface::CoarseDirt))
                     && self.understory(w, wg, x, z, top, s, flower_n, disturbed)
                 {
                     return next;
@@ -619,6 +619,13 @@ impl FeatureGen {
                 }
             }
             Biome::TropicalRainforest | Biome::TemperateRainforest => {
+                // The tropical forest's own floor first (ferns, gingers, broad leaves).
+                if s.biome == Biome::TropicalRainforest
+                    && (grassy || s.surface == Surface::Moss)
+                    && self.understory(w, wg, x, z, top, s, flower_n, disturbed)
+                {
+                    return next;
+                }
                 if grassy || s.surface == Surface::Moss {
                     if r < 0.2 {
                         w.put(x, top, z, b.fern);
@@ -674,12 +681,15 @@ impl FeatureGen {
             }
             _ => {
                 // Temperate grasslands and forests: the understory's species, then grass and
-                // flowers in clusters.
+                // flowers in clusters (the Mediterranean's maquis on its stony ground too).
                 let forest = matches!(
                     s.biome,
                     Biome::BroadleafForest | Biome::BirchForest | Biome::MixedForest
                 );
-                if grassy && self.understory(w, wg, x, z, top, s, flower_n, disturbed) {
+                let open = grassy
+                    || (s.biome == Biome::MediterraneanScrub
+                        && matches!(s.surface, Surface::CoarseDirt));
+                if open && self.understory(w, wg, x, z, top, s, flower_n, disturbed) {
                     return next;
                 }
                 if grassy {
@@ -750,7 +760,7 @@ impl FeatureGen {
             wet: s.biome == Biome::Wetland,
             realm: s.realm,
         };
-        let wet = s.biome == Biome::Wetland
+        let wet = matches!(s.biome, Biome::Wetland | Biome::Oasis)
             || s.river
                 .is_some_and(|r| r.distance < r.width * 0.5 + 14.0 && s.height - r.level < 2.5);
         // Light under the canopy: closed where trees are dense and the stand has grown.
@@ -1047,7 +1057,7 @@ impl FeatureGen {
         if forest.niches.is_empty() || s.biome == Biome::Mangrove {
             return None;
         }
-        let wet = s.biome == Biome::Wetland
+        let wet = matches!(s.biome, Biome::Wetland | Biome::Oasis)
             || s.river
                 .is_some_and(|r| r.distance < r.width * 0.5 + 14.0 && s.height - r.level < 2.5);
         let climate = crate::trees::PlaceClimate {

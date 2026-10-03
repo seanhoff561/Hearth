@@ -107,6 +107,20 @@ pub fn instances(
                             );
                         }
                     }
+                    Foot::Hoof => {
+                        put(off(0.0, 0.0), s.yaw, Vec3::new(0.85 * l, thin, l), color);
+                    }
+                    Foot::Pad => {
+                        put(off(0.0, 0.0), s.yaw, Vec3::new(0.95 * l, thin, l), color);
+                        for x in [-0.3, -0.1, 0.1, 0.3] {
+                            put(
+                                off(x * l, 0.5 * l),
+                                s.yaw,
+                                Vec3::new(0.12 * l, thin, 0.08 * l),
+                                color,
+                            );
+                        }
+                    }
                     Foot::Slither => {}
                 }
             }

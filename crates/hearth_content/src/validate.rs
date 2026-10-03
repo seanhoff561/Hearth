@@ -347,7 +347,13 @@ pub fn validate(content: &Content, report: &mut Report) {
             if let Some(s) = &a.shape {
                 c.opt("shape.neck", s.neck, 0.0, 1.0);
                 c.opt("shape.head", s.head, 0.0, 0.6);
-                c.opt("shape.snout", s.snout, 0.0, 1.0);
+                // An elephant's snout is its trunk, longer than its head.
+                let snout_max = if a.body_plan == crate::schema::fauna::BodyPlan::Elephant {
+                    3.0
+                } else {
+                    1.0
+                };
+                c.opt("shape.snout", s.snout, 0.0, snout_max);
                 c.opt("shape.tail", s.tail, 0.0, 2.0);
                 c.opt("shape.tail_width", s.tail_width, 0.0, 2.0);
                 c.opt("shape.ears", s.ears, 0.0, 2.0);
@@ -366,8 +372,11 @@ pub fn validate(content: &Content, report: &mut Report) {
                         c.range("shape horns length_m", length_m, 0.0, 2.5);
                         c.range("shape horns curve", curve, 0.0, 1.0);
                     }
-                    Some(crate::schema::fauna::HeadGear::Tusks { length_m }) => {
-                        c.range("shape tusks length_m", length_m, 0.0, 1.5);
+                    Some(crate::schema::fauna::HeadGear::NasalHorns { length_m }) => {
+                        c.range("shape nasal horns length_m", length_m, 0.0, 1.5);
+                    }
+                    Some(crate::schema::fauna::HeadGear::Tusks { length_m, .. }) => {
+                        c.range("shape tusks length_m", length_m, 0.0, 3.0);
                     }
                     None => {}
                 }

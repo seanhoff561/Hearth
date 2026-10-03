@@ -1,0 +1,23 @@
+# V2-10 (c) the tropics and the Mediterranean on the huge planet of seed 7, each at a place in its
+# realm (`x=`, `z=`): the African savanna in its rains and in the dry season, with its herds; the
+# Indian savanna; the African and the American rainforest; the Mediterranean scrub in spring and
+# in the summer's drought; an oasis's date palms; then their animals, close. Seasons are the
+# place's own (`season=`, `@` how far into it).
+# `hearth --screenshot-list tools/shots/v210_tropical.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=8, hour=11, clouds=0.25, dry=true
+x=215040, z=10240, above=3, yaw=30, pitch=4, season=summer@0.5, herd=plains_zebra:12@22:-4, out=bench-out/v210c/savanna_rains.png
+x=215040, z=10240, above=3, yaw=30, pitch=4, season=winter@0.6, herd=african_bush_elephant:7@28:4, out=bench-out/v210c/savanna_dry.png
+x=38912, z=-10240, above=3, yaw=30, pitch=4, season=summer, herd=chital:14@20:-2, out=bench-out/v210c/savanna_india.png
+x=210944, z=-2048, above=2, yaw=30, pitch=6, season=summer, out=bench-out/v210c/rainforest_africa.png
+x=112640, z=0, above=2, yaw=30, pitch=6, season=summer, out=bench-out/v210c/rainforest_america.png
+x=0, z=-28672, above=3, yaw=30, pitch=4, season=spring@0.6, out=bench-out/v210c/mediterranean_spring.png
+x=0, z=-28672, above=3, yaw=30, pitch=4, season=summer@0.7, herd=red_deer:6@20:3, out=bench-out/v210c/mediterranean_summer.png
+x=202752, z=-26624, above=3, yaw=30, pitch=4, season=spring, out=bench-out/v210c/oasis.png
+x=215040, z=10240, above=2.6, yaw=30, pitch=6, fov=45, season=summer, animal=african_bush_elephant:adult:f:walk@18:-4:80, animal=giraffe:adult:m:alert@16:4:110, animal=plains_zebra:adult:f:graze@10:-1:60, animal=blue_wildebeest:adult:m:alert@11:2:100, out=bench-out/v210c/african_big.png
+x=215040, z=10240, above=1.8, yaw=30, pitch=3, fov=45, season=summer, animal=lion:adult:m:alert@9:-2:70, animal=lion:adult:f:rest@8:1:110, animal=spotted_hyena:adult:f:walk@7:4:130, animal=cheetah:adult:m:alert@6:-4:60, out=bench-out/v210c/african_hunters.png
+x=215040, z=10240, above=2.2, yaw=30, pitch=4, fov=45, season=summer, animal=white_rhinoceros:adult:f:graze@12:-3:80, animal=african_buffalo:adult:m:alert@12:3:110, animal=warthog:adult:m:graze@6:-1:60, animal=impala:adult:m:alert@8:2:100, animal=ostrich:adult:m:walk@10:5:130, out=bench-out/v210c/african_more.png
+x=215040, z=10240, above=1.4, yaw=30, pitch=4, fov=40, season=summer, animal=greater_kudu:adult:m:alert@9:-2:80, animal=helmeted_guineafowl:adult:f:walk@4:-1:60, animal=secretary_bird:adult:m:walk@6:2:110, animal=leopard_tortoise:adult:f:walk@3.5:0.6:70, animal=banded_mongoose:adult:f:alert@3:-0.8:90, out=bench-out/v210c/african_small.png
+x=38912, z=-10240, above=2, yaw=30, pitch=4, fov=45, season=summer, animal=tiger:adult:m:walk@9:-2:80, animal=chital:adult:m:alert@12:3:110, animal=gaur:adult:m:graze@16:-5:60, animal=indian_peafowl:adult:m:alert@6:2:100, animal=asian_elephant:adult:m:walk@22:6:130, out=bench-out/v210c/indian.png
+x=210944, z=-2048, above=1.8, yaw=30, pitch=4, fov=45, season=summer, animal=okapi:adult:f:alert@9:-2:80, animal=western_lowland_gorilla:adult:m:rest@8:2:110, animal=chimpanzee:adult:f:walk@6:-1:60, animal=red_river_hog:adult:m:walk@7:3:130, animal=bongo:adult:m:alert@12:-4:100, out=bench-out/v210c/african_forest.png
+x=112640, z=0, above=1.8, yaw=30, pitch=4, fov=45, season=summer, animal=jaguar:adult:m:walk@8:-2:80, animal=lowland_tapir:adult:f:graze@10:3:110, animal=giant_anteater:adult:f:walk@7:-4:60, animal=collared_peccary:adult:m:alert@5:1:130, animal=scarlet_macaw:adult:m:alert@4:-1:70, animal=keel_billed_toucan:adult:f:alert@4:1.5:100, out=bench-out/v210c/american_forest.png
+x=0, z=-28672, above=1.4, yaw=30, pitch=4, fov=40, season=spring, animal=iberian_lynx:adult:m:alert@7:-1:80, animal=european_rabbit:adult:f:graze@4:1:60, animal=red_legged_partridge:adult:m:alert@5:-2:110, animal=wild_boar:adult:m:walk@10:3:130, animal=hermanns_tortoise:adult:f:walk@3:0.5:70, out=bench-out/v210c/mediterranean_animals.png

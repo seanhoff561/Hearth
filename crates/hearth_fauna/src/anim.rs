@@ -429,10 +429,11 @@ fn tr(v: Vec3) -> Affine3A {
 pub struct Pose {
     pub slots: [Affine3A; SLOTS],
     pub scale: f32,
-    /// How grown a male's antlers are (0 cast, 1 hard); whether horns and tusks show.
+    /// How grown a male's antlers are (0 cast, 1 hard); whether horns show; how big the tusks
+    /// show (0 none, 1 a grown male's).
     pub antlers: f32,
     pub horns: bool,
-    pub tusks: bool,
+    pub tusks: f32,
     /// The chest's breath (a fraction of its size).
     pub breath: f32,
 }
@@ -467,13 +468,7 @@ impl Pose {
                         0.0
                     }
                 }
-                Gear::Tusk => {
-                    if self.tusks {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                }
+                Gear::Tusk => self.tusks,
             };
             if grown <= 0.01 {
                 continue;
@@ -502,7 +497,7 @@ pub fn pose(rig: &Rig, m: &Motion, d: &Drive, ground: &dyn Footing) -> Pose {
         scale: 1.0,
         antlers: 0.0,
         horns: false,
-        tusks: false,
+        tusks: 0.0,
         breath: 0.0,
     };
     let male_adult = !d.female && d.stage == Stage::Adult;
@@ -527,9 +522,16 @@ pub fn pose(rig: &Rig, m: &Motion, d: &Drive, ground: &dyn Footing) -> Pose {
         Some(hearth_content::schema::fauna::HeadGear::Horns { both_sexes, .. }) => {
             d.stage != Stage::Young && (both_sexes || !d.female)
         }
+        Some(hearth_content::schema::fauna::HeadGear::NasalHorns { .. }) => d.stage != Stage::Young,
         _ => false,
     };
-    p.tusks = male_adult;
+    p.tusks = match rig.gear {
+        _ if male_adult => 1.0,
+        Some(hearth_content::schema::fauna::HeadGear::Tusks {
+            both_sexes: true, ..
+        }) if d.stage == Stage::Adult => 0.6,
+        _ => 0.0,
+    };
     // Breathing: slower as bodies are bigger, faster after running.
     let rate = 0.35 * (rig.mass / 100.0).max(1e-4).powf(-0.25) * (1.0 + m.flee * 2.0);
     p.breath = 0.015 * (TAU * rate.min(3.0) * m.time).sin() * (1.0 + m.flee);
@@ -1103,7 +1105,7 @@ pub fn rest_pose(rig: &Rig) -> Pose {
     // Every box shown, at its full size.
     p.antlers = 1.0;
     p.horns = true;
-    p.tusks = true;
+    p.tusks = 1.0;
     p.breath = 0.0;
     if matches!(rig.frame, Frame::Snake) {
         // Straight, head forward.

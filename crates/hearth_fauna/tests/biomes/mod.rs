@@ -14,6 +14,7 @@ use hearth_fauna::ecology::{Cause, Ecology};
 use hearth_fauna::habitat::{GenLand, Habitat, Land, TreeYields, Uniform};
 use hearth_fauna::species::{Catalog, Forage};
 use hearth_math::PlanetSize;
+use hearth_worldgen::realms::Realm;
 use hearth_worldgen::region::biome::Biome;
 use hearth_worldgen::vegetation::Vegetation;
 use hearth_worldgen::{ColumnSample, PlanetGrid, Terrain, WorldGenSettings, WorldGenerator};
@@ -57,16 +58,63 @@ pub fn about_the_heart(
     also: impl Fn(&ColumnSample) -> bool + Sync,
 ) -> (Ecology, Habitat) {
     let w = world();
+    let (x, z) =
+        w.wg.terrain
+            .find_biome(biome, 12_000.0, also)
+            .unwrap_or_else(|| panic!("no {} on the planet", biome.name()));
+    about(biome, x, z)
+}
+
+/// The same about the heart of a biome in a realm: the place whose land about it, out to 24 km
+/// (as far as the regions about it reach), is most of that biome in that realm (a heart on the
+/// border of another realm holds the other's animals as well).
+pub fn about_the_heart_in(biome: Biome, realm: Realm) -> (Ecology, Habitat) {
+    let w = world();
+    let t = &w.wg.terrain;
+    let c = t.planet().circumference();
+    let step = (c / 256).max(64);
+    let ours = |x: i32, z: i32| {
+        let s = t.sample(x, z);
+        s.biome == biome && s.realm == realm
+    };
+    let mut best: Option<(usize, i32, i32)> = None;
+    for z in (-c / 2 + step..c / 2 - step).step_by(step as usize) {
+        for x in (0..c).step_by(step as usize) {
+            if !ours(x, z) {
+                continue;
+            }
+            let mut same = 0;
+            for (k, r) in [3_000.0f64, 6_000.0, 12_000.0, 18_000.0, 24_000.0]
+                .into_iter()
+                .enumerate()
+            {
+                for a in 0..8 {
+                    let th = a as f64 * std::f64::consts::FRAC_PI_4 + k as f64 * 0.3;
+                    if ours(x + (th.cos() * r) as i32, z + (th.sin() * r) as i32) {
+                        same += 1;
+                    }
+                }
+            }
+            if best.is_none_or(|b| same > b.0) {
+                best = Some((same, x, z));
+            }
+        }
+    }
+    let (same, x, z) =
+        best.unwrap_or_else(|| panic!("no {} of the {realm:?} on the planet", biome.name()));
+    println!("  of 40 about it, {same} are the same");
+    about(biome, x, z)
+}
+
+/// The populations of the regions about a place, made; and its own cell.
+fn about(biome: Biome, x: i32, z: i32) -> (Ecology, Habitat) {
+    let w = world();
     let land = GenLand {
         wg: &w.wg,
         veg: &w.veg,
         catalog: &w.catalog,
         trees: &w.trees,
     };
-    let (x, z) =
-        w.wg.terrain
-            .find_biome(biome, 12_000.0, also)
-            .unwrap_or_else(|| panic!("no {} on the planet", biome.name()));
     let s = w.wg.terrain.sample(x, z);
     println!(
         "{} at {x}, {z}: mean {:.1} °C, warmest month {:.1} °C, {:.0} mm, realm {:?}",
@@ -159,6 +207,7 @@ pub fn fifty_years(eco: &mut Ecology, biome: Biome) -> (Vec<String>, Vec<String>
         );
     }
     eco.deaths.clear();
+    eco.kills.clear();
     eco.fed.clear();
     let start = eco.regions.values().map(|r| r.time).fold(0.0, f64::max);
     let mut series = vec![Vec::new(); present.len()];
@@ -212,6 +261,22 @@ pub fn fifty_years(eco: &mut Ecology, biome: Biome) -> (Vec<String>, Vec<String>
         let gone = v.windows(8).any(|w| w.iter().all(|x| *x < 0.5));
         if mean < 0.05 * cap || mean > 4.0 * cap + 5.0 || gone {
             failures.push(format!("{}: mean {mean:.0} of {cap:.0}", sp.name));
+        }
+        // Who took the most of it.
+        let mut by: Vec<(f64, &str)> = eco
+            .kills
+            .iter()
+            .filter(|((_, prey), _)| *prey as usize == s)
+            .map(|((hunter, _), n)| (*n / 50.0, cat.species[*hunter as usize].name.as_str()))
+            .collect();
+        by.sort_by(|a, b| b.0.total_cmp(&a.0));
+        if !by.is_empty() {
+            let top: Vec<String> = by
+                .iter()
+                .take(4)
+                .map(|(n, name)| format!("{name} {n:.0}"))
+                .collect();
+            println!("      killed a year by {}", top.join(", "));
         }
     }
     let names = present.iter().map(|&s| cat.species[s].id.clone()).collect();

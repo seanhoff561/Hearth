@@ -629,7 +629,8 @@ impl Bot {
                 {
                     self.wildfire = self.lightning();
                 }
-                if let Some(f) = self.wildfire
+                if self.wildfire.is_some()
+                    && let Some(f) = self.low_flames()
                     && self.firebrand(f)
                 {
                     let (ok, words) = self.w.act(
@@ -1495,6 +1496,25 @@ impl Bot {
     }
 
     /// Carries a burning stick from the natural fire at `fire` home (with a stick to burn).
+    /// The flames lowest on a burning tree about the camp, where a stick reaches them (a palm or
+    /// a tall crown burns from the top): it waits a while for the fire to come down the tree, and
+    /// finds none once it is out.
+    pub fn low_flames(&mut self) -> Option<BlockPos> {
+        let within = BlockPos::containing(self.camp).y + 3;
+        for _ in 0..12 {
+            let low = self
+                .w
+                .find(40, |n, _| n == "flames")
+                .into_iter()
+                .min_by_key(|p| p.y)?;
+            if low.y <= within {
+                return Some(low);
+            }
+            self.w.run(4);
+        }
+        None
+    }
+
     pub fn firebrand(&mut self, fire: BlockPos) -> bool {
         self.home();
         self.w.put_down_all();
@@ -1672,7 +1692,10 @@ pub fn goals_fire(bot: &mut Bot) {
         if bot.knows("fire_keeping") {
             break;
         }
-        bot.firebrand(fire);
+        let Some(low) = bot.low_flames() else {
+            break;
+        };
+        bot.firebrand(low);
         bot.w.put_down_all();
     }
     assert!(bot.knows("fire_keeping"), "{:?}", bot.w.learned);
@@ -1701,7 +1724,9 @@ pub fn goals_fire(bot: &mut Bot) {
     }
     let mut lit = false;
     for _ in 0..6 {
-        if bot.firebrand(fire) {
+        if let Some(low) = bot.low_flames()
+            && bot.firebrand(low)
+        {
             let (ok, words) = bot.w.act(
                 "light_fire",
                 AimAt::Block {

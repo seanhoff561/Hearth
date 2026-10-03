@@ -96,7 +96,24 @@ American badger, steppe polecat and black-footed ferret, great bustard, sage-gro
 owl, golden eagle, meadowlark and skylark, the prairie rattlesnake); the cold and hot deserts
 (Bactrian camel, dromedary, onager, addax, dorcas gazelle, the jackrabbit, kangaroo rat and
 jerboa, the fennec, kit fox and sand cat, the roadrunner, the western diamondback and horned
-viper, the Gila monster and the desert tortoise).
+viper, the Gila monster and the desert tortoise); the savanna and the tropical rainforest of
+three realms and the Mediterranean scrub (wave c). Africa's savanna: the bush elephant, giraffe,
+zebra, wildebeest, buffalo, kudu, hartebeest, eland, impala, Thomson's gazelle, warthog and white
+rhinoceros; the lion, leopard, cheetah, spotted hyena, wild dog and black-backed jackal; the
+ostrich, guineafowl, secretary bird and white-backed vulture; the scrub hare, multimammate mouse,
+banded mongoose, olive baboon, pangolin, puff adder, black mamba and leopard tortoise. Africa's
+rainforest: the forest elephant, okapi, bongo, red river hog and blue duiker; the chimpanzee,
+gorilla and guereza; the golden cat and crowned eagle; the grey parrot, pouched rat,
+soft-furred mouse and Gaboon viper. The Americas': the tapir, peccary, red brocket, sloth,
+agouti, paca, opossum and spiny rat; the howler monkey; the jaguar, ocelot, coati and harpy
+eagle; the macaw and toucan; the iguana and boa; and in the cerrado the giant anteater, maned
+wolf, rhea and bolo mouse. Tropical Asia's: the Asian elephant, gaur, sambar, chital and
+muntjac; the rhesus macaque and lar gibbon; the tiger, dhole, clouded leopard and sun bear; the
+hornbill, junglefowl and peafowl; the ricefield and spiny rats; the king cobra, python and rat
+snake. The Mediterranean's: the rabbit, red-legged partridge, Iberian lynx, wood mouse,
+Montpellier snake and Hermann's tortoise, with the boar, red deer, fox, badger, wolf and golden
+eagle of the woods and steppes; the chaparral's mule deer and California quail, with the coyote,
+bobcat, jackrabbit and deer mouse.
 
 ## Populations (`hearth_fauna`)
 The land is divided into **ecological cells** of 256 m, gathered in **regions** of 64 × 64
@@ -105,7 +122,9 @@ cell knows its **habitat** (`habitat.rs`): its shares of land, fresh water and s
 ecosystems, its realm and the realm of the animals that live there (its own, or the stand-in's),
 its climate, its cover, and the usable production of each kind of forage — graze, browse, mast,
 fruit, seeds, invertebrates, fungi, nectar and the invertebrates of fresh water — from the Miami
-model of net primary production shared out by the vegetation (`expected_canopy`): grass where
+model of net primary production shared out by the vegetation (`expected_canopy`), growing with
+the warmth and, where the climate has a dry season (the savanna's winter, the Mediterranean's
+summer), with the rains (D124): grass where
 the canopy lets light through, browse where young trees grow back after a clearing or a fire,
 mast under nut trees old enough to bear and under conifers their cone crops (their species'
 yields), fruit at the edges; where the summers are cool, part of the open ground's growth is in
@@ -119,9 +138,12 @@ snow buries what lies on the ground, every year has its weather (how well plants
 winter was), and nut trees mast heavily one year in three over a wide area.
 
 Each ecosystem names its **reference land** — the climate, canopy, young growth and the mast and
-fruit of its trees that its animals' densities describe (`reference` in `ecosystems.ron`; the
-temperate wood for an ecosystem without one) — and a species' density is that of the richest of
-the reference lands of the ecosystems it lives in (D116). How well a cell **suits** a species
+fruit of its trees that its animals' densities describe, and the realms whose animals live on it
+(`reference` in `ecosystems.ron`; the temperate wood for an ecosystem without one) — and a
+species' density is that of the richest of the reference lands of the ecosystems it lives in
+(`habitat`, D116); it may live in others besides at what their land gives it against those
+(`also_in`: the wild boar of the oak woods in the scrub and the monsoon forests, D128). Each
+realm's community on a reference land anchors the forage by its own needs (D127). How well a cell **suits** a species
 (its quality, against that land, which sets the numbers it holds): for a plant-eater its plants,
 for a hunter the meat its prey of the realm offer about the cell at their usual numbers there,
 with its plants for their share of its food, less where it lacks the cover it keeps to, and for

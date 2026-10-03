@@ -250,6 +250,8 @@ pub struct Ecology {
     pub attack: Vec<[f32; 8]>,
     /// Deaths by species and cause since the tally was cleared.
     pub deaths: FxHashMap<(u16, Cause), f64>,
+    /// Animals killed in the hunt, by hunter and prey species, since the tally was cleared.
+    pub kills: FxHashMap<(u16, u16), f64>,
     /// How well each species was fed (the sum of its consumers' food ratios, and their
     /// number) since the tally was cleared.
     pub fed: FxHashMap<u16, (f64, f64)>,
@@ -607,11 +609,14 @@ impl Ecology {
         let attack = calibrate_attack(&catalog);
         let reference = crate::habitat::temperate_wood(&catalog);
         let mut lands = vec![reference];
-        lands.extend(catalog.ecosystems.iter().filter_map(|e| {
-            e.reference
-                .as_ref()
-                .map(|r| crate::habitat::reference_land(&catalog, r, &e.id))
-        }));
+        for e in &catalog.ecosystems {
+            if let Some(r) = &e.reference {
+                lands.extend(
+                    reference_realms(r)
+                        .map(|realm| crate::habitat::reference_land(&catalog, r, &e.id, realm)),
+                );
+            }
+        }
         let scale = forage_scales(&catalog, &lands);
         let homes = homes(&catalog, &reference);
         let mut eco = Self {
@@ -624,6 +629,7 @@ impl Ecology {
             next_id: 1,
             attack,
             deaths: FxHashMap::default(),
+            kills: FxHashMap::default(),
             fed: FxHashMap::default(),
             reference,
             homes,
@@ -647,7 +653,7 @@ impl Ecology {
             .enumerate()
             .map(|(i, e)| {
                 let mut h = match &e.reference {
-                    Some(r) => crate::habitat::reference_land(cat, r, &e.id),
+                    Some(r) => crate::habitat::reference_land(cat, r, &e.id, Realm::Palearctic),
                     None => *wood,
                 };
                 // The land's own ecosystem's prey only.
@@ -666,7 +672,7 @@ impl Ecology {
                     lands
                         .iter()
                         .enumerate()
-                        .filter(|(i, _)| sp.habitats & (1 << i) != 0)
+                        .filter(|(i, _)| sp.core & (1 << i) != 0)
                         .map(|(_, h)| {
                             sp.prey
                                 .iter()
@@ -868,6 +874,7 @@ impl Ecology {
             next_id: ids,
             attack: self.attack.clone(),
             deaths: FxHashMap::default(),
+            kills: FxHashMap::default(),
             fed: FxHashMap::default(),
             reference: self.reference,
             homes: self.homes.clone(),
@@ -1474,6 +1481,7 @@ impl Ecology {
                             .deaths
                             .entry((pj as u16, Cause::Predation))
                             .or_default() += 1.0;
+                        *self.kills.entry((sp.index as u16, pj as u16)).or_default() += 1.0;
                     }
                 } else if let Some(&slot) = slot_of.get(&(pj as u16)) {
                     // Small prey are taken as they come, in proportion through the reach (counted
@@ -1524,6 +1532,7 @@ impl Ecology {
                         .deaths
                         .entry((pj as u16, Cause::Predation))
                         .or_default() += dead as f64;
+                    *self.kills.entry((sp.index as u16, pj as u16)).or_default() += dead as f64;
                 }
             }
             out.groups[gi] = eaten;
@@ -1598,6 +1607,7 @@ impl Ecology {
                             .deaths
                             .entry((pj as u16, Cause::Predation))
                             .or_default() += dead as f64;
+                        *self.kills.entry((sp.index as u16, pj as u16)).or_default() += dead as f64;
                     }
                 }
                 out.pools[i] = eaten;
@@ -2699,8 +2709,17 @@ fn founding_group(sp: &Species, rng: &mut Rng, id: u64, p: [f64; 2]) -> Group {
 /// simulation does not count (insects, slugs, the animals of other realms).
 const USED: f32 = 1.0;
 
-/// Per kind of forage, the factor that makes a reference land produce what its animals (the
-/// Palearctic's, at their usual densities) eat over [`USED`]: the habitat's formulas give the
+/// The realms of a reference land's animals: those it names, or the Palearctic.
+pub fn reference_realms(
+    r: &hearth_content::schema::ecosystem::ReferenceLand,
+) -> impl Iterator<Item = Realm> + '_ {
+    let named = r.realms.iter().filter_map(|n| Realm::parse(n));
+    let none = r.realms.is_empty().then_some(Realm::Palearctic);
+    named.chain(none)
+}
+
+/// Per kind of forage, the factor that makes a reference land produce what its animals (its
+/// realm's, at their usual densities) eat over [`USED`]: the habitat's formulas give the
 /// relative amounts from place to place, the animals' needs the absolute. None for a kind its
 /// animals do not eat.
 pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [Option<f32>; FORAGE_KINDS] {
@@ -2709,7 +2728,7 @@ pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [Option<f32>; FORAGE_
     for _ in 0..4 {
         let mut demand = [0.0f32; FORAGE_KINDS];
         for sp in &cat.species {
-            if !native(sp.realms, Realm::Palearctic) || sp.habitats & reference.ecosystems == 0 {
+            if !native(sp.realms, reference.fauna()) || sp.core & reference.ecosystems == 0 {
                 continue;
             }
             let total: f32 = (0..FORAGE_KINDS).map(|k| sp.forage[k] * prod[k]).sum();
@@ -2769,7 +2788,7 @@ pub fn homes(cat: &Catalog, wood: &Habitat) -> Vec<f32> {
         .ecosystems
         .iter()
         .map(|e| match &e.reference {
-            Some(r) => crate::habitat::reference_land(cat, r, &e.id),
+            Some(r) => crate::habitat::reference_land(cat, r, &e.id, Realm::Palearctic),
             None => *wood,
         })
         .collect();
@@ -2782,7 +2801,7 @@ pub fn homes(cat: &Catalog, wood: &Habitat) -> Vec<f32> {
             let best = lands
                 .iter()
                 .enumerate()
-                .filter(|(i, _)| sp.habitats & (1 << i) != 0)
+                .filter(|(i, _)| sp.core & (1 << i) != 0)
                 .map(|(_, h)| fare(h))
                 .fold(0.0f32, f32::max);
             if best > 0.0 { best } else { fare(wood) }

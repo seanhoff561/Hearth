@@ -168,7 +168,7 @@ impl Stage {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use hearth_content::schema::flora::{AutumnColor, BarkPattern, Crown, LeafKind};
 
