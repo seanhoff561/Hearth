@@ -305,3 +305,56 @@ content lint, the performance gate, `PROGRESS.md` with its **Humans Status** tab
 - **Engine (v1 M13/M14):** profiling, zero steady-state allocations, software-adapter run,
   README/BUILDING/MODDING/ASSETS_LICENSES, fresh-clone build, soak test.
 
+## Phase R (after the game is complete)
+Amendment R (`dev/AMENDMENT_R.md`, 2026-10-03): open-source release, multiplayer, AI and voice,
+the guide and the trailer. None of it starts until every H and V2 milestone above, through V2-16,
+is complete and accepted (R §0.1). Until then only its **multiplayer-ready rule** applies (R §0.3,
+D166): gameplay state on the server's side, new messages serializable and versioned through the
+channel, no simulation assuming a single player. When V2-16 is done: re-read the amendment, write
+`RELEASE_PLAN.md`, then R1. Each R milestone: implement, document, test, all checks,
+`PROGRESS.md` (with its Release Status table), commit.
+
+### Phase R-A — online features
+- **R1 — Networking core.** `hearth_net`: QUIC, protocol and versioning, the in-memory transport
+  for single-player, server-authoritative intents, handshake and identity keys. *Accept:*
+  single-player runs through the network layer with no regressions in the v1/v2 benchmarks.
+- **R2 — Replication and world sync.** Seed-plus-deltas cube sync with hashes, LOD updates,
+  interest management, snapshots and deltas, prediction and reconciliation, lag compensation,
+  replicated processes, plants, animals and people. *Accept:* 4 bot clients play an hour under
+  150 ms latency and 2 % loss without desyncs; controls feel immediate.
+- **R3 — Hosting, joining and administration.** Host & Play, dedicated server and Docker image,
+  `server.toml`, LAN discovery, UPnP, invite codes, relay, community list protocol, roles and the
+  admin panel, block/mute/report, PvP and sleep settings, mod sync, logging off and death.
+  *Accept:* a 32-bot soak on a dedicated server meets budgets; join flows work across platforms.
+- **R4 — AI Bridge.** Providers, capability levels, the Agent Bridge (WebSocket + MCP) with
+  examples, guardrails, decision journal, budgets and fallbacks, AI settings and wizard step.
+  *Accept:* R §12's AI tests; a local-model setup in under five minutes by the guide; the game
+  identical with AI off.
+- **R5 — Proximity voice.** Capture, DSP, Opus, transport, server range gating, spatial audio with
+  occlusion and reverb, whisper and shout as in-world noise, controls, indicators, settings.
+  *Accept:* R §12's voice tests; two players across a cave wall hear each other muffled; a shout
+  scares a nearby herd.
+- **R6 — Voice for agents.** Local and hosted speech-to-text, speech to speech acts gated by
+  language knowledge, `VoiceBackend` (vocalizations, local phoneme TTS speaking generated
+  languages, hosted TTS), stable per-person voices with emotional prosody, client-side synthesis.
+  *Accept:* talking to an agent by voice end to end with local models only; relatives sound
+  alike.
+
+### Phase R-B — release (only after R-A passes)
+- **R0 — Repository audit and open-source foundation.** R §1.1–1.2, §1.4: licenses, `cargo
+  deny`/`cargo about`, secrets and clean-room scans, `xtask`, devcontainer, `scripts/rename`,
+  `RELEASE_PLAN.md`; the working files (`PROGRESS.md`, `PLAN.md`, `MIGRATION*.md`,
+  `DECISIONS.md`) into `dev/`. *Accept:* a fresh clone builds and runs on all three platforms in
+  CI; no secrets or foreign trademarks; licenses complete.
+- **R7 — Packaging, CI and releases.** R §1.3, §1.5 (first-run wizard, diagnostics), the update
+  check, measured system requirements. *Accept:* a test tag produces every artifact; each
+  installs and runs on a clean VM per OS; Releases page to playing in under five minutes.
+- **R8 — README, guide, docs site and in-game Field Guide.** R §9 in full, with generated tables,
+  feature anchors and readability checks. *Accept:* every docs check passes; every implemented
+  system has a guide section; nothing unimplemented described as available.
+- **R9 — Branding, press kit and trailers.** R §8 and §10: the cinematic system, every trailer
+  cut, thumbnail, descriptions, the review loop. *Accept:* trailers rendered and reviewed;
+  `trailer/REVIEW.md` complete; licenses recorded.
+- **R10 — Launch readiness review.** Fresh-machine installs, the guide followed literally,
+  security and privacy reviews, a performance re-check, `dev/LAUNCH_REPORT.md` with the owner's
+  decisions still to confirm (R §0.5); the v0.1.0 release drafted, not published.

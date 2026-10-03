@@ -1872,3 +1872,23 @@ compact copies of the same components, and the player — whose state the server
 written for a person's body, knowledge or possessions also works on the player's. Components that
 arrive with later milestones (genome, phenotype, psyche, culture) join as fields of the record.
 
+## D166 — Multiplayer-ready from now on
+Amendment R (`dev/AMENDMENT_R.md`, 2026-10-03: open-source release, multiplayer, AI and voice,
+the guide, the trailer) waits until the game is finished (after V2-16; `PLAN.md`, Phase R). One
+rule of it applies at once (R §0.3), so that multiplayer comes at the end as a transport and
+replication job rather than a rewrite. Everything built from now on keeps the client/server
+boundary v1 §2 set up:
+- All gameplay state lives on the server's side; the client renders and sends the player's
+  intents (move, act, speak, craft, build) as messages.
+- Every new message type is serializable and versioned and goes through the existing in-memory
+  channel: its payloads derive `Serialize` and `Deserialize`, and `hearth_protocol::PROTOCOL` is
+  raised with every change to the messages (the older messages become serializable in R1).
+  Client code never reads or writes server state directly.
+- Simulation code never assumes a single player: anything about "the player" is "each player" —
+  the simulated regions, sleep, interest, who is noticed and who is tolerated. The people (H0)
+  take the players about them as a list, each with an identity: a band is drawn out near any
+  player and folded back only when far from all of them, a person notices each, a band's
+  tolerance is kept for each player by name, and what the client is sent is what lies about its
+  own player.
+What already assumes one player (the fauna's presence, the server's player state, sleep) predates
+the rule and is R1–R3's to generalize.
