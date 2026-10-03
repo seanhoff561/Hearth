@@ -84,6 +84,8 @@ struct Plan {
     needles: bool,
     density: f32,
     flare: f32,
+    /// The height (m) up the stem its stilt roots arch from.
+    prop: f32,
     snag: bool,
 }
 
@@ -124,6 +126,11 @@ impl Plan {
             density: f.foliage_density,
             flare: if stage >= Stage::Young {
                 f.root_flare
+            } else {
+                0.0
+            },
+            prop: if stage >= Stage::Sapling {
+                f.prop_roots * height
             } else {
                 0.0
             },
@@ -312,6 +319,9 @@ fn stem(
     if plan.flare > 0.0 {
         roots(plan, rng, out, base, r0);
     }
+    if plan.prop > 0.0 {
+        stilts(plan, rng, out, base, r0);
+    }
     // Branches along the leader in the crown.
     branches_along(plan, rng, out, &axis, height, crown_base, base);
     if fork_t < top {
@@ -378,6 +388,37 @@ fn tuft(plan: &Plan, rng: &mut Rng, out: &mut Skeleton, tip: Vec3, d: Vec3) {
             b: c,
             r: ((0.8 + 0.08 * plan.height).min(2.2) * rng.range_f32(0.85, 1.1)).max(1.0),
         });
+    }
+}
+
+/// Stilt roots: arching out and down from the lower stem into the mud about it (a red
+/// mangrove's cage), each a curve of segments thinning toward the ground.
+fn stilts(plan: &Plan, rng: &mut Rng, out: &mut Skeleton, base: Vec3, r0: f32) {
+    let n = 5 + rng.below(4) as usize;
+    let az0 = rng.range_f32(0.0, std::f32::consts::TAU);
+    for k in 0..n {
+        let az = az0 + k as f32 * std::f32::consts::TAU / n as f32 + rng.range_f32(-0.35, 0.35);
+        let out_dir = Vec3::new(az.cos(), 0.0, az.sin());
+        let from = base + Vec3::Y * (plan.prop * rng.range_f32(0.45, 1.0)) + out_dir * r0;
+        let to = base + out_dir * (r0 + plan.prop * rng.range_f32(0.7, 1.3)) - Vec3::Y * 0.3;
+        // Out first, then down: a quadratic arch bowed up over its chord.
+        let bend = Vec3::new(to.x, from.y + plan.prop * 0.15, to.z).lerp(from, 0.45);
+        let steps = 4;
+        let ra = (r0 * 0.35).max(0.06);
+        let mut p = from;
+        for i in 1..=steps {
+            let t = i as f32 / steps as f32;
+            let q = from * (1.0 - t) * (1.0 - t) + bend * 2.0 * t * (1.0 - t) + to * t * t;
+            let t0 = (i - 1) as f32 / steps as f32;
+            out.wood.push(Seg {
+                a: p,
+                b: q,
+                ra: ra * (1.0 - 0.4 * t0),
+                rb: ra * (1.0 - 0.4 * t),
+                order: 3,
+            });
+            p = q;
+        }
     }
 }
 

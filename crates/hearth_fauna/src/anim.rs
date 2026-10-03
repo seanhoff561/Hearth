@@ -19,7 +19,7 @@ use glam::{Affine3A, Quat, Vec2, Vec3};
 use hearth_content::schema::fauna::BodyPlan;
 
 use crate::live::{Act, Medium, Stage};
-use crate::rig::{Frame, Gear, MAX_SEGS, Rig, SLOTS, Slot};
+use crate::rig::{Frame, Gear, MAX_SEGS, PENGUIN_UPRIGHT, Rig, SLOTS, Slot};
 
 const G: f32 = 9.81;
 const TAU: f32 = std::f32::consts::TAU;
@@ -851,10 +851,16 @@ fn bird(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
     let bd = rig.torso.y;
     let bw = rig.torso.x;
     let bl = rig.torso.z;
-    let base = ground.ground(Vec3::ZERO).unwrap_or(0.0);
+    let penguin = rig.plan == BodyPlan::Penguin;
+    // Swimming, the ground under it is nothing to it.
+    let base = ground.ground(Vec3::ZERO).unwrap_or(0.0) * (1.0 - m.swim);
     let aloft = m.fly;
-    // Owls sit upright; small birds tilt their heads up; ground birds stand level.
+    // A penguin lies on its belly or swims flat, its upright body laid forward.
+    let flat = if penguin { m.swim.max(m.lie) } else { 0.0 };
+    // Owls sit upright; small birds tilt their heads up; ground birds stand level; penguins
+    // stand.
     let upright = match rig.plan {
+        BodyPlan::Penguin => PENGUIN_UPRIGHT * (1.0 - flat),
         BodyPlan::Raptor => 0.9,
         BodyPlan::BirdGround => 0.15,
         _ => 0.35,
@@ -870,32 +876,66 @@ fn bird(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
     };
     let peck = (TAU * 2.2 * m.time).sin().max(0.0) * m.graze;
     let crouch = rig.torso_y * 0.55 * m.lie;
-    let pitch = -upright * (1.0 - aloft) * (1.0 - m.graze * 0.7) + 0.55 * m.graze + 0.2 * peck;
+    let pitch = if penguin {
+        // A bow to feed.
+        -upright * (1.0 - 0.25 * m.graze) + 0.15 * peck
+    } else {
+        -upright * (1.0 - aloft) * (1.0 - m.graze * 0.7) + 0.55 * m.graze + 0.2 * peck
+    };
     let lift = aloft * rig.torso_y * 3.0;
-    let body = tr(Vec3::Y * (base + rig.torso_y + hop - crouch + lift)) * rx(pitch);
+    let y = if penguin {
+        // Standing; on its belly on the ground; swimming with its back at the surface (where
+        // a swimmer is put, its back's height under it).
+        let stand = base + rig.torso_y;
+        let lying = base + bd * 0.5;
+        let swimming = rig.shoulder * 0.85 - bd * 0.3;
+        (stand + (lying - stand) * m.lie) * (1.0 - m.swim) + swimming * m.swim
+    } else {
+        base + rig.torso_y + hop - crouch + lift
+    };
+    // A penguin waddles, rolling from foot to foot.
+    let roll = if penguin {
+        0.12 * (TAU * m.phase).sin() * moving * (1.0 - flat)
+    } else {
+        0.0
+    };
+    let body = tr(Vec3::Y * y) * rz(roll) * rx(pitch);
     p.slots[Slot::Hips.index()] = body;
     p.slots[Slot::Chest.index()] = body;
-    // Legs: down to the ground, alternating when walking; tucked up in flight.
+    // Legs: down to the ground, alternating when walking; tucked up in flight; a swimming
+    // penguin's trailing.
+    let stride = if penguin {
+        bw * 0.35
+    } else {
+        rig.torso.z * 0.6
+    };
     for (k, leg) in rig.legs.iter().enumerate() {
         let li = (k + 2) as u8;
         let joint = body.transform_point3(leg.joint - Vec3::Y * rig.torso_y);
         let step = if hopper {
             0.0
         } else {
-            let (z, l) = foot_in_stride(
-                &WALK_BIPED,
-                m.phase,
-                k,
-                rig.torso.z * 0.6 * moving,
-                bd * 0.4 * moving,
-            );
+            let (z, l) =
+                foot_in_stride(&WALK_BIPED, m.phase, k, stride * moving, bd * 0.4 * moving);
             let _ = l;
             z
         };
-        let mut target = Vec3::new(leg.joint.x, base + leg.foot.y, leg.joint.z + step);
+        // A penguin's feet under where its legs leave its upright body.
+        let (fx, fz) = if penguin {
+            (joint.x, joint.z)
+        } else {
+            (leg.joint.x, leg.joint.z)
+        };
+        let mut target = Vec3::new(fx, base + leg.foot.y, fz + step);
         if aloft > 0.0 {
             let tucked = joint + Vec3::new(0.0, -leg.upper * 0.4, -leg.upper * 0.8);
             target = target.lerp(tucked, aloft);
+        }
+        if flat > 0.0 {
+            let reach = leg.upper + leg.lower;
+            let trailing =
+                joint + body.transform_vector3(Vec3::new(0.0, -reach * 0.3, -reach * 0.9));
+            target = target.lerp(trailing, flat);
         }
         let (knee, reached) = two_bone(joint, target, leg.upper, leg.lower, Vec3::NEG_Z);
         p.slots[Slot::Upper(li).index()] = hang(joint, knee - joint);
@@ -912,14 +952,15 @@ fn bird(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
     let head_down = -pitch * 0.8 + 0.3 * m.graze + 0.8 * peck - m.look.y;
     p.slots[Slot::Head.index()] =
         neck * tr(Vec3::Z * rig.neck_len) * ry(m.look.x * 0.5) * rx(head_down + neck_up);
-    // The tail: cocked a little, fanned down in flight.
-    let tail = body
-        * tr(rig.tail_base - Vec3::Y * rig.torso_y)
-        * rx(
-            -rig.tail_pitch + upright * (1.0 - aloft) * 0.95 * (1.0 - m.graze) - 0.5 * m.graze
-                + 0.25 * flick(m, 41, 1.7)
-                - 0.15 * aloft,
-        );
+    // The tail: cocked a little, fanned down in flight; a standing penguin's down behind it.
+    let cock = if penguin {
+        0.5 * (1.0 - flat)
+    } else {
+        -rig.tail_pitch + upright * (1.0 - aloft) * 0.95 * (1.0 - m.graze) - 0.5 * m.graze
+            + 0.25 * flick(m, 41, 1.7)
+            - 0.15 * aloft
+    };
+    let tail = body * tr(rig.tail_base - Vec3::Y * rig.torso_y) * rx(cock);
     p.slots[Slot::Tail(0).index()] = tail;
     // The wings: folded along the flanks, or spread and beating.
     let beat = (TAU * m.flap).sin();
@@ -931,6 +972,15 @@ fn bird(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
     for s in 0..2u8 {
         let side = if s == 0 { 1.0 } else { -1.0 };
         let shoulder = Vec3::new(side * bw * 0.5, bd * 0.22, bl * 0.18);
+        if penguin {
+            // Flippers held a little out from the flanks; out and beating as it swims.
+            let beat = (TAU * m.phase * 2.0).sin() * m.swim;
+            let out = 0.25 + 0.6 * m.swim + 0.2 * m.alert;
+            let arm = body * tr(shoulder) * ry(-side * out) * rx(0.6 * beat);
+            p.slots[Slot::Wing(s, 0).index()] = arm;
+            p.slots[Slot::Wing(s, 1).index()] = arm * tr(Vec3::NEG_Z * rig.wing.x);
+            continue;
+        }
         let spread = -side * (PI * 0.5) * aloft;
         let flap = side * 0.9 * beat * aloft * glide;
         let arm = body * tr(shoulder) * rz(flap) * ry(spread) * rx(-0.1 * (1.0 - aloft));
@@ -955,14 +1005,17 @@ const WALK_BIPED: Gait = Gait {
 };
 
 fn fish(rig: &Rig, m: &Motion, p: &mut Pose) {
-    // A wave down the body, growing toward the tail; the fins fluttering.
+    // A wave down the body, growing toward the tail (side to side; a whale's up and down); the
+    // fins fluttering.
     let swim = (m.speed / 0.1).clamp(0.15, 1.0);
     let front = Vec3::new(0.0, rig.torso_y, rig.torso.z * 0.5);
+    let whale = rig.plan == BodyPlan::Cetacean;
     let mut t = tr(front);
     for k in 0..rig.segs.min(MAX_SEGS as u8) {
         let along = k as f32 / rig.segs.max(1) as f32;
         let wave = 0.35 * swim * along * (TAU * (m.phase * 2.0 - along * 0.8)).sin();
-        t *= ry(if k == 0 { -wave * 0.3 } else { wave * 0.5 });
+        let bend = if k == 0 { -wave * 0.3 } else { wave * 0.5 };
+        t *= if whale { rx(bend * 0.6) } else { ry(bend) };
         p.slots[Slot::Seg(k).index()] = t;
         t *= tr(Vec3::NEG_Z * rig.seg_len);
     }

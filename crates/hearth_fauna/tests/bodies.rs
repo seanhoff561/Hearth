@@ -97,7 +97,12 @@ fn every_species_stands_at_its_real_dimensions() {
                         sp.name,
                         lo.y
                     );
-                    let len = hi.z - lo.z;
+                    // A penguin's length is its height, standing.
+                    let len = if sp.plan == hearth_content::schema::fauna::BodyPlan::Penguin {
+                        hi.y - lo.y
+                    } else {
+                        hi.z - lo.z
+                    };
                     assert!(
                         len > sp.length_m * 0.6 && len < sp.length_m * 1.5,
                         "{}: {len:.3} m long",
@@ -105,6 +110,10 @@ fn every_species_stands_at_its_real_dimensions() {
                     );
                 }
                 _ => {
+                    // Its length without what grows on its head (a narwhal's tusk).
+                    let (lo, hi) = extent(&rig, &placed, |i| {
+                        rig.boxes[i].gear == hearth_fauna::rig::Gear::None
+                    });
                     let len = hi.z - lo.z;
                     assert!(
                         len > sp.length_m * 0.7 && len < sp.length_m * 1.4,

@@ -102,6 +102,19 @@ the plant's own colours. The swamps' trees are the bald cypress, the raffia, mor
 palms, with the alders and willows of the north's carrs; marsh marigold and bog cranberry grow
 on the wet ground.
 
+The coasts (V2-10 (f)): the mangroves stand in the tide on the tropics' sheltered muddy coasts,
+their stems on arching stilt roots (`prop_roots`, of the tree's height: the growth model curves
+roots out and down from the lower stem into the mud; the grey mangrove's stands on its flared
+foot) and their wood allowed to stand in the water, the tidal mud theirs alone (red mangrove in the Atlantic, loop-root and grey mangrove in the
+Indian Ocean and the Pacific; D155). A few trees stand on the beaches: the coconut palm on the
+tropical shore, pines on the cooler dunes. The understory's plants of the coast name the salt
+ground (`ground: [Salt]`) and grow on the beaches, rocky shores, salt marshes and mangrove mud and
+nowhere else, nothing else growing there (D156): cordgrass, glasswort and sea lavender on the
+salt marshes, marram grass, sea rocket and beach morning glory on the dunes, thrift on the sea
+cliffs. Under the sea the generator draws kelp on the cool rocky shelves, wrack on the shore's
+rocks and seagrass on the sandy shallows, shared by the species of each kind (D157), and on the
+deep ocean's floor its glowing sea pens (D158).
+
 ### Useful, edible, medicinal and poisonous plants
 The temperate understory has 26 species: berries (raspberry, bilberry, lingonberry, wild
 strawberry, bramble, dog rose), greens and herbs (wild garlic, wood sorrel, dandelion, ribwort

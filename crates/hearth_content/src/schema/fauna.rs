@@ -379,11 +379,15 @@ pub struct Shape {
     /// The legs' thickness against the body plan's.
     #[serde(default)]
     pub legs: Option<f32>,
-    /// A hump over the shoulders, of the shoulder height (bison, bears, boar).
+    /// A hump over the shoulders, of the shoulder height (bison, bears, boar); a whale's back
+    /// fin, of its length.
     #[serde(default)]
     pub hump: Option<f32>,
     #[serde(default)]
     pub head_gear: Option<HeadGear>,
+    /// A crab whose males wave one great claw (a fiddler's).
+    #[serde(default)]
+    pub great_claw: bool,
 }
 
 /// How an animal spends its time when nothing troubles it (V2-7 minds): weights about 1 on

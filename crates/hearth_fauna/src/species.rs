@@ -123,8 +123,10 @@ pub struct Species {
     pub realms: RealmSet,
     /// The coldest month it bears (°C), if it is bound by one.
     pub cold_limit: Option<f32>,
-    /// Lives in water (its density is per km² of water).
+    /// Lives in fresh water (its density is per km² of it).
     pub aquatic: bool,
+    /// Lives in the sea, its lands the sea's alone (its density is per km² of the sea).
+    pub marine: bool,
     /// Lives by the water, its lands those of the waters alone (a beaver, an otter, a heron, a
     /// hippo): of a cell's land it has the share the water about it gives.
     pub waterside: bool,
@@ -288,10 +290,25 @@ enum FoodKind {
     Unknown,
 }
 
-fn food_kind(c: &Content, a: &Animal, id: &str) -> FoodKind {
+fn food_kind(c: &Content, a: &Animal, id: &str, marine: bool) -> FoodKind {
     use hearth_content::schema::fauna::DietKind;
     if c.animals.get(id).is_some() {
         return FoodKind::Prey(id.to_owned());
+    }
+    // What lives in the sea eats the sea's weed, plankton and shellfish, which grow over its
+    // area as the water's small life does.
+    if marine
+        && (c.plants.get(id).is_some()
+            || c.materials.get(id).is_some_and(|m| {
+                m.tags.iter().any(|t| {
+                    matches!(
+                        t.as_str(),
+                        "insect" | "invertebrate" | "plankton" | "shellfish" | "seaweed"
+                    )
+                })
+            }))
+    {
+        return FoodKind::Forage(Forage::Aquatic);
     }
     // A name that is both a plant and its fruit or nut (bilberry, crab apple): browsers and
     // grazers eat the plant, the rest its fruit.
@@ -400,10 +417,29 @@ impl Catalog {
                         .all(|b| matches!(b.as_str(), "river" | "lake" | "wetland"))
             })
             .fold(0u32, |m, (i, _)| m | (1 << i));
+        // The ecosystems of the sea alone (its shelves, reefs, open ocean and deep).
+        let sea = ecosystems
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| {
+                !e.biomes.is_empty()
+                    && e.biomes.iter().all(|b| {
+                        matches!(
+                            b.as_str(),
+                            "polar_sea"
+                                | "cold_sea"
+                                | "temperate_sea"
+                                | "warm_shallows"
+                                | "deep_ocean"
+                                | "trench"
+                        )
+                    })
+            })
+            .fold(0u32, |m, (i, _)| m | (1 << i));
         let species = animals
             .iter()
             .enumerate()
-            .map(|(i, a)| species_of(c, a, i, &by_id, &eco_bit, water))
+            .map(|(i, a)| species_of(c, a, i, &by_id, &eco_bit, water, sea))
             .collect();
         Self {
             species,
@@ -449,7 +485,10 @@ fn species_of(
     by_id: &FxHashMap<String, usize>,
     eco_bit: &dyn Fn(&str) -> u32,
     water: u32,
+    sea: u32,
 ) -> Species {
+    let core = a.habitat.iter().fold(0, |m, h| m | eco_bit(h.as_str()));
+    let marine = core != 0 && core & !sea == 0;
     let mass = 0.5 * (a.mass_kg.0 + a.mass_kg.1).max(1e-6);
     let model = a.ranging.and_then(|r| r.model).unwrap_or(if mass >= 5.0 {
         PopulationModel::Groups
@@ -513,7 +552,7 @@ fn species_of(
     let mut prey = Vec::new();
     let mut carrion = 0.0f32;
     for f in &a.diet.foods {
-        match food_kind(c, a, f.food.as_str()) {
+        match food_kind(c, a, f.food.as_str(), marine) {
             FoodKind::Forage(k) => {
                 let p = &mut forage[k as usize];
                 *p = p.max(f.preference);
@@ -538,12 +577,12 @@ fn species_of(
         .seasonal
         .iter()
         .any(|s| matches!(s, SeasonalBehavior::Hibernation));
-    let core = a.habitat.iter().fold(0, |m, h| m | eco_bit(h.as_str()));
     let habitats = a.also_in.iter().fold(core, |m, h| m | eco_bit(h.as_str()));
-    let aquatic = matches!(
-        a.body_plan,
-        BodyPlan::FishFusiform | BodyPlan::FishFlat | BodyPlan::Eel
-    );
+    let aquatic = !marine
+        && matches!(
+            a.body_plan,
+            BodyPlan::FishFusiform | BodyPlan::FishFlat | BodyPlan::Eel
+        );
     let shoulder = a.shoulder_height_m.unwrap_or(match a.body_plan {
         BodyPlan::Snake | BodyPlan::Eel => a.length_m * 0.05,
         BodyPlan::FishFusiform | BodyPlan::FishFlat => a.length_m * 0.25,
@@ -574,7 +613,8 @@ fn species_of(
         realms: set_of(&a.realms),
         cold_limit: a.min_coldest_month_c,
         aquatic,
-        waterside: !aquatic && core != 0 && core & !water == 0,
+        marine,
+        waterside: !aquatic && !marine && core != 0 && core & !water == 0,
         colony: matches!(a.social, Social::Colony { .. }),
         need_kg: need,
         forage,

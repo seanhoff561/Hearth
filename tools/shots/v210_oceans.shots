@@ -1,0 +1,26 @@
+# V2-10 (f) the seas and coasts on the huge planet of seed 7, each at a place in its realm (`x=`,
+# `z=`): a kelp forest under the North Atlantic with a harbour seal and cod; an Indo-Pacific reef
+# from above and below with its turtles, shark, grouper and parrotfish; a northern beach with seals
+# and seabirds; the Arctic's ice with a polar bear, ringed seals and walruses; the Antarctic's with
+# emperor and Adélie penguins; the open ocean with whales and dolphins; the mangroves of the
+# Americas and Asia on their stilt roots; coconut palms on a tropical beach; the deep ocean's floor
+# lit by its glowing sea pens; a salt marsh and dunes; then the sea's animals, close.
+# `hearth --screenshot-list tools/shots/v210_oceans.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=6, hour=12, clouds=0.2, dry=true
+x=16896, z=-47104, above=-2, yaw=30, pitch=4, season=summer, animal=harbour_seal:adult:f:swim@6:-1:90, animal=atlantic_cod:adult:f:swim@4:1:60, animal=atlantic_cod:adult:m:swim@5:2.5:120, animal=atlantic_herring:adult:f:swim@3.5:-1.2:80, out=bench-out/v210f/kelp_forest.png
+x=47360, z=-18432, above=6, yaw=30, pitch=45, season=summer, out=bench-out/v210f/reef_from_above.png
+x=47360, z=-18432, above=-0.6, yaw=30, pitch=4, fov=50, season=summer, animal=green_turtle:adult:f:swim@4:-0.8:80, animal=hawksbill_turtle:adult:f:swim@5:1.2:110, animal=blacktip_reef_shark:adult:f:swim@6:0:60, animal=giant_grouper:adult:m:swim@7:-2:100, animal=bumphead_parrotfish:adult:m:swim@5:2.5:90, animal=bluestripe_snapper:adult:f:swim@3:0.4:90, out=bench-out/v210f/reef.png
+x=49664, z=-43520, above=1.8, yaw=210, pitch=6, fov=45, season=summer, animal=harbour_seal:adult:f:rest@6:-1.5:80, animal=grey_seal:adult:m:rest@9:1.5:110, animal=atlantic_puffin:adult:f:alert@4:0.4:60, animal=northern_gannet:adult:f:alert@5:-0.6:130, animal=herring_gull:adult:m:alert@7:2.5:90, out=bench-out/v210f/northern_shore.png
+x=156672, z=-130560, above=3, yaw=30, pitch=10, season=summer, animal=polar_bear:adult:m:walk@12:0:80, animal=ringed_seal:adult:f:rest@8:-3:110, herd=walrus:6@20:5, out=bench-out/v210f/arctic_ice.png
+x=42496, z=117760, above=3, yaw=30, pitch=10, season=summer, herd=emperor_penguin:10@12:0, animal=adelie_penguin:adult:f:walk@6:-2:80, animal=weddell_seal:adult:f:rest@9:3:110, out=bench-out/v210f/antarctic_ice.png
+x=9728, z=-7680, above=5, yaw=30, pitch=10, season=summer, animal=humpback_whale:adult:f:swim@40:-6:80, animal=orca:adult:m:swim@22:7:100, animal=common_dolphin:adult:f:swim@10:-1:90, animal=common_dolphin:adult:m:swim@12:1:95, out=bench-out/v210f/open_ocean.png
+x=119296, z=-512, above=1.6, yaw=120, pitch=2, fov=60, season=summer, herd=scarlet_ibis:8@8:0, out=bench-out/v210f/american_mangroves.png
+x=46592, z=-9728, above=1.6, yaw=210, pitch=2, fov=60, season=summer, animal=proboscis_monkey:adult:m:alert@6:-1:80, animal=saltwater_crocodile:adult:m:walk@8:2:110, out=bench-out/v210f/asian_mangroves.png
+x=51200, z=-16896, above=2, yaw=120, pitch=-14, fov=70, season=summer, tree=coconut_palm:mature:0@14:-4, tree=coconut_palm:mature:1@17:4, tree=coconut_palm:young:0@11:6, tree=coconut_palm:mature:2@20:-1, out=bench-out/v210f/coconut_palms.png
+x=9728, z=-7680, floor=1.2, yaw=200, pitch=14, fov=50, season=summer, out=bench-out/v210f/deep_sea_light.png
+x=18432, z=-45568, above=1.8, yaw=30, pitch=8, fov=60, season=summer, out=bench-out/v210f/salt_marsh.png
+x=49664, z=-43520, above=1.8, yaw=210, pitch=6, fov=60, season=summer, out=bench-out/v210f/dunes.png
+x=156672, z=-130560, above=1.8, yaw=30, pitch=8, fov=45, season=summer, animal=harbour_seal:adult:f:rest@5:-2.2:80, animal=grey_seal:adult:m:alert@6:0:110, animal=walrus:adult:m:alert@8:2.6:70, animal=california_sea_lion:adult:m:alert@4.5:1.6:130, out=bench-out/v210f/seals.png
+x=156672, z=-130560, above=1.8, yaw=30, pitch=6, fov=40, season=summer, animal=emperor_penguin:adult:m:alert@5:-1.5:90, animal=emperor_penguin:adult:f:walk@5.5:-0.4:60, animal=adelie_penguin:adult:f:alert@4:0.6:120, animal=magellanic_penguin:adult:m:alert@4.2:1.4:80, animal=little_penguin:adult:f:alert@3.6:2.0:100, out=bench-out/v210f/penguins.png
+x=9728, z=-7680, above=2.5, yaw=30, pitch=14, fov=50, season=summer, animal=orca:adult:m:swim@14:-3:80, animal=common_dolphin:adult:f:swim@8:2:95, animal=bottlenose_dolphin:adult:f:swim@9:-0.5:110, animal=beluga:adult:f:swim@12:4:70, animal=narwhal:adult:m:swim@17:2:85, out=bench-out/v210f/whales.png
+x=49664, z=-43520, above=1.4, yaw=210, pitch=10, fov=40, season=summer, mow=5@3, animal=red_king_crab:adult:m:walk@3:-0.8:80, animal=fiddler_crab:adult:m:alert@2.4:0.2:110, animal=atlantic_puffin:adult:f:alert@3:0.9:60, animal=herring_gull:adult:m:alert@4:-1.8:100, animal=great_cormorant:adult:m:alert@4.2:2:80, animal=brown_pelican:adult:f:alert@5:0:130, out=bench-out/v210f/shore_animals.png

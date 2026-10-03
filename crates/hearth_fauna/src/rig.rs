@@ -48,6 +48,9 @@ pub enum Slot {
 /// How many body segments a snake or fish has at most.
 pub const MAX_SEGS: usize = 12;
 
+/// How far a standing penguin's body is pitched up from the level (radians): nearly upright.
+pub const PENGUIN_UPRIGHT: f32 = 1.4;
+
 impl Slot {
     pub fn index(self) -> usize {
         match self {
@@ -296,6 +299,36 @@ fn plan_shape(plan: BodyPlan) -> PlanShape {
             depth: 0.75,
             neck_pitch: deg(25.0),
             tail_pitch: deg(-35.0),
+        },
+        // A torpedo on its belly: a short thick neck, a small round head, no ears to speak of,
+        // a stub of a tail; the limbs are flippers.
+        BodyPlan::Seal => PlanShape {
+            neck: 0.1,
+            head: 0.13,
+            snout: 0.3,
+            tail: 0.03,
+            tail_width: 0.25,
+            ears: 0.0,
+            ear_shape: EarShape::Round,
+            legs: 1.0,
+            depth: 0.92,
+            neck_pitch: deg(30.0),
+            tail_pitch: deg(0.0),
+        },
+        // A shell on four stumps (a sea turtle's, flippers): the head on a short neck held low,
+        // a stub of a tail.
+        BodyPlan::Turtle => PlanShape {
+            neck: 0.1,
+            head: 0.16,
+            snout: 0.3,
+            tail: 0.08,
+            tail_width: 0.25,
+            ears: 0.0,
+            ear_shape: EarShape::Round,
+            legs: 1.3,
+            depth: 0.7,
+            neck_pitch: deg(10.0),
+            tail_pitch: deg(20.0),
         },
         // Carnivores, primates and the rest of the four-legged.
         _ => PlanShape {
@@ -735,6 +768,15 @@ fn head(
                 horn_segment(b, mid, tip, w * 0.8, SkinPart::Tusk, Gear::Tusk);
             }
         }
+        Some(HeadGear::Tusks { length_m, .. }) if r.plan == BodyPlan::Seal => {
+            // A walrus's: down from the upper jaw past the chin, a little apart.
+            let w = (length_m * 0.13).max(0.008);
+            for side in [1.0f32, -1.0] {
+                let at = Vec3::new(side * hw * 0.22, -hh * 0.35, skull_l + snout_l * 0.6);
+                let tip = at + Vec3::new(side * 0.08, -0.95, -0.15).normalize() * length_m;
+                horn_segment(b, at, tip, w, SkinPart::Tusk, Gear::Tusk);
+            }
+        }
         Some(HeadGear::Tusks { length_m, .. }) => {
             let w = (length_m * 0.18).max(0.008);
             for side in [1.0f32, -1.0] {
@@ -749,10 +791,15 @@ fn head(
 
 /// A box from `from` to `to` on the head's slot, `w` thick (a beam, a tine, a horn's length).
 fn horn_segment(b: &mut Builder, from: Vec3, to: Vec3, w: f32, part: SkinPart, gear: Gear) {
+    bar(b, Slot::Head, from, to, w, part, gear);
+}
+
+/// A box from `from` to `to` on a slot, `w` thick.
+fn bar(b: &mut Builder, slot: Slot, from: Vec3, to: Vec3, w: f32, part: SkinPart, gear: Gear) {
     let d = to - from;
     let len = d.length().max(1e-4);
     b.boxes.push(RigBox {
-        slot: Slot::Head,
+        slot,
         center: (from + to) * 0.5,
         rot: Quat::from_rotation_arc(Vec3::Z, d / len),
         size: Vec3::new(w, w, len + w * 0.5).max(Vec3::splat(0.002)),
@@ -815,9 +862,11 @@ fn quadruped(sp: &Species, male: bool) -> Rig {
         tl *= 0.8;
     }
     let th = shoulder * d.depth;
-    // Wide enough to hold its mass (the torso about four fifths of it, filling half the box).
+    // Wide enough to hold its mass (the torso about four fifths of it, filling half the box);
+    // a shell broad and low.
     let volume = mass / 1000.0;
-    let tw = (0.8 * volume / (0.55 * tl * th)).clamp(0.45 * th, 1.25 * th);
+    let widest = if plan == BodyPlan::Turtle { 3.0 } else { 1.25 };
+    let tw = (0.8 * volume / (0.55 * tl * th)).clamp(0.45 * th, widest * th);
     let torso_y = shoulder - th * 0.5;
     r.torso = Vec3::new(tw, th, tl);
     r.torso_y = torso_y;
@@ -844,18 +893,31 @@ fn quadruped(sp: &Species, male: bool) -> Rig {
             SkinPart::Hump,
         );
     }
-    // Legs: the joints low in the torso, the feet under them; standing a little flexed.
-    let lw = (tw * 0.24 * legs_f).clamp(0.006, th * 0.6);
+    // Legs: the joints low in the torso, the feet under them; standing a little flexed. A seal's
+    // and a sea turtle's are flippers: short limbs hidden in the body ending in broad paddles,
+    // the fore pair splayed out to the sides, the hind pair trailing behind.
+    let flippers = plan == BodyPlan::Seal || (plan == BodyPlan::Turtle && sp.marine);
+    let lw = (tw * 0.24 * legs_f).clamp(0.006, th * 0.6) * if flippers { 0.7 } else { 1.0 };
     let lagomorph = plan == BodyPlan::Lagomorph;
     let plantigrade = matches!(plan, BodyPlan::Bear | BodyPlan::Primate);
     for l in 0..4u8 {
         let fore = l < 2;
         let side = if l % 2 == 0 { 1.0 } else { -1.0 };
-        let joint = Vec3::new(
-            side * tw * 0.3,
-            torso_y - th * if fore { 0.2 } else { 0.12 },
-            if fore { tl * 0.36 } else { -tl * 0.36 },
-        );
+        let joint = if flippers {
+            let hind_z = if plan == BodyPlan::Seal { 0.47 } else { 0.4 };
+            let hind_x = if plan == BodyPlan::Seal { 0.18 } else { 0.32 };
+            Vec3::new(
+                side * tw * if fore { 0.38 } else { hind_x },
+                torso_y - th * 0.3,
+                if fore { tl * 0.28 } else { -tl * hind_z },
+            )
+        } else {
+            Vec3::new(
+                side * tw * 0.3,
+                torso_y - th * if fore { 0.2 } else { 0.12 },
+                if fore { tl * 0.36 } else { -tl * 0.36 },
+            )
+        };
         let reach = joint.y / 0.93;
         // A hind leg's upper segment the longer (the thigh and shank to the hock), but for a
         // hare's, whose long foot is the lower.
@@ -869,7 +931,19 @@ fn quadruped(sp: &Species, male: bool) -> Rig {
         } else {
             lw * 1.5
         };
-        let foot = Vec3::new(lw * 1.1, (lw * 0.6).min(lower * 0.25), foot_l);
+        let foot = if flippers {
+            // A paddle: a sea turtle's fore flippers the long ones, a seal's hind.
+            let fl = len
+                * match (plan, fore) {
+                    (BodyPlan::Seal, true) => 0.15,
+                    (BodyPlan::Seal, false) => 0.17,
+                    (_, true) => 0.32,
+                    (_, false) => 0.13,
+                };
+            Vec3::new(fl * 0.45, (lw * 0.3).min(lower * 0.25).max(0.004), fl)
+        } else {
+            Vec3::new(lw * 1.1, (lw * 0.6).min(lower * 0.25), foot_l)
+        };
         r.legs.push(Leg {
             joint,
             upper,
@@ -890,12 +964,25 @@ fn quadruped(sp: &Species, male: bool) -> Rig {
             Vec3::new(lw * 0.9, lower, lw * 0.9),
             SkinPart::LowerLeg,
         );
-        b.put(
-            Slot::Foot(l),
-            Vec3::new(0.0, foot.y * 0.5, foot.z * 0.3),
-            foot,
-            SkinPart::Foot,
-        );
+        if flippers {
+            // Back from the wrist or ankle, turned out from the body.
+            let turn = Quat::from_rotation_y(-side * if fore { 0.65 } else { 0.15 });
+            b.boxes.push(RigBox {
+                slot: Slot::Foot(l),
+                center: turn * Vec3::new(0.0, foot.y * 0.5, -foot.z * 0.4),
+                rot: turn,
+                size: foot,
+                part: SkinPart::Foot,
+                gear: Gear::None,
+            });
+        } else {
+            b.put(
+                Slot::Foot(l),
+                Vec3::new(0.0, foot.y * 0.5, foot.z * 0.3),
+                foot,
+                SkinPart::Foot,
+            );
+        }
     }
     // The neck from the top front of the chest, along its slot's +z.
     let nw = (tw * 0.5).max(lw * 1.5);
@@ -969,7 +1056,15 @@ fn bird(sp: &Species, male: bool) -> Rig {
     let bl = (len * (1.0 - head_f - tail_f * 0.75 - neck_f)).clamp(len * 0.3, len * 0.6);
     let bd = bl * 0.62;
     let bw = bl * 0.55;
-    let torso_y = height - bd * 0.5;
+    // A penguin stands up on its short legs, its body pitched up nearly upright (its length is
+    // its height): the middle of the body as high as the legs and the body's lowest corner.
+    let penguin = sp.plan == BodyPlan::Penguin;
+    let stood = Quat::from_rotation_x(-PENGUIN_UPRIGHT);
+    let torso_y = if penguin {
+        len * 0.07 - (stood * Vec3::new(0.0, -bd * 0.5, -bl * 0.5)).y
+    } else {
+        height - bd * 0.5
+    };
     r.torso = Vec3::new(bw, bd, bl);
     r.torso_y = torso_y;
     let mut b = Builder { boxes: Vec::new() };
@@ -990,10 +1085,20 @@ fn bird(sp: &Species, male: bool) -> Rig {
     let lw = (bw * 0.12 * legs_f).max(0.003);
     for l in 2..4u8 {
         let side = if l % 2 == 0 { 1.0 } else { -1.0 };
-        let joint = Vec3::new(side * bw * 0.25, leg_top, bl * 0.02);
-        let reach = joint.y / 0.97;
+        // A penguin's at the foot of its upright body: the reach from where the joint stands.
+        let (joint, joint_h) = if penguin {
+            let at = Vec3::new(0.0, -bd * 0.25, -bl * 0.3);
+            (
+                Vec3::new(side * bw * 0.25, torso_y + at.y, at.z),
+                torso_y + (stood * at).y,
+            )
+        } else {
+            let joint = Vec3::new(side * bw * 0.25, leg_top, bl * 0.02);
+            (joint, joint.y)
+        };
+        let reach = joint_h / 0.97;
         let (upper, lower) = (reach * 0.45, reach * 0.55);
-        let foot = Vec3::new(lw * 2.5, lw * 0.7, bl * 0.32);
+        let foot = Vec3::new(lw * 2.5, lw * 0.7, bl * if penguin { 0.18 } else { 0.32 });
         r.legs.push(Leg {
             joint,
             upper,
@@ -1029,7 +1134,8 @@ fn bird(sp: &Species, male: bool) -> Rig {
     let hh = hw * 0.95;
     r.neck_base = Vec3::new(0.0, torso_y + bd * 0.25, bl * 0.42);
     r.neck_len = (neck_f * len).max(hh * 0.3);
-    r.neck_pitch = 60f32.to_radians();
+    // A penguin's runs on up its upright body.
+    r.neck_pitch = if penguin { 0.0 } else { 60f32.to_radians() };
     b.put(
         Slot::Neck,
         Vec3::new(0.0, 0.0, r.neck_len * 0.5),
@@ -1063,14 +1169,17 @@ fn bird(sp: &Species, male: bool) -> Rig {
         Vec3::new(bw * tail_w * 1.1, bd * 0.1, tl),
         SkinPart::Tail,
     );
-    // The wings, folded along the flanks: the arm and the hand, each along its slot's −z.
+    // The wings, folded along the flanks: the arm and the hand, each along its slot's −z (a
+    // penguin's a narrow flipper).
     let span_half = len
         * match sp.plan {
             BodyPlan::Raptor => 1.15,
             BodyPlan::BirdGround => 0.75,
+            BodyPlan::Penguin => 0.3,
+            BodyPlan::Seabird => 1.0,
             _ => 0.8,
         };
-    let chord = bl * 0.5;
+    let chord = bl * if penguin { 0.2 } else { 0.5 };
     r.wing = Vec3::new(span_half * 0.42, span_half * 0.58, chord);
     for side in 0..2u8 {
         b.put(
@@ -1098,11 +1207,13 @@ fn fish(sp: &Species, male: bool) -> Rig {
     let tail_f = s.tail.unwrap_or(0.18);
     let head_f = s.head.unwrap_or(0.22);
     let body = len * (1.0 - tail_f * 0.8);
-    // Deep and narrow, from its mass (a fish a little denser than water).
-    let depth = (mass / 1000.0 / (0.55 * 0.45 * body))
+    // Deep and narrow, from its mass (a fish a little denser than water); a whale round.
+    let whale = sp.plan == BodyPlan::Cetacean;
+    let across = if whale { 0.85 } else { 0.45 };
+    let depth = (mass / 1000.0 / (0.55 * across * body))
         .sqrt()
-        .clamp(len * 0.14, len * 0.32);
-    let width = depth * 0.45;
+        .clamp(len * if whale { 0.1 } else { 0.14 }, len * 0.32);
+    let width = depth * across;
     r.torso = Vec3::new(width, depth, body);
     r.torso_y = depth * 0.7;
     r.head_len = head_f * len;
@@ -1127,9 +1238,60 @@ fn fish(sp: &Species, male: bool) -> Rig {
             part,
         );
     }
-    // The tail fin on the last segment, the back fin on the second, the breast fins on the
-    // first.
     let last = segs - 1;
+    if whale {
+        // The fluke across the tail; the back fin two thirds back, its height of the length the
+        // `hump` (a bull orca's a quarter, a cow's half that; a blue whale's a nub); the
+        // flippers behind the head, out and back, a ninth of its length against `legs` (a
+        // humpback's a third).
+        b.put(
+            Slot::Seg(last),
+            Vec3::new(0.0, 0.0, -r.seg_len - tail_f * len * 0.45),
+            Vec3::new(len * 0.27, depth * 0.07, tail_f * len),
+            SkinPart::Fin,
+        );
+        let hump = s.hump.unwrap_or(0.04);
+        let fin_h = len * hump * if !male && hump > 0.15 { 0.55 } else { 1.0 };
+        b.put(
+            Slot::Seg(2),
+            Vec3::new(0.0, depth * 0.38 + fin_h * 0.45, -r.seg_len * 0.3),
+            Vec3::new(width * 0.1, fin_h, r.seg_len * 0.45),
+            SkinPart::Fin,
+        );
+        let fl = len * 0.11 * s.legs.unwrap_or(1.0);
+        for side in [1.0f32, -1.0] {
+            let turn = Quat::from_rotation_y(-side * 1.1);
+            let root = Vec3::new(side * width * 0.42, -depth * 0.25, -r.seg_len * 0.8);
+            b.boxes.push(RigBox {
+                slot: Slot::Seg(0),
+                center: root + turn * Vec3::new(0.0, 0.0, -fl * 0.5),
+                rot: turn,
+                size: Vec3::new(fl * 0.28, depth * 0.05, fl),
+                part: SkinPart::Fin,
+                gear: Gear::None,
+            });
+        }
+        // A narwhal's tusk, straight ahead from the upper jaw (the male's).
+        if let Some(HeadGear::Tusks {
+            length_m,
+            both_sexes,
+        }) = s.head_gear
+            && (male || both_sexes)
+        {
+            let w = (length_m * 0.035).max(0.01);
+            b.gear(
+                Slot::Seg(0),
+                Vec3::new(width * 0.12, depth * 0.05, length_m * 0.5),
+                Vec3::new(w, w, length_m),
+                SkinPart::Tusk,
+                Gear::Tusk,
+            );
+        }
+        r.boxes = b.boxes;
+        return r;
+    }
+    // The tail fin on the last segment, the back fin on the second, the breast fins on the
+    // first (`legs` their size against a fish's: a flying fish's wings).
     b.put(
         Slot::Seg(last),
         Vec3::new(0.0, 0.0, -r.seg_len - tail_f * len * 0.45),
@@ -1142,11 +1304,16 @@ fn fish(sp: &Species, male: bool) -> Rig {
         Vec3::new(width * 0.12, depth * 0.35, r.seg_len * 0.9),
         SkinPart::Fin,
     );
+    let fin = s.legs.unwrap_or(1.0);
     for side in [1.0f32, -1.0] {
         b.put(
             Slot::Seg(0),
-            Vec3::new(side * width * 0.55, -depth * 0.25, -r.seg_len * 0.8),
-            Vec3::new(width * 0.4, depth * 0.08, r.seg_len * 0.45),
+            Vec3::new(
+                side * width * (0.35 + 0.2 * fin),
+                -depth * 0.25,
+                -r.seg_len * (0.8 + 0.2 * (fin - 1.0)),
+            ),
+            Vec3::new(width * 0.4 * fin, depth * 0.08, r.seg_len * 0.45 * fin),
             SkinPart::Fin,
         );
     }
@@ -1282,7 +1449,110 @@ fn frog(sp: &Species, male: bool) -> Rig {
     r
 }
 
+/// A crab: a broad carapace (its length the breadth) low on four legs a side splayed out and
+/// down to the ground (`legs` their reach against the plan's: a king crab's long), two claws
+/// held in front (a male fiddler's one great claw), the eyes on stalks.
+fn crab(sp: &Species, male: bool) -> Rig {
+    let s = sp.shape;
+    let mass = mass_of(sp, male);
+    let mut r = Rig::empty(sp, Frame::Insect, SkinKind::Insect, mass);
+    let len = sp.length_m;
+    let (cw, cl, ch) = (len, len * 0.75, len * 0.32);
+    let clear = len * 0.16;
+    r.torso = Vec3::new(cw, ch, cl);
+    r.torso_y = clear + ch * 0.5;
+    r.neck_base = Vec3::new(0.0, r.torso_y, cl * 0.5);
+    let ground = -r.torso_y;
+    let mut b = Builder { boxes: Vec::new() };
+    b.put(
+        Slot::Hips,
+        Vec3::ZERO,
+        Vec3::new(cw, ch, cl),
+        SkinPart::Body,
+    );
+    let reach = len * 0.32 * s.legs.unwrap_or(1.0);
+    let lw = len * 0.07;
+    for k in 0..4 {
+        // Out to the sides, fanned: the front pair a little forward, the back pair back.
+        let z = cl * (0.3 - 0.2 * k as f32);
+        let fan = (1.5 - k as f32) * 0.5 * len;
+        for side in [1.0f32, -1.0] {
+            let root = Vec3::new(side * cw * 0.42, -ch * 0.1, z);
+            let out = Vec3::new(side, 0.0, 0.0);
+            let knee = root + out * reach + Vec3::new(0.0, ch * 0.45, fan * 0.1);
+            let foot =
+                root + out * reach * 1.45 + Vec3::new(0.0, ground + lw * 0.5 - root.y, fan * 0.2);
+            bar(
+                &mut b,
+                Slot::Hips,
+                root,
+                knee,
+                lw,
+                SkinPart::UpperLeg,
+                Gear::None,
+            );
+            bar(
+                &mut b,
+                Slot::Hips,
+                knee,
+                foot,
+                lw * 0.8,
+                SkinPart::LowerLeg,
+                Gear::None,
+            );
+        }
+    }
+    // The claws: the arm forward from the front of the carapace, the pincer at its end.
+    for side in [1.0f32, -1.0] {
+        let size = if s.great_claw && male {
+            if side > 0.0 { 2.6 } else { 0.6 }
+        } else {
+            1.0
+        };
+        let root = Vec3::new(side * cw * 0.3, -ch * 0.15, cl * 0.42);
+        // The great claw held folded across the front, the others forward.
+        let great = size > 1.5;
+        let reach = if great {
+            Vec3::new(side * 0.85, 0.2, 0.5)
+        } else {
+            Vec3::new(side * 0.25, 0.1, 0.96)
+        };
+        let wrist = root + reach.normalize() * len * 0.25 * size;
+        bar(
+            &mut b,
+            Slot::Hips,
+            root,
+            wrist,
+            lw * 1.2 * size.sqrt(),
+            SkinPart::UpperLeg,
+            Gear::None,
+        );
+        let (pincer, at) = if great {
+            let p = Vec3::new(len * 0.3, len * 0.12, len * 0.16) * size;
+            (p, wrist + Vec3::new(-side * p.x * 0.45, 0.0, p.z * 0.3))
+        } else {
+            let p = Vec3::new(len * 0.16, len * 0.12, len * 0.3) * size;
+            (p, wrist + Vec3::new(side * p.x * 0.2, 0.0, p.z * 0.45))
+        };
+        b.put(Slot::Hips, at, pincer, SkinPart::Foot);
+    }
+    // The eyes on their stalks.
+    for side in [1.0f32, -1.0] {
+        b.put(
+            Slot::Hips,
+            Vec3::new(side * cw * 0.15, ch * 0.5 + len * 0.05, cl * 0.42),
+            Vec3::new(len * 0.05, len * 0.1, len * 0.05),
+            SkinPart::Head,
+        );
+    }
+    r.boxes = b.boxes;
+    r
+}
+
 fn insect(sp: &Species, male: bool) -> Rig {
+    if sp.plan == BodyPlan::Crab {
+        return crab(sp, male);
+    }
     let s = sp.shape;
     let mass = mass_of(sp, male);
     let mut r = Rig::empty(sp, Frame::Insect, SkinKind::Insect, mass);

@@ -46,7 +46,7 @@ impl Walker {
             climb,
             drop: (climb * 2.5).max(1.2),
             wade: (sp.shoulder_m as f64 * 0.6).max(0.04),
-            swims: sp.swim_m_s.is_some() || sp.aquatic,
+            swims: sp.swim_m_s.is_some() || sp.aquatic || sp.marine,
             fish,
         }
     }

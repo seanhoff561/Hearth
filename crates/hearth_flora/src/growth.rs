@@ -190,6 +190,7 @@ pub(crate) mod tests {
                 whorled: false,
                 stems: 1,
                 root_flare: 0.6,
+                prop_roots: 0.0,
                 leaf: LeafKind::Broad,
                 foliage_density: 0.75,
                 autumn: AutumnColor::Brown,

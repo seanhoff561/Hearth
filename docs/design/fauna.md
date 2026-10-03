@@ -210,6 +210,11 @@ a shared condition. A step of the simulation (an eleventh of a month by default)
   send some mothers and young to nearby land with room (which is how the deer come back to land
   emptied by hunting); the edges of the simulated land take in animals as if the land beyond
   held its usual numbers.
+- **The sea** (V2-10 (f), D151): a species whose ecosystems are all the sea's lives on a cell's
+  sea and is counted per km² of it. The sea's small life (plankton, krill, shellfish, weed and
+  seagrass) is its aquatic forage, richest on the cold shelves, a third as rich over the deep,
+  poorer under the ice; the sea's realms are its coasts', the polar seas one about each pole
+  (D152); a mangrove's place is half sea, its animals living on its mud (D159).
 
 ## Animals in the world (`hearth_fauna::live`, the server's `fauna.rs`)
 The server keeps the regions about the player (the 3 × 3 about the one the player is in, made as
@@ -286,6 +291,16 @@ nose, hooves or paws, and the pattern (spots, stripes, grizzled hair, a badger's
 pied or barred feathers, a snake's zig-zag or bands, a perch's bars, a trout's spots). The
 figure shader reads each box's faces from the atlas by its unwrap's place, so the bodies stay a
 few hundred boxes for a herd.
+
+The sea's bodies (V2-10 (f), D153): a seal's and a sea turtle's limbs are flippers (short legs
+hidden in the body, broad paddles, the fore pair splayed, a seal's hind pair trailing); a
+penguin is the bird's body pitched up eighty degrees on short legs, waddling, lying on its belly
+and swimming flat with its flippers beating; a whale is round with a fluke across its tail that
+beats up and down, its back fin's height its `hump` (of its length) and its flippers' length its
+`legs`; tusks hang down from a walrus's jaw and run ahead from a narwhal male's; a crab stands on
+four legs a side with its claws before it, a male fiddler's one great claw folded across.
+Swimmers keep their depths (D154): a river's fish halfway down, the sea's within its sunlit
+top, a whale with its back just under the surface.
 
 ## Finding the way (`hearth_fauna::nav`)
 Animals go where they are going along ways searched on the loaded blocks a column at a time

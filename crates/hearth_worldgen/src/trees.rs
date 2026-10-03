@@ -198,8 +198,9 @@ impl PlaceGround {
             Ground::Rich => self.rich,
             Ground::Acid => self.acid,
             Ground::Disturbed => self.disturbed,
-            // Lime is not yet told from the bedrock: neither for nor against.
-            Ground::Lime => true,
+            // Lime is not yet told from the bedrock: neither for nor against; the coast's
+            // salt is judged by the place.
+            Ground::Lime | Ground::Salt => true,
         }
     }
 }
@@ -211,6 +212,8 @@ pub struct Forest {
     pub templates: Templates,
     pub blocks: Vec<SpeciesBlocks>,
     pub niches: Vec<Niche>,
+    /// Species that stand in the tidal water (the mangroves, on stilt roots or not).
+    pub tidal: Vec<bool>,
     pub understory: Vec<UnderPlant>,
     /// The blocks trees killed by fire stand in (charred trunk and limbs), if the content has
     /// them.
@@ -323,7 +326,24 @@ impl Niche {
 
     fn biome_affinity(&self, id: &str, b: Biome) -> f32 {
         let is = |names: &[&str]| names.iter().any(|n| id.ends_with(n));
+        // The tidal mud is the mangroves' alone, and they grow nowhere else; the coconut palm
+        // is the tropical shore's, rare inland.
+        if is(&["mangrove"]) {
+            return if b == Biome::Mangrove { 6.0 } else { 0.0 };
+        }
+        if is(&["coconut_palm"]) {
+            return if b == Biome::Beach { 6.0 } else { 0.1 };
+        }
         match b {
+            Biome::Mangrove => 0.0,
+            // Pines on the dunes of the cooler coasts.
+            Biome::Beach => {
+                if self.conifer {
+                    0.4
+                } else {
+                    0.0
+                }
+            }
             Biome::BorealForest | Biome::SnowyTaiga => {
                 if self.conifer {
                     3.0
@@ -389,6 +409,7 @@ impl Forest {
         let mut species = Vec::new();
         let mut blocks = Vec::new();
         let mut niches = Vec::new();
+        let mut tidal = Vec::new();
         for p in content.plants.iter() {
             let (Some(sp), Some(form)) = (hearth_flora::Species::from_plant(p), p.tree.as_ref())
             else {
@@ -404,6 +425,7 @@ impl Forest {
                     ));
                     species.push(sp);
                     blocks.push(b);
+                    tidal.push(form.prop_roots > 0.0 || p.id.ends_with("mangrove"));
                 }
                 Err(e) => log::warn!("tree `{}` is left out: {e}", p.id),
             }
@@ -468,10 +490,21 @@ impl Forest {
             templates: Templates::new(species),
             blocks,
             niches,
+            tidal,
             understory,
             charred,
             tallest_m,
         }
+    }
+
+    /// The wood of the species that stand in the tidal water (the mangroves): their logs and
+    /// limbs may take the water's place.
+    pub fn water_wood(&self) -> impl Iterator<Item = BlockStateId> + '_ {
+        self.blocks
+            .iter()
+            .zip(&self.tidal)
+            .filter(|(_, s)| **s)
+            .flat_map(|(b, _)| b.log.iter().chain(&b.branch).copied())
     }
 
     /// A plant of the understory for a column, or none: each species as likely as its climate,
@@ -493,9 +526,19 @@ impl Forest {
         // What each would cover over the place, its patches as they fall anywhere.
         let mut expect: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
         let mut natives: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
+        let coast = matches!(
+            c.biome,
+            Biome::Beach | Biome::StonyShore | Biome::SaltMarsh | Biome::Mangrove
+        );
         for (i, p) in self.understory.iter().enumerate() {
             let u = &p.understory;
             natives.push(p.niche.native(c));
+            // The coast's plants on the coast, the rest inland.
+            if u.ground.contains(&Ground::Salt) != coast {
+                odds.push(0.0);
+                expect.push(0.0);
+                continue;
+            }
             let grows_here = match (depth_m, u.water) {
                 (None, Some(WaterHabit::Floating { .. })) => false,
                 (None, _) => true,

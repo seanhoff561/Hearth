@@ -726,6 +726,8 @@ impl Terrain {
             Biome::Wetland => 0.25,
             Biome::Oasis => 0.35,
             Biome::Mangrove => 0.9,
+            // Palms along the tropical shore, pines on cooler dunes, here and there.
+            Biome::Beach => 0.08,
             Biome::MediterraneanScrub => 0.14,
             Biome::Savanna => 0.05,
             Biome::TemperatePlains => 0.035,

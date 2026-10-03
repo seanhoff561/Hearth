@@ -386,6 +386,36 @@ fn coral(seed: u64) -> Tex {
     t
 }
 
+/// Sea pens of the deep floor: feathers of polyps on a stalk, their tips lit blue-green (the
+/// light the deep's animals make when they are touched).
+fn sea_pen(seed: u64) -> Tex {
+    let mut t = blank();
+    let stalk: Rgb = [200, 150, 120];
+    let leaf: Rgb = [230, 170, 140];
+    let glow: Rgb = [140, 240, 230];
+    for b in 0..3 {
+        let x0 = 3 + b * 5;
+        let hgt = 9 + (rand01(seed, b, 0) * 6.0) as i32;
+        for k in 0..hgt {
+            let x = x0 + ((k as f32 * 0.3 + b as f32).sin() * 0.8) as i32;
+            t.put(x, 15 - k, stalk);
+            if k > 3 {
+                let w = (hgt - k).min(k - 3).min(2);
+                for d in 1..=w {
+                    let c = if d == w && (k + b) % 2 == 0 {
+                        glow
+                    } else {
+                        leaf
+                    };
+                    t.put(x - d, 15 - k, c);
+                    t.put(x + d, 15 - k, c);
+                }
+            }
+        }
+    }
+    t
+}
+
 /// A reef surface: coral heads of several colours over pale reef rock.
 fn coral_block(seed: u64) -> Tex {
     let colors: [Rgb; 5] = [
@@ -776,6 +806,7 @@ pub fn textures() -> Vec<TexEntry> {
     add("coral", coral(h("coral")));
     add("coral_block", coral_block(h("coralb")));
     add("seaweed", seaweed(h("seaweed")));
+    add("sea_pen", sea_pen(h("seapen")));
     // Cordgrass is painted in its own colour (it takes no climate tint).
     let colour = |mut t: Tex, c: Rgb| {
         for p in &mut t.px {

@@ -224,10 +224,15 @@ impl Habitat {
         self.fresh * CELL_KM2
     }
 
+    /// Sea area of the cell, km².
+    pub fn sea_km2(&self) -> f32 {
+        self.sea * CELL_KM2
+    }
+
     /// The area a kind of forage grows on in the cell, km².
     pub fn area_of(&self, k: Forage) -> f32 {
         if k == Forage::Aquatic {
-            self.fresh_km2()
+            self.fresh_km2() + self.sea_km2()
         } else {
             self.land_km2()
         }
@@ -313,6 +318,19 @@ const NECTAR: f32 = 6_000.0;
 /// Usable invertebrates of fresh water, kg (fresh) per km² of water a year (streams and lake
 /// shallows produce hundreds of tonnes).
 const AQUATIC: f32 = 250_000.0;
+/// Usable small life of the sea (the plankton, the weed and the shellfish of the bottom), kg
+/// (fresh) per km² a year, over a cold shelf.
+const AQUATIC_SEA: f32 = 150_000.0;
+
+/// How rich the sea is, against a cold shelf's (1), with the water `sea_c` (°C) at the
+/// surface and `depth_m` deep: the shelves rich, the open ocean a third as rich, the cold waters
+/// richer than the warm, the ice-covered seas poorer for want of light.
+pub fn sea_productivity(sea_c: f32, depth_m: f32) -> f32 {
+    let shelf = if depth_m < 250.0 { 1.0 } else { 0.33 };
+    let cold = 0.6 + 0.4 * ((22.0 - sea_c) / 15.0).clamp(0.0, 1.0);
+    let ice = if sea_c < -1.0 { 0.6 } else { 1.0 };
+    shelf * cold * ice
+}
 /// A mature canopy tree's crown, m².
 const CROWN_M2: f32 = 110.0;
 /// The share of a dwarf shrub's growth (leaves, buds, catkins, shoot tips) that is usable
@@ -356,23 +374,46 @@ impl GenLand<'_> {
             dry: dry_of(s.climate),
             ..Column::default()
         };
-        if s.ocean && s.is_underwater() {
-            col.sea = 1.0;
-            return col;
-        }
         col.ecosystems = self.catalog.ecosystems_of_biome(s.biome.name());
-        if s.is_underwater() {
+        // The ice-covered seas are one about each pole, whatever land is nearest: the Arctic's
+        // animals (the Palearctic's and the Nearctic's) in the north, the Antarctic's in the south.
+        if s.biome == hearth_worldgen::region::biome::Biome::PolarSea {
+            col.realm = if wg.planet().latitude_deg(z as f64) < 0.0 {
+                Realm::Antarctic
+            } else {
+                Realm::Palearctic
+            };
+        }
+        // The sea, of its biome's ecosystems; where mangroves stand over the water, half the
+        // place is their roots and the mud about them.
+        let mut mangrove = None;
+        if s.ocean && s.is_underwater() {
+            let depth_m = (s.water - s.height).max(0.0) / wg.terrain.vertical_scale();
+            let sea = AQUATIC_SEA * sea_productivity(s.sea_temperature, depth_m);
+            if s.biome != hearth_worldgen::region::biome::Biome::Mangrove {
+                col.sea = 1.0;
+                col.forage[Forage::Aquatic as usize] = sea;
+                return col;
+            }
+            mangrove = Some(sea);
+        }
+        if s.is_underwater() && mangrove.is_none() {
             col.fresh = 1.0;
             col.forage[Forage::Aquatic as usize] =
                 AQUATIC * (miami_npp(s.temperature, s.precipitation) / 1200.0).min(1.5);
             return col;
         }
         col.land = 1.0;
+        let mut aquatic = 0.0;
         if s.biome == hearth_worldgen::region::biome::Biome::Wetland {
             col.fresh = 0.3;
             col.land = 0.7;
-            col.forage[Forage::Aquatic as usize] =
-                AQUATIC * (miami_npp(s.temperature, s.precipitation) / 1200.0).min(1.5);
+            aquatic = AQUATIC * (miami_npp(s.temperature, s.precipitation) / 1200.0).min(1.5);
+        }
+        if let Some(sea) = mangrove {
+            col.sea = 0.5;
+            col.land = 0.5;
+            aquatic = sea;
         }
         // A river running by.
         if let Some(r) = s.river
@@ -414,6 +455,7 @@ impl GenLand<'_> {
             flowers,
         };
         (col.forage, col.cover) = stand.forage(s.temperature, s.t_warm, s.precipitation);
+        col.forage[Forage::Aquatic as usize] = aquatic;
         col
     }
 }
@@ -489,11 +531,13 @@ pub fn reference_land(
     );
     h.forage = forage;
     h.cover = cover;
-    if r.fresh > 0.0 {
+    if r.fresh > 0.0 || r.sea > 0.0 {
         h.fresh = r.fresh.clamp(0.0, 0.9);
-        h.land = 1.0 - h.fresh;
-        h.forage[Forage::Aquatic as usize] =
-            AQUATIC * (miami_npp(r.temp_c, r.precip_mm) / 1200.0).min(1.5);
+        h.sea = r.sea.clamp(0.0, 1.0 - h.fresh);
+        h.land = (1.0 - h.fresh - h.sea).max(0.0);
+        let fresh = AQUATIC * (miami_npp(r.temp_c, r.precip_mm) / 1200.0).min(1.5);
+        let sea = AQUATIC_SEA * sea_productivity(r.temp_c, if r.deep { 3000.0 } else { 100.0 });
+        h.forage[Forage::Aquatic as usize] = (fresh * h.fresh + sea * h.sea) / (h.fresh + h.sea);
     }
     h
 }
@@ -601,7 +645,7 @@ impl Land for GenLand<'_> {
             sum.sea += col.sea;
             for (k, (a, b)) in sum.forage.iter_mut().zip(col.forage).enumerate() {
                 *a += b * if k == Forage::Aquatic as usize {
-                    col.fresh
+                    col.fresh + col.sea
                 } else {
                     col.land
                 };
@@ -617,8 +661,9 @@ impl Land for GenLand<'_> {
         let land = sum.land / 4.0;
         let per_land = |v: f32| if sum.land > 0.0 { v / sum.land } else { 0.0 };
         let mut forage = sum.forage.map(per_land);
-        forage[Forage::Aquatic as usize] = if sum.fresh > 0.0 {
-            sum.forage[Forage::Aquatic as usize] / sum.fresh
+        let water = sum.fresh + sum.sea;
+        forage[Forage::Aquatic as usize] = if water > 0.0 {
+            sum.forage[Forage::Aquatic as usize] / water
         } else {
             0.0
         };

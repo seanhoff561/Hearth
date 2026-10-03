@@ -1721,3 +1721,84 @@ The world about the V2-5 spawn has wetlands now, and the first grown roe deer th
 met walked on down into a pool's hollow as the hunter came up beside it: the thrust went where
 it had stood. The test follows it, coming up beside it again where it stands until it is within
 the spear's reach, and thrusts from where the hunter stands, at a grown animal's heart (D113).
+
+## D151 — The sea's life, per km² of sea
+The populations knew land and fresh water; the sea's columns counted as sea and nothing lived
+there. A species whose ecosystems are all the sea's (the shelves, the reefs, the open ocean, the
+polar seas) is the sea's: it lives on a cell's sea and is counted per km² of it, as fish are of
+fresh water. The sea's small life (plankton, krill, shellfish, the weed and the seagrass) is the
+aquatic forage of its cells, 150 t a km² a year over a cold shelf: as rich again in the cold
+water as in the tropics' (the cold upwells its nutrients), a third as rich off the shelf over
+the deep, poorer under the ice for want of light. Whatever the sea's animals eat of the plants
+and of the materials of that small life is that forage, as a fish's grubs are the river's. The
+ecosystems' reference lands may be sea (`sea`, `deep`), and the forage of each kind is anchored
+per km² of the reference cell to the needs of the animals living on it, so the sea's references
+anchor its forage as the land's do theirs. A mangrove's place is half sea, half its mud.
+
+## D152 — The sea's realms are its coasts', and the ice is one about each pole
+The sea takes the nearest land's realm, so the sea's animals keep to the coasts of the realms
+they belong to: the Cape fur seal to Africa's and Australia's, the California sea lion to the
+Americas' Pacific. There are no ocean basins yet: a North Pacific animal of the Nearctic and the
+Palearctic (the sea otter, the Steller sea lion, the king crab) is on those realms' Atlantic
+coasts too. The ice-covered seas are one about each pole, whatever land is nearest (the vast
+planet's north polar sea is half "Oceanian" by its nearest islands): their animals are the
+Arctic's (the Palearctic's and Nearctic's) in the north and the Antarctic's in the south.
+
+## D153 — Bodies for the sea
+Seals had been drawn as dogs and penguins as crows lying flat. A seal's limbs are flippers: short
+legs hidden in a deep, long body ending in broad paddles, the fore pair splayed out, the hind
+pair trailing behind; a sea turtle's are the same, its fore flippers the long ones, under a
+broad shell three times as wide as deep (the tortoises' shells are broad too now, and lose the
+carnivore's pointed ears they had worn). A penguin's body is a bird's pitched up eighty degrees
+on short legs, its length its height; it waddles, lies on its belly and swims flat with its
+flippers beating. A whale is round, not deep and narrow like a fish, its tail a fluke across,
+beating up and down; its back fin's height is its `hump` (of its length: a bull orca's a
+quarter, a cow's half that), its flippers' its `legs` (a humpback's a third of its length). A
+walrus's tusks hang down, a narwhal male's runs straight ahead; a crab stands on four legs a side
+splayed out with its claws in front, a male fiddler's one great claw folded across it; a seabird's
+wings span twice its length (an albatross's too, short of its three and a half metres); a flying
+fish's fins are wings.
+
+## D154 — Swimmers at their depths
+A fish of a river or lake swims halfway down; the sea's are within its sunlit top, three metres
+and four of their lengths down at most and never below halfway; a whale or a sea cow swims with
+its back just under the surface. A pod of whales or a raft of seals made near the player is made
+in the water (a seal on the rocks where there are rocks), not on the sea floor. The sea's
+mammals range over the sea about the player (a few hundred km², dispersing a hundred km): ranges
+of the oceans' size sent whole pods out of the regions simulated and lost them.
+
+## D155 — Mangroves on stilt roots, palms on the beaches
+The mangrove swamp had kept the old shape of a mangrove. Its species are trees of the growth model
+now: red mangrove (the Atlantic's), loop-root mangrove (the Indian Ocean's and the Pacific's), grey
+mangrove (from the Red Sea to New Zealand). A tree's stem may stand on arching stilt roots
+(`prop_roots`, of its height: a red mangrove's a sixth), roots curving out and down from the
+lower stem into the mud; the mangroves' wood may stand in the tidal water. The tidal mud
+is the mangroves' alone, and they grow nowhere else. Beaches take a few trees: the coconut palm
+along the tropical shore (rare inland), pines on the dunes of the cooler coasts, and no others.
+
+## D156 — The coast's salt
+The understory's plants of the coast (`ground: [Salt]`: the salt marshes' cordgrass, glasswort and
+sea lavender, the dunes' marram grass, sea rocket and beach morning glory, the sea cliffs' thrift)
+grow on the beaches, rocky shores, salt marshes and mangrove mud and nowhere else, and nothing
+else grows there: the beaches had been bare and the salt marsh one cordgrass.
+
+## D157 — The sea's weeds are drawn by the generator's
+The generator draws kelp on the cool rocky shelves, wrack on the shore's rocks and seagrass on the
+sandy shallows, one look for each kind. The species (giant kelp and oarweed, bladder wrack,
+eelgrass and turtle grass) are the content's for what eats them and what they yield (kelp to eat,
+spread on the fields and burn for soda); they share the generator's blocks until each kelp has
+its own (sargassum, which floats on the open ocean, is planned).
+
+## D158 — The deep's light
+Under a few tens of metres the sea is dark (the water takes two levels of light a block). On the
+deep ocean's floor, sea pens stand glowing where they are touched (emitting light 8): the only
+light of the deep. The deep's animals are not drawn there (D154: the sea's fish swim within its
+sunlit top; the lanternfish come up at night as they do); their own lights wait for glowing
+coats.
+
+## D159 — The mangroves' animals live on its mud
+A mangrove's place is half sea and half mud and roots. Its animals (the fiddler crabs on the mud,
+the proboscis monkeys in the trees, the scarlet ibises, the saltwater crocodile) live on the mud,
+the land half; the fish of its channels (the reef's nursery) are not kept, a species being the
+sea's only where all its ecosystems are. The crocodile also lives in the tropical wetlands of its
+realms, on their land, and takes the crabs, the snakeheads, the monkeys and the buffalo there.

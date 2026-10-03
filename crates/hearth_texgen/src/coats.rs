@@ -681,6 +681,8 @@ fn insect(coat: &CoatRecipe, body: &Body, b: &SkinBox, p: Vec3) -> Rgb {
         SkinPart::Wing => WINGS,
         SkinPart::Head => coat.points,
         SkinPart::Hump => lerp(coat.back, coat.points, 0.5),
+        // A crab's claws.
+        SkinPart::Foot => coat.marking.unwrap_or(coat.points),
         _ => {
             let t = body.torso;
             let along = (p.z - t.min.z) / (t.size().z / 5.0).max(1e-5);

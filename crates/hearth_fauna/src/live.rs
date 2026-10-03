@@ -442,16 +442,34 @@ fn hdist(a: DVec3, b: DVec3) -> f64 {
 }
 
 /// Whether a small species walks the ground where the player can meet it (not flying birds,
-/// fish, or the very small).
+/// fish, the sea's animals but its penguins, or the very small).
 pub fn walks(sp: &Species) -> bool {
     use hearth_content::schema::fauna::BodyPlan as B;
     sp.mass_kg >= SMALL_MIN_KG
         && !sp.aquatic
+        && (!sp.marine || sp.plan == B::Penguin)
         && !sp.colony
         && !matches!(
             sp.plan,
             B::BirdPerching | B::Raptor | B::Waterfowl | B::Seabird | B::Insect | B::Snake
         )
+}
+
+/// How far under the surface (m) a fish or whale keeps in water `depth` deep: halfway down in
+/// a river or a lake; in the sea within its sunlit top, a few of its lengths down (never below
+/// halfway), and a whale or a sea cow with its back just under the surface, to breathe.
+pub fn swim_depth(sp: &Species, depth: f64) -> f64 {
+    use hearth_content::schema::fauna::BodyPlan as B;
+    let half = depth * 0.5;
+    if !sp.marine {
+        return half;
+    }
+    let keep = if sp.plan == B::Cetacean {
+        sp.shoulder_m as f64 * 1.25
+    } else {
+        3.0 + sp.length_m as f64 * 4.0
+    };
+    keep.min(half)
 }
 
 /// How a species goes about the world.
@@ -559,7 +577,7 @@ impl Live {
                 let Some(centre) = ground.top(g.pos[0], g.pos[1]) else {
                     continue;
                 };
-                if centre.water && !sp.aquatic {
+                if centre.water && !sp.aquatic && !sp.marine {
                     continue;
                 }
                 let spread = (g.size() as f64).sqrt() * (2.0 + sp.mass_kg.sqrt() as f64 * 0.25);
@@ -575,25 +593,50 @@ impl Live {
                     members.push((Stage::Young, f));
                 }
                 let mut placed = Vec::new();
+                // The water's animals (a pod of whales, a raft of seals at sea) in the water, a
+                // fish's depth down or swimming at the surface; the rest on dry ground.
+                let swimmer = sp.aquatic || sp.marine;
+                let fish = mover_of(sp) == Mover::Fish;
                 for (stage, female) in members {
                     let mut spot = None;
                     for _ in 0..6 {
                         let a = self.rng.next_f64() * std::f64::consts::TAU;
                         let d = spread * self.rng.next_f64().sqrt();
                         let (x, z) = (g.pos[0] + a.cos() * d, g.pos[1] + a.sin() * d);
-                        if let Some(f) = ground.footing(x, z, centre.y)
-                            && !f.water
-                        {
-                            spot = Some(DVec3::new(x, f.y, z));
+                        let Some(f) = ground.footing(x, z, centre.y) else {
+                            continue;
+                        };
+                        if !f.water && !fish {
+                            spot = Some((DVec3::new(x, f.y, z), Medium::Ground));
+                            break;
+                        }
+                        if swimmer && f.water && f.depth >= FISH_DEPTH {
+                            let y = if fish {
+                                f.level() - swim_depth(sp, f.depth)
+                            } else {
+                                f.level() - sp.shoulder_m as f64 * 0.85
+                            };
+                            spot = Some((DVec3::new(x, y, z), Medium::Water));
                             break;
                         }
                     }
-                    let pos = spot.unwrap_or(DVec3::new(g.pos[0], centre.y, g.pos[1]));
-                    placed.push((stage, female, pos));
+                    let (pos, medium) = spot.unwrap_or_else(|| {
+                        if swimmer && centre.water {
+                            let y = if fish {
+                                centre.level() - swim_depth(sp, centre.depth)
+                            } else {
+                                centre.level() - sp.shoulder_m as f64 * 0.85
+                            };
+                            (DVec3::new(g.pos[0], y, g.pos[1]), Medium::Water)
+                        } else {
+                            (DVec3::new(g.pos[0], centre.y, g.pos[1]), Medium::Ground)
+                        }
+                    });
+                    placed.push((stage, female, pos, medium));
                 }
                 g.live = true;
                 let mut made = Vec::with_capacity(placed.len());
-                for (stage, female, pos) in placed {
+                for (stage, female, pos, medium) in placed {
                     let id = self.next_id;
                     self.next_id += 1;
                     let yaw = self.rng.next_f32() * std::f32::consts::TAU;
@@ -608,7 +651,7 @@ impl Live {
                         pos,
                         yaw,
                         timer,
-                        Medium::Ground,
+                        medium,
                     ));
                 }
                 // The young of the year each with a mother among the females, beside her.
@@ -699,7 +742,8 @@ impl Live {
                         };
                         match mover {
                             Mover::Fish if f.water && f.depth >= FISH_DEPTH => {
-                                spots.push((DVec3::new(x, f.y + f.depth * 0.5, z), Medium::Water));
+                                let y = f.level() - swim_depth(sp, f.depth);
+                                spots.push((DVec3::new(x, y, z), Medium::Water));
                             }
                             Mover::Fish => {}
                             _ if f.water => {}
@@ -2121,7 +2165,7 @@ fn go(
             a.pos = DVec3::new(
                 nx,
                 if walker.fish {
-                    f.y + f.depth * 0.5
+                    f.level() - swim_depth(sp, f.depth)
                 } else if deep {
                     // Swimming: the back just out of the water (a young one's lower).
                     let size = match a.stage {

@@ -237,5 +237,17 @@
   "giant_groundsel_leaves": {"template": "foliage", "material": "hearth:palm_wood", "tint": "spruce", "drag": 0.5, "map_color": "#6a8a5a"},
   "frailejon_log": {"template": "log", "material": "hearth:palm_wood", "map_color": "#6a6050"},
   "frailejon_branch": {"template": "branch", "material": "hearth:palm_wood"},
-  "frailejon_leaves": {"template": "foliage", "material": "hearth:palm_wood", "tint": "spruce", "drag": 0.5, "map_color": "#a8b090"}
+  "frailejon_leaves": {"template": "foliage", "material": "hearth:palm_wood", "tint": "spruce", "drag": 0.5, "map_color": "#a8b090"},
+  "red_mangrove_log": {"template": "log", "material": "hearth:mangrove_wood", "map_color": "#7a5a4a"},
+  "red_mangrove_branch": {"template": "branch", "material": "hearth:mangrove_wood"},
+  "red_mangrove_leaves": {"template": "foliage", "material": "hearth:mangrove_wood", "tint": "spruce", "drag": 0.5, "map_color": "#3a6a2a"},
+  "loop_root_mangrove_log": {"template": "log", "material": "hearth:mangrove_wood", "map_color": "#5a4a3a"},
+  "loop_root_mangrove_branch": {"template": "branch", "material": "hearth:mangrove_wood"},
+  "loop_root_mangrove_leaves": {"template": "foliage", "material": "hearth:mangrove_wood", "tint": "spruce", "drag": 0.5, "map_color": "#3a6a2a"},
+  "grey_mangrove_log": {"template": "log", "material": "hearth:mangrove_wood", "map_color": "#a8a090"},
+  "grey_mangrove_branch": {"template": "branch", "material": "hearth:mangrove_wood"},
+  "grey_mangrove_leaves": {"template": "foliage", "material": "hearth:mangrove_wood", "tint": "spruce", "drag": 0.5, "map_color": "#5a7a5a"},
+  "coconut_palm_log": {"template": "log", "material": "hearth:palm_wood", "map_color": "#8a7a6a"},
+  "coconut_palm_branch": {"template": "branch", "material": "hearth:palm_wood"},
+  "coconut_palm_leaves": {"template": "foliage", "material": "hearth:palm_wood", "tint": "foliage", "drag": 0.5, "map_color": "#4a7a2a"}
 }

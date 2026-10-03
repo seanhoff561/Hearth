@@ -33,6 +33,8 @@ pub struct GenBlocks {
     rock: Vec<bool>,
     carvable: Vec<bool>,
     plantable: Vec<bool>,
+    /// The wood that may stand in water (stilt-rooted trees').
+    water_wood: Vec<bool>,
     /// Loose-stone block of each rock (by the rock's state), and whether a state is one.
     cobbles: rustc_hash::FxHashMap<BlockStateId, BlockStateId>,
     loose_stone: Vec<bool>,
@@ -59,6 +61,8 @@ pub struct GenBlocks {
     pub coral: BlockStateId,
     pub coral_block: BlockStateId,
     pub seaweed: BlockStateId,
+    /// Glowing sea pens of the deep floor.
+    pub sea_pen: BlockStateId,
     pub cordgrass: [BlockStateId; 2],
     pub short_grass: BlockStateId,
     pub tall_grass: [BlockStateId; 2],
@@ -141,6 +145,7 @@ impl GenBlocks {
             .collect();
         let carvable = rock.clone();
         let plantable = vec![false; reg.state_count()];
+        let water_wood = vec![false; reg.state_count()];
         let mut cobbles = rustc_hash::FxHashMap::default();
         let mut loose_stone = vec![false; reg.state_count()];
         for block in reg.blocks() {
@@ -176,6 +181,7 @@ impl GenBlocks {
             rock,
             carvable,
             plantable,
+            water_wood,
             cobbles,
             loose_stone,
             cobblestone: s("cobblestone")?,
@@ -202,6 +208,7 @@ impl GenBlocks {
             coral: s("coral")?,
             coral_block: s("coral_block")?,
             seaweed: s("seaweed")?,
+            sea_pen: s("sea_pen")?,
             cordgrass: pair("cordgrass")?,
             short_grass: s("short_grass")?,
             tall_grass: pair("tall_grass")?,
@@ -248,6 +255,21 @@ impl GenBlocks {
             Wood::Spruce => &self.spruce,
             Wood::Mangrove => &self.mangrove,
         }
+    }
+
+    /// Marks the wood of trees that stand in the tidal water on stilt roots.
+    pub fn add_water_wood(&mut self, wood: impl Iterator<Item = BlockStateId>) {
+        for s in wood {
+            if let Some(w) = self.water_wood.get_mut(s.0 as usize) {
+                *w = true;
+            }
+        }
+    }
+
+    /// True for wood that may take the place of water.
+    #[inline]
+    pub fn is_water_wood(&self, s: BlockStateId) -> bool {
+        self.water_wood.get(s.0 as usize).copied().unwrap_or(false)
     }
 
     /// Marks the soils' and sediments' blocks as ground plants grow in and caves may cut.

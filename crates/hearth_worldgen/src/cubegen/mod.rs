@@ -161,6 +161,8 @@ impl WorldGenerator {
             blocks.add_ground(std::iter::once(extra));
         }
         let v = terrain.vertical_scale();
+        let forest = Arc::new(crate::trees::Forest::new(reg, content));
+        blocks.add_water_wood(forest.water_wood());
         Ok(Self {
             caves: caves::CaveGen::new(seed, v),
             features: features::FeatureGen::new(seed),
@@ -171,7 +173,7 @@ impl WorldGenerator {
             soils,
             deposits,
             hydro,
-            forest: Arc::new(crate::trees::Forest::new(reg, content)),
+            forest,
             blocks,
             seed,
             terrain,

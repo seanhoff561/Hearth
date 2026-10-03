@@ -252,5 +252,10 @@
          thermal: (ignition_c: 300), fuel_mj_kg: 19.0, workability: 0.6, durability: 0.3,
          appearance: (color: "#c88a6a", pattern: WoodGrain, roughness: 0.4),
          notes: "Fine-grained and pinkish: the best charcoal of the maquis."),
+        (id: "mangrove_wood", name: "mangrove wood", category: Wood, tags: ["hardwood", "construction", "durable"], density_kg_m3: 900,
+         fracture: Splintery, strength: (compressive_mpa: 60, bending_mpa: 110), elastic_modulus_gpa: 15.0,
+         thermal: (ignition_c: 300), fuel_mj_kg: 19.0, workability: 0.4, durability: 0.85,
+         appearance: (color: "#8a4a3a", pattern: WoodGrain, roughness: 0.5),
+         notes: "Dense, red-brown and proof against rot and shipworm: straight poles for roofs and fish traps, and the hottest charcoal of the tropical coasts."),
 ],
 )

@@ -710,7 +710,9 @@ impl Ecology {
         if sp.cold_limit.is_some_and(|m| h.coldest_c() < m) {
             return false;
         }
-        if sp.aquatic || sp.waterside {
+        if sp.marine {
+            h.sea > 0.0
+        } else if sp.aquatic || sp.waterside {
             h.fresh > 0.0 && (sp.aquatic || h.land > 0.0)
         } else {
             h.land > 0.0
@@ -722,6 +724,8 @@ impl Ecology {
     fn area(sp: &Species, h: &Habitat) -> f32 {
         if sp.aquatic {
             h.fresh_km2()
+        } else if sp.marine {
+            h.sea_km2()
         } else if sp.waterside {
             h.land_km2() * waterside_share(h.fresh)
         } else {
@@ -737,7 +741,7 @@ impl Ecology {
     /// fewer than a third of the year (the far north, the mountains) it lives in fewer numbers.
     fn cover_factor(sp: &Species, h: &Habitat) -> f32 {
         let cover = 1.0 - (1.0 - h.cover).max(0.0) * sp.cover * 0.5;
-        if !sp.ectotherm || sp.aquatic {
+        if !sp.ectotherm || sp.aquatic || sp.marine {
             return cover;
         }
         let (above, none, full) = match sp.plan {
@@ -2755,14 +2759,16 @@ pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [Option<f32>; FORAGE_
             if total <= 0.0 {
                 continue;
             }
-            // Per km² of the reference land (of its water for fish, of its waterside for the
-            // animals of the waterside).
+            // Per km² of the reference place: of its land, of its water for fish, of its sea for
+            // the sea's animals, of its waterside for the animals of the waterside.
             let area = if sp.aquatic {
-                reference.fresh / reference.land.max(1e-6)
+                reference.fresh
+            } else if sp.marine {
+                reference.sea
             } else if sp.waterside {
-                waterside_share(reference.fresh)
+                reference.land * waterside_share(reference.fresh)
             } else {
-                1.0
+                reference.land
             };
             let season = if sp.ectotherm { 0.6 } else { 0.85 };
             let d = sp.density * area * sp.need_kg * 365.0 * season * sp.forage_share();
@@ -2773,9 +2779,9 @@ pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [Option<f32>; FORAGE_
         for k in 0..FORAGE_KINDS {
             if demand[k] > 0.0 {
                 let per_area = if Forage::ALL[k] == Forage::Aquatic {
-                    reference.land / reference.fresh.max(1e-6)
+                    1.0 / (reference.fresh + reference.sea).max(1e-6)
                 } else {
-                    1.0
+                    1.0 / reference.land.max(1e-6)
                 };
                 prod[k] = demand[k] * per_area / USED;
                 eaten[k] = true;

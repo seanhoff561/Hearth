@@ -119,5 +119,11 @@
   "fragrant_water_lily": {"hardness": 0.0, "resistance": 0.0, "shape": "lily_pad", "opaque": false, "render": "model", "layer": "cutout", "sound": "lily_pad", "behavior": "lily_pad", "map_color": "#3a6a2a"},
   "sacred_lotus": {"hardness": 0.0, "resistance": 0.0, "shape": "lily_pad", "opaque": false, "render": "model", "layer": "cutout", "sound": "lily_pad", "behavior": "lily_pad", "map_color": "#4a8a5a"},
   "blue_lotus": {"hardness": 0.0, "resistance": 0.0, "shape": "lily_pad", "opaque": false, "render": "model", "layer": "cutout", "sound": "lily_pad", "behavior": "lily_pad", "map_color": "#3a6a3a"},
-  "giant_water_lily": {"hardness": 0.0, "resistance": 0.0, "shape": "lily_pad", "opaque": false, "render": "model", "layer": "cutout", "sound": "lily_pad", "behavior": "lily_pad", "map_color": "#4a7a2a"}
+  "giant_water_lily": {"hardness": 0.0, "resistance": 0.0, "shape": "lily_pad", "opaque": false, "render": "model", "layer": "cutout", "sound": "lily_pad", "behavior": "lily_pad", "map_color": "#4a7a2a"},
+  "glasswort": {"template": "plant", "material": "hearth:samphire", "replaceable": true, "map_color": "#6a8a3a", "drag": 0.05},
+  "sea_lavender": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#7a6aa0", "drag": 0.05},
+  "marram_grass": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#9aa070", "drag": 0.15},
+  "sea_rocket": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#5a8a5a", "drag": 0.05},
+  "beach_morning_glory": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#3a7a3a", "drag": 0.05},
+  "sea_thrift": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#c87a9a", "drag": 0.05}
 }

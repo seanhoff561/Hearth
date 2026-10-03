@@ -264,12 +264,14 @@ fn is_plant(b: &GenBlocks, s: BlockStateId) -> bool {
 
 /// Blocks that may take the place of water: water plants, and mangrove trunks and roots.
 fn is_aquatic(b: &GenBlocks, s: BlockStateId) -> bool {
-    s == b.seagrass
+    b.is_water_wood(s)
+        || s == b.seagrass
         || b.tall_seagrass.contains(&s)
         || s == b.kelp
         || s == b.kelp_plant
         || s == b.coral
         || s == b.seaweed
+        || s == b.sea_pen
         || s == b.mangrove_roots[1]
         || s == b.mangrove.log_y
 }
@@ -341,7 +343,7 @@ fn soil_ok(s: &ColumnSample) -> bool {
             | Surface::Moss
             | Surface::SnowGrass
             | Surface::Mud
-    )
+    ) || (s.biome == Biome::Beach && s.surface == Surface::Sand)
 }
 
 impl FeatureGen {
@@ -517,6 +519,10 @@ impl FeatureGen {
                 Biome::Wetland | Biome::Lake if depth <= 2 && r < 0.08 && s.temperature > 4.0 => {
                     w.put(x, s.water_i(), z, b.lily_pad);
                 }
+                // In the dark of the deep floor, sea pens glowing where they are touched.
+                Biome::DeepOcean | Biome::Trench if floor_ok && r < 0.06 => {
+                    w.put(x, top, z, b.sea_pen);
+                }
                 _ => {}
             }
             return next;
@@ -570,11 +576,18 @@ impl FeatureGen {
                 }
             }
             Biome::SaltMarsh => {
-                // Cordgrass meadows on the marsh, thinning onto the open mud.
-                if r < 0.42 {
+                // The marsh's own: cordgrass meadows, glasswort on the open mud, sea lavender.
+                if self.understory(w, wg, x, z, top, s, flower_n, disturbed) {
+                    return next;
+                }
+                if r < 0.3 {
                     tall(w, b.cordgrass);
-                } else if r < 0.62 {
-                    w.put(x, top, z, b.short_grass);
+                }
+            }
+            // The dunes' grasses and creepers, the rocks' cushions, sparse.
+            Biome::Beach | Biome::StonyShore => {
+                if r < 0.25 && self.understory(w, wg, x, z, top, s, flower_n, disturbed) {
+                    return next;
                 }
             }
             Biome::Mangrove => {}
@@ -596,12 +609,7 @@ impl FeatureGen {
                     }
                 }
             }
-            Biome::SaltFlat
-            | Biome::Beach
-            | Biome::StonyShore
-            | Biome::Glacier
-            | Biome::IceSheet
-            | Biome::Volcanic => {}
+            Biome::SaltFlat | Biome::Glacier | Biome::IceSheet | Biome::Volcanic => {}
             // Cushions and the flowers of the screes, in the rock's gravelly pockets.
             Biome::AlpineRock => {
                 if (grassy || matches!(s.surface, Surface::Gravel | Surface::CoarseDirt))
@@ -973,7 +981,10 @@ impl FeatureGen {
             return if reaches { next } else { f64::INFINITY };
         }
         // The old shapes (where no species fits) are gone where the ground was cleared or
-        // burned, and do not grow back.
+        // burned, and do not grow back; the beaches have none.
+        if s.biome == Biome::Beach {
+            return f64::INFINITY;
+        }
         if veg
             .at(ox, oz)
             .iter()
@@ -1142,9 +1153,7 @@ impl FeatureGen {
         h: u64,
     ) -> Option<(Option<PlacedTree>, f64)> {
         let forest = &wg.forest;
-        // The mangrove swamp keeps its mangroves until their species come with the wetlands
-        // (V2-10 (e)): no desert tree of the arid coasts takes their place.
-        if forest.niches.is_empty() || s.biome == Biome::Mangrove {
+        if forest.niches.is_empty() {
             return None;
         }
         let wet = matches!(s.biome, Biome::Wetland | Biome::Oasis)

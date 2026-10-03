@@ -125,6 +125,8 @@ pub struct ShotSpec {
     pub biome: Option<String>,
     /// Height above the surface when `y` is not given.
     pub above: f64,
+    /// Height above the ground under the water instead (`floor=2`: on the sea floor).
+    pub floor: Option<f64>,
     pub yaw: f32,
     pub pitch: f32,
     pub fov: f32,
@@ -256,6 +258,7 @@ impl Default for ShotSpec {
             lat: None,
             biome: None,
             above: 24.0,
+            floor: None,
             yaw: 30.0,
             pitch: 15.0,
             fov: 70.0,
@@ -337,6 +340,7 @@ impl ShotSpec {
                 "lat" => spec.lat = Some(v.parse()?),
                 "biome" => spec.biome = Some(v.to_owned()),
                 "above" => spec.above = v.parse()?,
+                "floor" => spec.floor = Some(v.parse()?),
                 "yaw" => spec.yaw = v.parse()?,
                 "pitch" => spec.pitch = v.parse()?,
                 "fov" => spec.fov = v.parse()?,
@@ -885,7 +889,16 @@ pub fn render_shot(
             (eye, yaw, pitch)
         }
         None => {
-            let sy = spec.y.unwrap_or_else(|| lw.surface_y(sx, sz) + spec.above);
+            let floor = spec.floor.map(|f| {
+                lw.terrain()
+                    .sample(sx.floor() as i32, sz.floor() as i32)
+                    .height as f64
+                    + f
+            });
+            let sy = spec
+                .y
+                .or(floor)
+                .unwrap_or_else(|| lw.surface_y(sx, sz) + spec.above);
             (
                 DVec3::new(sx, sy, sz),
                 yaw_override.unwrap_or(spec.yaw),
@@ -1908,8 +1921,8 @@ fn placed_animals(
             .filter(|f| f.water)
             .map_or(ground, |f| {
                 if hearth_fauna::live::mover_of(sp) == hearth_fauna::live::Mover::Fish {
-                    // A fish halfway down.
-                    f.y + f.depth * 0.5
+                    // A fish as deep as it keeps.
+                    f.y + f.depth - hearth_fauna::live::swim_depth(sp, f.depth)
                 } else {
                     // The back just out of the water, as big as it is.
                     let scale = hearth_fauna::anim::scale_of(

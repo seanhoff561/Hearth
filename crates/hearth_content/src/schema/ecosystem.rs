@@ -43,6 +43,13 @@ pub struct ReferenceLand {
     /// fish and water-weed are counted per km² of the water.
     #[serde(default)]
     pub fresh: f32,
+    /// The share of it under the sea (a coast's shallows, the open ocean), whose life is counted
+    /// per km² of the sea.
+    #[serde(default)]
+    pub sea: f32,
+    /// Its sea is the open ocean's, off the shelf: poorer than the shallows'.
+    #[serde(default)]
+    pub deep: bool,
     /// The realms whose animals live on it, each anchoring its forage to their needs as a land
     /// of its own (the African, the American and the Asian rainforest); the Palearctic when
     /// none are named.

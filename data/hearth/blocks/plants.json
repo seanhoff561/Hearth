@@ -27,5 +27,6 @@
   "kelp_plant": {"template": "plant", "water_filled": true, "replaceable": false, "shape": {"boxes": [[0, 0, 0, 16, 16, 16]]}, "sound": "wet_grass", "behavior": "kelp"},
   "coral": {"template": "plant", "water_filled": true, "replaceable": false, "sound": "stone", "behavior": "seagrass", "map_color": "#e0708a"},
   "seaweed": {"template": "plant", "water_filled": true, "sound": "wet_grass", "behavior": "seagrass", "map_color": "#6b5a24"},
-  "cordgrass": {"template": "tall_plant", "map_color": "#9aa85a"}
+  "cordgrass": {"template": "tall_plant", "map_color": "#9aa85a"},
+  "sea_pen": {"template": "plant", "water_filled": true, "replaceable": false, "emission": 8, "sound": "wet_grass", "behavior": "seagrass", "map_color": "#80d0c0"}
 }

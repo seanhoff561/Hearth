@@ -202,6 +202,9 @@ pub enum Ground {
     Lime,
     /// Broken ground: clearings, burns, banks.
     Disturbed,
+    /// The coast's, in the salt and the spray (dunes, salt marshes, sea cliffs): such plants
+    /// grow there and nowhere else, and nothing else grows there.
+    Salt,
 }
 
 /// How a herb, shrub, fern or fungus of the understory is drawn and where it grows.
@@ -323,6 +326,10 @@ pub struct TreeForm {
     /// 0–1 how the foot spreads into roots.
     #[serde(default)]
     pub root_flare: f32,
+    /// How high up its stem it is held on arching stilt roots, of its height (a red
+    /// mangrove's a sixth; 0 none).
+    #[serde(default)]
+    pub prop_roots: f32,
     #[serde(default)]
     pub leaf: LeafKind,
     /// 0–1 how thickly foliage fills its clusters.

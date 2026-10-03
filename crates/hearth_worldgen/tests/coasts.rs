@@ -139,15 +139,20 @@ fn low_sheltered_coasts_are_marsh_or_mangrove() {
             "salt marsh in the tropics at {x},{z}"
         );
     }
-    // Mangrove trees stand in the generated world.
+    // Mangrove trees stand in the generated world: the mangrove species' (D155), or the old shape
+    // where no species fits.
     let wg = generator();
+    let wood: std::collections::HashSet<_> = wg.forest.water_wood().collect();
+    assert!(!wood.is_empty(), "no mangrove species");
     let found = mangrove.iter().take(60).any(|(x, z, s)| {
         (s.height_i()..s.height_i() + 12).any(|y| {
             let cube = wg.generate_cube(CubePos::new(x >> 4, y >> 4, z >> 4));
             (0..16).any(|lz| {
                 (0..16).any(|lx| {
                     let st = cube.get(LocalPos::new(lx, (y & 15) as u8, lz));
-                    st == wg.blocks.mangrove.log_y || wg.blocks.mangrove_roots.contains(&st)
+                    wood.contains(&st)
+                        || st == wg.blocks.mangrove.log_y
+                        || wg.blocks.mangrove_roots.contains(&st)
                 })
             })
         })
