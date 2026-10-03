@@ -644,7 +644,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
   - [x] (e) The performance gate: averages within 4 %; the 1 % lows that fell were single
     driver stalls in one run of three (an A/B of the forest scene put the new build ahead,
     D107); the baseline moved to the end of V2-9.
-- [ ] V2-10 — Ecosystem expansion waves
+- [x] V2-10 — Ecosystem expansion waves
 - [ ] V2-11 — Australopithecus & the agent framework
 - [ ] V2-12 — Neolithic
 - [ ] V2-13 — Metallurgy & mining
@@ -842,7 +842,9 @@ generated land of each of its biomes, and a screenshot suite):
   Pacific, the California current and the Caribbean's reefs and of the Old World's and the
   Americas' mangroves (`hearth_fauna/tests/sea_biomes.rs`); screenshots
   `tools/shots/v210_oceans.shots`.
-- [ ] (g) The performance gate.
+- [x] (g) The performance gate: every scene within 2 % of V2-9's (the forest's average −0.2 %
+  and lows −1.4 %, the peak's −1.2 % and −1.1 %, the cave's −1.9 % and +1.7 %); the baseline
+  moved to the end of V2-10 (D160).
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -852,8 +854,8 @@ generated land of each of its biomes, and a screenshot suite):
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. V2-10 — Ecosystem expansion waves (PLAN.md). Carry forward from the slice review
-   (`docs/review/slice-1.md`, "Left where they belong"): a kill is more than one person can use
+1. V2-11 — *Australopithecus* & the agent framework (PLAN.md). Carry forward from the slice
+   review (`docs/review/slice-1.md`, "Left where they belong"): a kill is more than one person can use
    in summer (sharing comes with others, V2-11); scavengers take a carcass within hours of
    play (the populations' year scale); joints are drawn, not built; a ridge piece for odd-span
    gables; drying racks spoil whole in the rain, unexplained to the player; dusk lights the land
