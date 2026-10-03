@@ -157,6 +157,7 @@
             ]),
             social: Flock(size: (5, 50)), activity: Diurnal,
             habitat: ["tundra_ecosystem"],
+            also_in: ["alpine_ecosystem"],
             seasonal: [Rut(season: Spring), Birthing(season: Summer), WinterCoat],
             growth_rate: 0.6, density_per_km2: 6, realms: ["Palearctic", "Nearctic"],
             life: (maturity_years: 1, lifespan_years: 5, litter: (6, 10), birth_day: 180, adult_survival: 0.6, young_survival: 0.3, birth_mass_kg: 0.014),

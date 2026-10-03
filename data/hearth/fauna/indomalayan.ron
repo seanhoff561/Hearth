@@ -239,7 +239,7 @@
             seasonal: [Birthing(season: Winter)],
             growth_rate: 0.3, density_per_km2: 0.1, realms: ["Indomalayan"],
             life: (maturity_years: 1.5, lifespan_years: 10, litter: (4, 9), births_per_year: 0.9, birth_day: 20, adult_survival: 0.85, young_survival: 0.45, birth_mass_kg: 0.3),
-            ranging: (home_range_km2: 50, territorial: true, dispersal_km: 30, dispersers: Females, cover: 0.4),
+            ranging: (home_range_km2: 80, territorial: true, dispersal_km: 30, dispersers: Females, cover: 0.4),
             coat: (base: "#b8582a", belly: "#e8c8a0", points: "#3a2a1a", tail_tip: "#1a1410"),
             shape: (neck: 0.18, head: 0.2, snout: 0.38, tail: 0.4, tail_width: 0.2, ears: 0.4, ear_shape: Round, legs: 0.9),
             habits: (vigilance: 0.5, sociability: 1.4),

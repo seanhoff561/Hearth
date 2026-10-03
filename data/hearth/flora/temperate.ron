@@ -19,7 +19,7 @@
         ),
         (
             id: "bramble", name: "Bramble", scientific: "Rubus fruticosus agg.", form: Shrub, status: Implemented,
-            climate: (temp_c: (3, 18), precip_mm: (400, 2000)),
+            climate: (temp_c: (3, 18), min_warmest_month_c: 13, precip_mm: (400, 2000)),
             shade_tolerance: 0.4, phenology: (leaf_out: 0.05, flowering: (0.35, 0.5), fruiting: (0.5, 0.7)),
             dispersal: Animal, max_height_m: 2.5, lifespan_years: 30,
             parts: [(part: Fruit, material: "blackberry", seasons: [Summer, Autumn], edibility: Edible, yield_kg: (0.5, 3), uses: ["food", "dye"])],
@@ -215,7 +215,7 @@
         ),
         (
             id: "hemlock", name: "Hemlock", scientific: "Conium maculatum", form: Herb, status: Implemented, lifecycle: Biennial,
-            climate: (temp_c: (4, 18), precip_mm: (400, 1500), koppen: ["Cfb", "Dfb", "Cfa", "Csb"]),
+            climate: (temp_c: (4, 18), min_warmest_month_c: 14, precip_mm: (400, 1500), koppen: ["Cfb", "Dfb", "Cfa", "Csb"]),
             shade_tolerance: 0.3, phenology: (flowering: (0.35, 0.55)),
             max_height_m: 2.0, lifespan_years: 2,
             parts: [
@@ -253,7 +253,7 @@
         ),
         (
             id: "foxglove", name: "Foxglove", scientific: "Digitalis purpurea", form: Herb, status: Implemented, lifecycle: Biennial,
-            climate: (temp_c: (4, 15), precip_mm: (600, 2000), koppen: ["Cfb", "Csb"]),
+            climate: (temp_c: (4, 15), min_warmest_month_c: 13, precip_mm: (600, 2000), koppen: ["Cfb", "Csb"]),
             shade_tolerance: 0.35, phenology: (flowering: (0.38, 0.55)),
             max_height_m: 1.5, lifespan_years: 2,
             parts: [
@@ -280,7 +280,7 @@
         ),
         (
             id: "bracken", name: "Bracken", scientific: "Pteridium aquilinum", form: Fern, status: Implemented,
-            climate: (temp_c: (0, 18), precip_mm: (600, 2500), koppen: ["Cfb", "Dfb", "Cfa", "Csb", "Dfb"]),
+            climate: (temp_c: (0, 18), min_warmest_month_c: 13, precip_mm: (600, 2500), koppen: ["Cfb", "Dfb", "Cfa", "Csb"]),
             shade_tolerance: 0.4, phenology: (leaf_out: 0.15, leaf_fall: (0.68, 0.8)),
             max_height_m: 1.5, lifespan_years: 50,
             parts: [

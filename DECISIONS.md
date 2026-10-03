@@ -1493,7 +1493,9 @@ A coati's fifth of a meal of spiny rats, and an opossum's twentieth, were, over 
 of them to the km², more rats than the rats could breed: the commonest rodent of the American
 forest floor fell to a hundredth of its numbers. Where an omnivore lives in such numbers and
 takes a vertebrate now and then, its meat is carrion rather than a named prey, and the forest's
-small hunters have the opossum and the iguana to live on besides the rats.
+small hunters have the opossum and the iguana to live on besides the rats. The olive baboon's hares
+and gazelle fawns were the same: ten thousand baboons took more Thomson's gazelles than the
+savanna's cats and dogs together, and held them at a fifteenth of their numbers (V2-10 (d)).
 
 ## D131 — The tropical runs: a realm's own heart, and uniform land where the world has none
 The heart of a biome in a realm was the place most surrounded by that biome, but on the border
@@ -1536,3 +1538,108 @@ and the tropics and the Mediterranean brought 26 more trees: the registry's stat
 are 16 bits, and the tables built per state are a few bytes each — so the test's sanity cap is
 now 40,000, room for the waves to come. A stem's block is named for its limbs (`bamboo_log` for
 `bamboo_branch`): a limb is drawn with its stem's bark.
+
+## D134 — A mountain's heights are alpine though their climate is a tundra's
+The alpine biomes were chosen above the tree line only where the climate was not classed as a
+tundra's. But above a mountain's trees the warmest month is under 10 °C, which is Köppen's
+tundra, so the slopes over every forest were the arctic's tundra, and alpine meadows and
+krummholz grew only on a fringe of cool oceanic coasts whose warmest month fell in the half
+degree between the tundra's 10 °C and the tree line's 10.5 °C: the alpine meadows' heart on the
+huge planet of seed 7 was 97 m above the sea, grown with bracken and foxgloves. A tree line more
+than 300 m above the sea is a mountain's, with forest below it: over it now lie the alpine meadows
+and rock whatever the climate's class, and along it the krummholz, though the forest under it be
+boreal. The tundra is where the tree line comes down to the sea. The fringe of cool coasts stays
+alpine meadow, as before; their plants (D135) are the alpine's.
+
+## D135 — The lowland plants stop where the summers are short
+Bracken, foxglove, hemlock and bramble had no bound on the summer's warmth, only the year's
+mean, and the cool oceanic coasts above the tree line (D134) suited them as well as any
+lowland: bracken stood two blocks tall over a tenth of the alpine meadow. Each now needs a
+warmest month of 13 to 14 °C (bracken stops at some 600 m in Britain, where July is near 12 °C,
+and lower where the summers are shorter). The soft edge of the climate's fit lets them a little
+way up the krummholz of the oceanic coasts, as bracken climbs to the tree line in Scotland.
+
+## D136 — A realm's own plants cover its ground, judged over the place
+The understory chose, at each spot, among the patches that fell on it: where none of the realm's
+own plants had a patch there, the stand-in realm's grew in full. Between the natives' patches
+the stand-ins filled every gap, and the Andes and Africa's mountains were half Eurasian heath.
+The choice is now judged from what each plant would cover over the place, its patches wherever
+they fall: where the realm's own would cover the ground there is, or half what the stand-ins
+would, the stand-ins are strays (as for the trees and the animals). And the two realms have
+alpine plants of their own now: the Afroalpine's giant lobelia, tree heath, everlasting,
+lady's mantle and tussock fescue, and the páramo and puna's páramo grass, lupine, chuquiragua
+and werneria. The planet's tropics have seasons where the Earth's high tropics have none (the
+African mountain's tree line has a coldest month of -4 °C, Mount Kenya's none below freezing),
+so its tropical tree lines are subarctic by their class: the tropical mountains' plants take the
+subarctic classes for their own.
+
+## D137 — Each realm's mountains have forests of their own; the tree line's dwarfs keep to it
+The tree line's dwarfs of the Andes and Africa (polylepis, frailejón, giant groundsel) were the
+only trees of those realms that suited a cool climate, and a realm's own trees take its land
+before any stand-in: they grew as whole forests on the mountains' lower slopes, giant groundsels
+at 2,800 m where Kilimanjaro has its rain forest. The two realms have their mountain forests now
+(the southern Andes' lenga, coihue and monkey puzzle; East Africa's pencil cedar, yellowwood
+and kosso), and a light-demanding tree of the tree line and the open (no more than 8 m tall, and
+little shade-tolerant) is a fifth as favoured in the temperate, northern and mountain forests,
+where the tall trees leave it room only at the edges; the small trees of the woods' own
+understory, hazel and elder, are left as they were. The lenga, the southern beech that makes the
+Andes' tree line, is the northern forest's broadleaf there as the birch and the aspen are in the
+north. The deodar keeps to the dry-winter climates of the western Himalaya: the Palearctic's
+mountains being one community (D140), it had seeded itself into Europe's lowland woods, a
+tenth of the regrowth of a cleared oak and chestnut wood.
+
+## D138 — The mountains' runs: uniform land for a realm, the Afroalpine's own climate
+The mountain belts of seed 7's vast planet are narrow: about the heart of each mountain biome
+lie other lands as much as its own, and a run there would judge the valleys' animals. The
+montane forest's Old World heart is generated and holds enough of it; the alpine lands of the
+Old World, North and South America and Ethiopia, and the montane forests of the Americas, are
+run as uniform lands of their ecosystem's reference for each realm, which the reference land's
+realms (D127) anchor. The Ethiopian highlands are cold all year round rather than in a winter
+(about 6 °C, the warmest month hardly warmer): their run takes the alpine reference with that
+climate, in which the gelada grazes the year through, as it does on the Simien. The cold
+wave's polar desert (D112) had been found where the tundra was coldest, which was on the cold
+high plateaus that are alpine now: the vast planet's high arctic lies under its polar ice, and
+the polar desert's run is the tundra's land in the high arctic's climate (some -13 °C, the
+warmest month 5 °C, 200 mm).
+
+## D139 — A pack's range is its share of the land
+A group-living hunter's `home_range_km2` is the land a group has to itself, which is the group's
+size over the species' density: the Ethiopian wolf's packs hold some 6 km² each on the Bale
+plateau, but the wolf had a range of 1 km² and starved, the crowding judged over less land than
+the pack hunts. The wolf, the spotted hyena and the dhole now range over their share. The
+Ethiopian wolf lives on the giant mole rats, which are some thousand to the square kilometre on
+the Sanetti plateau's best ground: their density is that, and the wolf and the jackal and the
+eagles live on them.
+
+## D140 — A realm's mountains share one community
+The Alps, the Himalaya and the Altai are one Palearctic mountain community here, as the Rockies
+and the Andes are the Nearctic's and the Neotropical's: a realm has no geography within it yet,
+so a Palearctic alpine meadow holds ibex, bharal and wild yak together. The Siberian ibex and the
+Himalayan marmot are left out until a realm can be divided, as the alpine ibex and the alpine
+marmot stand for them. Within a realm's mountains the animals sort themselves by what each
+eats and how cold it can bear.
+
+## D141 — Horns run as each animal's do; a flank band is not a zebra's bars
+Every horn was drawn as a cow's, out from the sides of the skull and forward and up, and the
+mountains' rams and goats are known by their horns. Horns now sweep out (cattle, bison,
+buffalo), up and back in an arc (antelopes, gazelles, wild goats; a chamois's short ones hooked
+over at the tips), back and down round the ear in a curl (the bighorn's, the argali's) or up in an
+open corkscrew (kudu, eland, nyala, addax, bongo), the curve bending each the more. And the
+black stripe along a Thomson's gazelle's and a bharal's side was drawn as bars down the flanks,
+the bands of a snake or a wildebeest's neck: a dark band along the flank, over the pale belly, is
+a pattern of its own.
+
+## D142 — The felling test cuts a stem at its own foot
+The world about the V2-5 spawn shifted with the mountains' plants, and the nearest slim stem the
+felling test found stood on the flared foot of a young holm oak, a block of log with the stem's
+first block above it. The axe cut there, and the whole tree fell with that block, as it should:
+the stump is the tree's foot. The test looks for a slim stem standing on the soil itself, as its
+comment always said, upright and joined to nothing beside it (not the turned-up end of a low
+limb), and the stump it finds after the fall is the block it cut (D113).
+The succession acceptance's temperate wood near the spawn is now a mountain forest of
+yellowwood, pencil cedar and strawberry tree. Cleared, it grows back through the kosso, the
+pioneer of its gaps, which lives some 150 years and then gives the old forest back to the
+yellowwood; it had been given 200, and outlived the test's two centuries.
+And the distant terrain's test, comparing its canopy with the cubes', looked for leaves no more
+than 40 blocks over the ground: the deodars and silver firs now in its forest stand fifty
+metres, and it looks as high as the tallest species grows.

@@ -44,8 +44,8 @@ seasons, danger and realms:
   simulated as groups (large animals, by default from 5 kg) or as numbers per cell (small ones,
   birds, fish);
 - **coat**: the recipe of its texture — back, belly, points, rump patch, pattern (plain,
-  spotted, striped, grizzled, masked, speckled, pied, zig-zag, banded) and its colour, the
-  winter coat, the male's colour where it differs, the young's pattern;
+  spotted, striped, grizzled, masked, speckled, pied, zig-zag, banded, a flank band) and its
+  colour, the winter coat, the male's colour where it differs, the young's pattern;
 - **yields**: what butchering gives as fractions of the live mass (meat or fish, fat, organs,
   bone, hide or fur, sinew) and extras (antlers in their season, tusks, horn, feathers);
 - **track**: the foot (cloven hoof, clawed or retracted paw, plantigrade sole, hopping feet,
@@ -113,7 +113,17 @@ hornbill, junglefowl and peafowl; the ricefield and spiny rats; the king cobra, 
 snake. The Mediterranean's: the rabbit, red-legged partridge, Iberian lynx, wood mouse,
 Montpellier snake and Hermann's tortoise, with the boar, red deer, fox, badger, wolf and golden
 eagle of the woods and steppes; the chaparral's mule deer and California quail, with the coyote,
-bobcat, jackrabbit and deer mouse.
+bobcat, jackrabbit and deer mouse. The mountains (wave d), whose alpine lies above every
+mountain's tree line (D134), a realm's ranges one community (D140): the Old World's ibex,
+chamois, marmot, snow vole, bearded vulture, chough, nutcracker, snow leopard, bharal, tahr,
+argali, wild yak, chiru, kiang, plateau pika, snowcock, Tibetan fox, musk deer and monal; North
+America's mountain goat, bighorn, hoary marmot, pika, golden-mantled ground squirrel,
+white-tailed ptarmigan, Clark's nutcracker and cougar; the Andes' vicuña, guanaco, taruca,
+mountain tapir, pudú, mountain viscacha, leaf-eared mouse, culpeo, spectacled bear and condor;
+Ethiopia's gelada, Ethiopian wolf, giant mole rat, walia ibex, mountain nyala, klipspringer, rock
+hyrax and Verreaux's eagle; with the golden eagle, foxes, wolves, bears, wolverine, ermine,
+hares, ptarmigan, deer, lynxes, capercaillie, squirrels, raven, moose and leopard of the lands
+below. A pack's home range is its share of the land, its size over the species' density (D139).
 
 ## Populations (`hearth_fauna`)
 The land is divided into **ecological cells** of 256 m, gathered in **regions** of 64 × 64
@@ -225,7 +235,9 @@ and weather, the animals in the world folded into them).
 Each species is a skeleton of slots with boxes on them, at its real dimensions, built from its
 body plan and the proportions of its `shape` (neck, head and snout, tail and its thickness,
 ears and how they stand, legs, a hump, and what grows on the head: antlers with their beam and
-tines, horns with their curve, tusks), every one of which defaults by plan, so that a new
+tines, horns with their curve and the way they sweep — out and forward as a cow's, up and back
+as an antelope's or a wild goat's, round the ear in a ram's curl or up in a kudu's corkscrew,
+D141 — tusks), every one of which defaults by plan, so that a new
 species needs only data. Four-legged bodies have a torso of two halves (bending at the middle
 of the back), legs of two segments and a foot, a neck, a head with a snout and a jaw, two ears
 and a tail of up to three segments; the torso is as long as the length leaves after the head

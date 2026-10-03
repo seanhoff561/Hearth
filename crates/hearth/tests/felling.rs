@@ -20,15 +20,26 @@ fn trunk(w: &World) -> Option<BlockPos> {
                     .is_some_and(|t| t == "8" || t == "12")
         })
     };
+    // Upright and joined to nothing beside it: a stem's foot, not the upturned end of a low limb
+    // standing over the ground beside the stem it forks from (the stump is the tree's foot).
     let stem = |p: BlockPos| {
         thick(p)
-            && w.mirror
-                .block(p)
-                .is_some_and(|s| w.reg.get(s, "up") == Some("true"))
+            && w.mirror.block(p).is_some_and(|s| {
+                w.reg.get(s, "up") == Some("true")
+                    && ["north", "south", "east", "west"]
+                        .iter()
+                        .all(|d| w.reg.get(s, d) != Some("true"))
+            })
+    };
+    // On the ground itself: not the slim stem over a flared foot of log.
+    let ground = |p: BlockPos| {
+        w.solid(p)
+            && w.block(p)
+                .is_some_and(|b| !b.ends_with("_log") && !b.ends_with("_branch"))
     };
     w.find(40, |n, _| n.ends_with("_branch"))
         .into_iter()
-        .filter(|p| stem(*p) && w.solid(p.down()))
+        .filter(|p| stem(*p) && ground(p.down()))
         .find(|p| {
             (1..=4).all(|k| {
                 w.block(BlockPos::new(p.x, p.y + k, p.z))

@@ -69,11 +69,27 @@ season (green, its autumn colour, bare), as the shaders already do by phenology.
 Trees stand on the generator's grid cells where the tree density passes. A column's
 candidate species are those whose climate envelope fits its mean temperature, coldest and
 warmest months, precipitation and Köppen class, weighted by how centrally they fit and by
-the biome's forest type; one is drawn by hash. Stand age varies smoothly across the land
-(young stands to old growth); a tree's age is the stand's ± its own, capped by its species'
-lifespan. The understory is placed per column from the species that fit the climate and the
-light under the canopy (shade-tolerant under trees, pioneers in clearings and on edges) and the
-ground. The distant terrain grows the same trees from their templates' crown summaries.
+the biome's forest type; one is drawn by hash. A realm's own species take its land; the
+stand-in realm's grow where none of them suits it (D115). The tree line's and the open's
+light-demanding small trees (a krummholz pine, a giant groundsel) are the alpine's and the
+krummholz's own and keep to the edges of the forests (D137). Stand age varies smoothly across
+the land (young stands to old growth); a tree's age is the stand's ± its own, capped by its
+species' lifespan. The understory is placed per column from the species that fit the climate
+(the summer's warmth bounding the lowland's, D135) and the light under the canopy
+(shade-tolerant under trees, pioneers in clearings and on edges) and the ground; the stand-ins
+come in full only where the realm's own would not cover the ground, judged over the place
+rather than by the patches on one spot (D136). The distant terrain grows the same trees from
+their templates' crown summaries.
+
+The mountains (V2-10 (d)) have a montane forest below the tree line (larch, fir, spruce and
+stone pine in the Alps and Siberia; spruce, subalpine fir, lodgepole and whitebark pine and
+mountain hemlock in the Rockies; birch and deodar in the Himalaya; lenga, coihue and monkey
+puzzle in the southern Andes; pencil cedar, yellowwood and kosso in East Africa), a krummholz
+along it and the alpine above it, of every mountain whose tree line stands above the sea
+(D134): alpenrose, dwarf juniper and green alder, fescues, cushions and flowers (moss campion,
+glacier buttercup, edelweiss, gentians, asters, blue poppies); the Afroalpine's giant groundsels
+and lobelias, tree heath, everlastings and lady's mantle; the páramo's and the puna's frailejón
+and polylepis, ichu and páramo grass, lupines, chuquiragua, werneria and yareta.
 
 ### Useful, edible, medicinal and poisonous plants
 The temperate understory has 26 species: berries (raspberry, bilberry, lingonberry, wild

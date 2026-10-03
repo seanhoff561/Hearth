@@ -60,6 +60,7 @@ pub enum Pattern {
     Pied,
     ZigZag,
     Banded,
+    FlankBand,
 }
 
 /// The colours and pattern of one coat: a species' at a season, of a sex and an age.
@@ -590,6 +591,8 @@ fn fish(coat: &CoatRecipe, body: &Body, b: &SkinBox, p: Vec3, n: Vec3) -> Rgb {
                         base
                     }
                 }
+                // A dark band along the flank, over the pale belly.
+                CoatPattern::FlankBand if (0.3..0.45).contains(&h) => coat.marking.unwrap_or(EYE),
                 CoatPattern::Banded if h > 0.3 => {
                     // Dark bars down the flanks.
                     let along = (p.z - t.min.z) / (t.size().z / 7.0).max(1e-4);

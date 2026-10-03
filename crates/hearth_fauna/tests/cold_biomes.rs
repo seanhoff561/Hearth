@@ -1,11 +1,13 @@
-//! V2-10 (a) acceptance (PLAN.md): fifty years of generated boreal forest, snowy taiga, tundra
-//! and polar desert (the coldest tundra) stay within plausible bounds for every species each
-//! holds, and each holds the animals that belong to it.
+//! V2-10 (a) acceptance (PLAN.md): fifty years of generated boreal forest, snowy taiga and
+//! tundra, and of the polar desert (the tundra's land in the high arctic's climate), stay within
+//! plausible bounds for every species each holds, and each holds the animals that belong to it.
 
 mod biomes;
 
-use biomes::{about_the_heart, check, fifty_years};
+use biomes::{about_the_heart, check, fifty_years, uniform, world};
+use hearth_fauna::habitat::reference_land;
 use hearth_fauna::species::Forage;
+use hearth_worldgen::realms::Realm;
 use hearth_worldgen::region::biome::Biome;
 
 #[test]
@@ -70,7 +72,19 @@ fn fifty_years_of_tundra() {
 
 #[test]
 fn fifty_years_of_polar_desert() {
-    let (mut eco, _) = about_the_heart(Biome::Tundra, |s| s.temperature < -12.0);
+    // The high arctic of seed 7's vast planet lies under its polar ice, and the cold high
+    // plateaus that were its coldest tundra are the mountains' alpine (D134): the tundra's land
+    // in the high arctic's climate, some -13 °C, the warmest month 5 °C, 200 mm.
+    let w = world();
+    let e = w
+        .catalog
+        .ecosystems
+        .iter()
+        .find(|e| e.id.ends_with("tundra_ecosystem"))
+        .expect("the tundra");
+    let mut land = e.reference.clone().expect("its land");
+    (land.temp_c, land.warm_c, land.precip_mm) = (-13.0, 5.0, 200.0);
+    let mut eco = uniform(reference_land(&w.catalog, &land, &e.id, Realm::Palearctic));
     let (present, failures) = fifty_years(&mut eco, Biome::Tundra);
     check(
         "polar desert",

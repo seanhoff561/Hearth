@@ -596,9 +596,23 @@ impl FeatureGen {
             | Biome::StonyShore
             | Biome::Glacier
             | Biome::IceSheet
-            | Biome::AlpineRock
             | Biome::Volcanic => {}
+            // Cushions and the flowers of the screes, in the rock's gravelly pockets.
+            Biome::AlpineRock => {
+                if (grassy || matches!(s.surface, Surface::Gravel | Surface::CoarseDirt))
+                    && r < 0.35
+                    && self.understory(w, wg, x, z, top, s, flower_n, disturbed)
+                {
+                    return next;
+                }
+            }
             Biome::AlpineMeadow => {
+                // The meadow's own grasses, cushions and flowers first.
+                if (grassy || matches!(s.surface, Surface::CoarseDirt | Surface::SnowGrass))
+                    && self.understory(w, wg, x, z, top, s, flower_n, disturbed)
+                {
+                    return next;
+                }
                 if grassy {
                     if flower_n > 0.35 && r < 0.35 {
                         w.put(x, top, z, b.flowers_alpine[(r2 * 2.0) as usize % 2]);
@@ -653,7 +667,6 @@ impl FeatureGen {
                 // The taiga's own floor first (berries, heaths, feather moss, lichens); ferns
                 // and grass where it is mild enough.
                 if (grassy || s.surface == Surface::SnowGrass)
-                    && matches!(s.biome, Biome::BorealForest | Biome::SnowyTaiga)
                     && self.understory(w, wg, x, z, top, s, flower_n, disturbed)
                 {
                     return next;

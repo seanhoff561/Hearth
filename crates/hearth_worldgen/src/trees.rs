@@ -96,6 +96,8 @@ pub struct Niche {
     /// Drainage it likes: 0 waterlogged … 1 dry.
     pub drainage: Option<(f32, f32)>,
     pub conifer: bool,
+    /// Grows no taller than a shrub (a krummholz pine, a giant groundsel): the tree line's own.
+    pub dwarf: bool,
     /// How quickly it takes opened ground, by how its seed travels and how fast it grows
     /// (about 1; the wind-sown, fast-growing pioneers 2 and more, heavy nuts a half).
     pub colonizes: f32,
@@ -127,6 +129,7 @@ impl Niche {
             shade_tolerance: p.shade_tolerance,
             drainage: p.soil.drainage,
             conifer,
+            dwarf: p.max_height_m <= 8.0,
             colonizes: travels * pace,
             pace,
             realms: crate::realms::set_of(&p.realms),
@@ -294,12 +297,35 @@ impl Niche {
 
     /// How much the biome's own trees favour it.
     pub fn affinity(&self, id: &str, b: Biome) -> f32 {
+        // The light-demanding small trees of the tree line and the open (a krummholz pine, a
+        // giant groundsel, a tamarisk) grow in the temperate and the northern forests only
+        // where the tall trees leave them room; the shade-bearing ones of the woods' understory
+        // (hazel, elder) are the woods' own.
+        let forest = matches!(
+            b,
+            Biome::BroadleafForest
+                | Biome::MixedForest
+                | Biome::BirchForest
+                | Biome::BorealForest
+                | Biome::SnowyTaiga
+                | Biome::TemperateRainforest
+                | Biome::MontaneForest
+        );
+        let under = if self.dwarf && self.shade_tolerance < 0.3 && forest {
+            0.2
+        } else {
+            1.0
+        };
+        under * self.biome_affinity(id, b)
+    }
+
+    fn biome_affinity(&self, id: &str, b: Biome) -> f32 {
         let is = |names: &[&str]| names.iter().any(|n| id.ends_with(n));
         match b {
             Biome::BorealForest | Biome::SnowyTaiga => {
                 if self.conifer {
                     3.0
-                } else if is(&["birch", "aspen"]) {
+                } else if is(&["birch", "aspen", "lenga"]) {
                     1.5
                 } else {
                     0.3
@@ -310,6 +336,16 @@ impl Niche {
                     5.0
                 } else {
                     0.6
+                }
+            }
+            // At the tree line the stunted and the dwarf, and the conifers that can grow so.
+            Biome::Krummholz | Biome::AlpineMeadow | Biome::AlpineRock => {
+                if self.dwarf {
+                    4.0
+                } else if self.conifer {
+                    1.0
+                } else {
+                    0.3
                 }
             }
             Biome::TemperateRainforest | Biome::MontaneForest => {
@@ -429,12 +465,15 @@ impl Forest {
         patch_roll: impl Fn(usize, f32) -> f32,
     ) -> Option<usize> {
         let mut odds: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
+        // What each would cover over the place, its patches as they fall anywhere.
+        let mut expect: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
         let mut natives: smallvec::SmallVec<[f32; 32]> = smallvec::SmallVec::new();
         for (i, p) in self.understory.iter().enumerate() {
             let u = &p.understory;
             natives.push(p.niche.native(c));
             if !ground.shrubs && matches!(p.form, GrowthForm::Shrub | GrowthForm::Vine) {
                 odds.push(0.0);
+                expect.push(0.0);
                 continue;
             }
             let climate = p.niche.suits(c).min(1.0);
@@ -445,37 +484,48 @@ impl Forest {
                 0.25
             };
             let fit = climate * lit * soil;
-            let p = if fit < 0.15 {
-                0.0
+            let (p, e) = if fit < 0.15 {
+                (0.0, 0.0)
             } else if u.patch_m > 0.0 {
                 // A patch is there or not; inside one, the plant is thick on the ground.
-                if patch_roll(i, u.patch_m) < u.abundance * fit {
+                let here = if patch_roll(i, u.patch_m) < u.abundance * fit {
                     0.35 * fit
                 } else {
                     0.0
-                }
+                };
+                (here, (u.abundance * fit).min(1.0) * 0.35 * fit)
             } else {
-                0.02 * u.abundance * fit
+                let p = 0.02 * u.abundance * fit;
+                (p, p)
             };
             odds.push(p);
+            expect.push(e);
         }
-        // The place's own realm's plants; where they cover less than half what the stand-in
-        // realm's would (a realm with no tundra plants of its own but a moss of every
-        // continent's bogs), the stand-in realm's in full (as its animals do), not as rare
-        // strays.
-        let (own, stand_in) = odds
-            .iter()
-            .zip(&natives)
-            .fold((0.0f32, 0.0f32), |(o, s), (p, n)| {
-                if *n >= 1.0 {
-                    (o + p, s)
-                } else if *n > 0.0 {
-                    (o, s + p)
-                } else {
-                    (o, s)
-                }
-            });
-        let strays = own >= 0.5 * stand_in;
+        // The ground the plants cover, the less the drier the place (de Martonne's index, the
+        // rain against the warmth): a sixth of it in the driest deserts, a third in the wetter
+        // ones, all there is room for on a steppe or in a wood.
+        let aridity = c.precip_mm / (c.mean_c + 10.0).max(1.0);
+        let cover = 0.7 * (aridity / 20.0).clamp(0.2, 1.0);
+        // The place's own realm's plants; where they would cover less than half what the
+        // stand-in realm's would, and less than the ground there is (a realm with no tundra
+        // plants of its own but a moss of every continent's bogs), the stand-in realm's in full
+        // (as its animals do), not as rare strays. Judged over the place, not by the patches
+        // that fall on the one spot, lest the stand-ins fill the gaps between the natives'
+        // patches.
+        let (own, stand_in) =
+            expect
+                .iter()
+                .zip(&natives)
+                .fold((0.0f32, 0.0f32), |(o, s), (p, n)| {
+                    if *n >= 1.0 {
+                        (o + p, s)
+                    } else if *n > 0.0 {
+                        (o, s + p)
+                    } else {
+                        (o, s)
+                    }
+                });
+        let strays = own >= (0.5 * stand_in).min(cover);
         for (p, n) in odds.iter_mut().zip(&natives) {
             *p *= if *n >= 1.0 || *n <= 0.0 || strays {
                 *n
@@ -483,11 +533,6 @@ impl Forest {
                 1.0
             };
         }
-        // The ground the plants cover, the less the drier the place (de Martonne's index, the
-        // rain against the warmth): a sixth of it in the driest deserts, a third in the wetter
-        // ones, all there is room for on a steppe or in a wood.
-        let aridity = c.precip_mm / (c.mean_c + 10.0).max(1.0);
-        let cover = 0.7 * (aridity / 20.0).clamp(0.2, 1.0);
         let total: f32 = odds.iter().sum::<f32>().min(cover);
         if roll >= total {
             return None;

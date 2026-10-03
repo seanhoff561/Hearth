@@ -252,6 +252,9 @@ pub struct BiomeInputs {
     pub shelter: f32,
 }
 
+/// How high (m) a tree line stands that is a mountain's rather than the arctic's.
+const MOUNTAIN_TREE_LINE_M: f32 = 300.0;
+
 /// Picks the biome for a column.
 pub fn select(i: &BiomeInputs) -> Biome {
     let underwater = i.water.is_finite() && i.height < i.water - 0.5;
@@ -301,7 +304,12 @@ pub fn select(i: &BiomeInputs) -> Biome {
     if i.climate == ClimateClass::IceCap {
         return Biome::IceSheet;
     }
-    if i.above_tree_line > 0.0 && i.climate != ClimateClass::Tundra {
+    // A mountain's tree line stands well above the sea, with forest below it; above it is the
+    // alpine though its climate be a tundra's, and the tree line is the krummholz's though the
+    // forest under it be the boreal's. The tundra's own lands are where the tree line comes
+    // down to the sea.
+    let mountain = (i.height - i.above_tree_line) / i.vertical_scale > MOUNTAIN_TREE_LINE_M;
+    if i.above_tree_line > 0.0 && (i.climate != ClimateClass::Tundra || mountain) {
         let dry = i.precipitation < 350.0;
         return if i.slope > 1.0 || dry || i.above_tree_line > 120.0 {
             Biome::AlpineRock
@@ -342,7 +350,7 @@ pub fn select(i: &BiomeInputs) -> Biome {
     }
     if i.above_tree_line > -40.0 && i.above_tree_line <= 0.0 {
         let cold_climate = matches!(i.climate, ClimateClass::Subarctic | ClimateClass::Tundra);
-        if !cold_climate && i.precipitation > 350.0 {
+        if (mountain || !cold_climate) && i.precipitation > 350.0 {
             return Biome::Krummholz;
         }
     }
@@ -556,6 +564,26 @@ mod tests {
         assert_eq!(select(&high), Biome::AlpineMeadow);
         high.above_snow_line = 10.0;
         assert_eq!(select(&high), Biome::Glacier);
+        // A mountain's slopes over its trees are alpine though their climate is a tundra's; the
+        // arctic, where the tree line is down at the sea, is the tundra.
+        let mut mountain = inputs(ClimateClass::Tundra);
+        mountain.height = 600.0;
+        mountain.above_tree_line = 30.0;
+        assert_eq!(select(&mountain), Biome::AlpineMeadow);
+        mountain.climate = ClimateClass::Subarctic;
+        mountain.above_tree_line = -20.0;
+        assert_eq!(
+            select(&mountain),
+            Biome::Krummholz,
+            "a mountain's tree line"
+        );
+        let mut arctic = inputs(ClimateClass::Tundra);
+        arctic.height = 20.0;
+        arctic.above_tree_line = 30.0;
+        assert_eq!(select(&arctic), Biome::Tundra);
+        arctic.climate = ClimateClass::Subarctic;
+        arctic.above_tree_line = -20.0;
+        assert_ne!(select(&arctic), Biome::Krummholz, "the arctic's tree line");
     }
 
     #[test]

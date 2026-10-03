@@ -1743,7 +1743,9 @@ mod tests {
                 let (x, z) = (x0 + dx, z0 + dz);
                 let ground = wg.terrain.sample(x, z).height_i();
                 let mut cube_top = i32::MIN;
-                for y in (ground..ground + 40).rev() {
+                // Up to the tallest species' crowns (a deodar's reach fifty metres).
+                let reach = wg.forest.tallest_m.ceil() as i32 + 8;
+                for y in (ground..ground + reach).rev() {
                     let p = hearth_math::BlockPos::new(x, y, z);
                     let cube = cubes
                         .entry(p.cube())

@@ -228,6 +228,7 @@ fn pattern_of(p: CoatPattern) -> Pattern {
         CoatPattern::Pied => Pattern::Pied,
         CoatPattern::ZigZag => Pattern::ZigZag,
         CoatPattern::Banded => Pattern::Banded,
+        CoatPattern::FlankBand => Pattern::FlankBand,
     }
 }
 

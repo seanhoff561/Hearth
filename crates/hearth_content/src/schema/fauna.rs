@@ -235,6 +235,9 @@ pub enum CoatPattern {
     ZigZag,
     /// Dark bands across the body (rattlesnakes).
     Banded,
+    /// A dark band along each flank between the back and the pale belly (a Thomson's
+    /// gazelle's, a bharal's).
+    FlankBand,
 }
 
 /// Colours and patterns of its coat, feathers or scales (V2-7): the recipe for its texture.
@@ -317,6 +320,9 @@ pub enum HeadGear {
         /// up at the tips (a musk ox's).
         #[serde(default)]
         droop: bool,
+        /// Which way they run from the skull.
+        #[serde(default)]
+        sweep: HornSweep,
     },
     /// Horns on the nose, one behind the other along the snout's top (a rhinoceros's): the
     /// front one's length (m), on both sexes.
@@ -328,6 +334,22 @@ pub enum HeadGear {
         #[serde(default)]
         both_sexes: bool,
     },
+}
+
+/// Which way horns run from the skull, their curve bending them the more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum HornSweep {
+    /// Out to the sides, then forward and up (cattle, bison, buffalo).
+    #[default]
+    Out,
+    /// Up from the crown and back in an arc (antelopes and wild goats: a gazelle's lyre, an
+    /// ibex's scimitar, a chamois's hook).
+    Up,
+    /// Back from the crown, down behind the ear and forward round it (wild sheep: a full curl
+    /// at a curve of 1).
+    Curl,
+    /// Up and back in an open corkscrew (kudu, eland, addax).
+    Spiral,
 }
 
 /// The proportions of its body past its length and height (V2-7 bodies), each a fraction; its

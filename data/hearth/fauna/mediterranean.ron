@@ -165,6 +165,7 @@
             ]),
             social: Family, activity: Crepuscular,
             habitat: ["mediterranean_scrub", "cold_desert"],
+            also_in: ["montane_forest_ecosystem", "alpine_ecosystem"],
             seasonal: [Rut(season: Autumn), Birthing(season: Summer)],
             growth_rate: 0.3, density_per_km2: 4, realms: ["Nearctic"],
             life: (maturity_years: 1.5, lifespan_years: 15, litter: (1, 2), births_per_year: 1, birth_day: 160, adult_survival: 0.9, young_survival: 0.7, birth_mass_kg: 3.5),

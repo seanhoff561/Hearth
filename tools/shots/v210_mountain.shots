@@ -1,0 +1,24 @@
+# V2-10 (d) the mountains on the huge planet of seed 7, each at a place in its realm (`x=`, `z=`):
+# the Old World's alpine meadows (an ibex herd), krummholz, rock and ice, and its montane larch
+# and fir forest in summer (chamois) and in autumn's gold; the Andes' puna (vicuñas), their lenga
+# forest in autumn from above it and their tree line of monkey puzzles; East Africa's Afroalpine
+# moor of giant groundsels, lobelias and tree heath (geladas) and its mountain forest of pencil
+# cedars and yellowwoods; then their animals, close (the Rockies' on the Old World's meadow: this
+# planet's Nearctic has no mountains). Seasons are the place's own (`season=`, `@` how far into
+# it). `hearth --screenshot-list tools/shots/v210_mountain.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=8, hour=11, clouds=0.25, dry=true
+x=168960, z=-48640, above=4, yaw=30, pitch=8, season=summer@0.5, herd=alpine_ibex:9@10:0, out=bench-out/v210d/alpine_meadow.png
+x=33280, z=-39936, above=3, yaw=30, pitch=4, season=summer@0.5, out=bench-out/v210d/krummholz.png
+x=171008, z=-45056, above=3, yaw=30, pitch=8, season=summer@0.6, out=bench-out/v210d/alpine_rock.png
+x=14336, z=-43008, above=4, yaw=30, pitch=8, season=summer@0.5, herd=chamois:8@10:0, out=bench-out/v210d/montane_summer.png
+x=14336, z=-43008, above=3, yaw=30, pitch=4, season=autumn@0.4, out=bench-out/v210d/montane_autumn.png
+x=78592, z=48128, above=4, yaw=300, pitch=8, season=summer@0.5, herd=vicuna:8@10:0, out=bench-out/v210d/puna.png
+x=57504, z=41312, above=15, yaw=30, pitch=12, season=autumn@0.4, out=bench-out/v210d/lenga_autumn.png
+x=58176, z=43940, above=3, yaw=210, pitch=2, season=summer@0.5, out=bench-out/v210d/andes_treeline.png
+x=204224, z=-12896, above=4.5, yaw=120, pitch=10, season=summer@0.5, herd=gelada:20@10:0, out=bench-out/v210d/afroalpine.png
+x=205184, z=-10828, above=3, yaw=30, pitch=4, season=summer@0.5, out=bench-out/v210d/afromontane_forest.png
+x=166400, z=-49664, above=1.8, yaw=30, pitch=4, fov=45, season=summer, animal=alpine_ibex:adult:m:alert@9:-2:80, animal=chamois:adult:f:graze@8:2:110, animal=alpine_marmot:adult:f:alert@4:-0.8:60, animal=snow_leopard:adult:m:walk@7:4:130, out=bench-out/v210d/alps_animals.png
+x=182272, z=-28416, above=2.2, yaw=120, pitch=6, fov=45, season=summer, animal=wild_yak:adult:m:alert@14:-3:80, animal=kiang:adult:f:graze@12:3:110, animal=tibetan_antelope:adult:m:alert@8:-1:60, animal=bharal:adult:m:graze@7:2.5:130, animal=plateau_pika:adult:f:alert@3.5:0.4:70, out=bench-out/v210d/tibet_animals.png
+x=166400, z=-49664, above=1.8, yaw=30, pitch=4, fov=45, season=summer, animal=mountain_goat:adult:m:alert@9:-2:80, animal=bighorn_sheep:adult:m:alert@10:3:110, animal=hoary_marmot:adult:f:alert@4:-0.6:60, animal=american_pika:adult:f:alert@3.5:0.8:90, animal=cougar:adult:f:walk@7:-4:130, out=bench-out/v210d/rockies_animals.png
+x=78592, z=48128, above=1.8, yaw=300, pitch=4, fov=45, season=summer, animal=vicuna:adult:m:alert@8:-2:80, animal=guanaco:adult:f:graze@11:3:110, animal=mountain_tapir:adult:f:walk@10:-4:60, animal=spectacled_bear:adult:m:walk@7:2:130, animal=mountain_viscacha:adult:f:alert@4:0.6:70, out=bench-out/v210d/andes_animals.png
+x=204224, z=-12896, above=3, yaw=170, pitch=14, fov=45, season=summer, animal=gelada:adult:m:graze@6:-0.5:80, animal=ethiopian_wolf:adult:f:alert@8:1.5:110, animal=walia_ibex:adult:m:alert@10:-1.5:60, animal=rock_hyrax:adult:f:alert@5:0.8:70, animal=giant_mole_rat:adult:f:alert@4.5:-0.3:90, out=bench-out/v210d/ethiopia_animals.png

@@ -12,7 +12,7 @@
 //! body segment runs back along −z, an ear stands up its +y.
 
 use glam::{Mat3, Quat, Vec3};
-use hearth_content::schema::fauna::{BodyPlan, EarShape, HeadGear};
+use hearth_content::schema::fauna::{BodyPlan, EarShape, HeadGear, HornSweep};
 use hearth_texgen::coats::{SkinKind, SkinPart};
 
 use crate::species::Species;
@@ -618,26 +618,93 @@ fn head(
             }
         }
         Some(HeadGear::Horns {
-            length_m, curve, ..
-        }) => {
-            // Out from the skull's top sides, curving forward and up.
-            let w = (length_m * 0.12).max(0.02);
-            for side in [1.0f32, -1.0] {
-                let mut at = Vec3::new(side * hw * 0.42, hh * 0.38, skull_l * 0.2);
-                let mut dir = Vec3::new(side, 0.15, 0.0).normalize();
-                let segs = 3;
-                for k in 0..segs {
-                    let l = length_m / segs as f32;
-                    let next = at + dir * l;
-                    let thick = w * (1.0 - 0.28 * k as f32);
-                    horn_segment(b, at, next, thick, SkinPart::Horn, Gear::Horn);
-                    at = next;
-                    // Bending forward and up by the curve.
-                    let turn = curve * 1.2;
-                    dir = (dir + Vec3::new(-side * 0.35, 0.5, 0.75) * turn).normalize();
+            length_m,
+            curve,
+            sweep,
+            ..
+        }) => match sweep {
+            HornSweep::Out => {
+                // Out from the skull's top sides, curving forward and up.
+                let w = (length_m * 0.12).max(0.02);
+                for side in [1.0f32, -1.0] {
+                    let mut at = Vec3::new(side * hw * 0.42, hh * 0.38, skull_l * 0.2);
+                    let mut dir = Vec3::new(side, 0.15, 0.0).normalize();
+                    let segs = 3;
+                    for k in 0..segs {
+                        let l = length_m / segs as f32;
+                        let next = at + dir * l;
+                        let thick = w * (1.0 - 0.28 * k as f32);
+                        horn_segment(b, at, next, thick, SkinPart::Horn, Gear::Horn);
+                        at = next;
+                        // Bending forward and up by the curve.
+                        let turn = curve * 1.2;
+                        dir = (dir + Vec3::new(-side * 0.35, 0.5, 0.75) * turn).normalize();
+                    }
                 }
             }
-        }
+            HornSweep::Up => {
+                // Up from the crown, bending back by the curve.
+                let w = (length_m * 0.12).max(0.015);
+                for side in [1.0f32, -1.0] {
+                    let mut at = Vec3::new(side * hw * 0.28, hh * 0.45, skull_l * 0.3);
+                    let mut dir = Vec3::new(side * 0.15, 1.0, -0.15).normalize();
+                    let segs = 4;
+                    for k in 0..segs {
+                        let l = length_m / segs as f32;
+                        let next = at + dir * l;
+                        let thick = w * (1.0 - 0.2 * k as f32);
+                        horn_segment(b, at, next, thick, SkinPart::Horn, Gear::Horn);
+                        at = next;
+                        dir = (dir + Vec3::new(side * 0.04, -0.3, -0.85) * curve * 0.7).normalize();
+                    }
+                }
+            }
+            HornSweep::Curl => {
+                // Back from the crown, down behind the ear and forward under it, drifting out
+                // from the head: round the ear by 55 degrees a segment at a curve of 1.
+                let w = (length_m * 0.16).max(0.02);
+                let (sin, cos) = (curve * 55.0f32).to_radians().sin_cos();
+                for side in [1.0f32, -1.0] {
+                    let mut at = Vec3::new(side * hw * 0.35, hh * 0.45, skull_l * 0.25);
+                    let mut dir = Vec3::new(side * 0.3, 0.5, -0.8).normalize();
+                    let segs = 6;
+                    for k in 0..segs {
+                        let l = length_m / segs as f32;
+                        let next = at + dir * l;
+                        let thick = w * (1.0 - 0.12 * k as f32);
+                        horn_segment(b, at, next, thick, SkinPart::Horn, Gear::Horn);
+                        at = next;
+                        let (y, z) = (dir.y * cos + dir.z * sin, dir.z * cos - dir.y * sin);
+                        dir = Vec3::new(dir.x + side * 0.08, y, z).normalize();
+                    }
+                }
+            }
+            HornSweep::Spiral => {
+                // Up and back along an axis, winding about it the more turns the more they
+                // curve.
+                let w = (length_m * 0.1).max(0.015);
+                let turns = 0.75 + 1.5 * curve;
+                let r = length_m * (0.06 + 0.06 * curve);
+                for side in [1.0f32, -1.0] {
+                    let base = Vec3::new(side * hw * 0.28, hh * 0.45, skull_l * 0.3);
+                    let axis = Vec3::new(side * 0.35, 0.85, -0.2 - 0.3 * curve).normalize();
+                    let u = axis.any_orthonormal_vector();
+                    let v = axis.cross(u);
+                    let segs = 8;
+                    let mut prev = base;
+                    for k in 1..=segs {
+                        let t = k as f32 / segs as f32;
+                        let phi = side * t * turns * std::f32::consts::TAU;
+                        let p = base
+                            + axis * (length_m * 0.85 * t)
+                            + (u * (phi.cos() - 1.0) + v * phi.sin()) * r;
+                        let thick = w * (1.0 - 0.6 * t);
+                        horn_segment(b, prev, p, thick, SkinPart::Horn, Gear::Horn);
+                        prev = p;
+                    }
+                }
+            }
+        },
         Some(HeadGear::NasalHorns { length_m }) => {
             // The front horn from the snout's tip, up and a little forward; the second behind
             // it, half its length.
