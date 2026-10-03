@@ -1,0 +1,30 @@
+// Gene pools (V2.1 §4.5): a species' frequencies for its physical loci, where they differ from the
+// loci's own. Behavioural loci (temperament, aptitude) have one set of frequencies in every pool:
+// a pool cannot name them (ground rule 1; the lint fails any that tries). Until H8's deep time
+// makes populations, a place's pool is its species' with the pigmentation set by the place's
+// sunlight where `sunlight` is on.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "homo_sapiens", name: "Human", status: Implemented, species: "homo_sapiens", sunlight: true,
+            realism_source: "pigmentation by sunlight (Jablonski and Chaplin 2000); review",
+            uncertain: true,
+        ),
+        (
+            id: "australopithecus", name: "Australopithecus", status: Implemented, species: "australopithecus", sunlight: false,
+            // Dark skin under dark hair, dark eyes: the tropics' apes'.
+            loci: [
+                (locus: "skin_a", frequencies: [1.0, 0.0]),
+                (locus: "skin_b", frequencies: [1.0, 0.0]),
+                (locus: "skin_c", frequencies: [1.0, 0.0]),
+                (locus: "eye_major", frequencies: [1.0, 0.0]),
+                (locus: "eye_green", frequencies: [1.0, 0.0]),
+                (locus: "red_hair", frequencies: [1.0, 0.0]),
+            ],
+            traits: [(of: "skin_pigment", raising: 0.6), (of: "hair_darkness", raising: 0.65)],
+            realism_source: "inferred from living African apes; review",
+            uncertain: true,
+        ),
+    ],
+)

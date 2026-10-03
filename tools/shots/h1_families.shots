@@ -1,0 +1,11 @@
+# H1 families of three generations (V2.1 §4, §18): the grandparents behind, the mother and the
+# father, their three children in front (a daughter of 19, a son of 16, a daughter of 9). Their
+# genomes are drawn by meiosis from the grandparents down; their looks are their phenotypes at
+# their ages. The first family's people are of the tropics (latitude 5), the second's of the far
+# north (latitude 60); in the third the mother's parents are of the north and the father's of the
+# tropics, and their children are a mix of them. On the savanna of seed 7, mown.
+# `hearth --screenshot-list tools/shots/h1_families.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=6, hour=11, clouds=0.25, dry=true, season=summer@0.5
+biome=savanna, above=1.7, yaw=30, pitch=10, fov=42, mow=12@7, family=11:5:5@6, out=bench-out/h1/family_tropics.png
+biome=savanna, above=1.7, yaw=30, pitch=10, fov=42, mow=12@7, family=12:60:60@6, out=bench-out/h1/family_north.png
+biome=savanna, above=1.7, yaw=30, pitch=10, fov=42, mow=12@7, family=13:60:5@6, out=bench-out/h1/family_mixed.png

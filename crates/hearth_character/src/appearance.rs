@@ -201,7 +201,7 @@ pub struct Appearance {
     /// Optional.
     pub name: String,
     pub body: BodyType,
-    /// Standing height (m), 1.55–1.95.
+    /// Standing height (m), 0.8–1.95: a child's to a tall grown one's.
     pub height_m: f32,
     /// 0 slight – 0.5 average – 1 heavy.
     pub build: f32,
@@ -235,7 +235,9 @@ impl Default for Appearance {
     }
 }
 
-pub const MIN_HEIGHT_M: f32 = 1.55;
+/// The shortest a figure stands: a small child (until H3's children have their own proportions,
+/// a child is a grown body made small).
+pub const MIN_HEIGHT_M: f32 = 0.8;
 pub const MAX_HEIGHT_M: f32 = 1.95;
 
 impl Appearance {

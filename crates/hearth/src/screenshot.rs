@@ -194,6 +194,8 @@ pub struct ShotSpec {
     pub animals: Vec<ShotAnimal>,
     /// Hominins on the ground in front of the camera.
     pub hominins: Vec<ShotHominin>,
+    /// A family of three generations standing before the camera (H1).
+    pub family: Option<ShotFamily>,
     /// Signs laid on the ground: whose, how many, what (prints, blood, droppings), from where
     /// (metres ahead, to the right) and going which way (degrees from the camera's).
     pub trails: Vec<(String, usize, hearth_fauna::live::SignKind, f64, f64, f32)>,
@@ -234,6 +236,18 @@ pub struct ShotHominin {
     pub right: f64,
     pub yaw: f32,
     pub up: f64,
+}
+
+/// A family of three generations in a screenshot (H1): two pairs of grandparents of the human
+/// pool, one pair at the mother's latitude and one at the father's, a daughter of the one and a
+/// son of the other, and their three children, drawn from `seed`; standing in rows `ahead`
+/// metres before the camera, the grandparents behind.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShotFamily {
+    pub seed: u64,
+    pub mother_lat: f64,
+    pub father_lat: f64,
+    pub ahead: f64,
 }
 
 /// An animal placed in a screenshot.
@@ -308,6 +322,7 @@ impl Default for ShotSpec {
             senses: None,
             animals: Vec::new(),
             hominins: Vec::new(),
+            family: None,
             trails: Vec::new(),
             fauna: false,
             stress: false,
@@ -521,6 +536,24 @@ impl ShotSpec {
                         right: n.next().unwrap_or("0").parse()?,
                         yaw: n.next().unwrap_or("180").parse()?,
                         up: n.next().unwrap_or("0").parse()?,
+                    });
+                }
+                // `family=7:5:60@6`: a family of three generations drawn from seed 7, the
+                // mother's people of latitude 5, the father's of 60, standing 6 m ahead.
+                "family" => {
+                    let (what, at) = v.split_once('@').unwrap_or((v, "6"));
+                    let mut w = what.split(':');
+                    let seed = w.next().unwrap_or("1").parse()?;
+                    let mother_lat: f64 = w.next().unwrap_or("0").parse()?;
+                    let father_lat = match w.next() {
+                        Some(l) => l.parse()?,
+                        None => mother_lat,
+                    };
+                    spec.family = Some(ShotFamily {
+                        seed,
+                        mother_lat,
+                        father_lat,
+                        ahead: at.parse()?,
                     });
                 }
                 // `trail=red_deer:12:prints@4:-1:30` a trail of signs (prints, blood or droppings)
@@ -1363,6 +1396,7 @@ pub fn render_shot(
     }
     // The hominins: those placed and those of a group sought.
     let mut hominin_views = placed_hominins(spec, lw, &camera);
+    hominin_views.extend(placed_family(spec, lw, &camera));
     // The animals: their bodies and coats, those placed and those of the populations.
     let mut drawn = Vec::new();
     let mut bodies = None;
@@ -2077,6 +2111,92 @@ fn stature(
     (range.0 + range.1) / 2.0 * growth.powf(0.4)
 }
 
+/// A family of three generations placed in a shot (see [`ShotFamily`]): their genomes by meiosis
+/// from the grandparents down, their looks from their phenotypes at their ages.
+fn placed_family(
+    spec: &ShotSpec,
+    lw: &LocalWorld,
+    camera: &hearth_render::camera::Camera,
+) -> Vec<hearth_people::PersonView> {
+    use hearth_fauna::live::{Medium, Stage};
+    use hearth_people::{Doing, Genetics, Genome};
+    let Some(fam) = &spec.family else {
+        return Vec::new();
+    };
+    let species = crate::born::PLAYER_SPECIES;
+    let (Some(g), Some(profile)) = (
+        Genetics::from_content(&lw.content),
+        lw.content.species.get(species),
+    ) else {
+        return Vec::new();
+    };
+    let Some(pool) = g.pool(species) else {
+        return Vec::new();
+    };
+    let mut rng = hearth_math::hash::Rng::new(hearth_math::hash::derive_seed(fam.seed, "family"));
+    let (sm, sf) = (g.sunlight(fam.mother_lat), g.sunlight(fam.father_lat));
+    let gm1 = g.founder(pool, sm, true, &mut rng);
+    let gf1 = g.founder(pool, sm, false, &mut rng);
+    let gm2 = g.founder(pool, sf, true, &mut rng);
+    let gf2 = g.founder(pool, sf, false, &mut rng);
+    let mother = g.child(&gm1, &gf1, Some(true), &mut rng);
+    let father = g.child(&gm2, &gf2, Some(false), &mut rng);
+    let [k1, k2, k3] = [true, false, true].map(|f| g.child(&mother, &father, Some(f), &mut rng));
+    // Who, how old, and where: metres further ahead (rows) and to the right.
+    let people: [(Genome, f32, f64, f64); 9] = [
+        (gm1, 66.0, 2.6, -2.7),
+        (gf1, 69.0, 2.6, -1.9),
+        (gm2, 64.0, 2.6, 1.9),
+        (gf2, 68.0, 2.6, 2.7),
+        (mother, 43.0, 1.3, -0.55),
+        (father, 46.0, 1.3, 0.55),
+        (k1, 19.0, 0.0, -1.1),
+        (k2, 16.0, 0.0, 0.0),
+        (k3, 9.0, -0.2, 1.0),
+    ];
+    let f = camera.forward().as_dvec3();
+    let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+    let right = DVec3::new(-flat.z, 0.0, flat.x);
+    let cam_yaw = flat.x.atan2(flat.z) as f32;
+    let maturity = profile.life.maturity_years;
+    people
+        .into_iter()
+        .enumerate()
+        .map(|(i, (genome, age, ahead, side))| {
+            let female = genome.female;
+            let ph = g.phenotype(&genome, &mut rng);
+            let p = camera.pos + flat * (fam.ahead + ahead) + right * side;
+            let ground = crate::fauna::surface_in(
+                &lw.map,
+                &lw.reg,
+                p.x,
+                p.z,
+                lw.surface_y(p.x, p.z).floor() as i32 + 3,
+                10,
+            )
+            .map_or_else(|| lw.surface_y(p.x, p.z), |s| s.y);
+            let grown = hearth_people::grown_height_m(profile, female, ph.z("stature"));
+            hearth_people::PersonView {
+                id: 900 + i as u64,
+                plan: profile.body.plan,
+                female,
+                stage: if age >= maturity {
+                    Stage::Adult
+                } else {
+                    Stage::Juvenile
+                },
+                pos: DVec3::new(p.x, ground, p.z),
+                yaw: cam_yaw + std::f32::consts::PI,
+                speed: 0.0,
+                medium: Medium::Ground,
+                doing: Doing::Idle,
+                height_m: grown * hearth_people::growth(maturity, age as f64).powf(0.4),
+                look: hearth_people::look(&ph, profile.body.plan, female, age, maturity),
+            }
+        })
+        .collect()
+}
+
 /// The hominins placed in a shot, on the ground in front of the camera.
 fn placed_hominins(
     spec: &ShotSpec,
@@ -2130,6 +2250,7 @@ fn placed_hominins(
                 medium,
                 doing,
                 height_m: stature(profile, h.female, h.stage),
+                look: hearth_people::Look::default(),
             }
         })
         .collect()

@@ -29,6 +29,8 @@ use hearth_math::hash::Rng;
 use rayon::prelude::*;
 
 use crate::band::{Band, Culture, Places};
+use crate::genome::Genetics;
+use crate::lineage::Kinship;
 use crate::mind::{Doing, Intent, Needs, Offer, Situation, Threat, choose};
 use crate::person::{Cause, Died, Event, Person, PersonId, Tier};
 use crate::species::{Species, SpeciesSet};
@@ -87,8 +89,9 @@ pub struct PersonView {
     pub speed: f32,
     pub medium: Medium,
     pub doing: Doing,
-    /// Its height (m), for its figure.
+    /// Its height (m), and its looks, for its figure.
     pub height_m: f32,
+    pub look: crate::looks::Look,
 }
 
 /// A band's numbers as the ecological cells count them: the young of the year, the young not yet
@@ -258,19 +261,22 @@ impl People {
                 continue;
             };
             let here = DVec3::new(pos[0], centre.level(), pos[1]);
+            let genes = species.genetics.as_ref();
+            let sun = genes.map_or(1.0, |g| g.sunlight(world.latitude(here)));
             let bi = match self
                 .bands
                 .iter()
                 .position(|b| b.population_group == Some(gid))
             {
                 Some(bi) => {
-                    self.redraw(bi, sp, graph, want, here, now);
+                    self.redraw(bi, sp, genes, sun, graph, want, here, now);
                     bi
                 }
                 None => {
                     let bi = self.found(sp, graph, gid, want, here, DVec2::from_array(home), now);
                     self.bands[bi].range_m = range_m;
                     self.bands[bi].population_group = Some(gid);
+                    self.endow(bi, sp, genes, sun, now);
                     world.settle(here, sp);
                     bi
                 }
@@ -346,6 +352,73 @@ impl People {
         bi
     }
 
+    /// Gives every living member of a band without a genome one (V2.1 §4): a child of its
+    /// mother's and father's where both are known — a father found among the band's grown males
+    /// where none is — else one drawn from its species' pool at the place's sunlight (a founder,
+    /// or a record from before genes). The eldest first, so parents have theirs before their
+    /// children.
+    fn endow(&mut self, bi: usize, sp: &Species, genetics: Option<&Genetics>, sun: f32, now: Now) {
+        let Some(genetics) = genetics else {
+            return;
+        };
+        let band = self.bands[bi].id;
+        let mut todo: Vec<usize> = (0..self.persons.len())
+            .filter(|&i| {
+                let p = &self.persons[i];
+                p.social.band == band && p.alive() && p.genome.is_none()
+            })
+            .collect();
+        todo.sort_by(|&a, &b| {
+            let (p, q) = (&self.persons[a], &self.persons[b]);
+            p.life.born.total_cmp(&q.life.born).then(p.id.cmp(&q.id))
+        });
+        for i in todo {
+            if let Some(m) = self.persons[i].life.mother
+                && self.persons[i].life.father.is_none()
+            {
+                let born = self.persons[i].life.born;
+                self.persons[i].life.father = self.father_for(bi, sp, m, born, now);
+            }
+            let genome = |id: Option<PersonId>| {
+                id.and_then(|id| self.get(id))
+                    .and_then(|q| q.genome.clone())
+            };
+            let mother = genome(self.persons[i].life.mother);
+            let father = genome(self.persons[i].life.father);
+            self.persons[i].inherit(genetics, mother.as_ref(), father.as_ref(), sun);
+        }
+    }
+
+    /// A father for a child born on day `born` to `mother`: one of her band's living grown males,
+    /// grown when it was born and not of her close kin (her sons, brothers and father are passed
+    /// over, as apes and people avoid them), drawn from the band's stream.
+    fn father_for(
+        &mut self,
+        bi: usize,
+        sp: &Species,
+        mother: PersonId,
+        born: f64,
+        now: Now,
+    ) -> Option<PersonId> {
+        let band = self.bands[bi].id;
+        let grown = sp.life.maturity_years as f64 * now.year_days;
+        let fathers: Vec<PersonId> = {
+            let mut kin = Kinship::new(&*self);
+            self.persons
+                .iter()
+                .filter(|q| q.social.band == band && q.alive() && !q.life.female)
+                .filter(|q| q.stage(sp, &now) == Stage::Adult && q.life.born + grown <= born)
+                .map(|q| q.id)
+                .filter(|&q| kin.of(mother, q) < 0.125)
+                .collect()
+        };
+        if fathers.is_empty() {
+            return None;
+        }
+        let k = self.bands[bi].rng.below(fathers.len() as u32) as usize;
+        Some(fathers[k])
+    }
+
     /// Gives the band's young and half-grown without a mother one among its grown females old
     /// enough to have borne them, the least burdened first.
     fn mothers(&mut self, bi: usize, sp: &Species, now: Now) {
@@ -407,10 +480,13 @@ impl People {
     /// player was away have died (the frailest first: the young of the year, the old, then the
     /// half-grown), those they gained are born to its mothers or join it; everyone back about its
     /// place, rested and fed if it has been long.
+    #[allow(clippy::too_many_arguments)]
     fn redraw(
         &mut self,
         bi: usize,
         sp: &Species,
+        genetics: Option<&Genetics>,
+        sun: f32,
         graph: &Graph,
         want: Numbers,
         here: DVec3,
@@ -438,7 +514,10 @@ impl People {
                     } else {
                         0.0
                     };
-                    (base + self.bands[bi].rng.next_f64(), i)
+                    // A recessive condition makes one frailer (V2.1 §4.2).
+                    let burden = genetics.map_or(0.0, |g| g.recessive_burden as f64)
+                        * p.phenotype.as_ref().map_or(0.0, |ph| ph.conditions as f64);
+                    (base + burden + self.bands[bi].rng.next_f64(), i)
                 })
                 .collect();
             frail.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
@@ -496,6 +575,7 @@ impl People {
                 };
                 let mut p = Person::new(pid, sp, graph, band, female, born, pos, now, self.seed);
                 p.life.mother = mother;
+                p.life.father = mother.and_then(|m| self.father_for(bi, sp, m, born, now));
                 p.record(born.min(now.day), event);
                 self.bands[bi].members.push(pid);
                 self.persons.push(p);
@@ -523,6 +603,7 @@ impl People {
         }
         self.bands[bi].tier = Tier::Full;
         self.bands[bi].dormant_since = None;
+        self.endow(bi, sp, genetics, sun, now);
     }
 
     /// Sets a band of a species down at a place (a test's, a screenshot's): its grown females and
@@ -549,6 +630,9 @@ impl People {
             males,
         };
         let bi = self.found(sp, graph, id, n, at, DVec2::new(at.x, at.z), now);
+        let genes = species.genetics.as_ref();
+        let sun = genes.map_or(1.0, |g| g.sunlight(world.latitude(at)));
+        self.endow(bi, sp, genes, sun, now);
         self.onto_the_ground(bi, &*world, at);
         know_about(&mut self.bands[bi], world, items, at);
         id
@@ -594,7 +678,9 @@ impl People {
         let Some(sp) = species.get(&self.bands[bi].species) else {
             return;
         };
-        self.redraw(bi, sp, graph, want, here, now);
+        let genes = species.genetics.as_ref();
+        let sun = genes.map_or(1.0, |g| g.sunlight(world.latitude(here)));
+        self.redraw(bi, sp, genes, sun, graph, want, here, now);
         self.onto_the_ground(bi, &*world, here);
         know_about(&mut self.bands[bi], world, items, here);
     }
@@ -673,6 +759,15 @@ impl People {
                     medium: p.place.medium,
                     doing: p.mind.doing.clone(),
                     height_m: p.height_m(sp, now),
+                    look: p.phenotype.as_ref().map_or_else(Default::default, |ph| {
+                        crate::looks::look(
+                            ph,
+                            sp.plan,
+                            p.life.female,
+                            p.age(now) as f32,
+                            sp.life.maturity_years,
+                        )
+                    }),
                 })
             })
             .collect()

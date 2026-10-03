@@ -25,7 +25,7 @@ use hearth_worldgen::{PlanetGrid, WorldGenerator};
 
 /// The version of the messages between the client and the server, raised with every change to
 /// them (D166); the network handshake checks it (Amendment R, R1).
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 /// From the client.
 #[derive(Debug, Clone)]
@@ -39,9 +39,9 @@ pub enum ToServer {
     /// Put the player at a place (the globe's choice, a debug move): the server finds solid
     /// ground there.
     Place(DVec3),
-    /// Live on as a new person after death (by the world's death rules).
-    /// After death, live on as the world's rules allow (Legacy: as this person, or the same).
-    Respawn(Option<hearth_character::Appearance>),
+    /// After death, live on as the world's rules allow: Legacy, born again in the region with
+    /// these wishes (or the last ones); Hardy, the same person again.
+    Respawn(Option<Wish>),
     /// Move a carried thing (or `count` of a stack) somewhere else carried.
     Shift {
         from: hearth_items::Path,
@@ -245,6 +245,29 @@ pub struct LifeSummary {
     pub discovered: Vec<String>,
 }
 
+/// What the player asks of a birth (V2.1 Addendum A): a name, to be born a daughter or a son
+/// or as chance has it, and the loincloth they first wear. Nothing of their looks: their
+/// parents' genes give those.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Wish {
+    pub name: String,
+    /// A daughter (true) or a son (false); none, as the father's gamete falls.
+    pub female: Option<bool>,
+    pub loincloth: hearth_character::Loincloth,
+}
+
+/// A birth as the player is shown it (H1): the two parents of the place, and the child as their
+/// genes made them (grown, until childhood is lived: H3).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Born {
+    pub mother: hearth_character::Appearance,
+    pub father: hearth_character::Appearance,
+    pub you: hearth_character::Appearance,
+    /// Where (degrees of latitude): its sun set the pool's colouring.
+    pub latitude_deg: f64,
+}
+
 /// The player's body as the client shows it and lets it move.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BodyView {
@@ -319,6 +342,8 @@ pub enum ToClient {
     Woke(hearth_body::Wake),
     /// The player is someone else now (Legacy) or again (Hardy).
     Person(hearth_character::Appearance),
+    /// The player was born (a new world, or born again): their parents and themself.
+    Born(Box<Born>),
     /// What the player carries, when it changed.
     Carried(hearth_items::Carry),
     /// The things lying near the player, when they changed.

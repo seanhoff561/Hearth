@@ -12,7 +12,11 @@
 //! it answers what they sense ([`Senses`]) and carries out what they do to it ([`World`]).
 
 pub mod band;
+pub mod birth;
+pub mod genome;
 pub mod inspect;
+pub mod lineage;
+pub mod looks;
 pub mod mind;
 pub mod person;
 pub mod save;
@@ -23,13 +27,17 @@ pub mod work;
 pub mod world;
 
 pub use band::{Band, Culture, Places};
+pub use birth::Birth;
+pub use genome::{Genetics, Genome, Phenotype};
+pub use lineage::{Kinship, Pedigree};
+pub use looks::{Eyes, Look, look};
 pub use mind::{Doing, Intent, Mind, Needs, Offer, Situation, Threat, choose};
 pub use person::{
     Cause, Died, Event, LifeEvent, LifeHistory, Person, PersonId, Place, Possessions, Social, Tier,
 };
 pub use save::{FORMAT, PeopleSave};
 pub use sim::{Done, Numbers, People, PersonView};
-pub use species::{Species, SpeciesSet, body_of};
+pub use species::{Species, SpeciesSet, body_of, grown_height_m, growth};
 pub use watch::{WATCH_M, scatter_near, seen, watched};
 pub use work::{Pile, REACH_M, Things, finish_work, plan_work};
 pub use world::{FoodHere, Now, PlayerId, PlayerSeen, Senses, World};

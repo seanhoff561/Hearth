@@ -1,4 +1,4 @@
-//! The character screen's preview drawn offscreen (`bench-out/character_*.png` to look at):
+//! The figure preview (the birth screen's) drawn offscreen (`bench-out/character_*.png` to look at):
 //! bodies of both kinds under each light, standing in the frame.
 
 use glam::{Affine3A, Quat, Vec3};
@@ -101,6 +101,7 @@ fn bodies_stand_in_the_preview() {
                 [x, 0, 320, 720],
                 &boxes,
                 1.9,
+                0.55,
                 light,
             );
             ctx.queue.submit(Some(enc.finish()));
@@ -224,6 +225,7 @@ fn dressed_for_winter() {
             [k as u32 * 320, 0, 320, 720],
             &boxes,
             1.9,
+            0.55,
             PreviewLight::Overcast,
         );
         ctx.queue.submit(Some(enc.finish()));

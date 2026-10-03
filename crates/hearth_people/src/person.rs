@@ -148,6 +148,12 @@ pub struct Person {
     pub possessions: Possessions,
     #[serde(default)]
     pub place: Place,
+    /// Its two copies of every locus, from its mother and its father (V2.1 §4).
+    #[serde(default)]
+    pub genome: Option<crate::genome::Genome>,
+    /// What its genes, development and chance make of it.
+    #[serde(default)]
+    pub phenotype: Option<crate::genome::Phenotype>,
     /// Its own random stream: what it draws does not depend on who else drew first.
     pub rng: Rng,
 }
@@ -216,8 +222,43 @@ impl Person {
                 pos,
                 ..Place::default()
             },
+            genome: None,
+            phenotype: None,
             rng,
         }
+    }
+
+    /// Gives it a genome (and the phenotype it makes) in its species' pool: the meiosis of its
+    /// parents' where they are known (a parent not met stands in as one of the pool at the
+    /// place's sunlight), else a founder's drawn from the pool.
+    pub fn inherit(
+        &mut self,
+        genetics: &crate::genome::Genetics,
+        mother: Option<&crate::genome::Genome>,
+        father: Option<&crate::genome::Genome>,
+        sun: f32,
+    ) {
+        let Some(pool) = genetics.pool(&self.species) else {
+            return;
+        };
+        let genome = if mother.is_none() && father.is_none() {
+            genetics.founder(pool, sun, self.life.female, &mut self.rng)
+        } else {
+            let mut parent = |known: Option<&crate::genome::Genome>, female: bool| {
+                known
+                    .cloned()
+                    .unwrap_or_else(|| genetics.founder(pool, sun, female, &mut self.rng))
+            };
+            let (m, f) = (parent(mother, true), parent(father, false));
+            genetics.child(&m, &f, Some(self.life.female), &mut self.rng)
+        };
+        self.phenotype = Some(genetics.phenotype(&genome, &mut self.rng));
+        self.genome = Some(genome);
+    }
+
+    /// Its stature in its species' standard deviations (0 without a phenotype).
+    pub fn stature_z(&self) -> f32 {
+        self.phenotype.as_ref().map_or(0.0, |p| p.z("stature"))
     }
 
     /// Whether it is alive.
@@ -242,7 +283,7 @@ impl Person {
 
     /// Its standing height (m) at a moment.
     pub fn height_m(&self, species: &Species, now: &Now) -> f32 {
-        species.height_m(self.life.female, self.age(now))
+        species.height_m(self.life.female, self.age(now), self.stature_z())
     }
 
     /// The share of a grown one's size it has reached.

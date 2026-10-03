@@ -53,7 +53,7 @@ V2-11 (a)–(d), committed together with this file:
 
 | Piece | Decision | Note |
 |---|---|---|
-| `Kind`, `Kinds::from_content` (a kind from a hominin entry: size, knowledge, techniques, body, coat) | **Refactor** (H0) | Becomes `Species` from the species profile; its body and coat stay; in H1 the person's phenotype sets the body (`body_of` keeps its physiology: DuBois area, Kleiber BMR, gait by leg length). |
+| `Kind`, `Kinds::from_content` (a kind from a hominin entry: size, knowledge, techniques, body, coat) | **Refactor** (H0) | Becomes `Species` from the species profile; its body and coat stay; in H1 the person's phenotype sets its stature and looks; its physiology by its own size (`body_of`: DuBois area, Kleiber BMR, gait by leg length) follows with the growing bodies of H3. |
 | `Agent` (body, knowledge, carry, mind, position, sex, stage) | **Refactor** (H0) | Becomes **`Person`**, a composition: `Body` (Keep), `Knowledge` (Keep: the player's `KnowledgeState`), `Possessions` (Keep: the player's `Carry`), `Mind` (Refactor), `Social` (from the group's ties), `LifeHistory` (new: birth, parents, events), and the place in the world. `Genome`/`Phenotype` (H1) and `Psyche` (H2) join as their milestones land; saves carry a component version. |
 | Ages as three stages (young, half-grown, grown) | **Replace** (H3) | Real ages on the calendar with V2.1's life stages, child bodies and growth. |
 | `Mind`, `Doing`, `Intent`, `Needs`, `Situation`, `choose` (a utility choice from needs, fear and what is about) | **Refactor** (H2) | Becomes the third layer (utility selection) of V2.1 §6's architecture, under routines and over the HTN planner; reflexes (flight, alarm) become layer 1. |
@@ -76,7 +76,7 @@ V2-11 (a)–(d), committed together with this file:
 | `Proportions::hominin`, `Rig::hominin`, `Figure::hominin` | `hearth_character` | **Refactor** (H1) | The species' body plan in its profile, then the person's phenotype within it. |
 | `ToClient::Hominins(Vec<AgentView>)`, the client's `ShownHominin` | protocol, `client.rs` | **Refactor** (H0) | `ToClient::People(Vec<PersonView>)`. |
 | Server wiring (the tick, calls heard with the animals', what the player sees done heard an hour apart) | `server.rs` | **Keep** | Renamed with the module. |
-| Screenshot keys `hominin=` and `seek=` for a hominin population | `screenshot.rs` | **Keep** | `person=` (with a species) in H1. |
+| Screenshot keys `hominin=` and `seek=` for a hominin population | `screenshot.rs` | **Keep** | `family=` (H1) sets three generations of the human pool before the camera; `person=` with a species when the eras' peoples are drawn (H8). |
 | The character creator's appearance editor | `crates/hearth/src/menus.rs`, `profiles.rs` (v2 §9.1) | **Replace** (H1, Addendum A) | The player is born: no appearance is chosen; the genome is a child's of two parents. |
 
 ### Docs

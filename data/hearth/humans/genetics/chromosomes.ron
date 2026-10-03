@@ -1,0 +1,32 @@
+// The chromosomes (V2.1 §4.1): 22 autosomes, X and Y, each with its sex-averaged genetic length in
+// centimorgans after the human linkage maps (a woman's meioses cross over about 1.65 times as often
+// as a man's: `settings.ron` scales the map by sex). X recombines in women only; Y not at all.
+(
+    schema: 1,
+    entries: [
+        (id: "chr1", name: "1", status: Implemented, kind: Autosome, length_cm: 270),
+        (id: "chr2", name: "2", status: Implemented, kind: Autosome, length_cm: 258),
+        (id: "chr3", name: "3", status: Implemented, kind: Autosome, length_cm: 218),
+        (id: "chr4", name: "4", status: Implemented, kind: Autosome, length_cm: 203),
+        (id: "chr5", name: "5", status: Implemented, kind: Autosome, length_cm: 206),
+        (id: "chr6", name: "6", status: Implemented, kind: Autosome, length_cm: 190),
+        (id: "chr7", name: "7", status: Implemented, kind: Autosome, length_cm: 179),
+        (id: "chr8", name: "8", status: Implemented, kind: Autosome, length_cm: 159),
+        (id: "chr9", name: "9", status: Implemented, kind: Autosome, length_cm: 157),
+        (id: "chr10", name: "10", status: Implemented, kind: Autosome, length_cm: 176),
+        (id: "chr11", name: "11", status: Implemented, kind: Autosome, length_cm: 152),
+        (id: "chr12", name: "12", status: Implemented, kind: Autosome, length_cm: 171),
+        (id: "chr13", name: "13", status: Implemented, kind: Autosome, length_cm: 127),
+        (id: "chr14", name: "14", status: Implemented, kind: Autosome, length_cm: 116),
+        (id: "chr15", name: "15", status: Implemented, kind: Autosome, length_cm: 117),
+        (id: "chr16", name: "16", status: Implemented, kind: Autosome, length_cm: 131),
+        (id: "chr17", name: "17", status: Implemented, kind: Autosome, length_cm: 135),
+        (id: "chr18", name: "18", status: Implemented, kind: Autosome, length_cm: 129),
+        (id: "chr19", name: "19", status: Implemented, kind: Autosome, length_cm: 110),
+        (id: "chr20", name: "20", status: Implemented, kind: Autosome, length_cm: 98),
+        (id: "chr21", name: "21", status: Implemented, kind: Autosome, length_cm: 62),
+        (id: "chr22", name: "22", status: Implemented, kind: Autosome, length_cm: 72),
+        (id: "chrx", name: "X", status: Implemented, kind: X, length_cm: 180),
+        (id: "chry", name: "Y", status: Implemented, kind: Y, length_cm: 0),
+    ],
+)

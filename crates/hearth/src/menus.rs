@@ -1,20 +1,19 @@
-//! The screens (v1 §11, the minimal set for V2-3; the full flow is V2-15): the title, the
-//! character (people kept as profiles, made with a turning preview), the worlds (pick one or
-//! make a new one with a person), pause, and the options — video, sound, controls with
-//! rebinding, language, accessibility. Every screen is drawn each frame with the widgets of `hearth_ui`
+//! The screens (v1 §11, the minimal set for V2-3; the full flow is V2-15): the title, the worlds
+//! (pick one, or make a new one and say what is wished of the birth in it: a name, a daughter or
+//! a son — never looks, which come from the parents: V2.1 Addendum A), the birth shown, pause,
+//! death, and the options — video, sound, controls with rebinding, language, accessibility. Every screen is drawn each frame with the widgets of `hearth_ui`
 //! and says what the player chose.
 
 use std::path::{Path, PathBuf};
 
-use hearth_character::appearance::{MAX_HEIGHT_M, MIN_HEIGHT_M, from_hsl, skin_presets, to_hsl};
-use hearth_character::{
-    Appearance, BodyType, EyeColor, FacialHair, HAIR_COLORS, HairStyle, Loincloth,
-};
+use hearth_character::{Appearance, Loincloth};
 use hearth_core::options::{DisplayMode, GraphicsPreset, Options, Quality};
 use hearth_input::{ActionId, CaptureResult, InputKey, KeyBindings, RebindCapture};
 use hearth_render::figure::PreviewLight;
 use hearth_ui::widgets::theme;
 use hearth_ui::{Column, Rect, Ui};
+
+use crate::profiles::Born;
 
 /// A world on disk.
 #[derive(Debug, Clone)]
@@ -87,23 +86,43 @@ pub enum Screen {
         capture: RebindCapture,
     },
     Accessibility,
-    /// Making people: which way the preview faces (radians), its light, and a drag in
-    /// progress (the pointer's last x).
-    Character {
-        yaw: f32,
+    /// The player was born (H1): their mother, they and their father side by side, turning a
+    /// little to and fro (its phase, radians), and the light on them.
+    Born {
+        born: Box<hearth_protocol::Born>,
+        sway: f32,
         light: usize,
-        drag: Option<f32>,
     },
 }
 
-/// The person on the character screen, for the app to draw.
+/// The people a screen shows, side by side, for the app to draw.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Preview {
     /// Where (interface pixels).
     pub rect: Rect,
-    pub appearance: Appearance,
+    pub people: Vec<Appearance>,
     pub yaw: f32,
     pub light: PreviewLight,
+}
+
+/// How far apart the people a screen shows stand (m), and the height it frames.
+pub const PREVIEW_SPACING_M: f32 = 0.9;
+pub const PREVIEW_HEIGHT_M: f32 = 2.0;
+
+/// Half the width a preview frames for `n` people side by side (m).
+pub fn preview_half_width(n: usize) -> f32 {
+    n as f32 * PREVIEW_SPACING_M / 2.0 + 0.1
+}
+
+/// Where (interface x) the middle of a person `x_m` metres from the middle of a preview of `n`
+/// people stands: the preview's camera, framing its height and width (`FigurePreview::render`).
+fn preview_x(rect: &Rect, n: usize, x_m: f32) -> f32 {
+    let half = (28f32.to_radians() / 2.0).tan();
+    let aspect = rect.w / rect.h.max(1.0);
+    let fit =
+        (PREVIEW_HEIGHT_M * 0.58 / half).max(preview_half_width(n).max(0.55) / (half * aspect));
+    let seen = fit * half * aspect;
+    rect.x + rect.w / 2.0 + x_m / seen * rect.w / 2.0
 }
 
 /// What the player chose.
@@ -116,8 +135,8 @@ pub enum MenuAction {
         death_rules: hearth_save::DeathRules,
         knowledge: hearth_save::KnowledgeMode,
     },
-    /// Live on after death (as this person, under Legacy).
-    LiveOn(Option<Appearance>),
+    /// Live on after death (born again with these wishes, under Legacy; the same person, Hardy).
+    LiveOn(Option<hearth_protocol::Wish>),
     /// Knapping is over: do the process, by hand (with the quality reached) or as usual.
     Knapped {
         process: String,
@@ -143,7 +162,7 @@ pub enum MenuAction {
     /// The options changed: save and apply them.
     OptionsChanged,
     LanguageChanged,
-    /// The people changed: save them.
+    /// The wishes for a birth changed: save them.
     ProfilesChanged,
 }
 
@@ -156,6 +175,7 @@ pub struct MenuContext<'a> {
     pub languages: &'a [String],
     /// The sound output devices there are.
     pub audio_devices: &'a [String],
+    /// What the player wishes of a birth.
     pub profiles: &'a mut crate::profiles::Profiles,
     /// The player's death, when there is one to face.
     pub death: Option<DeathInfo>,
@@ -189,7 +209,7 @@ const DEATH_RULES: [hearth_save::DeathRules; 3] = [
 /// The open screens, the top one shown.
 pub struct Menus {
     stack: Vec<Screen>,
-    /// The character screen's person this frame.
+    /// The people a screen shows this frame.
     preview: Option<Preview>,
 }
 
@@ -211,17 +231,9 @@ impl Menus {
         }
     }
 
-    /// The person shown on the character screen this frame, if it is open.
+    /// The people a screen shows this frame, if one does.
     pub fn preview(&self) -> Option<&Preview> {
         self.preview.as_ref()
-    }
-
-    fn character() -> Screen {
-        Screen::Character {
-            yaw: 0.4,
-            light: 0,
-            drag: None,
-        }
     }
 
     pub fn is_open(&self) -> bool {
@@ -240,7 +252,7 @@ impl Menus {
     pub fn back(&mut self) -> Option<MenuAction> {
         match self.stack.last() {
             Some(Screen::Title) | Some(Screen::Death) | None => None,
-            Some(Screen::Pause) => {
+            Some(Screen::Pause) | Some(Screen::Born { .. }) => {
                 self.stack.pop();
                 Some(MenuAction::Resume)
             }
@@ -330,9 +342,6 @@ impl Menus {
                         selected: None,
                     });
                 }
-                if ui.button(c.row(ROW), &ui.t("menu.title.character")) {
-                    push = Some(Self::character());
-                }
                 if ui.button(c.row(ROW), &ui.t("menu.options")) {
                     push = Some(Screen::Options);
                 }
@@ -420,21 +429,42 @@ impl Menus {
                 c.space(10.0);
                 ui.text_field(c.row(ROW), &ui.t("menu.new_world.seed_hint"), seed, 20);
                 c.space(6.0);
-                // Who lives there.
-                let unnamed = ui.t("menu.character.unnamed");
-                let people: Vec<String> = (0..cx.profiles.list.len())
-                    .map(|i| cx.profiles.name(i, &unnamed))
-                    .collect();
-                let row = c.row(ROW);
-                let (pick, edit) = row.split_left(W - 64.0, 4.0);
-                let mut who = cx.profiles.selected;
-                if ui.cycle(pick, &ui.t("menu.new_world.character"), &people, &mut who) {
-                    cx.profiles.selected = who;
+                // Who is born there (V2.1 Addendum A): a name, a daughter or a son or as chance
+                // has it, and the loincloth first worn; the looks come from the parents.
+                let wish = &mut *cx.profiles;
+                let before = wish.clone();
+                ui.label(x, c.y, &ui.t("menu.new_world.you"), theme::DIM);
+                c.space(10.0);
+                ui.text_field(
+                    c.row(ROW),
+                    &ui.t("menu.new_world.your_name"),
+                    &mut wish.name,
+                    32,
+                );
+                born_choice(ui, c.row(ROW), &mut wish.born);
+                let cloths = [Loincloth::Hide, Loincloth::PlantFibre];
+                let cloth_names: Vec<String> =
+                    ["character.loincloth.hide", "character.loincloth.fibre"]
+                        .iter()
+                        .map(|k| ui.t(k))
+                        .collect();
+                let mut i = cloths
+                    .iter()
+                    .position(|x| *x == wish.loincloth)
+                    .unwrap_or(0);
+                if ui.cycle(
+                    c.row(ROW),
+                    &ui.t("menu.character.loincloth"),
+                    &cloth_names,
+                    &mut i,
+                ) {
+                    wish.loincloth = cloths[i];
+                }
+                if *wish != before {
                     out.push(MenuAction::ProfilesChanged);
                 }
-                if ui.button(edit, &ui.t("menu.new_world.edit_character")) {
-                    push = Some(Self::character());
-                }
+                ui.label(x, c.y, &ui.t("menu.new_world.looks"), theme::DIM);
+                c.space(10.0);
                 let rules: Vec<String> = ["rules.legacy", "rules.permadeath", "rules.hardy"]
                     .iter()
                     .map(|k| ui.t(k))
@@ -862,7 +892,7 @@ impl Menus {
                 }
             }
             Screen::Death => {
-                death_screen(ui, cx, &mut out, &mut push);
+                death_screen(ui, cx, &mut out);
             }
             Screen::Knapping(k) => {
                 if let Some(done) = crate::knapping_ui::knapping_screen(ui, k) {
@@ -894,13 +924,12 @@ impl Menus {
                 }
                 None => pop = true,
             },
-            Screen::Character { yaw, light, drag } => {
-                let (preview, changed, done) = character_screen(ui, cx.profiles, yaw, light, drag);
+            Screen::Born { born, sway, light } => {
+                let (preview, begin) = born_screen(ui, born, sway, light);
                 self.preview = Some(preview);
-                if changed {
-                    out.push(MenuAction::ProfilesChanged);
+                if begin {
+                    out.push(MenuAction::Resume);
                 }
-                pop |= done;
             }
             Screen::Accessibility => {
                 ui.title(30.0, &ui.t("menu.options.accessibility"));
@@ -949,259 +978,83 @@ impl Menus {
     }
 }
 
-/// The character screen: the people on the left, the one chosen turning in the middle, what
-/// they look like on the right. Returns the preview, whether the people changed, and whether
-/// the screen is done.
-fn character_screen(
+/// The birth (H1): the mother, the child and the father side by side under their names, where it
+/// was and what it means, the light on them, and a button to begin. Returns the preview and
+/// whether the player begins.
+fn born_screen(
     ui: &mut Ui<'_>,
-    profiles: &mut crate::profiles::Profiles,
-    yaw: &mut f32,
+    born: &hearth_protocol::Born,
+    sway: &mut f32,
     light: &mut usize,
-    drag: &mut Option<f32>,
-) -> (Preview, bool, bool) {
+) -> (Preview, bool) {
     let size = ui.size;
-    let mut changed = false;
-    let mut done = false;
-    ui.title(8.0, &ui.t("menu.character.title"));
-    // The people.
-    let list_w = 120.0;
-    let list_r = Rect::new(8.0, 24.0, list_w, (size.1 - 24.0 - 52.0).max(40.0));
-    let unnamed = ui.t("menu.character.unnamed");
-    let names: Vec<String> = (0..profiles.list.len())
-        .map(|i| profiles.name(i, &unnamed))
-        .collect();
-    if let Some(i) = ui.list(
-        list_r,
-        "people",
-        names.len(),
-        14.0,
-        Some(profiles.selected),
-        |ui, r, i, _| {
-            ui.label(r.x + 3.0, r.y + 3.0, &names[i], theme::TEXT);
-        },
-    ) && i != profiles.selected
-    {
-        profiles.selected = i;
-        changed = true;
-    }
-    let mut c = Column::new(8.0, size.1 - 46.0, list_w);
-    let (a, b) = c.row(ROW).split_left((list_w - 4.0) / 2.0, 4.0);
-    if ui.button(a, &ui.t("menu.character.new")) {
-        let n = profiles.list.len();
-        profiles.list.push(if n % 2 == 1 {
-            Appearance::female()
-        } else {
-            Appearance::default()
-        });
-        profiles.selected = n;
-        changed = true;
-    }
-    if ui.button_enabled(b, &ui.t("menu.character.delete"), profiles.list.len() > 1) {
-        profiles.list.remove(profiles.selected);
-        profiles.selected = profiles.selected.min(profiles.list.len() - 1);
-        changed = true;
-    }
-    if ui.button(c.row(ROW), &ui.t("menu.done")) {
-        done = true;
-    }
-    // What they look like.
-    let cw = 200.0;
-    let mut c = Column::new(size.0 - cw - 8.0, 24.0, cw);
-    c.gap = 2.0;
-    let a = profiles.current_mut();
-    let before = a.clone();
-    ui.text_field(c.row(ROW), &ui.t("menu.character.name"), &mut a.name, 32);
-    let bodies = [BodyType::Female, BodyType::Male];
-    let body_names: Vec<String> = ["character.body.female", "character.body.male"]
-        .iter()
-        .map(|k| ui.t(k))
-        .collect();
-    let mut i = bodies.iter().position(|b| *b == a.body).unwrap_or(1);
-    if ui.cycle(
-        c.row(ROW),
-        &ui.t("menu.character.body"),
-        &body_names,
-        &mut i,
-    ) {
-        a.body = bodies[i];
-    }
-    let text = format!("{:.2} m", a.height_m);
-    ui.slider(
-        c.row(ROW),
-        &ui.t("menu.character.height"),
-        &mut a.height_m,
-        MIN_HEIGHT_M,
-        MAX_HEIGHT_M,
-        &text,
+    ui.title(10.0, &ui.t("menu.born.title"));
+    let mut y = 26.0;
+    let lat = born.latitude_deg;
+    let place = ui.lang.format(
+        "menu.born.place",
+        &[(
+            "lat",
+            &format!("{:.0}° {}", lat.abs(), if lat < 0.0 { "S" } else { "N" }),
+        )],
     );
-    let build = ["slight", "lean", "average", "sturdy", "heavy"][((a.build * 5.0) as usize).min(4)];
-    let text = ui.t(&format!("character.build.{build}"));
-    ui.slider(
-        c.row(ROW),
-        &ui.t("menu.character.build"),
-        &mut a.build,
-        0.0,
-        1.0,
-        &text,
-    );
-    let presets = skin_presets();
-    let nearest = presets
-        .iter()
-        .enumerate()
-        .min_by(|x, y| {
-            (x.1 - a.skin_tone)
-                .abs()
-                .total_cmp(&(y.1 - a.skin_tone).abs())
-        })
-        .map_or(0, |(i, _)| i);
-    let text = ui
-        .lang
-        .format("character.skin.tone", &[("n", &(nearest + 1).to_string())]);
-    ui.slider(
-        c.row(ROW),
-        &ui.t("menu.character.skin"),
-        &mut a.skin_tone,
-        0.0,
-        1.0,
-        &text,
-    );
-    let under = if a.undertone < -0.33 {
-        "cool"
-    } else if a.undertone > 0.33 {
-        "warm"
-    } else {
-        "neutral"
-    };
-    let text = ui.t(&format!("character.undertone.{under}"));
-    ui.slider(
-        c.row(ROW),
-        &ui.t("menu.character.undertone"),
-        &mut a.undertone,
-        -1.0,
-        1.0,
-        &text,
-    );
-    let styles: Vec<String> = HairStyle::ALL.iter().map(|h| ui.t(h.key())).collect();
-    let mut i = HairStyle::ALL
-        .iter()
-        .position(|h| *h == a.hair)
-        .unwrap_or(0);
-    if ui.cycle(c.row(ROW), &ui.t("menu.character.hair"), &styles, &mut i) {
-        a.hair = HairStyle::ALL[i];
-    }
-    // Natural colours, then the colour finely.
-    let mut colours: Vec<String> = HAIR_COLORS.iter().map(|(k, _)| ui.t(k)).collect();
-    let matching = HAIR_COLORS.iter().position(|(_, c)| *c == a.hair_color);
-    colours.push(ui.t("character.hair_color.custom"));
-    let mut i = matching.unwrap_or(HAIR_COLORS.len());
-    if ui.cycle(
-        c.row(ROW),
-        &ui.t("menu.character.hair_color"),
-        &colours,
-        &mut i,
-    ) && i < HAIR_COLORS.len()
-    {
-        a.hair_color = HAIR_COLORS[i].1;
-    }
-    let [mut h, mut s, mut l] = to_hsl(a.hair_color);
-    let text = format!("{h:.0}°");
-    let mut fine = ui.slider(
-        c.row(ROW),
-        &ui.t("menu.character.hue"),
-        &mut h,
-        0.0,
-        360.0,
-        &text,
-    );
-    let text = format!("{:.0}%", s * 100.0);
-    fine |= ui.slider(
-        c.row(ROW),
-        &ui.t("menu.character.saturation"),
-        &mut s,
-        0.0,
-        1.0,
-        &text,
-    );
-    let text = format!("{:.0}%", l * 100.0);
-    fine |= ui.slider(
-        c.row(ROW),
-        &ui.t("menu.character.lightness"),
-        &mut l,
-        0.02,
-        0.95,
-        &text,
-    );
-    if fine {
-        a.hair_color = from_hsl([h, s, l]);
-    }
-    let facial: Vec<String> = FacialHair::ALL.iter().map(|f| ui.t(f.key())).collect();
-    let mut i = FacialHair::ALL
-        .iter()
-        .position(|f| *f == a.facial_hair)
-        .unwrap_or(0);
-    if ui.cycle(
-        c.row(ROW),
-        &ui.t("menu.character.facial_hair"),
-        &facial,
-        &mut i,
-    ) {
-        a.facial_hair = FacialHair::ALL[i];
-    }
-    let eyes: Vec<String> = EyeColor::ALL.iter().map(|e| ui.t(e.key())).collect();
-    let mut i = EyeColor::ALL.iter().position(|e| *e == a.eyes).unwrap_or(0);
-    if ui.cycle(c.row(ROW), &ui.t("menu.character.eyes"), &eyes, &mut i) {
-        a.eyes = EyeColor::ALL[i];
-    }
-    let cloths = [Loincloth::Hide, Loincloth::PlantFibre];
-    let cloth_names: Vec<String> = ["character.loincloth.hide", "character.loincloth.fibre"]
-        .iter()
-        .map(|k| ui.t(k))
-        .collect();
-    let mut i = cloths.iter().position(|x| *x == a.loincloth).unwrap_or(0);
-    if ui.cycle(
-        c.row(ROW),
-        &ui.t("menu.character.loincloth"),
-        &cloth_names,
-        &mut i,
-    ) {
-        a.loincloth = cloths[i];
-    }
-    if *a != before {
-        changed = true;
-    }
-    // The person between, turned by dragging across them.
-    let px = list_w + 16.0;
-    let pw = (size.0 - cw - 16.0 - px).max(40.0);
-    let rect = Rect::new(px, 24.0, pw, (size.1 - 24.0 - 30.0).max(40.0));
-    match ui.input.pointer {
-        Some(p) if ui.input.down && (drag.is_some() || rect.contains(p)) => {
-            if let Some(last) = *drag {
-                *yaw += (p.0 - last) * 0.03;
-            }
-            *drag = Some(p.0);
+    let words = ui.t("menu.born.words");
+    for (text, colour) in [(place, theme::TEXT), (words, theme::DIM)] {
+        for line in ui.font.wrap(&text, (size.0 - 40.0).min(440.0) as u32) {
+            let lw = ui.font.width(&line) as f32;
+            ui.label(((size.0 - lw) / 2.0).round(), y, &line, colour);
+            y += hearth_ui::font::LINE as f32;
         }
-        _ => *drag = None,
+        y += 3.0;
     }
+    // The three, under their names.
+    let top = y + 6.0;
+    let rect = Rect::new(8.0, top, size.0 - 16.0, (size.1 - top - 62.0).max(40.0));
+    let people = vec![born.mother.clone(), born.you.clone(), born.father.clone()];
+    let names = ["menu.born.mother", "menu.born.you", "menu.born.father"];
+    for (k, key) in names.iter().enumerate() {
+        let name = if k == 1 && !born.you.name.trim().is_empty() {
+            format!("{} ({})", ui.t(key), born.you.name.trim())
+        } else {
+            ui.t(key)
+        };
+        let cx = preview_x(&rect, 3, (k as f32 - 1.0) * PREVIEW_SPACING_M);
+        let lw = ui.font.width(&name) as f32;
+        let colour = if k == 1 { theme::TEXT } else { theme::DIM };
+        ui.label(
+            (cx - lw / 2.0).round(),
+            rect.y + rect.h + 2.0,
+            &name,
+            colour,
+        );
+    }
+    let mut c = Column::new(((size.0 - W) / 2.0).round(), size.1 - 46.0, W);
     let lights: Vec<String> = PreviewLight::ALL.iter().map(|l| ui.t(l.key())).collect();
-    let lr = Rect::new((px + pw / 2.0 - 90.0).round(), size.1 - 26.0, 180.0, ROW);
-    ui.cycle(lr, &ui.t("menu.character.light"), &lights, light);
+    ui.cycle(c.row(ROW), &ui.t("menu.character.light"), &lights, light);
+    let begin = ui.button(c.row(ROW), &ui.t("menu.born.begin"));
+    // Facing the viewer, turning slowly to and fro.
+    *sway = (*sway + 0.004).rem_euclid(std::f32::consts::TAU);
     let preview = Preview {
         rect,
-        appearance: profiles.current().clone(),
-        yaw: *yaw,
+        people,
+        yaw: 0.35 * sway.sin(),
         light: PreviewLight::ALL[(*light).min(PreviewLight::ALL.len() - 1)],
     };
-    (preview, changed, done)
+    (preview, begin)
+}
+
+/// A daughter, a son, or as chance has it.
+fn born_choice(ui: &mut Ui<'_>, r: Rect, born: &mut Born) {
+    let names: Vec<String> = Born::ALL.iter().map(|b| ui.t(b.key())).collect();
+    let mut i = Born::ALL.iter().position(|b| b == born).unwrap_or(0);
+    if ui.cycle(r, &ui.t("menu.new_world.born"), &names, &mut i) {
+        *born = Born::ALL[i];
+    }
 }
 
 /// After death: how it happened, and what the world's rules allow — live on as someone new
 /// (Legacy), live again (Hardy), or the tale of the life that ended the world (permadeath).
-fn death_screen(
-    ui: &mut Ui<'_>,
-    cx: &mut MenuContext<'_>,
-    out: &mut Vec<MenuAction>,
-    push: &mut Option<Screen>,
-) {
+fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAction>) {
     let size = ui.size;
     let Some(d) = cx.death.clone() else {
         // Alive again: nothing to face.
@@ -1223,20 +1076,15 @@ fn death_screen(
     c.space(8.0);
     match d.rules {
         hearth_save::DeathRules::Legacy => {
-            let unnamed = ui.t("menu.character.unnamed");
-            let people: Vec<String> = (0..cx.profiles.list.len())
-                .map(|i| cx.profiles.name(i, &unnamed))
-                .collect();
-            let mut who = cx.profiles.selected;
-            if ui.cycle(c.row(ROW), &ui.t("menu.death.as"), &people, &mut who) {
-                cx.profiles.selected = who;
+            // Born again in this land (V2.1 Addendum A): a daughter or a son, or as chance has
+            // it; the name kept.
+            let before = cx.profiles.born;
+            born_choice(ui, c.row(ROW), &mut cx.profiles.born);
+            if cx.profiles.born != before {
                 out.push(MenuAction::ProfilesChanged);
             }
-            if ui.button(c.row(ROW), &ui.t("menu.death.live_on")) {
-                out.push(MenuAction::LiveOn(Some(cx.profiles.current().clone())));
-            }
-            if ui.button(c.row(ROW), &ui.t("menu.death.someone_new")) {
-                *push = Some(Menus::character());
+            if ui.button(c.row(ROW), &ui.t("menu.death.born_again")) {
+                out.push(MenuAction::LiveOn(Some(cx.profiles.wish())));
             }
         }
         hearth_save::DeathRules::Hardy => {

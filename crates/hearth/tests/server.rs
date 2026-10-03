@@ -17,7 +17,10 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
         planet: hearth_math::PlanetSize::Tiny,
         cache_dir: None,
         saves_dir: Some(dir.to_path_buf()),
-        appearance: hearth_character::Appearance::default(),
+        wish: hearth_protocol::Wish {
+            female: Some(false),
+            ..Default::default()
+        },
         death_rules: hearth_save::DeathRules::default(),
         knowledge: hearth_save::KnowledgeMode::default(),
     }
@@ -62,6 +65,14 @@ fn a_world_lives_saves_and_comes_back() {
     let start = ready.player;
     let tick0 = ready.ticks;
     assert_eq!(tick0, 0, "a new world starts at tick 0");
+    // The player was born: a son (as the test asks) of two parents, shown.
+    let born = wait(&server, 10.0, |m| match m {
+        ToClient::Born(b) => Some(b),
+        _ => None,
+    });
+    assert_eq!(born.you, ready.appearance, "the one born is the player");
+    assert_eq!(born.you.body, hearth_character::BodyType::Male);
+    assert_eq!(born.father.body, hearth_character::BodyType::Male);
     // Report a hard landing a little away from the spawn.
     let mut moved = start;
     moved.pos += DVec3::new(2.0, 0.0, 1.0);
@@ -116,6 +127,10 @@ fn a_world_lives_saves_and_comes_back() {
         "the injuries came back"
     );
     assert_eq!(again.dead, body.dead);
+    assert_eq!(
+        ready.appearance, born.you,
+        "the same person, looking the same"
+    );
     drop(server);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -156,13 +171,26 @@ fn death_follows_the_world_rules() {
         ToClient::Body(b) if b.dead.is_some() => Some(()),
         _ => None,
     });
-    let next = hearth_character::Appearance::female();
+    // Born again: a daughter, as wished, of two parents of the region; her name kept.
+    let next = hearth_protocol::Wish {
+        name: "Ash".into(),
+        female: Some(true),
+        loincloth: hearth_character::Loincloth::PlantFibre,
+    };
     server.send(ToServer::Respawn(Some(next.clone())));
     let who = wait(&server, 10.0, |m| match m {
         ToClient::Person(a) => Some(a),
         _ => None,
     });
-    assert_eq!(who.body, next.body, "the new person is who was chosen");
+    assert_eq!(who.body, hearth_character::BodyType::Female, "a daughter");
+    assert_eq!(who.name, "Ash");
+    assert_eq!(who.loincloth, next.loincloth);
+    let born = wait(&server, 10.0, |m| match m {
+        ToClient::Born(b) => Some(b),
+        _ => None,
+    });
+    assert_eq!(born.you, who, "the birth shown is hers");
+    assert_eq!(born.mother.body, hearth_character::BodyType::Female);
     let placed = wait(&server, 10.0, |m| match m {
         ToClient::Placed(p) => Some(p),
         _ => None,

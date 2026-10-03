@@ -199,6 +199,10 @@ impl Senses for Surrounds<'_> {
             .filter(|h| (*h - at).length() < within)
             .collect()
     }
+
+    fn latitude(&self, at: DVec3) -> f64 {
+        self.things.lw.map.planet().latitude_deg(at.z)
+    }
 }
 
 impl PeopleWorld for Surrounds<'_> {
@@ -719,21 +723,64 @@ pub fn figure(v: &PersonView) -> Figure {
     }
 }
 
-/// How a person looks (until H1's phenotypes): its height and sex; an australopith
-/// dark-skinned under a coat of brown hair.
+/// How a person looks: their look (from their phenotype, H1) on a figure of their height and
+/// sex; an australopith's hair a coat over all of it, not a style or a beard.
 pub fn looks(v: &PersonView) -> hearth_character::Appearance {
+    let mut a = appearance_of(&v.look, v.female, v.height_m);
+    if v.plan == BodyPlan::Australopith {
+        a.hair = hearth_character::HairStyle::ShortCrop;
+        a.facial_hair = hearth_character::FacialHair::None;
+        a.build = 0.7;
+    }
+    a
+}
+
+/// A figure's appearance from a look: skin, hair (its colour, and a style its curl and sex
+/// suggest until cultures dress it, H5), eyes, beard and build.
+pub fn appearance_of(
+    look: &hearth_people::Look,
+    female: bool,
+    height_m: f32,
+) -> hearth_character::Appearance {
+    use hearth_character::{EyeColor, FacialHair, HairStyle};
+    use hearth_people::Eyes;
+    let curl = look.hair_curl;
+    let hair = match (female, curl) {
+        (true, c) if c < 0.3 => HairStyle::LongStraight,
+        (true, c) if c < 0.55 => HairStyle::LongWavy,
+        (false, c) if c < 0.55 => HairStyle::ShortCrop,
+        (_, c) if c < 0.8 => HairStyle::Curly,
+        _ => HairStyle::Coily,
+    };
+    let eyes = match look.eyes {
+        Eyes::DarkBrown => EyeColor::DarkBrown,
+        Eyes::Brown => EyeColor::Brown,
+        Eyes::Amber => EyeColor::Amber,
+        Eyes::Hazel => EyeColor::Hazel,
+        Eyes::Green => EyeColor::Green,
+        Eyes::Blue => EyeColor::Blue,
+        Eyes::Grey => EyeColor::Grey,
+    };
+    let facial_hair = match look.beard {
+        b if b > 0.65 => FacialHair::FullBeard,
+        b if b > 0.45 => FacialHair::ShortBeard,
+        b if b > 0.25 => FacialHair::Stubble,
+        _ => FacialHair::None,
+    };
     hearth_character::Appearance {
-        body: if v.female {
+        body: if female {
             hearth_character::BodyType::Female
         } else {
             hearth_character::BodyType::Male
         },
-        height_m: v.height_m,
-        build: 0.7,
-        skin_tone: 0.72,
-        undertone: 0.0,
-        hair: hearth_character::HairStyle::ShortCrop,
-        hair_color: [74, 54, 38],
+        height_m,
+        build: look.build,
+        skin_tone: look.skin_tone,
+        undertone: look.undertone,
+        hair,
+        hair_color: look.hair_color,
+        facial_hair,
+        eyes,
         ..hearth_character::Appearance::default()
     }
 }

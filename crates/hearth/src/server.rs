@@ -58,8 +58,9 @@ pub struct WorldSpec {
     pub cache_dir: Option<PathBuf>,
     /// Where worlds are saved; `None` runs without saving.
     pub saves_dir: Option<PathBuf>,
-    /// Who the player is in a new world (a saved world keeps its own person).
-    pub appearance: hearth_character::Appearance,
+    /// What the player asks of their birth in a new world (a saved world keeps its own person):
+    /// their looks come from the parents the place gives them (V2.1 Addendum A).
+    pub wish: hearth_protocol::Wish,
     /// What death means in a new world (a saved world keeps its own rules).
     pub death_rules: hearth_save::DeathRules,
     /// How knowledge is gained in a new world.
@@ -84,6 +85,10 @@ struct PlayerSave {
     /// How the player looks (saves before it take the default person).
     #[serde(default)]
     appearance: hearth_character::Appearance,
+    /// The player's birth: their parents' genomes and theirs (a save from before genes draws
+    /// one when loaded).
+    #[serde(default)]
+    birth: Option<hearth_people::Birth>,
 }
 
 /// Handle to the server thread; it saves and stops when dropped.
@@ -390,6 +395,7 @@ fn save(
     save: &mut Option<Save>,
     player: &Player,
     appearance: &hearth_character::Appearance,
+    birth: &Option<hearth_people::Birth>,
     world_items: &hearth_items::WorldItems,
     workshop: &Workshop,
     lw: &LocalWorld,
@@ -407,6 +413,7 @@ fn save(
         format: PLAYER_FORMAT,
         player: player.clone(),
         appearance: appearance.clone(),
+        birth: birth.clone(),
     };
     if let Err(e) = s
         .dir
@@ -479,13 +486,32 @@ fn run(
                     None
                 }
             });
-    let (mut player, mut appearance) = match saved {
-        Some(p) => (p.player, p.appearance.sanitized()),
+    // Who the player is: the child of two parents of the place they begin (V2.1 Addendum A,
+    // D173), looking as their genes make them; a save from before genes draws its birth now.
+    let genetics = hearth_people::Genetics::from_content(&content);
+    let (mut player, mut appearance, mut birth, new_life) = match saved {
+        Some(p) => (p.player, p.appearance.sanitized(), p.birth, false),
         None => (
             Player::new(&cfg, first_spawn, seed ^ 0x5eed),
-            spec.appearance.clone().sanitized(),
+            crate::born::unborn(&spec.wish),
+            None,
+            true,
         ),
     };
+    if birth.is_none()
+        && let Some(g) = &genetics
+    {
+        let female = if new_life {
+            spec.wish.female
+        } else {
+            Some(appearance.body == hearth_character::BodyType::Female)
+        };
+        let latitude = planet.latitude_deg(player.mover.pos.z);
+        birth = crate::born::draw(g, latitude, female, seed);
+        if let Some(b) = &birth {
+            appearance = crate::born::player(&content, b, &appearance.name, appearance.loincloth);
+        }
+    }
     let items = Arc::new(hearth_items::Items::from_content(&content));
     // What a new person starts in: the loincloth (with a chest band for a female body, D70) of
     // their chosen material, as things they wear.
@@ -644,6 +670,12 @@ fn run(
     {
         return Ok(());
     }
+    // A new life begins with the birth shown.
+    if new_life && let Some(b) = &birth {
+        let latitude = planet.latitude_deg(player.mover.pos.z);
+        let shown = crate::born::shown(&content, b, &appearance, latitude);
+        let _ = tx.send(ToClient::Born(Box::new(shown)));
+    }
 
     let models = BlockModels::build(&lw.reg, &atlas);
     let opts = MeshOptions::default();
@@ -718,17 +750,40 @@ fn run(
                     let _ = tx.send(ToClient::Placed(player.mover));
                 }
                 Ok(ToServer::Respawn(who)) => {
+                    let mut reborn = false;
                     if player.body.dead.is_some() {
-                        // v2 §9.8. Legacy: someone new arrives in the same region; Hardy: the
-                        // same person again where the world began; permadeath: the end.
+                        // v2 §9.8 as Addendum A has it (until Addendum B's choice, H3). Legacy:
+                        // born again in the same region; Hardy: the same person again where the
+                        // world began; permadeath: the end.
                         let at = match death_rules {
                             hearth_save::DeathRules::Legacy => {
                                 let at = player.mover.pos;
                                 let (x, z) = lw
                                     .terrain()
                                     .spawn_near(at.x.floor() as i32, at.z.floor() as i32);
-                                if let Some(a) = who {
-                                    appearance = a.sanitized();
+                                // Born again in the region, of two parents of its pool, with
+                                // the wishes asked (or the last ones).
+                                let wish = who.unwrap_or_else(|| hearth_protocol::Wish {
+                                    name: appearance.name.clone(),
+                                    female: None,
+                                    loincloth: appearance.loincloth,
+                                });
+                                if let Some(g) = &genetics {
+                                    let latitude = planet.latitude_deg(z as f64);
+                                    let next =
+                                        crate::born::draw(g, latitude, wish.female, seed ^ ticks);
+                                    if let Some(b) = &next {
+                                        appearance = crate::born::player(
+                                            &content,
+                                            b,
+                                            &wish.name,
+                                            wish.loincloth,
+                                        );
+                                        birth = next;
+                                        reborn = true;
+                                    }
+                                } else {
+                                    appearance = crate::born::unborn(&wish);
                                 }
                                 Some(ground_at(&lw, x, z))
                             }
@@ -757,6 +812,11 @@ fn run(
                             worn = dress_carry(&player.carry);
                             death_told = false;
                             let _ = tx.send(ToClient::Person(appearance.clone()));
+                            if reborn && let Some(b) = &birth {
+                                let latitude = planet.latitude_deg(at.z);
+                                let shown = crate::born::shown(&content, b, &appearance, latitude);
+                                let _ = tx.send(ToClient::Born(Box::new(shown)));
+                            }
                             let _ = tx.send(ToClient::Placed(player.mover));
                         }
                     }
@@ -982,6 +1042,7 @@ fn run(
                         &mut save_state,
                         &player,
                         &appearance,
+                        &birth,
                         &world_items,
                         &workshop,
                         &lw,
@@ -996,6 +1057,7 @@ fn run(
                         &mut save_state,
                         &player,
                         &appearance,
+                        &birth,
                         &world_items,
                         &workshop,
                         &lw,
@@ -1316,6 +1378,7 @@ fn run(
                         &mut save_state,
                         &player,
                         &appearance,
+                        &birth,
                         &world_items,
                         &workshop,
                         &lw,
@@ -1482,6 +1545,7 @@ fn run(
                     &mut save_state,
                     &player,
                     &appearance,
+                    &birth,
                     &world_items,
                     &workshop,
                     &lw,
@@ -1534,6 +1598,7 @@ fn run(
                     &mut save_state,
                     &player,
                     &appearance,
+                    &birth,
                     &world_items,
                     &workshop,
                     &lw,
@@ -1549,6 +1614,7 @@ fn run(
                     &mut save_state,
                     &player,
                     &appearance,
+                    &birth,
                     &world_items,
                     &workshop,
                     &lw,
@@ -1603,6 +1669,7 @@ fn run(
                     &mut save_state,
                     &player,
                     &appearance,
+                    &birth,
                     &world_items,
                     &workshop,
                     &lw,

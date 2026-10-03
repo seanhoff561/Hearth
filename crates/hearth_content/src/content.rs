@@ -16,7 +16,7 @@ use crate::schema::era::Era;
 use crate::schema::fauna::Animal;
 use crate::schema::flora::Plant;
 use crate::schema::geology::{Deposit, Mineral, Province, Rock, Soil};
-use crate::schema::humans::Species;
+use crate::schema::humans::{Chromosome, GenePool, GeneticsSettings, Locus, Species, Trait};
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
 use crate::schema::material::Material;
@@ -136,6 +136,11 @@ pub struct Content {
     pub animals: Table<Animal>,
     pub ecosystems: Table<Ecosystem>,
     pub species: Table<Species>,
+    pub chromosomes: Table<Chromosome>,
+    pub traits: Table<Trait>,
+    pub loci: Table<Locus>,
+    pub gene_pools: Table<GenePool>,
+    pub genetics: Table<GeneticsSettings>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -292,6 +297,11 @@ impl Content {
             animals,
             ecosystems: load_table(packs, &mut r),
             species: load_table(packs, &mut r),
+            chromosomes: load_table(packs, &mut r),
+            traits: load_table(packs, &mut r),
+            loci: load_table(packs, &mut r),
+            gene_pools: load_table(packs, &mut r),
+            genetics: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
@@ -372,6 +382,9 @@ impl Content {
         u(&self.animals, &mut out);
         u(&self.ecosystems, &mut out);
         u(&self.species, &mut out);
+        u(&self.traits, &mut out);
+        u(&self.loci, &mut out);
+        u(&self.gene_pools, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
         u(&self.knowledge, &mut out);
@@ -400,6 +413,9 @@ impl Content {
             c("Animal species", &self.animals),
             c("Ecosystems", &self.ecosystems),
             c("Species of person", &self.species),
+            c("Heritable traits", &self.traits),
+            c("Named loci", &self.loci),
+            c("Gene pools", &self.gene_pools),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),
             c("Knowledge nodes", &self.knowledge),

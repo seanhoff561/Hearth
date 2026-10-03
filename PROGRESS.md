@@ -652,7 +652,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] V2-11 — Australopithecus & the agent framework (parts (a)–(d), 2026-10-03; superseded by
   V2.1, its part (e) folded into H0)
 - [x] H0 — Framework migration (2026-10-03)
-- [ ] H1 — Genetics engine
+- [x] H1 — Genetics engine (2026-10-03)
 - [ ] H2 — Psyche and mind core
 - [ ] H3 — Life course and demography (the player is born)
 - [ ] H4 — Social systems
@@ -679,11 +679,11 @@ design only). Updated with each H milestone.
 |---|---|---|
 | Species profiles | *Australopithecus* | *Homo erectus*, *H. neanderthalensis*, *H. sapiens* (data; H3 and H8) |
 | Era profiles | Wild Earth (its *Australopithecus* bands) | Wild Earth's families (H3), Lower, Middle, Upper Paleolithic (H8), Neolithic (H11), Bronze Age (H12), Iron Age (H13) |
-| Calibrated traits | — | appearance, health, temperament, aptitude (H1) |
+| Calibrated traits | 29 heritable traits on ~460 loci: appearance, health, metabolism, HEXACO temperament and its narrower dimensions, aptitudes (H1) | read by the mind (H2), the life course (H3), learning (H6) |
 | Routines | — | (H2) |
 | Norms | — | (H4) |
 | Speech acts | — | (H5) |
-| The player's birth | — | genome from parents (H1), born into a family (H3), birth options (H8); births in multiplayer (R3) |
+| The player's birth | genome from two parents of the place, shown at birth; no appearance chosen (H1) | born into a family (H3), birth options (H8); births in multiplayer (R3) |
 | Life after death | — | the death, life story, spectate, restart, inhabit an adult (H3); be born again, inhabit a child (H8); the full flow and settings (H9); in multiplayer (R3) |
 
 ## Content Status
@@ -928,6 +928,30 @@ H0 — Framework migration (PLAN.md, V2.1 §20; `MIGRATION_HUMANS.md`):
 - [x] *Australopithecus* on the new framework: V2-11's tests ported (`tests/persons.rs`,
   `tests/days.rs`), all passing; screenshots `tools/shots/v211_hominins.shots`.
 
+H1 — Genetics engine (PLAN.md, V2.1 §4, Addendum A; `docs/design/humans/genetics.md`):
+- [x] The architecture as data (`humans/genetics/`): 24 chromosomes with their genetic lengths,
+  named loci of large effect (three skin loci, eye colour's near-recessive blue and its green
+  modifier, red hair, lactase persistence, altitude, cold, starch digestion), 29 traits with their polygenic loci laid out
+  under one seed, thirty recessive conditions, an HLA-like region; about 460 loci (D171).
+- [x] Meiosis with crossovers by each parent's sex map, mutation, a child's sex as wished or by
+  chance; phenotypes on one scale with chance's spread calibrated to each trait's heritability
+  (`tests/genetics.rs`: Mendel's ratios, Haldane's map, heritabilities from offspring on
+  midparent and from siblings, inbreeding's recessive conditions, the mutation rate).
+- [x] Kinship and inbreeding on the pedigree (`lineage.rs`); a band's people endowed from its pool
+  at the place's sunlight, its children the meiosis of their mother's and a father's not of her
+  close kin; recessive conditions make one frailer; genomes saved (people format 2).
+- [x] Ground rule 1: temperament (HEXACO, D172) and aptitude share one set of frequencies in every
+  pool; the lint fails a pool or a sunlight gradient that names a behavioural locus or trait,
+  and a test finds them alike under every sun.
+- [x] Looks from phenotypes (`looks.rs`): skin, undertone, hair colour (lighter in a child,
+  greying), curl, eyes, beard, build and height drive every person's figure; the inspector shows
+  the genome and the phenotype's chain.
+- [x] The player born (Addendum A, D173): a new world asks a name, daughter, son or chance, and a
+  loincloth (`birth.json`); the parents are drawn from the pool of the place and the player is
+  their child, shown on the birth screen with them; born again under Legacy; older saves draw
+  their birth on loading. The character creator is gone.
+- [x] Families of three generations (`tools/shots/h1_families.shots`).
+
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
    `perf/baseline` in `bench-out/gate`, three alternating rounds of the quick scenes); a fall
@@ -936,11 +960,10 @@ H0 — Framework migration (PLAN.md, V2.1 §20; `MIGRATION_HUMANS.md`):
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. H1 — Genetics engine (PLAN.md, V2.1 §4, Addendum A): the genome, meiosis, mutation,
-   inbreeding, kinship, genotype → phenotype with calibrated heritabilities, the ancestry lint,
-   phenotype-driven figures; the player's genome a child's of two parents, the appearance editor
-   gone. When restarting, run the determinism (and, from H1/H3, genetics and demography) quick
-   tests with `scripts/check.sh` (V2.1 §21). Amendment R (`dev/AMENDMENT_R.md`) waits until
+1. H2 — Psyche and mind core (PLAN.md, V2.1 §5–6): personality's behaviour mappings from the
+   HEXACO phenotype, appraisal emotions, mood and stress, values; perception; memory and
+   beliefs; routines, utility selection and HTN planning on the process engine; budgets. When
+   restarting, run the determinism and genetics quick tests with `scripts/check.sh` (V2.1 §21). Amendment R (`dev/AMENDMENT_R.md`) waits until
    V2-16; only its multiplayer-ready rule applies (D166).
 2. Carried forward from the slice review (`docs/review/slice-1.md`, "Left where they belong"): a
    kill is more than one person can use in summer (sharing comes with others, H4); scavengers

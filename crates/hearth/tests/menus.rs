@@ -54,12 +54,40 @@ fn render(
             actions = menus.ui(ui, &mut cx);
         },
     );
+    // The people a screen shows, as the app draws them.
+    if let Some(p) = menus.preview() {
+        let scale = iface.scale as f32;
+        hearth::preview::PeoplePreview::new().draw(
+            ctx,
+            &mut enc,
+            &target.color_view,
+            OFFSCREEN_FORMAT,
+            (w, h),
+            scale,
+            p,
+            0.0,
+        );
+    }
     ctx.queue.submit(Some(enc.finish()));
     let px = target.read_rgba(ctx);
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
     std::fs::create_dir_all(&out).ok();
     write_png(&out.join(format!("menu_{name}.png")), w, h, &px).expect("png");
     actions
+}
+
+/// The birth screen of a birth drawn at a latitude: the parents and the child as their genes
+/// made them.
+fn born(latitude: f64, female: Option<bool>, name: &str) -> Screen {
+    let content = hearth_content::Content::load_base();
+    let g = hearth_people::Genetics::from_content(&content).expect("the genetics");
+    let b = hearth::born::draw(&g, latitude, female, 7).expect("a birth");
+    let you = hearth::born::player(&content, &b, name, hearth_character::Loincloth::Hide);
+    Screen::Born {
+        born: Box::new(hearth::born::shown(&content, &b, &you, latitude)),
+        sway: 0.0,
+        light: 0,
+    }
 }
 
 #[test]
@@ -95,14 +123,8 @@ fn the_screens_draw_and_answer() {
         ("options", Screen::Options),
         ("video", Screen::Video),
         ("sound", Screen::Sound),
-        (
-            "character",
-            Screen::Character {
-                yaw: 0.4,
-                light: 0,
-                drag: None,
-            },
-        ),
+        ("born", born(12.0, Some(true), "Ash")),
+        ("born_north", born(58.0, Some(false), "")),
         (
             "controls",
             Screen::Controls {

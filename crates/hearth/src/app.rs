@@ -80,11 +80,9 @@ pub struct App {
     audio_devices: Vec<String>,
     audio_checked: Instant,
     ambience_sent: Instant,
-    /// The people, and the one on the character screen as drawn.
+    /// The player's wishes for a birth, and the figures a screen shows as drawn.
     profiles: Profiles,
-    preview_figure: Option<hearth_character::Figure>,
-    figure_preview: Option<hearth_render::figure::FigurePreview>,
-    preview_boxes: Vec<hearth_character::FigureInstance>,
+    people_preview: crate::preview::PeoplePreview,
 }
 
 impl App {
@@ -110,7 +108,7 @@ impl App {
             toggle_sneak: options.controls.toggle_sneak,
             toggle_sprint: options.controls.toggle_sprint,
         });
-        let profiles = Profiles::load(&dirs.root.join("characters.json"));
+        let profiles = Profiles::load_or_migrate(&dirs.root);
         let last_fullscreen = match options.video.display_mode {
             DisplayMode::Exclusive => DisplayMode::Exclusive,
             _ => DisplayMode::Borderless,
@@ -139,15 +137,16 @@ impl App {
             audio_checked: Instant::now(),
             ambience_sent: Instant::now(),
             profiles,
-            preview_figure: None,
-            figure_preview: None,
-            preview_boxes: Vec::new(),
+            people_preview: crate::preview::PeoplePreview::new(),
         }
     }
 
     fn save_profiles(&self) {
-        if let Err(e) = self.profiles.save(&self.dirs.root.join("characters.json")) {
-            log::error!("could not save the characters: {e}");
+        if let Err(e) = self
+            .profiles
+            .save(&self.dirs.root.join(crate::profiles::FILE))
+        {
+            log::error!("could not save the wishes for a birth: {e}");
         }
     }
 
@@ -501,7 +500,7 @@ impl App {
                 seed,
                 Some(self.dirs.cache()),
                 Some(self.dirs.saves()),
-                self.profiles.current().clone(),
+                self.profiles.wish(),
                 death_rules,
                 knowledge,
             ),
@@ -699,6 +698,20 @@ impl App {
             });
             if let Some(c) = &mut run.client {
                 c.pump(&run.renderer.ctx);
+                if let Some(b) = c.born.take() {
+                    run.menus.close_all();
+                    run.menus.open(Screen::Born {
+                        born: Box::new(b),
+                        sway: 0.0,
+                        light: 0,
+                    });
+                    c.pause(true);
+                    if run.captured {
+                        run.captured = false;
+                        let _ = run.window.set_cursor_grab(CursorGrabMode::None);
+                        run.window.set_cursor_visible(true);
+                    }
+                }
                 if c.dead() && !run.menus.is_open() {
                     run.menus.open(Screen::Death);
                     if run.captured {
@@ -736,9 +749,7 @@ impl App {
             let languages = &self.languages;
             let audio_devices = &self.audio_devices;
             let profiles = &mut self.profiles;
-            let preview_figure = &mut self.preview_figure;
-            let figure_preview = &mut self.figure_preview;
-            let preview_boxes = &mut self.preview_boxes;
+            let people_preview = &mut self.people_preview;
             let format = run.renderer.color_format();
             if run.renderer.render_with(|ctx, enc, targets| {
                 match client.as_mut() {
@@ -765,47 +776,19 @@ impl App {
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
-                // The character screen's person, over its space in the interface.
+                // The people a screen shows (a birth's mother, child and father), side by side
+                // over its space in the interface.
                 if let Some(p) = menus.preview() {
-                    let fig = preview_figure.get_or_insert_with(|| {
-                        hearth_character::Figure::starting(p.appearance.clone())
-                    });
-                    fig.set_appearance(&p.appearance);
-                    fig.dress(&hearth_character::starting_garbs(&p.appearance));
-                    let drive = hearth_character::Drive {
-                        breaths_per_min: 12.0,
-                        ..Default::default()
-                    };
-                    let pose = fig.animator.update(&fig.rig, &drive, dt as f32);
-                    preview_boxes.clear();
-                    hearth_character::instances(
-                        &fig.rig,
-                        &fig.palette,
-                        &pose,
-                        glam::Affine3A::from_rotation_y(p.yaw),
-                        hearth_character::Show::default(),
-                        preview_boxes,
-                    );
-                    let s = interface.scale as f32;
-                    let rect = [
-                        (p.rect.x * s) as u32,
-                        (p.rect.y * s) as u32,
-                        (p.rect.w * s) as u32,
-                        (p.rect.h * s) as u32,
-                    ];
-                    let r = figure_preview.get_or_insert_with(|| {
-                        hearth_render::figure::FigurePreview::new(ctx, format)
-                    });
-                    // Framed for the tallest person, so heights compare.
-                    r.render(
+                    let scale = interface.scale as f32;
+                    people_preview.draw(
                         ctx,
                         enc,
                         targets.color,
+                        format,
                         targets.size,
-                        rect,
-                        preview_boxes,
-                        2.0,
-                        p.light,
+                        scale,
+                        p,
+                        dt as f32,
                     );
                 }
             }) {

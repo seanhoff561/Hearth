@@ -1,0 +1,28 @@
+// How genomes are laid out and passed on (V2.1 §4). One entry.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "genetics", name: "Genetics", status: Implemented,
+            // The polygenic loci's places and effects: one architecture for every world.
+            architecture_seed: 2026100301,
+            // The chance an allele mutates as it is passed on (a locus here stands for a gene's
+            // worth of sequence, far above a single base's rate).
+            mutation_rate: 0.0002,
+            // A woman's meioses cross over about 1.65 times as often as a man's: the sex-averaged
+            // map scaled for each.
+            female_map: 1.245, male_map: 0.755,
+            // Recessive conditions: loci, their broken alleles' frequencies, and what being
+            // homozygous for one costs a child's survival and an adult's health (abstracted).
+            recessive_loci: 30, recessive_frequency: (0.003, 0.02), recessive_burden: 0.25,
+            // The immune region: HLA-like loci and alleles each; diversity there resists disease.
+            hla_loci: 6, hla_alleles: 16,
+            // A place's sunlight from its latitude: 1 at the equator, cos(latitude) to this power
+            // (the sun's ultraviolet falls off faster than its light, through more air: about
+            // two thirds at 30 degrees, a third at 45, an eighth at 60).
+            sunlight_power: 3.0,
+            realism_source: "linkage maps (Kong et al. 2002); recessive load and HLA diversity schematic; review",
+            uncertain: true,
+        ),
+    ],
+)

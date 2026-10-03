@@ -1960,3 +1960,50 @@ fed, its injuries kept. How well a band tolerates each player is kept in its rec
 player's identity (D166), so the cells' groups no longer carry V2-11's single tolerance. Saving
 folds every band back in a copy, so a reloaded world draws them out again as themselves
 (`hearth_people/tests/persist.rs`).
+
+## D171 — An abstract genome on real maps, read on one scale
+V2.1 §4 asks for a genome of a few hundred loci on 23 chromosome pairs with recombination,
+calibrated to realistic heritabilities. The chromosomes carry their human sex-averaged genetic
+lengths (about 3,600 cM of autosomes), scaled 1.245 for a woman's meioses and 0.755 for a man's
+(women cross over about 1.65 times as often); each pair crosses over at least once, the rest by
+Poisson's law along its length (no interference), each chiasma passing to the gamete with a
+chance of a half, so recombination between two loci follows Haldane's map. A trait's
+architecture is data: how many loci of small effect it takes (their places and effects laid out
+under one seed, so every world of a version shares it), which named loci of large effect it
+weighs in, and its heritability with its source. About 460 loci in all — appearance, health,
+metabolism, temperament and aptitude, an immune region of six HLA-like loci and thirty rare
+recessive conditions — at a byte an allele; an allele mutates at 2·10⁻⁴ as it is passed on, a
+locus standing for a gene's worth of sequence. Every trait is read on **one scale**: the genetic
+mean and spread of the loci's own (species-wide) frequencies, with chance's spread set there to
+meet the heritability. Pools are not standardized on their own, so where a pool's physical loci
+differ (the tropics' pigmentation and the north's) the difference shows, while within a pool the
+heritability is what that pool's variation makes it. The tests measure it as family studies do
+(offspring on midparent, siblings), and kinship is reckoned on the pedigree (the coefficient of
+kinship, recursing through the younger's parents; inbreeding a person's parents' kinship): a
+band's fathers are drawn from its grown males who are not the mother's close kin, and a recessive
+condition makes one frailer when a band's numbers fall.
+
+## D172 — Temperament on the HEXACO model
+V2.1 §4.3 asks for HEXACO or the Big Five. HEXACO's six factors are taken: its honesty–humility
+(fairness, sincerity, modesty — what predicts cooperating rather than exploiting, in economic games
+and in life) is the trait the social systems most need for sharing, cheating, gossip and
+reputation (V2.1 §8.3–8.4), and it divides the Big Five's agreeableness and neuroticism the way
+the mind needs them divided — anger and forgiveness (agreeableness) apart from fear, anxiety and
+attachment (emotionality). Narrower dimensions the mind uses ride beside the factors: behavioural
+inhibition, stress reactivity, impulsivity, novelty seeking, sociability, the threshold for
+aggression and empathy. Each is heritable about 0.3–0.5, as twin studies find, and has one set of
+allele frequencies in every pool (ground rule 1: the lint fails a pool or a sunlight gradient that
+names one, and a test finds temperament alike under every sun).
+
+## D173 — The player's parents before families
+Until H3 puts the player into a family of the world, the player's two parents are drawn from the
+human gene pool at the latitude of the place the player begins — its pigmentation and hair form
+set by the place's sunlight, cos(latitude)³ (ultraviolet falls off faster than light, through
+more air) — and the player's genome is their child's by meiosis, the father's gamete drawn to the
+daughter or son wished for (or left to chance). The player takes up their life grown (twenty),
+looking as their genes make them; the birth screen shows the mother, the player and the father.
+The character creator is gone: a new world asks a name (or none), daughter, son or chance, and
+the loincloth first worn, kept in `birth.json` (the chosen character's name, sex and loincloth
+come over once from `characters.json`). Under Legacy the player is born again in the region of
+new parents; under Hardy they come back the same person. A world saved before H1 has no birth for
+its player: one is drawn at load the same way, of the player's sex, and their looks become its.

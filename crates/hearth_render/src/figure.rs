@@ -354,7 +354,7 @@ struct PreviewUniform {
     exposure: [f32; 4],
 }
 
-/// A body alone, for the character screen.
+/// People alone, for a screen that shows them (the birth screen).
 pub struct FigurePreview {
     pipeline: wgpu::RenderPipeline,
     uniform: wgpu::Buffer,
@@ -424,7 +424,8 @@ impl FigurePreview {
 
     /// Draws `instances` (placed in the figure's frame: feet at the origin, facing +Z) into
     /// `rect` (x, y, width, height in pixels) of `target` (`size` pixels), seen from the front
-    /// at the height of its middle and lit by `light`. The instances go up with the queue:
+    /// at the height of its middle, framing `height_m` up and `half_width_m` to each side, and
+    /// lit by `light`. The instances go up with the queue:
     /// one preview per submission.
     pub fn render(
         &mut self,
@@ -435,6 +436,7 @@ impl FigurePreview {
         rect: [u32; 4],
         instances: &[FigureInstance],
         height_m: f32,
+        half_width_m: f32,
         light: PreviewLight,
     ) {
         let [x, y, w, h] = rect;
@@ -451,10 +453,10 @@ impl FigurePreview {
         self.instances.set(ctx, instances);
         let fov = 28f32.to_radians();
         let aspect = w as f32 / h as f32;
-        // Far enough back that the body fits the height with a margin, and its width (with
+        // Far enough back that the bodies fit the height with a margin, and their width (with
         // arms out) the width.
         let half = (fov / 2.0).tan();
-        let fit = (height_m * 0.58 / half).max(0.55 / (half * aspect));
+        let fit = (height_m * 0.58 / half).max(half_width_m.max(0.55) / (half * aspect));
         let center = Vec3::new(0.0, height_m * 0.5, 0.0);
         let eye = center + Vec3::new(0.0, height_m * 0.05, fit);
         let view = glam::camera::rh::view::look_at_mat4(eye, center, Vec3::Y);

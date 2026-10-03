@@ -9,8 +9,9 @@ use crate::band::Band;
 use crate::person::Person;
 use crate::sim::People;
 
-/// The format of the people's save. Each format after the first adds its step to [`migrate`].
-pub const FORMAT: u32 = 1;
+/// The format of the people's save. Each format after the first adds its step to [`migrate`]:
+/// 2 (H1) gave persons their genomes and phenotypes.
+pub const FORMAT: u32 = 2;
 
 /// The people as saved.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,6 +64,8 @@ pub fn migrate(v: &mut Value) -> Result<u32, String> {
     if format == 0 {
         return Err("the people's save has format 0, which never existed".to_owned());
     }
+    // 1 → 2: no genomes yet; each band's people are given theirs from its pool when it is next
+    // drawn out (`People::endow`), parents before children.
     Ok(format)
 }
 

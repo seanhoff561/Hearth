@@ -512,6 +512,33 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.traits,
+        report,
+        |e| &e.id,
+        |t, c| {
+            c.range("heritability", t.heritability, 0.01, 0.999);
+            c.range("polygenic", t.polygenic as f32, 0.0, 200.0);
+        },
+    );
+    each(
+        &content.loci,
+        report,
+        |e| &e.id,
+        |l, c| {
+            let sum: f32 = l.alleles.iter().map(|a| a.frequency).sum();
+            c.range("alleles' frequencies' sum", sum, 0.99, 1.01);
+            c.range("position_cm", l.position_cm, 0.0, 300.0);
+        },
+    );
+    each(
+        &content.chromosomes,
+        report,
+        |e| &e.id,
+        |ch, c| {
+            c.range("length_cm", ch.length_cm, 0.0, 400.0);
+        },
+    );
+    each(
         &content.species,
         report,
         |e| &e.id,

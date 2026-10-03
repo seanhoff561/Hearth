@@ -259,6 +259,77 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
             );
         }
     }
+    // Genetics (V2.1 §4): references, and no behavioural trait varies by pool (ground rule 1).
+    for (e, o) in c.loci.iter_with_origin() {
+        r.check(&c.chromosomes, "chromosome", &e.chromosome, o, e.id());
+        if e.sunlight.is_some() && e.group.behavioural() {
+            r.report.error(
+                "behavioural-sunlight",
+                Some(o.file.clone()),
+                o.line,
+                format!(
+                    "locus `{}` is behavioural and varies with sunlight: temperament and aptitude may not differ by place (V2.1 ground rule 1)",
+                    e.id()
+                ),
+            );
+        }
+    }
+    for (e, o) in c.traits.iter_with_origin() {
+        for m in &e.major {
+            r.check(&c.loci, "locus", &m.locus, o, e.id());
+        }
+        if e.sunlight.is_some() && e.group.behavioural() {
+            r.report.error(
+                "behavioural-sunlight",
+                Some(o.file.clone()),
+                o.line,
+                format!(
+                    "trait `{}` is behavioural and varies with sunlight: temperament and aptitude may not differ by place (V2.1 ground rule 1)",
+                    e.id()
+                ),
+            );
+        }
+    }
+    for (e, o) in c.gene_pools.iter_with_origin() {
+        r.check(&c.species, "species", &e.species, o, e.id());
+        let behavioural = |group: crate::schema::humans::TraitGroup| group.behavioural();
+        for l in &e.loci {
+            r.check(&c.loci, "locus", &l.locus, o, e.id());
+            if c.loci
+                .get(l.locus.as_str())
+                .is_some_and(|x| behavioural(x.group))
+            {
+                r.report.error(
+                    "behavioural-pool",
+                    Some(o.file.clone()),
+                    o.line,
+                    format!(
+                        "pool `{}` sets the behavioural locus `{}`: temperament and aptitude may not differ by population (V2.1 ground rule 1)",
+                        e.id(),
+                        l.locus
+                    ),
+                );
+            }
+        }
+        for t in &e.traits {
+            r.check(&c.traits, "trait", &t.of, o, e.id());
+            if c.traits
+                .get(t.of.as_str())
+                .is_some_and(|x| behavioural(x.group))
+            {
+                r.report.error(
+                    "behavioural-pool",
+                    Some(o.file.clone()),
+                    o.line,
+                    format!(
+                        "pool `{}` sets the behavioural trait `{}`: temperament and aptitude may not differ by population (V2.1 ground rule 1)",
+                        e.id(),
+                        t.of
+                    ),
+                );
+            }
+        }
+    }
     for (e, o) in c.species.iter_with_origin() {
         for h in &e.habitat {
             r.check(&c.ecosystems, "ecosystem", h, o, e.id());

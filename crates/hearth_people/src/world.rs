@@ -81,6 +81,11 @@ pub trait Senses: Sync {
     fn surroundings(&self, at: DVec3) -> Surroundings;
     /// Hunters of people within `within` m of a place.
     fn hunters_near(&self, at: DVec3, within: f64) -> Vec<DVec3>;
+    /// A place's latitude (degrees): its sunlight sets a pool's pigmentation (the equator's,
+    /// where a world does not say).
+    fn latitude(&self, _at: DVec3) -> f64 {
+        0.0
+    }
 }
 
 /// What the people do to the world, one at a time.

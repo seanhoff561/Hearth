@@ -110,6 +110,68 @@ pub fn report(
         ],
     ));
 
+    // Genome and phenotype: what the genes give, chance and development, and what shows.
+    if let (Some(g), Some(ph)) = (&p.genome, &p.phenotype) {
+        let het = g
+            .maternal
+            .iter()
+            .zip(&g.paternal)
+            .filter(|(a, b)| a != b && **b != crate::genome::NONE)
+            .count();
+        let inbred = crate::lineage::Kinship::new(people).inbreeding(p.id);
+        sections.push(section(
+            "Genome",
+            vec![
+                format!(
+                    "{} loci, heterozygous at {het}; inbreeding {inbred:.3}; recessive conditions {}; immune diversity {:.2}",
+                    g.maternal.len(),
+                    ph.conditions,
+                    ph.immune_diversity
+                ),
+                ph.named
+                    .iter()
+                    .map(|(k, [a, b])| format!("{}: {a}/{b}", k.rsplit(':').next().unwrap_or(k)))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ],
+        ));
+        let chain = |id: &str| {
+            ph.traits
+                .iter()
+                .find(|(k, _)| k.as_str() == id || k.ends_with(&format!(":{id}")))
+                .map_or_else(String::new, |(_, v)| {
+                    format!(
+                        "{id} {:+.2} = genes {:+.2} chance {:+.2} development {:+.2}",
+                        v.z(),
+                        v.genetic,
+                        v.chance,
+                        v.development
+                    )
+                })
+        };
+        let mut lines: Vec<String> = ["stature", "skin_pigment", "hair_darkness", "build"]
+            .iter()
+            .map(|id| chain(id))
+            .collect();
+        let hexaco = [
+            ("H", "honesty_humility"),
+            ("E", "emotionality"),
+            ("X", "extraversion"),
+            ("A", "agreeableness"),
+            ("C", "conscientiousness"),
+            ("O", "openness"),
+        ];
+        lines.push(format!(
+            "HEXACO {}",
+            hexaco
+                .iter()
+                .map(|(k, id)| format!("{k} {:+.1}", ph.z(id)))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+        sections.push(section("Phenotype", lines));
+    }
+
     // Mind.
     let needs = Needs::of(&p.body, cfg, p.mind.fear);
     sections.push(section(

@@ -24,6 +24,9 @@ pub struct Species {
     /// A grown female's and male's height (m) and mass (kg): the middle of the profile's ranges.
     pub height_m: [f32; 2],
     pub mass_kg: [f32; 2],
+    /// The spread (one standard deviation) of grown heights about the middle (a quarter of the
+    /// profile's range).
+    pub height_sd_m: [f32; 2],
     pub climbs: bool,
     pub cognition: Cognition,
     pub life: LifeParams,
@@ -58,8 +61,7 @@ impl Species {
     /// How grown one of an age is: the share of a grown one's mass, from a newborn's to all of
     /// it at maturity.
     pub fn growth(&self, age_years: f64) -> f32 {
-        let t = (age_years.max(0.0) as f32 / self.life.maturity_years.max(1.0)).min(1.0);
-        NEWBORN + (1.0 - NEWBORN) * t.powf(1.1)
+        growth(self.life.maturity_years, age_years)
     }
 
     /// The mass (kg) of one of its persons of a sex and age.
@@ -67,9 +69,11 @@ impl Species {
         self.mass_kg[sex(female)] * self.growth(age_years)
     }
 
-    /// The standing height (m) of one of a sex and age (height goes as mass to the 0.4).
-    pub fn height_m(&self, female: bool, age_years: f64) -> f32 {
-        self.height_m[sex(female)] * self.growth(age_years).powf(0.4)
+    /// The standing height (m) of one of a sex and age (height goes as mass to the 0.4), of a
+    /// stature `z` standard deviations from the species' middle.
+    pub fn height_m(&self, female: bool, age_years: f64, z: f32) -> f32 {
+        let grown = self.height_m[sex(female)] + z.clamp(-3.5, 3.5) * self.height_sd_m[sex(female)];
+        grown * self.growth(age_years).powf(0.4)
     }
 
     /// The age class of an age, as the ecological cells count them: the young of the year, the
@@ -88,6 +92,28 @@ impl Species {
     pub fn weaned(&self, age_years: f64) -> bool {
         age_years >= self.life.weaning_years as f64
     }
+}
+
+/// How grown one of an age is, of a species grown at `maturity_years`: the share of a grown one's
+/// mass, from a newborn's to all of it at maturity.
+pub fn growth(maturity_years: f32, age_years: f64) -> f32 {
+    let t = (age_years.max(0.0) as f32 / maturity_years.max(1.0)).min(1.0);
+    NEWBORN + (1.0 - NEWBORN) * t.powf(1.1)
+}
+
+/// A grown one's height (m) by a species profile (implemented or not: a player's): the middle
+/// of its range for the sex, `z` standard deviations of a quarter of the range from it.
+pub fn grown_height_m(
+    profile: &hearth_content::schema::humans::Species,
+    female: bool,
+    z: f32,
+) -> f32 {
+    let r = if female {
+        profile.body.height_m.female
+    } else {
+        profile.body.height_m.male
+    };
+    (r.0 + r.1) / 2.0 + z.clamp(-3.5, 3.5) * (r.1 - r.0) / 4.0
 }
 
 /// The player's physiology for a body of `mass_kg` and `height_m`: its skin area by DuBois, its
@@ -118,10 +144,11 @@ fn hair() -> Worn {
     w
 }
 
-/// Every species whose persons the game lives.
+/// Every species whose persons the game lives, and the genetic architecture they are read by.
 #[derive(Debug, Clone, Default)]
 pub struct SpeciesSet {
     pub list: Vec<Species>,
+    pub genetics: Option<crate::genome::Genetics>,
 }
 
 impl SpeciesSet {
@@ -140,6 +167,8 @@ impl SpeciesSet {
             .filter(|s| s.status == Status::Implemented)
             .map(|s| {
                 let height_m = [mid(s.body.height_m.female), mid(s.body.height_m.male)];
+                let spread = |r: (f32, f32)| (r.1 - r.0) / 4.0;
+                let height_sd_m = [spread(s.body.height_m.female), spread(s.body.height_m.male)];
                 let mass_kg = [mid(s.body.mass_kg.female), mid(s.body.mass_kg.male)];
                 let knowledge: Vec<String> = s
                     .knowledge
@@ -160,6 +189,7 @@ impl SpeciesSet {
                     plan: s.body.plan,
                     height_m,
                     mass_kg,
+                    height_sd_m,
                     climbs: s.body.climbs,
                     cognition: s.cognition.clone(),
                     life: s.life.clone(),
@@ -176,7 +206,10 @@ impl SpeciesSet {
                 }
             })
             .collect();
-        Self { list }
+        Self {
+            list,
+            genetics: crate::genome::Genetics::from_content(c),
+        }
     }
 
     /// The index of a species by `namespace:path` or bare path.

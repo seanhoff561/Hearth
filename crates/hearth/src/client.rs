@@ -209,6 +209,8 @@ pub struct Client {
     eyes_shut: f32,
     /// Why the player last woke, and how long ago (s).
     woke: Option<(hearth_body::Wake, f64)>,
+    /// A birth to show the player (taken by the app for its screen).
+    pub born: Option<hearth_protocol::Born>,
     /// Where the heart and the breath are in their cycles (for the pulse at the edges of
     /// sight and the breath's fog).
     heart_phase: f64,
@@ -401,6 +403,7 @@ impl Client {
             hidden_looks: Vec::new(),
             eyes_shut: 0.0,
             woke: None,
+            born: None,
             heart_phase: 0.0,
             breath_phase: 0.0,
             reduce_motion: options.accessibility.reduce_motion,
@@ -1962,7 +1965,7 @@ impl Client {
         seed: u64,
         cache_dir: Option<std::path::PathBuf>,
         saves_dir: Option<std::path::PathBuf>,
-        appearance: hearth_character::Appearance,
+        wish: hearth_protocol::Wish,
         death_rules: hearth_save::DeathRules,
         knowledge: hearth_save::KnowledgeMode,
     ) -> WorldSpec {
@@ -1972,7 +1975,7 @@ impl Client {
             planet: hearth_math::PlanetSize::Standard,
             cache_dir,
             saves_dir,
-            appearance,
+            wish,
             death_rules,
             knowledge,
         }
@@ -2002,9 +2005,9 @@ impl Client {
 
     /// Asks to live on as a new person (after death).
     /// After death: live on as the world's rules allow (as `who`, under Legacy).
-    pub fn respawn(&mut self, who: Option<hearth_character::Appearance>) {
+    pub fn respawn(&mut self, wish: Option<hearth_protocol::Wish>) {
         if self.dead() {
-            self.server.send(ToServer::Respawn(who));
+            self.server.send(ToServer::Respawn(wish));
         }
     }
 
@@ -2435,6 +2438,7 @@ impl Client {
                     self.hearing = crate::hearing::Hearing::default();
                 }
                 ToClient::Ended(s) => self.ended = Some(s),
+                ToClient::Born(b) => self.born = Some(*b),
                 ToClient::Carried(c) => {
                     self.carry = c;
                     self.redress();

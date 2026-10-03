@@ -184,3 +184,175 @@ entry! {
         pub extinction_ya: Option<f64>,
     }
 }
+
+/// What a trait or locus is about. Physical groups may differ between gene pools where selection
+/// explains it; behavioural ones never do (V2.1 ground rule 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TraitGroup {
+    Pigmentation,
+    HairForm,
+    Body,
+    Health,
+    Metabolism,
+    Temperament,
+    Aptitude,
+}
+
+impl TraitGroup {
+    /// A behavioural group: one set of frequencies for the whole species, in every pool.
+    pub fn behavioural(self) -> bool {
+        matches!(self, TraitGroup::Temperament | TraitGroup::Aptitude)
+    }
+}
+
+/// A chromosome's kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ChromosomeKind {
+    Autosome,
+    X,
+    Y,
+}
+
+entry! {
+    /// A chromosome (V2.1 §4.1): its genetic length, sex-averaged.
+    pub struct Chromosome in "humans/genetics/chromosomes", schema 1, name name {
+        pub name: String,
+        pub kind: ChromosomeKind,
+        pub length_cm: f32,
+    }
+}
+
+/// How a trait's value is read.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum Shows {
+    /// A z-score: 0 the species' mean, 1 a standard deviation.
+    Z,
+    /// A factor about 1, `1 + spread·z`.
+    Factor(f32),
+    /// Stature: the species profile's height range by sex.
+    Stature,
+}
+
+/// A named locus's share in a trait.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MajorEffect {
+    pub locus: IdRef,
+    pub weight: f32,
+}
+
+entry! {
+    /// A heritable trait and its genetic architecture (V2.1 §4.3).
+    pub struct Trait in "humans/genetics/traits", schema 1, name name {
+        pub name: String,
+        pub group: TraitGroup,
+        /// Loci of small effect laid out for it under the settings' seed.
+        #[serde(default)]
+        pub polygenic: u16,
+        /// The share of its variation genes account for in the species' pool (narrow sense).
+        pub heritability: f32,
+        pub shows: Shows,
+        /// The named loci of larger effect it takes, by weight.
+        #[serde(default)]
+        pub major: Vec<MajorEffect>,
+        /// Its raising alleles' frequency where the sun is weakest and strongest (physical traits
+        /// only).
+        #[serde(default)]
+        pub sunlight: Option<(f32, f32)>,
+    }
+}
+
+/// An allele of a named locus.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Allele {
+    pub name: String,
+    /// Its effect, in the units of the polygenic loci's (about 1 each).
+    pub effect: f32,
+    /// Its frequency in the species pool.
+    pub frequency: f32,
+}
+
+/// How a named locus's alleles combine.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub enum Dominance {
+    #[default]
+    Additive,
+    /// The allele's effect shows in any carrier.
+    Dominant(String),
+    /// The allele's effect shows only in a homozygote.
+    Recessive(String),
+}
+
+/// An allele's frequency where the sun is weakest and strongest.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Sunlight {
+    pub allele: String,
+    pub weak: f32,
+    pub strong: f32,
+}
+
+entry! {
+    /// A named locus of larger effect (V2.1 §4.1).
+    pub struct Locus in "humans/genetics/loci", schema 1, name name {
+        pub name: String,
+        pub chromosome: IdRef,
+        pub position_cm: f32,
+        pub group: TraitGroup,
+        pub alleles: Vec<Allele>,
+        #[serde(default)]
+        pub dominance: Dominance,
+        #[serde(default)]
+        pub sunlight: Option<Sunlight>,
+    }
+}
+
+/// A pool's frequencies for a named locus (one per allele, in order).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PoolLocus {
+    pub locus: IdRef,
+    pub frequencies: Vec<f32>,
+}
+
+/// A pool's frequency for a polygenic trait's raising alleles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PoolTrait {
+    pub of: IdRef,
+    pub raising: f32,
+}
+
+entry! {
+    /// A species' gene pool (V2.1 §4.5): its physical loci's frequencies where they differ from
+    /// the loci's own. Behavioural loci share one set of frequencies everywhere (ground rule 1).
+    pub struct GenePool in "humans/genetics/pools", schema 1, name name {
+        pub name: String,
+        pub species: IdRef,
+        /// Whether a place's sunlight sets its pigmentation.
+        #[serde(default)]
+        pub sunlight: bool,
+        #[serde(default)]
+        pub loci: Vec<PoolLocus>,
+        #[serde(default)]
+        pub traits: Vec<PoolTrait>,
+    }
+}
+
+entry! {
+    /// How genomes are laid out and passed on (V2.1 §4.1–4.2).
+    pub struct GeneticsSettings in "humans/genetics/settings", schema 1, name name {
+        pub name: String,
+        pub architecture_seed: u64,
+        pub mutation_rate: f32,
+        pub female_map: f32,
+        pub male_map: f32,
+        pub recessive_loci: u16,
+        pub recessive_frequency: Range,
+        pub recessive_burden: f32,
+        pub hla_loci: u16,
+        pub hla_alleles: u16,
+        pub sunlight_power: f32,
+    }
+}

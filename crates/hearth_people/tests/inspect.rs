@@ -1,5 +1,5 @@
 //! H0 (V2.1 §16): the developer's inspector shows a person's record, a section for each of its
-//! components.
+//! components (H1 adds the genome and the phenotype).
 
 mod common;
 
@@ -32,6 +32,8 @@ fn the_inspector_shows_every_component() {
         [
             "Life",
             "Body",
+            "Genome",
+            "Phenotype",
             "Mind",
             "Knowledge",
             "Social",
@@ -39,7 +41,8 @@ fn the_inspector_shows_every_component() {
             "Place"
         ]
     );
-    let knowledge = &r.sections[3].lines[0];
+    let knowledge = &r.sections[5].lines[0];
+    assert!(r.sections[3].lines.iter().any(|l| l.starts_with("stature")));
     assert!(knowledge.contains("Cracking nuts"), "{knowledge}");
     assert!(report(&p, &b.species, &b.graph, 999_999, &world.now()).is_none());
 }
