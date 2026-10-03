@@ -39,5 +39,21 @@
   "mountain_avens": {"template": "plant", "material": "hearth:heather", "map_color": "#4a6a3a", "replaceable": false},
   "bearberry": {"template": "plant", "material": "hearth:bearberry", "map_color": "#3a5a2e", "replaceable": false},
   "purple_saxifrage": {"template": "plant", "material": "hearth:saxifrage_flowers", "map_color": "#4a5a3a", "replaceable": false},
-  "arctic_poppy": {"template": "plant", "material": "hearth:dry_grass", "map_color": "#6a7a4a", "replaceable": false}
+  "arctic_poppy": {"template": "plant", "material": "hearth:dry_grass", "map_color": "#6a7a4a", "replaceable": false},
+  "feather_grass": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#9aa65a", "drag": 0.15},
+  "steppe_fescue": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#7a8a5a", "drag": 0.1},
+  "big_bluestem": {"template": "tall_plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#5a7a6a", "drag": 0.3},
+  "blue_grama": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#7a8a6a", "drag": 0.1},
+  "fringed_sage": {"template": "plant", "material": "hearth:sage_leaves", "replaceable": false, "map_color": "#a8b0a0", "drag": 0.15},
+  "pasque_flower": {"template": "plant", "material": "hearth:sage_leaves", "replaceable": false, "map_color": "#8a9a6a", "drag": 0.05},
+  "purple_coneflower": {"template": "plant", "material": "hearth:coneflower_root", "replaceable": false, "map_color": "#4a6a3a", "drag": 0.1},
+  "common_sunflower": {"template": "tall_plant", "material": "hearth:sunflower_seed", "replaceable": false, "map_color": "#4e7a32", "drag": 0.3},
+  "soapweed_yucca": {"template": "tall_plant", "material": "hearth:yucca_fibre", "replaceable": false, "map_color": "#7a8a6a", "drag": 0.3},
+  "perennial_flax": {"template": "plant", "material": "hearth:flax_fibre", "replaceable": false, "map_color": "#6a8a5a", "drag": 0.1},
+  "creosote_bush": {"template": "tall_plant", "material": "hearth:creosote_leaves", "replaceable": false, "map_color": "#5a6a3a", "drag": 0.35},
+  "prickly_pear": {"template": "plant", "material": "hearth:nopal", "replaceable": false, "map_color": "#5a8a4a", "drag": 0.35},
+  "camelthorn": {"template": "plant", "material": "hearth:manna", "replaceable": false, "map_color": "#6a8a4a", "drag": 0.3},
+  "big_sagebrush": {"template": "tall_plant", "material": "hearth:sagebrush_bark", "replaceable": false, "map_color": "#9aa49a", "drag": 0.35},
+  "fourwing_saltbush": {"template": "tall_plant", "material": "hearth:saltbush_leaves", "replaceable": false, "map_color": "#a0a890", "drag": 0.3},
+  "joint_pine": {"template": "plant", "material": "hearth:ephedra_stems", "replaceable": false, "map_color": "#5a7a4a", "drag": 0.2}
 }

@@ -483,7 +483,12 @@ impl Forest {
                 1.0
             };
         }
-        let total: f32 = odds.iter().sum::<f32>().min(0.7);
+        // The ground the plants cover, the less the drier the place (de Martonne's index, the
+        // rain against the warmth): a sixth of it in the driest deserts, a third in the wetter
+        // ones, all there is room for on a steppe or in a wood.
+        let aridity = c.precip_mm / (c.mean_c + 10.0).max(1.0);
+        let cover = 0.7 * (aridity / 20.0).clamp(0.2, 1.0);
+        let total: f32 = odds.iter().sum::<f32>().min(cover);
         if roll >= total {
             return None;
         }

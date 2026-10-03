@@ -183,6 +183,8 @@ pub enum Sprite {
     Tuft,
     /// A mat over the ground, seen from above (mosses, lichens): its block is a carpet.
     Carpet,
+    /// Spined green paddles one on another (a prickly pear).
+    Cactus,
 }
 
 /// Ground the understory's plants need.

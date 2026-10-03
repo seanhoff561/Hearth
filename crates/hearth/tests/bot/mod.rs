@@ -1540,9 +1540,11 @@ pub fn start(dir: &std::path::Path, seed: u64) -> Bot {
             }
             n
         };
+        // Ground to build on: nothing standing on it but what gives way (a steppe's sages and
+        // a wood's nettles would have to be pulled up first).
         let open = |p: BlockPos| {
             w.solid(p)
-                && !w.solid(p.up())
+                && w.free(p.up())
                 && !w.solid(p.up().up())
                 && w.block(p.up()).is_none_or(|b| !b.ends_with("_log"))
         };
@@ -2189,7 +2191,11 @@ pub fn goals_sewing(bot: &mut Bot) {
         bot.resin_afar();
     }
     bot.say(&format!("{} resin", bot.count("pine_resin")));
-    if bot.count("point/flint") == 0 {
+    // A point of any good stone, knapped again when one hinges off or snaps.
+    for _ in 0..4 {
+        if bot.count(":point/") > 0 {
+            break;
+        }
         bot.cobbles(2, &knappable);
         bot.work("test_nodule", AimAt::Nothing);
         bot.work("knap_point", AimAt::Nothing);

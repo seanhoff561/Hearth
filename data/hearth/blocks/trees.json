@@ -81,5 +81,14 @@
   "balsam_fir_leaves": {"template": "foliage", "material": "hearth:fir_wood", "tint": "spruce", "drag": 0.55, "map_color": "#2c4d33"},
   "jack_pine_log": {"template": "log", "material": "hearth:pine_wood", "map_color": "#5a4a3e"},
   "jack_pine_branch": {"template": "branch", "material": "hearth:pine_wood"},
-  "jack_pine_leaves": {"template": "foliage", "material": "hearth:pine_wood", "tint": "spruce", "drag": 0.46, "map_color": "#4a6a3a"}
+  "jack_pine_leaves": {"template": "foliage", "material": "hearth:pine_wood", "tint": "spruce", "drag": 0.46, "map_color": "#4a6a3a"},
+  "mesquite_log": {"template": "log", "material": "hearth:mesquite_wood", "map_color": "#5a3a2a"},
+  "mesquite_branch": {"template": "branch", "material": "hearth:mesquite_wood"},
+  "mesquite_leaves": {"template": "foliage", "material": "hearth:mesquite_wood", "tint": "foliage", "drag": 0.4, "map_color": "#7a9a4a"},
+  "saxaul_log": {"template": "log", "material": "hearth:saxaul_wood", "map_color": "#6a5a4a"},
+  "saxaul_branch": {"template": "branch", "material": "hearth:saxaul_wood"},
+  "saxaul_leaves": {"template": "foliage", "material": "hearth:saxaul_wood", "tint": "foliage", "drag": 0.4, "map_color": "#6a8a5a"},
+  "tamarisk_log": {"template": "log", "material": "hearth:tamarisk_wood", "map_color": "#7a4a3a"},
+  "tamarisk_branch": {"template": "branch", "material": "hearth:tamarisk_wood"},
+  "tamarisk_leaves": {"template": "foliage", "material": "hearth:tamarisk_wood", "tint": "foliage", "drag": 0.4, "map_color": "#7a9a7a"}
 }

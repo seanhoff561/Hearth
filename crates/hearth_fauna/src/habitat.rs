@@ -299,6 +299,12 @@ pub fn dwarf_shrubs(warm_c: f32) -> f32 {
     0.5 * smooth(warm_c, 1.0, 5.0) * (1.0 - smooth(warm_c, 11.0, 16.0))
 }
 
+/// The share of open ground's growth in shrubs where the year's rain is `precip_mm`: a little
+/// in the steppes, half in the deserts (creosote, sagebrush, saltbush, saxaul).
+pub fn desert_shrubs(precip_mm: f32) -> f32 {
+    0.15 * (1.0 - smooth(precip_mm, 400.0, 600.0)) + 0.35 * (1.0 - smooth(precip_mm, 150.0, 350.0))
+}
+
 impl GenLand<'_> {
     /// One column's contribution: (land, fresh, sea, forage per km², cover, ecosystems).
     fn column(&self, x: i32, z: i32, roll: f32) -> Column {
@@ -335,7 +341,6 @@ impl GenLand<'_> {
         {
             col.ecosystems |= self.catalog.ecosystems_of_biome("river");
         }
-        let n = miami_npp(s.temperature, s.precipitation) / 1200.0;
         // The canopy as the vegetation has grown it.
         let (canopy, young, mast, fruit_tree, flowers) =
             match wg.features().expected_canopy(wg, self.veg, &s, x, z, roll) {
@@ -362,12 +367,47 @@ impl GenLand<'_> {
                 }
                 None => (s.tree_density.min(1.0) * 0.3, 0.0, 0.0, 0.0, false),
             };
+        let stand = Stand {
+            canopy,
+            young,
+            mast,
+            fruit_tree,
+            flowers,
+        };
+        (col.forage, col.cover) = stand.forage(s.temperature, s.t_warm, s.precipitation);
+        col
+    }
+}
+
+/// The vegetation of a column as its forage reads it: the canopy's cover, the young regrowth,
+/// the mast and fruit of its trees (kg a km²), whether they flower for the bees.
+#[derive(Debug, Clone, Copy, Default)]
+struct Stand {
+    canopy: f32,
+    young: f32,
+    mast: f32,
+    fruit_tree: f32,
+    flowers: bool,
+}
+
+impl Stand {
+    /// The usable forage of each kind a km² of such a stand produces in a year in a climate
+    /// (yearly mean and warmest month °C, rain mm), and the cover it gives.
+    fn forage(&self, temp_c: f32, warm_c: f32, precip_mm: f32) -> ([f32; FORAGE_KINDS], f32) {
+        let Stand {
+            canopy,
+            young,
+            mast,
+            fruit_tree,
+            flowers,
+        } = *self;
+        let n = miami_npp(temp_c, precip_mm) / 1200.0;
         let light = (1.0 - canopy).clamp(0.0, 1.0);
         let edge = 4.0 * canopy * light;
-        let wet = (s.precipitation / (s.precipitation + 400.0)).clamp(0.0, 1.0);
-        let heath = dwarf_shrubs(s.t_warm);
+        let wet = (precip_mm / (precip_mm + 400.0)).clamp(0.0, 1.0);
+        let heath = dwarf_shrubs(warm_c).max(desert_shrubs(precip_mm));
         let open = GRAZE_OPEN * n * light * light * 0.95;
-        let f = &mut col.forage;
+        let mut f = [0.0f32; FORAGE_KINDS];
         f[Forage::Graze as usize] = open * (1.0 - heath) + GRAZE_OPEN * n * 0.05;
         f[Forage::Browse as usize] = n
             * (BROWSE_OLD * (0.3 + canopy) + BROWSE_YOUNG * young + 0.1 * GRAZE_OPEN * edge * 0.1)
@@ -380,8 +420,75 @@ impl GenLand<'_> {
         f[Forage::Fungi as usize] = FUNGI * n * canopy * wet * 1.6;
         f[Forage::Nectar as usize] =
             NECTAR * n * (0.3 * light + edge * 0.3 + if flowers { canopy } else { 0.0 });
-        col.cover = (canopy * 0.7 + young * 0.9 + light * 0.1).clamp(0.0, 1.0);
-        col
+        let cover = (canopy * 0.7 + young * 0.9 + light * 0.1).clamp(0.0, 1.0);
+        (f, cover)
+    }
+}
+
+/// The habitat of an ecosystem's reference land (its own ecosystem's, the animals of the
+/// Palearctic).
+pub fn reference_land(
+    catalog: &Catalog,
+    r: &hearth_content::schema::ecosystem::ReferenceLand,
+    ecosystem: &str,
+) -> Habitat {
+    let stand = Stand {
+        canopy: r.canopy.clamp(0.0, 1.0),
+        young: r.young.clamp(0.0, 1.0),
+        mast: r.mast_kg.max(0.0),
+        fruit_tree: r.fruit_kg.max(0.0),
+        flowers: r.flowers,
+    };
+    let (forage, cover) = stand.forage(r.temp_c, r.warm_c, r.precip_mm);
+    let mut h = open_land(
+        catalog,
+        r.temp_c,
+        r.warm_c,
+        r.precip_mm,
+        &[ecosystem],
+        Realm::Palearctic,
+    );
+    h.forage = forage;
+    h.cover = cover;
+    h
+}
+
+/// Open land (a grassland, a steppe, a desert) of a climate (yearly mean and warmest month
+/// °C, rain mm), of the ecosystems named, whose animals are a realm's: what the generated world
+/// makes of such a place without its trees (tests, calibration).
+pub fn open_land(
+    catalog: &Catalog,
+    temp_c: f32,
+    warm_c: f32,
+    precip_mm: f32,
+    ecosystems: &[&str],
+    realm: Realm,
+) -> Habitat {
+    let (forage, cover) = Stand::default().forage(temp_c, warm_c, precip_mm);
+    let eco = ecosystems
+        .iter()
+        .map(|id| {
+            catalog
+                .ecosystems
+                .iter()
+                .position(|e| e.id.ends_with(id))
+                .map_or(0, |i| 1u32 << i)
+        })
+        .fold(0, |a, b| a | b);
+    Habitat {
+        land: 1.0,
+        fresh: 0.0,
+        sea: 0.0,
+        forage,
+        cover,
+        ecosystems: eco,
+        realm: realm as u8,
+        fauna: realm as u8,
+        island: false,
+        temp_c,
+        warm_c,
+        precip_mm,
+        southern: false,
     }
 }
 

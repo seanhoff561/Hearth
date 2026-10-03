@@ -1,0 +1,26 @@
+# V2-10 (b) the open lands on huge planets, each at its heart (`biome=`, `:T` a mean below T °C)
+# or at a place (`x=`, `z=`): the Palearctic steppe of seed 7 in summer and under the winter's
+# snow; the Nearctic prairie of seed 4 (seed 7 has no dry land in the Nearctic) looking out over
+# the lowland and along its plateau; the cold desert in summer and winter; the Old World's hot
+# desert and its dunes; the Nearctic hot desert of seed 9; then their animals, close. Seasons
+# are the place's own (`season=`, `@` how far into it).
+# `hearth --screenshot-list tools/shots/v210_dry.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=8, hour=11, clouds=0.25, dry=true
+biome=steppe:14, above=2.5, yaw=30, pitch=1, season=summer@0.5, herd=saiga:16@16:-3, out=bench-out/v210b/steppe_summer.png
+biome=steppe:14, above=2.5, yaw=30, pitch=1, season=winter@0.5, snow=true, herd=wild_horse:7@16:2, out=bench-out/v210b/steppe_winter.png
+seed=4, x=32768, z=-20480, above=2.5, yaw=200, pitch=2, season=summer, herd=american_bison:12@18:0, out=bench-out/v210b/prairie_summer.png
+seed=4, x=32768, z=-20480, above=2.5, yaw=120, pitch=2, season=autumn@0.3, herd=pronghorn:9@16:3, out=bench-out/v210b/prairie_autumn.png
+biome=cold_desert, above=3, yaw=30, pitch=5, season=summer, out=bench-out/v210b/cold_desert_summer.png
+biome=cold_desert, above=3, yaw=30, pitch=5, season=winter, snow=true, herd=wild_bactrian_camel:6@30:2, out=bench-out/v210b/cold_desert_winter.png
+biome=hot_desert, above=3, yaw=30, pitch=5, season=spring, out=bench-out/v210b/hot_desert.png
+biome=dune_sea, above=6, yaw=30, pitch=8, season=summer, herd=dromedary:5@30:-3, out=bench-out/v210b/dunes.png
+seed=9, x=112640, z=-18432, above=3, yaw=30, pitch=5, season=spring, out=bench-out/v210b/nearctic_desert.png
+biome=steppe:14, above=1.2, yaw=30, pitch=2, fov=50, season=spring@0.7, out=bench-out/v210b/steppe_ground.png
+seed=4, x=32768, z=-20480, above=1.2, yaw=200, pitch=2, fov=50, season=summer, out=bench-out/v210b/prairie_ground.png
+seed=9, x=112640, z=-18432, above=1.4, yaw=30, pitch=3, fov=50, season=spring, out=bench-out/v210b/desert_ground.png
+seed=4, x=32768, z=-20480, above=1.8, yaw=200, pitch=3, fov=45, season=summer, animal=american_bison:adult:m:alert@11:0:90, animal=american_bison:adult:f:graze@13:4:120, animal=american_bison:young:f:walk@10:6:100, out=bench-out/v210b/bison.png
+biome=steppe:14, above=1.6, yaw=30, pitch=3, fov=45, season=summer, animal=wild_horse:adult:m:alert@10:-2:80, animal=wild_horse:adult:f:graze@11:2:110, animal=saiga:adult:m:alert@8:5:70, out=bench-out/v210b/horse_saiga.png
+seed=4, x=32768, z=-20480, above=2.4, yaw=200, pitch=12, fov=45, season=summer, animal=pronghorn:adult:m:alert@9:-1:80, animal=coyote:adult:f:walk@7:3:120, animal=black_tailed_prairie_dog:adult:f:alert@4:0.5:60, animal=burrowing_owl:adult:m:alert@4.5:-1.5:90, out=bench-out/v210b/prairie_small.png
+biome=steppe:14, above=1.2, yaw=30, pitch=4, fov=40, season=summer, animal=great_bustard:adult:m:alert@8:-1:90, animal=bobak_marmot:adult:f:alert@4:1:60, animal=corsac_fox:adult:f:walk@6:2.5:120, animal=european_souslik:adult:f:alert@3:-0.6:70, out=bench-out/v210b/steppe_small.png
+biome=hot_desert, above=1.4, yaw=30, pitch=3, fov=45, season=spring, animal=addax:adult:m:alert@10:-1:80, animal=dorcas_gazelle:adult:f:alert@8:3:110, animal=fennec_fox:adult:f:alert@4:0.5:60, animal=lesser_egyptian_jerboa:adult:f:alert@3:-0.8:90, out=bench-out/v210b/desert_old_world.png
+seed=9, x=112640, z=-18432, above=2.2, yaw=300, pitch=14, fov=45, season=spring, animal=greater_roadrunner:adult:m:alert@5:-1:90, animal=western_diamondback:adult:f:rest@3.5:0.6:60, animal=gila_monster:adult:f:walk@4:-2:120, animal=desert_tortoise:adult:f:walk@4.5:1.8:70, animal=black_tailed_jackrabbit:adult:f:alert@7:2.5:80, out=bench-out/v210b/desert_new_world.png

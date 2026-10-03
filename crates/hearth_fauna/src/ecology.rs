@@ -207,12 +207,12 @@ pub struct Region {
     /// Per species and block of 8 × 8 cells (2 km): the same, to judge crowding by.
     #[serde(skip)]
     pub block_capacity: Vec<f32>,
-    /// Per species and cell (species-major): how well the cell feeds the species against the
-    /// reference wood, 0 where it cannot live ([`Ecology::qualities`]).
+    /// Per species and cell (species-major): how well the cell feeds the species against its
+    /// own best land, 0 where it cannot live ([`Ecology::qualities`]).
     #[serde(skip)]
     pub quality: Vec<f32>,
-    /// Per species and block: how rich the land about is in a hunter's prey against the
-    /// reference wood (1 for the rest).
+    /// Per species and block: how rich the land about is in a hunter's prey against their usual
+    /// numbers (1 for the rest).
     #[serde(skip)]
     pub prey: Vec<f32>,
 }
@@ -253,10 +253,17 @@ pub struct Ecology {
     /// How well each species was fed (the sum of its consumers' food ratios, and their
     /// number) since the tally was cleared.
     pub fed: FxHashMap<u16, (f64, f64)>,
-    /// The temperate wood the species' densities describe.
+    /// The reference temperate wood: the land the densities of an ecosystem's animals describe
+    /// where the ecosystem has no reference land of its own (D116).
     pub reference: Habitat,
-    /// Per kind of forage: the factor that anchors production to what the reference wood's
-    /// animals eat at their usual densities ([`forage_scale`]).
+    /// Per species: what its foods come to on the richest reference land of the ecosystems it
+    /// lives in (by preference, as [`Self::fare`] sums them), to judge places against.
+    pub homes: Vec<f32>,
+    /// Per hunter and realm: the meat its prey of the realm offer, at their usual numbers, on
+    /// the richest reference land of the ecosystems it lives in.
+    pub prey_homes: Vec<[f32; 8]>,
+    /// Per kind of forage: the factor that anchors production to what the reference lands'
+    /// animals eat at their usual densities ([`forage_scales`]).
     pub forage_scale: [f32; FORAGE_KINDS],
     /// Years a new region is run before it is used, to settle its numbers and structure.
     pub spin_up: f64,
@@ -483,23 +490,38 @@ fn edible(prey: &Species) -> f32 {
     }
 }
 
-/// How visible prey at density `d` (per km²) is to a predator: the type III response, prey
-/// passed over as it grows scarce against its usual density `usual`.
-fn noticed(pred: &Species, d: f32, usual: f32) -> f32 {
-    let s = switching(pred) * usual;
+/// How visible prey at density `d` (per km²) is to a predator that turns from a prey grown
+/// scarce as readily as `switching` ([`switching`]): the type III response, prey passed over as
+/// it grows scarce against its usual density `usual`.
+fn noticed(switching: f32, d: f32, usual: f32) -> f32 {
+    let s = switching * usual;
     if d + s <= 0.0 { 0.0 } else { d * d / (d + s) }
 }
 
-/// How readily a predator turns from a prey grown scarce: a generalist (with plants to eat,
-/// or many prey) at once, a specialist (a snake with its voles and frogs) not at all — it
-/// searches the harder.
-fn switching(pred: &Species) -> f32 {
-    if specialist(pred) { 0.0 } else { SWITCH }
+/// How readily a predator of a realm turns from a prey grown scarce: a generalist (with plants
+/// to eat, or many prey) at once, a specialist (a snake with its voles and frogs, the great grey
+/// owl with its voles) not at all — it searches the harder.
+fn switching(cat: &Catalog, pred: &Species, realm: Realm) -> f32 {
+    if specialist(cat, pred, realm) {
+        0.0
+    } else {
+        SWITCH
+    }
 }
 
-/// A predator with nothing but a prey or two to live on.
-fn specialist(pred: &Species) -> bool {
-    pred.forage_share() < 0.05 && pred.prey.len() <= 2
+/// A predator with nothing but a prey or two to live on where it lives (of the realm), or a
+/// cold-blooded one: a snake lies in wait for what passes and does not turn from a prey grown
+/// scarce to another (it has no search image to change), and lives on little; an owl of the
+/// taiga with its voles and lemmings hears them under the snow, and does not turn to others.
+fn specialist(cat: &Catalog, pred: &Species, realm: Realm) -> bool {
+    pred.ectotherm
+        || (pred.forage_share() < 0.05
+            && pred
+                .prey
+                .iter()
+                .filter(|(pj, _)| native(cat.species[*pj].realms, realm))
+                .count()
+                <= 2)
 }
 
 /// The density the hunt sees of a prey species at its usual numbers, per km².
@@ -584,8 +606,15 @@ impl Ecology {
     pub fn new(catalog: Arc<Catalog>, seed: u64, year_offset: f64, land: &dyn Land) -> Self {
         let attack = calibrate_attack(&catalog);
         let reference = crate::habitat::temperate_wood(&catalog);
-        let scale = forage_scale(&catalog, &reference);
-        Self {
+        let mut lands = vec![reference];
+        lands.extend(catalog.ecosystems.iter().filter_map(|e| {
+            e.reference
+                .as_ref()
+                .map(|r| crate::habitat::reference_land(&catalog, r, &e.id))
+        }));
+        let scale = forage_scales(&catalog, &lands);
+        let homes = homes(&catalog, &reference);
+        let mut eco = Self {
             catalog,
             seed,
             year_offset,
@@ -597,10 +626,63 @@ impl Ecology {
             deaths: FxHashMap::default(),
             fed: FxHashMap::default(),
             reference,
+            homes,
+            prey_homes: Vec::new(),
             forage_scale: scale,
             spin_up: 3.0,
             emigrants: Vec::new(),
-        }
+        };
+        eco.prey_homes = eco.prey_homes_of(&reference);
+        eco
+    }
+
+    /// Per hunter and realm, the meat its prey of the realm offer at their usual numbers on the
+    /// richest reference land of the ecosystems the hunter lives in (the temperate wood for one
+    /// without its own): what a place's prey are judged against (D116).
+    fn prey_homes_of(&self, wood: &Habitat) -> Vec<[f32; 8]> {
+        let cat = &self.catalog;
+        let lands: Vec<Habitat> = cat
+            .ecosystems
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let mut h = match &e.reference {
+                    Some(r) => crate::habitat::reference_land(cat, r, &e.id),
+                    None => *wood,
+                };
+                // The land's own ecosystem's prey only.
+                h.ecosystems = 1 << i;
+                h
+            })
+            .collect();
+        cat.species
+            .iter()
+            .map(|sp| {
+                std::array::from_fn(|ri| {
+                    if !sp.hunts() {
+                        return 0.0;
+                    }
+                    let realm = Realm::ALL[ri];
+                    lands
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| sp.habitats & (1 << i) != 0)
+                        .map(|(_, h)| {
+                            sp.prey
+                                .iter()
+                                .map(|&(pj, pref)| {
+                                    let p = &cat.species[pj];
+                                    if !native(p.realms, realm) || p.habitats & h.ecosystems == 0 {
+                                        return 0.0;
+                                    }
+                                    pref * usual_density(p) * edible(p) * self.quality(p, h)
+                                })
+                                .sum::<f32>()
+                        })
+                        .fold(0.0f32, f32::max)
+                })
+            })
+            .collect()
     }
 
     /// The key of the region holding a world position.
@@ -637,55 +719,52 @@ impl Ecology {
 
     /// How much of a species' worth a cell keeps for lack of the cover it keeps to, and, for a
     /// cold-blooded animal of the land, for want of warm weeks: a frog feeds, grows and breeds
-    /// in the months above 8 °C, a snake or a lizard in those above 10 °C; where they are
-    /// fewer than a third of the year (the far north, the mountains) it holds on in fewer
-    /// numbers, and where they are a tenth or less, not at all (the adder's northern limit is
-    /// a July of about 13 °C, the common frog's the tundra's edge).
+    /// in the months above 8 °C, and holds on where they are a tenth of the year; a snake or a
+    /// lizard in those above 10 °C, and needs them a sixth of the year (the adder's northern
+    /// limit is a July of about 13 °C, the common frog's the tundra's edge). Where they are
+    /// fewer than a third of the year (the far north, the mountains) it lives in fewer numbers.
     fn cover_factor(sp: &Species, h: &Habitat) -> f32 {
         let cover = 1.0 - (1.0 - h.cover).max(0.0) * sp.cover * 0.5;
         if !sp.ectotherm || sp.aquatic {
             return cover;
         }
-        let (above, full) = match sp.plan {
+        let (above, none, full) = match sp.plan {
             BodyPlan::Snake | BodyPlan::Lizard | BodyPlan::Turtle | BodyPlan::Crocodilian => {
-                (10.0, 0.3)
+                (10.0, 0.16, 0.35)
             }
-            _ => (8.0, 0.35),
+            _ => (8.0, 0.1, 0.35),
         };
-        let t = ((h.share_above(above) - 0.1) / (full - 0.1)).clamp(0.0, 1.0);
+        let t = ((h.share_above(above) - none) / (full - none)).clamp(0.0, 1.0);
         cover * t * t * (3.0 - 2.0 * t)
     }
 
-    /// How well a cell's plants (and worms, grubs and fungi) feed a species against the
-    /// reference wood, if it eats them.
+    /// How well a cell's plants (and worms, grubs and fungi) feed a species against its own
+    /// best land, if it eats them.
     fn fare(&self, sp: &Species, h: &Habitat) -> Option<f32> {
         if !sp.forages() {
             return None;
         }
-        let (mut num, mut den) = (0.0, 0.0);
-        for k in 0..FORAGE_KINDS {
-            num += sp.forage[k] * h.forage[k];
-            den += sp.forage[k] * self.reference.forage[k];
-        }
+        let num: f32 = (0..FORAGE_KINDS).map(|k| sp.forage[k] * h.forage[k]).sum();
+        let den = self.homes.get(sp.index).copied().unwrap_or(0.0);
         (den > 0.0).then(|| (num / den).clamp(0.0, 3.0))
     }
 
-    /// How well a cell feeds a plant-eater against the reference wood (about 1 in good
-    /// habitat), less where it lacks the cover the species keeps to. A hunter's is reckoned
-    /// with its prey, a region at a time ([`Self::qualities`]).
+    /// How well a cell feeds a plant-eater against its own best land (about 1 in good habitat,
+    /// D116), less where it lacks the cover the species keeps to. A hunter's is reckoned with
+    /// its prey, a region at a time ([`Self::qualities`]).
     pub fn quality(&self, sp: &Species, h: &Habitat) -> f32 {
         self.fare(sp, h).unwrap_or(1.0) * Self::cover_factor(sp, h)
     }
 
     /// Per species and cell of a region's habitat (species-major): how well the cell feeds the
-    /// species against the reference wood, 0 where it cannot live; and per species and block,
-    /// how rich the land about is in a hunter's prey (1 for the rest). A plant-eater's quality
-    /// is its plants' ([`Self::quality`]). A hunter's is its prey's: the meat its prey of the
-    /// realm offer about the cell (their usual numbers there, block by block, by preference)
-    /// against what they offer in the reference wood (a wolf of the tundra has a few reindeer
-    /// and musk oxen where a wolf of the oak woods has deer and boar by the dozen), with its
-    /// plants for their share of its food (a fox's berries do not make the berryless tundra a
-    /// desert to it).
+    /// species against its own best land, 0 where it cannot live; and per species and block,
+    /// how rich the land about is in a hunter's prey against their usual numbers (1 for the
+    /// rest). A plant-eater's quality is its plants' ([`Self::quality`]). A hunter's is its
+    /// prey's: the meat its prey of the realm offer about the cell (their usual numbers there,
+    /// block by block, by preference) against what they offer on its own best land (D116: a wolf
+    /// of the tundra has a few reindeer and musk oxen where a wolf of the oak woods has deer and
+    /// boar by the dozen), with its plants for their share of its food (a fox's berries do not
+    /// make the berryless tundra a desert to it).
     pub fn qualities(&self, habitat: &[Habitat]) -> (Vec<f32>, Vec<f32>) {
         let cat = &self.catalog;
         let n = cat.len();
@@ -710,6 +789,8 @@ impl Ecology {
             let share = sp.forage_share();
             for (c, h) in habitat.iter().enumerate() {
                 let b = block_of(c);
+                // The meat its prey of the realm offer here, at their usual numbers (the attack
+                // rate's calibration), and on its own best land.
                 let (mut here, mut usual) = (0.0f32, 0.0f32);
                 for &(pj, pref) in &sp.prey {
                     let p = &cat.species[pj];
@@ -720,8 +801,12 @@ impl Ecology {
                     usual += meat;
                     here += meat * block[pj * nb + b];
                 }
-                let rich = if usual > 0.0 { here / usual } else { 0.0 };
-                prey[sp.index * nb + b] = rich;
+                let home = self
+                    .prey_homes
+                    .get(sp.index)
+                    .map_or(0.0, |r| r[h.fauna() as usize & 7]);
+                prey[sp.index * nb + b] = if usual > 0.0 { here / usual } else { 0.0 };
+                let rich = if home > 0.0 { here / home } else { 0.0 };
                 if self.suits(sp, h) {
                     let plants = self.fare(sp, h).unwrap_or(rich);
                     q[sp.index * REGION_LEN + c] =
@@ -737,15 +822,16 @@ impl Ecology {
         sp.density * Self::area(sp, &r.habitat[c]) * r.quality[sp.index * REGION_LEN + c]
     }
 
-    /// How well a cell of a region feeds a species against the reference wood.
+    /// How well a cell of a region feeds a species against its own best land.
     pub fn quality_in(r: &Region, species: usize, c: usize) -> f32 {
         r.quality[species * REGION_LEN + c]
     }
 
-    /// How rich the land about a cell of a region is in a hunter's prey against the reference
-    /// wood, for the hunt: a hunter ranges the wider (its attack rate rises) as its prey are
-    /// the fewer, so that it meets its needs at its prey's usual numbers there, while the land
-    /// holds the fewer of it ([`Self::qualities`]) — within a tenth and three times.
+    /// How rich the land about a cell of a region is in a hunter's prey against their usual
+    /// numbers (as its attack rate is calibrated), for the hunt: a hunter ranges the wider (its
+    /// attack rate rises) as its prey are the fewer, so that it meets its needs at its prey's
+    /// usual numbers there, while the land holds the fewer of it ([`Self::qualities`]) — within
+    /// a tenth and three times.
     fn prey_in(r: &Region, species: usize, c: usize) -> f32 {
         let nb = (BLOCKS * BLOCKS) as usize;
         r.prey[species * nb + block_of(c)].clamp(0.1, 3.0)
@@ -784,6 +870,8 @@ impl Ecology {
             deaths: FxHashMap::default(),
             fed: FxHashMap::default(),
             reference: self.reference,
+            homes: self.homes.clone(),
+            prey_homes: self.prey_homes.clone(),
             forage_scale: self.forage_scale,
             spin_up: self.spin_up,
             emigrants: Vec::new(),
@@ -1289,6 +1377,9 @@ impl Ecology {
             let mut eaten = have;
             let reach = sp.range_radius_m();
             r.cells_within(self.cells_around, pos, reach, &mut cells);
+            let home = r.cell_at(self.cells_around, pos[0], pos[1]);
+            let realm = home.map_or(0, |c| r.habitat[c].fauna as usize & 7);
+            let turns = switching(&cat, sp, Realm::ALL[realm]);
             // The prey in reach, as the hunt sees it: its numbers over the area it lives in (not
             // the land of another realm or another kind it cannot live on).
             let mut seen: Vec<(usize, f32, f32)> = Vec::new();
@@ -1326,13 +1417,11 @@ impl Ecology {
                         n += (wa * r.adults[i] + wy * r.young[i]) * hide;
                     }
                 }
-                let d = noticed(sp, n / reach_km2, usual);
+                let d = noticed(turns, n / reach_km2, usual);
                 if d > 0.0 {
                     seen.push((pj, pref, d));
                 }
             }
-            let home = r.cell_at(self.cells_around, pos[0], pos[1]);
-            let realm = home.map_or(0, |c| r.habitat[c].fauna as usize & 7);
             // As it hunts in its own realm (a home on the border of another is still its own),
             // ranging the wider as its prey are the fewer.
             let alpha = match self.attack[sp.index][realm] {
@@ -1389,7 +1478,6 @@ impl Ecology {
                 } else if let Some(&slot) = slot_of.get(&(pj as u16)) {
                     // Small prey are taken as they come, in proportion through the reach (counted
                     // as grown ones: a tadpole is a mouthful of a frog).
-                    let kills = (rate * dtf).min((want - eaten) / e.max(1e-9));
                     let (wa, wy) = stage_weights(sp, prey);
                     let here: Vec<usize> = cells
                         .iter()
@@ -1403,22 +1491,39 @@ impl Ecology {
                             wa * r.adults[i] + wy * r.young[i]
                         })
                         .sum();
+                    // As many catches as its want would take of grown ones, a young one being
+                    // only part of a meal: a generalist turns to its other foods for the rest, a
+                    // specialist takes the more young (D120).
+                    let per = if turns > 0.0 {
+                        1.0
+                    } else {
+                        let meat: f32 = here
+                            .iter()
+                            .map(|&c| {
+                                let i = slot * REGION_LEN + c;
+                                wa * r.adults[i] + wy / 3.0 * r.young[i]
+                            })
+                            .sum();
+                        if total > 0.0 { meat / total } else { 1.0 }
+                    };
+                    let kills = (rate * dtf).min((want - eaten) / (e * per).max(1e-9));
                     if total <= 0.0 || kills <= 0.0 {
                         continue;
                     }
-                    // Each stage is taken as it is offered; a young one is part of a meal.
+                    // Each stage is taken as it is offered.
                     let frac = (kills / total).min(0.5);
-                    let mut taken = 0.0f32;
+                    let (mut taken, mut dead) = (0.0f32, 0.0f32);
                     for &c in &here {
                         let i = slot * REGION_LEN + c;
-                        taken += take_stages(&mut r.adults[i], &mut r.young[i], frac, wa, wy);
+                        let (m, n) = take_stages(&mut r.adults[i], &mut r.young[i], frac, wa, wy);
+                        taken += m;
+                        dead += n;
                     }
-                    let mass = taken.min(kills);
-                    eaten += mass * e;
+                    eaten += taken.min(kills * per) * e;
                     *self
                         .deaths
                         .entry((pj as u16, Cause::Predation))
-                        .or_default() += mass as f64;
+                        .or_default() += dead as f64;
                 }
             }
             out.groups[gi] = eaten;
@@ -1436,8 +1541,9 @@ impl Ecology {
             let handling = |pj: usize| edible(&cat.species[pj]) / most;
             for c in 0..REGION_LEN {
                 let i = slot * REGION_LEN + c;
-                let alpha = self.attack[sp.index][r.habitat[c].fauna as usize & 7]
-                    / Self::prey_in(r, sp.index, c);
+                let realm = r.habitat[c].fauna as usize & 7;
+                let alpha = self.attack[sp.index][realm] / Self::prey_in(r, sp.index, c);
+                let turns = switching(&cat, sp, Realm::ALL[realm]);
                 let want = needs.pools[i] * (1.0 - sp.forage_share());
                 if want <= 0.0 {
                     continue;
@@ -1455,7 +1561,7 @@ impl Ecology {
                         let n = (wa * r.adults[j] + wy * r.young[j]) * hide;
                         let area = Self::area(prey, &r.habitat[c]).max(1e-4);
                         let usual = usual_density(prey) * Self::quality_in(r, pj, c);
-                        let d = noticed(sp, n / area, usual);
+                        let d = noticed(turns, n / area, usual);
                         if d > 0.0 {
                             seen.push((pj, j, pref, d));
                         }
@@ -1472,19 +1578,26 @@ impl Ecology {
                     let e = edible(prey);
                     let (wa, wy) = stage_weights(sp, prey);
                     let total = wa * r.adults[j] + wy * r.young[j];
+                    // As many catches as its want would take of grown ones, a young one being
+                    // part of a meal, or of its fill for a specialist (D120).
+                    let per = if turns > 0.0 || total <= 0.0 {
+                        1.0
+                    } else {
+                        (wa * r.adults[j] + wy / 3.0 * r.young[j]) / total
+                    };
                     let kills = (preds * alpha * pref * d / denom * dtf)
-                        .min((want - eaten).max(0.0) / e.max(1e-9))
+                        .min((want - eaten).max(0.0) / (e * per).max(1e-9))
                         .min(total * 0.5);
                     if total > 0.0 && kills > 0.0 {
                         let (mut a, mut y) = (r.adults[j], r.young[j]);
-                        let taken = take_stages(&mut a, &mut y, kills / total, wa, wy).min(kills);
+                        let (taken, dead) = take_stages(&mut a, &mut y, kills / total, wa, wy);
                         r.adults[j] = a;
                         r.young[j] = y;
-                        eaten += taken * e;
+                        eaten += taken.min(kills * per) * e;
                         *self
                             .deaths
                             .entry((pj as u16, Cause::Predation))
-                            .or_default() += taken as f64;
+                            .or_default() += dead as f64;
                     }
                 }
                 out.pools[i] = eaten;
@@ -2008,6 +2121,12 @@ impl Ecology {
         let sp = &cat.species[d.species as usize];
         let wrap = self.wrap_m();
         let rad = sp.range_radius_m();
+        // It passes over land a fifth as good as the best about (where all is poor, as a
+        // desert's coyotes find it, the poor is what there is).
+        let best = r.quality[sp.index * REGION_LEN..(sp.index + 1) * REGION_LEN]
+            .iter()
+            .fold(0.0f32, |a, &q| a.max(q));
+        let poor = 0.2 * best.min(1.0);
         for attempt in 0..8 {
             let a = rng.next_f64() * std::f64::consts::TAU;
             // One leaving home goes its species' distance; one arriving (from another region,
@@ -2032,7 +2151,8 @@ impl Ecology {
                 }
                 continue;
             };
-            if !self.suits(sp, &r.habitat[c]) || Self::quality_in(r, sp.index, c) < 0.2 {
+            let q = Self::quality_in(r, sp.index, c);
+            if !self.suits(sp, &r.habitat[c]) || q <= 0.0 || q < poor {
                 continue;
             }
             if sp.territorial
@@ -2438,15 +2558,15 @@ fn stage_weights(pred: &Species, prey: &Species) -> (f32, f32) {
 }
 
 /// Takes `frac` of what a predator is offered of a pool (grown ones weighted `wa`, young
-/// `wy`) out of it; returns the meat taken, in grown animals' worth.
-fn take_stages(adults: &mut f32, young: &mut f32, frac: f32, wa: f32, wy: f32) -> f32 {
+/// `wy`) out of it; returns the meat taken, in grown animals' worth, and the animals.
+fn take_stages(adults: &mut f32, young: &mut f32, frac: f32, wa: f32, wy: f32) -> (f32, f32) {
     let frac = frac.clamp(0.0, 0.5);
     let ka = *adults * wa * frac;
     let ky = *young * (wy > 0.0) as u8 as f32 * frac;
     *adults -= ka;
     *young -= ky;
     // A young one is a third of its catch weight in meat (`wy` counted it thrice).
-    ka + ky * wy / 3.0
+    (ka + ky * wy / 3.0, ka + ky)
 }
 
 /// Kills one animal of a prey species from a group in reach, the weakest most likely.
@@ -2574,16 +2694,18 @@ fn founding_group(sp: &Species, rng: &mut Rng, id: u64, p: [f64; 2]) -> Group {
     }
 }
 
-/// The share of the production of a kind of forage the reference wood's animals eat at their
+/// The share of the production of a kind of forage a reference land's animals eat at their
 /// usual densities: what is left feeds the lean season, rots, and is eaten by what the
 /// simulation does not count (insects, slugs, the animals of other realms).
 const USED: f32 = 1.0;
 
-/// Per kind of forage, the factor that makes the reference wood produce what its animals (the
+/// Per kind of forage, the factor that makes a reference land produce what its animals (the
 /// Palearctic's, at their usual densities) eat over [`USED`]: the habitat's formulas give the
-/// relative amounts from place to place, the animals' needs the absolute.
-pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [f32; FORAGE_KINDS] {
+/// relative amounts from place to place, the animals' needs the absolute. None for a kind its
+/// animals do not eat.
+pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [Option<f32>; FORAGE_KINDS] {
     let mut prod = reference.forage;
+    let mut eaten = [false; FORAGE_KINDS];
     for _ in 0..4 {
         let mut demand = [0.0f32; FORAGE_KINDS];
         for sp in &cat.species {
@@ -2594,7 +2716,7 @@ pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [f32; FORAGE_KINDS] {
             if total <= 0.0 {
                 continue;
             }
-            // Per km² of the reference wood (of its water for fish).
+            // Per km² of the reference land (of its water for fish).
             let area = if sp.aquatic {
                 reference.fresh / reference.land.max(1e-6)
             } else {
@@ -2614,16 +2736,58 @@ pub fn forage_scale(cat: &Catalog, reference: &Habitat) -> [f32; FORAGE_KINDS] {
                     1.0
                 };
                 prod[k] = demand[k] * per_area / USED;
+                eaten[k] = true;
             }
         }
     }
-    let mut scale = [1.0; FORAGE_KINDS];
-    for k in 0..FORAGE_KINDS {
-        if reference.forage[k] > 0.0 {
-            scale[k] = prod[k] / reference.forage[k];
-        }
-    }
-    scale
+    std::array::from_fn(|k| {
+        (eaten[k] && reference.forage[k] > 0.0).then(|| prod[k] / reference.forage[k])
+    })
+}
+
+/// Per kind of forage, the factor that anchors production to the animals' needs (D117): the
+/// greatest over the reference lands that know it (the temperate wood and each ecosystem's own
+/// land), so that no land's animals go short of a food its reference's eat more of than the
+/// wood's do — the wood's few seed-eaters had made seed worth almost nothing, and a desert of
+/// kangaroo rats starved on it; 1 for a kind no reference's animals eat.
+pub fn forage_scales(cat: &Catalog, references: &[Habitat]) -> [f32; FORAGE_KINDS] {
+    let scales: Vec<[Option<f32>; FORAGE_KINDS]> =
+        references.iter().map(|r| forage_scale(cat, r)).collect();
+    std::array::from_fn(|k| {
+        scales
+            .iter()
+            .filter_map(|s| s[k])
+            .reduce(f32::max)
+            .unwrap_or(1.0)
+    })
+}
+
+/// Per species, what its foods come to on the richest reference land of the ecosystems it lives
+/// in (D116): the reference temperate wood for an ecosystem without its own.
+pub fn homes(cat: &Catalog, wood: &Habitat) -> Vec<f32> {
+    let lands: Vec<Habitat> = cat
+        .ecosystems
+        .iter()
+        .map(|e| match &e.reference {
+            Some(r) => crate::habitat::reference_land(cat, r, &e.id),
+            None => *wood,
+        })
+        .collect();
+    cat.species
+        .iter()
+        .map(|sp| {
+            let fare = |h: &Habitat| -> f32 {
+                (0..FORAGE_KINDS).map(|k| sp.forage[k] * h.forage[k]).sum()
+            };
+            let best = lands
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| sp.habitats & (1 << i) != 0)
+                .map(|(_, h)| fare(h))
+                .fold(0.0f32, f32::max);
+            if best > 0.0 { best } else { fare(wood) }
+        })
+        .collect()
 }
 
 /// Each predator's attack rate in each realm (km² a year per animal): the rate at which, at
@@ -2665,8 +2829,12 @@ fn attack_in(cat: &Catalog, sp: &Species, realm: Realm) -> f32 {
         let usual = usual_density(prey);
         // A specialist finds its prey where others would starve: it is set to live on a fifth
         // of its prey's usual numbers.
-        let at = if specialist(sp) { 0.2 } else { CALIBRATE_AT };
-        let d = noticed(sp, at * usual, usual);
+        let at = if specialist(cat, sp, realm) {
+            0.2
+        } else {
+            CALIBRATE_AT
+        };
+        let d = noticed(switching(cat, sp, realm), at * usual, usual);
         let e = edible(prey);
         let h = e / most_eaten(sp);
         s += pref * d * e;

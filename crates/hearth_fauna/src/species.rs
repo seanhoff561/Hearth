@@ -250,11 +250,13 @@ impl Species {
     }
 }
 
-/// An ecosystem as the habitat reads it: the biomes it occupies.
+/// An ecosystem as the habitat reads it: the biomes it occupies, and the land its animals'
+/// densities describe.
 #[derive(Debug, Clone)]
 pub struct EcosystemDef {
     pub id: String,
     pub biomes: Vec<String>,
+    pub reference: Option<hearth_content::schema::ecosystem::ReferenceLand>,
 }
 
 /// All species of the content, and the ecosystems they live in.
@@ -361,6 +363,7 @@ impl Catalog {
             .map(|e| EcosystemDef {
                 id: e.id.clone(),
                 biomes: e.biomes.clone(),
+                reference: e.reference,
             })
             .collect();
         ecosystems.sort_by(|a, b| a.id.cmp(&b.id));

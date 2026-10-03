@@ -34,11 +34,11 @@ fn level_ground(w: &mut World, wide: i32) -> BlockPos {
         let ground = |x: i32, z: i32| {
             w.ground_under(DVec3::new(x as f64 + 0.5, feet.y + 6.0, z as f64 + 0.5))
         };
+        // Room above: nothing but what gives way to a piece (grass, a steppe's tussocks).
         let clear = |g: BlockPos, n: i32| {
             (1..=n).all(|k| {
-                w.mirror
-                    .block(BlockPos::new(g.x, g.y + k, g.z))
-                    .is_some_and(|s| s.is_air())
+                let p = BlockPos::new(g.x, g.y + k, g.z);
+                w.mirror.block(p).is_some() && w.free(p)
             })
         };
         let mut found = None;

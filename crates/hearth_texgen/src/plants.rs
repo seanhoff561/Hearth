@@ -313,6 +313,43 @@ fn tuft(p: Palette, seed: u64) -> Tex {
     t
 }
 
+/// Paddles of a prickly pear, one set on the edge of another, dotted with spines, the fruit on
+/// their rims.
+fn cactus(p: Palette, seed: u64) -> Tex {
+    let mut t = Tex::new(S, S);
+    // Ovals: (centre x, centre y, half width, half height).
+    let pads = [
+        (8.0, 11.5, 3.2, 4.2),
+        (4.5, 6.0, 2.6, 3.6),
+        (11.0, 5.0, 2.6, 3.4),
+    ];
+    for (k, (cx, cy, rx, ry)) in pads.into_iter().enumerate() {
+        for y in 0..S as i32 {
+            for x in 0..S as i32 {
+                let (dx, dy) = ((x as f32 + 0.5 - cx) / rx, (y as f32 + 0.5 - cy) / ry);
+                let d = dx * dx + dy * dy;
+                if d <= 1.0 {
+                    // Darker toward the rim, a spine cluster here and there.
+                    let c = if d > 0.7 {
+                        scale(p.leaf, 0.8)
+                    } else {
+                        shade(p.leaf, seed ^ k as u64, x, y)
+                    };
+                    let spine = (x + 2 * y + k as i32) % 5 == 0 && rand01(seed ^ 7, x, y) < 0.6;
+                    t.set(x, y, if spine { [222, 214, 180] } else { c });
+                }
+            }
+        }
+    }
+    if let Some(c) = p.fruit.or(p.flower) {
+        for (x, y) in [(3, 2), (5, 2), (10, 1), (12, 2)] {
+            t.set(x, y, c);
+            t.set(x, y + 1, scale(c, 0.8));
+        }
+    }
+    t
+}
+
 /// A mat over the ground seen from above: moss as close-packed tiny shoots, lighter at their
 /// tips; a lichen as pale, branching clumps with dark hollows between (reindeer lichen) or a
 /// crust; whatever else lies flat as a speckled cover.
@@ -392,7 +429,10 @@ pub fn textures(c: &Content) -> Vec<TexEntry> {
         };
         let sd = seed(&name);
         let tall = p.max_height_m > 1.0
-            && !matches!(sprite, Sprite::Mushroom | Sprite::Heath | Sprite::Carpet);
+            && !matches!(
+                sprite,
+                Sprite::Mushroom | Sprite::Heath | Sprite::Carpet | Sprite::Cactus
+            );
         let draw = |part: u8| -> Tex {
             match sprite {
                 Sprite::Bush => bush(pal, sd, part),
@@ -406,6 +446,7 @@ pub fn textures(c: &Content) -> Vec<TexEntry> {
                 Sprite::Creeper => creeper(pal, sd),
                 Sprite::Tuft => tuft(pal, sd),
                 Sprite::Carpet => carpet(pal, p.form, sd),
+                Sprite::Cactus => cactus(pal, sd),
             }
         };
         // A plant well under a metre is drawn at its height in the block: a cushion a hand

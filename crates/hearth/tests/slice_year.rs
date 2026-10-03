@@ -82,11 +82,12 @@ fn keep(bot: &mut Bot, dir: &Path, name: &str, log: &mut Log) {
     log.line(bot, &format!("MOMENT {name} kept"));
 }
 
-/// Open ground with room above it at a place beside camp.
+/// Open ground with room above it at a place beside camp (nothing standing on it but what gives
+/// way to a built piece).
 fn open(bot: &mut Bot, dx: i32, dz: i32) -> bool {
     let g = bot.site(dx, dz);
     bot.w.solid(g)
-        && !bot.w.solid(g.up())
+        && bot.w.free(g.up())
         && !bot.w.solid(g.up().up())
         && !bot.w.solid(g.up().up().up())
 }

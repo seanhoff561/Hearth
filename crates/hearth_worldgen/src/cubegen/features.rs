@@ -555,6 +555,11 @@ impl FeatureGen {
         }
         match s.biome {
             Biome::HotDesert | Biome::DuneSea | Biome::Mesa | Biome::ColdDesert => {
+                // The desert's own shrubs, cacti and tufts where anything grows; dead bushes
+                // between.
+                if self.understory(w, wg, x, z, top, s, flower_n, disturbed) {
+                    return next;
+                }
                 if r < 0.012 {
                     w.put(x, top, z, b.dead_bush);
                 }
@@ -569,6 +574,13 @@ impl FeatureGen {
             }
             Biome::Mangrove => {}
             Biome::Steppe | Biome::Savanna => {
+                // The steppe's own grasses, sages and flowers first; dry grass between.
+                if s.biome == Biome::Steppe
+                    && (grassy || matches!(s.surface, Surface::CoarseDirt))
+                    && self.understory(w, wg, x, z, top, s, flower_n, disturbed)
+                {
+                    return next;
+                }
                 if grassy {
                     if r < 0.28 {
                         w.put(x, top, z, b.short_dry_grass);
@@ -1030,7 +1042,9 @@ impl FeatureGen {
         h: u64,
     ) -> Option<(Option<PlacedTree>, f64)> {
         let forest = &wg.forest;
-        if forest.niches.is_empty() {
+        // The mangrove swamp keeps its mangroves until their species come with the wetlands
+        // (V2-10 (e)): no desert tree of the arid coasts takes their place.
+        if forest.niches.is_empty() || s.biome == Biome::Mangrove {
             return None;
         }
         let wet = s.biome == Biome::Wetland
@@ -1649,9 +1663,15 @@ impl FeatureGen {
         let mut rng = Rng::new(hash_3d(self.seed ^ 0xdeb, ox, y, oz));
         match s.biome {
             Biome::HotDesert | Biome::DuneSea
-                if u < 0.55 && matches!(s.surface, Surface::Sand | Surface::RedSand) =>
+                if u < 0.55
+                    && matches!(s.surface, Surface::Sand | Surface::RedSand)
+                    && matches!(
+                        s.realm,
+                        crate::realms::Realm::Nearctic | crate::realms::Realm::Neotropical
+                    ) =>
             {
-                // Cacti: a few per cell, each on its own column.
+                // Cacti, the New World's (none in the Sahara or the Gobi): a few per cell, each
+                // on its own column.
                 for k in 0..3 {
                     let cx = ox + rng.range_i32(-4, 4);
                     let cz = oz + rng.range_i32(-4, 4);

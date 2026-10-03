@@ -339,6 +339,17 @@ impl World {
             .is_some_and(|s| !self.reg.collision_shape(s).is_empty())
     }
 
+    /// Whether a thing can be built into a block: air, or what gives way to it (grass; not a
+    /// plant with something to gather on it, nor water).
+    pub fn free(&self, p: BlockPos) -> bool {
+        self.mirror.block(p).is_none_or(|s| {
+            s.is_air() || {
+                let def = &self.reg.block_of(s).def;
+                def.replaceable && def.fluid.is_none()
+            }
+        })
+    }
+
     /// The first solid block under a point.
     pub fn ground_under(&self, at: DVec3) -> Option<BlockPos> {
         let mut p = BlockPos::containing(at);

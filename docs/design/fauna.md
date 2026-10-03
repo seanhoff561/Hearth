@@ -86,6 +86,18 @@ The Tier 1 temperate forest set (Appendix B) has both northern realms:
 Freshwater species live in the `temperate_freshwater` ecosystem (rivers, lakes, wetlands);
 their densities are per km² of water. A colony species' density counts colonies.
 
+The expansion waves (V2-10) bring each biome's own ecosystems, with species of both northern
+realms (a realm without its own takes the stand-in realm's, D115): the boreal forest and the
+tundra (moose, reindeer, musk ox, wolverine, Canada lynx, the hares, lemmings and ptarmigans,
+sable, marten, ermine, the great grey and snowy owls, the arctic fox); the temperate grassland,
+steppe and prairie (American and European bison, wild horse, saiga, pronghorn, the prairie dog,
+bobak marmot and souslik, the common and meadow voles, coyote, corsac and swift foxes, the
+American badger, steppe polecat and black-footed ferret, great bustard, sage-grouse, burrowing
+owl, golden eagle, meadowlark and skylark, the prairie rattlesnake); the cold and hot deserts
+(Bactrian camel, dromedary, onager, addax, dorcas gazelle, the jackrabbit, kangaroo rat and
+jerboa, the fennec, kit fox and sand cat, the roadrunner, the western diamondback and horned
+viper, the Gila monster and the desert tortoise).
+
 ## Populations (`hearth_fauna`)
 The land is divided into **ecological cells** of 256 m, gathered in **regions** of 64 × 64
 cells (16 km) that are simulated near the player, saved, and caught up when visited again. A
@@ -97,18 +109,25 @@ model of net primary production shared out by the vegetation (`expected_canopy`)
 the canopy lets light through, browse where young trees grow back after a clearing or a fire,
 mast under nut trees old enough to bear and under conifers their cone crops (their species'
 yields), fruit at the edges; where the summers are cool, part of the open ground's growth is in
-dwarf shrubs, browse rather than grass (up to half on the low-arctic tundra, D108). The amounts
-are anchored to what the reference wood's community eats at its usual densities, so that food is
-just enough at what the habitat holds. Each kind has a season (grass and twigs standing through
-the winter thinner, nuts falling in autumn and lasting into spring, fruit in its weeks), snow
-buries what lies on the ground, every year has its weather (how well plants grew, how hard the
+dwarf shrubs, browse rather than grass (up to half on the low-arctic tundra, D108), and where
+the rain is under 400 mm in desert shrubs (D117). The amounts are anchored to what the reference
+lands' communities eat at their usual densities, each kind by the land whose animals eat the
+most of it (the steppe's grass, the desert's seed and shrubs, the wood's mast), so that food is
+just enough at what the habitat holds (D117). Each kind has a season (grass and twigs standing
+through the winter thinner, nuts falling in autumn and lasting into spring, fruit in its weeks),
+snow buries what lies on the ground, every year has its weather (how well plants grew, how hard the
 winter was), and nut trees mast heavily one year in three over a wide area.
 
-How well a cell **suits** a species (its quality, against the reference wood, which sets the
-numbers it holds): for a plant-eater its plants, for a hunter its prey's numbers about the cell
-with its plants for their share of its food, less where it lacks the cover it keeps to, and for a
-cold-blooded animal of the land less again where few months are warm (a frog needs months above
-8 °C, a snake above 10 °C, a third of the year for full numbers, D109).
+Each ecosystem names its **reference land** — the climate, canopy, young growth and the mast and
+fruit of its trees that its animals' densities describe (`reference` in `ecosystems.ron`; the
+temperate wood for an ecosystem without one) — and a species' density is that of the richest of
+the reference lands of the ecosystems it lives in (D116). How well a cell **suits** a species
+(its quality, against that land, which sets the numbers it holds): for a plant-eater its plants,
+for a hunter the meat its prey of the realm offer about the cell at their usual numbers there,
+with its plants for their share of its food, less where it lacks the cover it keeps to, and for
+a cold-blooded animal of the land less again where few months are warm (a frog needs months
+above 8 °C a tenth of the year, a snake or a lizard above 10 °C a sixth, a third of the year for
+full numbers, D109, D119).
 
 Large animals live in **groups** that keep their members — young of the year, older young,
 females and males, a condition, a home and where they are today: a herd of red deer, a family of
@@ -116,15 +135,19 @@ roe, a sow's sounder, a wolf pack, a lynx with her kittens. Small animals (hares
 voles, birds, frogs, fish, snakes, bee colonies) are **numbers per cell**: young and adults with
 a shared condition. A step of the simulation (an eleventh of a month by default):
 - **Hunting**: predators take prey by a functional response whose attack rate is calibrated so
-  that each meets its need at its prey's usual numbers (a specialist — a snake — at a fifth of
-  them). It is of type III for generalists (they turn from a prey grown scarce to others, against
-  the prey's usual numbers there), and prey that keeps to cover is partly hidden. Where the land
-  holds fewer of a hunter's prey than the reference wood (the tundra, the taiga), the hunter
-  ranges the wider (its attack rate rises with the shortfall) while the land holds the fewer of
-  it, so that a wolf of the tundra meets its needs on reindeer as a wolf of the oak woods does on
-  deer, and there are fewer of it (D109). A hunter eats at most half as much again as its need
-  in its hungriest season (a snake its year's food in the warm months). The weak and the young
-  are taken first; fish take frogs only as tadpoles. A large kill's remains are carrion.
+  that each meets its need at its prey's usual numbers (a specialist at a fifth of them: a
+  cold-blooded hunter, which lies in wait, or one with a prey or two of its realm and no plants,
+  as the great grey owl with its voles, D119). It is of type III for generalists (they turn from
+  a prey grown scarce to others, against the prey's usual numbers there), and prey that keeps to
+  cover is partly hidden. Where the land holds fewer of a hunter's prey than their usual numbers
+  (the tundra, the taiga), the hunter ranges the wider (its attack rate rises with the shortfall)
+  while the land holds the fewer of it, so that a wolf of the tundra meets its needs on reindeer
+  as a wolf of the oak woods does on deer, and there are fewer of it (D109, D116). A hunter eats
+  at most half as much again as its need in its hungriest season (a snake its year's food in the
+  warm months). A generalist's catches go by its want in grown prey (a young one, caught the
+  more readily, is only part of a meal), the rest found among its other foods; a specialist takes
+  as many young as its fill needs (D120). The weak and the young are taken first; fish take frogs
+  only as tadpoles. A large kill's remains are carrion.
 - **Feeding**: everyone eats what the hunt did not give them from the forage and carrion in its
   range, shared out cell by cell when there is not enough. An omnivore short of meat eats more
   plants; a hunter can only partly (an owl in a vole-poor year lives on worms, thinly).
@@ -140,10 +163,11 @@ a shared condition. A step of the simulation (an eleventh of a month by default)
   holders of a territory where the species keeps one; the young grow up, fewer where the place
   is already full.
 - **Dispersal**: the young of the dispersing sex leave to settle within their species' distance
-  where there is room (territorial ones away from others' homes; pack animals pair up), in this
-  region or the next; crowded herds send some mothers and young to nearby land with room (which
-  is how the deer come back to land emptied by hunting); the edges of the simulated land take in
-  animals as if the land beyond held its usual numbers.
+  where there is room and the land is a fifth as good as the best about (territorial ones away
+  from others' homes; pack animals pair up), in this region or the next (D118); crowded herds
+  send some mothers and young to nearby land with room (which is how the deer come back to land
+  emptied by hunting); the edges of the simulated land take in animals as if the land beyond
+  held its usual numbers.
 
 ## Animals in the world (`hearth_fauna::live`, the server's `fauna.rs`)
 The server keeps the regions about the player (the 3 × 3 about the one the player is in, made as

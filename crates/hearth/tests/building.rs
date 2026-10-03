@@ -18,7 +18,7 @@ fn piece_at(w: &World, p: BlockPos) -> (String, Option<String>) {
     (name, w.reg.get(s, "facing").map(str::to_owned))
 }
 
-/// Open ground beside the player and in reach, with three blocks of air over it.
+/// Open ground beside the player and in reach, with three blocks of room over it.
 fn open_ground(w: &World) -> BlockPos {
     let feet = w.mover.pos;
     let eye = feet + DVec3::new(0.0, 1.6, 0.0);
@@ -40,10 +40,10 @@ fn open_ground(w: &World) -> BlockPos {
         )) else {
             continue;
         };
+        // Room above: nothing but what gives way to a piece (grass, a steppe's tussocks).
         let clear = (1..=3).all(|k| {
-            w.mirror
-                .block(BlockPos::new(g.x, g.y + k, g.z))
-                .is_some_and(|s| s.is_air())
+            let p = BlockPos::new(g.x, g.y + k, g.z);
+            w.mirror.block(p).is_some() && w.free(p)
         });
         let c = DVec3::new(g.x as f64 + 0.5, g.y as f64 + 1.0, g.z as f64 + 0.5);
         if clear && (c - eye).length() < 3.5 {
@@ -54,7 +54,7 @@ fn open_ground(w: &World) -> BlockPos {
 }
 
 /// Level open ground near the player, gone to: a block of ground with `wide` blocks east of it
-/// (itself the first) and the row south of those at the same height, three blocks of air over
+/// (itself the first) and the row south of those at the same height, three blocks of room over
 /// each, and the player standing just west of it.
 fn level_ground(w: &mut World, wide: i32) -> BlockPos {
     let feet = w.mover.pos;
@@ -66,9 +66,8 @@ fn level_ground(w: &mut World, wide: i32) -> BlockPos {
         };
         let clear = |g: BlockPos, n: i32| {
             (1..=n).all(|k| {
-                w.mirror
-                    .block(BlockPos::new(g.x, g.y + k, g.z))
-                    .is_some_and(|s| s.is_air())
+                let p = BlockPos::new(g.x, g.y + k, g.z);
+                w.mirror.block(p).is_some() && w.free(p)
             })
         };
         let mut found = None;

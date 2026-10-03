@@ -22,14 +22,22 @@ fn animals_come_into_the_world_about_the_player_and_go_as_they_leave() {
         let d = |p: glam::DVec2| (p.x - home.x).hypot(p.y - home.z);
         d(a.1).total_cmp(&d(b.1))
     });
-    // Walking to the nearest groups until some are met.
+    // Walking to the nearest groups until some are met (the large animals of the groups, not
+    // only the small ones drawn about: a souslik stands and watches a person in the open as
+    // long as they stand there).
     let mut met = Vec::new();
     'walk: for (_, at, _) in groups.iter().take(6) {
         w.go(at.x, at.y);
         for _ in 0..4 {
             w.run(40);
-            if !w.animals.is_empty() {
-                met = w.animals.clone();
+            let large: Vec<_> = w
+                .animals
+                .iter()
+                .filter(|v| catalog.species[v.species as usize].grouped())
+                .cloned()
+                .collect();
+            if !large.is_empty() {
+                met = large;
                 break 'walk;
             }
         }

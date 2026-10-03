@@ -55,10 +55,15 @@ fn spawn_region() -> (Ecology, (i64, i64), [f64; 2]) {
 fn fifty_years_about_the_spawn_stay_within_plausible_bounds() {
     let (mut eco, _, _) = spawn_region();
     let cat = eco.catalog.clone();
-    // The species the land holds ten of at least (a wolf pack ranges over far more than these
-    // regions, and a handful of bobcats or bears is at the mercy of chance).
+    // The species the land holds ten of at least, and two groups' worth of one that lives in
+    // groups (a wolf pack ranges over far more than these regions, a handful of bobcats or bears
+    // is at the mercy of chance, and so is a lone herd of onagers or a flock of bustards).
     let present: Vec<usize> = (0..cat.len())
-        .filter(|&s| eco.capacity(s) >= 10.0)
+        .filter(|&s| {
+            let sp = &cat.species[s];
+            let groups = (sp.group.0 + sp.group.1) as f64;
+            eco.capacity(s) >= 10.0f64.max(if sp.grouped() { groups } else { 0.0 })
+        })
         .collect();
     let start = eco.regions.values().map(|r| r.time).fold(0.0, f64::max);
     let mut series = vec![Vec::new(); present.len()];

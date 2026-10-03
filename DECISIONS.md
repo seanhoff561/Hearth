@@ -1332,3 +1332,88 @@ filled such places with the stand-in realm's species (their odds are relative). 
 place's own plants cover less than half what the stand-in realm's would, the stand-ins grow in
 full, as the animals of a realm without its own do; where its own hold their place (a Nearctic
 wood), the stand-ins stay strays. A plant of every realm (sphagnum) counts as the place's own.
+
+## D116 — Each ecosystem's animals are counted on a land of its own
+A species' density described the reference temperate wood, and every place was judged by its
+forage against the wood's. The open lands' grazers live on what the wood hardly has: a saiga
+was judged by the wood's grass, thin under its canopy, so that the steppe held it at three times
+its density, and the desert's seed-eaters by the wood's few seeds. Each ecosystem now names the
+land its animals' densities describe — its climate, the cover of its canopy, the young growth in
+reach, the mast and fruit of its trees (`reference` in `ecosystems.ron`) — and a species' density
+is that of the richest of the reference lands of the ecosystems it lives in (the wood for an
+ecosystem without one). A plant-eater's quality is what its foods come to in a place against what
+they come to there; a hunter's is the meat its prey of the realm offer about the place at their
+usual numbers against what they offer on its own best land (D109 judged it against the wood: the
+prairie's coyote, with its prairie dogs and voles, and the desert's, with its jackrabbits and
+kangaroo rats, are now each judged by the coyote's best land, the prairie).
+
+## D117 — Forage is anchored to the animals' needs on every reference land
+Each kind of forage was scaled so that the reference wood's animals ate what the wood made of it;
+the wood's few seed-eaters made seed worth almost nothing, and a desert of kangaroo rats starved on
+it. Each reference land now gives its own factor per kind, from its own animals' needs, and the
+greatest is used, so that no land's animals go short of a food another land's eat more of. Where
+the rain is under 400 mm part of the open ground's growth is in desert shrubs (sagebrush,
+saltbush, creosote, saxaul), browse rather than grass, as the tundra's dwarf shrubs are (D108).
+
+## D118 — A young animal settles where the land is as good as it gets about
+A disperser passed over land a fifth as good as the reference. Where all is poorer than that —
+the desert to its coyotes, which live there at a tenth of the prairie's numbers — none ever
+settled, and the desert's coyotes dwindled as their young left. It now passes over land a fifth
+as good as the best about it (as before where that is good land).
+
+## D119 — Cold-blooded hunters, and an owl with its voles, do not turn from scarce prey
+A snake or a lizard lies in wait and takes what comes by: it does not turn from a prey grown
+scarce to another (it has no search image to change) and lives on little. Cold-blooded hunters
+are now specialists to the hunt (no switching, the attack calibrated at a fifth of the prey's
+usual numbers), as hunters with no plants and a prey or two already were — counted now among the
+prey of the realm where they hunt, so that the great grey owl of the Palearctic, with its bank
+voles and lemmings, hunts them down to their scarcity under the snow, as a vole specialist does,
+while the owl of the Nearctic, with squirrels and hares besides, turns from them. Reptiles need
+the months above 10 °C a sixth of the year to hold on at all (frogs and toads the months above
+8 °C a tenth), and a third to live at their full numbers.
+
+## D120 — A specialist takes its fill of the young; a generalist turns to its other food
+A hunter takes a prey's young the more readily (they count thrice in what it meets) and a young
+one is a third of a grown one's meat; a hunter's catches in a step stopped at what its want would
+take in grown ones, so that among many young it ate a fifth to a half short of its fill. Every
+adder and great grey owl went hungry through the summers, when the voles are mostly young, and the
+owl starved out of the taiga. Counting every hunter's catches by the meat they come to was tried:
+the tawny owls of the reference wood, which live on worms when the voles fail, then held the bank
+voles at a twelfth of their numbers. So a specialist (D119), which has nothing else, takes as many
+young as its fill needs; a generalist's catches still stop at its want in grown prey (the hunt's
+time goes by the catch), and it makes up the rest among its other foods. The deaths are counted
+as animals, not as grown ones' worth of meat.
+
+## D121 — The open lands on a vast planet; a species judged where the land holds two groups
+On the huge planet of seed 7 the regions about a steppe's or a desert's heart still held other
+kinds of land; the fifty-year runs of the cold and dry lands are now made on the vast planet of
+the same seed, where the biomes' hearts are wide (D112 put the cold lands on the huge one; the vast
+planet's taiga and boreal forest lie in realms without animals of their own, where the stand-in
+realm's live, D115). The generated world has no dry land in the Nearctic, so the prairie and the
+Nearctic's hot desert run on uniform land of their climate (`open_land`), and the screenshot suite
+finds them on seeds 4 and 9. A species is judged where the land holds ten of it and, for one that
+lives in groups, two groups' worth: a lone herd of onagers about the spawn, or less land than a
+flock of bustards needs, is at the mercy of chance.
+
+## D122 — Cacti are the New World's; dry land is bare between its plants
+The generator's column cacti stood in every hot desert, the Sahara's too: they now grow only in the
+realms of the Americas. The understory covered up to seven tenths of the ground wherever its
+species fit, so a desert of creosote and prickly pear was a garden; the cover now shrinks with
+dryness (de Martonne's index, the rain against the warmth: a sixth of the ground in the driest
+deserts, a third in the wetter ones, all there is room for on a steppe or in a wood), and the dead
+bushes and bare sand and gravel show between. The mangrove swamp keeps its mangroves until their
+species come with the wetlands (V2-10 (e)): the arid coasts' new desert trees no longer take their
+place.
+
+## D123 — Grass gives way to a building; a bot lays its camp on bare ground, and knaps again
+The steppe's and the prairie's grasses (feather grass, fescue, bluestem, grama) were drawn as
+plants that do not give way to a built piece, and they cover most of the ground there: the
+building acceptance, about the V2-5 world's spawn, found no level ground to build on. A tussock of
+grass gives way to a built piece as plain grass does (its dry grass is lost under it); the sages,
+flowers and shrubs, like the wood's nettles, do not, and the bots now choose their camp and their
+building spots where nothing stands but what gives way, as a person picks a bare patch (the V2-5
+bot had put its fire where one of them stood, and been refused). And a point knapped for the
+spear may hinge off short and thick: the bot knaps again from fresh cobbles, as anyone would. The
+test of animals coming into the world watches the groups' large animals it walks to, not the
+sousliks drawn about, which stand and watch a person in the open as long as they stand there
+(D113: the tests try the game's paths, not one world's accidents).
