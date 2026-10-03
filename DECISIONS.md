@@ -1805,7 +1805,7 @@ realms, on their land, and takes the crabs, the snakeheads, the monkeys and the 
 
 ## D160 — The end of V2-10's gate
 Six waves of plants and animals (the boreal, the dry lands, the tropics, the mountains, the
-wetlands and the seas: 270 animals and 130 plants more than V2-9's) cost the quick scenes under
+wetlands and the seas: 315 animals and 168 plants more than V2-9's) cost the quick scenes under
 two per cent: the lowland forest's average −0.2 % and 1 % lows −1.4 %, the peak's −1.2 % and
 −1.1 %, the cave's −1.9 % and +1.7 %, three alternating rounds each on the RTX 4060 laptop.
 The baseline moves to the end of V2-10.
