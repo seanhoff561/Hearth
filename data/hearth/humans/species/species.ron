@@ -94,7 +94,7 @@
             uncertain: true,
         ),
         (
-            id: "homo_sapiens", name: "Human", scientific: "Homo sapiens", status: Planned,
+            id: "homo_sapiens", name: "Human", scientific: "Homo sapiens", status: Implemented,
             // Foragers' sizes; the species' range is wide and set by nutrition as much as genes.
             body: (
                 height_m: (female: (1.5, 1.68), male: (1.6, 1.8)),
@@ -118,7 +118,15 @@
             ),
             social: (group_size: (25, 50), disperses: Both),
             habitat: ["savanna_woodland", "tropical_freshwater", "tropical_rainforest", "temperate_grassland", "temperate_broadleaf_forest", "mediterranean_scrub", "boreal_forest_ecosystem", "tundra_ecosystem", "montane_forest_ecosystem", "alpine_ecosystem", "temperate_freshwater", "hot_desert", "cold_desert", "mangrove_forest", "coast"],
-            knowledge: [],
+            // Wild Earth's families know what living in their country takes and no more (D164):
+            // where it is warm the stone hammer, sharp flakes and cutting with them, the digging
+            // stick, throwing stones, carrying bundles and tracking; where it is cold besides,
+            // keeping and making fire, hide wraps (and the scraping and butchery they rest on)
+            // and a windbreak. The eras' peoples know their eras' (H8).
+            knowledge: ["stone_as_hammer", "sharp_flake", "flake_cutting", "digging_stick", "throwing_stones", "carrying_bundle", "tracking"],
+            cold_knowledge: ["fire_keeping", "fire_by_friction_hand_drill", "windbreak_shelter", "butchery", "hand_axe", "prepared_core", "scraper", "hide_scraping", "hide_wrap_clothing"],
+            population: "homo_sapiens",
+            worldwide: true,
             behaviors: [Forage, DigTubers, CrackNuts, Scavenge, KnapFlakes, Habituate],
             first_appearance_ya: 300000,
             realism_source: "forager life history (Gurven and Kaplan 2007; Marlowe 2004 on bilocal residence); review",

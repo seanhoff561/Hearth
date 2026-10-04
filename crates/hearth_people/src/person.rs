@@ -217,11 +217,13 @@ pub fn stream(seed: u64, id: PersonId) -> Rng {
 
 impl Person {
     /// A new person of a species, healthy, fed and rested, born on day `born`: a weaned one
-    /// knowing what its band knows (practised, the more if grown), a suckling nothing yet.
+    /// knowing what its band knows (`knows`: practised, the more if grown), a suckling nothing
+    /// yet.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: PersonId,
         species: &Species,
+        knows: &[String],
         graph: &Graph,
         band: u64,
         female: bool,
@@ -238,7 +240,7 @@ impl Person {
             } else {
                 YOUNG_PRACTICE_H
             };
-            for k in &species.knowledge {
+            for k in knows {
                 knowledge.known.insert(
                     k.clone(),
                     Learned {

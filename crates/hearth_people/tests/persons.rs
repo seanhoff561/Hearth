@@ -76,6 +76,7 @@ fn person(age: f64) -> Person {
     Person::new(
         1,
         hominin(),
+        &hominin().knowledge,
         &w.graph,
         7,
         true,

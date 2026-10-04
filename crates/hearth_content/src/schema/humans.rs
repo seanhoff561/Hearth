@@ -241,6 +241,14 @@ entry! {
         pub habitat: Vec<IdRef>,
         /// Knowledge nodes its groups practise (what a grown one knows).
         pub knowledge: Vec<IdRef>,
+        /// What its groups know besides where the winters are cold (keeping and making fire,
+        /// warm clothes, shelter from the wind): Wild Earth's families' (D164).
+        #[serde(default)]
+        pub cold_knowledge: Vec<IdRef>,
+        /// Its population lives in suitable land the world over, whatever the hominins' range
+        /// setting (Wild Earth's wandering families, D164).
+        #[serde(default)]
+        pub worldwide: bool,
         /// What it does, of what the people's minds know how to do.
         pub behaviors: Vec<Behavior>,
         /// Its population in the ecological cells: the animal entry that says what it eats, how

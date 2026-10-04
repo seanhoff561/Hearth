@@ -677,7 +677,7 @@ design only). Updated with each H milestone.
 
 | Part | Implemented | Planned |
 |---|---|---|
-| Species profiles | *Australopithecus* | *Homo erectus*, *H. neanderthalensis*, *H. sapiens* (data; H3 and H8) |
+| Species profiles | *Australopithecus*; *H. sapiens* as Wild Earth's few wandering families (H3) | *Homo erectus*, *H. neanderthalensis* (data; H8) |
 | Era profiles | Wild Earth (its *Australopithecus* bands) | Wild Earth's families (H3), Lower, Middle, Upper Paleolithic (H8), Neolithic (H11), Bronze Age (H12), Iron Age (H13) |
 | Calibrated traits | 29 heritable traits on ~460 loci: appearance, health, metabolism, HEXACO temperament and its narrower dimensions, aptitudes (H1); temperament read by the psyche (H2) | health by the life course (H3), aptitudes by learning (H6) |
 | Routines | *Australopithecus*'s day, a forager's day (H2) | cultures' routines (H5) |

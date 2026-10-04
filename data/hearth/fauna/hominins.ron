@@ -37,5 +37,42 @@
             realism_source: "general paleoanthropology references (chimpanzee and baboon ecology as analogues); review",
             uncertain: true,
         ),
+        (
+            id: "homo_sapiens", name: "Human", scientific: "Homo sapiens", body_plan: Primate, status: Implemented,
+            mass_kg: (50, 65), dimorphism: 1.15, length_m: 1.65, shoulder_height_m: 1.4,
+            speed: (walk_m_s: 1.3, run_m_s: 6, swim_m_s: 0.8),
+            senses: (vision_m: 1000, hearing_m: 400, smell_m: 20, night_vision: 0.2),
+            // A forager's fare the world over: meat and shellfish where there are any, fruit,
+            // nuts, berries and roots by the season, grubs and seeds when there is little else.
+            diet: (kind: Omnivore, daily_food_kg: 1.2, foods: [
+                (food: "meat", preference: 0.9), (food: "shellfish", preference: 0.8), (food: "wild_figs"), (food: "marula_fruit"),
+                (food: "marula_nut", preference: 0.7), (food: "acorn", preference: 0.6), (food: "bilberry"), (food: "blackberry"),
+                (food: "wild_cherry"), (food: "crowberry", preference: 0.6), (food: "taro_corm", preference: 0.7), (food: "wild_bananas"),
+                (food: "insect_larvae", preference: 0.4), (food: "grass_seed", preference: 0.3), (food: "watercress", preference: 0.4),
+            ]),
+            // Wild Earth's wandering families (D164): households of four to ten.
+            social: Herd(size: (4, 10)), activity: Diurnal,
+            habitat: ["savanna_woodland", "tropical_freshwater", "tropical_rainforest", "temperate_grassland", "temperate_broadleaf_forest", "mediterranean_scrub", "boreal_forest_ecosystem", "tundra_ecosystem", "montane_forest_ecosystem", "temperate_freshwater", "hot_desert", "cold_desert", "mangrove_forest", "coast"],
+            seasonal: [],
+            danger: (defensive: true, aggression: 0.2),
+            // Few and far apart: a family of six to some three thousand square kilometres, the
+            // era's one liberty besides the hominins. Where the winters are hard they keep fire,
+            // wear hides and build windbreaks (the species' cold knowledge).
+            growth_rate: 0.01, density_per_km2: 0.002, realms: ["Afrotropical", "Indomalayan", "Neotropical", "Australasian", "Palearctic", "Nearctic", "Oceanian"], min_coldest_month_c: -40,
+            life: (maturity_years: 18, lifespan_years: 70, litter: (1, 1), births_per_year: 0.25, birth_day: 150, adult_survival: 0.985, young_survival: 0.6, birth_mass_kg: 3.3),
+            ranging: (home_range_km2: 500, dispersal_km: 40, dispersers: Both, cover: 0.1),
+            coat: (base: "#8a6a50", belly: "#8a6a50", points: "#3a2a1e", face: "#7a5a40"),
+            shape: (neck: 0.08, head: 0.13, snout: 0.05, tail: 0.0, ears: 0.06, ear_shape: Round, legs: 1.0),
+            habits: (vigilance: 0.6),
+            track: (foot: Plantigrade, length_cm: 25, stride_m: 1.4),
+            calls: [
+                (kind: Scream, when: Alarm, loudness_db: 100, pitch_hz: (300, 2000), seconds: 0.8),
+                (kind: Grunt, when: Contact, loudness_db: 60, pitch_hz: (100, 400), seconds: 0.5),
+            ],
+            temperament: (flight_m: 30, boldness: 0.6),
+            notes: "Wild Earth's few wandering families of people: households of four to ten, far apart, living by foraging and knowing what their country takes and no more (D164). Near the player they are drawn out as persons; one of them is the family the player is born into.",
+            realism_source: "forager ecology (Kelly 2013; Marlowe 2005 on home ranges and group sizes); Wild Earth's sparseness is the era's design (D164); review",
+            uncertain: true,
+        ),
     ],
 )

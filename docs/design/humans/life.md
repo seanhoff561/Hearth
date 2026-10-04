@@ -99,6 +99,17 @@ An elder walks a little slower.
   a woman's hips and bust from puberty (`Appearance::grown`, the rig's head, trunk and arm units).
   A figure is made again as its person grows.
 
+## Wild Earth's families (H3 (c))
+
+*Homo sapiens* is implemented as Wild Earth's few wandering families (D164, D179): a population of
+the ecological cells (`fauna/hominins.ron`: households of four to ten, a family of six to some
+three thousand square kilometres, the world over whatever the hominins' range setting, hunted by
+nothing), drawn out as persons near the player like the hominins' bands and lived by the life
+course while near. A family knows what its country takes: the species' `knowledge` everywhere,
+and where the coldest month is below 8 °C its `cold_knowledge` besides (keeping and making fire,
+hide wraps and what they rest on, a windbreak) — its band's culture holds the list, and its
+techniques are what that knowledge opens.
+
 ## To come in H3
 
 Ageing's look and the elders' part; inheritance; Wild Earth's families and the player born into

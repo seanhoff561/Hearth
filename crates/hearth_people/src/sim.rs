@@ -192,6 +192,10 @@ const NEAR_KIN: u32 = 6;
 /// Days the dead lie where they fell before their people lay them to rest.
 const LAID_TO_REST_DAYS: f64 = 1.0;
 
+/// A country whose coldest month is colder than this (°C) asks fire, warm clothes and shelter
+/// from the wind of the people who live in it (D164).
+const COLD_C: f32 = 8.0;
+
 /// How near the young play together, and see a grown one's work to go and watch it (m); how
 /// close they crouch to watch it, and to take it in.
 const PLAY_M: f64 = 12.0;
@@ -297,8 +301,9 @@ impl People {
     ) {
         let wrap = eco.cells_around as f64 * CELL_M;
         let cat = eco.catalog.clone();
-        // The groups to draw out, in the order of their ids.
-        let mut groups: Vec<(u64, usize, Numbers, [f64; 2], [f64; 2], f64)> = Vec::new();
+        // The groups to draw out, in the order of their ids (and whether their country's
+        // winters are cold).
+        let mut groups: Vec<(u64, usize, Numbers, [f64; 2], [f64; 2], f64, bool)> = Vec::new();
         for r in eco.regions.values() {
             for g in &r.groups {
                 let sp = &cat.species[g.species as usize];
@@ -323,12 +328,16 @@ impl People {
                     males: g.males,
                 };
                 let range_m = (sp.home_range_km2 as f64 / std::f64::consts::PI).sqrt() * 1000.0;
-                groups.push((g.id, si, n, g.pos, g.home, range_m));
+                let cold = r
+                    .cell_at(eco.cells_around, g.pos[0], g.pos[1])
+                    .and_then(|c| r.habitat.get(c))
+                    .is_some_and(|h| h.coldest_c() < COLD_C);
+                groups.push((g.id, si, n, g.pos, g.home, range_m, cold));
             }
         }
         groups.sort_by_key(|g| g.0);
         let mut drawn = Vec::new();
-        for (gid, si, want, pos, home, range_m) in groups {
+        for (gid, si, want, pos, home, range_m, cold) in groups {
             let sp = &species.list[si];
             let Some(centre) = world.ground().top(pos[0], pos[1]) else {
                 // Not loaded yet: it waits.
@@ -347,7 +356,16 @@ impl People {
                     bi
                 }
                 None => {
-                    let bi = self.found(sp, graph, gid, want, here, DVec2::from_array(home), now);
+                    let bi = self.found(
+                        sp,
+                        graph,
+                        gid,
+                        want,
+                        here,
+                        DVec2::from_array(home),
+                        cold,
+                        now,
+                    );
                     self.bands[bi].range_m = range_m;
                     self.bands[bi].population_group = Some(gid);
                     self.endow(bi, sp, genes, sun, now);
@@ -378,8 +396,10 @@ impl People {
         n: Numbers,
         here: DVec3,
         home: DVec2,
+        cold: bool,
         now: Now,
     ) -> usize {
+        let (knowledge, techniques) = sp.ways(cold);
         let mut rng = band_stream(self.seed, id);
         let maturity = sp.life.maturity_years as f64;
         let prime = (sp.life.adult_death_years.0 as f64).max(maturity + 5.0);
@@ -402,7 +422,8 @@ impl People {
             places: Places::default(),
             tolerance: Vec::new(),
             culture: Culture {
-                techniques: sp.techniques.clone(),
+                knowledge: knowledge.clone(),
+                techniques,
                 traditions: Vec::new(),
             },
             population_group: None,
@@ -417,7 +438,9 @@ impl People {
             let born = now.day - age * now.year_days;
             let pos = self.scatter(bi, here, 2.0, 10.0);
             let pid = self.take_id();
-            let mut p = Person::new(pid, sp, graph, id, female, born, pos, now, self.seed);
+            let mut p = Person::new(
+                pid, sp, &knowledge, graph, id, female, born, pos, now, self.seed,
+            );
             p.place.yaw = self.bands[bi].rng.next_f32() * std::f32::consts::TAU;
             p.mind.timer = self.bands[bi].rng.next_f32() * 5.0;
             p.record(now.day, Event::Found { band: id });
@@ -711,7 +734,14 @@ impl People {
                         Some(mothers[k % mothers.len()]),
                     )
                 };
-                let mut p = Person::new(pid, sp, graph, band, female, born, pos, now, self.seed);
+                let knows = if self.bands[bi].culture.knowledge.is_empty() {
+                    sp.knowledge.clone()
+                } else {
+                    self.bands[bi].culture.knowledge.clone()
+                };
+                let mut p = Person::new(
+                    pid, sp, &knows, graph, band, female, born, pos, now, self.seed,
+                );
                 p.life.mother = mother;
                 p.life.father = mother.and_then(|m| self.father_for(bi, sp, m, born, now));
                 p.record(born.min(now.day), event);
@@ -767,7 +797,7 @@ impl People {
             females,
             males,
         };
-        let bi = self.found(sp, graph, id, n, at, DVec2::new(at.x, at.z), now);
+        let bi = self.found(sp, graph, id, n, at, DVec2::new(at.x, at.z), false, now);
         let genes = species.genetics.as_ref();
         let sun = genes.map_or(1.0, |g| g.sunlight(world.latitude(at)));
         self.endow(bi, sp, genes, sun, now);
@@ -1727,7 +1757,15 @@ fn decide(
             }
         }
     }
-    let mut s = situation(p, sp, glimpses, senses, crafts, content, items, now, sight);
+    // What its band knows how to do (its people's, and where it is cold what the cold asks).
+    let techniques: &[String] = if band.culture.techniques.is_empty() {
+        &sp.techniques
+    } else {
+        &band.culture.techniques
+    };
+    let mut s = situation(
+        p, sp, techniques, glimpses, senses, crafts, content, items, now, sight,
+    );
     s.threat = threat;
     s.flight_m = flight_m;
     let needs = Needs::of(
@@ -1801,6 +1839,7 @@ fn threat_of(
 fn situation(
     p: &Person,
     sp: &Species,
+    techniques: &[String],
     glimpses: &[Glimpse],
     senses: &dyn Senses,
     crafts: &Crafts,
@@ -1905,7 +1944,7 @@ fn situation(
     };
     // What it could do with what lies about: crack nuts at an anvil, strike a flake.
     let offers = if grown {
-        offers_for(p, sp, crafts, content, items, senses, &now)
+        offers_for(p, sp, techniques, crafts, content, items, senses, &now)
     } else {
         Vec::new()
     };
@@ -2384,6 +2423,7 @@ fn aim_for(
 fn offers_for(
     p: &Person,
     sp: &Species,
+    techniques: &[String],
     crafts: &Crafts,
     content: &Content,
     items: &Items,
@@ -2399,7 +2439,7 @@ fn offers_for(
     for spot in spots {
         let lying = senses.things_near(spot, REACH_M);
         let around = senses.surroundings(spot);
-        for t in &sp.techniques {
+        for t in techniques {
             let Some(r) = crafts.index_of(t).or_else(|| {
                 crafts.index_of(&format!("hearth:{}", t.rsplit(':').next().unwrap_or(t)))
             }) else {

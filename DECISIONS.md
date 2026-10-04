@@ -2089,3 +2089,14 @@ routes the player's watching uses, about once a minute and with one finished wor
 child comes to know its band's ways over many watchings rather than at a glance. A child's figure
 is the same rig with its head, trunk and arms reckoned in their own units, so a grown figure is
 drawn exactly as before.
+
+## D179 — Our species as Wild Earth's families: a population of the cells, ways by climate
+Wild Earth's wandering families (D164) are *Homo sapiens* made a population of the ecological
+cells like the hominins, at a family of six to some three thousand square kilometres, in every
+realm and every ecosystem a forager could live in (alpine heights excepted), never kept to the
+hominins' cradle (`worldwide`), and nobody's prey: no diet names them, and the entry has no
+yields. So they persist, fold and draw out with the machinery the hominins already use, and the
+player's own family (next) can be one of them. What a family knows is a band's culture: the
+species' knowledge everywhere and, where the coldest month is under 8 °C, its cold knowledge too
+(fire kept and made, hide wraps with the scraping, butchery, hand axe and prepared core they rest
+on, a windbreak), as D164 lists — the eras' and cultures' baselines replace this in H8.

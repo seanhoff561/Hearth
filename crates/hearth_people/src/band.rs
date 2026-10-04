@@ -16,6 +16,9 @@ use crate::world::PlayerId;
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Culture {
+    /// What its people know (knowledge nodes), and the processes that opens.
+    #[serde(default)]
+    pub knowledge: Vec<String>,
     pub techniques: Vec<String>,
     pub traditions: Vec<String>,
 }

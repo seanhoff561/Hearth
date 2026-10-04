@@ -8,38 +8,15 @@ mod common;
 
 use common::*;
 use glam::DVec3;
-use hearth_body::{BodyConfig, Rates};
-use hearth_content::TimeScales;
 use hearth_people::person::{Event, Person};
-use hearth_people::{Now, People, Species, SpeciesSet};
+use hearth_people::{Now, People};
 
 const YEARS: u32 = 200;
-
-/// The species set with ours in it (its families come later in H3: data until then).
-fn with_us() -> SpeciesSet {
-    let b = base();
-    let mut species = b.species.clone();
-    let human = BodyConfig::with_rates(
-        &b.content,
-        Rates::authentic(),
-        TimeScales::defaults(&b.content.time),
-    );
-    let us = b
-        .content
-        .species
-        .iter()
-        .find(|s| s.id.ends_with("homo_sapiens"))
-        .expect("our species' profile");
-    species
-        .list
-        .push(Species::of_profile(us, &b.graph, &human).with_routine(&b.content));
-    species
-}
 
 #[test]
 fn foragers_live_near_the_forager_targets() {
     let b = base();
-    let species = with_us();
+    let species = b.species.clone();
     let k = species.index_of("homo_sapiens").expect("our species");
     let mut w = Savanna::new();
     let mut p = People::new(11);

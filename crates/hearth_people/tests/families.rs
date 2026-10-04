@@ -69,3 +69,21 @@ fn a_band_carries_genes_and_its_children_their_parents() {
         .collect();
     assert_eq!(before, after);
 }
+
+#[test]
+fn our_families_know_what_their_country_takes() {
+    // Wild Earth's families (D164): the warm country's ways, and where it is cold fire, hide
+    // wraps and a windbreak besides.
+    let b = base();
+    let us = &b.species.list[b.species.index_of("homo_sapiens").expect("our species")];
+    let knows = |list: &[String], id: &str| list.iter().any(|k| k.ends_with(id));
+    let (warm, warm_ways) = us.ways(false);
+    let (cold, cold_ways) = us.ways(true);
+    assert!(knows(&warm, "digging_stick") && knows(&warm, "sharp_flake"));
+    assert!(!knows(&warm, "fire_keeping"), "no fire where it is warm");
+    assert!(knows(&cold, "fire_keeping") && knows(&cold, "hide_wrap_clothing"));
+    assert!(
+        cold_ways.len() > warm_ways.len(),
+        "the cold opens more to do"
+    );
+}

@@ -34,6 +34,9 @@ pub struct Species {
     pub behaviors: Vec<Behavior>,
     /// What its bands know and practise (knowledge nodes)…
     pub knowledge: Vec<String>,
+    /// What its bands know besides where the winters are cold, and the processes that opens.
+    pub cold_knowledge: Vec<String>,
+    pub cold_techniques: Vec<String>,
     /// …and the processes that knowledge opens: its bands' techniques.
     pub techniques: Vec<String>,
     /// Its population in the ecological cells (an animal species), if it has one.
@@ -111,6 +114,22 @@ impl Species {
         }
     }
 
+    /// What a band of it knows, and the processes that opens: its own, and where the winters are
+    /// cold what the cold asks besides.
+    pub fn ways(&self, cold: bool) -> (Vec<String>, Vec<String>) {
+        let mut knowledge = self.knowledge.clone();
+        let mut techniques = self.techniques.clone();
+        if cold {
+            knowledge.extend(self.cold_knowledge.iter().cloned());
+            techniques.extend(self.cold_techniques.iter().cloned());
+        }
+        knowledge.sort();
+        knowledge.dedup();
+        techniques.sort();
+        techniques.dedup();
+        (knowledge, techniques)
+    }
+
     /// Whether one of an age is weaned (and has begun to learn its band's ways).
     pub fn weaned(&self, age_years: f64) -> bool {
         age_years >= self.life.weaning_years as f64
@@ -178,18 +197,25 @@ impl Species {
         let spread = |r: (f32, f32)| (r.1 - r.0) / 4.0;
         let height_sd_m = [spread(s.body.height_m.female), spread(s.body.height_m.male)];
         let mass_kg = [mid(s.body.mass_kg.female), mid(s.body.mass_kg.male)];
-        let knowledge: Vec<String> = s
-            .knowledge
-            .iter()
-            .filter_map(|k| node(k.as_str()).map(|n| n.id.clone()))
-            .collect();
-        let mut techniques: Vec<String> = knowledge
-            .iter()
-            .filter_map(|k| node(k))
-            .flat_map(|n| n.enables.iter().cloned())
-            .collect();
-        techniques.sort();
-        techniques.dedup();
+        let resolve = |list: &[hearth_content::IdRef]| -> Vec<String> {
+            list.iter()
+                .filter_map(|k| node(k.as_str()).map(|n| n.id.clone()))
+                .collect()
+        };
+        let opens = |known: &[String]| -> Vec<String> {
+            let mut t: Vec<String> = known
+                .iter()
+                .filter_map(|k| node(k))
+                .flat_map(|n| n.enables.iter().cloned())
+                .collect();
+            t.sort();
+            t.dedup();
+            t
+        };
+        let knowledge = resolve(&s.knowledge);
+        let techniques = opens(&knowledge);
+        let cold_knowledge = resolve(&s.cold_knowledge);
+        let cold_techniques = opens(&cold_knowledge);
         let bodies = [0, 1].map(|k| body_of(base, mass_kg[k] as f64, height_m[k] as f64));
         Species {
             id: s.id.clone(),
@@ -205,6 +231,8 @@ impl Species {
             behaviors: s.behaviors.clone(),
             knowledge,
             techniques,
+            cold_knowledge,
+            cold_techniques,
             population: s.population.as_ref().map(|p| p.to_string()),
             bodies,
             coat: match s.body.coat {

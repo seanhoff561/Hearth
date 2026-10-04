@@ -358,7 +358,7 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
         for h in &e.habitat {
             r.check(&c.ecosystems, "ecosystem", h, o, e.id());
         }
-        for k in &e.knowledge {
+        for k in e.knowledge.iter().chain(&e.cold_knowledge) {
             r.check(&c.knowledge, "knowledge", k, o, e.id());
         }
         match &e.population {

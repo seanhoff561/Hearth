@@ -130,6 +130,8 @@ pub struct Species {
     /// The population of a species of person (`humans/species/`): its groups are drawn out near
     /// the player as that species' persons, not as animals.
     pub hominin: bool,
+    /// A people that lives the world over, not kept to the hominins' cradle (D164).
+    pub worldwide: bool,
     /// Lives by the water, its lands those of the waters alone (a beaver, an otter, a heron, a
     /// hippo): of a cell's land it has the share the water about it gives.
     pub waterside: bool,
@@ -454,6 +456,7 @@ impl Catalog {
                 .or_else(|| by_id.get(&format!("hearth:{}", p.as_str())));
             if let Some(&i) = at {
                 species[i].hominin = true;
+                species[i].worldwide = h.worldwide;
             }
         }
         Self {
@@ -471,7 +474,7 @@ impl Catalog {
     /// region (v2 §8.1); by default they live in suitable habitat the world over.
     pub fn hominins_in_cradle(&mut self) {
         for sp in &mut self.species {
-            if sp.hominin {
+            if sp.hominin && !sp.worldwide {
                 sp.realms = hearth_worldgen::realms::Realm::Afrotropical.bit();
             }
         }
@@ -640,6 +643,7 @@ fn species_of(
         aquatic,
         marine,
         hominin: false,
+        worldwide: false,
         waterside: !aquatic && !marine && core != 0 && core & !water == 0,
         colony: matches!(a.social, Social::Colony { .. }),
         need_kg: need,
