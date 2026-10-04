@@ -59,6 +59,7 @@ pub fn report(
             p.life_stage(sp, now),
             match p.tier {
                 Tier::Full => "lived in full",
+                Tier::Household => "lived as households",
                 Tier::Dormant => "dormant",
             },
             p.life.born,

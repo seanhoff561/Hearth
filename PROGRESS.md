@@ -658,7 +658,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [ ] H4 — Social systems (built 2026-10-04; its tests to run)
 - [ ] H5 — Culture and language (built 2026-10-04; its tests to run)
 - [ ] H6 — Knowledge and social learning (built 2026-10-04; its tests to run)
-- [ ] H7 — Tiers and persistence
+- [ ] H7 — Tiers and persistence (built 2026-10-04; its tests to run)
 - [ ] H8 — History simulation and Paleolithic eras (birth options)
 - [ ] H9 — Observer mode and the player in society
 - [ ] H10 — Optional conversation backend
@@ -1142,6 +1142,15 @@ while only `clippy` checks could run (its tests run with H4's and H5's):
 - [x] (c) The acceptance (`tests/culture.rs`): a deep technique lost by a small band alone in a
   hundred and fifty years and kept by a large connected one; the player shown how learns a work in
   minutes that watching alone does not teach.
+
+H7 — Tiers and persistence (PLAN.md, V2.1 §17; `docs/design/humans/tiers.md`, D189), built while
+only `clippy` checks could run: a household tier between full and dormant — bands away from the
+player but within 40 km, or holding one the player knows, kept whole and lived by the life course
+(pairing, crowding and culture count them), lifted back into full about their camp as the same
+persons; bands met for the first time founded with coherent families (mothers of age, births
+spaced) and forebears (dead mothers kept as stubs, making brothers and sisters of the founders); a
+save keeps bands in full as households; at most 300 in full and 20,000 as households; the long dead
+pruned to genealogy stubs (`tests/persist.rs`).
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in

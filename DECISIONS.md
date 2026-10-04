@@ -2243,3 +2243,17 @@ and found. Teaching in play is a direct insight toward the shown work's node (a 
 at a people's teaching factor, which for the player is the one fast way to learn from people
 (watching gives them a trigger an hour); apprenticeship biases whom the young watch; stories move
 places and, as legends, techniques. Records and writing wait for the eras that have them.
+
+## D189 — A household tier lived by the life course; forebears as stubs
+V2.1 §17's household tier is the life course itself: a band away from the player but within the
+recent-history region (40 km here, until H8 defines the region) or holding someone the player
+knows keeps its persons whole and lives week by week what the life course already lives
+(deaths, births, pairing, households, ties, culture, language, learning), without bodies or
+moment-to-moment minds — so promotion needs no reconciliation, and "leaving a band and coming
+back" finds the same people, aged. Coarse daily outcomes (food got, work done) are not simulated
+yet; the life course's crowding stands for them. The cells' numbers keep counting only dormant
+bands. Instantiation keeps H0's founding and adds coherence (mothers of age, spaced births) and
+synthesized forebears: dead mothers kept as genealogy stubs, shared by founders close in age, so
+kinship (and through it ties, households and incest avoidance) works from the first meeting.
+Budgets bound the full tier by distance (300) and the household tier (20,000); pruning cuts the
+long dead to stubs that keep what genealogies need.

@@ -21,6 +21,7 @@ the amendment, written and updated with the milestone that builds it (`PLAN.md`,
 | [culture.md](culture.md) | §9: the culture model and its generator, culture in what people do, transmission and evolution, daughter cultures | H5 |
 | [language.md](language.md) | §10: generated languages, names, families, drift and borrowing; speech acts and gestures; subtitles and the player learning a language | H5 |
 | [learning.md](learning.md) | §11: knowing and the anachronism guard, learning across a life, finding things out, the collective brain; teaching, apprenticeship, stories, the player taught | H6 |
+| [tiers.md](tiers.md) | §17: the full, household and demographic tiers, promotion and demotion conserving state, coherent families and forebears, budgets, pruning to genealogy stubs | H7 |
 
-Planned with their milestones: `tiers.md` (H7),
+Planned with their milestones:
 `history.md` and `eras.md` (H8), `observer.md` (H9), `conversation.md` (H10).

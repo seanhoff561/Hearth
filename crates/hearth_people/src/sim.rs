@@ -47,6 +47,20 @@ use serde::{Deserialize, Serialize};
 /// beyond [`FAR_M`] is folded back into its numbers.
 pub const NEAR_M: f64 = 112.0;
 pub const FAR_M: f64 = 150.0;
+/// How far from a player a band away from it is kept as households, its persons whole (m;
+/// beyond, its numbers go back to the cells unless it holds one the player knows).
+pub const HOUSEHOLD_M: f64 = 40_000.0;
+/// The most persons lived in full, and as households (V2.1 §17.2).
+pub const FULL_BUDGET: usize = 300;
+pub const HOUSEHOLD_BUDGET: usize = 20_000;
+/// Years after a death that a record is pruned to a genealogy stub.
+const PRUNE_YEARS: f64 = 40.0;
+/// The least years between two children of one mother (twins aside), and the oldest a woman
+/// bears (years), as founders' families are made.
+const BIRTH_GAP_YEARS: f64 = 1.5;
+const LAST_BIRTH_AGE: f64 = 45.0;
+/// The salt of the streams founders' forebears are drawn on.
+const FOREBEARS_STREAM: u64 = 0x0f0e_bea2_0000_0000;
 /// How far a person looks about for a tree, water or food it does not yet know (m).
 const LOOK_M: f64 = 40.0;
 /// How far it sees a hunter or the player (m), by day; at night a quarter of it.
@@ -182,6 +196,8 @@ pub struct People {
     pub quarrels: Vec<crate::conflict::Quarrel>,
     /// What was said lately, for whoever hears it (V2.1 §10.2).
     pub said: Vec<crate::speech::Said>,
+    /// The day the long dead were last pruned to stubs.
+    pub(crate) pruned_to: f64,
 }
 
 /// The horizontal distance between two places on the planet (wrapping in x).
@@ -306,6 +322,7 @@ impl People {
             deeds: Vec::new(),
             quarrels: Vec::new(),
             said: Vec::new(),
+            pruned_to: 0.0,
         }
     }
 
@@ -426,8 +443,38 @@ impl People {
             }
         }
         groups.sort_by_key(|g| g.0);
+        // Bands lived as households about a player come back into full, as the budget allows.
+        let lift: Vec<usize> = (0..self.bands.len())
+            .filter(|&bi| self.bands[bi].tier == Tier::Household)
+            .filter(|&bi| {
+                let b = &self.bands[bi];
+                let at = b
+                    .camp
+                    .unwrap_or_else(|| DVec3::new(b.home.x, 0.0, b.home.y));
+                players.iter().any(|p| hdist(at, *p, wrap) <= NEAR_M)
+            })
+            .collect();
+        for bi in lift {
+            let id = self.bands[bi].id;
+            let n = self.members(id).filter(|p| p.alive()).count();
+            if !self.room_in_full(n) {
+                continue;
+            }
+            let b = &self.bands[bi];
+            let at = b
+                .camp
+                .unwrap_or_else(|| DVec3::new(b.home.x, 0.0, b.home.y));
+            let Some(top) = world.ground().top(at.x, at.z) else {
+                continue;
+            };
+            let here = DVec3::new(at.x, top.level(), at.z);
+            self.lift(bi, species, world, items, here, now);
+        }
         let mut drawn = Vec::new();
         for (gid, si, want, pos, home, range_m, cold) in groups {
+            if !self.room_in_full(want.total()) {
+                continue;
+            }
             let sp = &species.list[si];
             let Some(centre) = world.ground().top(pos[0], pos[1]) else {
                 // Not loaded yet: it waits.
@@ -729,16 +776,17 @@ impl People {
     }
 
     /// Gives the band's young and half-grown without a mother one among its grown females old
-    /// enough to have borne them, the least burdened first.
+    /// enough to have borne them and not past bearing then, their births a year and a half apart
+    /// at least, the least burdened first.
     fn mothers(&mut self, bi: usize, sp: &Species, now: Now) {
         let band = self.bands[bi].id;
         let maturity = sp.life.maturity_years as f64;
-        let mut females: Vec<(PersonId, f64, usize)> = self
+        let mut females: Vec<(PersonId, f64, Vec<f64>)> = self
             .persons
             .iter()
             .filter(|p| p.social.band == band && p.alive() && p.life.female)
             .filter(|p| p.stage(sp, &now) == Stage::Adult)
-            .map(|p| (p.id, p.age(&now), 0))
+            .map(|p| (p.id, p.age(&now), Vec::new()))
             .collect();
         for i in 0..self.persons.len() {
             let p = &self.persons[i];
@@ -749,14 +797,83 @@ impl People {
                 continue;
             }
             let age = p.age(&now);
+            let spaced = |kids: &[f64]| kids.iter().all(|k| (k - age).abs() >= BIRTH_GAP_YEARS);
             let mother = females
                 .iter_mut()
-                .filter(|(_, a, _)| *a - age >= maturity)
-                .min_by_key(|(id, _, k)| (*k, *id));
-            if let Some((m, _, k)) = mother {
-                *k += 1;
+                .filter(|(_, a, kids)| {
+                    (maturity..=LAST_BIRTH_AGE).contains(&(*a - age)) && spaced(kids)
+                })
+                .min_by_key(|(id, _, kids)| (kids.len(), *id));
+            if let Some((m, _, kids)) = mother {
+                kids.push(age);
                 self.persons[i].life.mother = Some(*m);
             }
+        }
+        self.forebears(bi, sp, now);
+    }
+
+    /// Its grown founders' forebears, synthesized (V2.1 §17.1): those without a mother among
+    /// them are given — by ones, twos and threes close in age — a mother who died before the band
+    /// was met, kept as a genealogy stub, so that a band met for the first time has brothers and
+    /// sisters among its grown as a real band has.
+    fn forebears(&mut self, bi: usize, sp: &Species, now: Now) {
+        let band = self.bands[bi].id;
+        let years = now.year_days.max(1.0);
+        let maturity = sp.life.maturity_years as f64;
+        let mut rng = Rng::new(hearth_math::hash::hash2(self.seed ^ FOREBEARS_STREAM, band));
+        let mut orphans: Vec<(usize, f64)> = (0..self.persons.len())
+            .filter(|&i| {
+                let p = &self.persons[i];
+                p.social.band == band
+                    && p.alive()
+                    && p.life.mother.is_none()
+                    && p.player.is_none()
+                    && p.stage(sp, &now) == Stage::Adult
+            })
+            .map(|i| (i, self.persons[i].age(&now)))
+            .collect();
+        orphans.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        let mut k = 0;
+        while k < orphans.len() {
+            // A sibship: the next one or two close behind in age join the eldest.
+            let want = 1 + (rng.next_f32() * 3.0) as usize;
+            let mut n = 1;
+            while n < want && k + n < orphans.len() {
+                let gap = orphans[k + n - 1].1 - orphans[k + n].1;
+                if !(BIRTH_GAP_YEARS..=8.0).contains(&gap) {
+                    break;
+                }
+                n += 1;
+            }
+            let (eldest, youngest) = (orphans[k].1, orphans[k + n - 1].1);
+            // She bore the eldest a few years after she was grown, and died after the youngest
+            // was born.
+            let first = maturity + 2.0 + 8.0 * rng.next_f64();
+            let born = now.day - (eldest + first) * years;
+            let died = now.day - youngest * rng.next_f64() * years;
+            let id = self.take_id();
+            let pos = self.persons[orphans[k].0].place.pos;
+            // Of no band now: her record is her children's line.
+            let mut m = Person::newborn(id, sp, 0, true, born, pos, self.seed);
+            m.tier = Tier::Dormant;
+            m.record(born, Event::Born { band });
+            m.life.died = Some(Died {
+                day: died,
+                cause: Cause::Course,
+            });
+            m.record(
+                died,
+                Event::Died {
+                    cause: Cause::Course,
+                },
+            );
+            m.stub();
+            for j in 0..n {
+                let i = orphans[k + j].0;
+                self.persons[i].life.mother = Some(id);
+            }
+            self.persons.push(m);
+            k += n;
         }
     }
 
@@ -1006,29 +1123,250 @@ impl People {
         self.form(bi, &species.psyche, now);
     }
 
-    /// Folds back into their numbers the bands whose persons are all beyond [`FAR_M`] of every
-    /// player (or dead): their records wait, dormant; the cells count them again.
+    /// Folds the bands away from the players (V2.1 §17.1): a band lived in full whose persons are
+    /// all beyond [`FAR_M`] of every player goes on as households — its persons kept whole, their
+    /// lives lived by the life course — while its home is within [`HOUSEHOLD_M`] of one or it
+    /// holds someone a player knows; beyond that, and not so held, its records wait, dormant, and
+    /// the cells count its numbers again. Then the budgets (see `keep_budget`).
     pub fn fold(&mut self, eco: &mut Ecology, species: &SpeciesSet, players: &[DVec3], now: Now) {
         let wrap = eco.cells_around as f64 * CELL_M;
-        let far: Vec<usize> = (0..self.bands.len())
-            .filter(|&bi| self.bands[bi].tier == Tier::Full)
-            .filter(|&bi| {
-                let id = self.bands[bi].id;
-                self.members(id)
-                    .filter(|p| p.alive())
-                    .all(|p| players.iter().all(|q| hdist(p.place.pos, *q, wrap) > FAR_M))
-            })
-            .collect();
-        for bi in far {
-            self.demote(bi, eco, species, now);
+        let home_near = |people: &People, bi: usize| {
+            let h = people.bands[bi].home;
+            let at = DVec3::new(h.x, 0.0, h.y);
+            players.iter().any(|q| hdist(at, *q, wrap) <= HOUSEHOLD_M)
+        };
+        for bi in 0..self.bands.len() {
+            match self.bands[bi].tier {
+                Tier::Full => {
+                    let id = self.bands[bi].id;
+                    let far = self
+                        .members(id)
+                        .filter(|p| p.alive())
+                        .all(|p| players.iter().all(|q| hdist(p.place.pos, *q, wrap) > FAR_M));
+                    if !far {
+                        continue;
+                    }
+                    if home_near(self, bi) || self.kept(bi) {
+                        self.to_households(bi, now);
+                    } else {
+                        self.demote(bi, eco, species, now);
+                    }
+                }
+                Tier::Household => {
+                    if !home_near(self, bi) && !self.kept(bi) {
+                        self.demote(bi, eco, species, now);
+                    }
+                }
+                Tier::Dormant => {}
+            }
+        }
+        self.keep_budget(eco, species, players, wrap, now);
+    }
+
+    /// Folds every band lived in full away (a save's copy: as if the player were far away): as
+    /// households, kept whole for the player's return.
+    pub fn fold_all(&mut self, _eco: &mut Ecology, _species: &SpeciesSet, now: Now) {
+        for bi in 0..self.bands.len() {
+            if self.bands[bi].tier == Tier::Full {
+                self.to_households(bi, now);
+            }
         }
     }
 
-    /// Folds every band back (a save's copy: as if the player were far away).
-    pub fn fold_all(&mut self, eco: &mut Ecology, species: &SpeciesSet, now: Now) {
-        for bi in 0..self.bands.len() {
-            if self.bands[bi].tier == Tier::Full {
-                self.demote(bi, eco, species, now);
+    /// Whether a band holds someone a player knows (V2.1 §17.1): one who has met a player, or
+    /// kin to a player's person — kept as households wherever it is.
+    pub(crate) fn kept(&self, bi: usize) -> bool {
+        let players: Vec<PersonId> = self
+            .persons
+            .iter()
+            .filter(|p| p.player.is_some())
+            .map(|p| p.id)
+            .collect();
+        self.band_members(bi).into_iter().any(|i| {
+            let p = &self.persons[i];
+            p.player.is_some()
+                || p.life
+                    .events
+                    .iter()
+                    .any(|e| matches!(e.event, Event::Met { .. }))
+                || players
+                    .iter()
+                    .any(|&me| crate::kin::kin_of(self, me, p.id).is_some())
+        })
+    }
+
+    /// A band goes on as households (V2.1 §17.1): its persons kept whole, their lives lived by
+    /// the life course; its numbers stay out of the cells. Its quarrels end.
+    pub fn to_households(&mut self, bi: usize, now: Now) {
+        let id = self.bands[bi].id;
+        self.bands[bi].tier = Tier::Household;
+        self.bands[bi].dormant_since = Some(now.day);
+        let mut gone: Vec<PersonId> = Vec::new();
+        for p in self.persons.iter_mut().filter(|p| p.social.band == id) {
+            if p.player.is_none() {
+                p.tier = Tier::Household;
+                p.mind = crate::mind::Mind::default();
+                gone.push(p.id);
+            }
+        }
+        self.quarrels
+            .retain(|q| !gone.contains(&q.a) && !gone.contains(&q.b));
+    }
+
+    /// A band lived as households comes back into full about a place (V2.1 §17.1): the same
+    /// persons, as their lives have gone while away, about the place, knowing what lies there.
+    #[allow(clippy::too_many_arguments)]
+    pub fn lift(
+        &mut self,
+        bi: usize,
+        species: &SpeciesSet,
+        world: &mut dyn World,
+        items: &Items,
+        here: DVec3,
+        now: Now,
+    ) {
+        let Some(sp) = species.get(&self.bands[bi].species) else {
+            return;
+        };
+        let band = self.bands[bi].id;
+        let away = self.bands[bi]
+            .dormant_since
+            .map_or(0.0, |d| (now.day - d).max(0.0));
+        let members: Vec<usize> = (0..self.persons.len())
+            .filter(|&i| self.persons[i].social.band == band && self.persons[i].alive())
+            .collect();
+        for i in members {
+            let pos = self.scatter(bi, here, 2.0, 10.0);
+            let p = &mut self.persons[i];
+            if p.player.is_some() {
+                continue;
+            }
+            p.tier = Tier::Full;
+            p.place.pos = pos;
+            p.place.medium = Medium::Ground;
+            p.place.perch = None;
+            p.place.speed = 0.0;
+            p.mind = crate::mind::Mind::default();
+            if away > REFRESH_DAYS {
+                let seed = p.rng.next_u64();
+                let injuries = std::mem::take(&mut p.body.injuries);
+                p.body = hearth_body::Body::new(sp.body(p.life.female), seed);
+                p.body.injuries = injuries;
+            }
+        }
+        self.bands[bi].tier = Tier::Full;
+        self.bands[bi].dormant_since = None;
+        self.settle_households(bi);
+        self.acquaint(bi, now.day);
+        self.onto_the_ground(bi, &*world, here);
+        know_about(&mut self.bands[bi], world, items, here);
+        self.form(bi, &species.psyche, now);
+    }
+
+    /// Keeps within budget (V2.1 §17.2): the persons lived in full (see `hold_full_budget`); and
+    /// past [`HOUSEHOLD_BUDGET`] lived as households, the bands farthest from every player not
+    /// holding one a player knows are folded back into the cells.
+    fn keep_budget(
+        &mut self,
+        eco: &mut Ecology,
+        species: &SpeciesSet,
+        players: &[DVec3],
+        wrap: f64,
+        now: Now,
+    ) {
+        self.hold_full_budget(players, wrap, now);
+        let households = self
+            .persons
+            .iter()
+            .filter(|p| p.tier == Tier::Household && p.alive())
+            .count();
+        if households <= HOUSEHOLD_BUDGET {
+            return;
+        }
+        let mut bands: Vec<(f64, usize, usize)> = (0..self.bands.len())
+            .filter(|&bi| self.bands[bi].tier == Tier::Household && !self.kept(bi))
+            .map(|bi| {
+                let id = self.bands[bi].id;
+                let n = self.members(id).filter(|p| p.alive()).count();
+                (self.reach_of_players(bi, players, wrap), bi, n)
+            })
+            .collect();
+        bands.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        let mut over = households - HOUSEHOLD_BUDGET;
+        for (_, bi, n) in bands {
+            if over == 0 {
+                break;
+            }
+            self.demote(bi, eco, species, now);
+            over = over.saturating_sub(n);
+        }
+    }
+
+    /// Keeps the persons lived in full within [`FULL_BUDGET`] (V2.1 §17.2): past it, the bands
+    /// farthest from every player go on as households, never a player's own (`wrap`: the world's
+    /// width, east to west, 0 for none).
+    pub fn hold_full_budget(&mut self, players: &[DVec3], wrap: f64, now: Now) {
+        let full = self
+            .persons
+            .iter()
+            .filter(|p| p.tier == Tier::Full && p.alive())
+            .count();
+        if full <= FULL_BUDGET {
+            return;
+        }
+        let mut bands: Vec<(f64, usize, usize)> = (0..self.bands.len())
+            .filter(|&bi| self.bands[bi].tier == Tier::Full)
+            .filter(|&bi| {
+                let id = self.bands[bi].id;
+                !self.members(id).any(|p| p.player.is_some())
+            })
+            .map(|bi| {
+                let id = self.bands[bi].id;
+                let n = self.members(id).filter(|p| p.alive()).count();
+                (self.reach_of_players(bi, players, wrap), bi, n)
+            })
+            .collect();
+        bands.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        let mut over = full - FULL_BUDGET;
+        for (_, bi, n) in bands {
+            if over == 0 {
+                break;
+            }
+            self.to_households(bi, now);
+            over = over.saturating_sub(n);
+        }
+    }
+
+    /// How far a band's home is from the nearest player (m).
+    fn reach_of_players(&self, bi: usize, players: &[DVec3], wrap: f64) -> f64 {
+        let h = self.bands[bi].home;
+        let at = DVec3::new(h.x, 0.0, h.y);
+        players
+            .iter()
+            .map(|q| hdist(at, *q, wrap))
+            .fold(f64::MAX, f64::min)
+    }
+
+    /// Whether more persons may be lived in full: `more` of them within budget.
+    fn room_in_full(&self, more: usize) -> bool {
+        self.persons
+            .iter()
+            .filter(|p| p.tier == Tier::Full && p.alive())
+            .count()
+            + more
+            <= FULL_BUDGET
+    }
+
+    /// Prunes the records of the long dead to genealogy stubs (V2.1 §17.1): dead for more than
+    /// [`PRUNE_YEARS`], not a player's.
+    pub fn prune(&mut self, now: &Now) {
+        let before = now.day - PRUNE_YEARS * now.year_days.max(1.0);
+        for p in self.persons.iter_mut() {
+            if !p.life.stub
+                && p.player.is_none()
+                && p.life.died.as_ref().is_some_and(|d| d.day < before)
+            {
+                p.stub();
             }
         }
     }

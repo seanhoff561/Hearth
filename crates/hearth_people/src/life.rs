@@ -144,12 +144,18 @@ impl People {
         now: Now,
     ) {
         let step = now.year_days.max(1.0) / STEPS_A_YEAR;
+        // Bands lived in full or as households live their courses (V2.1 §17.1).
         for band in &mut self.bands {
-            if band.tier == Tier::Full {
+            if matches!(band.tier, Tier::Full | Tier::Household) {
                 band.lived_to.get_or_insert(now.day);
             } else {
                 band.lived_to = None;
             }
+        }
+        // The long dead pruned to genealogy stubs, about yearly.
+        if now.day - self.pruned_to >= now.year_days.max(1.0) {
+            self.pruned_to = now.day;
+            self.prune(&now);
         }
         // The band furthest behind goes first (bands split off join in from their day).
         loop {
@@ -198,7 +204,7 @@ impl People {
         let n: usize = self
             .bands
             .iter()
-            .filter(|b| b.tier == Tier::Full && &b.species == kind)
+            .filter(|b| matches!(b.tier, Tier::Full | Tier::Household) && &b.species == kind)
             .filter(|b| (b.home - home).length() <= ROOM_M)
             .map(|b| b.members.len())
             .sum();
@@ -507,7 +513,10 @@ impl People {
         // Where to look: her band, then the others of her kind nearby, nearest first.
         let (home, kind) = (self.bands[bi].home, self.bands[bi].species.clone());
         let mut bands: Vec<(f64, usize)> = (0..self.bands.len())
-            .filter(|&b| self.bands[b].tier == Tier::Full && self.bands[b].species == kind)
+            .filter(|&b| {
+                matches!(self.bands[b].tier, Tier::Full | Tier::Household)
+                    && self.bands[b].species == kind
+            })
             .map(|b| {
                 let d = if b == bi {
                     -1.0

@@ -34,6 +34,9 @@ const STUNTING_SD: f32 = 2.0;
 pub enum Tier {
     /// Near the player: lived moment to moment.
     Full,
+    /// Away from the player but within reach of its life, or one the player knows: kept whole,
+    /// its life lived by the life course (V2.1 §17.1).
+    Household,
     /// A record waiting: its band's numbers live on in the ecological cells.
     #[default]
     Dormant,
@@ -202,6 +205,8 @@ pub struct LifeHistory {
     /// How short of food it went while growing, 0 never … 1 always hungry: a running measure
     /// over its childhood that holds its stature back.
     pub undernourished: f32,
+    /// Pruned to a genealogy stub, long dead (V2.1 §17.1).
+    pub stub: bool,
 }
 
 /// Where a person is and how it moves.
@@ -294,6 +299,37 @@ pub struct Person {
     pub player: Option<u64>,
     /// Its own random stream: what it draws does not depend on who else drew first.
     pub rng: Rng,
+}
+
+impl Person {
+    /// Pruned to what a genealogy needs (V2.1 §17.1): its id, parents, sex, dates, name and the
+    /// outline of its life (born, paired, bore, died); its genome, mind, knowledge, memories,
+    /// ties and things let go.
+    pub fn stub(&mut self) {
+        self.life.stub = true;
+        self.genome = None;
+        self.phenotype = None;
+        self.mind = Mind::default();
+        self.knowledge = KnowledgeState::default();
+        self.social.ties = Vec::new();
+        self.social.reputes = Vec::new();
+        self.possessions = Possessions::default();
+        self.psyche = crate::psyche::Psyche::default();
+        self.memory = crate::memory::Memory::default();
+        self.tongues = Vec::new();
+        self.body.injuries = Vec::new();
+        self.life.events.retain(|e| {
+            matches!(
+                e.event,
+                Event::Born { .. }
+                    | Event::Found { .. }
+                    | Event::Joined { .. }
+                    | Event::Paired { .. }
+                    | Event::Bore { .. }
+                    | Event::Died { .. }
+            )
+        });
+    }
 }
 
 /// A person's own stream, from the world's seed and its id.
