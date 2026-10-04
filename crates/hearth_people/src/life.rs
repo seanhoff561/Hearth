@@ -222,9 +222,10 @@ impl People {
         let year_days = now.year_days.max(1.0);
         let age = |p: &Person| (day - p.life.born) / year_days;
         let band = self.bands[bi].id;
-        // The dead and the gone off the band's list.
+        // The dead and the gone off the band's list; everyone in a household.
         let living = self.living(bi);
         self.bands[bi].members = living.iter().map(|&i| self.persons[i].id).collect();
+        self.settle_households(bi);
         let crowd = self.crowd(bi, table);
         // Deaths, by age; more children die where the land is crowded.
         for &i in &living {
@@ -345,9 +346,13 @@ impl People {
         });
         p.life.pregnant = None;
         p.record(day, Event::Died { cause });
-        let (dead, band, bond) = (p.id, p.social.band, p.social.bond);
+        let (dead, band, bond, household) =
+            (p.id, p.social.band, p.social.bond, p.social.household);
         for b in self.bands.iter_mut().filter(|b| b.id == band) {
             b.members.retain(|m| *m != dead);
+        }
+        if let Some(h) = household {
+            self.rehome(h, band, day, now.year_days.max(1.0));
         }
         if let Some(j) = bond.and_then(|b| self.persons.binary_search_by_key(&b, |q| q.id).ok())
             && self.persons[j].social.bond == Some(dead)
@@ -512,6 +517,8 @@ impl People {
                 };
                 self.move_to(mover, to, day, year_days);
             }
+            // A hearth of their own.
+            self.house_pair(w, m);
         }
     }
 
@@ -569,6 +576,7 @@ impl People {
             child.tier = tier;
             child.life.mother = Some(mother);
             child.life.father = due.father;
+            child.social.household = self.persons[i].social.household;
             child.record(day, Event::Born { band });
             self.bands[bi].members.push(id);
             self.persons.push(child);
@@ -582,26 +590,15 @@ impl People {
     /// A band past what holds together splits: its households — a pair with the children of
     /// theirs not yet paired, one alone — go one by one, every other, to a new band nearby.
     fn split(&mut self, bi: usize, day: f64) {
+        self.settle_households(bi);
         let living = self.living(bi);
-        let index = |id: PersonId| living.iter().copied().find(|&j| self.persons[j].id == id);
-        // A grown one's household: its pair's, or its own.
-        let own = |i: usize| {
-            let p = &self.persons[i];
-            p.social
-                .bond
-                .and_then(index)
-                .map_or(p.id, |b| p.id.min(self.persons[b].id))
-        };
-        let mut household: Vec<(PersonId, usize)> = Vec::new();
-        for &i in &living {
-            let p = &self.persons[i];
-            // The unpaired young go with their mother's household.
-            let head = match (p.social.bond, p.life.mother.and_then(index)) {
-                (None, Some(m)) => own(m),
-                _ => own(i),
-            };
-            household.push((head, i));
-        }
+        let household: Vec<(PersonId, usize)> = living
+            .iter()
+            .map(|&i| {
+                let p = &self.persons[i];
+                (p.social.household.unwrap_or(p.id), i)
+            })
+            .collect();
         let mut heads: Vec<PersonId> = household.iter().map(|(h, _)| *h).collect();
         heads.sort_unstable();
         heads.dedup();

@@ -166,6 +166,7 @@ impl People {
             rng: band_stream(self.seed, id),
         });
         let bi = self.bands.len() - 1;
+        let hearth = self.take_id();
         let born = |age: f64| now.day - age * years;
         // The parents, of the birth's genomes, paired before their first child.
         let add = |people: &mut People, female: bool, age: f64| -> PersonId {
@@ -184,6 +185,7 @@ impl People {
                 people.seed,
             );
             p.record(born(age), Event::Born { band: id });
+            p.social.household = Some(hearth);
             people.bands[bi].members.push(pid);
             people.persons.push(p);
             pid

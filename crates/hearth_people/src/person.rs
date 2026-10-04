@@ -159,8 +159,11 @@ pub struct Place {
 pub struct Social {
     /// Its band's id.
     pub band: u64,
-    /// Its partner, if it has paired (V2.1 §7.1; kinship and households join in H4).
+    /// Its partner, if it has paired (V2.1 §7.1).
     pub bond: Option<PersonId>,
+    /// The household it belongs to: who shares its hearth and food (V2.1 §8.1).
+    #[serde(default)]
+    pub household: Option<u64>,
 }
 
 /// What a person carries (property and claims join in H11).
@@ -275,7 +278,11 @@ impl Person {
             body,
             mind: Mind::default(),
             knowledge,
-            social: Social { band, bond: None },
+            social: Social {
+                band,
+                bond: None,
+                household: None,
+            },
             possessions: Possessions::default(),
             place: Place {
                 pos,
@@ -316,7 +323,11 @@ impl Person {
             body,
             mind: Mind::default(),
             knowledge: KnowledgeState::default(),
-            social: Social { band, bond: None },
+            social: Social {
+                band,
+                bond: None,
+                household: None,
+            },
             possessions: Possessions::default(),
             place: Place {
                 pos,

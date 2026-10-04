@@ -16,6 +16,7 @@ pub mod birth;
 pub mod family;
 pub mod genome;
 pub mod inspect;
+pub mod kin;
 pub mod life;
 pub mod lineage;
 pub mod looks;

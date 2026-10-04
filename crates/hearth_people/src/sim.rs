@@ -456,6 +456,7 @@ impl People {
             self.persons.push(p);
         }
         self.mothers(bi, sp, now);
+        self.settle_households(bi);
         bi
     }
 
@@ -781,6 +782,7 @@ impl People {
         self.bands[bi].tier = Tier::Full;
         self.bands[bi].dormant_since = None;
         self.endow(bi, sp, genetics, sun, now);
+        self.settle_households(bi);
     }
 
     /// Sets a band of a species down at a place (a test's, a screenshot's): its grown females and
@@ -1158,9 +1160,12 @@ impl People {
             cause: cause.clone(),
         });
         p.record(now.day, Event::Died { cause });
-        let (dead, band) = (p.id, p.social.band);
+        let (dead, band, household) = (p.id, p.social.band, p.social.household);
         self.bequeath(i, now.day, sp, items, &now);
         self.mourn(dead, band, now.day);
+        if let Some(h) = household {
+            self.rehome(h, band, now.day, now.year_days.max(1.0));
+        }
     }
 
     /// A death felt by the dead one's band: grief in its kin by how close they were (a mother,

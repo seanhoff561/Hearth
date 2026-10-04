@@ -1027,6 +1027,30 @@ H3 — Life course and demography (PLAN.md, V2.1 §7, §14.3; Addenda A and B;
   and lints, a few of the game's bot tests; the performance gate waits (H3 draws nothing new
   in the benchmark scenes).
 
+H4 — Social systems (PLAN.md, V2.1 §8; `docs/design/humans/social.md`), in parts:
+- [x] (a) Kinship and households: who another is to a person read from the pedigree and the bonds
+  (parents and children, brothers and sisters and half ones, grandparents, aunts and uncles,
+  nieces and nephews, cousins, partners and in-laws; `kin.rs`); households, the hearths that
+  share food — a pair and the children they raise, the unpaired grown with their mother — settled
+  for every band, a pair's own when it bonds, a child born into its mother's, the young left
+  without a grown one taken in by their nearest kin, a band splitting by them; the inspector's kin
+  and household (`tests/social.rs`).
+- [ ] (b) Relationships and obligations: ties (affection, trust, respect, fear, rivalry) grown by
+  time together and what passes between, fading without contact; the ledger of help given and
+  owed; social worlds of realistic sizes.
+- [ ] (c) Cooperation: food shared in the household and a large find with the band, help and care
+  for the hurt, kin altruism by relatedness, reciprocity remembered.
+- [ ] (d) Reputation, gossip, norms and sanctions: what others believe of one, spread in company
+  with decay and distortion; norms as data; violations noticed, felt, told and sanctioned
+  (ridicule, avoidance, withheld cooperation, ostracism); levelling among foragers; property (the
+  player's things not taken).
+- [ ] (e) Status and group decisions: status from what the people value; a band debating and
+  deciding where to camp next.
+- [ ] (f) Conflict and strangers: escalation and its easing; how people receive one not their own
+  (the player among them).
+- [ ] (g) The acceptance: gossip spreads reputation plausibly; a violation brings sanctions; a band
+  debates and moves camp.
+
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
    `perf/baseline` in `bench-out/gate`, three alternating rounds of the quick scenes); a fall

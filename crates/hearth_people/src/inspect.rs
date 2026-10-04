@@ -307,6 +307,25 @@ pub fn report(
     if let Some(with) = p.social.bond {
         social.push(format!("paired with #{with}"));
     }
+    if let Some(h) = p.social.household {
+        let members = people.household_of(h);
+        social.push(format!("household #{h} of {}", members.len()));
+    }
+    // Its kin among the living, nearest first.
+    let mut kin: Vec<(u8, String)> = people
+        .persons
+        .iter()
+        .filter(|q| q.alive() && q.id != p.id)
+        .filter_map(|q| {
+            crate::kin::kin_of(people, p.id, q.id)
+                .map(|k| (k.nearness(), format!("{} #{}", k.word(q.life.female), q.id)))
+        })
+        .collect();
+    kin.sort();
+    if !kin.is_empty() {
+        let words: Vec<String> = kin.into_iter().take(10).map(|(_, w)| w).collect();
+        social.push(format!("kin: {}", words.join(", ")));
+    }
     let children: Vec<String> = people
         .persons
         .iter()
