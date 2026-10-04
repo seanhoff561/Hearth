@@ -656,7 +656,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H2 — Psyche and mind core (2026-10-03)
 - [x] H3 — Life course and demography (the player is born) (2026-10-04)
 - [ ] H4 — Social systems (built 2026-10-04; its tests to run)
-- [ ] H5 — Culture and language
+- [ ] H5 — Culture and language (built 2026-10-04; its tests to run)
 - [ ] H6 — Knowledge and social learning
 - [ ] H7 — Tiers and persistence
 - [ ] H8 — History simulation and Paleolithic eras (birth options)
@@ -1112,10 +1112,19 @@ while the machine's memory allowed only `clippy` checks; their tests run with H4
   sound change runs through every word at once and a word gives way to a new one; neighbours
   lend words; the inspector shows a band's language and a few of its words (`tests/culture.rs`:
   two daughters five hundred years apart still mostly cognate, against a stranger's tongue).
-- [ ] (e) Speech acts and gestures, H4's exchanges among them.
-- [ ] (f) Subtitles translated as far as the player knows the language; the player learning it.
-- [ ] (g) The acceptance: two cultures from one ancestor diverge after a split with related
-  languages and customs; the player learns a language over play.
+- [x] (e) Speech acts and gestures (`speech.rs`, D187): every exchange a structured act — what
+  it does, to whom, its words as meanings and names in the speaker's word order, a gesture —
+  spoken through what H4 already does (greeting, warning off, quarrel, backing down, mediation,
+  amends, sharing, gifts, mockery, gossip, the council, taking in), kept half a minute for whoever
+  hears it.
+- [x] (f) Subtitles and learning: what is said within 20 m of the player shown with the words as
+  they sound and what the player makes of them (known words glossed, half-known doubted, unknown
+  as dots); a born player's mother tongue its family's; other tongues learned by hearing — faster
+  spoken to, twice with a gesture — and a related tongue partly made out by cognates.
+- [x] (g) The acceptance (`tests/culture.rs`): a split people's two cultures two hundred years on
+  differ in values and customs, their tongues related and not a stranger people's; a newcomer
+  makes out little of its hosts' speech at first and most after half an hour among them. As with
+  H4, the tests compile and lint clean but wait for the machine's memory to run.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in

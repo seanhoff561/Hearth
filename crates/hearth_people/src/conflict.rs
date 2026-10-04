@@ -20,6 +20,7 @@ use crate::person::{Event, Person, PersonId, Tier};
 use crate::psyche::{Feeling, Tendency, Value};
 use crate::sim::{People, carried_food, move_toward, species_body, yaw_toward};
 use crate::species::SpeciesSet;
+use crate::speech::{Act, Gesture, clause, words};
 use crate::world::{Now, World};
 
 /// A people's ways with strangers and with quarrels (`humans/social/ways.ron`), resolved (and a
@@ -211,6 +212,22 @@ impl People {
         });
         self.persons[i].record(day, Event::Quarrelled { with: b });
         self.persons[j].record(day, Event::Quarrelled { with: a });
+        // Its first words: a reproach, or a threat.
+        let order = self.order_of(a);
+        if rung == Rung::Argument {
+            let reproach = clause(order, Some("you"), None, None, &["bad"]);
+            self.say(a, Some(b), Act::Insult, reproach, None, day);
+        } else {
+            let threat = clause(order, Some("i"), Some("hit"), Some("you"), &[]);
+            self.say(
+                a,
+                Some(b),
+                Act::Threaten,
+                threat,
+                Some(Gesture::ThreatDisplay),
+                day,
+            );
+        }
         true
     }
 
@@ -475,6 +492,10 @@ impl People {
             Rung::Argument if held >= ways.argue_s => {
                 if roll < 0.5 * hot {
                     up(self, Rung::Threat);
+                    let order = self.order_of(q.a);
+                    let threat = clause(order, Some("i"), Some("hit"), Some("you"), &[]);
+                    let display = Some(Gesture::ThreatDisplay);
+                    self.say(q.a, Some(q.b), Act::Threaten, threat, display, now.day);
                     None
                 } else {
                     Some(Settled::TalkedOut)
@@ -668,6 +689,15 @@ impl People {
                         p.mind.timer = 30.0;
                     }
                 }
+                let sorry = words(&["sorry"]);
+                self.say(
+                    w,
+                    Some(other),
+                    Act::Apologise,
+                    sorry,
+                    Some(Gesture::Submission),
+                    day,
+                );
             }
             Settled::Mediated(m) => {
                 if let Some(x) = self.index_of_person(m) {
@@ -676,12 +706,23 @@ impl People {
                     p.record(day, Event::Mediated { a: q.a, b: q.b });
                     p.psyche.feel(Feeling::Pride, 0.4);
                     self.respect(m, at, 0.1, day);
+                    self.say(m, None, Act::Command, words(&["stop", "enough"]), None, day);
                 }
             }
             Settled::Amends => {
                 if let Some(j) = self.index_of_person(q.b) {
                     self.persons[j].record(day, Event::MadeAmends { to: q.a });
                 }
+                let amends = words(&["take", "this", "sorry"]);
+                self.say(
+                    q.b,
+                    Some(q.a),
+                    Act::Apologise,
+                    amends,
+                    Some(Gesture::Offer),
+                    day,
+                );
+                self.say(q.a, Some(q.b), Act::Thank, words(&["thanks"]), None, day);
             }
             Settled::Fought => {
                 // The worse of it fears the other the more; the better has spent its grudge.

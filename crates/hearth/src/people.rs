@@ -71,6 +71,8 @@ pub struct PeopleNear {
     now: Option<Now>,
     /// The player's person, and how many of its life's events the player has been told.
     told: Option<(u64, usize)>,
+    /// The day of the last speech the player has been told of.
+    heard_to: f64,
 }
 
 /// The world as the people live in it, for one tick.
@@ -353,6 +355,7 @@ impl PeopleNear {
             shown: false,
             now: None,
             told: None,
+            heard_to: f64::NEG_INFINITY,
         }
     }
 
@@ -378,6 +381,49 @@ impl PeopleNear {
         self.live
             .gift(me, person, stack, &self.species, items, content, now)?;
         Ok(format!("You hold out {what}, and it is taken."))
+    }
+
+    /// What the people near a player have said since the player was last told, as the player
+    /// makes it out (V2.1 §10.3) — and the player's person learning their words by hearing them.
+    pub fn heard_by(&mut self, player: u64) -> Vec<hearth_protocol::HeardLine> {
+        let Some((me, at)) = self.live.player_person(player).map(|p| (p.id, p.place.pos)) else {
+            return Vec::new();
+        };
+        let since = self.heard_to;
+        let new: Vec<hearth_people::Said> = self
+            .live
+            .said
+            .iter()
+            .filter(|s| {
+                s.day > since
+                    && s.speaker != me
+                    && (s.at - at).length() < hearth_people::speech::HEARD_M
+            })
+            .cloned()
+            .collect();
+        self.heard_to = self.live.said.iter().map(|s| s.day).fold(since, f64::max);
+        let mut out = Vec::new();
+        for s in &new {
+            let defs = self
+                .live
+                .get(s.speaker)
+                .and_then(|q| self.species.get(&q.species))
+                .and_then(|sp| sp.language.as_ref());
+            if let (Some(d), Some(listener)) = (defs, self.live.get(me))
+                && let Some(h) = self.live.heard(d, listener, s)
+            {
+                out.push(hearth_protocol::HeardLine {
+                    speaker: h.speaker,
+                    to_you: h.to_you,
+                    spoken: h.spoken,
+                    sense: h.sense,
+                    understood: h.understood,
+                    gesture: h.gesture.map(|g| gesture_words(g).to_owned()),
+                });
+            }
+            self.live.learn_from(me, s);
+        }
+        out
     }
 
     /// What has befallen the player's person among others since the player was last told, in
@@ -1208,5 +1254,21 @@ impl PeopleNear {
         }
         lines.push("Those who know you may find you not yourself.".into());
         lines
+    }
+}
+
+/// A gesture in words.
+fn gesture_words(g: hearth_people::Gesture) -> &'static str {
+    use hearth_people::Gesture;
+    match g {
+        Gesture::Point => "pointing",
+        Gesture::Show => "showing",
+        Gesture::Offer => "holding something out",
+        Gesture::Beckon => "beckoning",
+        Gesture::Shoo => "waving you off",
+        Gesture::ThreatDisplay => "drawn up, threatening",
+        Gesture::Submission => "head bowed",
+        Gesture::Embrace => "arms open",
+        Gesture::Hands => "hands held out",
     }
 }

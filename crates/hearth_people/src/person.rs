@@ -246,6 +246,10 @@ pub struct Person {
     /// Its name, in its people's language (none for a people without one, or a player's).
     #[serde(default)]
     pub name: String,
+    /// What it knows of languages not its own, and its mother tongue (a player's person; V2.1
+    /// §10.3).
+    #[serde(default)]
+    pub tongues: Vec<crate::speech::Tongue>,
     #[serde(default)]
     pub tier: Tier,
     #[serde(default)]
@@ -335,6 +339,7 @@ impl Person {
             id,
             species: species.id.clone(),
             name: String::new(),
+            tongues: Vec::new(),
             tier: Tier::Full,
             life: LifeHistory {
                 female,
@@ -383,6 +388,7 @@ impl Person {
             id,
             species: species.id.clone(),
             name: String::new(),
+            tongues: Vec::new(),
             tier: Tier::Full,
             life: LifeHistory {
                 female,

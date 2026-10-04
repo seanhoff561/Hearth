@@ -50,7 +50,49 @@ Two daughters five hundred years apart still share most of their words as cognat
 a third of their sounds apart), against a few chance likenesses with a language of another
 people; after many thousands of years only traces remain.
 
-## To come in H5
+## Speech acts (H5 (e))
 
-Speech acts and gestures, H4's exchanges among them; subtitles translated as far as the player
-knows the language, and the player learning it; the acceptance.
+Every exchange between persons is a **speech act** (`speech.rs`): what it does (V2.1 §10.2's
+list: greet, inform, warn, offer, thank, apologise, insult, threaten, command, gossip, argue for
+an option …), whom it is to, its words — meanings, and people's names — in the speaker's word
+order, and the **gesture** that goes with it (pointing, beckoning, holding something out, waving
+off, the threat display, the head bowed, open arms, hands held out), which needs no shared
+language. Persons speak through what they already do, so an act's effects are what H4 computes:
+
+| What happens (H4) | The act and its words |
+|---|---|
+| A stranger met | greet: "hello friend", answered "hello", with the culture's greeting |
+| A stranger warned off | warn: "go away", waving it off |
+| A grievance had out | insult: "you bad"; at the threat rung, threaten: "I hit you", drawn up |
+| One backs down | apologise: "sorry", head bowed |
+| One steps in | command: "stop enough" |
+| Amends made | apologise: "take this sorry", holding it out; thanked |
+| Food shared, a gift taken | offer: "eat this", holding it out; thank: "thanks" |
+| Mockery | insult: the name and "bad" |
+| Gossip | gossip: the name and "steal", "not share" or "good" |
+| The council | argue for: "we stay here", or "we go food there", pointing |
+| A guest taken in | accept: "yes stay here", arms open |
+
+A step's acts are kept about half a minute for whoever hears them; a people without language
+says nothing (the hominins' calls stay the animals' kind).
+
+## Subtitles and the player (H5 (f))
+
+What is said within twenty metres of the player is shown as a **subtitle**: who said it (and
+whether to the player), the gesture, the words as they sound, and what the player makes of them —
+each word known (seven tenths and more) in the player's own tongue, a half-known one with a
+doubt ("hello?"), an unknown one as dots. A player born into a family speaks its language as
+its mother tongue. Another is **learned by hearing it**: each word heard comes a tenth of the way
+to known when spoken to the player and a twenty-fifth when overheard, twice as fast with a
+gesture making its sense plain. A word of a language related to one the player knows is made out
+by its cognate (six tenths as well as the cognate is known), so a daughter people's speech is
+half understood from the first. The H4 notices (greeted, warned off, taken in) stay beside the
+speech.
+
+## The acceptance (H5 (g))
+
+`tests/culture.rs`: a people grown past itself splits and its daughter goes far; two hundred
+years of their lives later their cultures differ in values and customs, and their tongues are
+plainly related — most words cognates — and not to another people's; and a newcomer from
+another people, among hosts who have something to talk about, makes out little of their speech
+at first and most of it after half an hour of hearing them.

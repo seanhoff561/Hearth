@@ -249,6 +249,17 @@ impl People {
         self.form(bi, &species.psyche, now);
         self.acquaint(bi, now.day);
         self.name_members(bi, &sp);
+        // The player's mother tongue is its family's.
+        if let (Some(y), Some(language)) = (
+            you.and_then(|y| self.index_of_person(y)),
+            self.bands[bi].culture.language.as_ref().map(|l| l.id),
+        ) {
+            self.persons[y].tongues = vec![crate::speech::Tongue {
+                language,
+                native: true,
+                words: Vec::new(),
+            }];
+        }
         self.onto_the_ground(bi, &*world, f.at);
         know_about(&mut self.bands[bi], world, items, f.at);
         Some((id, you?))

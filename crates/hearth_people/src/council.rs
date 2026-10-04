@@ -194,6 +194,18 @@ impl People {
                     .unwrap_or(0)
             })
             .collect();
+        // Each says where it would keep camp: here, or where the food is.
+        for (k, &i) in members.iter().enumerate() {
+            use crate::speech::{Act, Gesture, clause};
+            let me = self.persons[i].id;
+            let order = self.order_of(me);
+            let case = if (options[support[k]] - camp).length() < 1.0 {
+                clause(order, Some("we"), Some("stay"), None, &["here"])
+            } else {
+                clause(order, Some("we"), Some("go"), None, &["food", "there"])
+            };
+            self.say(me, None, Act::ArgueFor, case, Some(Gesture::Point), now.day);
+        }
         let standing: Vec<f32> = members
             .iter()
             .map(|&i| self.standing(bi, self.persons[i].id, &now))

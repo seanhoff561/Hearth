@@ -179,6 +179,22 @@ pub struct WorkView {
     pub play_s_left: f64,
 }
 
+/// Something said near the player, as the player makes it out (V2.1 §10.3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeardLine {
+    /// Who said it (its name), and whether to the player.
+    pub speaker: String,
+    pub to_you: bool,
+    /// The words as they sound, and what the player makes of them (words known in the player's
+    /// own tongue, half-known ones doubted, the rest as dots).
+    pub spoken: String,
+    pub sense: String,
+    /// The share made out (0–1).
+    pub understood: f32,
+    /// The gesture with it, if any (in words).
+    pub gesture: Option<String>,
+}
+
 /// What came of something done.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Acted {
@@ -373,6 +389,8 @@ pub enum ToClient {
     Work(Option<WorkView>),
     /// What came of a process, a meal or a drink.
     Acted(Acted),
+    /// What the people near said, as the player makes it out.
+    Heard(Vec<HeardLine>),
     /// A tree falls: its blocks as they stood (gone from the world now), turning down about
     /// the edge `pivot` toward `toward` over `seconds`; where it comes to rest arrives as block
     /// changes when the fall is over.

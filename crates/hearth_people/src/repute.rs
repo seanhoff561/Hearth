@@ -263,6 +263,26 @@ impl People {
         r.honest = (r.honest + (told.honest + twist - r.honest) * take).clamp(-1.0, 1.0);
         r.sure = r.sure.max(told.sure * HEARD);
         r.day = day;
+        // Told in words: the one spoken of by name, and what it does.
+        if let Who::Person(about) = told.about {
+            let what: &[&str] = if told.honest < -0.05 {
+                &["steal"]
+            } else if told.generous < -0.05 {
+                &["not", "share"]
+            } else {
+                &["good"]
+            };
+            let mut said = vec![crate::speech::Word::Name(about)];
+            said.extend(crate::speech::words(what));
+            self.say(
+                teller_id,
+                Some(hearer_id),
+                crate::speech::Act::Gossip,
+                said,
+                None,
+                day,
+            );
+        }
     }
 
     /// Those in close company talk now and then (`dt` seconds of play).

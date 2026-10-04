@@ -1573,6 +1573,11 @@ fn run(
                     ) {
                         items_changed = true;
                     }
+                    // What the people near say, as the player makes it out (V2.1 §10.3).
+                    let heard = people.heard_by(0);
+                    if !heard.is_empty() && !player.asleep {
+                        let _ = tx.send(ToClient::Heard(heard));
+                    }
                     // How the people have met the player (V2.1 §8.7), told.
                     for (words, done) in people.news_for(0) {
                         let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {

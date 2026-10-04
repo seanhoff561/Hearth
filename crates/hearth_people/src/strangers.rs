@@ -20,6 +20,7 @@ use crate::psyche::Feeling;
 use crate::repute::{Deed, Seen};
 use crate::sim::People;
 use crate::species::SpeciesSet;
+use crate::speech::{Act, Gesture, words};
 use crate::world::Now;
 
 /// A stranger a band has met and greeted: who, the day, and who greeted it.
@@ -67,6 +68,27 @@ impl People {
                 b.set_tolerance(pl, t.max(0.75));
             }
         }
+        // The greeting in words, and as their culture greets.
+        use hearth_content::schema::culture::Greeting;
+        let gesture = self
+            .bands
+            .iter()
+            .find(|b| b.id == band && b.culture.drawn())
+            .map(|b| match b.culture.greeting {
+                Greeting::Embrace => Gesture::Embrace,
+                Greeting::Hands => Gesture::Hands,
+                Greeting::Call => Gesture::Beckon,
+                Greeting::Gift => Gesture::Offer,
+            });
+        self.say(
+            me,
+            Some(them),
+            Act::Greet,
+            words(&["hello", "friend"]),
+            gesture,
+            day,
+        );
+        self.say(them, Some(me), Act::Greet, words(&["hello"]), gesture, day);
     }
 
     /// Whether a person is a guest of a band.
@@ -112,6 +134,14 @@ impl People {
         q.psyche.feel(Feeling::Affection, 0.3);
         q.record(now.day, Event::GiftFrom { who: from });
         self.give(from, to, worth, now.day);
+        self.say(
+            to,
+            Some(from),
+            Act::Thank,
+            words(&["thanks"]),
+            None,
+            now.day,
+        );
         let k = self.tie_index(b, from, now.day);
         let t = &mut self.persons[b].social.ties[k];
         t.trust = (t.trust + 0.15 * (1.0 - t.trust)).min(1.0);
@@ -181,16 +211,26 @@ impl People {
                 .count();
             let long = now.day - g.since >= ways.take_in_days;
             if long && !grown.is_empty() && trusting as f32 / grown.len() as f32 >= TAKE_IN_SHARE {
-                taken.push(g.who);
+                taken.push((g.who, g.by));
             } else {
                 kept.push(g);
             }
         }
         self.bands[bi].guests = kept;
-        for &who in &taken {
+        for &(who, by) in &taken {
             self.take_in(bi, who, now.day);
+            // The one who greeted it tells it so.
+            let stay = words(&["yes", "stay", "here"]);
+            self.say(
+                by,
+                Some(who),
+                Act::Accept,
+                stay,
+                Some(Gesture::Embrace),
+                now.day,
+            );
         }
-        taken
+        taken.into_iter().map(|(who, _)| who).collect()
     }
 
     /// A guest taken into a band: one of them now, knowing them all.

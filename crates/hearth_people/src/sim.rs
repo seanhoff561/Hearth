@@ -180,6 +180,8 @@ pub struct People {
     pub deeds: Vec<crate::repute::Seen>,
     /// The quarrels under way (V2.1 §8.6).
     pub quarrels: Vec<crate::conflict::Quarrel>,
+    /// What was said lately, for whoever hears it (V2.1 §10.2).
+    pub said: Vec<crate::speech::Said>,
 }
 
 /// The horizontal distance between two places on the planet (wrapping in x).
@@ -303,6 +305,7 @@ impl People {
             done: Vec::new(),
             deeds: Vec::new(),
             quarrels: Vec::new(),
+            said: Vec::new(),
         }
     }
 
@@ -1126,6 +1129,7 @@ impl People {
         dt: f32,
     ) {
         self.done.clear();
+        self.forget_said(now.day);
         // Bands met again from before cultures (or drawn out without one) are given theirs.
         for bi in 0..self.bands.len() {
             if !self.bands[bi].culture.drawn()
@@ -1750,6 +1754,25 @@ impl People {
                         deed: crate::repute::Deed::Shared { with: to },
                         at,
                     });
+                    use crate::speech::{Act, Gesture, clause, words};
+                    let order = self.order_of(from);
+                    let offer = clause(order, None, Some("eat"), Some("this"), &[]);
+                    self.say(
+                        from,
+                        Some(to),
+                        Act::Offer,
+                        offer,
+                        Some(Gesture::Offer),
+                        now.day,
+                    );
+                    self.say(
+                        to,
+                        Some(from),
+                        Act::Thank,
+                        words(&["thanks"]),
+                        None,
+                        now.day,
+                    );
                 }
                 self.persons[i].mind.doing = Doing::Idle;
                 self.persons[i].mind.timer = 0.0;
@@ -1809,6 +1832,18 @@ impl People {
                         t.affection = (t.affection - 0.05).max(0.0);
                     }
                     self.aggrieve(j, me, 0.08, now.day);
+                    let insult = vec![
+                        crate::speech::Word::Name(who),
+                        crate::speech::Word::Meaning("bad".to_owned()),
+                    ];
+                    self.say(
+                        me,
+                        Some(who),
+                        crate::speech::Act::Insult,
+                        insult,
+                        None,
+                        now.day,
+                    );
                 }
                 let p = &mut self.persons[i];
                 p.mind.doing = Doing::Idle;
@@ -1866,6 +1901,10 @@ impl People {
                     p.record(now.day, Event::WarnedOff { who });
                     self.persons[j].record(now.day, Event::Unwelcome { by: me });
                     self.aggrieve(j, me, 0.1, now.day);
+                    let order = self.order_of(me);
+                    let go = crate::speech::clause(order, None, Some("go"), None, &["away"]);
+                    let shoo = Some(crate::speech::Gesture::Shoo);
+                    self.say(me, Some(who), crate::speech::Act::Warn, go, shoo, now.day);
                 }
                 let stays = self.ways_of(bi, sp).is_some_and(|w| d < w.greet_m);
                 if self.persons[i].mind.timer < 1.0

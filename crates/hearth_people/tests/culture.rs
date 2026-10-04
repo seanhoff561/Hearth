@@ -408,3 +408,274 @@ fn languages_are_drawn_people_named_and_daughters_stay_related() {
     println!("{names:?}");
     assert!(names.iter().all(|n| !n.is_empty()), "every one named");
 }
+
+#[test]
+fn speech_is_made_out_as_far_as_the_language_is_known() {
+    use hearth_math::hash::Rng;
+    use hearth_people::speech::{Act, Gesture, Said, Tongue, words};
+    let b = base();
+    let species = &b.species;
+    let k = species.index_of("homo_sapiens").expect("our species");
+    let d = species.list[k].language.clone().expect("our people speak");
+    let mut world = Savanna::new();
+    let mut p = People::new(67);
+    let now = world.now();
+    let mut found = |x: f64| {
+        p.spawn_band(
+            species,
+            &b.graph,
+            &b.items,
+            &mut world,
+            k,
+            [2, 2, 0, 0],
+            DVec3::new(x, GROUND, 0.0),
+            now,
+        )
+    };
+    let (ours, theirs, kin) = (found(0.0), found(50_000.0), found(100_000.0));
+    // The third band speaks a daughter of the first's tongue, three hundred years on.
+    let mut daughter = p.bands[0]
+        .culture
+        .language
+        .as_ref()
+        .expect("a language")
+        .daughter(kin);
+    let mut rng = Rng::new(9);
+    for _ in 0..300 {
+        daughter.drift(&d, &mut rng);
+    }
+    p.bands[2].culture.language = Some(daughter);
+    let listener = p.members(ours).next().expect("a listener").id;
+    let mother = p.bands[0].culture.language.as_ref().expect("ours").id;
+    for q in p.persons.iter_mut().filter(|q| q.id == listener) {
+        q.tongues = vec![Tongue {
+            language: mother,
+            native: true,
+            words: Vec::new(),
+        }];
+    }
+    let greeting = |speaker: u64| Said {
+        speaker,
+        to: Some(listener),
+        act: Act::Greet,
+        words: words(&["hello", "friend", "come", "eat"]),
+        gesture: Some(Gesture::Beckon),
+        at: DVec3::ZERO,
+        day: now.day,
+    };
+    let made_out = |p: &People, speaker: u64| {
+        let me = p.get(listener).expect("the listener");
+        p.heard(&d, me, &greeting(speaker)).expect("heard")
+    };
+    // In its mother tongue, all of it; in a stranger's, nothing; in a related one, some.
+    let own = made_out(&p, p.members(ours).nth(1).expect("one of ours").id);
+    let stranger = p.members(theirs).next().expect("one of theirs").id;
+    let strange = made_out(&p, stranger);
+    let related = made_out(&p, p.members(kin).next().expect("one of the kin").id);
+    println!(
+        "own: {} / {}; stranger's: {} / {}; related: {} / {}",
+        own.spoken, own.sense, strange.spoken, strange.sense, related.spoken, related.sense
+    );
+    assert_eq!(own.understood, 1.0);
+    assert!(strange.understood < 0.3, "a stranger's tongue is strange");
+    assert!(
+        related.understood > strange.understood,
+        "a related tongue partly made out"
+    );
+    // Spoken to again and again, with a gesture making it plain, the stranger's words are
+    // learned.
+    for _ in 0..8 {
+        p.learn_from(listener, &greeting(stranger));
+    }
+    let learned = made_out(&p, stranger);
+    println!("after hearing it: {} / {}", learned.spoken, learned.sense);
+    assert!(learned.understood > 0.9, "learned");
+}
+
+#[test]
+fn h5_accepted_cultures_part_with_related_tongues_and_a_newcomer_learns() {
+    use hearth_people::speech::{HEARD_M, Tongue};
+    let b = base();
+    let species = &b.species;
+    let k = species.index_of("homo_sapiens").expect("our species");
+    let d = species.list[k].language.clone().expect("our people speak");
+    // One people, grown past what holds together: it splits, and the band gone off goes far.
+    let mut world = Savanna::new();
+    let mut p = People::new(68);
+    let now = world.now();
+    p.spawn_band(
+        species,
+        &b.graph,
+        &b.items,
+        &mut world,
+        k,
+        [26, 24, 14, 0],
+        DVec3::new(0.0, GROUND, 0.0),
+        now,
+    );
+    // And another people altogether, far off.
+    p.spawn_band(
+        species,
+        &b.graph,
+        &b.items,
+        &mut world,
+        k,
+        [3, 3, 0, 0],
+        DVec3::new(300_000.0, GROUND, 0.0),
+        now,
+    );
+    p.live_course(species, &b.items, &world, now);
+    p.live_course(
+        species,
+        &b.items,
+        &world,
+        Now {
+            day: now.day + 2.0,
+            ..now
+        },
+    );
+    let a = p.bands[0].id;
+    let c = p
+        .bands
+        .iter()
+        .find(|x| x.culture.parent == Some(a))
+        .map(|x| x.id)
+        .expect("a daughter culture");
+    let other = p.bands[1].id;
+    for x in p.bands.iter_mut().filter(|x| x.id == c) {
+        x.home += glam::DVec2::new(0.0, 150_000.0);
+    }
+    // Two hundred years of their lives.
+    p.live_course(
+        species,
+        &b.items,
+        &world,
+        Now {
+            day: now.day + 2.0 + 200.0 * YEAR_DAYS,
+            ..now
+        },
+    );
+    let band = |id: u64| p.bands.iter().find(|x| x.id == id).expect("the band");
+    let (ca, cc, co) = (&band(a).culture, &band(c).culture, &band(other).culture);
+    let (la, lc, lo) = (
+        ca.language.as_ref().expect("a tongue"),
+        cc.language.as_ref().expect("a tongue"),
+        co.language.as_ref().expect("a tongue"),
+    );
+    println!(
+        "two hundred years apart: values {:.2} apart, {} customs; cognates {:.2}, with a \
+         stranger people's {:.2}; water {} / {} / {}",
+        ca.value_gap(cc),
+        ca.customs_apart(cc),
+        la.kinship(lc),
+        la.kinship(lo),
+        la.say(&d, "water").unwrap_or_default(),
+        lc.say(&d, "water").unwrap_or_default(),
+        lo.say(&d, "water").unwrap_or_default()
+    );
+    assert!(
+        ca.value_gap(cc) > 0.0 && la.words != lc.words,
+        "they diverged"
+    );
+    assert!(
+        la.kinship(lc) > la.kinship(lo) + 0.25,
+        "their tongues are related, and not to a stranger people's"
+    );
+    // A newcomer from another people learns its hosts' tongue over play: what it makes out of
+    // what is said near it, early on and at the end. (One of them has been seen stealing, so
+    // there is talk.)
+    use hearth_people::memory::Who;
+    use hearth_people::repute::{Deed, Seen};
+    let mut world = Savanna::new();
+    let mut q = People::new(69);
+    let now = world.now();
+    let mut found = |n: [u16; 4], x: f64| {
+        q.spawn_band(
+            species,
+            &b.graph,
+            &b.items,
+            &mut world,
+            k,
+            n,
+            DVec3::new(x, GROUND, 2.0),
+            now,
+        )
+    };
+    let (hosts, home) = (found([3, 3, 2, 0], 2.0), found([1, 1, 0, 0], 1_000.0));
+    let theirs = q.bands[0]
+        .culture
+        .language
+        .as_ref()
+        .map(|l| l.id)
+        .expect("their tongue");
+    let mine = q.bands[1]
+        .culture
+        .language
+        .as_ref()
+        .map(|l| l.id)
+        .expect("its tongue");
+    let newcomer = q.members(home).next().map(|x| x.id).expect("a newcomer");
+    let hosts_grown: Vec<u64> = q
+        .members(hosts)
+        .filter(|x| x.age(&now) >= 18.0)
+        .map(|x| x.id)
+        .collect();
+    let there = q.get(hosts_grown[0]).expect("a host").place.pos;
+    // A player's person stays where it is put, among them.
+    for x in q.persons.iter_mut().filter(|x| x.id == newcomer) {
+        x.player = Some(1);
+        x.place.pos = there + DVec3::new(2.0, 0.0, 2.0);
+        x.tongues = vec![Tongue {
+            language: mine,
+            native: true,
+            words: Vec::new(),
+        }];
+    }
+    let thief = hosts_grown[0];
+    q.deed(
+        Seen {
+            who: Who::Person(thief),
+            deed: Deed::Took {
+                from: Who::Person(hosts_grown[1]),
+            },
+            at: there,
+        },
+        &species.norms,
+        1.0,
+        now.day,
+    );
+    let (mut early, mut late) = ((0.0f32, 0.0f32), (0.0f32, 0.0f32));
+    let minutes = 30;
+    for minute in 0..minutes {
+        for _ in 0..(60.0 / DT) as u64 {
+            step(&mut q, &mut world, &[]);
+            let me_at = q.get(newcomer).expect("the newcomer").place.pos;
+            let near: Vec<hearth_people::Said> = q
+                .said
+                .iter()
+                .filter(|s| s.speaker != newcomer && (s.at - me_at).length() < HEARD_M)
+                .filter(|s| q.tongue_of(s.speaker).is_some_and(|l| l.id == theirs))
+                .cloned()
+                .collect();
+            for s in &near {
+                let me = q.get(newcomer).expect("the newcomer");
+                if let Some(h) = q.heard(&d, me, s) {
+                    if minute < 5 {
+                        early = (early.0 + h.understood, early.1 + 1.0);
+                    } else if minute >= minutes - 5 {
+                        late = (late.0 + h.understood, late.1 + 1.0);
+                    }
+                }
+                q.learn_from(newcomer, s);
+            }
+            q.said.retain(|s| !near.contains(s));
+        }
+    }
+    let (e, l) = (early.0 / early.1.max(1.0), late.0 / late.1.max(1.0));
+    println!(
+        "the newcomer made out {e:.2} of what was said at first ({} acts), {l:.2} at the end ({} acts)",
+        early.1, late.1
+    );
+    assert!(late.1 > 0.0, "it heard them talk");
+    assert!(l > e + 0.2, "it learned their tongue");
+}

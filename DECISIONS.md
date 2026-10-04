@@ -2215,3 +2215,16 @@ cognates and to render H5's speech acts; grammar is only word order, adjective o
 affixes until speech needs more. The language lives in the culture so it splits, drifts and
 borrows with it. Persons get names in their band's language (a player's person keeps the
 player's); kin terms and place names will come from the same words as speech needs them.
+
+## D187 — Speech acts spoken through behaviour; understanding per word
+V2.1 §10.2 makes speech the deterministic core of communication. Here the acts are emitted by the
+behaviours that already carry the exchange (H4's greeting, warning, quarrel rungs, mediation,
+amends, sharing, gossip, council), so an act never needs effects of its own: words are the
+visible form of what the simulation already decided, and nothing depends on whether anyone
+understood them — the world stays deterministic and free of any conversation backend (§10.4 stays
+off). Understanding is per word and per listener: a mother tongue is known whole; another is
+learned word by word by hearing it, faster when addressed and with a gesture (the way a newcomer
+picks up a language among speakers), and a related language is made out through cognates, which
+is what makes language families matter to the player. The player sees subtitles (the sounds and
+the sense made of them) in the message list for now; the speech-act wheel by which the player
+speaks comes with H9's interaction UI.

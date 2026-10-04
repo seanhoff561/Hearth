@@ -460,18 +460,28 @@ impl Language {
         }
     }
 
-    /// How alike two languages' words are: the share of meanings whose words lie no more than a
-    /// third of their sounds apart — cognates, between related languages.
+    /// How alike two languages' words are: the share of meanings whose words are cognates.
     pub fn kinship(&self, other: &Self) -> f32 {
         let (mut n, mut alike) = (0, 0);
-        for (m, w) in &self.words {
-            if let Some((_, v)) = other.words.iter().find(|(o, _)| o == m) {
+        for (m, _) in &self.words {
+            if other.words.iter().any(|(o, _)| o == m) {
                 n += 1;
-                if apart(w, v) * 3 <= w.len().max(v.len()) {
+                if self.cognate(other, m) {
                     alike += 1;
                 }
             }
         }
         if n == 0 { 0.0 } else { alike as f32 / n as f32 }
+    }
+
+    /// Whether its word for a meaning and another language's are cognates: no more than a third
+    /// of their sounds apart.
+    pub fn cognate(&self, other: &Self, meaning: &str) -> bool {
+        let w = self.words.iter().find(|(m, _)| m == meaning);
+        let v = other.words.iter().find(|(m, _)| m == meaning);
+        matches!(
+            (w, v),
+            (Some((_, w)), Some((_, v))) if apart(w, v) * 3 <= w.len().max(v.len())
+        )
     }
 }

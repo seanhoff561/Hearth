@@ -2677,6 +2677,23 @@ impl Client {
                         c.tell(a.words, kind);
                     }
                 }
+                ToClient::Heard(lines) => {
+                    // Speech near the player, as subtitles: the words as they sound and what
+                    // the player makes of them.
+                    if let Some(c) = &mut self.crafting {
+                        for l in lines {
+                            let to = if l.to_you { " to you" } else { "" };
+                            let with = l.gesture.map_or(String::new(), |g| format!(" ({g})"));
+                            let sense = if l.understood > 0.0 {
+                                format!(" — {}", l.sense)
+                            } else {
+                                String::new()
+                            };
+                            let line = format!("{}{to}{with}: “{}”{sense}", l.speaker, l.spoken);
+                            c.tell(line, News::Hunch);
+                        }
+                    }
+                }
                 ToClient::Learned {
                     name,
                     discovered,
