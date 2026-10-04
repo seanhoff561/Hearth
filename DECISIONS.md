@@ -2100,3 +2100,18 @@ player's own family (next) can be one of them. What a family knows is a band's c
 species' knowledge everywhere and, where the coldest month is under 8 °C, its cold knowledge too
 (fire kept and made, hide wraps with the scraping, butchery, hand axe and prepared core they rest
 on, a windbreak), as D164 lists — the eras' and cultures' baselines replace this in H8.
+
+## D180 — The player's family: a household drawn at birth, a person record the player drives
+A new world draws the player's household with their birth (D173): the parents' ages, the player's,
+and the parents' other children three or four years apart — about a third of the children a
+forager mother bears not living — the eldest born when the mother was eighteen or more, the last
+by forty-four, their genomes the parents' meiosis. The birth screen shows them all; the household
+is saved with the player. Once the ecological region about the player is made (on workers, a few
+seconds), the family is set down there as a band of our species — its numbers placed as a group
+of the cells so it folds and wakes like any band — with the player's own **person record** among
+them: a `Person` whose `player` names the player. The record's mind steps aside (no choosing, no
+acting, no body of its own: the player's body is the player's), the life table neither kills it
+nor pairs it, the cells' reconciling never takes it, and the server keeps it where the player is;
+to the family it is their child, to be played with and watched. Until the childhood is lived
+(next), the player begins at their people's coming of age (16 for foragers, the life table's
+`coming_of_age`). Saves from before families keep their player as they were, without one.

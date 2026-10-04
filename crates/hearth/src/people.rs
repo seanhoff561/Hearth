@@ -468,6 +468,7 @@ impl PeopleNear {
         year_frac: f32,
         regions: &[DVec3],
         players: &[PlayerSeen],
+        family: Option<(&hearth_people::Birth, &hearth_people::Household)>,
         now: Now,
         dt: f32,
     ) -> bool {
@@ -529,6 +530,25 @@ impl PeopleNear {
                 nests: Vec::new(),
             };
             if every {
+                // The family the player is born into, set down where they begin once the land
+                // about is known (V2.1 Addendum A).
+                if let Some((birth, household)) = family
+                    && self.live.player_person(0).is_none()
+                    && let Some(&p) = at.first()
+                {
+                    found_family(
+                        &mut self.live,
+                        &self.species,
+                        &mut fauna.eco,
+                        graph,
+                        items,
+                        &mut world,
+                        birth,
+                        household,
+                        p,
+                        now,
+                    );
+                }
                 self.live.fold(&mut fauna.eco, &self.species, at, now);
                 self.live.draw_out(
                     &mut fauna.eco,
@@ -867,5 +887,51 @@ pub fn drive(v: &PersonView) -> Drive {
         shiver,
         breaths_per_min: breaths,
         holding: hearth_character::Holding::default(),
+    }
+}
+
+/// Founds the family the player is born into at their place, its numbers a group of the
+/// ecological cells so that it folds and wakes as any band does.
+#[allow(clippy::too_many_arguments)]
+fn found_family(
+    live: &mut People,
+    species: &SpeciesSet,
+    eco: &mut hearth_fauna::ecology::Ecology,
+    graph: &Graph,
+    items: &Items,
+    world: &mut dyn hearth_people::World,
+    birth: &hearth_people::Birth,
+    household: &hearth_people::Household,
+    p: DVec3,
+    now: Now,
+) {
+    if !eco.regions.contains_key(&eco.region_key(p.x, p.z)) {
+        return;
+    }
+    let kind = crate::born::PLAYER_SPECIES;
+    let founding = hearth_people::Founding {
+        birth,
+        household,
+        species: kind,
+        player: 0,
+        at: p,
+        cold: hearth_people::sim::cold_country(eco, p.x, p.z),
+    };
+    let Some((band, _)) = live.found_family(species, graph, items, world, founding, now) else {
+        return;
+    };
+    let Some(sp) = species.get(kind) else {
+        return;
+    };
+    let n = live.numbers(band, sp, &now);
+    let group = eco.catalog.index(kind).and_then(|si| {
+        eco.place_group(
+            si as u16,
+            [p.x, p.z],
+            [n.young, n.juveniles, n.females, n.males],
+        )
+    });
+    if let Some(b) = live.bands.iter_mut().find(|b| b.id == band) {
+        b.population_group = group;
     }
 }

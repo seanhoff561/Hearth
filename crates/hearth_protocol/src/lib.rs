@@ -266,6 +266,12 @@ pub struct Born {
     pub you: hearth_character::Appearance,
     /// Where (degrees of latitude): its sun set the pool's colouring.
     pub latitude_deg: f64,
+    /// The mother's, the player's and the father's ages (years) as the life begins.
+    #[serde(default)]
+    pub ages: [f32; 3],
+    /// Their other children, eldest first: their ages and how they look.
+    #[serde(default)]
+    pub siblings: Vec<(f32, hearth_character::Appearance)>,
 }
 
 /// The player's body as the client shows it and lets it move.

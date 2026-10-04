@@ -535,6 +535,32 @@ fn usual_density(prey: &Species) -> f32 {
     }
 }
 
+impl Ecology {
+    /// Sets a group of a species down at a place, its numbers as given and drawn out already
+    /// (the family a player is born into): its id, or none where its region is not yet made.
+    pub fn place_group(&mut self, species: u16, at: [f64; 2], numbers: [u16; 4]) -> Option<u64> {
+        let key = self.region_key(at[0], at[1]);
+        let id = self.next_id;
+        let r = self.regions.get_mut(&key)?;
+        self.next_id += 1;
+        let [young, juveniles, females, males] = numbers;
+        r.groups.push(Group {
+            id,
+            species,
+            home: at,
+            pos: at,
+            young,
+            juveniles,
+            females,
+            males,
+            condition: 0.75,
+            food: 0.0,
+            live: true,
+        });
+        Some(id)
+    }
+}
+
 impl Region {
     /// The local index of the cell at a world position, if it is in this region.
     pub fn cell_at(&self, eco_cells_around: i64, x: f64, z: f64) -> Option<usize> {

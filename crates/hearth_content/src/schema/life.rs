@@ -52,6 +52,8 @@ entry! {
         pub maternal_death: f32,
         /// The ages women and men first pair.
         pub pairing_age: (f32, f32),
+        /// The age the young are counted grown, and a player's childhood ends (Addendum A).
+        pub coming_of_age: f32,
         /// The people a square kilometre of their land feeds well (where more live about,
         /// children die more and fewer are born), and the number at which a band splits in two.
         pub density: f32,

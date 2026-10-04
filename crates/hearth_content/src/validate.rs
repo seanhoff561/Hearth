@@ -531,6 +531,7 @@ pub fn validate(content: &Content, report: &mut Report) {
             c.range("twins", t.twins, 0.0, 0.1);
             c.range("maternal_death", t.maternal_death, 0.0, 0.2);
             c.range("density", t.density, 0.001, 10.0);
+            c.range("coming_of_age", t.coming_of_age, 8.0, 25.0);
             c.range("crowding children", t.crowding.children, 0.0, 10.0);
             c.range("crowding conception", t.crowding.conception, 0.0, 10.0);
             for (age, f) in &t.fecundability {

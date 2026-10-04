@@ -110,6 +110,16 @@ and where the coldest month is below 8 °C its `cold_knowledge` besides (keeping
 hide wraps and what they rest on, a windbreak) — its band's culture holds the list, and its
 techniques are what that knowledge opens.
 
+## The player's family (H3 (c))
+
+A new world draws the player's **household** with their birth: the parents' ages, the player's,
+and their brothers and sisters (three or four years apart, some born not living, the eldest born
+when the mother was eighteen or more, the youngest by her forty-fourth year; their genomes the
+parents' meiosis). The birth screen shows all of them with their ages. When the land about the
+player is made, the family is set down there as a band of our species and a group of the cells,
+the player's own **person record** among them (`Person::player`): the family's child to them, its
+mind stepped aside for the player, kept where the player is, never taken by the life table (D180).
+
 ## To come in H3
 
 Ageing's look and the elders' part; inheritance; Wild Earth's families and the player born into

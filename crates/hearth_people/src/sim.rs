@@ -196,6 +196,17 @@ const LAID_TO_REST_DAYS: f64 = 1.0;
 /// from the wind of the people who live in it (D164).
 const COLD_C: f32 = 8.0;
 
+/// Whether a country's winters are cold, by its ecological cell's climate (D164).
+pub fn cold_country(eco: &Ecology, x: f64, z: f64) -> bool {
+    eco.regions
+        .get(&eco.region_key(x, z))
+        .and_then(|r| {
+            r.cell_at(eco.cells_around, x, z)
+                .and_then(|c| r.habitat.get(c))
+        })
+        .is_some_and(|h| h.coldest_c() < COLD_C)
+}
+
 /// How near the young play together, and see a grown one's work to go and watch it (m); how
 /// close they crouch to watch it, and to take it in.
 const PLAY_M: f64 = 12.0;
@@ -328,10 +339,7 @@ impl People {
                     males: g.males,
                 };
                 let range_m = (sp.home_range_km2 as f64 / std::f64::consts::PI).sqrt() * 1000.0;
-                let cold = r
-                    .cell_at(eco.cells_around, g.pos[0], g.pos[1])
-                    .and_then(|c| r.habitat.get(c))
-                    .is_some_and(|h| h.coldest_c() < COLD_C);
+                let cold = cold_country(eco, g.pos[0], g.pos[1]);
                 groups.push((g.id, si, n, g.pos, g.home, range_m, cold));
             }
         }
@@ -613,7 +621,7 @@ impl People {
     }
 
     /// Sets a band's living members down on the ground they stand over (not in the water).
-    fn onto_the_ground(&mut self, bi: usize, world: &dyn Senses, here: DVec3) {
+    pub(crate) fn onto_the_ground(&mut self, bi: usize, world: &dyn Senses, here: DVec3) {
         let band = self.bands[bi].id;
         for p in self
             .persons
@@ -630,7 +638,7 @@ impl People {
     }
 
     /// A place about `here`, from the band's stream.
-    fn scatter(&mut self, bi: usize, here: DVec3, near: f64, far: f64) -> DVec3 {
+    pub(crate) fn scatter(&mut self, bi: usize, here: DVec3, near: f64, far: f64) -> DVec3 {
         let rng = &mut self.bands[bi].rng;
         let a = rng.next_f64() * std::f64::consts::TAU;
         let d = near + rng.next_f64() * (far - near);
@@ -663,6 +671,7 @@ impl People {
         if have > target {
             let mut frail: Vec<(f64, usize)> = living
                 .iter()
+                .filter(|&&i| self.persons[i].player.is_none())
                 .map(|&i| {
                     let p = &self.persons[i];
                     let age = p.age(&now);
@@ -916,7 +925,7 @@ impl People {
     ) -> Vec<PersonView> {
         self.persons
             .iter()
-            .filter(|p| p.tier == Tier::Full)
+            .filter(|p| p.tier == Tier::Full && p.player.is_none())
             .filter(|p| {
                 p.life
                     .died
@@ -1018,7 +1027,7 @@ impl People {
             let bands = &self.bands;
             self.persons
                 .par_iter_mut()
-                .filter(|p| p.tier == Tier::Full && p.alive())
+                .filter(|p| p.tier == Tier::Full && p.alive() && p.player.is_none())
                 .for_each(|p| {
                     let Some(sp) = species.get(&p.species) else {
                         return;
@@ -1045,7 +1054,8 @@ impl People {
         // 2. Acting, one at a time in the persons' order.
         for i in 0..self.persons.len() {
             let p = &self.persons[i];
-            if p.tier != Tier::Full {
+            // A player's person is moved by the player.
+            if p.tier != Tier::Full || p.player.is_some() {
                 continue;
             }
             if !p.alive() && p.body.dead.is_none() {
@@ -2147,7 +2157,7 @@ fn trunk_top(ground: &dyn Ground, foot: DVec3, height: f64) -> f64 {
 
 /// Learns the places about a band as it is drawn out: the water, the trees to sleep in, the
 /// anvils lying about.
-fn know_about(band: &mut Band, world: &mut dyn World, items: &Items, here: DVec3) {
+pub(crate) fn know_about(band: &mut Band, world: &mut dyn World, items: &Items, here: DVec3) {
     if let Some((bank, _)) = water_near(world.ground(), here, 80.0) {
         Places::remember(&mut band.places.water, bank, 10.0, 6);
     }

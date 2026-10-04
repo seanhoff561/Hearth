@@ -13,6 +13,7 @@
 
 pub mod band;
 pub mod birth;
+pub mod family;
 pub mod genome;
 pub mod inspect;
 pub mod life;
@@ -32,6 +33,7 @@ pub mod world;
 
 pub use band::{Band, Culture, Places};
 pub use birth::Birth;
+pub use family::{Founding, Household, Sibling};
 pub use genome::{Genetics, Genome, Phenotype};
 pub use hearth_content::schema::humans::LifeStage;
 pub use lineage::{Kinship, Pedigree};

@@ -21,6 +21,8 @@
             nursing_years: 2.75, nursing_factor: 0.05,
             twins: 0.012, maternal_death: 0.01,
             pairing_age: (17.0, 20.0),
+            // Foragers count the young grown about fifteen or sixteen (Addendum A).
+            coming_of_age: 16.0,
             // A tenth of a person to the square kilometre, as foragers of open country live
             // (H6 lets the land say); bands of twenty-five to fifty, splitting past fifty-five.
             density: 0.1, band_splits_at: 60,

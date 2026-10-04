@@ -1007,27 +1007,64 @@ fn born_screen(
         }
         y += 3.0;
     }
-    // The three, under their names.
+    // The family, under who each is and their age: the elder children, the mother, the player,
+    // the father, the younger children.
     let top = y + 6.0;
-    let rect = Rect::new(8.0, top, size.0 - 16.0, (size.1 - top - 62.0).max(40.0));
-    let people = vec![born.mother.clone(), born.you.clone(), born.father.clone()];
-    let names = ["menu.born.mother", "menu.born.you", "menu.born.father"];
-    for (k, key) in names.iter().enumerate() {
-        let name = if k == 1 && !born.you.name.trim().is_empty() {
-            format!("{} ({})", ui.t(key), born.you.name.trim())
+    let rect = Rect::new(8.0, top, size.0 - 16.0, (size.1 - top - 72.0).max(40.0));
+    let kin = |a: &hearth_character::Appearance| {
+        if a.body == hearth_character::BodyType::Female {
+            "menu.born.sister"
         } else {
-            ui.t(key)
-        };
-        let cx = preview_x(&rect, 3, (k as f32 - 1.0) * PREVIEW_SPACING_M);
-        let lw = ui.font.width(&name) as f32;
-        let colour = if k == 1 { theme::TEXT } else { theme::DIM };
-        ui.label(
-            (cx - lw / 2.0).round(),
-            rect.y + rect.h + 2.0,
-            &name,
-            colour,
-        );
+            "menu.born.brother"
+        }
+    };
+    let you_age = born.ages[1];
+    let mut family: Vec<(String, f32, hearth_character::Appearance)> = Vec::new();
+    for (age, a) in born.siblings.iter().filter(|s| s.0 > you_age) {
+        family.push((ui.t(kin(a)), *age, a.clone()));
     }
+    family.push((ui.t("menu.born.mother"), born.ages[0], born.mother.clone()));
+    let you = if born.you.name.trim().is_empty() {
+        ui.t("menu.born.you")
+    } else {
+        format!("{} ({})", ui.t("menu.born.you"), born.you.name.trim())
+    };
+    family.push((you, you_age, born.you.clone()));
+    family.push((ui.t("menu.born.father"), born.ages[2], born.father.clone()));
+    for (age, a) in born.siblings.iter().filter(|s| s.0 <= you_age) {
+        family.push((ui.t(kin(a)), *age, a.clone()));
+    }
+    let n = family.len();
+    for (k, (name, age, a)) in family.iter().enumerate() {
+        let cx = preview_x(
+            &rect,
+            n,
+            (k as f32 - (n as f32 - 1.0) / 2.0) * PREVIEW_SPACING_M,
+        );
+        let years = if *age < 1.0 {
+            ui.t("menu.born.newborn")
+        } else {
+            ui.lang.format(
+                "menu.born.years",
+                &[("n", &format!("{}", age.floor() as u32))],
+            )
+        };
+        let colour = if a == &born.you {
+            theme::TEXT
+        } else {
+            theme::DIM
+        };
+        for (line, text) in [name, &years].into_iter().enumerate() {
+            let lw = ui.font.width(text) as f32;
+            ui.label(
+                (cx - lw / 2.0).round(),
+                rect.y + rect.h + 2.0 + line as f32 * hearth_ui::font::LINE as f32,
+                text,
+                colour,
+            );
+        }
+    }
+    let people: Vec<hearth_character::Appearance> = family.into_iter().map(|(_, _, a)| a).collect();
     let mut c = Column::new(((size.0 - W) / 2.0).round(), size.1 - 46.0, W);
     let lights: Vec<String> = PreviewLight::ALL.iter().map(|l| ui.t(l.key())).collect();
     ui.cycle(c.row(ROW), &ui.t("menu.character.light"), &lights, light);

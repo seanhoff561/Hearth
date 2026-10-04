@@ -89,6 +89,10 @@ struct PlayerSave {
     /// one when loaded).
     #[serde(default)]
     birth: Option<hearth_people::Birth>,
+    /// The household they were born into (H3): their parents' ages, theirs, their brothers and
+    /// sisters (a save from before families has none, and its player no family).
+    #[serde(default)]
+    household: Option<hearth_people::Household>,
 }
 
 /// Handle to the server thread; it saves and stops when dropped.
@@ -396,6 +400,7 @@ fn save(
     player: &Player,
     appearance: &hearth_character::Appearance,
     birth: &Option<hearth_people::Birth>,
+    household: &Option<hearth_people::Household>,
     world_items: &hearth_items::WorldItems,
     workshop: &Workshop,
     lw: &LocalWorld,
@@ -414,6 +419,7 @@ fn save(
         player: player.clone(),
         appearance: appearance.clone(),
         birth: birth.clone(),
+        household: household.clone(),
     };
     if let Err(e) = s
         .dir
@@ -489,15 +495,25 @@ fn run(
     // Who the player is: the child of two parents of the place they begin (V2.1 Addendum A,
     // D173), looking as their genes make them; a save from before genes draws its birth now.
     let genetics = hearth_people::Genetics::from_content(&content);
-    let (mut player, mut appearance, mut birth, new_life) = match saved {
-        Some(p) => (p.player, p.appearance.sanitized(), p.birth, false),
+    let (mut player, mut appearance, mut birth, mut household, new_life) = match saved {
+        Some(p) => (
+            p.player,
+            p.appearance.sanitized(),
+            p.birth,
+            p.household,
+            false,
+        ),
         None => (
             Player::new(&cfg, first_spawn, seed ^ 0x5eed),
             crate::born::unborn(&spec.wish),
             None,
+            None,
             true,
         ),
     };
+    // A new life begins in a family of the place, at the age its people count the young grown
+    // (until the childhood itself is lived, H3).
+    let life_begins = crate::born::coming_of_age(&content);
     if birth.is_none()
         && let Some(g) = &genetics
     {
@@ -509,7 +525,16 @@ fn run(
         let latitude = planet.latitude_deg(player.mover.pos.z);
         birth = crate::born::draw(g, latitude, female, seed);
         if let Some(b) = &birth {
-            appearance = crate::born::player(&content, b, &appearance.name, appearance.loincloth);
+            let age = if new_life {
+                life_begins
+            } else {
+                crate::born::GROWN_YEARS
+            };
+            appearance =
+                crate::born::player(&content, b, &appearance.name, appearance.loincloth, age);
+            if new_life {
+                household = Some(crate::born::household(g, b, age, seed));
+            }
         }
     }
     let items = Arc::new(hearth_items::Items::from_content(&content));
@@ -673,7 +698,7 @@ fn run(
     // A new life begins with the birth shown.
     if new_life && let Some(b) = &birth {
         let latitude = planet.latitude_deg(player.mover.pos.z);
-        let shown = crate::born::shown(&content, b, &appearance, latitude);
+        let shown = crate::born::shown(&content, b, &appearance, latitude, household.as_ref());
         let _ = tx.send(ToClient::Born(Box::new(shown)));
     }
 
@@ -778,6 +803,7 @@ fn run(
                                             b,
                                             &wish.name,
                                             wish.loincloth,
+                                            crate::born::GROWN_YEARS,
                                         );
                                         birth = next;
                                         reborn = true;
@@ -814,7 +840,8 @@ fn run(
                             let _ = tx.send(ToClient::Person(appearance.clone()));
                             if reborn && let Some(b) = &birth {
                                 let latitude = planet.latitude_deg(at.z);
-                                let shown = crate::born::shown(&content, b, &appearance, latitude);
+                                let shown =
+                                    crate::born::shown(&content, b, &appearance, latitude, None);
                                 let _ = tx.send(ToClient::Born(Box::new(shown)));
                             }
                             let _ = tx.send(ToClient::Placed(player.mover));
@@ -1043,6 +1070,7 @@ fn run(
                         &player,
                         &appearance,
                         &birth,
+                        &household,
                         &world_items,
                         &workshop,
                         &lw,
@@ -1058,6 +1086,7 @@ fn run(
                         &player,
                         &appearance,
                         &birth,
+                        &household,
                         &world_items,
                         &workshop,
                         &lw,
@@ -1127,6 +1156,9 @@ fn run(
                     };
                     let crafts = workshop.crafts.clone();
                     let graph = workshop.graph.clone();
+                    // The player's person where the player is.
+                    let yaw = last_moved.as_ref().map_or(0.0, |m| m.yaw);
+                    people.live.place_player(0, at, yaw);
                     if people.tick(
                         &mut lw,
                         &mut fauna,
@@ -1140,6 +1172,7 @@ fn run(
                         now.year_frac,
                         &[at],
                         &[seen],
+                        birth.as_ref().zip(household.as_ref()),
                         people_now,
                         TICK_S as f32,
                     ) {
@@ -1379,6 +1412,7 @@ fn run(
                         &player,
                         &appearance,
                         &birth,
+                        &household,
                         &world_items,
                         &workshop,
                         &lw,
@@ -1546,6 +1580,7 @@ fn run(
                     &player,
                     &appearance,
                     &birth,
+                    &household,
                     &world_items,
                     &workshop,
                     &lw,
@@ -1599,6 +1634,7 @@ fn run(
                     &player,
                     &appearance,
                     &birth,
+                    &household,
                     &world_items,
                     &workshop,
                     &lw,
@@ -1615,6 +1651,7 @@ fn run(
                     &player,
                     &appearance,
                     &birth,
+                    &household,
                     &world_items,
                     &workshop,
                     &lw,
@@ -1670,6 +1707,7 @@ fn run(
                     &player,
                     &appearance,
                     &birth,
+                    &household,
                     &world_items,
                     &workshop,
                     &lw,

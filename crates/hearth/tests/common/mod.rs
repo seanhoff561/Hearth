@@ -41,6 +41,8 @@ pub struct World {
     pub generator: Arc<hearth_worldgen::WorldGenerator>,
     /// The animals near the player as the server last told of them.
     pub animals: Vec<hearth_fauna::live::AnimalView>,
+    /// The people near the player as the server last told of them.
+    pub people: Vec<hearth_people::PersonView>,
     /// The last census of the groups about the player.
     pub census: Option<Vec<(u16, glam::DVec2, u32)>>,
     /// The signs animals left about the player, as last told.
@@ -128,6 +130,7 @@ impl World {
             body: None,
             generator: ready.generator.clone(),
             animals: Vec::new(),
+            people: Vec::new(),
             census: None,
             signs: Vec::new(),
             calls: Vec::new(),
@@ -158,6 +161,7 @@ impl World {
                 ToClient::Work(w) => self.working = w.is_some(),
                 ToClient::Body(b) => self.body = Some(*b),
                 ToClient::Animals(v) => self.animals = v,
+                ToClient::People(v) => self.people = v,
                 ToClient::Census(c) => self.census = Some(c),
                 ToClient::Signs { signs, .. } => self.signs = signs,
                 ToClient::Calls(c) => self.calls.extend(c),

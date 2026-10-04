@@ -2337,6 +2337,7 @@ fn hominins_living(
             year_frac,
             &[centre],
             &[],
+            None,
             hearth_people::Now {
                 tick: t,
                 hour,

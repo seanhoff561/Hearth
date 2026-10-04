@@ -31,6 +31,7 @@ pub struct Table {
     pub twins: f32,
     pub maternal_death: f32,
     pub pairing_age: (f32, f32),
+    pub coming_of_age: f32,
     /// The persons a square kilometre feeds well.
     pub density: f32,
     pub splits_at: u16,
@@ -84,6 +85,7 @@ impl Tables {
                     twins: t.twins,
                     maternal_death: t.maternal_death,
                     pairing_age: t.pairing_age,
+                    coming_of_age: t.coming_of_age,
                     density: t.density,
                     splits_at: t.band_splits_at.max(2),
                     crowding: t.crowding,
@@ -226,6 +228,10 @@ impl People {
         let crowd = self.crowd(bi, table);
         // Deaths, by age; more children die where the land is crowded.
         for &i in &living {
+            // A player's person dies as the player's body does, not by the table.
+            if self.persons[i].player.is_some() {
+                continue;
+            }
             let a = age(&self.persons[i]);
             let mut h = table.mortality.hazard(a.max(0.0));
             if a < 15.0 {
@@ -241,7 +247,7 @@ impl People {
         for &i in &living {
             let p = &self.persons[i];
             let a = age(p);
-            if !p.alive() || p.tier != Tier::Full || a >= maturity {
+            if !p.alive() || p.tier != Tier::Full || a >= maturity || p.player.is_some() {
                 continue;
             }
             let lived = p.body.age_s > 0.0;
@@ -273,7 +279,7 @@ impl People {
         let mut born_any = false;
         for &i in &living {
             let p = &self.persons[i];
-            if !p.life.female || !p.alive() {
+            if !p.life.female || !p.alive() || p.player.is_some() {
                 continue;
             }
             if let Some(due) = p.life.pregnant.clone() {
@@ -429,7 +435,8 @@ impl People {
     /// their kind within [`MATES_M`], the one of them who disperses moving to the other's band.
     fn pair(&mut self, bi: usize, sp: &Species, table: &Table, day: f64, year_days: f64) {
         let age = |p: &Person| (day - p.life.born) / year_days;
-        let free = |p: &Person| p.alive() && p.social.bond.is_none();
+        // Players pair as they choose (H4), not by the table.
+        let free = |p: &Person| p.alive() && p.social.bond.is_none() && p.player.is_none();
         let mut women: Vec<usize> = self
             .living(bi)
             .into_iter()

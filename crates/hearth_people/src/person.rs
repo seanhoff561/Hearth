@@ -206,6 +206,11 @@ pub struct Person {
     /// Its mental map, the people it knows, what happened to it (V2.1 §6.3).
     #[serde(default)]
     pub memory: crate::memory::Memory,
+    /// The player whose person it is, if any: its mind steps aside and the player's intents
+    /// drive it (the player's body and knowledge are the player's own); the life table does not
+    /// take it.
+    #[serde(default)]
+    pub player: Option<u64>,
     /// Its own random stream: what it draws does not depend on who else drew first.
     pub rng: Rng,
 }
@@ -280,6 +285,7 @@ impl Person {
             phenotype: None,
             psyche: crate::psyche::Psyche::default(),
             memory: crate::memory::Memory::default(),
+            player: None,
             rng,
         }
     }
@@ -320,6 +326,7 @@ impl Person {
             phenotype: None,
             psyche: crate::psyche::Psyche::default(),
             memory: crate::memory::Memory::default(),
+            player: None,
             rng,
         }
     }

@@ -76,15 +76,22 @@ fn render(
     actions
 }
 
-/// The birth screen of a birth drawn at a latitude: the parents and the child as their genes
-/// made them.
+/// The birth screen of a birth drawn at a latitude: the family, as their genes made them.
 fn born(latitude: f64, female: Option<bool>, name: &str) -> Screen {
     let content = hearth_content::Content::load_base();
     let g = hearth_people::Genetics::from_content(&content).expect("the genetics");
     let b = hearth::born::draw(&g, latitude, female, 7).expect("a birth");
-    let you = hearth::born::player(&content, &b, name, hearth_character::Loincloth::Hide);
+    let age = hearth::born::coming_of_age(&content);
+    let you = hearth::born::player(&content, &b, name, hearth_character::Loincloth::Hide, age);
+    let family = hearth::born::household(&g, &b, age, 7);
     Screen::Born {
-        born: Box::new(hearth::born::shown(&content, &b, &you, latitude)),
+        born: Box::new(hearth::born::shown(
+            &content,
+            &b,
+            &you,
+            latitude,
+            Some(&family),
+        )),
         sway: 0.0,
         light: 0,
     }
