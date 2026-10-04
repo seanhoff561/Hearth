@@ -875,7 +875,15 @@ impl Client {
                 self.act_chosen();
             }
         }
-        if input.was_pressed(builtin::INTERACT) {
+        // A thing held out to one of the people within reach: a gift (V2.1 §8.7).
+        let give = self
+            .person_in_reach()
+            .filter(|_| self.busy_hand().is_some());
+        if input.was_pressed(builtin::INTERACT)
+            && let Some(person) = give
+        {
+            self.server.send(ToServer::GiveTo { person });
+        } else if input.was_pressed(builtin::INTERACT) {
             match self.aim {
                 Some(Aim::Item(id)) => self.server.send(ToServer::PickUp(id)),
                 Some(Aim::Block { .. }) => {
@@ -939,6 +947,22 @@ impl Client {
         } else {
             self.dragged_at = None;
         }
+    }
+
+    /// The person within reach the eye is on, if any (to hand a thing to).
+    fn person_in_reach(&self) -> Option<u64> {
+        let eye = self.camera.pos;
+        let ahead = self.camera.forward().as_dvec3();
+        self.people
+            .iter()
+            .filter_map(|(id, s)| {
+                let to = s.pos + DVec3::Y * (s.target.height_m as f64 * 0.6) - eye;
+                let d = to.length();
+                let cos = to.dot(ahead) / d.max(1e-6);
+                (d < 3.0 && cos > 0.9).then_some((*id, d))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _)| id)
     }
 
     /// The developer's inspector (F3): the person looked at — the nearest within 40 m whose

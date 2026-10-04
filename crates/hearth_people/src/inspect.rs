@@ -97,6 +97,17 @@ pub fn report(
             Event::Inherited { from } => format!("took up what #{from} had carried"),
             Event::Breached { breach } => format!("seen breaking a norm: {breach:?}"),
             Event::CastOut { from } => format!("cast out of band {from}"),
+            Event::MovedCamp { band } => format!("moved camp with band {band}"),
+            Event::Quarrelled { with } => format!("quarrelled with #{with}"),
+            Event::Fought { with } => format!("came to blows with #{with}"),
+            Event::Mediated { a, b } => format!("talked #{a} and #{b} round"),
+            Event::MadeAmends { to } => format!("made amends to #{to}"),
+            Event::Left { from } => format!("left band {from} after a feud"),
+            Event::Greeted { who } => format!("greeted #{who}"),
+            Event::WarnedOff { who } => format!("warned #{who} off"),
+            Event::Unwelcome { by } => format!("warned off by #{by}"),
+            Event::TakenIn { band } => format!("taken into band {band}"),
+            Event::GiftFrom { who } => format!("given a gift by #{who}"),
             Event::Hurt => "badly hurt".to_owned(),
             Event::Mourned { who } => format!("mourned #{who}"),
         };
@@ -306,6 +317,29 @@ pub fn report(
     let band = people.bands.iter().find(|b| b.id == p.social.band);
     let living = people.members(p.social.band).filter(|q| q.alive()).count();
     let mut social = vec![format!("band {} of {living}", p.social.band)];
+    if let Some(b) = band {
+        if let Some(c) = b.camp {
+            social.push(format!("camp at {:.0}, {:.0}", c.x, c.z));
+        }
+        if let Some(c) = &b.council {
+            social.push(format!(
+                "last council, day {:.1}: {} places argued for, {} rounds, {}",
+                c.day,
+                c.options.len(),
+                c.rounds,
+                match c.chosen {
+                    Some(at) => format!("agreed on {:.0}, {:.0}", at.x, at.z),
+                    None => "no agreement".to_owned(),
+                }
+            ));
+        }
+    }
+    if let Some(bi) = people.bands.iter().position(|b| b.id == p.social.band) {
+        social.push(format!(
+            "standing in its band {:.2}",
+            people.standing(bi, p.id, now)
+        ));
+    }
     if let Some(with) = p.social.bond {
         social.push(format!("paired with #{with}"));
     }
@@ -394,7 +428,53 @@ pub fn report(
     if !children.is_empty() {
         social.push(format!("children {}", children.join(", ")));
     }
+    // Its grudges and quarrels; its band's guests.
+    let grudges: Vec<String> = p
+        .social
+        .ties
+        .iter()
+        .filter(|t| t.rivalry >= 0.1 || t.quarrels > 0)
+        .map(|t| {
+            format!(
+                "#{} rivalry {:.2}, {} quarrels{}",
+                t.who,
+                t.rivalry,
+                t.quarrels,
+                if t.fear > 0.05 {
+                    format!(", fears {:.2}", t.fear)
+                } else {
+                    String::new()
+                }
+            )
+        })
+        .collect();
+    if !grudges.is_empty() {
+        social.push(format!("grudges: {}", grudges.join("; ")));
+    }
+    if let Some(q) = people
+        .quarrels
+        .iter()
+        .find(|q| q.a == p.id || q.b == p.id || q.mediator == Some(p.id))
+    {
+        social.push(format!(
+            "quarrel between #{} and #{}: {:?}, {:.0} s{}",
+            q.a,
+            q.b,
+            q.rung,
+            q.held,
+            q.mediator
+                .map_or(String::new(), |m| format!(", #{m} stepping in"))
+        ));
+    }
     if let Some(b) = band {
+        if !b.guests.is_empty() {
+            let words: Vec<String> = b
+                .guests
+                .iter()
+                .map(|g| format!("#{} since day {:.1}", g.who, g.since))
+                .collect();
+            social.push(format!("its band's guests: {}", words.join(", ")));
+        }
         for (player, t) in &b.tolerance {
             social.push(format!("at ease with player {player}: {t:.2}"));
         }

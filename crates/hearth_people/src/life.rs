@@ -233,6 +233,9 @@ impl People {
             self.fade_ties(bi, day, year_days / STEPS_A_YEAR * PAIRING_EVERY as f64);
             self.fade_reputes(bi);
             self.cast_out(bi, &species.norms, day, year_days);
+            if let Some(w) = &sp.ways {
+                self.feuds(bi, w, &Now { day, ..now });
+            }
         }
         let crowd = self.crowd(bi, table);
         // Deaths, by age; more children die where the land is crowded.
@@ -623,6 +626,12 @@ impl People {
         new.population_group = None;
         new.lived_to = Some(day);
         new.rng = crate::sim::band_stream(self.seed, id);
+        new.council = None;
+        new.weighed = 0.0;
+        new.guests = Vec::new();
+        new.camp = self.bands[bi]
+            .camp
+            .map(|c| DVec3::new(new.home.x, c.y, new.home.y));
         for (head, i) in household {
             if !going.contains(&head) {
                 continue;

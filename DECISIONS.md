@@ -2167,3 +2167,22 @@ with the player: what a player puts down stays theirs and the people leave it be
 lay down is the band's to use (personal property among people comes with cultures). A person's
 views and ties are bounded (sixty views, a hundred and fifty ties) and fade, so long runs keep
 them small.
+
+## D184 — Conflict as a ladder of the grown, strangers met by a people's ways
+Quarrels (V2.1 §8.6) are kept by the registry, not by either party's mind: a quarrel holds both
+to it (and draws in one who steps in) until it ends, rung by rung — argument, threats, blows —
+each rung's time a people's way (data), each second's chances of easing (backing down, a
+mediator, amends) and each rung's chance of rising read from the two's psyches. Grievances are
+the rivalry already in ties, raised by the wrongs the people already see (breaches, mockery,
+warnings), so conflict comes out of what has happened between them and not from a roll. Blows
+are a short scuffle with bruises, only between the grown, never with a player (whose body is the
+game's) — ground rule 4's non-gratuitous level; a feud ends as foragers' feuds mostly end, by one
+side moving away (Woodburn 1982; Lee 1979). Strangers (§8.7) are those one does not trust, of no
+band hosting one: watched, met and greeted, guests fed by hospitality, made friends by gifts,
+taken in when most trust them; warned off where the country is crowded (the forager form of a
+territorial dispute) or a name or grudge says so — all per the people's ways
+(`humans/social/ways.ron`), which H5's cultures will vary. Humans stop fleeing a calm player as
+the hominins do: they meet them instead (habituation stays for the apes and early hominins).
+Group conflict beyond this — raids, war, alliances as institutions — waits for the eras that
+have them (H11–H12); kin married into another band are not strangers there, which is the
+forager alliance by marriage.

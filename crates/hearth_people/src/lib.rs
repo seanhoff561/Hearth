@@ -13,6 +13,8 @@
 
 pub mod band;
 pub mod birth;
+pub mod conflict;
+pub mod council;
 pub mod family;
 pub mod genome;
 pub mod inspect;
@@ -29,6 +31,7 @@ pub mod repute;
 pub mod save;
 pub mod sim;
 pub mod species;
+pub mod strangers;
 pub mod ties;
 pub mod watch;
 pub mod work;
@@ -36,13 +39,14 @@ pub mod world;
 
 pub use band::{Band, Culture, Places};
 pub use birth::Birth;
+pub use conflict::{Quarrel, Rung, Ways, WaysSet};
 pub use family::{Founding, Household, PlayerKin, Sibling};
 pub use genome::{Genetics, Genome, Phenotype};
 pub use hearth_content::schema::humans::LifeStage;
 pub use lineage::{Kinship, Pedigree};
 pub use looks::{Eyes, Look, look};
 pub use memory::{Happened, Memory, PlaceKind, Who};
-pub use mind::{Doing, Intent, Mind, Needs, Offer, Situation, Threat, choose};
+pub use mind::{Doing, Intent, Mind, Needs, Offer, Situation, Stranger, Threat, choose};
 pub use person::{
     Cause, Died, Event, LifeEvent, LifeHistory, Person, PersonId, Place, Possessions, Social, Tier,
 };
@@ -51,6 +55,7 @@ pub use psyche::{Feeling, Psyche, PsycheDefs, Tendency, Value};
 pub use save::{FORMAT, PeopleSave};
 pub use sim::{Done, Numbers, People, PersonView};
 pub use species::{Species, SpeciesSet, body_of, grown_height_m};
+pub use strangers::Guest;
 pub use watch::{WATCH_M, scatter_near, seen, watched};
 pub use work::{Pile, REACH_M, Things, finish_work, plan_work};
 pub use world::{FoodHere, Now, PlayerId, PlayerSeen, Senses, World};

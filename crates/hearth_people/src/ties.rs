@@ -29,6 +29,11 @@ pub struct Tie {
     pub owed: f32,
     /// The day of the world they were last together.
     pub day: f64,
+    /// The quarrels they have had, and the day of the last (V2.1 §8.6).
+    #[serde(default)]
+    pub quarrels: u8,
+    #[serde(default)]
+    pub quarrelled: Option<f64>,
 }
 
 /// The most ties a person keeps.
@@ -72,6 +77,8 @@ impl Tie {
             given: 0.0,
             owed: 0.0,
             day,
+            quarrels: 0,
+            quarrelled: None,
         }
     }
 
@@ -161,8 +168,15 @@ impl People {
     }
 
     /// Time together in a band lived in full: those near one another drawn closer, a groomer
-    /// and the groomed much the more (`dt` seconds of play).
+    /// and the groomed much the more, a band and its guests at half the pace (`dt` seconds of
+    /// play).
     pub(crate) fn keep_company(&mut self, dt: f32, day: f64) {
+        let guests: Vec<(u64, PersonId)> = self
+            .bands
+            .iter()
+            .filter(|b| b.tier == Tier::Full)
+            .flat_map(|b| b.guests.iter().map(move |g| (b.id, g.who)))
+            .collect();
         let near: Vec<(usize, PersonId, u64, glam::DVec3, Option<u64>)> = self
             .persons
             .iter()
@@ -176,9 +190,10 @@ impl People {
                 (i, p.id, p.social.band, p.place.pos, grooming)
             })
             .collect();
-        for &(i, _, band, pos, grooming) in &near {
+        for &(i, me, band, pos, grooming) in &near {
             for &(_, other, band_o, pos_o, _) in &near {
-                if band_o != band || other == self.persons[i].id {
+                let hosted = guests.contains(&(band, other)) || guests.contains(&(band_o, me));
+                if (band_o != band && !hosted) || other == me {
                     continue;
                 }
                 let d = (pos_o - pos).length();
@@ -187,6 +202,7 @@ impl People {
                 }
                 let rate = match grooming {
                     Some(g) if g == other || (g == 0 && d < 2.0) => GROOM_RATE,
+                    _ if band_o != band => NEAR_RATE * 0.5,
                     _ => NEAR_RATE,
                 };
                 let k = self.tie_index(i, other, day);
@@ -199,13 +215,20 @@ impl People {
     /// through it fade back to where they began, and the ledgers slowly.
     pub(crate) fn fade_ties(&mut self, bi: usize, day: f64, step: f64) {
         for i in self.band_members(bi) {
+            // Grudges fade the sooner in the forgiving; a feud long eased is forgotten.
+            let forgiving = self.persons[i]
+                .psyche
+                .tendency(crate::psyche::Tendency::Forgiveness);
             for t in &mut self.persons[i].social.ties {
                 if day - t.day > step {
                     t.affection += (t.base - t.affection) * FADE_A_WEEK;
                     t.trust += (t.base - t.trust) * FADE_A_WEEK;
                 }
                 t.fear *= 1.0 - FADE_A_WEEK;
-                t.rivalry *= 1.0 - FADE_A_WEEK;
+                t.rivalry *= 1.0 - FADE_A_WEEK * (0.5 + forgiving);
+                if t.rivalry < 0.05 {
+                    t.quarrels = 0;
+                }
                 t.given *= 1.0 - LEDGER_FADE_A_WEEK;
                 t.owed *= 1.0 - LEDGER_FADE_A_WEEK;
             }

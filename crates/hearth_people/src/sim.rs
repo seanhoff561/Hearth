@@ -32,7 +32,7 @@ use crate::band::{Band, Culture, Places};
 use crate::genome::Genetics;
 use crate::lineage::Kinship;
 use crate::memory::{Happened, PlaceKind, Who};
-use crate::mind::{Doing, Intent, Needs, Offer, Situation, Threat, choose};
+use crate::mind::{Doing, Intent, Needs, Offer, Situation, Stranger, Threat, choose};
 use crate::person::{Cause, Died, Event, Person, PersonId, Tier};
 use crate::plan::Step;
 use crate::psyche::{Feeling, PsycheDefs, Tendency};
@@ -158,6 +158,9 @@ struct Glimpse {
     hurt: bool,
     /// The feeling it shows, and how strongly.
     shows: Option<(Feeling, f32)>,
+    /// The stranger it is greeting, or warning off.
+    greeting: Option<PersonId>,
+    warning: Option<PersonId>,
 }
 
 /// Everyone ever drawn out, and their bands.
@@ -175,6 +178,8 @@ pub struct People {
     pub done: Vec<Done>,
     /// Deeds done in the last step that tell of their doers (V2.1 §8.4).
     pub deeds: Vec<crate::repute::Seen>,
+    /// The quarrels under way (V2.1 §8.6).
+    pub quarrels: Vec<crate::conflict::Quarrel>,
 }
 
 /// The horizontal distance between two places on the planet (wrapping in x).
@@ -238,7 +243,11 @@ const SCORN_M: f64 = 15.0;
 const GROOM_M: f64 = 20.0;
 
 /// Where in what it carries a person has food: in a hand, or in a basket or pouch.
-fn carried_food(p: &Person, items: &Items, content: &Content) -> Option<hearth_items::Path> {
+pub(crate) fn carried_food(
+    p: &Person,
+    items: &Items,
+    content: &Content,
+) -> Option<hearth_items::Path> {
     use hearth_items::{Hand, Path, Root};
     let edible = |s: &Stack| {
         items
@@ -256,7 +265,7 @@ fn carried_food(p: &Person, items: &Items, content: &Content) -> Option<hearth_i
 }
 
 /// A person's physiology now, by its size.
-fn species_body(p: &Person, sp: &Species, now: &Now) -> hearth_body::BodyConfig {
+pub(crate) fn species_body(p: &Person, sp: &Species, now: &Now) -> hearth_body::BodyConfig {
     p.body_config(sp, now).into_owned()
 }
 
@@ -290,6 +299,7 @@ impl People {
             body_s: 0.0,
             done: Vec::new(),
             deeds: Vec::new(),
+            quarrels: Vec::new(),
         }
     }
 
@@ -504,6 +514,10 @@ impl People {
             tier: Tier::Full,
             dormant_since: None,
             lived_to: None,
+            camp: None,
+            council: None,
+            weighed: 0.0,
+            guests: Vec::new(),
             rng,
         };
         self.bands.push(band);
@@ -1097,7 +1111,35 @@ impl People {
                 household: p.social.household,
                 hurt: p.body.injuries.iter().any(|i| i.healed < 1.0),
                 shows: p.psyche.shown(&species.psyche),
+                greeting: match p.mind.doing {
+                    Doing::Greeting { who } => Some(who),
+                    _ => None,
+                },
+                warning: match p.mind.doing {
+                    Doing::WarningOff { who } => Some(who),
+                    _ => None,
+                },
             })
+            .collect();
+        // Whose country is crowded past what their ways bear with strangers, and who is whose
+        // guest (V2.1 §8.7).
+        let crowded: Vec<u64> = (0..self.bands.len())
+            .filter(|&bi| {
+                let b = &self.bands[bi];
+                b.tier == Tier::Full
+                    && species
+                        .get(&b.species)
+                        .and_then(|sp| sp.ways.as_ref())
+                        .zip(species.life.of(&b.species))
+                        .is_some_and(|(w, t)| self.crowd(bi, t) > w.warn_off_crowding)
+            })
+            .map(|bi| self.bands[bi].id)
+            .collect();
+        let guests: Vec<(PersonId, u64)> = self
+            .bands
+            .iter()
+            .filter(|b| b.tier == Tier::Full)
+            .flat_map(|b| b.guests.iter().map(move |g| (g.who, b.id)))
             .collect();
         // 1. Deciding, everyone at once.
         {
@@ -1113,6 +1155,11 @@ impl People {
                     let Some(band) = bands.iter().find(|b| b.id == p.social.band) else {
                         return;
                     };
+                    let hosts: Vec<u64> = guests
+                        .iter()
+                        .filter(|(g, _)| *g == p.id)
+                        .map(|(_, b)| *b)
+                        .collect();
                     decide(
                         p,
                         sp,
@@ -1125,6 +1172,8 @@ impl People {
                         content,
                         items,
                         players,
+                        crowded.contains(&band.id),
+                        &hosts,
                         now,
                         dt,
                     );
@@ -1189,10 +1238,58 @@ impl People {
                 }
             }
         }
-        // 3. The deeds of the step, seen by those near: what they think of their doers moved.
+        // Quarrels (V2.1 §8.6): grievances had out, those under way carried on.
+        if body_step {
+            self.grudges(species, &now);
+        }
+        self.quarrels_step(species, items, content, world, now, dt);
+        // 3. The deeds of the step, seen by those near: what they think of their doers moved;
+        // work done well before them, respected.
         let deeds = std::mem::take(&mut self.deeds);
         for seen in deeds {
+            if let (crate::memory::Who::Person(who), crate::repute::Deed::Shared { .. }) =
+                (seen.who, &seen.deed)
+            {
+                self.respect(who, seen.at, 0.05, now.day);
+            }
             self.deed(seen, &species.norms, light(now.hour), now.day);
+        }
+        let worked: Vec<(PersonId, DVec3)> = self.done.iter().map(|d| (d.person, d.at)).collect();
+        for (who, at) in worked {
+            self.respect(who, at, 0.01, now.day);
+        }
+        // Each evening, a band whose camp has gone poor holds council on where to keep it.
+        if (17.0..18.0).contains(&now.hour) {
+            let today = now.day.floor();
+            let hungry: Vec<bool> = self
+                .persons
+                .iter()
+                .map(|p| {
+                    species.get(&p.species).is_some_and(|sp| {
+                        Needs::of(&p.body, &p.body_config(sp, &now), 0.0).hunger > 0.35
+                    })
+                })
+                .collect();
+            for bi in 0..self.bands.len() {
+                let Some(sp) = species.get(&self.bands[bi].species) else {
+                    continue;
+                };
+                let keeps_camp = sp.does(Behavior::KeepCamp);
+                if (!keeps_camp && sp.ways.is_none())
+                    || self.bands[bi].tier != Tier::Full
+                    || self.bands[bi].weighed >= today
+                {
+                    continue;
+                }
+                self.bands[bi].weighed = today;
+                if keeps_camp {
+                    self.council(bi, now, &|i| hungry[i]);
+                }
+                // Its guests weighed: one long among them whom most trust, taken in.
+                if let Some(w) = &sp.ways {
+                    self.weigh_guests(bi, w, &now);
+                }
+            }
         }
         // 4. The young watching the grown at their work take in what it shows, as the player
         // does by watching (V2-11): now and then as they watch, about once a minute, and the
@@ -1641,10 +1738,85 @@ impl People {
                     if let Some(t) = q.social.ties.iter_mut().find(|t| t.who == me) {
                         t.affection = (t.affection - 0.05).max(0.0);
                     }
+                    self.aggrieve(j, me, 0.08, now.day);
                 }
                 let p = &mut self.persons[i];
                 p.mind.doing = Doing::Idle;
                 p.mind.timer = 2.0;
+            }
+            Doing::Greeting { who } => {
+                // Over to the stranger; there, the greeting.
+                let Some(j) = self.index_of_person(who) else {
+                    let p = &mut self.persons[i];
+                    p.mind.doing = Doing::Idle;
+                    p.mind.timer = 0.0;
+                    return;
+                };
+                let at = self.persons[j].place.pos;
+                let p = &mut self.persons[i];
+                if (p.place.pos - at).length() > 2.0 {
+                    move_toward(p, &*world, at, walk, dt);
+                    return;
+                }
+                p.place.speed = 0.0;
+                p.place.yaw = yaw_toward(p.place.pos, at);
+                p.mind.doing = Doing::Idle;
+                p.mind.timer = 0.0;
+                if let Some(w) = &sp.ways {
+                    self.greet(i, j, w, now.day);
+                }
+            }
+            Doing::WarningOff { who } => {
+                // Up to the stranger, shouting, the body made big — the first shout a wrong to
+                // it; one still here when the warning is spent is threatened.
+                let Some(j) = self.index_of_person(who) else {
+                    let p = &mut self.persons[i];
+                    p.mind.doing = Doing::Idle;
+                    p.mind.timer = 0.0;
+                    return;
+                };
+                let at = self.persons[j].place.pos;
+                let p = &mut self.persons[i];
+                let d = (p.place.pos - at).length();
+                if d > 6.0 {
+                    move_toward(p, &*world, at, walk, dt);
+                    return;
+                }
+                p.place.speed = 0.0;
+                p.place.yaw = yaw_toward(p.place.pos, at);
+                if p.rng.next_f32() < 0.4 * dt {
+                    world.call(p.place.pos, true);
+                }
+                let me = p.id;
+                let fresh = !p.life.events.iter().rev().take(8).any(|e| {
+                    now.day - e.day < 0.05
+                        && matches!(e.event, Event::WarnedOff { who: w } if w == who)
+                });
+                if fresh {
+                    p.record(now.day, Event::WarnedOff { who });
+                    self.persons[j].record(now.day, Event::Unwelcome { by: me });
+                    self.aggrieve(j, me, 0.1, now.day);
+                }
+                let stays = sp.ways.as_ref().is_some_and(|w| d < w.greet_m);
+                if self.persons[i].mind.timer < 1.0
+                    && stays
+                    && self.persons[j].age(&now) >= crate::conflict::GROWN
+                {
+                    self.quarrel(me, who, crate::conflict::Rung::Threat, now.day);
+                }
+            }
+            Doing::Quarrelling { .. } | Doing::Mediating { .. } => {
+                // Held to it by its quarrel (`conflict.rs`); with none under way, it is over.
+                let me = self.persons[i].id;
+                if !self
+                    .quarrels
+                    .iter()
+                    .any(|q| q.a == me || q.b == me || q.mediator == Some(me))
+                {
+                    let p = &mut self.persons[i];
+                    p.mind.doing = Doing::Idle;
+                    p.mind.timer = 0.0;
+                }
             }
             Doing::Imitating { at, recipe, .. } => {
                 // Over to the work, then crouched by it, watching it and trying it after:
@@ -1899,11 +2071,13 @@ fn decide(
     content: &Content,
     items: &Items,
     players: &[PlayerSeen],
+    crowded: bool,
+    hosts: &[u64],
     now: Now,
     dt: f32,
 ) {
     let sight = SEE_M * light(now.hour) as f64;
-    let (threat, flight_m) = threat_of(p, band, senses, players, sight);
+    let (threat, flight_m) = threat_of(p, band, senses, players, sight, sp.ways.is_some());
     // The bold let a threat come nearer before they run.
     let flight_m = flight_m * (1.3 - 0.6 * p.psyche.tendency(Tendency::RiskTolerance));
     // Fear rises at a threat; what the others nearby show is caught; feelings fade.
@@ -2026,8 +2200,10 @@ fn decide(
         &band.culture.techniques
     };
     let mut s = situation(
-        p, sp, techniques, norms, glimpses, senses, crafts, content, items, now, sight,
+        p, sp, techniques, norms, glimpses, senses, crafts, content, items, now, sight, band,
+        crowded, hosts,
     );
+    s.camp = band.camp;
     s.threat = threat;
     s.flight_m = flight_m;
     let needs = Needs::of(
@@ -2055,13 +2231,15 @@ fn decide(
 
 /// The nearest threat a person sees (a hunter of people, else the player it is most wary of),
 /// and how near it may come before it runs: its flight distance, less for a player its band has
-/// come to tolerate.
+/// come to tolerate. People with ways with strangers (`humane`) do not run from a calm one: they
+/// meet it (V2.1 §8.7).
 fn threat_of(
     p: &Person,
     band: &Band,
     senses: &dyn Senses,
     players: &[PlayerSeen],
     sight: f64,
+    humane: bool,
 ) -> (Option<Threat>, f32) {
     let pos = p.place.pos;
     let hunter: Option<Threat> = senses
@@ -2088,6 +2266,9 @@ fn threat_of(
         // may come nearer the more the band has come to tolerate them, and beyond what holds its
         // eye is let be.
         let hunting = q.running || q.hunting;
+        if humane && !hunting {
+            continue;
+        }
         let tolerated = FLIGHT_M * (1.0 - 0.85 * band.tolerance_of(q.id));
         if !hunting && d > tolerated * HEED {
             continue;
@@ -2121,6 +2302,9 @@ fn situation(
     items: &Items,
     now: Now,
     sight: f64,
+    band: &Band,
+    crowded: bool,
+    hosts: &[u64],
 ) -> Situation {
     let pos = p.place.pos;
     let grown = p.stage(sp, &now) == Stage::Adult;
@@ -2131,11 +2315,12 @@ fn situation(
     // those it is fondest of.
     let carries_food = carried_food(p, items, content).is_some();
     let mut share_with: Option<(u64, DVec3, f32)> = None;
+    let guest = |id: PersonId| band.guests.iter().any(|g| g.who == id);
+    let hospitality = sp.ways.as_ref().map_or(0.0, |w| w.hospitality);
     if carries_food {
-        for g in glimpses
-            .iter()
-            .filter(|g| g.band == p.social.band && g.alive && g.hungry && g.id != p.id)
-        {
+        for g in glimpses.iter().filter(|g| {
+            (g.band == p.social.band || guest(g.id)) && g.alive && g.hungry && g.id != p.id
+        }) {
             if (g.pos - pos).length() > SHARE_M {
                 continue;
             }
@@ -2156,10 +2341,62 @@ fn situation(
                 .find(|t| t.who == g.id)
                 .map_or(0.1, |t| t.affection);
             let home = p.social.household.is_some() && g.household == p.social.household;
-            let dear = if home { fond.max(0.8) } else { fond };
+            // A hungry guest is fed as their ways have it.
+            let dear = if home {
+                fond.max(0.8)
+            } else if g.band != p.social.band {
+                hospitality * fond.max(0.3)
+            } else {
+                fond
+            };
             if share_with.is_none_or(|s| dear > s.2) {
                 share_with = Some((g.id, g.pos, dear));
             }
+        }
+    }
+    // The nearest stranger it sees — not of its band, nor its band's guest, nor its hosts, nor
+    // one it trusts — and one warning it off.
+    let mut stranger: Option<Stranger> = None;
+    let mut warned: Option<DVec3> = None;
+    if let Some(w) = &sp.ways {
+        for g in glimpses
+            .iter()
+            .filter(|g| g.band != p.social.band && g.alive && g.id != p.id)
+        {
+            let d = (g.pos - pos).length();
+            if g.warning == Some(p.id) && d < w.wary_m {
+                warned = Some(g.pos);
+            }
+            if d > w.wary_m.min(sight) || guest(g.id) || hosts.contains(&g.band) {
+                continue;
+            }
+            let tie = p.social.ties.iter().find(|t| t.who == g.id);
+            if tie.is_some_and(|t| t.trust >= crate::strangers::STRANGER_TRUST)
+                || stranger.is_some_and(|s| s.dist <= d)
+            {
+                continue;
+            }
+            let bad = p
+                .social
+                .reputes
+                .iter()
+                .find(|r| r.about == Who::Person(g.id))
+                .is_some_and(|r| r.badness() <= -0.35);
+            let grudge = tie.is_some_and(|t| t.rivalry >= crate::conflict::GRUDGE);
+            let met = glimpses.iter().any(|o| {
+                o.band == p.social.band
+                    && o.id != p.id
+                    && (o.greeting == Some(g.id) || o.warning == Some(g.id))
+            });
+            stranger = Some(Stranger {
+                id: g.id,
+                at: g.pos,
+                dist: d,
+                grown: g.grown,
+                unwelcome: g.grown && (crowded || bad || grudge),
+                greet_m: w.greet_m,
+                met,
+            });
         }
     }
     // One near it thinks ill of, and whether the name brings mockery or keeping away.
@@ -2326,6 +2563,9 @@ fn situation(
         share_with,
         hurt_near,
         scorn,
+        camp: None,
+        stranger,
+        warned,
         project: p
             .mind
             .plan
@@ -2361,7 +2601,13 @@ fn advance(p: &mut Person, done: &Step) {
 }
 
 /// A step toward a place on the ground; true when there.
-fn move_toward(p: &mut Person, senses: &dyn Senses, to: DVec3, speed: f32, dt: f32) -> bool {
+pub(crate) fn move_toward(
+    p: &mut Person,
+    senses: &dyn Senses,
+    to: DVec3,
+    speed: f32,
+    dt: f32,
+) -> bool {
     let d = DVec2::new(to.x - p.place.pos.x, to.z - p.place.pos.z);
     if d.length() < 1.0 {
         p.place.speed = 0.0;
@@ -2557,6 +2803,9 @@ fn hold_for(d: &Doing) -> f32 {
         Doing::Sharing { .. } => 20.0,
         Doing::Tending { .. } => 30.0,
         Doing::Mocking { .. } => 4.0,
+        Doing::Quarrelling { .. } | Doing::Mediating { .. } => 2.0,
+        Doing::Greeting { .. } => 20.0,
+        Doing::WarningOff { .. } => 15.0,
     }
 }
 
@@ -2578,7 +2827,11 @@ fn activity_of(d: &Doing, speed: f32) -> &'static str {
         | Doing::Mobbing { .. }
         | Doing::Fleeing { .. }
         | Doing::Playing { .. }
-        | Doing::Sharing { .. } => {
+        | Doing::Sharing { .. }
+        | Doing::Quarrelling { .. }
+        | Doing::Mediating { .. }
+        | Doing::Greeting { .. }
+        | Doing::WarningOff { .. } => {
             if speed > 2.0 {
                 "jogging"
             } else if speed > 0.1 {
@@ -2591,7 +2844,7 @@ fn activity_of(d: &Doing, speed: f32) -> &'static str {
 }
 
 /// The yaw facing from one place to another.
-fn yaw_toward(from: DVec3, to: DVec3) -> f32 {
+pub(crate) fn yaw_toward(from: DVec3, to: DVec3) -> f32 {
     ((to.x - from.x) as f32).atan2((to.z - from.z) as f32)
 }
 

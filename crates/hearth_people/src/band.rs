@@ -89,6 +89,17 @@ pub struct Band {
     /// The day its life course was last reckoned to (a band of a people with a life table).
     #[serde(default)]
     pub lived_to: Option<f64>,
+    /// Where it keeps camp (where its people gather and sleep), and its last council on it.
+    #[serde(default)]
+    pub camp: Option<glam::DVec3>,
+    #[serde(default)]
+    pub council: Option<crate::council::Council>,
+    /// The day it last weighed whether to hold one (and its guests).
+    #[serde(default)]
+    pub weighed: f64,
+    /// Strangers it has met and greeted (V2.1 §8.7).
+    #[serde(default)]
+    pub guests: Vec<crate::strangers::Guest>,
     /// Its own random stream: where its members come down, who dies and who is born while the
     /// player is away.
     pub rng: Rng,

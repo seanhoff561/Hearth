@@ -106,6 +106,24 @@ pub enum Doing {
         who: u64,
         at: DVec3,
     },
+    /// Having it out with another (V2.1 §8.6): words, threats, a scuffle.
+    Quarrelling {
+        with: u64,
+        rung: crate::conflict::Rung,
+    },
+    /// Stepping into a quarrel between two, to talk them round.
+    Mediating {
+        a: u64,
+        b: u64,
+    },
+    /// Going to meet a stranger, and greeting it (V2.1 §8.7).
+    Greeting {
+        who: u64,
+    },
+    /// Warning a stranger off: up to them, shouting, the body made big.
+    WarningOff {
+        who: u64,
+    },
 }
 
 /// How pressing a person's needs are, 0 not at all … 1 desperately.
@@ -160,6 +178,24 @@ pub struct Threat {
     pub dist: f32,
     /// A hunter that takes its kind (not a person).
     pub hunter: bool,
+}
+
+/// A stranger near (V2.1 §8.7): one not of its band, nor its band's guest, whom it does not
+/// know or trust.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Stranger {
+    pub id: u64,
+    pub at: DVec3,
+    /// How far (m).
+    pub dist: f64,
+    /// Grown (a child is never warned off).
+    pub grown: bool,
+    /// Not welcome here, to be warned off: the country crowded, a bad name, a grievance.
+    pub unwelcome: bool,
+    /// How near it comes before it is met (m).
+    pub greet_m: f64,
+    /// Another of its band is already meeting it, or warning it off.
+    pub met: bool,
 }
 
 /// A process it could do here, offered by what lies about it: the recipe, where it is done, and
@@ -221,6 +257,12 @@ pub struct Situation {
     /// One near it thinks ill of: who, where, how bad a name (−1 … 0), whether the name brings
     /// mockery and keeping away.
     pub scorn: Option<(u64, DVec3, f32, bool, bool)>,
+    /// Where its band keeps camp.
+    pub camp: Option<DVec3>,
+    /// The nearest stranger it sees, if any (V2.1 §8.7).
+    pub stranger: Option<Stranger>,
+    /// One warning it off: where they stand.
+    pub warned: Option<DVec3>,
     /// The next step of what it means to do (its plan's), if it has one.
     pub project: Option<Doing>,
 }
@@ -253,6 +295,9 @@ pub struct Mind {
 
 /// How far a person strays from its group's middle before it goes back to them (m).
 const STRAY_M: f32 = 30.0;
+/// How far from its camp a person goes about its day, and sleeps (m).
+const CAMP_M: f32 = 400.0;
+const CAMP_SLEEP_M: f64 = 15.0;
 
 /// Chooses what to do now, from what it needs and what it knows of the moment, as its psyche
 /// tilts it: danger first (to face a hunter with the others, to flee up a tree or away, to call
@@ -301,9 +346,27 @@ pub fn choose(
         }
         return Doing::Watching { at: t.at };
     }
+    // Warned off by those whose country it is in: away.
+    if let Some(at) = s.warned {
+        let away = (s.pos - at).normalize_or(DVec3::X);
+        return Doing::Going {
+            to: s.pos + away * 60.0,
+            then: Intent::Roam,
+        };
+    }
     if night {
         if s.in_nest {
             return Doing::Sleeping;
+        }
+        // Those who keep camp sleep there.
+        if let Some(camp) = s.camp
+            && !species.does(Behavior::TreeNest)
+            && (camp - s.pos).length() > CAMP_SLEEP_M
+        {
+            return Doing::Going {
+                to: camp,
+                then: Intent::Rejoin,
+            };
         }
         if s.in_tree && species.does(Behavior::TreeNest) {
             return Doing::Nesting;
@@ -319,6 +382,28 @@ pub fn choose(
             };
         }
         return Doing::Sleeping;
+    }
+    // A stranger near: the young to their mothers.
+    if !s.grown
+        && s.stranger.is_some()
+        && s.from_group_m > 6.0
+        && let Some(at) = s.group_at
+    {
+        return Doing::Going {
+            to: at,
+            then: Intent::Rejoin,
+        };
+    }
+    // Far from camp, back toward it.
+    if let Some(camp) = s.camp
+        && (camp - s.pos).length() as f32 > CAMP_M
+        && needs.hunger < 0.6
+        && needs.thirst < 0.6
+    {
+        return Doing::Going {
+            to: camp,
+            then: Intent::Rejoin,
+        };
     }
     // The conforming keep closer to the others.
     let stray = STRAY_M * (1.5 - psyche.tendency(Tendency::Conformity));
@@ -342,6 +427,30 @@ pub fn choose(
             best = (d, score);
         }
     };
+    // A stranger near (V2.1 §8.7): watched, the more by the wary; met and greeted when it
+    // comes near, by the trusting and the sociable the more readily — or, unwelcome, warned off
+    // by the bolder.
+    if s.grown
+        && let Some(st) = s.stranger
+    {
+        let trusting = psyche.tendency(Tendency::TrustStrangers);
+        consider(Doing::Watching { at: st.at }, 0.45 + 0.3 * (1.0 - trusting));
+        if !st.met {
+            if st.unwelcome {
+                let bold = psyche.tendency(Tendency::Dominance);
+                consider(
+                    Doing::WarningOff { who: st.id },
+                    0.4 + 0.5 * bold - 0.3 * trusting + 0.1 * roll,
+                );
+            } else if st.dist <= st.greet_m {
+                let sociable = psyche.tendency(Tendency::Sociability);
+                consider(
+                    Doing::Greeting { who: st.id },
+                    0.5 + 0.4 * trusting + 0.2 * sociable + 0.1 * roll,
+                );
+            }
+        }
+    }
     if needs.thirst > 0.25 {
         if s.water_here {
             consider(Doing::Drinking, 0.5 + 3.0 * needs.thirst);

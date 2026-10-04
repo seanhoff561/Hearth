@@ -655,7 +655,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H1 — Genetics engine (2026-10-03)
 - [x] H2 — Psyche and mind core (2026-10-03)
 - [x] H3 — Life course and demography (the player is born) (2026-10-04)
-- [ ] H4 — Social systems
+- [ ] H4 — Social systems (built 2026-10-04; its tests to run)
 - [ ] H5 — Culture and language
 - [ ] H6 — Knowledge and social learning
 - [ ] H7 — Tiers and persistence
@@ -682,7 +682,7 @@ design only). Updated with each H milestone.
 | Calibrated traits | 29 heritable traits on ~460 loci: appearance, health, metabolism, HEXACO temperament and its narrower dimensions, aptitudes (H1); temperament read by the psyche (H2) | health by the life course (H3), aptitudes by learning (H6) |
 | Routines | *Australopithecus*'s day, a forager's day (H2) | cultures' routines (H5) |
 | Life tables | foragers': deaths by age, fertility, nursing, pairing, crowding, bands splitting (H3) | the eras' (Neolithic H11, later H12–H13) |
-| Norms | — | (H4) |
+| Norms | the foragers': another's things are theirs, food is shared with the hungry, with their sanctions; their ways with strangers and quarrels (H4) | cultures' own (H5) |
 | Speech acts | — | (H5) |
 | The player's birth | genome from two parents of the place, shown at birth; no appearance chosen (H1); born into a family of the place, its household shown, the childhood lived through its moments (H3) | birth options among the eras' households (H8); births in multiplayer (R3) |
 | Life after death | the death an event of the world, the life told, living on as a grown kinsman with the "Who you are" briefing, watching with a free camera, beginning the world again (H3) | be born again into a household, inhabit a child (H8); following while watching, scope and knowledge after death, the old rules as presets (H9); in multiplayer (R3) |
@@ -1054,12 +1054,36 @@ H4 — Social systems (PLAN.md, V2.1 §8; `docs/design/humans/social.md`), in pa
   sanctions follow — mockery that shames, keeping away, food withheld, casting out of the band;
   grooming and mockery go to their partner; property: what a player puts down stays theirs and
   the people leave it be; the inspector's views (`tests/social.rs`, game `tests/family.rs`).
-- [ ] (e) Status and group decisions: status from what the people value; a band debating and
-  deciding where to camp next.
-- [ ] (f) Conflict and strangers: escalation and its easing; how people receive one not their own
-  (the player among them).
-- [ ] (g) The acceptance: gossip spreads reputation plausibly; a violation brings sanctions; a band
-  debates and moves camp.
+- [x] (e) Status and group decisions (`council.rs`): standing as the respect a band's grown hold
+  one in, earned by work done well before them and by sharing; camps kept (slept at, returned
+  to); each evening a band whose camp has gone poor holds council — each grown one reckons the
+  places remembered by food, water, danger, the way and staying, the places' cases are argued,
+  and they come round toward the case made best, the many and the respected until three in five
+  agree — and moves its camp (`tests/social.rs`: seven argue east and north and, the east's case
+  made, all go east in four rounds).
+- [x] (f) Conflict and strangers (`conflict.rs`, `strangers.rs`, `humans/social/ways.ron`, D184): a
+  wrong leaves rivalry; a grievance near, angry enough for one's temper, is had out — argument,
+  threats, rarely a short scuffle with bruises (the grown only; never blows with a player) — and
+  most ease first: one backs down and keeps away, one of standing or kin to both talks them round,
+  the one in the wrong makes amends with food, or the words are spent; a feud after three quarrels
+  ends with the weaker household leaving for a country of its own. Strangers (those not trusted, of
+  no band that hosts them) are watched, the young called in; one coming near is met and greeted —
+  a guest, fed when hungry by the people's hospitality, known better by time near and by gifts,
+  taken in by an evening's weighing when most of the grown trust it after two days; in crowded
+  country, or with a bad name, warned off and, staying, threatened. Humans no longer flee a calm
+  player; the player hands a thing to the person looked at within reach (E) as a gift, and is
+  told when greeted, warned off, taken in or quarrelled with. Camps and councils are only for
+  peoples that keep camp (`KeepCamp`); a band that splits or leaves keeps its own camp
+  (`tests/social.rs`: a grievance had out and eased; a quarrel talked round by one respected; a
+  feud parting the band; a stranger greeted and taken in; an unwelcome one warned off).
+- [x] (g) The acceptance (`tests/social.rs`): word of a theft seen in the dusk by the one robbed
+  spreads through a band of nineteen by talk within half a day, those who heard it less sure than
+  the one who saw; a theft angers, is told, brings mockery and at last casting out; a band whose
+  country has gone poor debates where to go and moves its camp; quarrels rise and ease; strangers
+  are greeted and taken in, or warned off. These tests and (e)–(f)'s compile and lint clean
+  (`clippy --tests`; the game crate too) but have not run yet: the machine's memory was exhausted
+  (a test build crawled at about a second of work a minute), so they run first when it allows,
+  with the perf gate.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -1069,15 +1093,24 @@ H4 — Social systems (PLAN.md, V2.1 §8; `docs/design/humans/social.md`), in pa
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. H4 — Social systems (PLAN.md, V2.1 §8): kinship systems and households, relationships and
-   obligations, cooperation and sharing, reputation and gossip, norms and sanctions, status and
-   group decisions (a band debating and deciding where to camp), conflict escalating and easing,
-   strangers (how people not of the player's family receive them). Build and test gently
-   (`low.sh`: two jobs, below-normal priority, the changed crates' tests only). Amendment R
-   (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready rule applies (D166).
-   Known from H3: the family takes things lying about, the player's own among them, until H4's
-   property norms; a mother carrying her infant is not drawn holding it; watching after death is
-   a free camera only (following comes with H9).
+1. First, when the machine's memory allows (a Windows restart frees it): run H4's tests
+   (`cargo test -p hearth_people`, above all `tests/social.rs` and `tests/childhood.rs`, which the
+   council broke for the tree-nesting hominins and `KeepCamp` mended;
+   `cargo test -p hearth_content --test base_content`; the game's `tests/family.rs`), fix what
+   fails, tick H4 and run the perf gate. Then H5 — Culture and language (PLAN.md, V2.1 §9–10):
+   the culture generator and model, its
+   transmission and evolution (H4's norms and ways become a culture's, varying by its values);
+   generated languages, their families and drift, names; speech acts, gestures, subtitles with
+   partial translation (replacing the words the game tells the player when strangers greet or
+   warn them off); the player learning a language. *Accept:* two cultures from one ancestor
+   diverge after a split with related languages and customs; the player learns a language over
+   play. Build and test gently (`low.sh`: one or two jobs, below-normal priority, the changed
+   crates' tests only).
+   Amendment R (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready rule applies
+   (D166). Known from H4: levelling among egalitarian foragers (deflating the boastful) waits for
+   cultures' values; the people do not yet give gifts to strangers themselves, nor raid; a mother
+   carrying her infant is not drawn holding it; watching after death is a free camera only
+   (following comes with H9).
 2. Carried forward from the slice review (`docs/review/slice-1.md`, "Left where they belong"): a
    kill is more than one person can use in summer (sharing comes with others, H4); scavengers
    take a carcass within hours of play (the populations' year scale); joints are drawn, not

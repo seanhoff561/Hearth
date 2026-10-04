@@ -31,6 +31,8 @@ pub enum Behavior {
     FleeToTrees,
     /// Comes to tolerate a calm, patient person.
     Habituate,
+    /// Keeps a camp it sleeps at and comes back to, moved where its grown agree in council.
+    KeepCamp,
 }
 
 /// How a species speaks (V2.1 §10.1).

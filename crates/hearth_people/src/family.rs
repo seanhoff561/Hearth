@@ -163,6 +163,10 @@ impl People {
             tier: Tier::Full,
             dormant_since: None,
             lived_to: None,
+            camp: Some(f.at),
+            council: None,
+            weighed: 0.0,
+            guests: Vec::new(),
             rng: band_stream(self.seed, id),
         });
         let bi = self.bands.len() - 1;

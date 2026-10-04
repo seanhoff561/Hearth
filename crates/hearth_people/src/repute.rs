@@ -182,6 +182,7 @@ impl People {
                     && (p.place.pos - seen.at).length() <= sight
             })
             .collect();
+        let mut wronged: Option<usize> = None;
         for i in witnesses {
             let k = self.repute_index(i, seen.who, day);
             let p = &mut self.persons[i];
@@ -194,6 +195,7 @@ impl People {
                 let weight = norms.severity(b);
                 if victim == Some(Who::Person(p.id)) {
                     p.psyche.feel(Feeling::Anger, 0.4 + 0.5 * weight);
+                    wronged = Some(i);
                 } else {
                     p.psyche.feel(Feeling::Indignation, 0.2 + 0.6 * weight);
                 }
@@ -204,6 +206,10 @@ impl People {
                     t.trust = (t.trust - 0.3 * weight).max(0.0);
                 }
             }
+        }
+        // The wronged holds it against the doer (V2.1 §8.6).
+        if let (Some(i), Who::Person(doer), Some(b)) = (wronged, seen.who, breach) {
+            self.aggrieve(i, doer, 0.2 + 0.5 * norms.severity(b), day);
         }
         if let (Who::Person(doer), Some(b)) = (seen.who, breach)
             && let Ok(d) = self.persons.binary_search_by_key(&doer, |p| p.id)
@@ -344,6 +350,11 @@ impl People {
         band.population_group = None;
         band.lived_to = Some(day);
         band.rng = crate::sim::band_stream(self.seed, id);
+        band.council = None;
+        band.weighed = 0.0;
+        band.guests = Vec::new();
+        let y = self.persons[i].place.pos.y;
+        band.camp = Some(DVec3::new(band.home.x, y, band.home.y));
         let pid = self.persons[i].id;
         band.members = vec![pid];
         self.bands[bi].members.retain(|m| *m != pid);

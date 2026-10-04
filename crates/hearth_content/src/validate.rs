@@ -533,6 +533,24 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.ways,
+        report,
+        |e| &e.id,
+        |w, c| {
+            c.range("wary_m", w.wary_m, 0.0, 1000.0);
+            c.range("greet_m", w.greet_m, 0.0, w.wary_m);
+            c.range("greeting_trust", w.greeting_trust, 0.0, 1.0);
+            c.range("hospitality", w.hospitality, 0.0, 1.0);
+            c.range("warn_off_crowding", w.warn_off_crowding, 0.0, 100.0);
+            c.range("take_in_trust", w.take_in_trust, 0.0, 1.0);
+            c.range("take_in_days", w.take_in_days, 0.0, 3650.0);
+            c.range("argue_s", w.argue_s, 1.0, 3600.0);
+            c.range("threat_s", w.threat_s, 1.0, 3600.0);
+            c.range("blows_s", w.blows_s, 1.0, 600.0);
+            c.range("leave_rivalry", w.leave_rivalry, 0.0, 1.0);
+        },
+    );
+    each(
         &content.moments,
         report,
         |e| &e.id,

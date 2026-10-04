@@ -68,7 +68,8 @@ their hands, clothing, containers and body; nothing goes into an invisible pocke
   What is worn also sets the body's insulation.
 - **Controls** (v2 §10.6):
   - crouch C, prone Z;
-  - inventory Tab, drop G (Ctrl+G stack), interact E, drag F (hold);
+  - inventory Tab, drop G (Ctrl+G stack), interact E (looking at a person within reach with
+    something in hand: hand it to them, a gift — V2.1 §8.7), drag F (hold);
   - quick slots 1–6, quick choice Q (hold);
   - Body panel B; lie down X.
 

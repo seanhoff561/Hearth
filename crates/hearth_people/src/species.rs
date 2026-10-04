@@ -47,6 +47,8 @@ pub struct Species {
     pub coat: Worn,
     /// The shape of its days (V2.1 §6.1): when it sleeps, forages, rests, works, keeps company.
     pub routine: Vec<hearth_content::schema::mind::Block>,
+    /// Its people's ways with strangers and quarrels (V2.1 §8.6–8.7), if they have them.
+    pub ways: Option<crate::conflict::Ways>,
 }
 
 fn sex(female: bool) -> usize {
@@ -240,6 +242,7 @@ impl Species {
                 Coat::Bare => Worn::naked(),
             },
             routine: Vec::new(),
+            ways: None,
         }
     }
 
@@ -298,11 +301,16 @@ impl SpeciesSet {
     /// The implemented species profiles of the content, with bodies made from the player's
     /// `base`.
     pub fn from_content(c: &Content, graph: &Graph, base: &BodyConfig) -> Self {
+        let ways = crate::conflict::WaysSet::from_content(c);
         let list = c
             .species
             .iter()
             .filter(|s| s.status == Status::Implemented)
-            .map(|s| Species::of_profile(s, graph, base).with_routine(c))
+            .map(|s| {
+                let mut k = Species::of_profile(s, graph, base).with_routine(c);
+                k.ways = ways.of(&k.id).cloned();
+                k
+            })
             .collect();
         Self {
             list,

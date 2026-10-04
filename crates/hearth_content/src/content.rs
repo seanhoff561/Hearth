@@ -24,7 +24,7 @@ use crate::schema::material::Material;
 use crate::schema::mind::Routine;
 use crate::schema::process::Process;
 use crate::schema::psyche::{Feeling, Tendency, Value};
-use crate::schema::social::Norm;
+use crate::schema::social::{Norm, Ways};
 use crate::schema::station::{ConstructionPiece, Workstation};
 use crate::schema::{Entry, Status};
 use crate::source::{EntryFile, SourceFile, domain_files, find_id_line, parse, singleton_files};
@@ -152,6 +152,7 @@ pub struct Content {
     pub life_tables: Table<LifeTable>,
     pub moments: Table<Moment>,
     pub norms: Table<Norm>,
+    pub ways: Table<Ways>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -320,6 +321,7 @@ impl Content {
             life_tables: load_table(packs, &mut r),
             moments: load_table(packs, &mut r),
             norms: load_table(packs, &mut r),
+            ways: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
@@ -410,6 +412,7 @@ impl Content {
         u(&self.life_tables, &mut out);
         u(&self.moments, &mut out);
         u(&self.norms, &mut out);
+        u(&self.ways, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
         u(&self.knowledge, &mut out);
@@ -448,6 +451,7 @@ impl Content {
             c("Life tables", &self.life_tables),
             c("Moments of childhood", &self.moments),
             c("Norms", &self.norms),
+            c("Ways with strangers and quarrels", &self.ways),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),
             c("Knowledge nodes", &self.knowledge),

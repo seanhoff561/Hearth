@@ -79,6 +79,8 @@ pub struct View {
 
 /// How much faster the world goes while the player sleeps (v2 §9.5: smoothly, up to 60–120×).
 const SLEEP_SPEED: f64 = 90.0;
+/// How near a person must be for the player to hand them a thing (m).
+const GIVE_M: f64 = 3.5;
 
 /// What `player.json` holds.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1054,6 +1056,41 @@ fn run(
                         }
                     }
                 }
+                Ok(ToServer::GiveTo { person }) => {
+                    // A gift (V2.1 §8.7): what the hands hold, the right first, to one within
+                    // reach; kept when they cannot take it.
+                    let near = people.live.get(person).is_some_and(|q| {
+                        q.alive()
+                            && q.player.is_none()
+                            && (q.place.pos - player.mover.pos).length() < GIVE_M
+                    });
+                    if near && player.can_act(&cfg) {
+                        let right = player.carry.right.is_some();
+                        let held = if right {
+                            player.carry.right.take()
+                        } else {
+                            player.carry.left.take()
+                        };
+                        if let Some(stack) = held {
+                            match people.give_to(0, person, stack, &items, &lw.content) {
+                                Ok(words) => {
+                                    let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                                        process: String::new(),
+                                        done: true,
+                                        words,
+                                    }));
+                                }
+                                Err(stack) => {
+                                    if right {
+                                        player.carry.right = Some(stack);
+                                    } else {
+                                        player.carry.left = Some(stack);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 Ok(ToServer::Shift { from, count, to }) => {
                     if player.can_act(&cfg) {
                         let body_kg = cfg.mass_kg as f32;
@@ -1535,6 +1572,14 @@ fn run(
                         TICK_S as f32,
                     ) {
                         items_changed = true;
+                    }
+                    // How the people have met the player (V2.1 §8.7), told.
+                    for (words, done) in people.news_for(0) {
+                        let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                            process: String::new(),
+                            done,
+                            words,
+                        }));
                     }
                     // What the player, awake, sees them do (and the scatters they leave), heard
                     // an hour apart at most.

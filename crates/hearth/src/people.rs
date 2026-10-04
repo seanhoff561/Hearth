@@ -69,6 +69,8 @@ pub struct PeopleNear {
     pub shown: bool,
     /// The moment of the last tick.
     now: Option<Now>,
+    /// The player's person, and how many of its life's events the player has been told.
+    told: Option<(u64, usize)>,
 }
 
 /// The world as the people live in it, for one tick.
@@ -350,7 +352,76 @@ impl PeopleNear {
             trees_at: None,
             shown: false,
             now: None,
+            told: None,
         }
+    }
+
+    /// A player hands one of the people what it holds: a gift (V2.1 §8.7), taken into their
+    /// keeping — or given back, when they have no room or the player is no one among them.
+    /// Words for the player.
+    pub fn give_to(
+        &mut self,
+        player: u64,
+        person: u64,
+        stack: Stack,
+        items: &Items,
+        content: &Content,
+    ) -> Result<String, Stack> {
+        let (Some(now), Some(me)) = (self.now, self.live.player_person(player).map(|p| p.id))
+        else {
+            return Err(stack);
+        };
+        let what = items.get(&stack.id).map_or_else(
+            || "it".to_owned(),
+            |k| format!("the {}", k.name.to_lowercase()),
+        );
+        self.live
+            .gift(me, person, stack, &self.species, items, content, now)?;
+        Ok(format!("You hold out {what}, and it is taken."))
+    }
+
+    /// What has befallen the player's person among others since the player was last told, in
+    /// words (and whether it went well): met and greeted by strangers, warned off, taken in,
+    /// quarrelled with.
+    pub fn news_for(&mut self, player: u64) -> Vec<(String, bool)> {
+        let Some(p) = self.live.player_person(player) else {
+            return Vec::new();
+        };
+        let n = p.life.events.len();
+        let from = match self.told {
+            Some((id, k)) if id == p.id => k.min(n),
+            _ => n,
+        };
+        let id = p.id;
+        let words: Vec<(String, bool)> = p.life.events[from..]
+            .iter()
+            .filter_map(|e| {
+                use hearth_people::Event;
+                match e.event {
+                    Event::Greeted { .. } => Some((
+                        "One of a band not your own comes to meet you, and greets you: you are \
+                         their guest."
+                            .to_owned(),
+                        true,
+                    )),
+                    Event::Unwelcome { .. } => Some((
+                        "One of a band not your own shouts at you to go: you are not welcome here."
+                            .to_owned(),
+                        false,
+                    )),
+                    Event::TakenIn { .. } => Some((
+                        "They have taken you in: you are one of them now.".to_owned(),
+                        true,
+                    )),
+                    Event::Quarrelled { .. } => {
+                        Some(("Someone has it out with you, angry.".to_owned(), false))
+                    }
+                    _ => None,
+                }
+            })
+            .collect();
+        self.told = Some((id, n));
+        words
     }
 
     /// Saves the people into `dir` with the animals: every band folded back into its numbers in

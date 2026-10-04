@@ -1,0 +1,22 @@
+// How Wild Earth's foragers meet one not their own and how their quarrels run (V2.1 §8.6–8.7),
+// until cultures carry their own (H5). A stranger is watched as it comes and, coming openly, met
+// and greeted by one of the grown; a guest is fed when hungry and comes to be trusted by its
+// doings, gifts above all — among the !Kung a gift begins a partnership (Wiessner 1982, hxaro);
+// where the country is crowded strangers are warned off. Most quarrels end in talk, in one
+// backing down, in one of standing or kin to both talking them round, or in amends; blows are
+// rare and short; a feud that will not ease ends with one side moving away — foragers' readiest
+// way out (Lee 1979; Woodburn 1982; Kelly 2013, ch. 9).
+(
+    schema: 1,
+    entries: [
+        (
+            id: "forager_ways", name: "The foragers' ways with strangers and quarrels", status: Implemented,
+            species: "homo_sapiens",
+            wary_m: 80.0, greet_m: 30.0, greeting_trust: 0.35, hospitality: 0.6,
+            warn_off_crowding: 1.6,
+            take_in_trust: 0.5, take_in_days: 2.0,
+            argue_s: 25.0, threat_s: 12.0, blows_s: 6.0,
+            leave_rivalry: 0.6, leave_quarrels: 3,
+        ),
+    ],
+)

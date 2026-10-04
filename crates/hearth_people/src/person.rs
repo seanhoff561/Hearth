@@ -77,6 +77,51 @@ pub enum Event {
     CastOut {
         from: u64,
     },
+    /// Moved camp with its band, as they agreed in council.
+    MovedCamp {
+        band: u64,
+    },
+    /// Had it out with another (V2.1 §8.6).
+    Quarrelled {
+        with: PersonId,
+    },
+    /// Came to blows with another.
+    Fought {
+        with: PersonId,
+    },
+    /// Stepped into a quarrel and talked the two round.
+    Mediated {
+        a: PersonId,
+        b: PersonId,
+    },
+    /// Made amends to one it had wronged.
+    MadeAmends {
+        to: PersonId,
+    },
+    /// Left its band after a feud, its household with it.
+    Left {
+        from: u64,
+    },
+    /// Met a stranger with a greeting, or was met so (V2.1 §8.7).
+    Greeted {
+        who: PersonId,
+    },
+    /// Warned a stranger off.
+    WarnedOff {
+        who: PersonId,
+    },
+    /// Was warned off by one of a band not its own.
+    Unwelcome {
+        by: PersonId,
+    },
+    /// A stranger taken into a band.
+    TakenIn {
+        band: u64,
+    },
+    /// Was given a gift.
+    GiftFrom {
+        who: PersonId,
+    },
     /// First came near a player.
     Met {
         player: crate::world::PlayerId,

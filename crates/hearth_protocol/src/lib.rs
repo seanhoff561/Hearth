@@ -50,6 +50,8 @@ pub enum ToServer {
     },
     /// Pick up a thing lying in the world (or take hold to drag it if it is too heavy).
     PickUp(u64),
+    /// Hand what the hands hold (the right first) to a person within reach: a gift (V2.1 §8.7).
+    GiveTo { person: u64 },
     /// Put a carried thing (or `count` of a stack) down on the ground at a point.
     PutDown {
         from: hearth_items::Path,
