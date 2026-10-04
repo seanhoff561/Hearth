@@ -106,6 +106,8 @@ fn a_sample_week_of_each_era() {
         let mut band: std::collections::BTreeSet<u64> = Default::default();
         let (mut walked, mut farthest, mut lost) = (0.0f64, 0.0f64, 0u32);
         let mut last: Option<glam::DVec3> = None;
+        let mut died: Option<String> = None;
+        let t_start = w.ticks as f64;
         let mut by_hour: BTreeMap<String, BTreeMap<String, u32>> = BTreeMap::new();
         let mut work: BTreeMap<String, BTreeMap<String, u32>> = BTreeMap::new();
         let mut seen: BTreeMap<u64, (bool, String, f32)> = BTreeMap::new();
@@ -151,12 +153,38 @@ fn a_sample_week_of_each_era() {
             if !seen_them {
                 lost += 1;
             }
+            if died.is_none()
+                && let Some(d) = w.body.as_ref().and_then(|b| b.dead.as_ref())
+            {
+                died = Some(format!(
+                    "{:.1} days in: {d:?}",
+                    (w.ticks as f64 - t_start) / w.ticks_per_day
+                ));
+            }
             let me = w.mover.pos;
             let local = w
                 .calendar
                 .at(w.ticks)
                 .local_time(planet.solar_time_offset(me.x));
             let hour = (local * 24.0) as u32 / 3 * 3;
+            if std::env::var("DEBUG_WEEK").is_ok() {
+                // TEMP
+                let e = w.body.as_ref().map(|b| b.exposure);
+                let mut kinds: BTreeMap<String, u32> = BTreeMap::new();
+                for v in w.people.iter().filter(|v| !v.dead) {
+                    *kinds.entry(about(&v.doing)).or_default() += 1;
+                }
+                let dists: Vec<i32> = w.people.iter().filter(|v| !v.dead).map(|v| (v.pos - w.mover.pos).length() as i32).collect();
+                if let Some(&id0) = band.iter().next() {
+                    w.server.send(ToServer::Inspect(Some(id0)));
+                }
+                if let Some(r) = &w.inspected {
+                    for sec in r.sections.iter().filter(|x| x.name == "Body" || x.name == "Mind") {
+                        println!("TEMPB {}", sec.lines.join("; "));
+                    }
+                }
+                println!("TEMP {:.2} h {:.1} exp {:?} doing {:?} dist {:?}", (w.ticks as f64 - t_start) / w.ticks_per_day, local * 24.0, e.map(|e| (e.air_c, e.wind_m_s, e.rain_mm_h, e.radiant_w_m2)), kinds, dists);
+            }
             let near: Vec<_> = w
                 .people
                 .iter()
@@ -305,17 +333,15 @@ fn a_sample_week_of_each_era() {
             },
             fires.join(", ")
         );
-        // The inspector's record of two of them: a grown woman and a grown man about.
+        // The inspector's record of two of them: a grown woman and a grown man of the band.
         let mut grown: Vec<(bool, u64)> = Vec::new();
         for female in [true, false] {
-            if let Some(v) = w
-                .people
+            if let Some((id, _)) = seen
                 .iter()
-                .filter(|v| !v.dead && v.female == female && format!("{:?}", v.stage) == "Adult")
-                .filter(|v| (v.pos - me).length() < 150.0)
-                .min_by_key(|v| v.id)
+                .filter(|(id, (f, stage, _))| band.contains(id) && *f == female && stage == "Adult")
+                .min_by_key(|(id, _)| **id)
             {
-                grown.push((female, v.id));
+                grown.push((female, *id));
             }
         }
         for (female, id) in grown {
@@ -333,13 +359,26 @@ fn a_sample_week_of_each_era() {
                 r.title
             );
             for s in r.sections.iter().filter(|s| {
-                ["Life", "Body", "Memory", "Knowledge", "Social", "Culture"]
-                    .contains(&s.name.as_str())
+                [
+                    "Life",
+                    "Body",
+                    "Memory",
+                    "Mind",
+                    "Knowledge",
+                    "Social",
+                    "Culture",
+                ]
+                .contains(&s.name.as_str())
             }) {
                 let _ = writeln!(log, "- *{}*: {}", s.name, s.lines.join("; "));
             }
         }
         w.server.send(ToServer::Inspect(None));
+        let _ = writeln!(
+            log,
+            "\nThe player {}.",
+            died.map_or("lived the week".to_owned(), |d| format!("died {d}"))
+        );
         let _ = writeln!(
             log,
             "\nThe week took {:.0} s to run.",

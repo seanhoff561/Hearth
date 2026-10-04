@@ -1947,6 +1947,7 @@ fn run(
                         &graph,
                         &mut gathered,
                         e,
+                        &|p| workshop.radiant_w_m2(p),
                         around,
                         now.year_frac,
                         &[at],

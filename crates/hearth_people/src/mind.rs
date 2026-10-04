@@ -300,9 +300,12 @@ pub struct Mind {
 
 /// How far a person strays from its group's middle before it goes back to them (m).
 const STRAY_M: f32 = 30.0;
-/// How far from its camp a person goes about its day, and sleeps (m).
+/// How far from its camp a person goes about its day (m).
 const CAMP_M: f32 = 400.0;
-const CAMP_SLEEP_M: f64 = 15.0;
+/// Those who keep camp sleep close about its fire, a few steps out (m): its warmth reaches no
+/// further on a cold night.
+const CAMP_SLEEP_M: f64 = 3.5;
+const CAMP_SLEEP_RING_M: f64 = 2.0;
 
 /// Chooses what to do now, from what it needs and what it knows of the moment, as its psyche
 /// tilts it: danger first (to face a hunter with the others, to flee up a tree or away, to call
@@ -363,13 +366,14 @@ pub fn choose(
         if s.in_nest {
             return Doing::Sleeping;
         }
-        // Those who keep camp sleep there.
+        // Those who keep camp sleep there, about its fire, on the side they come from.
         if let Some(camp) = s.camp
             && !species.does(Behavior::TreeNest)
             && (camp - s.pos).length() > CAMP_SLEEP_M
         {
+            let from = DVec3::new(s.pos.x - camp.x, 0.0, s.pos.z - camp.z).normalize_or(DVec3::X);
             return Doing::Going {
-                to: camp,
+                to: camp + from * CAMP_SLEEP_RING_M,
                 then: Intent::Rejoin,
             };
         }

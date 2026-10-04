@@ -2530,6 +2530,7 @@ fn hominins_living(
             &graph,
             &mut changed,
             exposure,
+            &|_| 0.0,
             around.clone(),
             year_frac,
             &[centre],

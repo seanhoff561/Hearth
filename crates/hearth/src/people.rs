@@ -83,6 +83,8 @@ struct Surrounds<'a> {
     trees: &'a [FoodTree],
     hunters: Vec<DVec3>,
     exposure: Exposure,
+    /// The fires' radiant heat at a place (W/m², as a body there takes it).
+    warmth: &'a (dyn Fn(DVec3) -> f32 + Sync),
     around: Surroundings,
     calls: Vec<(DVec3, bool)>,
     nests: Vec<BlockPos>,
@@ -184,8 +186,12 @@ impl Senses for Surrounds<'_> {
             .min_by(|a, b| (*a - at).length().total_cmp(&(*b - at).length()))
     }
 
-    fn exposure(&self, _at: DVec3, in_tree: bool) -> Exposure {
+    fn exposure(&self, at: DVec3, in_tree: bool) -> Exposure {
         let mut e = self.exposure;
+        // The fires about them warm those beside them, as they warm the player.
+        let wm = (self.warmth)(at + DVec3::new(0.0, 0.9, 0.0));
+        if std::env::var("DEBUG_WEEK").is_ok() && fastrand_tick() { eprintln!("TEMPW warmth {wm:.0} base {:.0} air {:.1}", e.radiant_w_m2, e.air_c); }
+        e.radiant_w_m2 += wm;
         if in_tree {
             // In the crown's shade, on a nest of leaves.
             e.radiant_w_m2 *= 0.4;
@@ -746,6 +752,7 @@ impl PeopleNear {
         graph: &Graph,
         changed: &mut Vec<BlockPos>,
         exposure: Exposure,
+        warmth: &(dyn Fn(DVec3) -> f32 + Sync),
         around: Surroundings,
         year_frac: f32,
         regions: &[DVec3],
@@ -807,6 +814,7 @@ impl PeopleNear {
                 trees: &self.trees,
                 hunters,
                 exposure,
+                warmth,
                 around,
                 calls: Vec::new(),
                 nests: Vec::new(),
@@ -1615,4 +1623,11 @@ fn gesture_words(g: hearth_people::Gesture) -> &'static str {
         Gesture::Embrace => "arms open",
         Gesture::Hands => "hands held out",
     }
+}
+
+// TEMP
+fn fastrand_tick() -> bool {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    N.fetch_add(1, Ordering::Relaxed) % 20000 == 0
 }

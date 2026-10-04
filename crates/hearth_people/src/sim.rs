@@ -209,6 +209,11 @@ pub struct People {
     pub(crate) knower_counts: crate::learning::KnowerCounts,
 }
 
+/// The share of the wind (taken two metres up) a body lying on grassy ground is in.
+const LYING_WIND: f32 = 0.37;
+/// What grass and leaves pulled together under a sleeper keep of the ground's cold (clo).
+const LYING_CLO: f32 = 1.0;
+
 /// The horizontal distance between two places on the planet (wrapping in x).
 fn hdist(a: DVec3, b: DVec3, wrap: f64) -> f64 {
     let mut dx = (a.x - b.x).abs();
@@ -1783,7 +1788,15 @@ impl People {
                 let sized = p.body_config(sp, &now);
                 let cfg: &BodyConfig = &sized;
                 let activity = cfg.activity(activity_of(&p.mind.doing, p.place.speed));
-                let exposure = world.exposure(p.place.pos, p.place.medium == Medium::Tree);
+                let mut exposure = world.exposure(p.place.pos, p.place.medium == Medium::Tree);
+                if matches!(p.mind.doing, Doing::Sleeping) && p.place.medium == Medium::Ground {
+                    // Lying on the ground a body is in the wind of a third of a metre up, not of
+                    // two (the wind's log profile over grass, roughness 0.1 m: ln 3 / ln 20).
+                    exposure.wind_m_s *= LYING_WIND;
+                    // And on what it lay down on: grass and leaves pulled together at least, as
+                    // apes make their nests (the camp's beds, where it has them, more).
+                    exposure.ground_clo = exposure.ground_clo.max(LYING_CLO);
+                }
                 let hurt = p.body.injuries.len();
                 p.body
                     .step(cfg, BODY_S as f64, &exposure, &sp.coat, &activity);
