@@ -20,6 +20,7 @@ use crate::schema::humans::{Chromosome, GenePool, GeneticsSettings, Locus, Speci
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
 use crate::schema::material::Material;
+use crate::schema::mind::Routine;
 use crate::schema::process::Process;
 use crate::schema::psyche::{Feeling, Tendency, Value};
 use crate::schema::station::{ConstructionPiece, Workstation};
@@ -145,6 +146,7 @@ pub struct Content {
     pub tendencies: Table<Tendency>,
     pub feelings: Table<Feeling>,
     pub values: Table<Value>,
+    pub routines: Table<Routine>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -309,6 +311,7 @@ impl Content {
             tendencies: load_table(packs, &mut r),
             feelings: load_table(packs, &mut r),
             values: load_table(packs, &mut r),
+            routines: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
@@ -395,6 +398,7 @@ impl Content {
         u(&self.tendencies, &mut out);
         u(&self.feelings, &mut out);
         u(&self.values, &mut out);
+        u(&self.routines, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
         u(&self.knowledge, &mut out);
@@ -429,6 +433,7 @@ impl Content {
             c("Behaviour tendencies", &self.tendencies),
             c("Feelings", &self.feelings),
             c("Values", &self.values),
+            c("Routines", &self.routines),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),
             c("Knowledge nodes", &self.knowledge),

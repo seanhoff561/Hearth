@@ -236,6 +236,9 @@ pub struct ShotHominin {
     pub right: f64,
     pub yaw: f32,
     pub up: f64,
+    /// What it shows it feels (`cower`, `bristle`, `slump`, `hang`, `bright`, `recoil`,
+    /// `warm`), if anything.
+    pub shows: Option<hearth_content::schema::psyche::Display>,
 }
 
 /// A family of three generations in a screenshot (H1): two pairs of grandparents of the human
@@ -527,6 +530,19 @@ impl ShotSpec {
                         _ => Stage::Adult,
                     };
                     let act = w.next().unwrap_or("stand").to_owned();
+                    let shows = {
+                        use hearth_content::schema::psyche::Display;
+                        match w.next() {
+                            Some("cower") => Some(Display::Cower),
+                            Some("bristle") => Some(Display::Bristle),
+                            Some("slump") => Some(Display::Slump),
+                            Some("hang") => Some(Display::Hang),
+                            Some("bright") => Some(Display::Bright),
+                            Some("recoil") => Some(Display::Recoil),
+                            Some("warm") => Some(Display::Warm),
+                            _ => None,
+                        }
+                    };
                     let mut n = at.split(':');
                     spec.hominins.push(ShotHominin {
                         female,
@@ -536,6 +552,7 @@ impl ShotSpec {
                         right: n.next().unwrap_or("0").parse()?,
                         yaw: n.next().unwrap_or("180").parse()?,
                         up: n.next().unwrap_or("0").parse()?,
+                        shows,
                     });
                 }
                 // `family=7:5:60@6`: a family of three generations drawn from seed 7, the
@@ -2252,7 +2269,7 @@ fn placed_hominins(
                 doing,
                 height_m: stature(profile, h.female, h.stage),
                 look: hearth_people::Look::default(),
-                shows: None,
+                shows: h.shows.map(|d| (d, 0.9)),
             }
         })
         .collect()

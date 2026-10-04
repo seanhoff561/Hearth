@@ -86,6 +86,12 @@ pub trait Senses: Sync {
     fn latitude(&self, _at: DVec3) -> f64 {
         0.0
     }
+    /// What processes can be done to within `within` m of a place — a scatter of stones, a
+    /// tree, a stand of nettles — where each is and how it is aimed at (none where a world does
+    /// not say).
+    fn targets_near(&self, _at: DVec3, _within: f64) -> Vec<(DVec3, hearth_craft::engine::Aimed)> {
+        Vec::new()
+    }
 }
 
 /// What the people do to the world, one at a time.
@@ -97,6 +103,15 @@ pub trait World: Senses {
     /// A nest bent in a tree's crown about a place: the trace it leaves, and where one lies on
     /// it (none where no nest could be made: it sleeps where it is).
     fn nest(&mut self, at: DVec3) -> Option<DVec3>;
+    /// A process done to a target at a place, with what it does to it (a scatter of stones
+    /// gathered is gone).
+    fn worked(
+        &mut self,
+        _at: DVec3,
+        _aimed: &hearth_craft::engine::Aimed,
+        _effect: hearth_content::schema::process::Effect,
+    ) {
+    }
     /// A band of a species drawn out about a place for the first time: the world may lay there
     /// the traces of its past (its anvil and stones under a nut tree, the scatter of its
     /// knapping).

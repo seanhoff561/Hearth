@@ -20,6 +20,7 @@ pub mod looks;
 pub mod memory;
 pub mod mind;
 pub mod person;
+pub mod plan;
 pub mod psyche;
 pub mod save;
 pub mod sim;
@@ -38,6 +39,7 @@ pub use mind::{Doing, Intent, Mind, Needs, Offer, Situation, Threat, choose};
 pub use person::{
     Cause, Died, Event, LifeEvent, LifeHistory, Person, PersonId, Place, Possessions, Social, Tier,
 };
+pub use plan::{Plan, Step, Want};
 pub use psyche::{Feeling, Psyche, PsycheDefs, Tendency, Value};
 pub use save::{FORMAT, PeopleSave};
 pub use sim::{Done, Numbers, People, PersonView};

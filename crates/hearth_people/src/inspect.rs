@@ -242,6 +242,16 @@ pub fn report(
                 "hunger {:.2}, thirst {:.2}, tiredness {:.2}, fear {:.2}",
                 needs.hunger, needs.thirst, needs.tiredness, needs.fear
             ),
+            match (&p.mind.goal, &p.mind.plan) {
+                (None, _) => "no goal".to_owned(),
+                (Some(g), None) => format!("goal {g:?}, unplanned ({} failed)", p.mind.failures),
+                (Some(g), Some(pl)) => format!(
+                    "goal {g:?}: step {} of {}, {:?}",
+                    pl.next + 1,
+                    pl.steps.len(),
+                    pl.step()
+                ),
+            },
         ],
     ));
 

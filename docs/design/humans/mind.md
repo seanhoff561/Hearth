@@ -46,8 +46,12 @@ The layers, cheap to dear:
 
 1. **Reflexes** — danger interrupts whatever is under way at once: flight up a tree or away,
    facing a hunter with the others, the alarm.
-2. **Routines** — the day's shape: nests at dusk and down at dawn (camps and shelters for those
-   who do not nest come with H3).
+2. **Routines** — the day's shape, as data (`humans/mind/routines.ron`): when a species' people
+   sleep (night is the routine's sleeping hours: an australopith's dusk to dawn in its nest, a
+   forager's from a few hours after dark to first light where it lies), and how strongly each
+   other stretch of the day pulls toward what it is for — foraging in the morning and late
+   afternoon, rest and grooming through the midday heat, work, the evening's company. A culture's
+   routine (H5) will replace its species'.
 3. **Utility selection** — the needs (thirst, hunger, weariness), the feelings (a low mood or grief
    weighs toward rest), the tendencies (diligence toward work, sociability toward company), the
    moment's offers (a process at hand, food in sight) and the plan's next step, scored.
@@ -62,4 +66,26 @@ if carried, else picked up where it lies in sight, else made by a process it kno
 process's tools and inputs a thing to have in turn, its target a place to go to (a scatter of
 stones, a pine for its resin, a stand of nettles). The plan's steps (go, take up, do) are done one
 by one, each checked by the engine as it is done; a failed knapping or a thing gone makes the plan
-again from where things stand, and three plans that come to nothing give the goal up.
+again from where things stand, and three plans that come to nothing give the goal up (D175).
+
+- **What it plans with.** The plan reckons what it will have as it goes: what is carried, what
+  it means to pick up (claimed, so no other step takes it), what each process will make (the
+  least it gives, of the material of the first thing it uses, as the engine makes it), the
+  targets it will have worked (a scatter gathered is gone). A tool is held aside while the
+  process's inputs are found — the hammerstone is not the stone struck — and the strongest that
+  serves is used.
+- **What it plans.** Making and gathering: processes done with things at hand or to a block (a
+  scatter, a tree, a plant). Building, felling, fires and stations come with their systems.
+- **Budgets.** A plan weighs at most twenty thousand wants and tries the three cheapest ways of
+  each; one person in four plans in a step, so planning is spread over the steps; a plan is made
+  only when the goal has none.
+- **Doing it.** The plan's next step is one of the choices the moment offers, worth more to the
+  diligent and in the routine's working hours; hunger, thirst, danger and night come first, and
+  the plan waits. The tools it needs come out of the basket into a hand. What is done to a target
+  is told to the world (a scatter of stones gathered is gone from the land).
+- **Proven** (`tests/plans.rs`): a woman of *Homo sapiens* who knows how, carrying only a back
+  basket, sets out to have a stone-tipped spear and, in about a third of a day, takes up a
+  hammerstone, gathers flint from a scatter, tests a core and strikes flakes, pulls a dead pine
+  pole and whittles it to a spear, knaps a point, strips nettle fibre and rolls a binding,
+  scrapes pine resin, eats at a fruiting tree when hungry, plans again from there and hafts the
+  point.

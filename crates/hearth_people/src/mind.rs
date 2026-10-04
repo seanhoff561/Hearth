@@ -26,6 +26,8 @@ pub enum Intent {
     Rejoin,
     /// About its range.
     Roam,
+    /// To a place its plan goes by.
+    Step,
 }
 
 /// What a person is doing.
@@ -45,6 +47,10 @@ pub enum Doing {
     /// A process under way (its recipe).
     Working {
         recipe: usize,
+    },
+    /// Taking up a thing lying where it stands.
+    Taking {
+        id: u64,
     },
     Resting,
     /// Grooming another (or itself).
@@ -156,8 +162,9 @@ pub struct Situation {
     pub water_here: bool,
     /// The nearest place with food to pick (fruit underfoot, a fruiting tree).
     pub food: Option<DVec3>,
-    /// Food where it stands.
+    /// Food where it stands, and how fast it can eat it (kg a minute).
     pub food_here: bool,
+    pub food_rate: f32,
     pub offers: Vec<Offer>,
     /// Another of its group is calling the alarm.
     pub alarm_raised: bool,
@@ -168,6 +175,8 @@ pub struct Situation {
     pub from_group_m: f32,
     /// It is grown (the young keep to their mothers).
     pub grown: bool,
+    /// The next step of what it means to do (its plan's), if it has one.
+    pub project: Option<Doing>,
 }
 
 /// What a person keeps in mind between moments (the layered mind of H2 replaces it).
@@ -181,13 +190,17 @@ pub struct Mind {
     pub strain: f32,
     /// Where and when (seconds of play) it last saw hunters.
     pub seen: Vec<(DVec3, f64)>,
+    /// What it means to have, if anything: kept until it has it or gives it up.
+    pub goal: Option<crate::plan::Want>,
+    /// How it means to get it, step by step (made again when the world has moved on).
+    #[serde(skip)]
+    pub plan: Option<crate::plan::Plan>,
+    /// Plans for the goal that came to nothing; at three it is given up.
+    pub failures: u8,
 }
 
 /// How far a person strays from its group's middle before it goes back to them (m).
 const STRAY_M: f32 = 30.0;
-/// Night, by the local solar hour: from dusk to dawn they are in their nests.
-const DUSK_H: f32 = 18.5;
-const DAWN_H: f32 = 6.0;
 
 /// Chooses what to do now, from what it needs and what it knows of the moment, as its psyche
 /// tilts it: danger first (to face a hunter with the others, to flee up a tree or away, to call
@@ -201,7 +214,10 @@ pub fn choose(
     psyche: &Psyche,
     roll: f32,
 ) -> Doing {
-    let night = s.hour < DAWN_H || s.hour >= DUSK_H;
+    use hearth_content::schema::mind::Routinely;
+    // Night by the routine of its kind; its other hours pull toward what they are for.
+    let night = species.asleep_at(s.hour);
+    let pull = |doing: Routinely| species.routinely(doing, s.hour);
     if let Some(t) = s.threat {
         if t.dist < s.flight_m {
             // A hunter that enough grown ones face is mobbed; a nearer one, or a lone one, is
@@ -240,7 +256,11 @@ pub fn choose(
         if s.in_tree && species.does(Behavior::TreeNest) {
             return Doing::Nesting;
         }
-        if let Some(tree) = s.tree {
+        // Those who nest in trees go up one; the others sleep where they are (camps and
+        // shelters come with H3).
+        if species.does(Behavior::TreeNest)
+            && let Some(tree) = s.tree
+        {
             return Doing::Going {
                 to: tree,
                 then: Intent::Nest,
@@ -261,7 +281,10 @@ pub fn choose(
     let near = |p: DVec3| (p - s.pos).length() <= REACH_M;
     // Rest weighs more when weary, low or grieving.
     let low = (-psyche.mood).max(0.0) * 0.15 + psyche.feeling(Feeling::Grief) * 0.3;
-    let mut best = (Doing::Resting, 0.2 + 0.5 * needs.tiredness + low);
+    let mut best = (
+        Doing::Resting,
+        0.2 + 0.5 * needs.tiredness + low + pull(Routinely::Rest),
+    );
     let mut consider = |d: Doing, score: f32| {
         if score > best.1 {
             best = (d, score);
@@ -280,13 +303,17 @@ pub fn choose(
     }
     if needs.hunger > 0.1 {
         if s.food_here {
-            consider(Doing::Feeding, 0.3 + 2.5 * needs.hunger);
-        } else if let Some(f) = s.food {
+            // As worth it as it is rich: a thin scatter of grubs less than a fruiting tree.
+            let rich = (s.food_rate / 0.1).clamp(0.15, 1.0);
+            let score = (0.3 + 2.5 * needs.hunger) * rich + pull(Routinely::Forage);
+            consider(Doing::Feeding, score);
+        }
+        if let Some(f) = s.food {
             let go = Doing::Going {
                 to: f,
                 then: Intent::Feed,
             };
-            consider(go, 0.2 + 2.4 * needs.hunger);
+            consider(go, 0.2 + 2.4 * needs.hunger + pull(Routinely::Forage));
         }
     }
     for o in &s.offers {
@@ -299,7 +326,9 @@ pub fn choose(
                 0.0
             }
         } else {
-            0.25 * (0.5 + psyche.tendency(Tendency::Diligence)) + 0.35 * roll
+            0.25 * (0.5 + psyche.tendency(Tendency::Diligence))
+                + 0.35 * roll
+                + pull(Routinely::Work)
         };
         let d = if near(o.at) {
             Doing::Working { recipe: o.recipe }
@@ -313,7 +342,14 @@ pub fn choose(
     }
     if s.grown_near > 0 {
         let social = 0.2 * (0.5 + psyche.tendency(Tendency::Sociability));
-        consider(Doing::Grooming { other: None }, social + 0.4 * roll);
+        let score = social + 0.4 * roll + pull(Routinely::Socialize);
+        consider(Doing::Grooming { other: None }, score);
+    }
+    // What it means to do, the diligent the more readily.
+    if let Some(d) = &s.project {
+        let score =
+            0.45 + 0.3 * psyche.tendency(Tendency::Diligence) + 0.1 * roll + pull(Routinely::Work);
+        consider(d.clone(), score);
     }
     best.0
 }

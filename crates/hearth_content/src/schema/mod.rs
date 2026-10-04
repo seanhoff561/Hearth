@@ -17,6 +17,7 @@ pub mod humans;
 pub mod item;
 pub mod knowledge;
 pub mod material;
+pub mod mind;
 pub mod process;
 pub mod psyche;
 pub mod station;

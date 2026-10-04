@@ -34,6 +34,7 @@ use crate::lineage::Kinship;
 use crate::memory::{Happened, PlaceKind, Who};
 use crate::mind::{Doing, Intent, Needs, Offer, Situation, Threat, choose};
 use crate::person::{Cause, Died, Event, Person, PersonId, Tier};
+use crate::plan::Step;
 use crate::psyche::{Feeling, PsycheDefs, Tendency};
 use crate::species::{Species, SpeciesSet};
 use crate::work::{REACH_M, finish_work, plan_work};
@@ -52,6 +53,10 @@ const SEE_M: f64 = 120.0;
 const HEAR_M: f64 = 300.0;
 /// How near (m) one must be to see where another drinks, sleeps or works, and learn the place.
 const LEARN_M: f64 = 30.0;
+/// Plans that come to nothing before a goal is given up.
+const GIVE_UP: u8 = 3;
+/// Food this rich where it stands (kg a minute) keeps a person feeding there.
+const RICH_KG_MIN: f32 = 0.1;
 /// How near (m) another must be for what it shows (fear, joy) to be caught at all.
 const CATCH_M: f32 = 25.0;
 /// How far a hunter or the player may come before it runs, when it has not come to tolerate them.
@@ -1086,9 +1091,13 @@ impl People {
                         Intent::Drink => Doing::Drinking,
                         Intent::Work(r) => Doing::Working { recipe: r },
                         Intent::Nest => Doing::Nesting,
-                        Intent::Rejoin | Intent::Roam => Doing::Idle,
+                        Intent::Rejoin | Intent::Roam | Intent::Step => Doing::Idle,
                     };
                     p.mind.timer = hold_for(&p.mind.doing);
+                    if then == Intent::Step {
+                        advance(p, &Step::Go(to));
+                        p.mind.timer = 0.0;
+                    }
                     if then == Intent::Drink {
                         let w = p.place.pos;
                         self.remember_place(i, bi, PlaceKind::Water, w, now);
@@ -1161,8 +1170,8 @@ impl People {
             Doing::Sleeping => {
                 let p = &mut self.persons[i];
                 p.place.speed = 0.0;
-                // Morning: down from the tree.
-                if (6.0..18.5).contains(&now.hour) {
+                // Morning (by its kind's routine): up.
+                if !sp.asleep_at(now.hour) {
                     p.mind.timer = 0.0;
                 }
             }
@@ -1170,6 +1179,25 @@ impl People {
                 let p = &mut self.persons[i];
                 p.place.speed = 0.0;
                 p.psyche.feel(Feeling::Affection, 0.35);
+            }
+            Doing::Taking { id } => {
+                let p = &mut self.persons[i];
+                p.place.speed = 0.0;
+                let mass = p.mass_kg(sp, &now);
+                match world.things().take(id, None) {
+                    Some(stack) => match p.possessions.carry.stow(items, stack, mass) {
+                        Ok(()) => advance(p, &Step::Take(id)),
+                        Err(stack) => {
+                            // Hands and basket full: it is put back, and the plan made again.
+                            world.things().lay(p.place.pos, stack);
+                            p.mind.plan = None;
+                        }
+                    },
+                    // Gone: the plan made again.
+                    None => p.mind.plan = None,
+                }
+                p.mind.doing = Doing::Idle;
+                p.mind.timer = 0.0;
             }
             Doing::Resting | Doing::Idle => {
                 self.persons[i].place.speed = 0.0;
@@ -1255,7 +1283,21 @@ impl People {
             world.things().take(*id, None);
         }
         let lying = world.things_near(pos, REACH_M);
-        let aimed = aim_for(crafts, content, recipe, &lying, items);
+        // A step of its plan: done to what the plan aims at.
+        let planned: Option<Option<Aimed>> =
+            self.persons[i]
+                .mind
+                .plan
+                .as_ref()
+                .and_then(|pl| match pl.step() {
+                    Some(Step::Do { recipe: r, aim }) if *r == recipe => Some(aim.clone()),
+                    _ => None,
+                });
+        let aimed = match &planned {
+            Some(aim) => aim.clone(),
+            None => aim_for(crafts, content, recipe, &lying, items),
+        };
+        let at_anvil = matches!(aimed, Some(Aimed::Thing(_)));
         let around = world.surroundings(pos);
         let plan = plan_work(
             crafts,
@@ -1269,8 +1311,12 @@ impl People {
         );
         let Ok(plan) = plan else {
             // It cannot here (the nuts eaten, the stone gone): it puts down what it took up and
-            // looks about again.
-            lay_down_tools(&mut self.persons[i], world, pos);
+            // looks about again; a plan it was following is made again.
+            if planned.is_some() {
+                self.persons[i].mind.plan = None;
+            } else {
+                lay_down_tools(&mut self.persons[i], world, pos);
+            }
             self.persons[i].mind.doing = Doing::Idle;
             return;
         };
@@ -1301,10 +1347,44 @@ impl People {
             &mut rng,
         );
         if outcome.done {
-            self.remember_place(i, bi, PlaceKind::Anvil, pos, now);
+            if at_anvil {
+                self.remember_place(i, bi, PlaceKind::Anvil, pos, now);
+            }
             let p = &mut self.persons[i];
             p.psyche.feel(Feeling::Joy, 0.25);
             p.psyche.feel(Feeling::Pride, 0.3);
+        }
+        // Following a plan: the step done (what it did to its target told to the world), or the
+        // plan made again from where things stand (the point snapped in the knapping).
+        if let Some(aim) = planned {
+            let p = &mut self.persons[i];
+            if outcome.done {
+                let target_at = p.mind.plan.as_ref().and_then(|pl| {
+                    match pl.steps.get(pl.next.wrapping_sub(1)) {
+                        Some(Step::Go(at)) => Some(*at),
+                        _ => None,
+                    }
+                });
+                let step = Step::Do {
+                    recipe,
+                    aim: aim.clone(),
+                };
+                advance(p, &step);
+                if let (Some(a), Some(at)) = (&aim, target_at) {
+                    world.worked(at, a, crafts.recipes[recipe].def.effect);
+                }
+            } else {
+                p.mind.plan = None;
+            }
+            p.mind.doing = Doing::Idle;
+            p.mind.timer = 0.0;
+            self.done.push(Done {
+                person: self.persons[i].id,
+                at: pos,
+                recipe,
+                triggers: outcome.triggers,
+            });
+            return;
         }
         self.done.push(Done {
             person: self.persons[i].id,
@@ -1402,6 +1482,36 @@ fn decide(
         p.mind.timer <= 0.0 || interrupt || calm_while_fleeing || p.mind.doing == Doing::Idle;
     if !choosing {
         return;
+    }
+    // A goal: had already, or planned for — as deep as its species plans, one person in four
+    // each step, so the planning is spread over the steps.
+    if let Some(goal) = p.mind.goal.clone() {
+        if crate::plan::has(items, content, p, &goal) {
+            p.mind.goal = None;
+            p.mind.plan = None;
+            p.mind.failures = 0;
+            p.psyche.feel(Feeling::Joy, 0.4);
+            p.psyche.feel(Feeling::Pride, 0.5);
+        } else if p.mind.plan.is_none() && (p.id + now.tick).is_multiple_of(4) {
+            let ctx = crate::plan::Ctx {
+                crafts,
+                content,
+                items,
+                senses,
+                depth: sp.cognition.planning_depth,
+                look_m: LOOK_M * 2.0,
+            };
+            match crate::plan::plan(&ctx, p, &goal) {
+                Some(plan) => p.mind.plan = Some(plan),
+                None => {
+                    p.mind.failures += 1;
+                    if p.mind.failures >= GIVE_UP {
+                        p.mind.goal = None;
+                        p.mind.failures = 0;
+                    }
+                }
+            }
+        }
     }
     let mut s = situation(p, sp, glimpses, senses, crafts, content, items, now, sight);
     s.threat = threat;
@@ -1539,14 +1649,22 @@ fn situation(
         .or_else(|| trunk_near(senses.ground(), pos, 12.0).map(|(t, _)| t));
     let water = p.memory.nearest(PlaceKind::Water, pos).filter(safe);
     let water_here = water.is_some_and(|w| (w - pos).length() < 2.0);
-    let food_here = senses.food_at(pos).is_some();
-    let food = if food_here {
+    let food_rate = senses.food_at(pos).map_or(0.0, |f| f.kg_min);
+    let food_here = food_rate > 0.0;
+    // Food elsewhere, when what is here is thin (or nothing): in sight, else remembered.
+    let food = if food_rate >= RICH_KG_MIN {
         None
     } else {
         senses
             .food_near(pos, LOOK_M)
+            .filter(|f| (*f - pos).length() > 5.0)
             .filter(safe)
-            .or_else(|| p.memory.nearest(PlaceKind::Food, pos).filter(safe))
+            .or_else(|| {
+                p.memory
+                    .nearest(PlaceKind::Food, pos)
+                    .filter(|f| (*f - pos).length() > 5.0)
+                    .filter(safe)
+            })
     };
     // What it could do with what lies about: crack nuts at an anvil, strike a flake.
     let offers = if grown {
@@ -1566,12 +1684,44 @@ fn situation(
         water_here,
         food,
         food_here,
+        food_rate,
         offers,
         alarm_raised,
         grown_near,
         group_at,
         from_group_m,
         grown,
+        project: p
+            .mind
+            .plan
+            .as_ref()
+            .and_then(|pl| pl.step())
+            .map(step_doing),
+    }
+}
+
+/// What a plan's step has a person do.
+fn step_doing(s: &Step) -> Doing {
+    match s {
+        Step::Go(at) => Doing::Going {
+            to: *at,
+            then: Intent::Step,
+        },
+        Step::Take(id) => Doing::Taking { id: *id },
+        Step::Do { recipe, .. } => Doing::Working { recipe: *recipe },
+    }
+}
+
+/// A plan's step done: on to the next; a plan gone through is let go (the goal is looked at
+/// again: had, or planned anew).
+fn advance(p: &mut Person, done: &Step) {
+    if let Some(plan) = &mut p.mind.plan
+        && plan.step() == Some(done)
+    {
+        plan.next += 1;
+        if plan.done() {
+            p.mind.plan = None;
+        }
     }
 }
 
@@ -1757,6 +1907,7 @@ fn hold_for(d: &Doing) -> f32 {
         Doing::Feeding => 40.0,
         Doing::Drinking => 15.0,
         Doing::Working { .. } => 120.0,
+        Doing::Taking { .. } => 2.0,
         Doing::Resting => 20.0,
         Doing::Grooming { .. } => 15.0,
         Doing::Nesting => 20.0,
@@ -1773,7 +1924,9 @@ fn activity_of(d: &Doing, speed: f32) -> &'static str {
     match d {
         Doing::Sleeping => "sleeping",
         Doing::Resting | Doing::Grooming { .. } | Doing::Feeding | Doing::Drinking => "resting",
-        Doing::Watching { .. } | Doing::Alarm { .. } | Doing::Idle => "standing",
+        Doing::Watching { .. } | Doing::Alarm { .. } | Doing::Idle | Doing::Taking { .. } => {
+            "standing"
+        }
         Doing::Working { .. } | Doing::Nesting => "carrying_heavy",
         Doing::Going { .. } | Doing::Mobbing { .. } | Doing::Fleeing { .. } => {
             if speed > 2.0 {
@@ -1794,7 +1947,11 @@ fn yaw_toward(from: DVec3, to: DVec3) -> f32 {
 
 /// Eats `kg` of a material.
 fn eat(p: &mut Person, cfg: &hearth_body::BodyConfig, content: &Content, material: &str, kg: f32) {
-    let Some(m) = content.materials.get(material) else {
+    let Some(m) = content
+        .materials
+        .get(material)
+        .or_else(|| content.materials.get(&format!("hearth:{material}")))
+    else {
         return;
     };
     let Some(b) = hearth_craft::food::bite(m, kg, 0.0) else {
@@ -1863,9 +2020,78 @@ fn take_up_tools(
             {
                 took.push(*id);
             }
+            continue;
+        }
+        // In its basket: taken into a hand, what fills the left hand put in the basket first.
+        let in_basket =
+            |c: &hearth_items::Carry| in_containers(c, &|s: &Stack| strong(s, &t.property, t.min));
+        if in_basket(&p.possessions.carry).is_none() {
+            continue;
+        }
+        let carry = &mut p.possessions.carry;
+        let hand = if carry.right.is_none() {
+            Some(hearth_items::Hand::Right)
+        } else if carry.left.is_none() {
+            Some(hearth_items::Hand::Left)
+        } else {
+            carry
+                .release(hearth_items::Hand::Left)
+                .and_then(|s| match carry.stow(items, s, mass) {
+                    Ok(()) => Some(hearth_items::Hand::Left),
+                    Err(s) => {
+                        let _ = carry.hold(items, s, hearth_items::Hand::Left, mass);
+                        None
+                    }
+                })
+        };
+        if let (Some(hand), Some(path)) = (hand, in_basket(carry))
+            && let Some(tool) = carry.take(items, &path, Some(1))
+            && let Err((tool, _)) = carry.hold(items, tool, hand, mass)
+        {
+            let _ = carry.stow(items, tool, mass);
         }
     }
     took
+}
+
+/// Where in the containers carried (a basket on the back, a pouch hung from a belt) the first
+/// thing lies that `pick` takes.
+fn in_containers(
+    c: &hearth_items::Carry,
+    pick: &dyn Fn(&Stack) -> bool,
+) -> Option<hearth_items::Path> {
+    fn walk(
+        path: &hearth_items::Path,
+        s: &Stack,
+        pick: &dyn Fn(&Stack) -> bool,
+    ) -> Option<hearth_items::Path> {
+        let inside = s.contents()?;
+        for (i, it) in inside.items.iter().enumerate() {
+            let p = path.inner(i);
+            if pick(&it.stack) {
+                return Some(p);
+            }
+            if let Some(found) = walk(&p, &it.stack, pick) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    use hearth_items::{Path, Root};
+    let mut roots: Vec<(Root, &Stack)> = Vec::new();
+    if let Some(b) = &c.back {
+        roots.push((Root::Back, b));
+    }
+    for (i, w) in c.worn.iter().enumerate() {
+        for (k, h) in w.hung.iter().enumerate() {
+            if let Some(s) = h {
+                roots.push((Root::Hung(i, k), s));
+            }
+        }
+    }
+    roots
+        .into_iter()
+        .find_map(|(r, s)| walk(&Path::at(r), s, pick))
 }
 
 /// Lays down beside it what it holds in its hands (its tools, after the work).

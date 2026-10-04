@@ -42,6 +42,8 @@ pub struct Species {
     pub bodies: [BodyConfig; 2],
     /// Its coat of hair, or bare skin, covering the body as clothes do.
     pub coat: Worn,
+    /// The shape of its days (V2.1 §6.1): when it sleeps, forages, rests, works, keeps company.
+    pub routine: Vec<hearth_content::schema::mind::Block>,
 }
 
 fn sex(female: bool) -> usize {
@@ -144,6 +146,99 @@ fn hair() -> Worn {
     w
 }
 
+impl Species {
+    /// A species from its profile (implemented or not), its bodies made from the player's
+    /// `base`.
+    pub fn of_profile(
+        s: &hearth_content::schema::humans::Species,
+        graph: &Graph,
+        base: &BodyConfig,
+    ) -> Species {
+        let node = |id: &str| {
+            graph
+                .node(id)
+                .or_else(|| graph.node(&format!("hearth:{id}")))
+        };
+        let mid = |r: (f32, f32)| (r.0 + r.1) / 2.0;
+        let height_m = [mid(s.body.height_m.female), mid(s.body.height_m.male)];
+        let spread = |r: (f32, f32)| (r.1 - r.0) / 4.0;
+        let height_sd_m = [spread(s.body.height_m.female), spread(s.body.height_m.male)];
+        let mass_kg = [mid(s.body.mass_kg.female), mid(s.body.mass_kg.male)];
+        let knowledge: Vec<String> = s
+            .knowledge
+            .iter()
+            .filter_map(|k| node(k.as_str()).map(|n| n.id.clone()))
+            .collect();
+        let mut techniques: Vec<String> = knowledge
+            .iter()
+            .filter_map(|k| node(k))
+            .flat_map(|n| n.enables.iter().cloned())
+            .collect();
+        techniques.sort();
+        techniques.dedup();
+        let bodies = [0, 1].map(|k| body_of(base, mass_kg[k] as f64, height_m[k] as f64));
+        Species {
+            id: s.id.clone(),
+            name: s.name.clone(),
+            plan: s.body.plan,
+            height_m,
+            mass_kg,
+            height_sd_m,
+            climbs: s.body.climbs,
+            cognition: s.cognition.clone(),
+            life: s.life.clone(),
+            social: s.social.clone(),
+            behaviors: s.behaviors.clone(),
+            knowledge,
+            techniques,
+            population: s.population.as_ref().map(|p| p.to_string()),
+            bodies,
+            coat: match s.body.coat {
+                Coat::Hair => hair(),
+                Coat::Bare => Worn::naked(),
+            },
+            routine: Vec::new(),
+        }
+    }
+
+    /// With its routine from the content (a species without one keeps the default day: asleep
+    /// from dusk to dawn).
+    pub fn with_routine(mut self, c: &Content) -> Self {
+        let key = |id: &str| id.rsplit(':').next().unwrap_or(id).to_owned();
+        self.routine = c
+            .routines
+            .iter()
+            .filter(|r| key(r.species.as_str()) == key(&self.id))
+            .flat_map(|r| r.blocks.iter().cloned())
+            .collect();
+        self
+    }
+
+    /// Whether its people sleep at a local hour.
+    pub fn asleep_at(&self, hour: f32) -> bool {
+        use hearth_content::schema::mind::Routinely;
+        let mut sleep = self
+            .routine
+            .iter()
+            .filter(|b| b.doing == Routinely::Sleep)
+            .peekable();
+        if sleep.peek().is_none() {
+            let h = hour.rem_euclid(24.0);
+            return !(6.0..18.5).contains(&h);
+        }
+        sleep.any(|b| b.holds(hour))
+    }
+
+    /// How strongly its routine pulls toward something at a local hour.
+    pub fn routinely(&self, doing: hearth_content::schema::mind::Routinely, hour: f32) -> f32 {
+        self.routine
+            .iter()
+            .filter(|b| b.doing == doing && b.holds(hour))
+            .map(|b| b.weight)
+            .sum()
+    }
+}
+
 /// Every species whose persons the game lives, and the genetic architecture they are read by.
 #[derive(Debug, Clone, Default)]
 pub struct SpeciesSet {
@@ -157,56 +252,11 @@ impl SpeciesSet {
     /// The implemented species profiles of the content, with bodies made from the player's
     /// `base`.
     pub fn from_content(c: &Content, graph: &Graph, base: &BodyConfig) -> Self {
-        let node = |id: &str| {
-            graph
-                .node(id)
-                .or_else(|| graph.node(&format!("hearth:{id}")))
-        };
-        let mid = |r: (f32, f32)| (r.0 + r.1) / 2.0;
         let list = c
             .species
             .iter()
             .filter(|s| s.status == Status::Implemented)
-            .map(|s| {
-                let height_m = [mid(s.body.height_m.female), mid(s.body.height_m.male)];
-                let spread = |r: (f32, f32)| (r.1 - r.0) / 4.0;
-                let height_sd_m = [spread(s.body.height_m.female), spread(s.body.height_m.male)];
-                let mass_kg = [mid(s.body.mass_kg.female), mid(s.body.mass_kg.male)];
-                let knowledge: Vec<String> = s
-                    .knowledge
-                    .iter()
-                    .filter_map(|k| node(k.as_str()).map(|n| n.id.clone()))
-                    .collect();
-                let mut techniques: Vec<String> = knowledge
-                    .iter()
-                    .filter_map(|k| node(k))
-                    .flat_map(|n| n.enables.iter().cloned())
-                    .collect();
-                techniques.sort();
-                techniques.dedup();
-                let bodies = [0, 1].map(|k| body_of(base, mass_kg[k] as f64, height_m[k] as f64));
-                Species {
-                    id: s.id.clone(),
-                    name: s.name.clone(),
-                    plan: s.body.plan,
-                    height_m,
-                    mass_kg,
-                    height_sd_m,
-                    climbs: s.body.climbs,
-                    cognition: s.cognition.clone(),
-                    life: s.life.clone(),
-                    social: s.social.clone(),
-                    behaviors: s.behaviors.clone(),
-                    knowledge,
-                    techniques,
-                    population: s.population.as_ref().map(|p| p.to_string()),
-                    bodies,
-                    coat: match s.body.coat {
-                        Coat::Hair => hair(),
-                        Coat::Bare => Worn::naked(),
-                    },
-                }
-            })
+            .map(|s| Species::of_profile(s, graph, base).with_routine(c))
             .collect();
         Self {
             list,

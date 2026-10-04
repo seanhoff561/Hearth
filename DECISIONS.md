@@ -2021,3 +2021,35 @@ day of play. Contagion catches at most half of the feeling seen: without it a ba
 visible people kept one another frightened indefinitely after a single fright (the test
 `a_fright_spreads_through_those_near_and_fades` caught it); halved, a feeling passed on weakens
 with each passing and dies away without its cause, as alarm in a calm group does.
+
+## D175 — Planning: a task network over the player's process engine
+V2.1 §6.1 asks for HTN planning on the process engine. A goal is to *have* something (a thing
+answering to a process input, or a tool of a strength); it is met by what is carried or made
+earlier in the plan, by a thing lying in sight (go, take up), or by a process the person knows
+that makes it — each tool and input in turn a want, a block target a place to go. The search is
+depth-first to the species' planning depth (*Australopithecus* 1, *Homo sapiens* 6), tries the
+three cheapest ways of each want by the process's hours and the walk to its target, and stops at a
+budget of twenty thousand wants; the processes that make a want are found once per plan. The plan
+tracks what it will have (things carried and made, things claimed, targets used up), holds each
+tool aside while the inputs are found (so the hammer is not the stone struck) and makes outputs of
+the first input's material, as the engine does — an early version lost which stone a flake was
+struck from, expected a blunt basalt flake and never whittled the spear. Plans are not saved (made
+again on loading); a failed step makes the plan again from where things stand, three plans that
+come to nothing give the goal up. Only making and gathering are planned for now — processes kept
+or removing or depleting their target, without stations; what is done to a target is told to the
+world (`World::worked`), and the world says what can be worked about a place
+(`Senses::targets_near`): the tests' savanna in full, the game's world from H3, when people who
+plan live in it. The planning test also found that a person's food here and now was weighed only
+by hunger: a thin scatter of grubs kept a hungry woman feeding all day beside a fruiting marula,
+so food is weighed by how rich it is, and a person where it is thin goes to richer food it sees
+or remembers (D176).
+
+## D176 — Routines as data, and food weighed by its richness
+V2.1 §6.1's routines are a species' (later a culture's) days as data (`humans/mind/routines.ron`):
+its sleeping hours, which are night for the choosing (an australopith in its nest dusk to dawn, a
+forager from a few hours after dark), and stretches of the day that add to what they are for —
+foraging in the morning and late afternoon, rest and grooming at midday (savanna primates'
+activity budgets), a forager's work and the evening's company. The pulls are small (0.1–0.2 on
+scores of 0.2–3), so need still decides. Food where a person stands is worth as much as it is
+rich (its kilograms a minute against a tenth of a kilogram): where it is thin, food in sight or
+remembered elsewhere is weighed too.

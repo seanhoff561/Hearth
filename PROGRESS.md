@@ -653,7 +653,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
   V2.1, its part (e) folded into H0)
 - [x] H0 — Framework migration (2026-10-03)
 - [x] H1 — Genetics engine (2026-10-03)
-- [ ] H2 — Psyche and mind core
+- [x] H2 — Psyche and mind core (2026-10-03)
 - [ ] H3 — Life course and demography (the player is born)
 - [ ] H4 — Social systems
 - [ ] H5 — Culture and language
@@ -679,8 +679,8 @@ design only). Updated with each H milestone.
 |---|---|---|
 | Species profiles | *Australopithecus* | *Homo erectus*, *H. neanderthalensis*, *H. sapiens* (data; H3 and H8) |
 | Era profiles | Wild Earth (its *Australopithecus* bands) | Wild Earth's families (H3), Lower, Middle, Upper Paleolithic (H8), Neolithic (H11), Bronze Age (H12), Iron Age (H13) |
-| Calibrated traits | 29 heritable traits on ~460 loci: appearance, health, metabolism, HEXACO temperament and its narrower dimensions, aptitudes (H1) | read by the mind (H2), the life course (H3), learning (H6) |
-| Routines | — | (H2) |
+| Calibrated traits | 29 heritable traits on ~460 loci: appearance, health, metabolism, HEXACO temperament and its narrower dimensions, aptitudes (H1); temperament read by the psyche (H2) | health by the life course (H3), aptitudes by learning (H6) |
+| Routines | *Australopithecus*'s day, a forager's day (H2) | cultures' routines (H5) |
 | Norms | — | (H4) |
 | Speech acts | — | (H5) |
 | The player's birth | genome from two parents of the place, shown at birth; no appearance chosen (H1) | born into a family (H3), birth options (H8); births in multiplayer (R3) |
@@ -972,10 +972,21 @@ H2 — Psyche and mind core (PLAN.md, V2.1 §5–6), in parts:
   a hunter was seen and its water and food passed over for days; people known by sight, more
   familiar with time together; weighted episodes, the defining ones into the life history
   (`Met`, `Hurt`, `Mourned`); people format 4 (`tests/memory.rs`).
-- [ ] (c) The layered mind: reflexes, routines from data, utility selection over goals, HTN
-  planning on the process engine with an executor, budgets.
-- [ ] (d) The acceptance: a *Homo sapiens* agent makes a hafted spear from scratch, knowing how;
-  modest trait–behaviour correlations; feelings visible on the figures and contagious.
+- [x] (c) The layered mind (`docs/design/humans/mind.md`, D175–D176): danger's reflexes, routines
+  as data (`humans/mind/routines.ron`: sleeping hours as night, foraging, midday rest and
+  grooming, work, evening company), utility selection with the routine's pulls and food weighed
+  by its richness, and planning: a task network over the player's process engine to the species'
+  depth (have it, pick it up, or make or gather it by a known process, tools held aside), steps
+  done one by one and the plan made again when the world moves on, budgeted; tools taken from the
+  basket into a hand; what is done to a target told to the world.
+- [x] (d) The acceptance: a woman of *Homo sapiens* who knows how makes a stone-tipped spear from
+  scratch in about a third of a day (`tests/plans.rs`); the sociable groom more, modestly
+  (`tests/temperament.rs`); feelings caught from those near (`tests/psyche.rs`) and shown on the
+  figures' postures (`tools/shots/h2_feelings.shots`).
+- (e) Checked lightly at the user's asking (their machine froze under full checks): the changed
+  crates' tests and lints (`hearth_content`, `hearth_people`, `hearth`); the performance gate and
+  the feelings screenshots wait for a release build (H2 changes nothing drawn but the figures'
+  postures).
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -985,11 +996,14 @@ H2 — Psyche and mind core (PLAN.md, V2.1 §5–6), in parts:
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. H2 — Psyche and mind core (PLAN.md, V2.1 §5–6): personality's behaviour mappings from the
-   HEXACO phenotype, appraisal emotions, mood and stress, values; perception; memory and
-   beliefs; routines, utility selection and HTN planning on the process engine; budgets. When
-   restarting, run the determinism and genetics quick tests with `scripts/check.sh` (V2.1 §21). Amendment R (`dev/AMENDMENT_R.md`) waits until
-   V2-16; only its multiplayer-ready rule applies (D166).
+1. H3 — Life course and demography (PLAN.md, V2.1 §7, §14; Addenda A and B): pair bonds
+   (abstracted), pregnancy and birth, the life stages with child bodies, development (genes ×
+   environment), ageing, death, mourning and inheritance, life tables; the player born into a
+   family of the world (Wild Earth's wandering families, D164) and growing up at the childhood
+   pace; death as an event and its choices (spectate, restart, inhabit an adult). Build and test
+   gently (`low.sh`: two jobs, below-normal priority, the changed crates' tests only — the user's
+   machine froze under full checks). Amendment R (`dev/AMENDMENT_R.md`) waits until V2-16; only
+   its multiplayer-ready rule applies (D166).
 2. Carried forward from the slice review (`docs/review/slice-1.md`, "Left where they belong"): a
    kill is more than one person can use in summer (sharing comes with others, H4); scavengers
    take a carcass within hours of play (the populations' year scale); joints are drawn, not

@@ -290,6 +290,10 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
             );
         }
     }
+    // Routines (V2.1 §6.1): whose they are.
+    for (e, o) in c.routines.iter_with_origin() {
+        r.check(&c.species, "species", &e.species, o, e.id());
+    }
     // The psyche (V2.1 §5): what each tendency, feeling and value leans on.
     for (e, o) in c.tendencies.iter_with_origin() {
         for l in &e.from {

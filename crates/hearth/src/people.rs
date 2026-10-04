@@ -790,27 +790,72 @@ pub fn appearance_of(
 pub fn drive(v: &PersonView) -> Drive {
     use hearth_people::Doing;
     let in_tree = v.medium == hearth_fauna::live::Medium::Tree;
-    let activity = match &v.doing {
+    let mut activity = match &v.doing {
         Doing::Sleeping => Activity::Lie,
         _ if in_tree && v.speed > 0.05 => Activity::Ladder,
-        Doing::Working { .. } | Doing::Feeding | Doing::Drinking | Doing::Nesting => {
-            Activity::Crouch
-        }
+        Doing::Working { .. }
+        | Doing::Feeding
+        | Doing::Drinking
+        | Doing::Nesting
+        | Doing::Taking { .. } => Activity::Crouch,
         Doing::Grooming { .. } | Doing::Resting => Activity::Crouch,
         _ if v.speed > 3.0 => Activity::Sprint,
         _ if v.speed > 1.8 => Activity::Jog,
         _ if v.speed > 0.1 => Activity::Walk,
         _ => Activity::Stand,
     };
+    // What it feels shows in how it holds itself: cowering and trembling in fear, bristling
+    // in anger, the head bowed in grief, hung and turned aside in shame, up in joy, turned
+    // away in disgust, inclined toward the others in affection (the head's pitch in degrees,
+    // down positive, and turn).
+    let (mut pitch, mut turn, mut shiver, mut breaths) = (0.0, 0.0, 0.0, 16.0);
+    if let Some((display, felt)) = v.shows {
+        use hearth_content::schema::psyche::Display;
+        match display {
+            Display::Cower => {
+                if activity == Activity::Stand {
+                    activity = Activity::Crouch;
+                }
+                pitch = -6.0;
+                shiver = 0.5 * felt;
+                breaths = 28.0;
+            }
+            Display::Bristle => {
+                pitch = -12.0 * felt;
+                breaths = 24.0;
+            }
+            Display::Slump => {
+                pitch = 35.0 * felt;
+                breaths = 11.0;
+            }
+            Display::Hang => {
+                pitch = 40.0 * felt;
+                turn = 30.0 * felt;
+            }
+            Display::Bright => {
+                pitch = -15.0 * felt;
+                breaths = 18.0;
+            }
+            Display::Recoil => {
+                pitch = -18.0 * felt;
+                turn = 45.0 * felt;
+            }
+            Display::Warm => {
+                pitch = 8.0 * felt;
+                turn = 15.0 * felt;
+            }
+            Display::None => {}
+        }
+    }
     Drive {
         activity,
         speed: v.speed,
         vertical: if in_tree { v.speed } else { 0.0 },
-        look_pitch: 0.0,
-        look_yaw: 0.0,
+        look_pitch: pitch,
+        look_yaw: turn,
         climb: 0.0,
-        shiver: 0.0,
-        breaths_per_min: 16.0,
+        shiver,
+        breaths_per_min: breaths,
         holding: hearth_character::Holding::default(),
     }
 }

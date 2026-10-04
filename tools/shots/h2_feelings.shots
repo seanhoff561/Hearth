@@ -1,0 +1,6 @@
+# H2 feelings shown on the body (V2.1 §5.2): a row of australopiths on the savanna of seed 7,
+# each holding itself as a feeling makes it — calm, cowering in fear, bristling in anger, slumped
+# in grief, the head hung in shame, bright in joy, recoiling in disgust, warm toward another.
+# `hearth --screenshot-list tools/shots/h2_feelings.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=6, hour=10, clouds=0.25, dry=true, season=summer@0.5
+biome=savanna, above=1.5, yaw=30, pitch=8, fov=40, mow=12@6, hominin=f:adult:stand@5:-3.6:180, hominin=m:adult:stand:cower@5:-2.6:180, hominin=m:adult:stand:bristle@5:-1.5:180, hominin=f:adult:stand:slump@5:-0.5:180, hominin=f:adult:stand:hang@5:0.5:180, hominin=m:adult:stand:bright@5:1.5:180, hominin=f:adult:stand:recoil@5:2.5:180, hominin=f:adult:stand:warm@5:3.5:180, out=bench-out/h2/feelings.png

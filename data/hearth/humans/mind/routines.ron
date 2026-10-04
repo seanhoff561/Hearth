@@ -1,0 +1,41 @@
+// Routines (V2.1 §6.1): the ordinary shape of a species' days — when its people sleep, forage,
+// rest, work and keep company — making ordinary life look ordinary at little cost. Each block is
+// a stretch of local solar hours (`to` before `from` runs across midnight) and how strongly it
+// pulls toward what it is for (added to that choice's worth when the person chooses); sleep's
+// hours are simply night. A culture's routine (H5) replaces its species' where it has one.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "australopithecus_day", name: "An australopith's day", status: Implemented, species: "australopithecus",
+            // Down from the nests at dawn, feeding through the morning, resting and grooming
+            // through the heat of the day, feeding again through the afternoon, up into the nests
+            // at dusk.
+            blocks: [
+                (from: 18.5, to: 6.0, doing: Sleep, weight: 1.0),
+                (from: 6.0, to: 10.5, doing: Forage, weight: 0.15),
+                (from: 10.5, to: 14.5, doing: Rest, weight: 0.2),
+                (from: 10.5, to: 14.5, doing: Socialize, weight: 0.1),
+                (from: 14.5, to: 18.5, doing: Forage, weight: 0.15),
+            ],
+            realism_source: "chimpanzee and savanna-baboon activity budgets: feeding peaks in the morning and late afternoon, resting and grooming at midday (Pruetz and Bertolani 2009; Hill et al. 2003)",
+            uncertain: true,
+        ),
+        (
+            id: "forager_day", name: "A forager's day", status: Implemented, species: "homo_sapiens",
+            // Up at first light, out foraging and working through the morning, resting through
+            // the heat, working and mending in the afternoon, together at the fire in the
+            // evening, asleep a few hours after dark.
+            blocks: [
+                (from: 21.5, to: 6.5, doing: Sleep, weight: 1.0),
+                (from: 6.5, to: 11.0, doing: Forage, weight: 0.1),
+                (from: 6.5, to: 11.0, doing: Work, weight: 0.1),
+                (from: 11.0, to: 14.0, doing: Rest, weight: 0.2),
+                (from: 14.0, to: 18.0, doing: Work, weight: 0.15),
+                (from: 18.0, to: 21.5, doing: Socialize, weight: 0.2),
+            ],
+            realism_source: "forager time allocation and evening fireside talk (Lee 1979; Hawkes et al.; Wiessner 2014); review",
+            uncertain: true,
+        ),
+    ],
+)

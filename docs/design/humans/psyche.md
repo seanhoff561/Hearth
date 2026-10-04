@@ -48,7 +48,13 @@ another's is caught, how it shows on the body, and the traits that make it felt 
 - **Showing.** The strongest feeling shown is the one the body shows (`Display`: cowering in
   fear, bristling in anger or indignation, slumped in grief, hanging the head in shame or guilt,
   bright in joy or pride, recoiling in disgust, warm in affection); the people's views carry it to
-  the figures.
+  the figures, which hold themselves so — crouched and trembling, breathing fast; upright and
+  agitated; the head bowed, breathing slow; the head hung and turned aside; the head up; turned
+  away; inclined toward the others (`tools/shots/h2_feelings.shots`).
+- **Tilting behaviour, modestly** (`tests/temperament.rs`): over a day of ten bands, how much of
+  its time each grown one spends grooming follows its sociability (and its extraversion behind
+  that) — a correlation to be found, not a rule; the body's needs, the hour and chance decide most
+  of it.
 
 ## Mood and stress
 

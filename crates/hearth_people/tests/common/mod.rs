@@ -116,6 +116,8 @@ pub struct Savanna {
     pub tick: u64,
     pub nests: usize,
     pub alarms: usize,
+    /// What processes can be done to: where, and how it is aimed at.
+    pub targets: Vec<(DVec3, hearth_craft::engine::Aimed)>,
 }
 
 impl Savanna {
@@ -150,6 +152,7 @@ impl Savanna {
             tick: 0,
             nests: 0,
             alarms: 0,
+            targets: Vec::new(),
         }
     }
 
@@ -236,6 +239,14 @@ impl Senses for Savanna {
             .into_iter()
             .collect()
     }
+
+    fn targets_near(&self, at: DVec3, within: f64) -> Vec<(DVec3, hearth_craft::engine::Aimed)> {
+        self.targets
+            .iter()
+            .filter(|(p, _)| (*p - at).length() < within)
+            .cloned()
+            .collect()
+    }
 }
 
 impl World for Savanna {
@@ -252,6 +263,18 @@ impl World for Savanna {
     fn nest(&mut self, _at: DVec3) -> Option<DVec3> {
         self.nests += 1;
         None
+    }
+
+    fn worked(
+        &mut self,
+        at: DVec3,
+        _aimed: &hearth_craft::engine::Aimed,
+        effect: hearth_content::schema::process::Effect,
+    ) {
+        use hearth_content::schema::process::Effect;
+        if matches!(effect, Effect::Remove | Effect::Deplete) {
+            self.targets.retain(|(p, _)| (*p - at).length() > 0.5);
+        }
     }
 }
 
