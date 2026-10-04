@@ -18,8 +18,8 @@ use hearth_fauna::live::Stage;
 use hearth_items::{Hand, Items, Stack};
 use hearth_math::hash::Rng;
 use hearth_people::{
-    Doing, Intent, Needs, Now, Offer, Person, Pile, Situation, Species, SpeciesSet, Things, Threat,
-    choose, finish_work, plan_work,
+    Doing, Intent, Needs, Now, Offer, Person, Pile, Psyche, Situation, Species, SpeciesSet, Things,
+    Threat, choose, finish_work, plan_work,
 };
 
 struct World {
@@ -418,10 +418,13 @@ fn its_mind_chooses_by_its_needs_and_fears() {
         feeds: true,
     });
     s.food = Some(DVec3::new(20.0, 0.0, 0.0));
-    assert_eq!(choose(k, &hungry, &s, 0.5), Doing::Working { recipe: 3 });
+    assert_eq!(
+        choose(k, &hungry, &s, &Psyche::default(), 0.5),
+        Doing::Working { recipe: 3 }
+    );
     s.offers.clear();
     assert!(matches!(
-        choose(k, &hungry, &s, 0.5),
+        choose(k, &hungry, &s, &Psyche::default(), 0.5),
         Doing::Going {
             then: Intent::Feed,
             ..
@@ -431,7 +434,7 @@ fn its_mind_chooses_by_its_needs_and_fears() {
     let mut t = calm(here);
     t.water = Some(DVec3::new(50.0, 0.0, 0.0));
     assert!(matches!(
-        choose(k, &thirsty, &t, 0.5),
+        choose(k, &thirsty, &t, &Psyche::default(), 0.5),
         Doing::Going {
             then: Intent::Drink,
             ..
@@ -445,15 +448,24 @@ fn its_mind_chooses_by_its_needs_and_fears() {
         dist: 100.0,
         hunter: true,
     });
-    assert!(matches!(choose(k, &fed, &d, 0.5), Doing::Alarm { .. }));
+    assert!(matches!(
+        choose(k, &fed, &d, &Psyche::default(), 0.5),
+        Doing::Alarm { .. }
+    ));
     d.threat = Some(Threat {
         at: DVec3::new(30.0, 0.0, 0.0),
         dist: 30.0,
         hunter: true,
     });
-    assert!(matches!(choose(k, &fed, &d, 0.5), Doing::Mobbing { .. }));
+    assert!(matches!(
+        choose(k, &fed, &d, &Psyche::default(), 0.5),
+        Doing::Mobbing { .. }
+    ));
     d.grown_near = 1;
-    assert_eq!(choose(k, &fed, &d, 0.5), Doing::Fleeing { to: tree });
+    assert_eq!(
+        choose(k, &fed, &d, &Psyche::default(), 0.5),
+        Doing::Fleeing { to: tree }
+    );
     // The player, not too near: watched.
     let mut p = calm(here);
     p.threat = Some(Threat {
@@ -461,20 +473,26 @@ fn its_mind_chooses_by_its_needs_and_fears() {
         dist: 80.0,
         hunter: false,
     });
-    assert!(matches!(choose(k, &fed, &p, 0.5), Doing::Watching { .. }));
+    assert!(matches!(
+        choose(k, &fed, &p, &Psyche::default(), 0.5),
+        Doing::Watching { .. }
+    ));
     // Night: up a tree to make its nest, and asleep in it.
     let mut n = calm(here);
     n.hour = 20.0;
     n.tree = Some(tree);
     assert_eq!(
-        choose(k, &fed, &n, 0.5),
+        choose(k, &fed, &n, &Psyche::default(), 0.5),
         Doing::Going {
             to: tree,
             then: Intent::Nest
         }
     );
     n.in_tree = true;
-    assert_eq!(choose(k, &fed, &n, 0.5), Doing::Nesting);
+    assert_eq!(choose(k, &fed, &n, &Psyche::default(), 0.5), Doing::Nesting);
     n.in_nest = true;
-    assert_eq!(choose(k, &fed, &n, 0.5), Doing::Sleeping);
+    assert_eq!(
+        choose(k, &fed, &n, &Psyche::default(), 0.5),
+        Doing::Sleeping
+    );
 }

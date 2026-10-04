@@ -149,6 +149,8 @@ fn hair() -> Worn {
 pub struct SpeciesSet {
     pub list: Vec<Species>,
     pub genetics: Option<crate::genome::Genetics>,
+    /// How temperament shows in behaviour, and the feelings' ways.
+    pub psyche: crate::psyche::PsycheDefs,
 }
 
 impl SpeciesSet {
@@ -209,6 +211,7 @@ impl SpeciesSet {
         Self {
             list,
             genetics: crate::genome::Genetics::from_content(c),
+            psyche: crate::psyche::PsycheDefs::from_content(c),
         }
     }
 

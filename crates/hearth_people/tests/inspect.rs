@@ -34,6 +34,7 @@ fn the_inspector_shows_every_component() {
             "Body",
             "Genome",
             "Phenotype",
+            "Psyche",
             "Mind",
             "Knowledge",
             "Social",
@@ -41,7 +42,7 @@ fn the_inspector_shows_every_component() {
             "Place"
         ]
     );
-    let knowledge = &r.sections[5].lines[0];
+    let knowledge = &r.sections[6].lines[0];
     assert!(r.sections[3].lines.iter().any(|l| l.starts_with("stature")));
     assert!(knowledge.contains("Cracking nuts"), "{knowledge}");
     assert!(report(&p, &b.species, &b.graph, 999_999, &world.now()).is_none());

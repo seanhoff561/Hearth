@@ -512,6 +512,32 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.tendencies,
+        report,
+        |e| &e.id,
+        |t, c| {
+            c.range("middle", t.middle, t.range.0, t.range.1);
+            c.range("spread", t.spread, 0.0, 0.5);
+        },
+    );
+    each(
+        &content.feelings,
+        report,
+        |e| &e.id,
+        |f, c| {
+            c.range("valence", f.valence, -1.0, 1.0);
+            c.range("contagion", f.contagion, 0.0, 1.0);
+        },
+    );
+    each(
+        &content.values,
+        report,
+        |e| &e.id,
+        |v, c| {
+            c.range("default", v.default, 0.0, 1.0);
+        },
+    );
+    each(
         &content.traits,
         report,
         |e| &e.id,

@@ -154,6 +154,9 @@ pub struct Person {
     /// What its genes, development and chance make of it.
     #[serde(default)]
     pub phenotype: Option<crate::genome::Phenotype>,
+    /// Its tendencies, feelings, mood, stress and values (V2.1 §5).
+    #[serde(default)]
+    pub psyche: crate::psyche::Psyche,
     /// Its own random stream: what it draws does not depend on who else drew first.
     pub rng: Rng,
 }
@@ -224,6 +227,7 @@ impl Person {
             },
             genome: None,
             phenotype: None,
+            psyche: crate::psyche::Psyche::default(),
             rng,
         }
     }

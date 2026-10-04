@@ -172,8 +172,44 @@ pub fn report(
         sections.push(section("Phenotype", lines));
     }
 
+    // Psyche: the mood and stress, the feelings now, the tendencies and values.
+    let ps = &p.psyche;
+    let felt: Vec<String> = ps
+        .feelings
+        .iter()
+        .filter(|(_, v)| *v >= 0.02)
+        .map(|(f, v)| format!("{} {v:.2}", f.key()))
+        .collect();
+    let tendencies: Vec<String> = ps
+        .tendencies
+        .iter()
+        .map(|(t, v)| format!("{} {v:.2}", t.key()))
+        .collect();
+    let values: Vec<String> = ps
+        .values
+        .iter()
+        .map(|(v, w)| format!("{} {w:.2}", v.key()))
+        .collect();
+    sections.push(section(
+        "Psyche",
+        vec![
+            format!(
+                "mood {:+.2}, stress {:.2}; feeling {}",
+                ps.mood,
+                ps.stress,
+                if felt.is_empty() {
+                    "nothing much".to_owned()
+                } else {
+                    felt.join(", ")
+                }
+            ),
+            tendencies.join(", "),
+            values.join(", "),
+        ],
+    ));
+
     // Mind.
-    let needs = Needs::of(&p.body, cfg, p.mind.fear);
+    let needs = Needs::of(&p.body, cfg, p.psyche.feeling(crate::psyche::Feeling::Fear));
     sections.push(section(
         "Mind",
         vec![

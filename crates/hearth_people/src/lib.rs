@@ -19,6 +19,7 @@ pub mod lineage;
 pub mod looks;
 pub mod mind;
 pub mod person;
+pub mod psyche;
 pub mod save;
 pub mod sim;
 pub mod species;
@@ -35,6 +36,7 @@ pub use mind::{Doing, Intent, Mind, Needs, Offer, Situation, Threat, choose};
 pub use person::{
     Cause, Died, Event, LifeEvent, LifeHistory, Person, PersonId, Place, Possessions, Social, Tier,
 };
+pub use psyche::{Feeling, Psyche, PsycheDefs, Tendency, Value};
 pub use save::{FORMAT, PeopleSave};
 pub use sim::{Done, Numbers, People, PersonView};
 pub use species::{Species, SpeciesSet, body_of, grown_height_m, growth};

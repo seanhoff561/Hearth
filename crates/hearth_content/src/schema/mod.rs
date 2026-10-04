@@ -18,6 +18,7 @@ pub mod item;
 pub mod knowledge;
 pub mod material;
 pub mod process;
+pub mod psyche;
 pub mod station;
 
 use std::fmt;

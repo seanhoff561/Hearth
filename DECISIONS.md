@@ -2007,3 +2007,17 @@ the loincloth first worn, kept in `birth.json` (the chosen character's name, sex
 come over once from `characters.json`). Under Legacy the player is born again in the region of
 new parents; under Hardy they come back the same person. A world saved before H1 has no birth for
 its player: one is drawn at load the same way, of the player's sex, and their looks become its.
+
+## D174 — The psyche as data curves; feelings on two clocks; contagion that weakens
+V2.1 §5 asks for personality mapped to behaviour through data curves, appraisal emotions, mood,
+stress and values. The kinds are fixed in code — thirteen tendencies, ten feelings, eight values —
+because the mind refers to them by meaning; their numbers are data (`humans/psyche/`): a
+tendency's middle, range and spread per standard deviation of the traits it leans on; a feeling's
+valence, fade, contagion, display and reactivity; a value's default and tilt. They are saved by
+name. Feelings fade on one of two clocks: a moment's (fear, anger, joy, disgust) in seconds of
+play, as the player sees it pass, a lasting one's (grief, shame, guilt, affection) in days of the
+world, so a night's sleep at ninety times speed does not end a grief and a fright does not last a
+day of play. Contagion catches at most half of the feeling seen: without it a band of mutually
+visible people kept one another frightened indefinitely after a single fright (the test
+`a_fright_spreads_through_those_near_and_fades` caught it); halved, a feeling passed on weakens
+with each passing and dies away without its cause, as alarm in a calm group does.

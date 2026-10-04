@@ -1,0 +1,83 @@
+// Feelings (V2.1 §5.2): each felt when something is appraised against what a person wants, holds
+// dear and believes (threat to self or kin: fear; a blocked goal or an insult: anger; a loss:
+// grief; one's own wrong: shame or guilt; another's: indignation; success: joy and pride;
+// contamination: disgust; company: affection). `valence` is its weight in the mood; `half_life`
+// how fast it fades (a moment's in seconds of play, a lasting one's in days of the world);
+// `contagion` how much of another's, seen at full strength, is caught in a second; `display` how
+// it shows on the body; `reactivity` how much stronger it is felt per standard deviation of the
+// traits it leans on.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "fear", name: "Fear", status: Implemented,
+            valence: -0.8, half_life: Seconds(40), contagion: 0.35, display: Cower,
+            reactivity: [(of: "emotionality", weight: 0.2), (of: "stress_reactivity", weight: 0.12), (of: "inhibition", weight: 0.1)],
+            realism_source: "fear contagion in groups (alarm); emotionality and harm avoidance",
+            uncertain: true,
+        ),
+        (
+            id: "anger", name: "Anger", status: Implemented,
+            valence: -0.6, half_life: Seconds(90), contagion: 0.12, display: Bristle,
+            reactivity: [(of: "aggression_threshold", weight: -0.2), (of: "agreeableness", weight: -0.15)],
+            realism_source: "HEXACO agreeableness (low: anger); review",
+            uncertain: true,
+        ),
+        (
+            id: "grief", name: "Grief", status: Implemented,
+            valence: -0.9, half_life: Days(20), contagion: 0.05, display: Slump,
+            reactivity: [(of: "emotionality", weight: 0.15)],
+            realism_source: "acute grief eases over weeks to months; estimate for the game's compressed days",
+            uncertain: true,
+        ),
+        (
+            id: "shame", name: "Shame", status: Implemented,
+            valence: -0.6, half_life: Days(0.5), contagion: 0.0, display: Hang,
+            reactivity: [(of: "honesty_humility", weight: 0.1), (of: "emotionality", weight: 0.1)],
+            realism_source: "estimate; review (felt at one's own norm violations seen by others, H4)",
+            uncertain: true,
+        ),
+        (
+            id: "guilt", name: "Guilt", status: Implemented,
+            valence: -0.5, half_life: Days(1), contagion: 0.0, display: Hang,
+            reactivity: [(of: "honesty_humility", weight: 0.15), (of: "conscientiousness", weight: 0.1)],
+            realism_source: "estimate; review (felt at acting against one's values, H4)",
+            uncertain: true,
+        ),
+        (
+            id: "indignation", name: "Indignation", status: Implemented,
+            valence: -0.4, half_life: Seconds(300), contagion: 0.1, display: Bristle,
+            reactivity: [(of: "honesty_humility", weight: 0.15)],
+            realism_source: "estimate; review (felt at others' norm violations, H4)",
+            uncertain: true,
+        ),
+        (
+            id: "joy", name: "Joy", status: Implemented,
+            valence: 0.8, half_life: Seconds(120), contagion: 0.2, display: Bright,
+            reactivity: [(of: "extraversion", weight: 0.15)],
+            realism_source: "positive affect and extraversion; estimate",
+            uncertain: true,
+        ),
+        (
+            id: "pride", name: "Pride", status: Implemented,
+            valence: 0.6, half_life: Seconds(240), contagion: 0.0, display: Bright,
+            reactivity: [(of: "honesty_humility", weight: -0.1), (of: "extraversion", weight: 0.1)],
+            realism_source: "estimate; review",
+            uncertain: true,
+        ),
+        (
+            id: "disgust", name: "Disgust", status: Implemented,
+            valence: -0.5, half_life: Seconds(60), contagion: 0.25, display: Recoil,
+            reactivity: [(of: "emotionality", weight: 0.1)],
+            realism_source: "disgust at contamination, readily caught from others' faces; estimate",
+            uncertain: true,
+        ),
+        (
+            id: "affection", name: "Affection", status: Implemented,
+            valence: 0.6, half_life: Days(0.25), contagion: 0.05, display: Warm,
+            reactivity: [(of: "agreeableness", weight: 0.1), (of: "empathy", weight: 0.1)],
+            realism_source: "estimate; review",
+            uncertain: true,
+        ),
+    ],
+)

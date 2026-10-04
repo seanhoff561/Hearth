@@ -1,0 +1,35 @@
+// Values (V2.1 §5.3): what people care about, weighting their choices (kin loyalty in sharing
+// and defence, generosity in giving, honour in revenge and keeping one's word, autonomy in
+// following others, deference to elders, piety in rites, fairness in dividing, courage in facing
+// danger). A culture gives each its weight (H5); `default` stands where none does. Within a
+// culture they vary by personality (`from`, per standard deviation, times `spread`) and by life.
+// Acting against one's values brings guilt; seeing others do so, judgment (H4).
+(
+    schema: 1,
+    entries: [
+        (id: "kin_loyalty", name: "Kin loyalty", status: Implemented, default: 0.7, spread: 0.08,
+         from: [(of: "agreeableness", weight: 0.3), (of: "empathy", weight: 0.3)],
+         realism_source: "kin altruism is near universal (Hamilton's rule); estimate", uncertain: true),
+        (id: "generosity", name: "Generosity", status: Implemented, default: 0.5, spread: 0.1,
+         from: [(of: "honesty_humility", weight: 0.4), (of: "agreeableness", weight: 0.3)],
+         realism_source: "HEXACO and giving in dictator games (Hilbig et al. 2013)", uncertain: true),
+        (id: "honor", name: "Honour", status: Implemented, default: 0.4, spread: 0.1,
+         from: [(of: "honesty_humility", weight: 0.2), (of: "agreeableness", weight: -0.2)],
+         realism_source: "estimate; review", uncertain: true),
+        (id: "autonomy", name: "Autonomy", status: Implemented, default: 0.5, spread: 0.1,
+         from: [(of: "openness", weight: 0.3), (of: "agreeableness", weight: -0.2)],
+         realism_source: "estimate; review", uncertain: true),
+        (id: "deference", name: "Deference to elders", status: Implemented, default: 0.5, spread: 0.1,
+         from: [(of: "conscientiousness", weight: 0.2), (of: "openness", weight: -0.2)],
+         realism_source: "estimate; review", uncertain: true),
+        (id: "piety", name: "Piety", status: Implemented, default: 0.3, spread: 0.1,
+         from: [(of: "conscientiousness", weight: 0.2)],
+         realism_source: "estimate; review (rites come with culture, H5)", uncertain: true),
+        (id: "fairness", name: "Fairness", status: Implemented, default: 0.6, spread: 0.1,
+         from: [(of: "honesty_humility", weight: 0.5)],
+         realism_source: "HEXACO honesty-humility and fairness (Ashton and Lee 2007)", uncertain: true),
+        (id: "courage", name: "Courage", status: Implemented, default: 0.5, spread: 0.1,
+         from: [(of: "emotionality", weight: -0.4), (of: "inhibition", weight: -0.2)],
+         realism_source: "estimate; review", uncertain: true),
+    ],
+)

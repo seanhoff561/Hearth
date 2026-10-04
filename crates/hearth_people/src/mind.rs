@@ -7,6 +7,7 @@ use hearth_body::{Body, BodyConfig, Hunger, Thirst, Tiredness};
 use hearth_content::schema::humans::Behavior;
 use serde::{Deserialize, Serialize};
 
+use crate::psyche::{Feeling, Psyche, Tendency, Value};
 use crate::species::Species;
 use crate::work::REACH_M;
 
@@ -176,8 +177,8 @@ pub struct Mind {
     pub doing: Doing,
     /// Seconds of play before it looks about and chooses again (danger interrupts at once).
     pub timer: f32,
-    /// How afraid it is now: it rises at a threat and fades in safety.
-    pub fear: f32,
+    /// What its body bears (0–1: hunger, thirst, weariness, pain), as last felt.
+    pub strain: f32,
     /// Where and when (seconds of play) it last saw hunters.
     pub seen: Vec<(DVec3, f64)>,
 }
@@ -188,12 +189,18 @@ const STRAY_M: f32 = 30.0;
 const DUSK_H: f32 = 18.5;
 const DAWN_H: f32 = 6.0;
 
-/// Chooses what to do now, from what it needs and what it knows of the moment: danger first (to
-/// face a hunter with the others, to flee up a tree or away, to call the alarm, to watch), then
-/// its nest at night, then the others if it has strayed, then the most pressing of its needs —
-/// drinking, feeding, a work that feeds it — and otherwise rest and company. `roll` (0–1) varies
-/// the idle choices.
-pub fn choose(species: &Species, needs: &Needs, s: &Situation, roll: f32) -> Doing {
+/// Chooses what to do now, from what it needs and what it knows of the moment, as its psyche
+/// tilts it: danger first (to face a hunter with the others, to flee up a tree or away, to call
+/// the alarm, to watch), then its nest at night, then the others if it has strayed, then the most
+/// pressing of its needs — drinking, feeding, a work that feeds it — and otherwise rest and
+/// company. `roll` (0–1) varies the idle choices.
+pub fn choose(
+    species: &Species,
+    needs: &Needs,
+    s: &Situation,
+    psyche: &Psyche,
+    roll: f32,
+) -> Doing {
     let night = s.hour < DAWN_H || s.hour >= DUSK_H;
     if let Some(t) = s.threat {
         if t.dist < s.flight_m {
@@ -204,7 +211,7 @@ pub fn choose(species: &Species, needs: &Needs, s: &Situation, roll: f32) -> Doi
                 && s.grown
                 && s.grown_near >= 4
                 && t.dist > 6.0
-                && needs.fear < 0.9;
+                && needs.fear < 0.6 + 0.4 * psyche.value(Value::Courage);
             if mob {
                 return Doing::Mobbing { at: t.at };
             }
@@ -241,7 +248,9 @@ pub fn choose(species: &Species, needs: &Needs, s: &Situation, roll: f32) -> Doi
         }
         return Doing::Sleeping;
     }
-    if s.from_group_m > STRAY_M
+    // The conforming keep closer to the others.
+    let stray = STRAY_M * (1.5 - psyche.tendency(Tendency::Conformity));
+    if s.from_group_m > stray
         && let Some(at) = s.group_at
     {
         return Doing::Going {
@@ -250,7 +259,9 @@ pub fn choose(species: &Species, needs: &Needs, s: &Situation, roll: f32) -> Doi
         };
     }
     let near = |p: DVec3| (p - s.pos).length() <= REACH_M;
-    let mut best = (Doing::Resting, 0.2 + 0.5 * needs.tiredness);
+    // Rest weighs more when weary, low or grieving.
+    let low = (-psyche.mood).max(0.0) * 0.15 + psyche.feeling(Feeling::Grief) * 0.3;
+    let mut best = (Doing::Resting, 0.2 + 0.5 * needs.tiredness + low);
     let mut consider = |d: Doing, score: f32| {
         if score > best.1 {
             best = (d, score);
@@ -288,7 +299,7 @@ pub fn choose(species: &Species, needs: &Needs, s: &Situation, roll: f32) -> Doi
                 0.0
             }
         } else {
-            0.25 + 0.35 * roll
+            0.25 * (0.5 + psyche.tendency(Tendency::Diligence)) + 0.35 * roll
         };
         let d = if near(o.at) {
             Doing::Working { recipe: o.recipe }
@@ -301,7 +312,8 @@ pub fn choose(species: &Species, needs: &Needs, s: &Situation, roll: f32) -> Doi
         consider(d, score);
     }
     if s.grown_near > 0 {
-        consider(Doing::Grooming { other: None }, 0.2 + 0.4 * roll);
+        let social = 0.2 * (0.5 + psyche.tendency(Tendency::Sociability));
+        consider(Doing::Grooming { other: None }, social + 0.4 * roll);
     }
     best.0
 }

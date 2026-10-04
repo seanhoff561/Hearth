@@ -2192,6 +2192,7 @@ fn placed_family(
                 doing: Doing::Idle,
                 height_m: grown * hearth_people::growth(maturity, age as f64).powf(0.4),
                 look: hearth_people::look(&ph, profile.body.plan, female, age, maturity),
+                shows: None,
             }
         })
         .collect()
@@ -2251,6 +2252,7 @@ fn placed_hominins(
                 doing,
                 height_m: stature(profile, h.female, h.stage),
                 look: hearth_people::Look::default(),
+                shows: None,
             }
         })
         .collect()

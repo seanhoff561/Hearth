@@ -33,6 +33,7 @@ use crate::genome::Genetics;
 use crate::lineage::Kinship;
 use crate::mind::{Doing, Intent, Needs, Offer, Situation, Threat, choose};
 use crate::person::{Cause, Died, Event, Person, PersonId, Tier};
+use crate::psyche::{Feeling, PsycheDefs, Tendency};
 use crate::species::{Species, SpeciesSet};
 use crate::work::{REACH_M, finish_work, plan_work};
 use crate::world::{Now, PlayerSeen, Senses, World};
@@ -46,6 +47,8 @@ pub const FAR_M: f64 = 150.0;
 const LOOK_M: f64 = 40.0;
 /// How far it sees a hunter or the player (m), by day.
 const SEE_M: f64 = 120.0;
+/// How near (m) another must be for what it shows (fear, joy) to be caught at all.
+const CATCH_M: f32 = 25.0;
 /// How far a hunter or the player may come before it runs, when it has not come to tolerate them.
 const FLIGHT_M: f32 = 60.0;
 /// A calm player holds its eye within this many times its flight distance; beyond, it goes about
@@ -92,6 +95,9 @@ pub struct PersonView {
     /// Its height (m), and its looks, for its figure.
     pub height_m: f32,
     pub look: crate::looks::Look,
+    /// The feeling it shows on its body, and how strongly.
+    #[serde(default)]
+    pub shows: Option<(hearth_content::schema::psyche::Display, f32)>,
 }
 
 /// A band's numbers as the ecological cells count them: the young of the year, the young not yet
@@ -119,6 +125,8 @@ struct Glimpse {
     grown: bool,
     alive: bool,
     alarm: bool,
+    /// The feeling it shows, and how strongly.
+    shows: Option<(Feeling, f32)>,
 }
 
 /// Everyone ever drawn out, and their bands.
@@ -270,6 +278,7 @@ impl People {
             {
                 Some(bi) => {
                     self.redraw(bi, sp, genes, sun, graph, want, here, now);
+                    self.form(bi, &species.psyche, now);
                     bi
                 }
                 None => {
@@ -277,6 +286,7 @@ impl People {
                     self.bands[bi].range_m = range_m;
                     self.bands[bi].population_group = Some(gid);
                     self.endow(bi, sp, genes, sun, now);
+                    self.form(bi, &species.psyche, now);
                     world.settle(here, sp);
                     bi
                 }
@@ -386,6 +396,18 @@ impl People {
             let mother = genome(self.persons[i].life.mother);
             let father = genome(self.persons[i].life.father);
             self.persons[i].inherit(genetics, mother.as_ref(), father.as_ref(), sun);
+        }
+    }
+
+    /// Forms the psyche of every living member of a band who has none yet, from its phenotype.
+    fn form(&mut self, bi: usize, defs: &PsycheDefs, now: Now) {
+        let band = self.bands[bi].id;
+        for p in self
+            .persons
+            .iter_mut()
+            .filter(|p| p.social.band == band && p.alive() && !p.psyche.formed)
+        {
+            p.psyche = crate::psyche::Psyche::form(defs, p.phenotype.as_ref(), now.day);
         }
     }
 
@@ -633,6 +655,7 @@ impl People {
         let genes = species.genetics.as_ref();
         let sun = genes.map_or(1.0, |g| g.sunlight(world.latitude(at)));
         self.endow(bi, sp, genes, sun, now);
+        self.form(bi, &species.psyche, now);
         self.onto_the_ground(bi, &*world, at);
         know_about(&mut self.bands[bi], world, items, at);
         id
@@ -681,6 +704,7 @@ impl People {
         let genes = species.genetics.as_ref();
         let sun = genes.map_or(1.0, |g| g.sunlight(world.latitude(here)));
         self.redraw(bi, sp, genes, sun, graph, want, here, now);
+        self.form(bi, &species.psyche, now);
         self.onto_the_ground(bi, &*world, here);
         know_about(&mut self.bands[bi], world, items, here);
     }
@@ -768,6 +792,10 @@ impl People {
                             sp.life.maturity_years,
                         )
                     }),
+                    shows: p
+                        .psyche
+                        .shown(&species.psyche)
+                        .map(|(f, v)| (species.psyche.feeling(f).display, v)),
                 })
             })
             .collect()
@@ -809,6 +837,7 @@ impl People {
                     .is_some_and(|sp| p.stage(sp, &now) == Stage::Adult),
                 alive: p.alive(),
                 alarm: matches!(p.mind.doing, Doing::Alarm { .. }),
+                shows: p.psyche.shown(&species.psyche),
             })
             .collect();
         // 1. Deciding, everyone at once.
@@ -826,14 +855,33 @@ impl People {
                         return;
                     };
                     decide(
-                        p, sp, band, &glimpses, senses, crafts, content, items, players, now, dt,
+                        p,
+                        sp,
+                        &species.psyche,
+                        band,
+                        &glimpses,
+                        senses,
+                        crafts,
+                        content,
+                        items,
+                        players,
+                        now,
+                        dt,
                     );
                 });
         }
         // 2. Acting, one at a time in the persons' order.
         for i in 0..self.persons.len() {
             let p = &self.persons[i];
-            if p.tier != Tier::Full || !p.alive() {
+            if p.tier != Tier::Full {
+                continue;
+            }
+            // A body that died otherwise (a hunter's kill, a fall): its death recorded.
+            if p.life.died.is_none() && p.body.dead.is_some() {
+                self.died(i, now);
+                continue;
+            }
+            if !p.alive() {
                 continue;
             }
             let Some(sp) = species.get(&p.species) else {
@@ -848,19 +896,62 @@ impl People {
                 let cfg = sp.body(p.life.female);
                 let activity = cfg.activity(activity_of(&p.mind.doing, p.place.speed));
                 let exposure = world.exposure(p.place.pos, p.place.medium == Medium::Tree);
+                let hurt = p.body.injuries.len();
                 p.body
                     .step(cfg, BODY_S as f64, &exposure, &sp.coat, &activity);
-                if let Some(d) = &p.body.dead
-                    && p.life.died.is_none()
-                {
-                    let cause = Cause::Body(format!("{d:?}"));
-                    p.life.died = Some(Died {
-                        day: now.day,
-                        cause: cause.clone(),
-                    });
-                    p.record(now.day, Event::Died { cause });
+                // A new hurt frightens and angers; the body's needs and pains strain it.
+                if p.body.injuries.len() > hurt {
+                    p.psyche.feel(Feeling::Fear, 0.6);
+                    p.psyche.feel(Feeling::Anger, 0.4);
+                }
+                let n = Needs::of(&p.body, cfg, 0.0);
+                let pain = (p.body.injuries.len() as f32 * 0.2).min(0.6);
+                p.mind.strain =
+                    (0.35 * n.hunger + 0.35 * n.thirst + 0.15 * n.tiredness + pain).min(1.0);
+                if p.body.dead.is_some() {
+                    self.died(i, now);
                 }
             }
+        }
+    }
+
+    /// Records a person's death (its body's cause), and its band's mourning.
+    fn died(&mut self, i: usize, now: Now) {
+        let p = &mut self.persons[i];
+        let Some(d) = &p.body.dead else {
+            return;
+        };
+        if p.life.died.is_some() {
+            return;
+        }
+        let cause = Cause::Body(format!("{d:?}"));
+        p.life.died = Some(Died {
+            day: now.day,
+            cause: cause.clone(),
+        });
+        p.record(now.day, Event::Died { cause });
+        let (dead, band) = (p.id, p.social.band);
+        self.mourn(dead, band);
+    }
+
+    /// A death felt by the dead one's band: grief in its kin by how close they were (a mother,
+    /// a child, a brother or sister most; a grandparent or a half-sibling half as much).
+    fn mourn(&mut self, dead: PersonId, band: u64) {
+        let kin: Vec<(usize, f64)> = {
+            let mut k = Kinship::new(&*self);
+            (0..self.persons.len())
+                .filter(|&j| {
+                    let q = &self.persons[j];
+                    q.social.band == band && q.alive() && q.id != dead
+                })
+                .map(|j| (j, k.of(dead, self.persons[j].id)))
+                .filter(|(_, r)| *r >= 0.1)
+                .collect()
+        };
+        for (j, r) in kin {
+            self.persons[j]
+                .psyche
+                .feel(Feeling::Grief, (4.0 * r).min(1.0) as f32);
         }
     }
 
@@ -942,6 +1033,8 @@ impl People {
                 let p = &mut self.persons[i];
                 p.place.speed = 0.0;
                 if let Some(f) = world.food_at(p.place.pos) {
+                    let hunger = Needs::of(&p.body, cfg, 0.0).hunger;
+                    p.psyche.feel(Feeling::Joy, 0.3 * hunger);
                     eat(p, cfg, content, &f.material, f.kg_min * PER_MIN * dt);
                     // A handful of marula stones to crack later, now and then.
                     if let Some(nuts) = &f.nuts
@@ -1001,7 +1094,12 @@ impl People {
                     p.mind.timer = 0.0;
                 }
             }
-            Doing::Resting | Doing::Grooming { .. } | Doing::Idle => {
+            Doing::Grooming { .. } => {
+                let p = &mut self.persons[i];
+                p.place.speed = 0.0;
+                p.psyche.feel(Feeling::Affection, 0.35);
+            }
+            Doing::Resting | Doing::Idle => {
                 self.persons[i].place.speed = 0.0;
             }
             Doing::Watching { at } => {
@@ -1132,6 +1230,9 @@ impl People {
         );
         if outcome.done {
             Places::remember(&mut self.bands[bi].places.anvils, pos, 8.0, 8);
+            let p = &mut self.persons[i];
+            p.psyche.feel(Feeling::Joy, 0.25);
+            p.psyche.feel(Feeling::Pride, 0.3);
         }
         self.done.push(Done {
             person: self.persons[i].id,
@@ -1153,6 +1254,7 @@ impl People {
 fn decide(
     p: &mut Person,
     sp: &Species,
+    defs: &PsycheDefs,
     band: &Band,
     glimpses: &[Glimpse],
     senses: &dyn Senses,
@@ -1164,11 +1266,30 @@ fn decide(
     dt: f32,
 ) {
     let (threat, flight_m) = threat_of(p, band, senses, players);
-    // Fear rises at a threat and fades in safety.
+    // The bold let a threat come nearer before they run.
+    let flight_m = flight_m * (1.3 - 0.6 * p.psyche.tendency(Tendency::RiskTolerance));
+    // Fear rises at a threat; what the others nearby show is caught; feelings fade.
     let scare = threat.map_or(0.0, |t| {
         ((flight_m * 1.5 - t.dist) / (flight_m * 1.5)).clamp(0.0, 1.0)
     });
-    p.mind.fear = p.mind.fear.max(scare) * (1.0 - 0.05 * dt);
+    p.psyche.feel(Feeling::Fear, scare);
+    let pos = p.place.pos;
+    for g in glimpses
+        .iter()
+        .filter(|g| g.band == p.social.band && g.alive && g.id != p.id)
+    {
+        if let Some((f, v)) = g.shows {
+            let near = (1.0 - (g.pos - pos).length() as f32 / CATCH_M).clamp(0.0, 1.0);
+            if near > 0.0 {
+                p.psyche.catch(defs, f, v * near, dt);
+            }
+        }
+        // An alarm heard frightens.
+        if g.alarm && (g.pos - pos).length() < SEE_M {
+            p.psyche.feel(Feeling::Fear, 0.45);
+        }
+    }
+    p.psyche.pass(defs, dt, now.day, p.mind.strain);
     let danger = threat.is_some_and(|t| t.dist < flight_m);
     let calm_while_fleeing = matches!(p.mind.doing, Doing::Fleeing { .. }) && !danger;
     p.mind.timer -= dt;
@@ -1185,10 +1306,16 @@ fn decide(
     let mut s = situation(p, sp, band, glimpses, senses, crafts, content, items, now);
     s.threat = threat;
     s.flight_m = flight_m;
-    let needs = Needs::of(&p.body, sp.body(p.life.female), p.mind.fear);
+    let needs = Needs::of(
+        &p.body,
+        sp.body(p.life.female),
+        p.psyche.feeling(Feeling::Fear),
+    );
     let roll = p.rng.next_f32();
-    p.mind.doing = choose(sp, &needs, &s, roll);
-    p.mind.timer = hold_for(&p.mind.doing) * (0.75 + 0.5 * p.rng.next_f32());
+    p.mind.doing = choose(sp, &needs, &s, &p.psyche, roll);
+    // The patient keep at a thing longer.
+    let patience = 0.8 + 0.4 * p.psyche.tendency(Tendency::Patience);
+    p.mind.timer = hold_for(&p.mind.doing) * patience * (0.75 + 0.5 * p.rng.next_f32());
 }
 
 /// The nearest threat a person sees (a hunter of people, else the player it is most wary of),
