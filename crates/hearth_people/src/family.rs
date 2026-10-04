@@ -393,6 +393,14 @@ impl People {
         Some(taken)
     }
 
+    /// A player is no longer the person they were (born again elsewhere): the record stays
+    /// as it is, its own again.
+    pub fn release_player(&mut self, player: u64) {
+        for p in self.persons.iter_mut().filter(|p| p.player == Some(player)) {
+            p.player = None;
+        }
+    }
+
     /// The person a player is, if they are one.
     pub fn player_person(&self, player: u64) -> Option<&Person> {
         self.persons.iter().find(|p| p.player == Some(player))

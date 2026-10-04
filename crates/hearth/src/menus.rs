@@ -1142,13 +1142,18 @@ fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAct
     if !d.story.is_empty() {
         c.space(6.0);
     }
-    for (id, who) in d.kin.iter().take(4) {
+    let kin: &[(u64, String)] = if d.rules == hearth_save::DeathRules::Permadeath {
+        &[]
+    } else {
+        &d.kin
+    };
+    for (id, who) in kin.iter().take(4) {
         let words = ui.lang.format("menu.death.live_as", &[("who", who)]);
         if ui.button(c.row(ROW), &words) {
             out.push(MenuAction::LiveAs(*id));
         }
     }
-    if !d.kin.is_empty() {
+    if !kin.is_empty() {
         c.space(6.0);
     }
     let rules = match d.rules {

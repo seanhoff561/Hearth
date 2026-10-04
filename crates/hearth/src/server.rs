@@ -852,6 +852,12 @@ fn run(
                             hearth_save::DeathRules::Permadeath => None,
                         };
                         if let Some(at) = at {
+                            // The one who died lies where they fell, theirs no more; the new
+                            // life is grown, without the old one's family.
+                            people.live.release_player(0);
+                            household = None;
+                            childhood = None;
+                            cfg = grown_cfg.clone();
                             let fell = player.mover.pos;
                             let left = std::mem::take(&mut player.carry);
                             for (k, stack) in left.into_stacks().into_iter().enumerate() {
@@ -1058,8 +1064,10 @@ fn run(
                 }
                 Ok(ToServer::Inhabit(id)) => {
                     // Living on as one of their people (Addendum B §2): the person's body, what
-                    // it knows and carries, where it stands, taken up whole.
+                    // it knows and carries, where it stands, taken up whole (never under
+                    // Permadeath).
                     if player.body.dead.is_some()
+                        && death_rules != hearth_save::DeathRules::Permadeath
                         && let Some(q) = people.live.inhabit(0, id)
                     {
                         let maturity = people

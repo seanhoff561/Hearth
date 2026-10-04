@@ -53,3 +53,27 @@ fn an_infant_is_carried_by_its_mother_and_hunger_stunts() {
     hungry.life.undernourished = 0.5;
     assert!(hungry.height_m(sp, &now) < infant.height_m(sp, &now) * 0.99);
 }
+
+#[test]
+fn an_infant_held_little_carries_stress_more_heavily_within_bounds() {
+    // Attachment (V2.1 §18, development): the same hard days weigh more on one who had no one
+    // to hold to as an infant, but not beyond the designed half again.
+    let b = base();
+    let defs = &b.species.psyche;
+    let mut held = hearth_people::Psyche::default();
+    let mut alone = hearth_people::Psyche {
+        insecure: 0.5,
+        ..hearth_people::Psyche::default()
+    };
+    for day in 1..=12 {
+        let d = day as f64 * 0.25;
+        held.pass(defs, 1.0, d, 0.4);
+        alone.pass(defs, 1.0, d, 0.4);
+    }
+    println!(
+        "stress {:.3} held, {:.3} held little",
+        held.stress, alone.stress
+    );
+    assert!(alone.stress > held.stress * 1.05, "it weighs more");
+    assert!(alone.stress < held.stress * 1.5, "but within bounds");
+}

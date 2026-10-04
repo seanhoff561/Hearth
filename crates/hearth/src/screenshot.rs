@@ -212,6 +212,9 @@ pub struct ShotSpec {
     pub lying: Vec<(DVec3, glam::Vec3, [u8; 3], f32)>,
     /// The camera to the nearest group of this species, looking at it from 30 m along `yaw`.
     pub seek: Option<String>,
+    /// A player's household set down where the camera stands (H3): the player's age, the
+    /// household's people living a while (`run`) as the game lives them.
+    pub born: Option<f64>,
     /// Seconds the animals live on before the shot with the camera as a person among them
     /// (they see it, and flee it).
     pub run: Option<f64>,
@@ -333,6 +336,7 @@ impl Default for ShotSpec {
             back: 0.0,
             lying: Vec::new(),
             seek: None,
+            born: None,
             run: None,
             near_water: false,
             yaw_given: false,
@@ -481,6 +485,11 @@ impl ShotSpec {
                 "seek" => {
                     spec.fauna = true;
                     spec.seek = Some(v.to_owned());
+                }
+                // `born=6`: the household of a player of six set down here, living a while.
+                "born" => {
+                    spec.fauna = true;
+                    spec.born = Some(v.parse()?);
                 }
                 // `animal=red_deer:adult:m:graze@20:-3:90` (species, stage, sex, what it does @
                 // metres ahead : to the right : facing in degrees from the camera's : above the
@@ -636,7 +645,7 @@ impl ShotSpec {
         }
         // Seeking a group, the camera stands a little above the ground, looking at it through
         // a longer lens.
-        if spec.seek.is_some() {
+        if spec.seek.is_some() || spec.born.is_some() {
             if !given.iter().any(|k| k == "above") {
                 spec.above = 4.0;
             }
@@ -905,6 +914,18 @@ pub fn render_shot(
                 f.eco.regions.len(),
                 made.elapsed().as_secs_f64()
             );
+            if spec.born.is_some() {
+                // A household set down where the camera stands, drawn out once the blocks are
+                // in: the camera on its place for now.
+                let centre = DVec3::new(sx, lw.surface_y(sx, sz) + 0.8, sz);
+                let h = Herd::new(vec![centre]);
+                let (eye, yaw) = h.first_view(lw, spec.yaw, spec.above);
+                (sx, sz) = (eye.x, eye.z);
+                seen = Some((eye, yaw, h.mid));
+                hominins_at = Some(centre);
+                fauna = Some(f);
+                break 'seek;
+            }
             if let Some(seek) = &spec.seek {
                 // `red_deer` or `red_deer:3` (the third nearest group).
                 let (name, nth) = match seek.split_once(':') {
@@ -2323,6 +2344,18 @@ fn hominins_living(
     let seconds = spec.run.unwrap_or(30.0);
     let steps = ((seconds / 0.05).round() as u64).max(41);
     let started = std::time::Instant::now();
+    // A player's household set down here (`born=`): the birth of the place and its household.
+    let genetics = hearth_people::Genetics::from_content(&content);
+    let latitude = lw.map.planet().latitude_deg(centre.z);
+    let birth = spec
+        .born
+        .zip(genetics.as_ref())
+        .and_then(|(_, g)| crate::born::draw(g, latitude, None, spec.seed));
+    let household = spec
+        .born
+        .zip(genetics.as_ref())
+        .zip(birth.as_ref())
+        .map(|((age, g), b)| crate::born::household(g, b, age, spec.seed));
     for t in 0..steps {
         agents.tick(
             lw,
@@ -2337,7 +2370,7 @@ fn hominins_living(
             year_frac,
             &[centre],
             &[],
-            None,
+            birth.as_ref().zip(household.as_ref()),
             hearth_people::Now {
                 tick: t,
                 hour,

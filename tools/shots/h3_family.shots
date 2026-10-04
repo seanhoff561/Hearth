@@ -1,0 +1,10 @@
+# H3 the household a player is born into (V2.1 Addendum A, D180), set down on the savanna of seed 7
+# where the H1 and V2-11 shots stand and living its morning as the game lives it: the parents, the
+# brothers and sisters of every age in their own proportions, the young at play by their mothers,
+# an infant carried at the hip (the player's own person, the newborn or the child, is the player's
+# and not drawn).
+# `hearth --screenshot-list tools/shots/h3_family.shots`
+defaults: seed=7, planet=huge, res=256, w=960, h=540, dist=8, hour=10, clouds=0.25, dry=true, season=summer
+x=215040, z=10240, above=1.6, back=-13, mow=24@14, born=5, run=25, out=bench-out/h3/family_5.png
+x=215040, z=10240, above=1.6, back=-13, mow=24@14, born=9, run=25, out=bench-out/h3/family_9.png
+x=215040, z=10240, above=1.6, back=-13, mow=24@14, born=2, run=25, out=bench-out/h3/family_2.png
