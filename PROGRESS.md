@@ -1160,23 +1160,32 @@ pruned to genealogy stubs (`tests/persist.rs`).
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. First, when the machine's memory allows (a Windows restart frees it): run H4's tests
-   (`cargo test -p hearth_people`, above all `tests/social.rs` and `tests/childhood.rs`, which the
-   council broke for the tree-nesting hominins and `KeepCamp` mended;
-   `cargo test -p hearth_content --test base_content`; the game's `tests/family.rs`), fix what
-   fails, tick H4 and run the perf gate; then H5's and H6's tests (`tests/culture.rs`), likewise.
-   H5 — Culture and language (PLAN.md, V2.1 §9–10), built: the culture generator and model, its
-   transmission and evolution (H4's norms and ways become a culture's, varying by its values);
-   generated languages, their families and drift, names; speech acts, gestures, subtitles with
-   partial translation (replacing the words the game tells the player when strangers greet or
-   warn them off); the player learning a language. *Accept:* two cultures from one ancestor
-   diverge after a split with related languages and customs; the player learns a language over
-   play. Build and test gently (`low.sh`: one or two jobs, below-normal priority, the changed
-   crates' tests only).
-   Amendment R (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready rule applies
-   (D166). Known from H4: levelling among egalitarian foragers (deflating the boastful) waits for
-   cultures' values; the people do not yet give gifts to strangers themselves, nor raid; a mother
-   carrying her infant is not drawn holding it; watching after death is a free camera only
+1. First, when the machine's memory allows (a Windows restart frees it; until then a test build
+   thrashed the PC to a standstill, so H4–H7 were built with `clippy` checks only): run their
+   tests, one crate at a time with `low.sh` — `cargo test -p hearth_people` (above all
+   `tests/social.rs`, `tests/culture.rs`, `tests/persist.rs` and `tests/childhood.rs`, which the
+   council broke for the tree-nesting hominins and `KeepCamp` mended), `cargo test -p
+   hearth_content --test base_content`, `cargo test -p hearth_craft`, and the game's
+   `tests/family.rs`; fix what fails (the tests' thresholds were set by reasoning, not by a run —
+   adjust data or thresholds where a run shows them off, and say so); then tick H4–H7 and run the
+   perf gate. Amendment R (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready
+   rule applies (D166).
+   Then H8 — History simulation and the Paleolithic eras (PLAN.md; V2.1 §15; design to write in
+   `docs/design/humans/history.md` and `eras.md`): the deep-time layer on the ecological cell
+   grid (populations as gene pools, cultures, languages and knowledge distributions; growth by
+   biome capacity and technology; dispersal along coasts, rivers and open land, strait crossings
+   and land bridges by era sea level; splits, contact and borrowing; the chronicle) run at world
+   creation behind a progress bar and cached; the recent-history layer about the spawn (the
+   household tier, H7, run for three or four generations); *H. erectus* (proto-language, D186's
+   generator gated) and Neanderthals implemented with their life tables, cultures and languages;
+   Lower, Middle and Upper Paleolithic era profiles (routines, camps, seasonal rounds,
+   aggregation) and the era selector; birth options (two to four households of the chosen area);
+   after death, be born again and inhabit a child; `docs/review/era-*.md` with screenshots — it
+   needs the game running, so it waits for the restart.
+   Known from H4–H7: levelling among egalitarian foragers waits for H9's interaction of values;
+   the people do not yet give gifts to strangers themselves, nor raid (H11–H12); the household
+   tier has no coarse daily outcomes (food got, work done) beyond the life course's crowding; a
+   mother carrying her infant is not drawn holding it; watching after death is a free camera only
    (following comes with H9).
 2. Carried forward from the slice review (`docs/review/slice-1.md`, "Left where they belong"): a
    kill is more than one person can use in summer (sharing comes with others, H4); scavengers
