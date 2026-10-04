@@ -172,6 +172,16 @@ pub struct Client {
     weather: (f32, f32),
     paused: bool,
     captions: bool,
+    /// The player's childhood as the server last told it (none: grown, or never a child).
+    childhood: Option<hearth_protocol::ChildhoodView>,
+    /// The player's life told at its death, and who they could live on as.
+    story: Option<hearth_protocol::Story>,
+    /// Who the player is now, having taken up another's life (for the app to show once).
+    pub who_you_are: Option<Vec<String>>,
+    /// Dead, and watching the world.
+    spectating: bool,
+    /// The world as it was asked for (to begin it again).
+    world_spec: WorldSpec,
     /// The player's person, their pose this frame, which way the body faces (degrees, as the
     /// camera's yaw), and the boxes drawn.
     figure: Option<Figure>,
@@ -328,6 +338,7 @@ impl Client {
         color_format: wgpu::TextureFormat,
         content: Option<&hearth_content::Content>,
     ) -> Self {
+        let world_spec = world.clone();
         let atlas = Arc::new(TextureArray::from_entries(&hearth_texgen::textures_for(
             content,
         )));
@@ -383,6 +394,11 @@ impl Client {
             weather: (0.0, 0.0),
             paused: false,
             captions: options.sound.subtitles,
+            childhood: None,
+            story: None,
+            who_you_are: None,
+            spectating: false,
+            world_spec: world_spec.clone(),
             figure: None,
             pose: None,
             body_yaw: 0.0,
@@ -1621,6 +1637,11 @@ impl Client {
             words: death_words(l, death),
             rules: self.death_rules,
             summary,
+            story: self
+                .story
+                .as_ref()
+                .map_or_else(Vec::new, |s| s.lines.clone()),
+            kin: self.story.as_ref().map_or_else(Vec::new, |s| s.kin.clone()),
         })
     }
 
@@ -1978,6 +1999,7 @@ impl Client {
             wish,
             death_rules,
             knowledge,
+            childhood: true,
         }
     }
 
@@ -2001,6 +2023,31 @@ impl Client {
                 CameraMode::Body
             }
         };
+    }
+
+    /// After death: live on as one of the player's people (Addendum B §2).
+    pub fn inhabit(&mut self, id: u64) {
+        if self.dead() {
+            self.server.send(ToServer::Inhabit(id));
+        }
+    }
+
+    /// After death: watch the world with a free camera; the choices come back with Esc.
+    pub fn spectate(&mut self) {
+        self.spectating = true;
+        if self.mode == CameraMode::Body {
+            self.toggle_free_camera();
+        }
+    }
+
+    /// Dead and watching the world.
+    pub fn spectating(&self) -> bool {
+        self.spectating && self.dead()
+    }
+
+    /// The world as it was asked for.
+    pub fn world_spec(&self) -> &WorldSpec {
+        &self.world_spec
     }
 
     /// Asks to live on as a new person (after death).
@@ -2172,6 +2219,16 @@ impl Client {
     }
 
     fn walk(&mut self, dt: f64, input: &mut InputState, wish: DVec2, pad: &crate::gamepad::Pad) {
+        // A growing body's size; held (a child carried, the years of a childhood passing), it
+        // is where the server holds it and does not move of its own.
+        if let Some(b) = &self.body {
+            self.mover.scale = b.scale;
+            if let Some(at) = b.held {
+                self.mover.pos = at;
+                self.mover.vel = DVec3::ZERO;
+                return;
+            }
+        }
         // The sprint key jogs; pressed twice quickly, it sprints until let go.
         let sprint_key = input.is_active(builtin::SPRINT);
         if sprint_key && !self.sprint_was {
@@ -2440,6 +2497,13 @@ impl Client {
                     self.tick_frac = 0.0;
                 }
                 ToClient::Body(b) => self.body = Some(*b),
+                ToClient::Childhood(v) => self.childhood = v,
+                ToClient::Story(s) => self.story = Some(*s),
+                ToClient::WhoYouAre(lines) => {
+                    self.story = None;
+                    self.spectating = false;
+                    self.who_you_are = Some(lines);
+                }
                 ToClient::Woke(why) => self.woke = Some((why, 0.0)),
                 ToClient::Person(a) => {
                     self.figure = Some(Figure::new(a));
@@ -2816,6 +2880,9 @@ impl Client {
         {
             c.draw(ui, veil);
         }
+        if let Some(c) = &self.childhood {
+            self.draw_childhood(ui, c, veil);
+        }
         // Eyelids: the world goes dark asleep or fainting.
         if self.eyes_shut > 0.01 {
             let a = (self.eyes_shut.clamp(0.0, 1.0) * 255.0) as u8;
@@ -3042,6 +3109,54 @@ impl Client {
     }
 
     /// The sounds in words, lowest right, fading as they pass.
+    /// The childhood as it goes (V2.1 Addendum A): the moment's name and what is said of it, or
+    /// the years passing; the child's age; how to go on.
+    fn draw_childhood(&self, ui: &mut Ui<'_>, c: &hearth_protocol::ChildhoodView, veil: u8) {
+        let (w, _) = ui.size;
+        let lh = hearth_ui::font::LINE as f32;
+        let wide = (w - 40.0).min(460.0);
+        let title = if c.passing {
+            ui.t("childhood.passing")
+        } else {
+            c.name.clone()
+        };
+        let age = if c.age < 1.0 {
+            ui.t("childhood.newborn")
+        } else {
+            ui.lang.format(
+                "childhood.age",
+                &[("n", &format!("{}", c.age.floor() as u32))],
+            )
+        };
+        let mut lines: Vec<(String, Rgba)> = vec![(title, Rgba([245, 238, 220, 240]))];
+        for l in ui.font.wrap(&c.text, wide as u32) {
+            lines.push((l, Rgba([225, 222, 210, 230])));
+        }
+        lines.push((age, Rgba([200, 200, 205, 220])));
+        lines.push((ui.t("childhood.hint"), Rgba([170, 170, 180, 200])));
+        let tall = lines.len() as f32 * lh + 10.0;
+        let x0 = ((w - wide) / 2.0 - 8.0).round();
+        let shade = 150u8.saturating_sub(veil / 2);
+        ui.draw
+            .rect(x0, 8.0, wide + 16.0, tall, Rgba([12, 12, 16, shade]));
+        for (k, (line, colour)) in lines.iter().enumerate() {
+            let lw = ui.font.width(line) as f32;
+            ui.label(
+                ((w - lw) / 2.0).round(),
+                13.0 + k as f32 * lh,
+                line,
+                *colour,
+            );
+        }
+    }
+
+    /// Goes on in the childhood: to its next moment, or grown up now.
+    pub fn childhood_skip(&mut self, skip: hearth_protocol::Skip) {
+        if self.childhood.is_some() {
+            self.server.send(ToServer::Childhood(skip));
+        }
+    }
+
     fn draw_captions(&self, ui: &mut Ui<'_>, veil: u8) {
         let lines: Vec<(String, f32)> = self
             .hearing

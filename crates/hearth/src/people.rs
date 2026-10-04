@@ -935,3 +935,204 @@ fn found_family(
         b.population_group = group;
     }
 }
+
+/// What the player's own record adds to the story of their life.
+pub struct LifeFacts<'a> {
+    pub name: &'a str,
+    pub walked_km: f64,
+    pub farthest_km: f64,
+    /// What they knew (the knowledge's names).
+    pub known: Vec<String>,
+    /// Where they died.
+    pub at: DVec3,
+}
+
+/// Who another is to a person, in words ("your sister", "a man of your band"), and how near:
+/// a partner first, then children, brothers and sisters, parents, the band, others.
+fn kin_words(of: &hearth_people::Person, q: &hearth_people::Person) -> (u8, String) {
+    let sex = |f: bool, a: &str, b: &str| if f { a.to_owned() } else { b.to_owned() };
+    if of.social.bond == Some(q.id) || q.social.bond == Some(of.id) {
+        (0, "your partner".into())
+    } else if q.life.mother == Some(of.id) || q.life.father == Some(of.id) {
+        (1, sex(q.life.female, "your daughter", "your son"))
+    } else if of.life.mother == Some(q.id) {
+        (3, "your mother".into())
+    } else if of.life.father == Some(q.id) {
+        (3, "your father".into())
+    } else if of.life.mother.is_some() && q.life.mother == of.life.mother {
+        (2, sex(q.life.female, "your sister", "your brother"))
+    } else if q.social.band == of.social.band {
+        (
+            4,
+            sex(q.life.female, "a woman of your band", "a man of your band"),
+        )
+    } else {
+        (
+            5,
+            sex(
+                q.life.female,
+                "a woman of another family",
+                "a man of another family",
+            ),
+        )
+    }
+}
+
+impl PeopleNear {
+    /// The player's life told at its end (Addendum B §2), from their person's record and their
+    /// own; and who of their people they could live on as — the living grown of their kin and
+    /// band, and of others near where they died — told only by who they are to the dead.
+    pub fn life_story(&self, facts: &LifeFacts<'_>) -> hearth_protocol::Story {
+        let mut lines = Vec::new();
+        let mut kin = Vec::new();
+        let Some(now) = self.now else {
+            return hearth_protocol::Story { lines, kin };
+        };
+        let name = if facts.name.trim().is_empty() {
+            "You".to_owned()
+        } else {
+            facts.name.trim().to_owned()
+        };
+        if let Some(p) = self.live.player_person(0) {
+            let years = (p.life.died.as_ref().map_or(now.day, |d| d.day) - p.life.born)
+                / now.year_days.max(1.0);
+            lines.push(if years < 1.0 {
+                format!("{name} lived {:.0} days.", years * now.year_days)
+            } else {
+                format!("{name} lived {:.0} years.", years.floor())
+            });
+            let alive = |id: Option<u64>| id.and_then(|id| self.live.get(id)).map(|q| q.alive());
+            let parent = |id: Option<u64>, who: &str| match alive(id) {
+                Some(true) => format!("{who} lives."),
+                Some(false) => format!("{who} died before you."),
+                None => format!("{who} you never knew."),
+            };
+            lines.push(format!(
+                "{} {}",
+                parent(p.life.mother, "Your mother"),
+                parent(p.life.father, "Your father")
+            ));
+            if let Some(b) = p.social.bond.and_then(|b| self.live.get(b)) {
+                let (_, words) = kin_words(p, b);
+                lines.push(format!("You lived with {words}."));
+            }
+            let children: Vec<&hearth_people::Person> = self
+                .live
+                .persons
+                .iter()
+                .filter(|q| q.life.mother == Some(p.id) || q.life.father == Some(p.id))
+                .collect();
+            if !children.is_empty() {
+                let living = children.iter().filter(|c| c.alive()).count();
+                let word = if children.len() == 1 {
+                    "child"
+                } else {
+                    "children"
+                };
+                lines.push(format!(
+                    "You had {} {word}, {living} of them living.",
+                    children.len()
+                ));
+            }
+            let mourners = self
+                .live
+                .persons
+                .iter()
+                .filter(|q| q.alive() && q.social.band == p.social.band && q.id != p.id)
+                .count();
+            if mourners > 0 {
+                lines.push(format!("{mourners} of your people mourn you."));
+            }
+            // Who could live on: the grown and living near, of the player's kind.
+            let maturity = |q: &hearth_people::Person| {
+                self.species
+                    .get(&q.species)
+                    .map_or(18.0, |sp| sp.life.maturity_years as f64)
+            };
+            let mut near: Vec<(u8, f64, u64, String)> = self
+                .live
+                .persons
+                .iter()
+                .filter(|q| {
+                    q.alive() && q.player.is_none() && q.tier == hearth_people::person::Tier::Full
+                })
+                .filter(|q| q.species == p.species && q.age(&now) >= maturity(q))
+                .filter(|q| {
+                    q.social.band == p.social.band || (q.place.pos - facts.at).length() < 300.0
+                })
+                .map(|q| {
+                    let (rank, words) = kin_words(p, q);
+                    let age = q.age(&now).floor();
+                    (rank, -age, q.id, format!("{words}, {age:.0} years"))
+                })
+                .collect();
+            near.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)));
+            kin = near
+                .into_iter()
+                .take(6)
+                .map(|(_, _, id, w)| (id, w))
+                .collect();
+        }
+        if !facts.known.is_empty() {
+            let mut known = facts.known.clone();
+            known.sort();
+            let shown: Vec<String> = known.iter().take(8).cloned().collect();
+            let more = known.len().saturating_sub(shown.len());
+            lines.push(if more > 0 {
+                format!("You knew {}, and {more} more.", shown.join(", "))
+            } else {
+                format!("You knew {}.", shown.join(", "))
+            });
+        }
+        lines.push(format!(
+            "You walked {:.1} km in all, as far as {:.1} km from where your life began.",
+            facts.walked_km, facts.farthest_km
+        ));
+        hearth_protocol::Story { lines, kin }
+    }
+
+    /// Who the player is, having taken up a person's life (Addendum B §2): the briefing.
+    pub fn who_you_are(&self, id: u64, known: &[String]) -> Vec<String> {
+        let mut lines = Vec::new();
+        let (Some(now), Some(p)) = (self.now, self.live.get(id)) else {
+            return lines;
+        };
+        lines.push(format!(
+            "You are a {} of {:.0} years, of a family of the people here.",
+            if p.life.female { "woman" } else { "man" },
+            p.age(&now).floor()
+        ));
+        let mut kin: Vec<(u8, String)> = self
+            .live
+            .persons
+            .iter()
+            .filter(|q| q.alive() && q.id != p.id)
+            .map(|q| (q, kin_words(p, q)))
+            .filter(|(_, (rank, _))| *rank <= 3)
+            .map(|(q, (rank, words))| (rank, format!("{words}, {:.0}", q.age(&now).floor())))
+            .collect();
+        kin.sort();
+        if kin.is_empty() {
+            lines.push("None of your close kin live.".into());
+        } else {
+            let words: Vec<String> = kin.into_iter().map(|(_, w)| w).collect();
+            lines.push(format!("Your kin: {}.", words.join("; ")));
+        }
+        let lost = p
+            .life
+            .events
+            .iter()
+            .filter(|e| matches!(e.event, hearth_people::person::Event::Mourned { .. }))
+            .count();
+        if lost > 0 {
+            lines.push(format!("You have mourned {lost} of your kin."));
+        }
+        if !known.is_empty() {
+            let mut known = known.to_vec();
+            known.sort();
+            lines.push(format!("You know {}.", known.join(", ")));
+        }
+        lines.push("Those who know you may find you not yourself.".into());
+        lines
+    }
+}

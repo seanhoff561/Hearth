@@ -6,6 +6,14 @@ eligibility and scope), H9 (the full inhabiting flow, knowledge after death, the
 preset, the old death rules retired), R3 (the same in multiplayer). Supersedes v2 §9.8 and V2.1
 §16's "Legacy".*
 
+**Built in H3 (D182):** the death as an event of the world (the player's person dies with them and
+is mourned; its body lies where it fell once another is lived), the death screen telling the life,
+inhabiting a grown person of the player's kin, band or the people near where they died (told by
+who they are, never their looks) with the "Who you are" briefing, watching the world with a free
+camera, and beginning the world again with the old save archived. Eligibility rules beyond "grown,
+living, near, not another player's", the scope and knowledge-after-death settings, following a
+person or animal while watching, being born again and inhabiting a child come with H8 and H9.
+
 **In short:** when your character dies, the death is real — the body stays where it fell and its
 people mourn it as their culture does — and then you choose: live on as another living person,
 be born again, restart the world, or watch.

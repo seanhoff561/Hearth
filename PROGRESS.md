@@ -1006,10 +1006,18 @@ H3 — Life course and demography (PLAN.md, V2.1 §7, §14.3; Addenda A and B;
   stress; children playing near their mothers and going to watch the grown at work, practising
   and taking in what it shows; child figures with their own proportions, made again as they grow;
   the inspector's stage and growth (`tests/growing.rs`, `tests/childhood.rs`).
-- [ ] (c) Death, mourning and inheritance; Wild Earth's families (D164) and the player born into
-  one, growing up at the childhood pace through its moments.
-- [ ] (d) Death's choices (Addendum B): the death screen and the life story, spectate, restart,
-  inhabit an adult.
+- [x] (c) Death, mourning and inheritance (the dead lie a day; what they carried to their heir);
+  Wild Earth's families (D179: our species a sparse population of the cells, its ways by
+  climate); the player born into one (D180: the household drawn at birth and shown, the family
+  set down as a band with the player's own person record); the childhood (D181: moments at the
+  world's pace, the years between as a time-lapse, N / Ctrl+N to go on, the child safe, carried,
+  kept and sized to its age, learning the family's ways) (`tests/death.rs`, `tests/family.rs`,
+  `tests/childhood.rs` in the game crate).
+- [x] (d) Death's choices (Addendum B, D182): the death an event of the world (the player's person
+  dies with them, mourned), the death screen with the life told and the grown kin and people near
+  to live on as (by who they are, never their looks), taking one up whole with the "Who you are"
+  briefing, watching the world with a free camera, beginning the world again with the old save
+  archived (`tests/afterlife.rs`).
 - [ ] (e) The acceptance: families persist across generations; a scripted player is born, grows up
   and comes of age; a scripted player dies, reads its life story and goes on as a kinsman.
 

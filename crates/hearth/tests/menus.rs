@@ -47,6 +47,16 @@ fn render(
                     words: "You froze to death.".into(),
                     rules: hearth_save::DeathRules::Legacy,
                     summary: None,
+                    story: vec![
+                        "You lived 31 years.".into(),
+                        "Your mother lives. Your father died before you.".into(),
+                        "You had 2 children, 2 of them living.".into(),
+                        "5 of your people mourn you.".into(),
+                    ],
+                    kin: vec![
+                        (11, "your partner, 33 years".into()),
+                        (12, "your sister, 27 years".into()),
+                    ],
                 }),
                 inventory: None,
                 journal: None,

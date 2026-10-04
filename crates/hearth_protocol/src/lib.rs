@@ -90,6 +90,10 @@ pub enum ToServer {
     Give(hearth_items::Stack),
     /// Debug: move the clock on (or back) by game hours.
     SkipHours(f64),
+    /// The player's childhood: on to its next moment, or grown up now (Addendum A).
+    Childhood(Skip),
+    /// The player, dead, lives on as one of their people (Addendum B §2): that person's id.
+    Inhabit(u64),
     /// Debug: extra ticks per second of play (0 for none).
     TimeWarp(f64),
     /// Tests and bots: from now on the world ticks only when asked; run this many game ticks
@@ -290,6 +294,11 @@ pub struct BodyView {
     pub illnesses: Vec<String>,
     /// The weather, water and shelter the body is in.
     pub exposure: Exposure,
+    /// Where the player is held, not moving of their own (a child carried, or the years of a
+    /// childhood passing): the client keeps them there.
+    pub held: Option<DVec3>,
+    /// How tall the body stands to a grown one (a child's less than 1): its box and eyes.
+    pub scale: f64,
 }
 
 /// Smoke rising from a fire in the vegetation.
@@ -383,4 +392,41 @@ pub enum ToClient {
         discovered: bool,
         text: String,
     },
+    /// The player's childhood as it goes: the moment being lived or the years passing (none:
+    /// grown, or never a child).
+    Childhood(Option<ChildhoodView>),
+    /// The player's life told at its end, and who of their people they could live on as.
+    Story(Box<Story>),
+    /// Who the player is now, having taken up another's life: the briefing's lines.
+    WhoYouAre(Vec<String>),
+}
+
+/// A life told at its end (Addendum B §2).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Story {
+    pub lines: Vec<String>,
+    /// The living grown of the dead one's kin and people near: each person's id and who they
+    /// are to the dead (never how they look).
+    pub kin: Vec<(u64, String)>,
+}
+
+/// Skipping ahead in a childhood.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Skip {
+    /// To the next moment (from a moment, the years passing to it).
+    Next,
+    /// Straight to coming of age, the years between lived at the household's pace.
+    GrownUp,
+}
+
+/// A childhood as the player is told it (Addendum A).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChildhoodView {
+    /// The moment's name, and what is said of it (the years passing: empty).
+    pub name: String,
+    pub text: String,
+    /// The player's age (years).
+    pub age: f32,
+    /// The years passing quickly to the next moment.
+    pub passing: bool,
 }

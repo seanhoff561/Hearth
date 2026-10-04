@@ -100,6 +100,16 @@ impl Household {
     }
 }
 
+/// A player's kin in their band (see [`People::kin_of_player`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlayerKin {
+    pub band: u64,
+    pub mother: Option<PersonId>,
+    pub father: Option<PersonId>,
+    pub eldest: Option<PersonId>,
+    pub youngest: Option<PersonId>,
+}
+
 /// What a family founding needs: the birth and its household, whose player, where.
 pub struct Founding<'a> {
     pub birth: &'a Birth,
@@ -232,6 +242,155 @@ impl People {
         self.onto_the_ground(bi, &*world, f.at);
         know_about(&mut self.bands[bi], world, items, f.at);
         Some((id, you?))
+    }
+
+    /// A player's kin in their band: their mother and father, the eldest and the youngest of
+    /// their brothers and sisters at home (alive, of the band), and the band.
+    pub fn kin_of_player(&self, player: u64) -> Option<PlayerKin> {
+        let me = self.player_person(player)?;
+        let band = me.social.band;
+        let here = |q: &&Person| q.alive() && q.social.band == band && q.id != me.id;
+        let mine = |id: Option<PersonId>| id.and_then(|id| self.get(id)).filter(here).map(|q| q.id);
+        let mut siblings: Vec<&Person> = self
+            .persons
+            .iter()
+            .filter(here)
+            .filter(|q| q.life.mother.is_some() && q.life.mother == me.life.mother)
+            .collect();
+        siblings.sort_by(|a, b| a.life.born.total_cmp(&b.life.born));
+        Some(PlayerKin {
+            band,
+            mother: mine(me.life.mother),
+            father: mine(me.life.father),
+            eldest: siblings.first().map(|q| q.id),
+            youngest: siblings.last().map(|q| q.id),
+        })
+    }
+
+    /// Who would carry a player's person if it were an infant, or keep it as a child: its
+    /// mother, else the nearest grown one of its band. Where they stand, which way they face,
+    /// and how tall they are.
+    pub fn keeper_of_player(
+        &self,
+        player: u64,
+        species: &SpeciesSet,
+        now: &Now,
+    ) -> Option<(PersonId, DVec3, f32, f32)> {
+        let me = self.player_person(player)?;
+        let band = me.social.band;
+        let grown = |q: &Person| {
+            species
+                .get(&q.species)
+                .is_some_and(|sp| q.age(now) >= sp.life.maturity_years as f64)
+        };
+        let keeper = me
+            .life
+            .mother
+            .and_then(|m| self.get(m))
+            .filter(|q| q.alive() && q.social.band == band && q.tier == Tier::Full)
+            .or_else(|| {
+                self.persons
+                    .iter()
+                    .filter(|q| q.alive() && q.social.band == band && q.id != me.id)
+                    .filter(|q| q.tier == Tier::Full && grown(q))
+                    .min_by(|a, b| {
+                        let d = |q: &Person| (q.place.pos - me.place.pos).length();
+                        d(a).total_cmp(&d(b)).then(a.id.cmp(&b.id))
+                    })
+            })?;
+        let height = species
+            .get(&keeper.species)
+            .map_or(1.6, |sp| keeper.height_m(sp, now));
+        Some((keeper.id, keeper.place.pos, keeper.place.yaw, height))
+    }
+
+    /// Sends a person off to the water its band knows nearest (an elder taking a child along).
+    pub fn lead_to_water(&mut self, id: PersonId) -> bool {
+        let Ok(i) = self.persons.binary_search_by_key(&id, |q| q.id) else {
+            return false;
+        };
+        let pos = self.persons[i].place.pos;
+        let band = self.persons[i].social.band;
+        let water = self.persons[i]
+            .memory
+            .nearest(crate::memory::PlaceKind::Water, pos)
+            .or_else(|| {
+                self.bands
+                    .iter()
+                    .find(|b| b.id == band)
+                    .and_then(|b| crate::band::Places::nearest(&b.places.water, pos))
+            });
+        let Some(to) = water else {
+            return false;
+        };
+        let p = &mut self.persons[i];
+        p.mind.doing = crate::mind::Doing::Going {
+            to,
+            then: crate::mind::Intent::Drink,
+        };
+        p.mind.timer = 60.0;
+        true
+    }
+
+    /// Brings a band's living members about a place (a coming of age).
+    pub fn gather_to(&mut self, band: u64, at: DVec3) {
+        for p in self
+            .persons
+            .iter_mut()
+            .filter(|p| p.social.band == band && p.alive() && p.player.is_none())
+        {
+            p.mind.doing = crate::mind::Doing::Going {
+                to: at,
+                then: crate::mind::Intent::Rejoin,
+            };
+            p.mind.timer = 30.0;
+        }
+    }
+
+    /// A player's person dies as the player's body did (Addendum B §2): the death an event of
+    /// the world, its kin mourning, its body lying where it fell once another is lived.
+    pub fn player_died(&mut self, player: u64, cause: String, day: f64) {
+        let Some(i) = self.persons.iter().position(|p| p.player == Some(player)) else {
+            return;
+        };
+        let p = &mut self.persons[i];
+        if p.life.died.is_some() {
+            return;
+        }
+        let cause = crate::person::Cause::Body(cause);
+        p.life.died = Some(crate::person::Died {
+            day,
+            cause: cause.clone(),
+        });
+        p.record(day, Event::Died { cause });
+        let (dead, band) = (p.id, p.social.band);
+        for b in self.bands.iter_mut().filter(|b| b.id == band) {
+            b.members.retain(|m| *m != dead);
+        }
+        self.mourn(dead, band, day);
+    }
+
+    /// The player lives on as another (Addendum B §2): the record they were is theirs no more
+    /// (it lies where it fell, if it died) and the living one is. The one taken up, as it was —
+    /// its body, what it knows, what it carries, where it is — or none where it may not be
+    /// (dead, another player's, or not lived in full).
+    pub fn inhabit(&mut self, player: u64, id: PersonId) -> Option<Person> {
+        let i = self.persons.binary_search_by_key(&id, |p| p.id).ok()?;
+        let q = &self.persons[i];
+        if !q.alive() || q.player.is_some() || q.tier != Tier::Full {
+            return None;
+        }
+        for p in self.persons.iter_mut().filter(|p| p.player == Some(player)) {
+            p.player = None;
+        }
+        let q = &mut self.persons[i];
+        q.player = Some(player);
+        q.mind = Default::default();
+        let taken = q.clone();
+        // What it carried and knew is the player's now.
+        q.possessions = Default::default();
+        q.knowledge = Default::default();
+        Some(taken)
     }
 
     /// The person a player is, if they are one.

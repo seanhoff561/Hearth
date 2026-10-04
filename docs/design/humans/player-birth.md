@@ -6,6 +6,13 @@ Milestones: H1 (the genome from two parents, no appearance chosen), H3 (born int
 childhood), H8 (birth options from the area's peoples; being born again), H9 (stepping in from the
 Observer as a birth), R3 (births in multiplayer).*
 
+**Built in H3 (D180–D181):** the household drawn at birth and shown on the birth screen, the
+family set down in the world as one of Wild Earth's families with the player's own person among
+them, and the childhood — the moments of `humans/life/moments.ron` at the world's pace, the years
+between as a time-lapse, skipping ahead with N and Ctrl+N, the child safe, carried, kept and sized
+to its age, and learning its family's ways. The two to four births to choose from come with the
+eras' peoples (H8); until then the one birth is the place's.
+
 This is the single-player birth. In a shared world the clock cannot run fast for one player:
 friends may **start together** and share a childhood, and a player joining a running world lives
 a real young person's childhood **as memories** ([multiplayer-births.md](multiplayer-births.md)).

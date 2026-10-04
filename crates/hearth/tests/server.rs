@@ -23,6 +23,7 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
         },
         death_rules: hearth_save::DeathRules::default(),
         knowledge: hearth_save::KnowledgeMode::default(),
+        childhood: false,
     }
 }
 

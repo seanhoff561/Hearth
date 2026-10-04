@@ -1,0 +1,54 @@
+// The moments of a forager's childhood (V2.1 Addendum A): a few minutes each at the world's pace,
+// at the ages and in the doings a childhood in such a family holds; the years pass quickly
+// between them (the world's childhood pace). What the child picks up in those years it learns
+// from its family, as a child does. Coming of age ends the childhood.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "born", name: "Born", status: Implemented, species: "homo_sapiens",
+            age: 0.0, minutes: 1.0, with: Mother, setup: Born,
+            text: "You are born. Your mother holds you against her, and the others come close to see you.",
+        ),
+        (
+            id: "carried", name: "Carried", status: Implemented, species: "homo_sapiens",
+            age: 0.5, minutes: 3.0, with: Mother, setup: Carried,
+            text: "You ride on your mother's hip as she goes about her day: her warmth, her voice, the light and the leaves.",
+        ),
+        (
+            id: "first_steps", name: "First steps", status: Implemented, species: "homo_sapiens",
+            age: 1.2, minutes: 3.0, with: Mother, setup: FirstSteps,
+            text: "You can stand, and walk a little, never far from your mother.",
+        ),
+        (
+            id: "to_the_water", name: "To the water", status: Implemented, species: "homo_sapiens",
+            age: 3.5, minutes: 3.0, with: Elder, setup: Water,
+            text: "Your elder goes to the water, and you go too.",
+        ),
+        (
+            id: "stones", name: "Stones", status: Implemented, species: "homo_sapiens",
+            age: 5.5, minutes: 4.0, with: Father, setup: Knapping,
+            text: "Your father strikes flakes from a stone. There are stones for you too: watch, and try.",
+        ),
+        (
+            id: "gathering", name: "Gathering", status: Implemented, species: "homo_sapiens",
+            age: 8.0, minutes: 4.0, with: Mother, setup: Gathering,
+            text: "You go out with the others to gather: what grows here, and what of it is good to eat.",
+        ),
+        (
+            id: "minding", name: "Minding the little one", status: Implemented, species: "homo_sapiens",
+            age: 10.5, minutes: 3.0, with: Youngest, setup: Minding,
+            text: "The youngest is yours to mind while the grown are busy.",
+        ),
+        (
+            id: "work_of_hands", name: "The work of your hands", status: Implemented, species: "homo_sapiens",
+            age: 13.0, minutes: 4.0, with: Father, setup: Knapping,
+            text: "Your hands know the stones now. Make what you can.",
+        ),
+        (
+            id: "coming_of_age", name: "Coming of age", status: Implemented, species: "homo_sapiens",
+            age: 16.0, minutes: 2.0, with: Family, setup: ComingOfAge,
+            text: "Your people count you grown. Your family is about you; the life ahead is yours.",
+        ),
+    ],
+)

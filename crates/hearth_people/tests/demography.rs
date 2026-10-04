@@ -117,6 +117,22 @@ fn foragers_live_near_the_forager_targets() {
         women.len(),
         p.bands.len()
     );
+    // Families persist across generations: the living have grandmothers born in the run.
+    let grand = p
+        .persons
+        .iter()
+        .filter(|q| q.alive())
+        .filter(|q| {
+            q.life
+                .mother
+                .and_then(|m| p.get(m))
+                .and_then(|m| m.life.mother)
+                .and_then(|g| p.get(g))
+                .is_some_and(|g| g.life.born > start)
+        })
+        .count();
+    println!("{grand} living with a grandmother born in the run");
+    assert!(grand > 20, "three generations and more");
     assert!(n > 300.0, "too few born to judge");
     assert!(
         (27.0..37.0).contains(&e0),

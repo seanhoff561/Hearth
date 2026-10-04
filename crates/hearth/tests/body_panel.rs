@@ -45,6 +45,8 @@ fn the_body_panel_names_and_draws_the_injuries() {
         injuries: body.injuries.clone(),
         illnesses: Vec::new(),
         exposure: hearth_body::Exposure::mild(),
+        held: None,
+        scale: 1.0,
     };
     let (w, h) = (1280, 720);
     let target = OffscreenTarget::new(&ctx, w, h);

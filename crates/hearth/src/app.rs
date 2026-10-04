@@ -407,6 +407,8 @@ impl App {
                     };
                     match &mut run.client {
                         Some(c) if c.globe.open => c.globe.close(),
+                        // Watching the world after death: the choices again.
+                        Some(c) if c.spectating() => run.menus.open(Screen::Death),
                         Some(c) => {
                             c.pause(true);
                             run.menus.open(Screen::Pause);
@@ -421,6 +423,10 @@ impl App {
                 {
                     if action == builtin::WORLD_MAP {
                         release_mouse |= p.toggle_globe();
+                    } else if action == builtin::CHILDHOOD_NEXT {
+                        p.childhood_skip(hearth_protocol::Skip::Next);
+                    } else if action == builtin::CHILDHOOD_GROW_UP {
+                        p.childhood_skip(hearth_protocol::Skip::GrownUp);
                     } else if action == builtin::DEBUG_TIME_FORWARD {
                         p.skip_hours(1.0);
                     } else if action == builtin::DEBUG_TIME_BACK {
@@ -544,6 +550,48 @@ impl App {
                 MenuAction::Eat(from) => {
                     if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
                         c.eat(from);
+                    }
+                }
+                MenuAction::LiveAs(id) => {
+                    if let Some(run) = &mut self.running {
+                        run.menus.close_all();
+                        if let Some(c) = &mut run.client {
+                            c.inhabit(id);
+                        }
+                    }
+                }
+                MenuAction::Spectate => {
+                    if let Some(run) = &mut self.running {
+                        run.menus.close_all();
+                        if let Some(c) = &mut run.client {
+                            c.spectate();
+                        }
+                    }
+                    self.set_captured(true);
+                }
+                MenuAction::Restart => {
+                    // The world begun again from its seed and settings, the old one archived.
+                    let spec = self
+                        .running
+                        .as_mut()
+                        .and_then(|r| r.client.take())
+                        .map(|c| c.world_spec().clone());
+                    if let Some(spec) = spec {
+                        let saves = self.dirs.saves();
+                        let old = saves.join(&spec.name);
+                        if old.exists() {
+                            let mut n = 1;
+                            while saves.join(format!("{} (life {n})", spec.name)).exists() {
+                                n += 1;
+                            }
+                            if let Err(e) = std::fs::rename(
+                                &old,
+                                saves.join(format!("{} (life {n})", spec.name)),
+                            ) {
+                                log::error!("could not archive the world: {e}");
+                            }
+                        }
+                        self.play(&spec.name, spec.seed, spec.death_rules, spec.knowledge);
                     }
                 }
                 MenuAction::LiveOn(who) => {
@@ -712,7 +760,16 @@ impl App {
                         run.window.set_cursor_visible(true);
                     }
                 }
-                if c.dead() && !run.menus.is_open() {
+                if let Some(lines) = c.who_you_are.take() {
+                    run.menus.close_all();
+                    run.menus.open(Screen::WhoYouAre { lines });
+                    if run.captured {
+                        run.captured = false;
+                        let _ = run.window.set_cursor_grab(CursorGrabMode::None);
+                        run.window.set_cursor_visible(true);
+                    }
+                }
+                if c.dead() && !c.spectating() && !run.menus.is_open() {
                     run.menus.open(Screen::Death);
                     if run.captured {
                         run.captured = false;

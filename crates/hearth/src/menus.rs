@@ -86,6 +86,10 @@ pub enum Screen {
         capture: RebindCapture,
     },
     Accessibility,
+    /// Having taken up another's life: who the player is now (Addendum B §2).
+    WhoYouAre {
+        lines: Vec<String>,
+    },
     /// The player was born (H1): their mother, they and their father side by side, turning a
     /// little to and fro (its phase, radians), and the light on them.
     Born {
@@ -137,6 +141,12 @@ pub enum MenuAction {
     },
     /// Live on after death (born again with these wishes, under Legacy; the same person, Hardy).
     LiveOn(Option<hearth_protocol::Wish>),
+    /// After death: live on as one of the player's people (their person's id).
+    LiveAs(u64),
+    /// After death: watch the world.
+    Spectate,
+    /// After death: begin this world again (the old one archived).
+    Restart,
     /// Knapping is over: do the process, by hand (with the quality reached) or as usual.
     Knapped {
         process: String,
@@ -192,6 +202,9 @@ pub struct DeathInfo {
     pub rules: hearth_save::DeathRules,
     /// The life's tale, when it ended the world.
     pub summary: Option<Vec<String>>,
+    /// The life told (Addendum B §2), and who of their people the player could live on as.
+    pub story: Vec<String>,
+    pub kin: Vec<(u64, String)>,
 }
 
 const KNOWLEDGE_MODES: [hearth_save::KnowledgeMode; 3] = [
@@ -894,6 +907,23 @@ impl Menus {
             Screen::Death => {
                 death_screen(ui, cx, &mut out);
             }
+            Screen::WhoYouAre { lines } => {
+                ui.title((size_of(ui).1 * 0.18).round(), &ui.t("menu.who.title"));
+                let mut y = (size_of(ui).1 * 0.18 + 24.0).round();
+                let wide = (size_of(ui).0 - 40.0).min(480.0);
+                for line in lines.iter() {
+                    for l in ui.font.wrap(line, wide as u32) {
+                        let lw = ui.font.width(&l) as f32;
+                        ui.label(((size_of(ui).0 - lw) / 2.0).round(), y, &l, theme::TEXT);
+                        y += hearth_ui::font::LINE as f32;
+                    }
+                    y += 3.0;
+                }
+                let mut c = Column::new(x, y + 10.0, W);
+                if ui.button(c.row(ROW), &ui.t("menu.who.begin")) {
+                    out.push(MenuAction::Resume);
+                }
+            }
             Screen::Knapping(k) => {
                 if let Some(done) = crate::knapping_ui::knapping_screen(ui, k) {
                     use crate::knapping_ui::KnapDone;
@@ -1098,8 +1128,29 @@ fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAct
         return;
     };
     let x = ((size.0 - W) / 2.0).round();
-    ui.title((size.1 * 0.22).round(), &d.words);
-    let mut c = Column::new(x, (size.1 * 0.22 + 20.0).round(), W);
+    let top = if d.story.is_empty() { 0.22 } else { 0.06 };
+    ui.title((size.1 * top).round(), &d.words);
+    let mut c = Column::new(x, (size.1 * top + 20.0).round(), W);
+    // The life told, and who of their people the player could live on as (Addendum B §2).
+    for line in &d.story {
+        for l in ui.font.wrap(line, (W + 120.0) as u32) {
+            let lw = ui.font.width(&l) as f32;
+            ui.label(((size.0 - lw) / 2.0).round(), c.y, &l, theme::TEXT);
+            c.space(hearth_ui::font::LINE as f32);
+        }
+    }
+    if !d.story.is_empty() {
+        c.space(6.0);
+    }
+    for (id, who) in d.kin.iter().take(4) {
+        let words = ui.lang.format("menu.death.live_as", &[("who", who)]);
+        if ui.button(c.row(ROW), &words) {
+            out.push(MenuAction::LiveAs(*id));
+        }
+    }
+    if !d.kin.is_empty() {
+        c.space(6.0);
+    }
     let rules = match d.rules {
         hearth_save::DeathRules::Legacy => "body.death.legacy",
         hearth_save::DeathRules::Hardy => "body.death.hardy",
@@ -1139,9 +1190,20 @@ fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAct
         }
     }
     c.space(6.0);
+    if ui.button(c.row(ROW), &ui.t("menu.death.watch")) {
+        out.push(MenuAction::Spectate);
+    }
+    if ui.button(c.row(ROW), &ui.t("menu.death.again")) {
+        out.push(MenuAction::Restart);
+    }
     if ui.button(c.row(ROW), &ui.t("menu.death.to_title")) {
         out.push(MenuAction::QuitToTitle);
     }
+}
+
+/// A screen's size.
+fn size_of(ui: &Ui<'_>) -> (f32, f32) {
+    ui.size
 }
 
 /// A world's folder from its name.

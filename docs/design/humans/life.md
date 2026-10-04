@@ -120,8 +120,25 @@ player is made, the family is set down there as a band of our species and a grou
 the player's own **person record** among them (`Person::player`): the family's child to them, its
 mind stepped aside for the player, kept where the player is, never taken by the life table (D180).
 
-## To come in H3
+## The player's childhood (H3 (c), D181)
 
-Ageing's look and the elders' part; inheritance; Wild Earth's families and the player born into
-one, growing up at the childhood pace (Addendum A, `player-birth.md`); death as an event and its
-choices (Addendum B, `life-after-death.md`).
+The player is born a newborn into that family and lives the **moments** of their people's
+childhood (`humans/life/moments.ron`) at the world's pace, a few minutes each: born, carried on
+the mother's hip, first steps, to the water with an elder, stones by the father, gathering,
+minding the youngest, the work of one's hands, and coming of age (16 for foragers). Between
+moments the years pass as a time-lapse over the family's camp (a year in five minutes) while the
+family lives on; N goes on to the next moment, Ctrl+N straight to coming of age. The child is safe
+(no attack lands, no hurt stays, no drowning), carried while an infant, kept by its family and
+fetched back if it strays; its body, box, eyes and figure are its age's; and the years teach it
+its family's ways (insight a year toward each, known by about twelve; a little practice at their
+skills).
+
+## Death and its choices (H3 (d), D182)
+
+The player's death is an event of the world: their person dies with them and their people mourn.
+The death screen tells the life — how long, the parents, a partner, children, who mourns, what was
+known, how far walked — and offers the living grown of their kin and band, and others near, told
+only by who they are ("your sister, 26 years"): taking one up moves that person's body, knowledge,
+possessions and place to the player, and a briefing says who they are now. Or they watch the
+world (a free camera; Esc brings the choices back), or begin the world again (the save archived
+as "name (life n)", the world replayed from its seed and settings). See `life-after-death.md`.

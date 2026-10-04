@@ -176,6 +176,14 @@ pub struct Mover {
     pub fall_speed: f64,
     /// Whether the body was in water on the last step.
     pub wet: bool,
+    /// How tall the body stands to a grown one of its kind (a child's less than 1): its box and
+    /// eyes are as much lower.
+    #[serde(default = "grown")]
+    pub scale: f64,
+}
+
+fn grown() -> f64 {
+    1.0
 }
 
 impl Mover {
@@ -191,17 +199,28 @@ impl Mover {
             scramble_s: 0.0,
             fall_speed: 0.0,
             wet: false,
+            scale: 1.0,
         }
+    }
+
+    /// The height of its box as it stands now (m).
+    pub fn height(&self) -> f64 {
+        self.stance.height() * self.scale
+    }
+
+    /// The height of its eyes above its feet as it stands now (m).
+    pub fn eye_height(&self) -> f64 {
+        self.stance.eye() * self.scale
     }
 
     /// The body's box.
     pub fn bounds(&self) -> Aabb {
-        Aabb::from_feet(self.pos, WIDTH, self.stance.height())
+        Aabb::from_feet(self.pos, WIDTH * self.scale.max(0.6), self.height())
     }
 
     /// Where the eyes are.
     pub fn eye(&self) -> DVec3 {
-        self.pos + DVec3::new(0.0, self.stance.eye(), 0.0)
+        self.pos + DVec3::new(0.0, self.eye_height(), 0.0)
     }
 }
 
@@ -282,22 +301,24 @@ fn sweep(t: &impl Terrain, b: &Aabb, d: DVec3, scratch: &mut Vec<Aabb>) -> DVec3
 /// The ledge ahead a climber can pull up onto: the lowest free spot within reach above the
 /// obstacle in front, with room to rise there.
 fn find_ledge(t: &impl Terrain, m: &Mover, fwd: DVec2, s: &mut Vec<Aabb>) -> Option<DVec3> {
-    let ahead = DVec3::new(fwd.x, 0.0, fwd.y) * (WIDTH * 0.5 + 0.3);
-    let h = Stance::Standing.height();
+    // A child reaches and rises as much less as it is smaller.
+    let width = WIDTH * m.scale.max(0.6);
+    let ahead = DVec3::new(fwd.x, 0.0, fwd.y) * (width * 0.5 + 0.3);
+    let h = Stance::Standing.height() * m.scale;
     // Something must be in the way at the feet.
     if !collides(
         t,
-        &Aabb::from_feet(m.pos + ahead + DVec3::Y * 0.05, WIDTH, 0.5),
+        &Aabb::from_feet(m.pos + ahead + DVec3::Y * 0.05, width, 0.5),
         s,
     ) {
         return None;
     }
     let mut dy = 0.125;
-    while dy <= REACH + 1e-9 {
+    while dy <= REACH * m.scale + 1e-9 {
         let top = m.pos + ahead + DVec3::Y * dy;
-        let spot = Aabb::from_feet(top, WIDTH, h);
-        let rise = Aabb::from_feet(m.pos + DVec3::Y * dy, WIDTH, h);
-        let support = Aabb::from_feet(top - DVec3::Y * 0.1, WIDTH * 0.6, 0.1);
+        let spot = Aabb::from_feet(top, width, h);
+        let rise = Aabb::from_feet(m.pos + DVec3::Y * dy, width, h);
+        let support = Aabb::from_feet(top - DVec3::Y * 0.1, width * 0.6, 0.1);
         if !collides(t, &spot, s) && !collides(t, &rise, s) && collides(t, &support, s) {
             return Some(top);
         }
@@ -334,7 +355,7 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
     // Water around the body.
     let level = water_level(t, m.pos);
     let depth = level.map_or(0.0, |l| l - m.pos.y);
-    let submerged = (depth / Stance::Standing.height()).clamp(0.0, 1.0);
+    let submerged = (depth / (Stance::Standing.height() * m.scale)).clamp(0.0, 1.0);
     let ground = if m.on_ground {
         t.ground(BlockPos::containing(m.pos - DVec3::Y * 0.05))
     } else {
@@ -359,13 +380,19 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
     };
     if wanted != m.stance {
         let taller = wanted.height() > m.stance.height();
-        let fits = !taller || !collides(t, &Aabb::from_feet(m.pos, WIDTH, wanted.height()), &mut s);
+        let width = WIDTH * m.scale.max(0.6);
+        let fits = !taller
+            || !collides(
+                t,
+                &Aabb::from_feet(m.pos, width, wanted.height() * m.scale),
+                &mut s,
+            );
         if fits {
             m.stance = wanted;
         } else if wanted == Stance::Standing
             && !collides(
                 t,
-                &Aabb::from_feet(m.pos, WIDTH, Stance::Crouching.height()),
+                &Aabb::from_feet(m.pos, width, Stance::Crouching.height() * m.scale),
                 &mut s,
             )
         {
@@ -439,7 +466,7 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
     };
     if m.stance == Stance::Swimming {
         // Afloat with the eyes just out of the water.
-        let float_y = level.unwrap_or(m.pos.y) - Stance::Swimming.eye() + 0.1;
+        let float_y = level.unwrap_or(m.pos.y) - Stance::Swimming.eye() * m.scale + 0.1;
         let mut vy = ((float_y - m.pos.y) * 2.0).clamp(-1.2, 1.2);
         if i.jump {
             vy += 0.8;
@@ -606,7 +633,7 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
     m.wet = in_water;
 
     // Breath.
-    let eyes_under = level.is_some_and(|l| l > m.pos.y + m.stance.eye());
+    let eyes_under = level.is_some_and(|l| l > m.pos.y + m.eye_height());
     if eyes_under {
         m.breath_s -= dt;
         if m.breath_s <= 0.0 {
@@ -620,7 +647,7 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
 
     let hspeed = (moved.x * moved.x + moved.z * moved.z).sqrt() / dt;
     let depth = level.map_or(0.0, |l| l - m.pos.y);
-    rep.immersion = (depth / m.stance.height()).clamp(0.0, 1.0);
+    rep.immersion = (depth / m.height()).clamp(0.0, 1.0);
     rep.eyes_under = eyes_under;
     rep.airless_s = m.airless_s;
     rep.speed = hspeed;

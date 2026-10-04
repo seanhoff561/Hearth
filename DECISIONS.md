@@ -2115,3 +2115,38 @@ nor pairs it, the cells' reconciling never takes it, and the server keeps it whe
 to the family it is their child, to be played with and watched. Until the childhood is lived
 (next), the player begins at their people's coming of age (16 for foragers, the life table's
 `coming_of_age`). Saves from before families keep their player as they were, without one.
+
+## D181 — The childhood: moments at the world's pace, the years between as a time-lapse
+A new player is born a newborn and lives their childhood (Addendum A) as a curriculum of
+**moments** — data per species (`humans/life/moments.ron`: born; carried on the mother's hip;
+first steps; to the water with an elder; stones by the father; gathering; minding the youngest;
+the work of one's hands; coming of age at the life table's age) — each a few minutes at the
+world's pace, set going by whom it is with (placed by them, an elder sent to the water, stones by
+the father and for the child, the family gathered round). Between moments the world's clock runs
+as a time-lapse, a year in five minutes (with the moments, about two hours from birth to coming
+of age): the family goes on living (its life course births and deaths catch up), the seasons and
+the days turn over the camp, and the child is held by its keeper — carried at the hip while an
+infant, beside them otherwise. N moves on to the next moment, Ctrl+N straight to coming of age
+(the skipped years jump the clock, lived at the household's pace). A child is never harmed: no
+animal's attack lands, it does not drown, hurts do not stay and a worn body is made whole, and it
+is fetched back to its family if it strays forty metres. It is its age's size — the player's
+physiology scaled to its mass and height (`Species::body_at`), its box and eyes lower by
+`Mover::scale`, its figure a child's — and what the years teach it is its family's ways: insight
+toward each of their knowledge a year (known by about twelve) and a little practice at their
+skills. Tests and bots begin grown at the coming of age (`WorldSpec::childhood`).
+
+## D182 — Death's choices in H3: the life told, living on as a kinsman, watching, beginning again
+The player's death is an event of the world: their person record dies with them, their people
+mourn, and when they live on as another the record lies where it fell like anyone's. The death
+screen tells the life from the record and the player's own (how long it lasted, the parents
+living or dead, a partner, children and how many live, how many mourn, what was known, how far
+they walked) and offers the living grown of their kin and band, and of others near where they
+died — told only by who they are to the dead ("your sister, 26 years"), never by their looks.
+Taking one up moves the person's body, knowledge, possessions and place to the player whole (the
+record's own mind steps aside; its possessions and knowledge are the player's while they live
+it); a briefing tells who they are now (their age and kin, the kin they have mourned, what they
+know, and that those who know them may find them not themselves). "Watch the world" is a free
+camera (Esc brings the choices back; following a person or animal and the Observer's controls
+come with H9); "Begin this world again" archives the save as "name (life n)" and replays the world
+from its seed and settings. The death rules of v2 (Legacy, Hardy, Permadeath) stay beside these
+until H9 makes them presets; being born again into a household and inhabiting a child are H8's.

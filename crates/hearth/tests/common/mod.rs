@@ -43,6 +43,11 @@ pub struct World {
     pub animals: Vec<hearth_fauna::live::AnimalView>,
     /// The people near the player as the server last told of them.
     pub people: Vec<hearth_people::PersonView>,
+    /// The childhood as last told, and the moments told of so far (their names).
+    pub childhood: Option<hearth_protocol::ChildhoodView>,
+    pub moments: Vec<String>,
+    /// How the player looks, as last told.
+    pub appearance: Option<hearth_character::Appearance>,
     /// The last census of the groups about the player.
     pub census: Option<Vec<(u16, glam::DVec2, u32)>>,
     /// The signs animals left about the player, as last told.
@@ -76,6 +81,16 @@ pub fn temp(name: &str) -> std::path::PathBuf {
 
 impl World {
     pub fn start(dir: &std::path::Path, knowledge: hearth_save::KnowledgeMode, seed: u64) -> Self {
+        Self::start_with(dir, knowledge, seed, false)
+    }
+
+    /// A world whose player lives their childhood (or begins grown).
+    pub fn start_with(
+        dir: &std::path::Path,
+        knowledge: hearth_save::KnowledgeMode,
+        seed: u64,
+        childhood: bool,
+    ) -> Self {
         let spec = WorldSpec {
             name: "test".into(),
             seed,
@@ -88,6 +103,7 @@ impl World {
             },
             death_rules: hearth_save::DeathRules::default(),
             knowledge,
+            childhood,
         };
         let atlas = Arc::new(TextureArray::from_entries(&hearth_texgen::textures_for(
             None,
@@ -131,6 +147,9 @@ impl World {
             generator: ready.generator.clone(),
             animals: Vec::new(),
             people: Vec::new(),
+            childhood: None,
+            moments: Vec::new(),
+            appearance: Some(ready.appearance.clone()),
             census: None,
             signs: Vec::new(),
             calls: Vec::new(),
@@ -162,6 +181,16 @@ impl World {
                 ToClient::Body(b) => self.body = Some(*b),
                 ToClient::Animals(v) => self.animals = v,
                 ToClient::People(v) => self.people = v,
+                ToClient::Childhood(v) => {
+                    if let Some(c) = &v
+                        && !c.passing
+                        && self.moments.last() != Some(&c.name)
+                    {
+                        self.moments.push(c.name.clone());
+                    }
+                    self.childhood = v;
+                }
+                ToClient::Person(a) => self.appearance = Some(a),
                 ToClient::Census(c) => self.census = Some(c),
                 ToClient::Signs { signs, .. } => self.signs = signs,
                 ToClient::Calls(c) => self.calls.extend(c),

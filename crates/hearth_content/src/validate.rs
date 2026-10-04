@@ -522,6 +522,15 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.moments,
+        report,
+        |e| &e.id,
+        |m, c| {
+            c.range("age", m.age, 0.0, 30.0);
+            c.range("minutes", m.minutes, 0.25, 30.0);
+        },
+    );
+    each(
         &content.life_tables,
         report,
         |e| &e.id,

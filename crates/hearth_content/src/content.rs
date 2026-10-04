@@ -19,7 +19,7 @@ use crate::schema::geology::{Deposit, Mineral, Province, Rock, Soil};
 use crate::schema::humans::{Chromosome, GenePool, GeneticsSettings, Locus, Species, Trait};
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
-use crate::schema::life::LifeTable;
+use crate::schema::life::{LifeTable, Moment};
 use crate::schema::material::Material;
 use crate::schema::mind::Routine;
 use crate::schema::process::Process;
@@ -149,6 +149,7 @@ pub struct Content {
     pub values: Table<Value>,
     pub routines: Table<Routine>,
     pub life_tables: Table<LifeTable>,
+    pub moments: Table<Moment>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -315,6 +316,7 @@ impl Content {
             values: load_table(packs, &mut r),
             routines: load_table(packs, &mut r),
             life_tables: load_table(packs, &mut r),
+            moments: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
@@ -403,6 +405,7 @@ impl Content {
         u(&self.values, &mut out);
         u(&self.routines, &mut out);
         u(&self.life_tables, &mut out);
+        u(&self.moments, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
         u(&self.knowledge, &mut out);
@@ -439,6 +442,7 @@ impl Content {
             c("Values", &self.values),
             c("Routines", &self.routines),
             c("Life tables", &self.life_tables),
+            c("Moments of childhood", &self.moments),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),
             c("Knowledge nodes", &self.knowledge),

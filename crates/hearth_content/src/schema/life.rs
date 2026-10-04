@@ -63,3 +63,52 @@ entry! {
         pub crowding: Crowding,
     }
 }
+
+/// What a moment of a player's childhood sets going (Addendum A).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Setup {
+    /// Just born, in the mother's arms.
+    Born,
+    /// Carried on the mother's hip as she goes about.
+    Carried,
+    /// Free to walk a little by the mother.
+    FirstSteps,
+    /// Following an elder brother or sister to the water.
+    Water,
+    /// By the father as he strikes flakes, with stones of one's own.
+    Knapping,
+    /// Out with the others, gathering.
+    Gathering,
+    /// Minding the youngest.
+    Minding,
+    /// Counted grown, the family about.
+    ComingOfAge,
+}
+
+/// Who a moment of childhood is with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Kin {
+    Mother,
+    Father,
+    /// The eldest brother or sister at home.
+    Elder,
+    /// The youngest brother or sister.
+    Youngest,
+    Family,
+}
+
+entry! {
+    /// A moment of a player's childhood (V2.1 Addendum A): lived at the world's pace at an age,
+    /// a few minutes long, with someone of the family, setting something going; the years pass
+    /// quickly between moments.
+    pub struct Moment in "humans/life/moments", schema 1, name name {
+        pub name: String,
+        pub species: IdRef,
+        pub age: f32,
+        pub minutes: f32,
+        pub with: Kin,
+        pub setup: Setup,
+        /// What is said of it as it begins.
+        pub text: String,
+    }
+}

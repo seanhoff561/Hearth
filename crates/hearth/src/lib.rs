@@ -7,6 +7,7 @@ pub mod bench;
 pub mod body_panel;
 pub mod born;
 pub mod building;
+pub mod childhood;
 pub mod client;
 pub mod content_cli;
 pub mod content_state;
