@@ -2209,6 +2209,7 @@ fn placed_family(
                 doing: Doing::Idle,
                 height_m: grown * profile.life.grown_share(age as f64).0,
                 grown: (age / maturity.max(1.0)).clamp(0.0, 1.0),
+                dead: false,
                 look: hearth_people::look(&ph, profile.body.plan, female, age, maturity),
                 shows: None,
             }
@@ -2274,6 +2275,7 @@ fn placed_hominins(
                     hearth_fauna::live::Stage::Juvenile => 0.5,
                     hearth_fauna::live::Stage::Adult => 1.0,
                 },
+                dead: false,
                 look: hearth_people::Look::default(),
                 shows: h.shows.map(|d| (d, 0.9)),
             }

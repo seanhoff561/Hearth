@@ -84,7 +84,7 @@ fn foragers_live_near_the_forager_targets() {
             day: start + year as f64 * YEAR_DAYS,
             ..now
         };
-        p.live_course(&species, &w, now);
+        p.live_course(&species, &b.items, &w, now);
         if year % 20 == 0 {
             let living = p.persons.iter().filter(|q| q.alive()).count();
             println!(

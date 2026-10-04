@@ -94,6 +94,7 @@ pub fn report(
             Event::Met { player } => format!("first met player {player}"),
             Event::Paired { with } => format!("paired with #{with}"),
             Event::Bore { child } => format!("bore #{child}"),
+            Event::Inherited { from } => format!("took up what #{from} had carried"),
             Event::Hurt => "badly hurt".to_owned(),
             Event::Mourned { who } => format!("mourned #{who}"),
         };

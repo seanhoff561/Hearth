@@ -65,6 +65,10 @@ pub enum Event {
     Bore {
         child: PersonId,
     },
+    /// Took up what one who died had carried.
+    Inherited {
+        from: PersonId,
+    },
     /// First came near a player.
     Met {
         player: crate::world::PlayerId,

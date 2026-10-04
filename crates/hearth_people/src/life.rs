@@ -12,6 +12,7 @@ use glam::{DVec2, DVec3};
 use hearth_content::Content;
 use hearth_content::schema::humans::{Disperser, LifeStage};
 use hearth_content::schema::life::{Crowding, Siler};
+use hearth_items::Items;
 
 use crate::lineage::ancestors;
 use crate::person::{Cause, Died, Event, Person, PersonId, Pregnancy, Tier};
@@ -132,7 +133,13 @@ fn line(people: &People, id: PersonId) -> Vec<PersonId> {
 impl People {
     /// Lives the life course of every band lived in full of a species with a life table, from
     /// the day each was last reckoned to now, a step at a time (a band met again, from now).
-    pub fn live_course(&mut self, species: &SpeciesSet, senses: &dyn Senses, now: Now) {
+    pub fn live_course(
+        &mut self,
+        species: &SpeciesSet,
+        items: &Items,
+        senses: &dyn Senses,
+        now: Now,
+    ) {
         let step = now.year_days.max(1.0) / STEPS_A_YEAR;
         for band in &mut self.bands {
             if band.tier == Tier::Full {
@@ -163,7 +170,7 @@ impl People {
                 g.sunlight(senses.latitude(DVec3::new(home.x, 0.0, home.y)))
             });
             let n = (day / step).round() as u64;
-            self.course_step(bi, sp, species, table, sun, day, n, now);
+            self.course_step(bi, sp, species, items, table, sun, day, n, now);
         }
     }
 
@@ -202,6 +209,7 @@ impl People {
         bi: usize,
         sp: &Species,
         species: &SpeciesSet,
+        items: &Items,
         table: &Table,
         sun: f32,
         day: f64,
@@ -224,7 +232,7 @@ impl People {
                 h *= 1.0 + table.crowding.children as f64 * (crowd - 1.0);
             }
             if self.bands[bi].rng.next_f64() < 1.0 - (-h * years).exp() {
-                self.dies(i, day, Cause::Course);
+                self.dies(i, day, Cause::Course, sp, items, now);
             }
         }
         // The growing: how thin they go (their stature follows; a body lived in full only), and
@@ -270,7 +278,7 @@ impl People {
             }
             if let Some(due) = p.life.pregnant.clone() {
                 if due.due <= day {
-                    self.give_birth(bi, i, sp, table, due, day);
+                    self.give_birth(bi, i, sp, items, table, due, day, now);
                     born_any = true;
                 }
                 continue;
@@ -318,8 +326,9 @@ impl People {
     }
 
     /// A person dies of what its people die of at its age, or in giving birth: off its band's
-    /// list, its partner free, its kin mourning.
-    fn dies(&mut self, i: usize, day: f64, cause: Cause) {
+    /// list, its partner free, what it carried to its heir, its kin mourning.
+    #[allow(clippy::too_many_arguments)]
+    fn dies(&mut self, i: usize, day: f64, cause: Cause, sp: &Species, items: &Items, now: Now) {
         let p = &mut self.persons[i];
         if p.life.died.is_some() {
             return;
@@ -339,7 +348,80 @@ impl People {
         {
             self.persons[j].social.bond = None;
         }
+        self.bequeath(i, day, sp, items, &now);
         self.mourn(dead, band, day);
+    }
+
+    /// What one who died carried in its hands and on its back goes to its heir, as much as the
+    /// heir can carry (the rest, and what it wore, stays with it): its partner, else its children
+    /// of its band (the grown, eldest first), its mother, its father, its mother's other
+    /// children (until cultures say otherwise, H5).
+    pub(crate) fn bequeath(&mut self, i: usize, day: f64, sp: &Species, items: &Items, now: &Now) {
+        let (dead, band) = (self.persons[i].id, self.persons[i].social.band);
+        let (bond, mother, father) = {
+            let l = &self.persons[i];
+            (l.social.bond, l.life.mother, l.life.father)
+        };
+        let here = |q: &Person| q.alive() && q.social.band == band && q.id != dead;
+        let mut children: Vec<usize> = (0..self.persons.len())
+            .filter(|&j| {
+                let q = &self.persons[j];
+                here(q) && (q.life.mother == Some(dead) || q.life.father == Some(dead))
+            })
+            .collect();
+        children.sort_by(|&a, &b| {
+            let (p, q) = (&self.persons[a], &self.persons[b]);
+            p.life.born.total_cmp(&q.life.born).then(p.id.cmp(&q.id))
+        });
+        let siblings = (0..self.persons.len()).filter(|&j| {
+            let q = &self.persons[j];
+            here(q) && mother.is_some() && q.life.mother == mother
+        });
+        let by_id = |id: Option<PersonId>| {
+            id.and_then(|id| self.persons.binary_search_by_key(&id, |q| q.id).ok())
+                .filter(|&j| here(&self.persons[j]))
+        };
+        let grown = |j: &usize| self.persons[*j].age(now) >= sp.life.maturity_years as f64;
+        let Some(heir) = by_id(bond)
+            .or_else(|| children.iter().copied().find(grown))
+            .or_else(|| by_id(mother))
+            .or_else(|| by_id(father))
+            .or_else(|| siblings.clone().find(grown))
+            .or_else(|| children.first().copied())
+        else {
+            return;
+        };
+        let heir_kg = self.persons[heir].mass_kg(sp, now);
+        let mut got = false;
+        for slot in 0..3 {
+            let carry = &mut self.persons[i].possessions.carry;
+            let taken = match slot {
+                0 => carry.right.take(),
+                1 => carry.left.take(),
+                _ => carry.back.take(),
+            };
+            let Some(stack) = taken else {
+                continue;
+            };
+            match self.persons[heir]
+                .possessions
+                .carry
+                .stow(items, stack, heir_kg)
+            {
+                Ok(()) => got = true,
+                Err(back) => {
+                    let carry = &mut self.persons[i].possessions.carry;
+                    match slot {
+                        0 => carry.right = Some(back),
+                        1 => carry.left = Some(back),
+                        _ => carry.back = Some(back),
+                    }
+                }
+            }
+        }
+        if got {
+            self.persons[heir].record(day, Event::Inherited { from: dead });
+        }
     }
 
     /// The unpaired grown women of a band, eldest first, each paired with the unpaired grown man
@@ -456,14 +538,17 @@ impl People {
     }
 
     /// A woman gives birth to the child (or twins) she carries; it may cost her life.
+    #[allow(clippy::too_many_arguments)]
     fn give_birth(
         &mut self,
         bi: usize,
         i: usize,
         sp: &Species,
+        items: &Items,
         table: &Table,
         due: Pregnancy,
         day: f64,
+        now: Now,
     ) {
         self.persons[i].life.pregnant = None;
         let band = self.bands[bi].id;
@@ -483,7 +568,7 @@ impl People {
             self.persons[i].record(day, Event::Bore { child: id });
         }
         if self.bands[bi].rng.next_f32() < table.maternal_death {
-            self.dies(i, day, Cause::Childbirth);
+            self.dies(i, day, Cause::Childbirth, sp, items, now);
         }
     }
 

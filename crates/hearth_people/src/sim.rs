@@ -106,6 +106,9 @@ pub struct PersonView {
     pub height_m: f32,
     #[serde(default = "grown")]
     pub grown: f32,
+    /// Dead, lying where it fell until its people lay it to rest.
+    #[serde(default)]
+    pub dead: bool,
     pub look: crate::looks::Look,
     /// The feeling it shows on its body, and how strongly.
     #[serde(default)]
@@ -185,6 +188,9 @@ pub fn light(hour: f32) -> f32 {
 /// Generations reckoned back for mourning and for passing over close kin: enough for any kin
 /// closer than second cousins.
 const NEAR_KIN: u32 = 6;
+
+/// Days the dead lie where they fell before their people lay them to rest.
+const LAID_TO_REST_DAYS: f64 = 1.0;
 
 /// How near the young play together, and see a grown one's work to go and watch it (m); how
 /// close they crouch to watch it, and to take it in.
@@ -878,7 +884,15 @@ impl People {
         near: DVec3,
         within: f64,
     ) -> Vec<PersonView> {
-        self.full()
+        self.persons
+            .iter()
+            .filter(|p| p.tier == Tier::Full)
+            .filter(|p| {
+                p.life
+                    .died
+                    .as_ref()
+                    .is_none_or(|d| now.day - d.day < LAID_TO_REST_DAYS)
+            })
             .filter(|p| (p.place.pos - near).length() <= within)
             .filter_map(|p| {
                 let sp = species.get(&p.species)?;
@@ -895,6 +909,7 @@ impl People {
                     // To the centimetre and the hundredth, so a figure is made again only as it
                     // grows.
                     height_m: (p.height_m(sp, now) * 100.0).round() / 100.0,
+                    dead: !p.alive(),
                     grown: ((p.age(now) as f32 / sp.life.maturity_years.max(1.0)).min(1.0) * 100.0)
                         .round()
                         / 100.0,
@@ -933,7 +948,7 @@ impl People {
         dt: f32,
     ) {
         self.done.clear();
-        self.live_course(species, &*world, now);
+        self.live_course(species, items, &*world, now);
         self.body_s -= dt;
         let body_step = self.body_s <= 0.0;
         if body_step {
@@ -1003,17 +1018,20 @@ impl People {
             if p.tier != Tier::Full {
                 continue;
             }
-            // A body that died otherwise (a hunter's kill, a fall): its death recorded.
-            if p.life.died.is_none() && p.body.dead.is_some() {
-                self.died(i, now);
-                continue;
-            }
-            if !p.alive() {
+            if !p.alive() && p.body.dead.is_none() {
                 continue;
             }
             let Some(sp) = species.get(&p.species) else {
                 continue;
             };
+            // A body that died otherwise (a hunter's kill, a fall): its death recorded.
+            if p.life.died.is_none() && p.body.dead.is_some() {
+                self.died(i, sp, items, now);
+                continue;
+            }
+            if !p.alive() {
+                continue;
+            }
             let Some(bi) = self.band_index(p.social.band) else {
                 continue;
             };
@@ -1040,7 +1058,7 @@ impl People {
                 p.mind.strain =
                     (0.35 * n.hunger + 0.35 * n.thirst + 0.15 * n.tiredness + pain).min(1.0);
                 if p.body.dead.is_some() {
-                    self.died(i, now);
+                    self.died(i, sp, items, now);
                 }
             }
         }
@@ -1086,7 +1104,7 @@ impl People {
     }
 
     /// Records a person's death (its body's cause), and its band's mourning.
-    fn died(&mut self, i: usize, now: Now) {
+    fn died(&mut self, i: usize, sp: &Species, items: &Items, now: Now) {
         let p = &mut self.persons[i];
         let Some(d) = &p.body.dead else {
             return;
@@ -1101,6 +1119,7 @@ impl People {
         });
         p.record(now.day, Event::Died { cause });
         let (dead, band) = (p.id, p.social.band);
+        self.bequeath(i, now.day, sp, items, &now);
         self.mourn(dead, band, now.day);
     }
 

@@ -797,6 +797,7 @@ pub fn drive(v: &PersonView) -> Drive {
     use hearth_people::Doing;
     let in_tree = v.medium == hearth_fauna::live::Medium::Tree;
     let mut activity = match &v.doing {
+        _ if v.dead => Activity::Lie,
         Doing::Sleeping => Activity::Lie,
         _ if in_tree && v.speed > 0.05 => Activity::Ladder,
         Doing::Working { .. }
