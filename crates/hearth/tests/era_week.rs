@@ -112,25 +112,29 @@ fn a_sample_week_of_each_era() {
         let mut near_counts: Vec<usize> = Vec::new();
         let mut asleep_by_day = 0u32;
         for _ in 0..days * 48 {
-            w.run(half_hour);
-            if band.is_empty() {
-                let me = w.mover.pos;
-                band = w
+            // The half hour a few minutes at a time, so the band is not lost between looks.
+            let mut seen_them = false;
+            for _ in 0..6 {
+                w.run((half_hour / 6).max(1));
+                if band.is_empty() {
+                    let me = w.mover.pos;
+                    band = w
+                        .people
+                        .iter()
+                        .filter(|v| !v.dead && (v.pos - me).length() < 150.0)
+                        .map(|v| v.id)
+                        .collect();
+                }
+                let ours: Vec<glam::DVec3> = w
                     .people
                     .iter()
-                    .filter(|v| !v.dead && (v.pos - me).length() < 150.0)
-                    .map(|v| v.id)
+                    .filter(|v| !v.dead && band.contains(&v.id))
+                    .map(|v| v.pos)
                     .collect();
-            }
-            let ours: Vec<glam::DVec3> = w
-                .people
-                .iter()
-                .filter(|v| !v.dead && band.contains(&v.id))
-                .map(|v| v.pos)
-                .collect();
-            if ours.is_empty() {
-                lost += 1;
-            } else {
+                if ours.is_empty() {
+                    continue;
+                }
+                seen_them = true;
                 let mid = ours.iter().copied().sum::<glam::DVec3>() / ours.len() as f64;
                 let flat = |d: glam::DVec3| d.x.hypot(d.z);
                 if let Some(l) = last {
@@ -143,6 +147,9 @@ fn a_sample_week_of_each_era() {
                     w.server.send(ToServer::Place(mid));
                     w.until(10.0, |w| w.mover.pos != before);
                 }
+            }
+            if !seen_them {
+                lost += 1;
             }
             let me = w.mover.pos;
             let local = w
