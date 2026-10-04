@@ -304,8 +304,8 @@ const STRAY_M: f32 = 30.0;
 const CAMP_M: f32 = 400.0;
 /// Those who keep camp sleep close about its fire, a few steps out (m): its warmth reaches no
 /// further on a cold night.
-const CAMP_SLEEP_M: f64 = 3.5;
-const CAMP_SLEEP_RING_M: f64 = 2.0;
+const CAMP_SLEEP_M: f64 = 2.0;
+const CAMP_SLEEP_RING_M: f64 = 1.2;
 
 /// Chooses what to do now, from what it needs and what it knows of the moment, as its psyche
 /// tilts it: danger first (to face a hunter with the others, to flee up a tree or away, to call

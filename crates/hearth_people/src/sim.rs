@@ -209,6 +209,10 @@ pub struct People {
     pub(crate) knower_counts: crate::learning::KnowerCounts,
 }
 
+/// When and how near its camp a band's people eat the day's take (D202).
+const CAMP_MEAL_HOURS: std::ops::Range<f32> = 17.0..22.0;
+const CAMP_MEAL_M: f64 = 20.0;
+
 /// The share of the wind (taken two metres up) a body lying on grassy ground is in.
 const LYING_WIND: f32 = 0.37;
 /// What grass and leaves pulled together under a sleeper keep of the ground's cold (clo).
@@ -1783,6 +1787,12 @@ impl People {
                 });
             }
             self.act(i, bi, sp, crafts, content, items, world, now, dt);
+            let camp = self.bands[bi].camp.filter(|_| sp.does(Behavior::KeepCamp));
+            let cooks = self.bands[bi]
+                .culture
+                .knowledge
+                .iter()
+                .any(|k| k.ends_with("cooking_roasting"));
             let p = &mut self.persons[i];
             if body_step {
                 let sized = p.body_config(sp, &now);
@@ -1800,6 +1810,18 @@ impl People {
                 let hurt = p.body.injuries.len();
                 p.body
                     .step(cfg, BODY_S as f64, &exposure, &sp.coat, &activity);
+                // The day's take, shared at camp of an evening (D202): the game and roots its
+                // people bring in beyond what is lived in full, eaten by those who are hungry —
+                // roasted where they know how — the nursed young aside.
+                if CAMP_MEAL_HOURS.contains(&now.hour)
+                    && let Some(c) = camp
+                    && (c - p.place.pos).length() < CAMP_MEAL_M
+                    && p.stage(sp, &now) != Stage::Young
+                    && Needs::of(&p.body, cfg, 0.0).hunger >= 0.3
+                {
+                    eat(p, cfg, content, if cooks { "cooked_meat" } else { "meat" }, 0.15);
+                    eat(p, cfg, content, "cattail_root", 0.15);
+                }
                 // A new hurt frightens and angers; the body's needs and pains strain it.
                 if p.body.injuries.len() > hurt {
                     p.psyche.feel(Feeling::Fear, 0.6);
