@@ -2257,3 +2257,28 @@ synthesized forebears: dead mothers kept as genealogy stubs, shared by founders 
 kinship (and through it ties, households and incest avoidance) works from the first meeting.
 Budgets bound the full tier by distance (300) and the household tier (20,000); pruning cuts the
 long dead to stubs that keep what genealogies need.
+
+## D190 — H4–H7's tests run: what the first runs changed
+H4–H7 were built while the PC's memory allowed only `clippy` checks, their thresholds set by
+reasoning. Their first runs (2026-10-04, on a 4-core cloud machine) passed but for these:
+- **Forebears and the earlier tests.** Since H7 a band met for the first time gives its grown
+  founders forebears: mothers long dead, kept as genealogy stubs without genomes. Tests of H1–H4
+  that took "any member with a mother" for a child of a living mother picked a founder and its
+  forebear instead; they now ask for a living mother (`tests/common::living_mother`) or pass over
+  a stub's let-go genome.
+- **A forebear's children were strangers in their genes.** Founders sharing a forebear were
+  brothers and sisters by pedigree, but each was drawn from the pool alone. Now a forebear's
+  genome and her unrecorded mate's are drawn on a stream of her id — the same whenever one of her
+  children's is — and her children are the meiosis of that couple (`People::endow`); a living
+  father found among the band's grown still takes the mate's place. The families test checks that
+  a sibship shares more alleles than unrelated founders (0.966 of loci alike against 0.912).
+- **Warning off.** The weight of warning off an unwelcome stranger (0.4 + 0.5 boldness − 0.3
+  trust) left every host of ordinary temper (dominance about 0.35–0.4) watching it (about 0.63)
+  for good; its base is raised to 0.55, so the bolder half of a band warns it off and the timid
+  watch, as H4 meant.
+- **Gifts.** A hand holds one thing; the stranger test's five gifts to each host are put down
+  between (the test's fault, not the code's).
+- **The inspector** shows H5's culture section (the test's list predated it).
+The perf gate (`scripts/perf-gate.sh`) and screenshots need the user's GPU: the cloud machine
+renders only on a software device (llvmpipe), whose frame rates say nothing of the reference
+machine's, so the gate for H4–H7 waits for the PC.

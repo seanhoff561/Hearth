@@ -121,9 +121,9 @@ fn ties_grow_in_company_kin_begin_closer_and_giving_is_owed() {
     };
     let child = p
         .full()
-        .find(|q| q.life.mother.is_some())
+        .find(|q| living_mother(&p, q).is_some())
         .expect("a child with its mother");
-    let mother = child.life.mother.expect("its mother");
+    let mother = living_mother(&p, child).expect("its mother");
     let stranger = p
         .full()
         .find(|q| q.id != mother && kin_of(&p, mother, q.id).is_none())
@@ -156,13 +156,14 @@ fn a_mother_with_food_feeds_her_hungry_child() {
     let child = p
         .full()
         .find(|q| {
-            q.life.mother.is_some() && q.life_stage(sp, &now) != hearth_people::LifeStage::Infant
+            living_mother(&p, q).is_some()
+                && q.life_stage(sp, &now) != hearth_people::LifeStage::Infant
         })
         .map(|q| q.id)
         .expect("a weaned child with its mother");
     let mother = p
         .get(child)
-        .and_then(|q| q.life.mother)
+        .and_then(|q| living_mother(&p, q))
         .expect("its mother");
     // Something good to eat in her hand; the child hungry.
     let food = b
@@ -704,10 +705,11 @@ fn a_stranger_is_greeted_and_taken_in() {
     let now = world.now();
     let stone = hearth_items::Stack::of(&item("marula_stone"), 1);
     for &g in &hosts {
-        for q in p.persons.iter_mut().filter(|q| q.id == g) {
-            q.possessions.carry = Default::default();
-        }
         for _ in 0..5 {
+            // Each gift put down before the next (hands hold one thing each).
+            for q in p.persons.iter_mut().filter(|q| q.id == g) {
+                q.possessions.carry = Default::default();
+            }
             p.gift(
                 stranger,
                 g,

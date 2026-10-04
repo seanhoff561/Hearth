@@ -443,9 +443,11 @@ pub fn choose(
         if !st.met {
             if st.unwelcome {
                 let bold = psyche.tendency(Tendency::Dominance);
+                // A trespasser stirs more than a passer-by: the bolder half of a band of
+                // ordinary temper warns it off rather than watching it (D190).
                 consider(
                     Doing::WarningOff { who: st.id },
-                    0.4 + 0.5 * bold - 0.3 * trusting + 0.1 * roll,
+                    0.55 + 0.5 * bold - 0.3 * trusting + 0.1 * roll,
                 );
             } else if st.dist <= st.greet_m {
                 let sociable = psyche.tendency(Tendency::Sociability);

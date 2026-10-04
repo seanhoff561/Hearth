@@ -684,10 +684,43 @@ impl People {
                 id.and_then(|id| self.get(id))
                     .and_then(|q| q.genome.clone())
             };
-            let mother = genome(self.persons[i].life.mother);
-            let father = genome(self.persons[i].life.father);
+            let mut mother = genome(self.persons[i].life.mother);
+            let mut father = genome(self.persons[i].life.father);
+            // A forebear's children (founders sharing a mother kept as a stub) are brothers and
+            // sisters in their genes too: her genome, and her unrecorded mate's, drawn again the
+            // same for each of them.
+            if mother.is_none()
+                && let Some(m) = self.persons[i].life.mother
+                && self.get(m).is_some_and(|q| q.life.stub)
+            {
+                let (fm, ff) = self.forebear_genomes(genetics, &self.persons[i].species, m, sun);
+                mother = fm;
+                father = father.or(ff);
+            }
             self.persons[i].inherit(genetics, mother.as_ref(), father.as_ref(), sun);
         }
+    }
+
+    /// The genomes of a forebear kept as a stub (her own was let go) and of the unrecorded father
+    /// of her children, drawn from her species' pool on a stream of her id alone, so that they
+    /// come out the same whenever one of her children's is drawn.
+    fn forebear_genomes(
+        &self,
+        genetics: &Genetics,
+        species: &str,
+        mother: PersonId,
+        sun: f32,
+    ) -> (Option<crate::genome::Genome>, Option<crate::genome::Genome>) {
+        let Some(pool) = genetics.pool(species) else {
+            return (None, None);
+        };
+        let mut rng = Rng::new(hearth_math::hash::hash2(
+            self.seed ^ FOREBEARS_STREAM ^ 0x6e,
+            mother,
+        ));
+        let m = genetics.founder(pool, sun, true, &mut rng);
+        let f = genetics.founder(pool, sun, false, &mut rng);
+        (Some(m), Some(f))
     }
 
     /// Forms the psyche of every living member of a band who has none yet, from its phenotype;

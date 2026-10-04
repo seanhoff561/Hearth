@@ -302,6 +302,13 @@ pub fn band(world: &mut Savanna) -> People {
     p
 }
 
+/// A person's mother if she is living (grown founders' mothers are forebears long dead, H7).
+pub fn living_mother(p: &People, q: &hearth_people::Person) -> Option<u64> {
+    q.life
+        .mother
+        .filter(|&m| p.get(m).is_some_and(|m| m.alive()))
+}
+
 /// One step of play with the players about.
 pub fn step(p: &mut People, world: &mut Savanna, players: &[PlayerSeen]) {
     let b = base();

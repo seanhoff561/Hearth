@@ -1,5 +1,5 @@
 //! H0 (V2.1 §16): the developer's inspector shows a person's record, a section for each of its
-//! components (H1 adds the genome and the phenotype).
+//! components (H1 adds the genome and the phenotype, H5 the culture).
 
 mod common;
 
@@ -39,6 +39,7 @@ fn the_inspector_shows_every_component() {
             "Mind",
             "Knowledge",
             "Social",
+            "Culture",
             "Possessions",
             "Place"
         ]

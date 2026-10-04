@@ -84,9 +84,15 @@ fn a_fright_spreads_through_those_near_and_fades() {
 fn a_death_grieves_the_kin() {
     let mut world = Savanna::new();
     let mut p = band(&mut world);
+    // A living mother: grown founders' mothers are forebears long dead (H7).
     let (child, mother) = p
         .full()
-        .find_map(|q| q.life.mother.map(|m| (q.id, m)))
+        .find_map(|q| {
+            q.life
+                .mother
+                .filter(|&m| p.get(m).is_some_and(|m| m.alive()))
+                .map(|m| (q.id, m))
+        })
         .expect("a child with its mother");
     if let Some(m) = p.persons.iter_mut().find(|q| q.id == mother) {
         m.body.kill(hearth_body::Death::Starvation);
