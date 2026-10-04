@@ -15,6 +15,7 @@ pub mod band;
 pub mod birth;
 pub mod genome;
 pub mod inspect;
+pub mod life;
 pub mod lineage;
 pub mod looks;
 pub mod memory;

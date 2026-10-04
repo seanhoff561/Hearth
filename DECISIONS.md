@@ -2053,3 +2053,21 @@ activity budgets), a forager's work and the evening's company. The pulls are sma
 scores of 0.2–3), so need still decides. Food where a person stands is worth as much as it is
 rich (its kilograms a minute against a tenth of a kilogram): where it is thin, food in sight or
 remembered elsewhere is weighed too.
+
+## D177 — The life course: weekly steps on bands lived in full, crowding by the land
+A band lived in full of a people with a life table lives its course a fifty-second of a calendar
+year at a time, the band furthest behind first so neighbours keep pace; a dormant band's numbers
+stay the ecological cells' (V2-11) and one met again is reckoned from when it is met, so nothing
+is lived twice. Deaths follow a Siler hazard by age (Gurven and Kaplan's forager composite).
+Fertility is a monthly chance of a conception carried to term by age, held back while a woman
+nurses: because nursing sets most of a birth interval, fertility answers weakly to that chance,
+so the life table says how crowding tells — conceptions divided by the crowding cubed, children's
+deaths raised by half of it — and the crowding is the people of a band's kind within 15 km of its
+home against what that land feeds (0.1 a square kilometre for foragers until H6 lets the land
+say). A band alone grows about a per cent a year (V2.1's foragers), splits past sixty, and the
+country fills in about a century and then holds. Close kin, for pairing, are those sharing a
+parent or grandparent (siblings, half siblings, first cousins, aunts and nephews) or being one —
+a short look up the pedigree instead of a kinship coefficient, which grows costly over centuries;
+mourning reckons kinship six generations back for the same reason. Pair bonds are abstracted
+(ground rule 3): an event and a partner's id. *Homo sapiens* stays data until Wild Earth's
+families (later in H3) need it; the demography test adds it to its own species set.

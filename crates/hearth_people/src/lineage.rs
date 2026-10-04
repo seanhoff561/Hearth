@@ -36,13 +36,22 @@ const GENERATIONS: u32 = 32;
 pub struct Kinship<'a, P: Pedigree> {
     pedigree: &'a P,
     memo: HashMap<(PersonId, PersonId), f64>,
+    /// Steps back through the pedigree reckoned at most.
+    generations: u32,
 }
 
 impl<'a, P: Pedigree> Kinship<'a, P> {
     pub fn new(pedigree: &'a P) -> Self {
+        Self::near(pedigree, GENERATIONS)
+    }
+
+    /// Kinship reckoned only so many steps back: near kin exactly, distant kin as strangers (a
+    /// long pedigree's reckoning kept short).
+    pub fn near(pedigree: &'a P, generations: u32) -> Self {
         Self {
             pedigree,
             memo: HashMap::new(),
+            generations,
         }
     }
 
@@ -67,7 +76,7 @@ impl<'a, P: Pedigree> Kinship<'a, P> {
     }
 
     fn phi(&mut self, a: PersonId, b: PersonId, depth: u32) -> f64 {
-        if depth > GENERATIONS {
+        if depth > self.generations {
             return 0.0;
         }
         let key = (a.min(b), a.max(b));

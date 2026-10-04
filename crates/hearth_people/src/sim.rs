@@ -172,8 +172,12 @@ pub fn light(hour: f32) -> f32 {
     0.25 + 0.75 * up.min(down)
 }
 
+/// Generations reckoned back for mourning and for passing over close kin: enough for any kin
+/// closer than second cousins.
+const NEAR_KIN: u32 = 6;
+
 /// A band's own stream, from the world's seed and its id.
-fn band_stream(seed: u64, id: u64) -> Rng {
+pub(crate) fn band_stream(seed: u64, id: u64) -> Rng {
     Rng::new(hearth_math::hash::hash2(seed ^ 0x00ba_4d5e_ed00_0000, id))
 }
 
@@ -213,7 +217,7 @@ impl People {
         self.bands.iter().position(|b| b.id == id)
     }
 
-    fn take_id(&mut self) -> PersonId {
+    pub(crate) fn take_id(&mut self) -> PersonId {
         let id = self.next_id;
         self.next_id += 1;
         id
@@ -361,6 +365,7 @@ impl People {
             population_group: None,
             tier: Tier::Full,
             dormant_since: None,
+            lived_to: None,
             rng,
         };
         self.bands.push(band);
@@ -385,7 +390,14 @@ impl People {
     /// where none is — else one drawn from its species' pool at the place's sunlight (a founder,
     /// or a record from before genes). The eldest first, so parents have theirs before their
     /// children.
-    fn endow(&mut self, bi: usize, sp: &Species, genetics: Option<&Genetics>, sun: f32, now: Now) {
+    pub(crate) fn endow(
+        &mut self,
+        bi: usize,
+        sp: &Species,
+        genetics: Option<&Genetics>,
+        sun: f32,
+        now: Now,
+    ) {
         let Some(genetics) = genetics else {
             return;
         };
@@ -419,7 +431,7 @@ impl People {
 
     /// Forms the psyche of every living member of a band who has none yet, from its phenotype;
     /// one who remembers nothing of the range starts from what the band knows of it.
-    fn form(&mut self, bi: usize, defs: &PsycheDefs, now: Now) {
+    pub(crate) fn form(&mut self, bi: usize, defs: &PsycheDefs, now: Now) {
         let band = self.bands[bi].id;
         let places = self.bands[bi].places.clone();
         for p in self
@@ -486,7 +498,7 @@ impl People {
         let band = self.bands[bi].id;
         let grown = sp.life.maturity_years as f64 * now.year_days;
         let fathers: Vec<PersonId> = {
-            let mut kin = Kinship::new(&*self);
+            let mut kin = Kinship::near(&*self, NEAR_KIN);
             self.persons
                 .iter()
                 .filter(|q| q.social.band == band && q.alive() && !q.life.female)
@@ -878,6 +890,7 @@ impl People {
         dt: f32,
     ) {
         self.done.clear();
+        self.live_course(species, &*world, now);
         self.body_s -= dt;
         let body_step = self.body_s <= 0.0;
         if body_step {
@@ -1000,9 +1013,9 @@ impl People {
 
     /// A death felt by the dead one's band: grief in its kin by how close they were (a mother,
     /// a child, a brother or sister most; a grandparent or a half-sibling half as much).
-    fn mourn(&mut self, dead: PersonId, band: u64, day: f64) {
+    pub(crate) fn mourn(&mut self, dead: PersonId, band: u64, day: f64) {
         let kin: Vec<(usize, f64)> = {
-            let mut k = Kinship::new(&*self);
+            let mut k = Kinship::near(&*self, NEAR_KIN);
             (0..self.persons.len())
                 .filter(|&j| {
                     let q = &self.persons[j];

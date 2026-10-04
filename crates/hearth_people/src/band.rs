@@ -62,7 +62,7 @@ pub struct Band {
     pub id: u64,
     /// Its species' id.
     pub species: String,
-    /// Its members' ids, the dead among them until they are pruned (H7).
+    /// Its members' ids (the dead among them until its life course takes them off).
     pub members: Vec<PersonId>,
     /// The middle of its range and how far the range reaches (m).
     pub home: DVec2,
@@ -83,6 +83,9 @@ pub struct Band {
     /// The day it was last folded back into the cells' numbers.
     #[serde(default)]
     pub dormant_since: Option<f64>,
+    /// The day its life course was last reckoned to (a band of a people with a life table).
+    #[serde(default)]
+    pub lived_to: Option<f64>,
     /// Its own random stream: where its members come down, who dies and who is born while the
     /// player is away.
     pub rng: Rng,

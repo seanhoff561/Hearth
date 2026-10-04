@@ -73,6 +73,9 @@ pub fn report(
                 .map_or("unknown".to_owned(), |m| format!("#{m}")),
         ),
     ];
+    if let Some(due) = &p.life.pregnant {
+        life.push(format!("with child, due day {:.1}", due.due));
+    }
     for e in p.life.events.iter().rev().take(5) {
         let what = match &e.event {
             Event::Born { band } => format!("born into band {band}"),
@@ -80,6 +83,8 @@ pub fn report(
             Event::Joined { band } => format!("joined band {band}"),
             Event::Died { cause } => format!("died: {cause:?}"),
             Event::Met { player } => format!("first met player {player}"),
+            Event::Paired { with } => format!("paired with #{with}"),
+            Event::Bore { child } => format!("bore #{child}"),
             Event::Hurt => "badly hurt".to_owned(),
             Event::Mourned { who } => format!("mourned #{who}"),
         };
@@ -283,6 +288,18 @@ pub fn report(
     let band = people.bands.iter().find(|b| b.id == p.social.band);
     let living = people.members(p.social.band).filter(|q| q.alive()).count();
     let mut social = vec![format!("band {} of {living}", p.social.band)];
+    if let Some(with) = p.social.bond {
+        social.push(format!("paired with #{with}"));
+    }
+    let children: Vec<String> = people
+        .persons
+        .iter()
+        .filter(|c| c.life.mother == Some(p.id) || c.life.father == Some(p.id))
+        .map(|c| format!("#{}{}", c.id, if c.alive() { "" } else { " (dead)" }))
+        .collect();
+    if !children.is_empty() {
+        social.push(format!("children {}", children.join(", ")));
+    }
     if let Some(b) = band {
         for (player, t) in &b.tolerance {
             social.push(format!("at ease with player {player}: {t:.2}"));

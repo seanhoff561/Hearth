@@ -10,8 +10,10 @@ use crate::person::Person;
 use crate::sim::People;
 
 /// The format of the people's save. Each format after the first adds its step to [`migrate`]:
-/// 2 (H1) gave persons their genomes and phenotypes, 3 (H2) their psyches, 4 their memories.
-pub const FORMAT: u32 = 4;
+/// 2 (H1) gave persons their genomes and phenotypes, 3 (H2) their psyches, 4 their memories, 5
+/// (H3) their partners and the children they carry, and bands the day their life course was
+/// reckoned to.
+pub const FORMAT: u32 = 5;
 
 /// The people as saved.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,6 +71,8 @@ pub fn migrate(v: &mut Value) -> Result<u32, String> {
     // 2 → 3: no psyches yet; each is formed from its phenotype when its band is next drawn out
     // (`People::form`); a mind's fear moved into the psyche.
     // 3 → 4: no memories yet; each mental map starts from its band's places when next drawn out.
+    // 4 → 5: nobody paired or carrying yet; a band's life course is reckoned from when it is
+    // next lived.
     Ok(format)
 }
 

@@ -52,6 +52,14 @@ pub enum Event {
     Died {
         cause: Cause,
     },
+    /// Paired with another.
+    Paired {
+        with: PersonId,
+    },
+    /// Gave birth to a child.
+    Bore {
+        child: PersonId,
+    },
     /// First came near a player.
     Met {
         player: crate::world::PlayerId,
@@ -80,6 +88,18 @@ pub enum Cause {
     WhileAway,
     /// Its body's own death, as the player's would be told.
     Body(String),
+    /// What its people die of at its age, as their life table has it (illness, an accident, a
+    /// hunter, age: the table does not say which).
+    Course,
+    /// In giving birth.
+    Childbirth,
+}
+
+/// A child carried: when it is due, and its father.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Pregnancy {
+    pub due: f64,
+    pub father: Option<PersonId>,
 }
 
 /// A death: when, and of what.
@@ -103,6 +123,8 @@ pub struct LifeHistory {
     pub birthplace: [f64; 2],
     pub events: Vec<LifeEvent>,
     pub died: Option<Died>,
+    /// The child it carries, if any.
+    pub pregnant: Option<Pregnancy>,
 }
 
 /// Where a person is and how it moves.
@@ -125,6 +147,8 @@ pub struct Place {
 pub struct Social {
     /// Its band's id.
     pub band: u64,
+    /// Its partner, if it has paired (V2.1 §7.1; kinship and households join in H4).
+    pub bond: Option<PersonId>,
 }
 
 /// What a person carries (property and claims join in H11).
@@ -232,7 +256,47 @@ impl Person {
             body,
             mind: Mind::default(),
             knowledge,
-            social: Social { band },
+            social: Social { band, bond: None },
+            possessions: Possessions::default(),
+            place: Place {
+                pos,
+                ..Place::default()
+            },
+            genome: None,
+            phenotype: None,
+            psyche: crate::psyche::Psyche::default(),
+            memory: crate::memory::Memory::default(),
+            rng,
+        }
+    }
+
+    /// A child born into a band, knowing nothing yet.
+    #[allow(clippy::too_many_arguments)]
+    pub fn newborn(
+        id: PersonId,
+        species: &Species,
+        band: u64,
+        female: bool,
+        born: f64,
+        pos: DVec3,
+        seed: u64,
+    ) -> Self {
+        let mut rng = stream(seed, id);
+        let body = Body::new(species.body(female), rng.next_u64());
+        Self {
+            id,
+            species: species.id.clone(),
+            tier: Tier::Full,
+            life: LifeHistory {
+                female,
+                born,
+                birthplace: [pos.x, pos.z],
+                ..LifeHistory::default()
+            },
+            body,
+            mind: Mind::default(),
+            knowledge: KnowledgeState::default(),
+            social: Social { band, bond: None },
             possessions: Possessions::default(),
             place: Place {
                 pos,

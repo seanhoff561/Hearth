@@ -512,6 +512,24 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.life_tables,
+        report,
+        |e| &e.id,
+        |t, c| {
+            c.range("nursing_years", t.nursing_years, 0.0, 6.0);
+            c.range("nursing_factor", t.nursing_factor, 0.0, 1.0);
+            c.range("twins", t.twins, 0.0, 0.1);
+            c.range("maternal_death", t.maternal_death, 0.0, 0.2);
+            c.range("density", t.density, 0.001, 10.0);
+            c.range("crowding children", t.crowding.children, 0.0, 10.0);
+            c.range("crowding conception", t.crowding.conception, 0.0, 10.0);
+            for (age, f) in &t.fecundability {
+                c.range("fecundability age", *age, 0.0, 70.0);
+                c.range("fecundability", *f, 0.0, 1.0);
+            }
+        },
+    );
+    each(
         &content.tendencies,
         report,
         |e| &e.id,

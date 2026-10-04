@@ -246,6 +246,8 @@ pub struct SpeciesSet {
     pub genetics: Option<crate::genome::Genetics>,
     /// How temperament shows in behaviour, and the feelings' ways.
     pub psyche: crate::psyche::PsycheDefs,
+    /// The life tables of the species that have them.
+    pub life: crate::life::Tables,
 }
 
 impl SpeciesSet {
@@ -262,6 +264,7 @@ impl SpeciesSet {
             list,
             genetics: crate::genome::Genetics::from_content(c),
             psyche: crate::psyche::PsycheDefs::from_content(c),
+            life: crate::life::Tables::from_content(c),
         }
     }
 

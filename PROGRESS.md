@@ -681,6 +681,7 @@ design only). Updated with each H milestone.
 | Era profiles | Wild Earth (its *Australopithecus* bands) | Wild Earth's families (H3), Lower, Middle, Upper Paleolithic (H8), Neolithic (H11), Bronze Age (H12), Iron Age (H13) |
 | Calibrated traits | 29 heritable traits on ~460 loci: appearance, health, metabolism, HEXACO temperament and its narrower dimensions, aptitudes (H1); temperament read by the psyche (H2) | health by the life course (H3), aptitudes by learning (H6) |
 | Routines | *Australopithecus*'s day, a forager's day (H2) | cultures' routines (H5) |
+| Life tables | foragers': deaths by age, fertility, nursing, pairing, crowding, bands splitting (H3) | the eras' (Neolithic H11, later H12–H13) |
 | Norms | — | (H4) |
 | Speech acts | — | (H5) |
 | The player's birth | genome from two parents of the place, shown at birth; no appearance chosen (H1) | born into a family (H3), birth options (H8); births in multiplayer (R3) |
@@ -987,6 +988,27 @@ H2 — Psyche and mind core (PLAN.md, V2.1 §5–6), in parts:
   crates' tests and lints (`hearth_content`, `hearth_people`, `hearth`); the performance gate and
   the feelings screenshots wait for a release build (H2 changes nothing drawn but the figures'
   postures).
+
+H3 — Life course and demography (PLAN.md, V2.1 §7, §14.3; Addenda A and B;
+`docs/design/humans/life.md`), in parts:
+- [x] (a) The demography engine (D177): life tables as data (`humans/life/tables.ron`: the
+  foragers' Siler mortality, fecundability by age, nursing, twins, deaths in childbirth, pairing
+  ages, the land's density and crowding, the split size); every band lived in full lives its
+  course a fifty-second of a year at a time — deaths by age, pairing with the nearest in age not
+  of close kin (from neighbouring bands, the dispersing sex moving), conception and birth (the
+  child's genome its parents' meiosis), bands splitting by households; partners, pregnancies and
+  children in the inspector; people format 5. A 200-year run of six forager bands meets §14.3's
+  targets (`tests/demography.rs`: e0 30.5, 5.1 children 4.1 years apart, near-zero growth once
+  the land fills, bands of about thirty).
+- [ ] (b) Life stages and child bodies: infant to elder, sizes and proportions by age, the
+  children's behaviours (play, imitation), development (nutrition and stature, attachment),
+  ageing.
+- [ ] (c) Death, mourning and inheritance; Wild Earth's families (D164) and the player born into
+  one, growing up at the childhood pace through its moments.
+- [ ] (d) Death's choices (Addendum B): the death screen and the life story, spectate, restart,
+  inhabit an adult.
+- [ ] (e) The acceptance: families persist across generations; a scripted player is born, grows up
+  and comes of age; a scripted player dies, reads its life story and goes on as a kinsman.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in

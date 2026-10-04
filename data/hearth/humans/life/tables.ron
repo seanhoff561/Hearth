@@ -1,0 +1,34 @@
+// Life tables (V2.1 §7, §14.3): how a people dies at each age, how often its women conceive, how
+// long they nurse, when they pair and how large its bands grow. Long headless runs must land near
+// the forager targets: high infant and child mortality, a life expectancy at birth in the low to
+// mid thirties with most who outlive childhood living into their sixties and seventies, a total
+// fertility of four to six with births three to four years apart, long-run growth near zero and
+// residential groups of twenty-five to fifty (`hearth_people/tests/demography.rs`).
+(
+    schema: 1,
+    entries: [
+        (
+            id: "forager", name: "Foragers", status: Implemented, species: "homo_sapiens",
+            // The composite hunter-gatherer Siler fit of Gurven and Kaplan (2007): e0 about 31,
+            // 56 % alive at fifteen, the modal adult age at death about 70.
+            mortality: (a1: 0.422, b1: 1.131, a2: 0.013, a3: 0.000147, b3: 0.086),
+            // Natural fertility: a paired woman's chance in a month of a conception carried to
+            // term, at its height in her twenties, falling steeply after thirty-five and gone by
+            // forty-six (Hadza- and !Kung-like age-specific fertility).
+            fecundability: [(15.0, 0.01), (18.0, 0.06), (22.0, 0.1), (30.0, 0.09), (35.0, 0.05), (40.0, 0.012), (44.0, 0.002), (46.0, 0.0)],
+            // Nursing on demand for three years holds conception back (lactational
+            // amenorrhoea), spacing births three to four years apart.
+            nursing_years: 2.75, nursing_factor: 0.05,
+            twins: 0.012, maternal_death: 0.01,
+            pairing_age: (17.0, 20.0),
+            // A tenth of a person to the square kilometre, as foragers of open country live
+            // (H6 lets the land say); bands of twenty-five to fifty, splitting past fifty-five.
+            density: 0.1, band_splits_at: 60,
+            // Crowded, more children die and fewer are conceived: numbers hold near what the
+            // land feeds.
+            crowding: (children: 0.5, conception: 3.0),
+            realism_source: "Gurven and Kaplan 2007 (mortality); Howell 1979, Hill and Hurtado 1996, Blurton Jones 2016 (fertility, birth spacing); Marlowe 2005 (group size)",
+            uncertain: true,
+        ),
+    ],
+)
