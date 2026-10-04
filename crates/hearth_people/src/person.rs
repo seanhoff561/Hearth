@@ -69,6 +69,14 @@ pub enum Event {
     Inherited {
         from: PersonId,
     },
+    /// Broke a norm of its people, seen doing it.
+    Breached {
+        breach: hearth_content::schema::social::Breach,
+    },
+    /// Cast out of its band for the name it had there.
+    CastOut {
+        from: u64,
+    },
     /// First came near a player.
     Met {
         player: crate::world::PlayerId,
@@ -167,6 +175,9 @@ pub struct Social {
     /// Its ties to those it knows, and the ledger with each (V2.1 §8.2).
     #[serde(default)]
     pub ties: Vec<crate::ties::Tie>,
+    /// What it believes of others: how generous, how honest (V2.1 §8.4).
+    #[serde(default)]
+    pub reputes: Vec<crate::repute::Repute>,
 }
 
 /// What a person carries (property and claims join in H11).
@@ -286,6 +297,7 @@ impl Person {
                 bond: None,
                 household: None,
                 ties: Vec::new(),
+                reputes: Vec::new(),
             },
             possessions: Possessions::default(),
             place: Place {
@@ -332,6 +344,7 @@ impl Person {
                 bond: None,
                 household: None,
                 ties: Vec::new(),
+                reputes: Vec::new(),
             },
             possessions: Possessions::default(),
             place: Place {

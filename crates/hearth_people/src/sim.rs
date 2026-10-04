@@ -36,9 +36,11 @@ use crate::mind::{Doing, Intent, Needs, Offer, Situation, Threat, choose};
 use crate::person::{Cause, Died, Event, Person, PersonId, Tier};
 use crate::plan::Step;
 use crate::psyche::{Feeling, PsycheDefs, Tendency};
+use crate::repute::Norms;
 use crate::species::{Species, SpeciesSet};
 use crate::work::{REACH_M, finish_work, plan_work};
 use crate::world::{Now, PlayerSeen, Senses, World};
+use hearth_content::schema::social::Sanction;
 use serde::{Deserialize, Serialize};
 
 /// A band within this of the player is drawn out as persons (m); one whose persons are all
@@ -171,6 +173,8 @@ pub struct People {
     pub(crate) body_s: f32,
     /// What was done in the last step that someone could have watched.
     pub done: Vec<Done>,
+    /// Deeds done in the last step that tell of their doers (V2.1 §8.4).
+    pub deeds: Vec<crate::repute::Seen>,
 }
 
 /// The horizontal distance between two places on the planet (wrapping in x).
@@ -225,9 +229,13 @@ const IMITATE_H_PER_S: f32 = 1.0 / 240.0;
 /// The share of the works a child watches finished that teach it something.
 const TAKEN_IN: f32 = 0.25;
 
-/// How far off one sees another hungry to bring food to, and one hurt to stay by (m).
+/// How far off one sees another hungry to bring food to, and one hurt to stay by, and one it
+/// thinks ill of to mock or keep from (m).
 const SHARE_M: f64 = 15.0;
 const TEND_M: f64 = 30.0;
+const SCORN_M: f64 = 15.0;
+/// How far one goes over to groom another (m).
+const GROOM_M: f64 = 20.0;
 
 /// Where in what it carries a person has food: in a hand, or in a basket or pouch.
 fn carried_food(p: &Person, items: &Items, content: &Content) -> Option<hearth_items::Path> {
@@ -281,6 +289,7 @@ impl People {
             seed,
             body_s: 0.0,
             done: Vec::new(),
+            deeds: Vec::new(),
         }
     }
 
@@ -1053,8 +1062,9 @@ impl People {
         let body_step = self.body_s <= 0.0;
         if body_step {
             self.body_s += BODY_S;
-            // Time together draws people closer (V2.1 §8.2).
+            // Time together draws people closer (V2.1 §8.2), and those close talk (§8.4).
             self.keep_company(BODY_S, now.day);
+            self.talk(BODY_S, now.day);
         }
         self.habituate(species, players, dt);
         // The others as the step finds them.
@@ -1107,6 +1117,7 @@ impl People {
                         p,
                         sp,
                         &species.psyche,
+                        &species.norms,
                         band,
                         &glimpses,
                         senses,
@@ -1143,6 +1154,14 @@ impl People {
             let Some(bi) = self.band_index(p.social.band) else {
                 continue;
             };
+            if let Some(from) = self.persons[i].mind.stingy_to.take() {
+                let p = &self.persons[i];
+                self.deeds.push(crate::repute::Seen {
+                    who: Who::Person(p.id),
+                    deed: crate::repute::Deed::Withheld { from },
+                    at: p.place.pos,
+                });
+            }
             self.act(i, bi, sp, crafts, content, items, world, now, dt);
             let p = &mut self.persons[i];
             if body_step {
@@ -1170,7 +1189,12 @@ impl People {
                 }
             }
         }
-        // 3. The young watching the grown at their work take in what it shows, as the player
+        // 3. The deeds of the step, seen by those near: what they think of their doers moved.
+        let deeds = std::mem::take(&mut self.deeds);
+        for seen in deeds {
+            self.deed(seen, &species.norms, light(now.hour), now.day);
+        }
+        // 4. The young watching the grown at their work take in what it shows, as the player
         // does by watching (V2-11): now and then as they watch, about once a minute, and the
         // more often as a work is finished before them — insight toward its knowledge and what
         // that rests on, and in time the knowing of it.
@@ -1419,10 +1443,52 @@ impl People {
                     p.mind.timer = 0.0;
                 }
             }
-            Doing::Grooming { .. } => {
+            Doing::Grooming { other } => {
+                // Over to the one of its band it is fondest of near (whom it grooms, and talks
+                // with), then grooming them.
+                let partner = other.or_else(|| {
+                    let p = &self.persons[i];
+                    let (me, band, pos) = (p.id, p.social.band, p.place.pos);
+                    self.persons
+                        .iter()
+                        .filter(|q| {
+                            q.id != me
+                                && q.alive()
+                                && q.tier == Tier::Full
+                                && q.social.band == band
+                                && (q.place.pos - pos).length() < GROOM_M
+                        })
+                        .max_by(|a, b| {
+                            let fond = |q: &Person| {
+                                p.social
+                                    .ties
+                                    .iter()
+                                    .find(|t| t.who == q.id)
+                                    .map_or(0.0, |t| t.affection)
+                            };
+                            fond(a).total_cmp(&fond(b)).then(b.id.cmp(&a.id))
+                        })
+                        .map(|q| q.id)
+                });
+                let at = partner
+                    .and_then(|o| self.persons.binary_search_by_key(&o, |q| q.id).ok())
+                    .map(|j| self.persons[j].place.pos);
                 let p = &mut self.persons[i];
-                p.place.speed = 0.0;
-                p.psyche.feel(Feeling::Affection, 0.35);
+                if let Doing::Grooming { other } = &mut p.mind.doing {
+                    *other = partner;
+                }
+                match at {
+                    Some(at) if (p.place.pos - at).length() > 1.2 => {
+                        move_toward(p, &*world, at, walk, dt);
+                    }
+                    _ => {
+                        p.place.speed = 0.0;
+                        if let Some(at) = at {
+                            p.place.yaw = yaw_toward(p.place.pos, at);
+                        }
+                        p.psyche.feel(Feeling::Affection, 0.35);
+                    }
+                }
             }
             Doing::Taking { id } => {
                 let p = &mut self.persons[i];
@@ -1511,6 +1577,12 @@ impl People {
                     q.psyche.feel(Feeling::Affection, 0.4);
                     self.give(from, to, worth, now.day);
                     self.persons[i].psyche.feel(Feeling::Joy, 0.2);
+                    let at = self.persons[i].place.pos;
+                    self.deeds.push(crate::repute::Seen {
+                        who: Who::Person(from),
+                        deed: crate::repute::Deed::Shared { with: to },
+                        at,
+                    });
                 }
                 self.persons[i].mind.doing = Doing::Idle;
                 self.persons[i].mind.timer = 0.0;
@@ -1545,6 +1617,34 @@ impl People {
                 q.psyche.feelings[Feeling::Fear] *= 1.0 - (0.05 * dt).min(1.0);
                 q.psyche.feel(Feeling::Affection, 0.2);
                 self.give(from, who, 0.01 * dt, now.day);
+            }
+            Doing::Mocking { who, at } => {
+                // Up to them, and to their face: they feel shame and the less fond of the
+                // mocker; the indignation spent.
+                let at = self
+                    .persons
+                    .binary_search_by_key(&who, |q| q.id)
+                    .map_or(at, |j| self.persons[j].place.pos);
+                let p = &mut self.persons[i];
+                if (p.place.pos - at).length() > 4.0 {
+                    move_toward(p, &*world, at, walk, dt);
+                    return;
+                }
+                p.place.speed = 0.0;
+                p.place.yaw = yaw_toward(p.place.pos, at);
+                let me = p.id;
+                let near = (p.place.pos - at).length() < 6.0;
+                p.psyche.feelings[Feeling::Indignation] *= 0.6;
+                if near && let Ok(j) = self.persons.binary_search_by_key(&who, |q| q.id) {
+                    let q = &mut self.persons[j];
+                    q.psyche.feel(Feeling::Shame, 0.5);
+                    if let Some(t) = q.social.ties.iter_mut().find(|t| t.who == me) {
+                        t.affection = (t.affection - 0.05).max(0.0);
+                    }
+                }
+                let p = &mut self.persons[i];
+                p.mind.doing = Doing::Idle;
+                p.mind.timer = 2.0;
             }
             Doing::Imitating { at, recipe, .. } => {
                 // Over to the work, then crouched by it, watching it and trying it after:
@@ -1791,6 +1891,7 @@ fn decide(
     p: &mut Person,
     sp: &Species,
     defs: &PsycheDefs,
+    norms: &Norms,
     band: &Band,
     glimpses: &[Glimpse],
     senses: &dyn Senses,
@@ -1925,7 +2026,7 @@ fn decide(
         &band.culture.techniques
     };
     let mut s = situation(
-        p, sp, techniques, glimpses, senses, crafts, content, items, now, sight,
+        p, sp, techniques, norms, glimpses, senses, crafts, content, items, now, sight,
     );
     s.threat = threat;
     s.flight_m = flight_m;
@@ -1936,6 +2037,17 @@ fn decide(
     );
     let roll = p.rng.next_f32();
     p.mind.doing = choose(sp, &needs, &s, &p.psyche, roll);
+    // Food kept from one hungry near, again and again: a breach of the sharing norm.
+    match (&s.share_with, &p.mind.doing) {
+        (Some((to, _, _)), d) if !matches!(d, Doing::Sharing { .. }) && needs.hunger < 0.3 => {
+            p.mind.withheld = p.mind.withheld.saturating_add(1);
+            if p.mind.withheld >= 3 {
+                p.mind.withheld = 0;
+                p.mind.stingy_to = Some(*to);
+            }
+        }
+        _ => p.mind.withheld = 0,
+    }
     // The patient keep at a thing longer.
     let patience = 0.8 + 0.4 * p.psyche.tendency(Tendency::Patience);
     p.mind.timer = hold_for(&p.mind.doing) * patience * (0.75 + 0.5 * p.rng.next_f32());
@@ -2001,6 +2113,7 @@ fn situation(
     p: &Person,
     sp: &Species,
     techniques: &[String],
+    norms: &Norms,
     glimpses: &[Glimpse],
     senses: &dyn Senses,
     crafts: &Crafts,
@@ -2026,6 +2139,16 @@ fn situation(
             if (g.pos - pos).length() > SHARE_M {
                 continue;
             }
+            // Nothing for one whose name brings food withheld, but its own household's young.
+            let withheld = p
+                .social
+                .reputes
+                .iter()
+                .find(|r| r.about == Who::Person(g.id))
+                .is_some_and(|r| norms.sanctions(r, Sanction::Withholding));
+            if withheld && g.household != p.social.household {
+                continue;
+            }
             let fond = p
                 .social
                 .ties
@@ -2037,6 +2160,30 @@ fn situation(
             if share_with.is_none_or(|s| dear > s.2) {
                 share_with = Some((g.id, g.pos, dear));
             }
+        }
+    }
+    // One near it thinks ill of, and whether the name brings mockery or keeping away.
+    let mut scorn: Option<(u64, DVec3, f32, bool, bool)> = None;
+    for g in glimpses
+        .iter()
+        .filter(|g| g.band == p.social.band && g.alive && g.id != p.id)
+    {
+        if (g.pos - pos).length() > SCORN_M {
+            continue;
+        }
+        let Some(r) = p
+            .social
+            .reputes
+            .iter()
+            .find(|r| r.about == Who::Person(g.id))
+        else {
+            continue;
+        };
+        let bad = r.badness();
+        if bad < 0.0 && scorn.is_none_or(|s| bad < s.2) {
+            let ridicule = norms.sanctions(r, Sanction::Ridicule);
+            let avoid = norms.sanctions(r, Sanction::Avoidance);
+            scorn = Some((g.id, g.pos, bad, ridicule, avoid));
         }
     }
     // One of its own hurt near, whom it is fond of.
@@ -2178,6 +2325,7 @@ fn situation(
         work_near: work_near.map(|(id, at, r, _)| (id, at, r)),
         share_with,
         hurt_near,
+        scorn,
         project: p
             .mind
             .plan
@@ -2408,6 +2556,7 @@ fn hold_for(d: &Doing) -> f32 {
         Doing::Imitating { .. } => 20.0,
         Doing::Sharing { .. } => 20.0,
         Doing::Tending { .. } => 30.0,
+        Doing::Mocking { .. } => 4.0,
     }
 }
 
@@ -2424,7 +2573,7 @@ fn activity_of(d: &Doing, speed: f32) -> &'static str {
             "standing"
         }
         Doing::Working { .. } | Doing::Nesting => "carrying_heavy",
-        Doing::Imitating { .. } | Doing::Tending { .. } => "resting",
+        Doing::Imitating { .. } | Doing::Tending { .. } | Doing::Mocking { .. } => "resting",
         Doing::Going { .. }
         | Doing::Mobbing { .. }
         | Doing::Fleeing { .. }

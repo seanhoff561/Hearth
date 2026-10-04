@@ -1,0 +1,20 @@
+// The norms of Wild Earth's foragers (V2.1 §8.4), until cultures carry their own (H5): what one
+// must and must not do among them, how heavily a breach weighs, and the sanctions it brings as
+// word of it spreads — each from how bad a name the one who broke it has come to have among
+// those who apply it. Foragers' sanctions run from mockery to shunning to casting out (Boehm
+// 1999 on the egalitarian band's levelling and its sanctions; Wiessner 2005 on !Kung talk).
+(
+    schema: 1,
+    entries: [
+        (
+            id: "not_taking", name: "Another's things are theirs", status: Implemented, species: "homo_sapiens",
+            breach: Taking, severity: 0.6,
+            sanctions: [(Ridicule, -0.2), (Avoidance, -0.35), (Withholding, -0.5), (Ostracism, -0.8)],
+        ),
+        (
+            id: "sharing", name: "Food is shared with the hungry", status: Implemented, species: "homo_sapiens",
+            breach: Withholding, severity: 0.25,
+            sanctions: [(Ridicule, -0.2), (Avoidance, -0.45), (Withholding, -0.6)],
+        ),
+    ],
+)

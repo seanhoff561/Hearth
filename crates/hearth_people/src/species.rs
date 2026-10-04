@@ -290,6 +290,8 @@ pub struct SpeciesSet {
     pub psyche: crate::psyche::PsycheDefs,
     /// The life tables of the species that have them.
     pub life: crate::life::Tables,
+    /// The peoples' norms and their sanctions (until cultures carry their own, H5).
+    pub norms: crate::repute::Norms,
 }
 
 impl SpeciesSet {
@@ -307,6 +309,7 @@ impl SpeciesSet {
             genetics: crate::genome::Genetics::from_content(c),
             psyche: crate::psyche::PsycheDefs::from_content(c),
             life: crate::life::Tables::from_content(c),
+            norms: crate::repute::Norms::from_content(c),
         }
     }
 

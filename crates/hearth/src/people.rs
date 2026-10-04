@@ -93,9 +93,11 @@ struct OnTheGround<'a> {
 
 impl Things for OnTheGround<'_> {
     fn near(&self, at: DVec3, reach: f64) -> Vec<(u64, Stack)> {
+        // What a player put down is theirs: the people leave it be (V2.1 §8.4).
         self.items
             .items
             .iter()
+            .filter(|w| w.owner.is_none())
             .filter(|w| (DVec3::from_array(w.pos) - at).length() <= reach)
             .map(|w| (w.id, w.stack.clone()))
             .collect()

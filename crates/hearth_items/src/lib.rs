@@ -26,6 +26,10 @@ pub struct WorldItem {
     /// Work left to itself here (meat drying on a rack, acorns soaking).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work: Option<Batch>,
+    /// The player whose it is, if it is anyone's: what a player puts down stays theirs, and the
+    /// people do not take it (V2.1 §8.4's property).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<u64>,
 }
 
 /// Unattended work: a process (content id) under way, the hours it has had of the conditions
@@ -57,7 +61,17 @@ impl WorldItems {
             pos,
             yaw,
             work: None,
+            owner: None,
         });
+        id
+    }
+
+    /// Lays a thing down as a player's own: it stays theirs, and the people leave it be.
+    pub fn add_owned(&mut self, stack: Stack, pos: [f64; 3], yaw: f32, owner: u64) -> u64 {
+        let id = self.add(stack, pos, yaw);
+        if let Some(w) = self.get_mut(id) {
+            w.owner = Some(owner);
+        }
         id
     }
 

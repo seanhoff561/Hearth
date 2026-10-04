@@ -101,6 +101,11 @@ pub enum Doing {
         who: u64,
         at: DVec3,
     },
+    /// Mocking one it thinks ill of to their face: a sanction (V2.1 §8.4).
+    Mocking {
+        who: u64,
+        at: DVec3,
+    },
 }
 
 /// How pressing a person's needs are, 0 not at all … 1 desperately.
@@ -213,6 +218,9 @@ pub struct Situation {
     pub share_with: Option<(u64, DVec3, f32)>,
     /// One of its own is hurt near: who, where, and how fond of them it is.
     pub hurt_near: Option<(u64, DVec3, f32)>,
+    /// One near it thinks ill of: who, where, how bad a name (−1 … 0), whether the name brings
+    /// mockery and keeping away.
+    pub scorn: Option<(u64, DVec3, f32, bool, bool)>,
     /// The next step of what it means to do (its plan's), if it has one.
     pub project: Option<Doing>,
 }
@@ -235,6 +243,12 @@ pub struct Mind {
     pub plan: Option<crate::plan::Plan>,
     /// Plans for the goal that came to nothing; at three it is given up.
     pub failures: u8,
+    /// Times running it chose not to feed one hungry near while it carried food, and the one
+    /// last kept from (seen at three: a breach of the sharing norm).
+    #[serde(skip)]
+    pub withheld: u8,
+    #[serde(skip)]
+    pub stingy_to: Option<u64>,
 }
 
 /// How far a person strays from its group's middle before it goes back to them (m).
@@ -413,6 +427,24 @@ pub fn choose(
     {
         let score = 0.2 + 0.6 * dear + 0.3 * psyche.value(Value::Generosity) + 0.1 * roll;
         consider(Doing::Sharing { to, at }, score);
+    }
+    // One it thinks ill of near: mocked to its face while the indignation lasts, kept away
+    // from when the name is worse (V2.1 §8.4).
+    if let Some((who, at, bad, ridicule, avoid)) = s.scorn {
+        if avoid && (at - s.pos).length() < 4.0 {
+            let away = (s.pos - at).normalize_or(DVec3::X);
+            consider(
+                Doing::Going {
+                    to: s.pos + away * 12.0,
+                    then: Intent::Roam,
+                },
+                0.45 - bad,
+            );
+        }
+        if ridicule {
+            let score = 0.1 + 0.6 * psyche.feeling(Feeling::Indignation) - 0.3 * bad + 0.1 * roll;
+            consider(Doing::Mocking { who, at }, score);
+        }
     }
     // One of its own hurt: staying by them (a child by its mother too), the fonder the more
     // readily.

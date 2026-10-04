@@ -522,6 +522,17 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.norms,
+        report,
+        |e| &e.id,
+        |n, c| {
+            c.range("severity", n.severity, 0.0, 1.0);
+            for (_, from) in &n.sanctions {
+                c.range("sanction from", *from, -1.0, 0.0);
+            }
+        },
+    );
+    each(
         &content.moments,
         report,
         |e| &e.id,

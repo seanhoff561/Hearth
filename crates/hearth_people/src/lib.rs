@@ -25,6 +25,7 @@ pub mod mind;
 pub mod person;
 pub mod plan;
 pub mod psyche;
+pub mod repute;
 pub mod save;
 pub mod sim;
 pub mod species;

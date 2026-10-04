@@ -34,4 +34,18 @@ fn the_player_is_born_into_a_family_beside_them() {
             && near.iter().any(|v| !v.female && v.grown >= 1.0),
         "a mother and a father"
     );
+    // What the player puts down is theirs: the family leaves it be (V2.1 §8.4).
+    w.give("hearth:cobble/basalt", 2);
+    w.put_down_all();
+    w.run(20);
+    let mine = |w: &World| {
+        w.lying
+            .iter()
+            .filter(|t| t.stack.id == "hearth:cobble/basalt" && t.owner == Some(0))
+            .count()
+    };
+    let put = mine(&w);
+    assert!(put > 0, "put down as the player's");
+    w.run(2400);
+    assert_eq!(mine(&w), put, "still lying where they were put");
 }

@@ -21,6 +21,7 @@ pub mod material;
 pub mod mind;
 pub mod process;
 pub mod psyche;
+pub mod social;
 pub mod station;
 
 use std::fmt;

@@ -941,7 +941,7 @@ fn run(
                         && let Some(stack) = player.carry.take(&items, &from, count)
                     {
                         let rest = rest_on(&lw, at);
-                        world_items.add(stack, rest.to_array(), 0.0);
+                        world_items.add_owned(stack, rest.to_array(), 0.0, 0);
                         worn = dress_carry(&player.carry);
                         items_changed = true;
                     }
@@ -953,7 +953,7 @@ fn run(
                         player.mover.pos
                     };
                     if let Some(stack) = player.carry.dragging.take() {
-                        world_items.add(stack, rest_on(&lw, at).to_array(), 0.0);
+                        world_items.add_owned(stack, rest_on(&lw, at).to_array(), 0.0, 0);
                         items_changed = true;
                     }
                 }
@@ -998,7 +998,7 @@ fn run(
                             }
                             end = hit.at;
                         }
-                        world_items.add(f.stack, rest_on(&lw, end).to_array(), 0.0);
+                        world_items.add_owned(f.stack, rest_on(&lw, end).to_array(), 0.0, 0);
                         items_changed = true;
                     }
                 }
@@ -1049,7 +1049,7 @@ fn run(
                             Err(s) => player.carry.drag(&items, s, body_kg).err(),
                         };
                         if let Some((s, _)) = left {
-                            world_items.add(s, player.mover.pos.to_array(), 0.0);
+                            world_items.add_owned(s, player.mover.pos.to_array(), 0.0, 0);
                             items_changed = true;
                         }
                     }

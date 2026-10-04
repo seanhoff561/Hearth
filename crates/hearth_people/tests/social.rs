@@ -227,3 +227,118 @@ fn one_hurt_is_tended_by_those_fond_of_them() {
     println!("tended her for {tended:.2}");
     assert!(tended > 0.0, "someone stayed by her");
 }
+
+#[test]
+fn a_theft_is_seen_told_and_sanctioned() {
+    use hearth_people::memory::Who;
+    use hearth_people::psyche::Feeling;
+    use hearth_people::repute::{Deed, Seen};
+    let b = base();
+    let species = &b.species;
+    let mut world = Savanna::new();
+    let mut p = People::new(31);
+    let k = species.index_of("homo_sapiens").expect("our species");
+    let now = world.now();
+    p.spawn_band(
+        species,
+        &b.graph,
+        &b.items,
+        &mut world,
+        k,
+        [4, 3, 2, 0],
+        DVec3::new(2.0, GROUND, 2.0),
+        now,
+    );
+    live(&mut p, &mut world, 20.0, &[]);
+    let grown: Vec<u64> = p
+        .full()
+        .filter(|q| q.age(&world.now()) >= 18.0)
+        .map(|q| q.id)
+        .collect();
+    let (thief, victim, away) = (grown[0], grown[1], grown[2]);
+    // One of them off out of sight when it happens.
+    for q in p.persons.iter_mut().filter(|q| q.id == away) {
+        q.place.pos += DVec3::new(300.0, 0.0, 0.0);
+    }
+    let at = p.get(thief).expect("the thief").place.pos;
+    // Taken where the thief stands, before whoever is near.
+    let seen = |p: &mut People, day: f64| {
+        let at = p.get(thief).expect("the thief").place.pos;
+        p.deed(
+            Seen {
+                who: Who::Person(thief),
+                deed: Deed::Took {
+                    from: Who::Person(victim),
+                },
+                at,
+            },
+            &species.norms,
+            1.0,
+            day,
+        );
+    };
+    seen(&mut p, world.now().day);
+    let view = |p: &People, of: u64| {
+        p.get(of)
+            .and_then(|q| {
+                q.social
+                    .reputes
+                    .iter()
+                    .find(|r| r.about == Who::Person(thief))
+            })
+            .map(|r| (r.honest, r.sure))
+            .unwrap_or((0.0, 0.0))
+    };
+    let (honest, sure) = view(&p, victim);
+    assert!(
+        honest < -0.4 && sure >= 1.0,
+        "the one robbed saw it: {honest:.2} {sure:.2}"
+    );
+    assert_eq!(view(&p, away), (0.0, 0.0), "the one away did not");
+    // Back among them, the one away hears of it in time; the thief is mocked to its face.
+    for q in p.persons.iter_mut().filter(|q| q.id == away) {
+        q.place.pos = at + DVec3::new(1.0, 0.0, 1.0);
+    }
+    let mut shamed = 0.0f32;
+    for _ in 0..(900.0 / DT) as u64 {
+        step(&mut p, &mut world, &[]);
+        let s = p
+            .get(thief)
+            .expect("the thief")
+            .psyche
+            .feeling(Feeling::Shame);
+        shamed = shamed.max(s);
+    }
+    let (heard, heard_sure) = view(&p, away);
+    println!("heard: honest {heard:.2}, sure {heard_sure:.2}; the thief's shame up to {shamed:.2}");
+    assert!(heard < -0.05, "the word reached the one who was away");
+    assert!(heard_sure < 1.0, "less sure than seeing it");
+    assert!(shamed > 0.2, "mocked, and shamed by it");
+    // Taken again and again, before them all: cast out at the month's reckoning.
+    for _ in 0..3 {
+        seen(&mut p, world.now().day);
+        live(&mut p, &mut world, 200.0, &[]);
+    }
+    let band = p.get(thief).expect("the thief").social.band;
+    let bi = p.bands.iter().position(|x| x.id == band).expect("its band");
+    let now = world.now();
+    let v = p.band_view(bi, thief, now.day, now.year_days);
+    println!(
+        "the band thinks the thief: honest {:.2}, sure {:.2}",
+        v.honest, v.sure
+    );
+    let later = hearth_people::Now {
+        day: now.day + now.year_days / 6.0,
+        ..now
+    };
+    p.live_course(species, &b.items, &world, later);
+    let after = p.get(thief).expect("the thief");
+    assert_ne!(after.social.band, band, "cast out of the band");
+    assert!(
+        after
+            .life
+            .events
+            .iter()
+            .any(|e| matches!(e.event, hearth_people::person::Event::CastOut { .. }))
+    );
+}

@@ -226,10 +226,13 @@ impl People {
         let living = self.living(bi);
         self.bands[bi].members = living.iter().map(|&i| self.persons[i].id).collect();
         self.settle_households(bi);
-        // Those born or come since meet everyone, and untended ties fade, about monthly.
+        // Those born or come since meet everyone, untended ties and views fade, and one whose
+        // name is worst is cast out if it has come to that, about monthly.
         if n.is_multiple_of(PAIRING_EVERY) {
             self.acquaint(bi, day);
             self.fade_ties(bi, day, year_days / STEPS_A_YEAR * PAIRING_EVERY as f64);
+            self.fade_reputes(bi);
+            self.cast_out(bi, &species.norms, day, year_days);
         }
         let crowd = self.crowd(bi, table);
         // Deaths, by age; more children die where the land is crowded.

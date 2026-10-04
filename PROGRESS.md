@@ -1045,10 +1045,15 @@ H4 — Social systems (PLAN.md, V2.1 §8; `docs/design/humans/social.md`), in pa
   and those it is fond of, the generous the more readily, never while hungry itself — the gift
   eaten and both ledgers moved; one of a person's own hurt is stayed by (a child by its mother
   too), their fear eased and the tie warmed (`tests/social.rs`).
-- [ ] (d) Reputation, gossip, norms and sanctions: what others believe of one, spread in company
-  with decay and distortion; norms as data; violations noticed, felt, told and sanctioned
-  (ridicule, avoidance, withheld cooperation, ostracism); levelling among foragers; property (the
-  player's things not taken).
+- [x] (d) Reputation, gossip, norms and sanctions (`repute.rs`, D183): what people believe of one
+  another — how generous, how honest, how sure — from deeds seen by daylight (taking, keeping food
+  from the hungry, sharing, tending) and from gossip in close company (trusted tellers believed
+  more, the heard less sure, a little changed in the passing), fading monthly; norms as data
+  (`humans/social/norms.ron`: another's things are theirs, food is shared with the hungry); a
+  breach angers its victim and stirs indignation, and as its doer's name worsens the norm's
+  sanctions follow — mockery that shames, keeping away, food withheld, casting out of the band;
+  grooming and mockery go to their partner; property: what a player puts down stays theirs and
+  the people leave it be; the inspector's views (`tests/social.rs`, game `tests/family.rs`).
 - [ ] (e) Status and group decisions: status from what the people value; a band debating and
   deciding where to camp next.
 - [ ] (f) Conflict and strangers: escalation and its easing; how people receive one not their own

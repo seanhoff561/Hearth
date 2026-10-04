@@ -2150,3 +2150,20 @@ camera (Esc brings the choices back; following a person or animal and the Observ
 come with H9); "Begin this world again" archives the save as "name (life n)" and replays the world
 from its seed and settings. The death rules of v2 (Legacy, Hardy, Permadeath) stay beside these
 until H9 makes them presets; being born again into a household and inhabiting a child are H8's.
+
+## D183 — Social life as ties, views and norms: what passes between people, what they say of it
+H4 models a person's social world as two lists it carries: **ties** (affection, trust, respect,
+fear, rivalry and the ledger of what was given and is owed, begun from kinship and the band and
+moved by time together, grooming and gifts) and **views** of others (how generous, how honest,
+how sure). Deeds are what others see (by daylight, forty metres); talk is how the unseen spreads:
+in close company, now and then, one tells another the thing about a third most worth telling,
+and the hearer comes round as far as it trusts the teller — so a reputation spreads along the
+ties that carry trust, weakening and drifting as it goes, as gossip does (Wiessner 2005; Dunbar
+1996). Norms and their sanctions are data per people (H5's cultures will own them); sanctions are
+behaviours chosen like any other (mockery while indignation lasts, keeping away, withholding food)
+and, for the worst names among a band's grown, casting out at the month's reckoning — the forager
+ladder Boehm describes. Households are hearth groups kept by the life course. Property begins
+with the player: what a player puts down stays theirs and the people leave it be; what the people
+lay down is the band's to use (personal property among people comes with cultures). A person's
+views and ties are bounded (sixty views, a hundred and fifty ties) and fade, so long runs keep
+them small.

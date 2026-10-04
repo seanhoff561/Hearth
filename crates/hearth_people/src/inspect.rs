@@ -95,6 +95,8 @@ pub fn report(
             Event::Paired { with } => format!("paired with #{with}"),
             Event::Bore { child } => format!("bore #{child}"),
             Event::Inherited { from } => format!("took up what #{from} had carried"),
+            Event::Breached { breach } => format!("seen breaking a norm: {breach:?}"),
+            Event::CastOut { from } => format!("cast out of band {from}"),
             Event::Hurt => "badly hurt".to_owned(),
             Event::Mourned { who } => format!("mourned #{who}"),
         };
@@ -352,6 +354,36 @@ pub fn report(
             p.social.ties.len(),
             words.join("; ")
         ));
+    }
+    // What it thinks of others, and what its band thinks of it.
+    let mut views: Vec<&crate::repute::Repute> = p
+        .social
+        .reputes
+        .iter()
+        .filter(|r| r.badness() < -0.05 || r.generous > 0.2)
+        .collect();
+    views.sort_by(|a, b| a.badness().total_cmp(&b.badness()));
+    if !views.is_empty() {
+        let words: Vec<String> = views
+            .iter()
+            .take(4)
+            .map(|r| {
+                format!(
+                    "{:?} generous {:+.2} honest {:+.2} (sure {:.2})",
+                    r.about, r.generous, r.honest, r.sure
+                )
+            })
+            .collect();
+        social.push(format!("thinks: {}", words.join("; ")));
+    }
+    if let Some(bi) = people.bands.iter().position(|b| b.id == p.social.band) {
+        let r = people.band_view(bi, p.id, now.day, now.year_days);
+        if r.sure > 0.01 {
+            social.push(format!(
+                "its band thinks it generous {:+.2}, honest {:+.2}",
+                r.generous, r.honest
+            ));
+        }
     }
     let children: Vec<String> = people
         .persons
