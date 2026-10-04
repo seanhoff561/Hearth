@@ -1266,6 +1266,39 @@ impl Ecology {
         out
     }
 
+    /// The nearest fresh remains within `radius` of `at` not told of within `again` years, now
+    /// told of — one flock of ravens at a time, so that a second carcass is told of in its turn
+    /// rather than passed over with the first.
+    pub fn raven(
+        &mut self,
+        at: [f64; 2],
+        radius: f64,
+        now: f64,
+        fresh: f64,
+        again: f64,
+    ) -> Option<Remains> {
+        let wrap = self.wrap_m();
+        let mut best: Option<(f64, (i64, i64), usize)> = None;
+        for (key, r) in &self.regions {
+            for (i, m) in r.remains.iter().enumerate() {
+                let age = now - m.time;
+                let d = dist(m.at, at, wrap);
+                if (0.0..fresh).contains(&age)
+                    && now - m.told >= again
+                    && d <= radius
+                    && m.left_at(now) > 0.2
+                    && best.is_none_or(|b| (d, *key, i) < (b.0, b.1, b.2))
+                {
+                    best = Some((d, *key, i));
+                }
+            }
+        }
+        let (_, key, i) = best?;
+        let m = self.regions.get_mut(&key)?.remains.get_mut(i)?;
+        m.told = now;
+        Some(*m)
+    }
+
     /// Remains of animals dead within `fresh` years and within `radius` of a place, that ravens
     /// circle over, not told of for `again` years: told of now.
     pub fn ravens(
