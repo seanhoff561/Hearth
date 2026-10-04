@@ -106,9 +106,16 @@ fn a_dead_deer_lies_until_found_and_is_butchered_by_its_kind() {
     });
     w.run(81);
     assert!(w.lying.iter().all(|l| !l.stack.id.contains("_carcass")));
-    // By day the ravens over her tell of her.
-    if let Some((_, _, words)) = w.acted.iter().find(|(_, _, s)| s.contains("Ravens")) {
-        assert!(words.contains("east"), "{words}");
+    // By day the ravens over her tell of her (each flock about in its turn, the nearest first:
+    // the populations' own dead may lie nearer).
+    let ravens: Vec<&String> = w
+        .acted
+        .iter()
+        .filter(|(_, _, s)| s.contains("Ravens"))
+        .map(|(_, _, s)| s)
+        .collect();
+    if !ravens.is_empty() {
+        assert!(ravens.iter().any(|s| s.contains("east")), "{ravens:?}");
     }
     // Come near, she is found, whole and fresh.
     w.go(far.x - 1.0, far.z);

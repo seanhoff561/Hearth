@@ -655,10 +655,10 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H1 — Genetics engine (2026-10-03)
 - [x] H2 — Psyche and mind core (2026-10-03)
 - [x] H3 — Life course and demography (the player is born) (2026-10-04)
-- [ ] H4 — Social systems (built 2026-10-04; its tests to run)
-- [ ] H5 — Culture and language (built 2026-10-04; its tests to run)
-- [ ] H6 — Knowledge and social learning (built 2026-10-04; its tests to run)
-- [ ] H7 — Tiers and persistence (built 2026-10-04; its tests to run)
+- [x] H4 — Social systems (2026-10-04; tests run, D190)
+- [x] H5 — Culture and language (2026-10-04; tests run, D190)
+- [x] H6 — Knowledge and social learning (2026-10-04; tests run, D190)
+- [x] H7 — Tiers and persistence (2026-10-04; tests run, D190)
 - [ ] H8 — History simulation and Paleolithic eras (birth options)
 - [ ] H9 — Observer mode and the player in society
 - [ ] H10 — Optional conversation backend
@@ -1080,13 +1080,12 @@ H4 — Social systems (PLAN.md, V2.1 §8; `docs/design/humans/social.md`), in pa
   spreads through a band of nineteen by talk within half a day, those who heard it less sure than
   the one who saw; a theft angers, is told, brings mockery and at last casting out; a band whose
   country has gone poor debates where to go and moves its camp; quarrels rise and ease; strangers
-  are greeted and taken in, or warned off. These tests and (e)–(f)'s compile and lint clean
-  (`clippy --tests`; the game crate too) but have not run yet: the machine's memory was exhausted
-  (a test build crawled at about a second of work a minute), so they run first when it allows,
-  with the perf gate.
+  are greeted and taken in, or warned off. Built with `clippy` checks only (the PC's memory was
+  exhausted), these tests and (e)–(f)'s ran on 2026-10-04 in the cloud and pass after the fixes
+  D190 tells; the perf gate waits for the PC's GPU.
 
 H5 — Culture and language (PLAN.md, V2.1 §9–10; `docs/design/humans/culture.md`), in parts (built
-while the machine's memory allowed only `clippy` checks; their tests run with H4's):
+while the machine's memory allowed only `clippy` checks; their tests ran with H4's, D190):
 - [x] (a) The culture model and generator (`culture.rs`, `humans/culture/generators.ron`, D185):
   every band's culture — its lineage, four values, residence, descent, polygyny, the share of each
   work its women do, burial, greeting, taboos, motif and its own ways with strangers and quarrels
@@ -1124,10 +1123,10 @@ while the machine's memory allowed only `clippy` checks; their tests run with H4
 - [x] (g) The acceptance (`tests/culture.rs`): a split people's two cultures two hundred years on
   differ in values and customs, their tongues related and not a stranger people's; a newcomer
   makes out little of its hosts' speech at first and most after half an hour among them. As with
-  H4, the tests compile and lint clean but wait for the machine's memory to run.
+  H4, the tests ran on 2026-10-04 and pass (D190).
 
 H6 — Knowledge and social learning (PLAN.md, V2.1 §11; `docs/design/humans/learning.md`), built
-while only `clippy` checks could run (its tests run with H4's and H5's):
+while only `clippy` checks could run (its tests ran with H4's and H5's and pass, D190):
 - [x] (a) Learning across a life and the collective brain (`learning.rs`,
   `humans/learning/transmission.ron`, D188): each year the young (and the grown, less) learn each
   technique whose groundwork they have from the knowers of their band and its neighbours, the
@@ -1144,7 +1143,7 @@ while only `clippy` checks could run (its tests run with H4's and H5's):
   minutes that watching alone does not teach.
 
 H7 — Tiers and persistence (PLAN.md, V2.1 §17; `docs/design/humans/tiers.md`, D189), built while
-only `clippy` checks could run: a household tier between full and dormant — bands away from the
+only `clippy` checks could run (its tests ran with H4's and pass, D190): a household tier between full and dormant — bands away from the
 player but within 40 km, or holding one the player knows, kept whole and lived by the life course
 (pairing, crowding and culture count them), lifted back into full about their camp as the same
 persons; bands met for the first time founded with coherent families (mothers of age, births
@@ -1160,16 +1159,12 @@ pruned to genealogy stubs (`tests/persist.rs`).
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. First, when the machine's memory allows (a Windows restart frees it; until then a test build
-   thrashed the PC to a standstill, so H4–H7 were built with `clippy` checks only): run their
-   tests, one crate at a time with `low.sh` — `cargo test -p hearth_people` (above all
-   `tests/social.rs`, `tests/culture.rs`, `tests/persist.rs` and `tests/childhood.rs`, which the
-   council broke for the tree-nesting hominins and `KeepCamp` mended), `cargo test -p
-   hearth_content --test base_content`, `cargo test -p hearth_craft`, and the game's
-   `tests/family.rs`; fix what fails (the tests' thresholds were set by reasoning, not by a run —
-   adjust data or thresholds where a run shows them off, and say so); then tick H4–H7 and run the
-   perf gate. Amendment R (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready
-   rule applies (D166).
+1. H4–H7's tests ran on 2026-10-04 in the cloud (`hearth_people`, `hearth_content`'s base
+   content, `hearth_craft` and every test of the game crate) and pass after the fixes D190 tells.
+   The perf gate (`scripts/perf-gate.sh`) and screenshots need a GPU: the cloud machine renders
+   only on a software device (llvmpipe), whose frame rates say nothing of the reference
+   machine's, so the gate for H4–H7 (and H8) is to run on the PC. Amendment R
+   (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready rule applies (D166).
    Then H8 — History simulation and the Paleolithic eras (PLAN.md; V2.1 §15; design to write in
    `docs/design/humans/history.md` and `eras.md`): the deep-time layer on the ecological cell
    grid (populations as gene pools, cultures, languages and knowledge distributions; growth by
@@ -1195,6 +1190,11 @@ pruned to genealogy stubs (`tests/persist.rs`).
    next winter.
 
 ## Known issues
+- Finite water (V2-8), since V2-10 (e)'s rivers: a channel or pit dug through a river's bank where
+  it stands a block below the water, or beside a stream stepping down its bed, takes the river's
+  water without end and sends it down the land, and the water never rests there (the hydrology's
+  rivers do not fall as a breach takes from them; D190). `tests/finite_water.rs` digs where the
+  banks hold.
 - Hominins (V2-11): an agent's sleeping place is a limb of the crown found from the cells about
   the trunk, so in a crown without limbs near the trunk it sleeps beside the trunk's top; their
   play-time bodies step at the server's tick and are not advanced by sleep's skipped hours; a

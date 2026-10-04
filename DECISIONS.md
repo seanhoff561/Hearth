@@ -2279,6 +2279,20 @@ reasoning. Their first runs (2026-10-04, on a 4-core cloud machine) passed but f
 - **Gifts.** A hand holds one thing; the stranger test's five gifts to each host are put down
   between (the test's fault, not the code's).
 - **The inspector** shows H5's culture section (the test's list predated it).
+- **Ravens** (the game's `tests/fauna.rs`): told of all fresh remains about a place at once, every
+  one was marked told, so a second carcass near never had a flock of its own; ravens now circle
+  one at a time, over the nearest untold remains (`Ecology::raven`), and the test asks that one
+  telling points the way to the kill.
+- **Finite water's test site** (`tests/finite_water.rs`, older than H4): since V2-10 (e)'s rivers
+  — water a block above where the terrain's samples round it, streams stepping down their beds —
+  the bank the test chose by samples could leak: a bank a block below the water beside the
+  channel, or a step of the stream feeding the channel from above the river's level, sent the
+  river through the channel and down the land for ever, and the water never rested. The test now
+  checks the loaded blocks (walls and floor solid at the river's level, no water touching what is
+  dug but the river at its mouth). The game's water does the same in such a place: a known issue.
+- **The V2-5 bot under load** (`tests/acceptance_v2_5.rs`): it died once of the night's cold while
+  the machine ran three builds besides — its waits for the server are bounded in wall-clock
+  seconds, so a starved run acts late; run alone it passes (930 s). Not a fault of H4–H7.
 The perf gate (`scripts/perf-gate.sh`) and screenshots need the user's GPU: the cloud machine
 renders only on a software device (llvmpipe), whose frame rates say nothing of the reference
 machine's, so the gate for H4–H7 waits for the PC.

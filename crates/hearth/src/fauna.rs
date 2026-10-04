@@ -628,19 +628,17 @@ impl Fauna {
         out
     }
 
-    /// Where ravens circle over fresh remains within sight of the player (told of again after
-    /// an hour): the way to the nearest, on the ground.
+    /// Where ravens circle over fresh remains within sight of the player: the way to the
+    /// nearest not told of within the hour, on the ground (each flock in its turn).
     pub fn ravens(&mut self, at: DVec3) -> Option<DVec2> {
-        let seen = self.eco.ravens(
+        let m = self.eco.raven(
             [at.x, at.z],
             2000.0,
             self.now,
             4.0 / 365.0,
             1.0 / (365.0 * 24.0),
-        );
-        seen.iter()
-            .map(|m| DVec2::new(m.at[0] - at.x, m.at[1] - at.z))
-            .min_by(|a, b| a.length().total_cmp(&b.length()))
+        )?;
+        Some(DVec2::new(m.at[0] - at.x, m.at[1] - at.z))
     }
 
     /// Tests and bots: a grown animal of a species dies at a place (a natural death a test may
