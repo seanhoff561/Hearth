@@ -551,6 +551,68 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.languages,
+        report,
+        |e| &e.id,
+        |g, c| {
+            for (_, share) in g.consonants.iter().chain(&g.vowels) {
+                c.range("sound share", *share, 0.0, 1.0);
+            }
+            for (_, share) in &g.shapes {
+                c.range("shape share", *share, 0.0, 1.0);
+            }
+            for (_, w) in &g.orders {
+                c.range("order weight", *w, 0.0, 100.0);
+            }
+            c.range("adjective_after", g.adjective_after, 0.0, 1.0);
+            c.range("plural", g.plural, 0.0, 1.0);
+            c.range("past", g.past, 0.0, 1.0);
+            c.range("replacement", g.replacement, 0.0, 1.0);
+            c.range(
+                "consonant_count",
+                g.consonant_count.0 as f32,
+                1.0,
+                g.consonants.len() as f32,
+            );
+            c.range(
+                "consonant_count",
+                g.consonant_count.1 as f32,
+                g.consonant_count.0 as f32,
+                g.consonants.len() as f32,
+            );
+            c.range(
+                "vowel_count",
+                g.vowel_count.0 as f32,
+                1.0,
+                g.vowels.len() as f32,
+            );
+            c.range(
+                "vowel_count",
+                g.vowel_count.1 as f32,
+                g.vowel_count.0 as f32,
+                g.vowels.len() as f32,
+            );
+            c.range("name_syllables", g.name_syllables.0 as f32, 1.0, 8.0);
+            c.range(
+                "name_syllables",
+                g.name_syllables.1 as f32,
+                g.name_syllables.0 as f32,
+                8.0,
+            );
+            for ch in &g.changes {
+                c.range("change chance", ch.chance, 0.0, 1.0);
+            }
+        },
+    );
+    each(
+        &content.meanings,
+        report,
+        |e| &e.id,
+        |m, c| {
+            c.range("syllables", m.syllables as f32, 1.0, 6.0);
+        },
+    );
+    each(
         &content.culture_generators,
         report,
         |e| &e.id,

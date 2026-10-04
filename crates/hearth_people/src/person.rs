@@ -243,6 +243,9 @@ pub struct Person {
     pub id: PersonId,
     /// Its species' id (the profile's).
     pub species: String,
+    /// Its name, in its people's language (none for a people without one, or a player's).
+    #[serde(default)]
+    pub name: String,
     #[serde(default)]
     pub tier: Tier,
     #[serde(default)]
@@ -331,6 +334,7 @@ impl Person {
         Self {
             id,
             species: species.id.clone(),
+            name: String::new(),
             tier: Tier::Full,
             life: LifeHistory {
                 female,
@@ -378,6 +382,7 @@ impl Person {
         Self {
             id,
             species: species.id.clone(),
+            name: String::new(),
             tier: Tier::Full,
             life: LifeHistory {
                 female,

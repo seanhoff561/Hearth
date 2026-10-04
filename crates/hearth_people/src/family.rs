@@ -248,6 +248,7 @@ impl People {
         }
         self.form(bi, &species.psyche, now);
         self.acquaint(bi, now.day);
+        self.name_members(bi, &sp);
         self.onto_the_ground(bi, &*world, f.at);
         know_about(&mut self.bands[bi], world, items, f.at);
         Some((id, you?))

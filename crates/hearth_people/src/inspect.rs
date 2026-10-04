@@ -45,7 +45,11 @@ pub fn report(
     let sp = species.get(&p.species)?;
     let age = p.age(now);
     let sex = if p.life.female { "female" } else { "male" };
-    let title = format!("{} #{} — {sex}, {age:.1} years", sp.name, p.id);
+    let title = if p.name.is_empty() {
+        format!("{} #{} — {sex}, {age:.1} years", sp.name, p.id)
+    } else {
+        format!("{}, {} #{} — {sex}, {age:.1} years", p.name, sp.name, p.id)
+    };
     let mut sections = Vec::new();
 
     // Life history.
@@ -518,6 +522,25 @@ pub fn report(
                 .map(|(w, s)| format!("{w} {:.0}%", s * 100.0))
                 .collect();
             lines.push(format!("women's share of the work: {}", work.join(", ")));
+            if let (Some(l), Some(d)) = (&c.language, &sp.language) {
+                let sounds: Vec<String> = l.sounds.iter().map(|&s| d.spell(&[s])).collect();
+                lines.push(format!(
+                    "speaks language #{}{}: {} sounds ({}), {:?}, adjectives {}; {} sound changes",
+                    l.id,
+                    l.parent.map_or(String::new(), |p| format!(" (from #{p})")),
+                    sounds.len(),
+                    sounds.join(" "),
+                    l.order,
+                    if l.adjective_after { "after" } else { "before" },
+                    l.changed.len()
+                ));
+                let words: Vec<String> =
+                    ["water", "fire", "mother", "child", "hello", "go", "good"]
+                        .iter()
+                        .filter_map(|m| l.say(d, m).map(|w| format!("{m} {w}")))
+                        .collect();
+                lines.push(format!("words: {}", words.join(", ")));
+            }
         } else {
             lines.push("no culture drawn yet".to_owned());
         }

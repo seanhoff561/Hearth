@@ -63,8 +63,26 @@ bands met again from before cultures are given theirs.
 - **Taboos**: a food its culture forbids is not eaten, unless starving; a place that offers
   only it is let go.
 
+## Transmission and evolution (H5 (c))
+
+- **Taking it in**: each month of the life course a band's people take its culture in — each
+  one's values move toward what its temperament and its culture make of them together (six parts
+  its own, four its culture's): honour from its culture's honour, deference and autonomy from its
+  hierarchy, kin loyalty and generosity from how widely it cooperates. The young (under fifteen)
+  move a tenth of the way a month, the grown a hundredth, the conforming the more; individuals keep
+  their own bent, and nonconformists most of it.
+- **Drift**: each year a culture's values wander a little (a hundredth, as a standard step, by
+  data), the shares of its work too within what its people's way of life allows, and now and then
+  a custom changes — where a pair lives, descent, how the dead are laid to rest, the greeting, a
+  taboo taken up or let go — and its motif.
+- **Contact**: each year a culture meets those of its people's other bands within twenty
+  kilometres, the nearer the more: their values draw toward each other, and now and then one takes
+  up a custom of the other's (a burial, a greeting, a motif).
+- **Splits**: a daughter culture begins as its parent's and from then on drifts on its own, drawn
+  back only by contact; two daughters that never meet drift apart, two that meet stay alike — the
+  peoples part where their bands part.
+
 ## To come in H5
 
-Transmission and evolution (children taking in their culture's values, conformity and prestige,
-drift, diffusion between neighbours, daughter cultures parting); languages and names; speech acts
-and gestures; subtitles translated as far as the player knows the language; the acceptance.
+Languages and names; speech acts and gestures; subtitles translated as far as the player knows
+the language; the acceptance.

@@ -20,6 +20,7 @@ use crate::schema::geology::{Deposit, Mineral, Province, Rock, Soil};
 use crate::schema::humans::{Chromosome, GenePool, GeneticsSettings, Locus, Species, Trait};
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
+use crate::schema::language::{LanguageGenerator, Meaning};
 use crate::schema::life::{LifeTable, Moment};
 use crate::schema::material::Material;
 use crate::schema::mind::Routine;
@@ -155,6 +156,8 @@ pub struct Content {
     pub norms: Table<Norm>,
     pub ways: Table<Ways>,
     pub culture_generators: Table<CultureGenerator>,
+    pub languages: Table<LanguageGenerator>,
+    pub meanings: Table<Meaning>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -325,6 +328,8 @@ impl Content {
             norms: load_table(packs, &mut r),
             ways: load_table(packs, &mut r),
             culture_generators: load_table(packs, &mut r),
+            languages: load_table(packs, &mut r),
+            meanings: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
@@ -417,6 +422,8 @@ impl Content {
         u(&self.norms, &mut out);
         u(&self.ways, &mut out);
         u(&self.culture_generators, &mut out);
+        u(&self.languages, &mut out);
+        u(&self.meanings, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
         u(&self.knowledge, &mut out);
@@ -457,6 +464,8 @@ impl Content {
             c("Norms", &self.norms),
             c("Ways with strangers and quarrels", &self.ways),
             c("Culture generators", &self.culture_generators),
+            c("Language generators", &self.languages),
+            c("Meanings", &self.meanings),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),
             c("Knowledge nodes", &self.knowledge),

@@ -51,6 +51,8 @@ pub struct Species {
     pub ways: Option<crate::conflict::Ways>,
     /// What its people's cultures are drawn from (V2.1 §9), if they have cultures.
     pub culture: Option<crate::culture::Generator>,
+    /// What its people's languages are drawn from, and the meanings (V2.1 §10.1), if they speak.
+    pub language: Option<crate::language::LanguageDefs>,
 }
 
 fn sex(female: bool) -> usize {
@@ -246,6 +248,7 @@ impl Species {
             routine: Vec::new(),
             ways: None,
             culture: None,
+            language: None,
         }
     }
 
@@ -306,6 +309,7 @@ impl SpeciesSet {
     pub fn from_content(c: &Content, graph: &Graph, base: &BodyConfig) -> Self {
         let ways = crate::conflict::WaysSet::from_content(c);
         let cultures = crate::culture::Generators::from_content(c);
+        let languages = crate::language::LanguageDefs::from_content(c);
         let list = c
             .species
             .iter()
@@ -314,6 +318,7 @@ impl SpeciesSet {
                 let mut k = Species::of_profile(s, graph, base).with_routine(c);
                 k.ways = ways.of(&k.id).cloned();
                 k.culture = cultures.of(&k.id).cloned();
+                k.language = crate::language::LanguageDefs::of(&languages, &k.id).cloned();
                 k
             })
             .collect();

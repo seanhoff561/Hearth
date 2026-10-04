@@ -237,6 +237,13 @@ impl People {
             if let Some(w) = self.ways_of(bi, sp) {
                 self.feuds(bi, &w, &Now { day, ..now });
             }
+            // Its people take its culture in; any without a name are given one.
+            self.enculturate(bi, &species.psyche, &Now { day, ..now });
+            self.name_members(bi, sp);
+        }
+        // A year of its culture: drift, and its neighbours'.
+        if n.is_multiple_of(STEPS_A_YEAR as u64) {
+            self.culture_year(bi, sp, n / STEPS_A_YEAR as u64);
         }
         let crowd = self.crowd(bi, table);
         // Deaths, by age; more children die where the land is crowded.
@@ -631,6 +638,8 @@ impl People {
             self.persons.push(child);
             self.persons[i].record(day, Event::Bore { child: id });
         }
+        // The newborn named in its people's tongue.
+        self.name_members(bi, sp);
         if self.bands[bi].rng.next_f32() < table.maternal_death {
             self.dies(i, day, Cause::Childbirth, sp, items, now);
         }

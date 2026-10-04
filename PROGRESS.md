@@ -1097,9 +1097,21 @@ while the machine's memory allowed only `clippy` checks; their tests run with H4
   deciding where a pair of two bands lives; the division of labour weighing each work by the
   chooser's sex; the dead laid to rest as their culture has it, grave goods kept from heirs;
   taboo foods left uneaten unless starving (`tests/culture.rs`).
-- [ ] (c) Transmission and evolution: children taking in their culture's values; conformity and
-  prestige; drift; diffusion between neighbours; daughter cultures parting.
-- [ ] (d) Languages: phonology, lexicon, grammar, names; families and drift; loanwords.
+- [x] (c) Transmission and evolution: each month a band's people take in its culture — their
+  values toward six parts temperament, four parts culture, the young a tenth of the way a month,
+  the grown a hundredth, the conforming the more; each year a culture drifts (values, work
+  shares, now and then a custom, its motif) and meets its people's other bands within 20 km, the
+  nearer the more, values drawn together and customs borrowed; daughters part where they do not
+  meet (`tests/culture.rs`: five hundred years apart and in contact; the young taking a culture in
+  sooner than the grown).
+- [x] (d) Languages (`language.rs`, `humans/language/`, D186; `docs/design/humans/language.md`):
+  each culture of a people with language speaks one drawn from the world's sounds by how common
+  each is, its syllable shapes, word order and affixes, and a word for each of about a hundred
+  and ten core meanings; everyone is named in it at birth (a player's person keeps the player's
+  name); a daughter culture speaks a daughter language, and each year now and then a regular
+  sound change runs through every word at once and a word gives way to a new one; neighbours
+  lend words; the inspector shows a band's language and a few of its words (`tests/culture.rs`:
+  two daughters five hundred years apart still mostly cognate, against a stranger's tongue).
 - [ ] (e) Speech acts and gestures, H4's exchanges among them.
 - [ ] (f) Subtitles translated as far as the player knows the language; the player learning it.
 - [ ] (g) The acceptance: two cultures from one ancestor diverge after a split with related

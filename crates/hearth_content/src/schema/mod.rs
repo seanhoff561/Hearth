@@ -17,6 +17,7 @@ pub mod geology;
 pub mod humans;
 pub mod item;
 pub mod knowledge;
+pub mod language;
 pub mod life;
 pub mod material;
 pub mod mind;

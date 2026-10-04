@@ -284,8 +284,8 @@ fn milk(l: f64) -> Food {
     }
 }
 
-/// The salt of the streams bands' cultures are drawn from.
-const CULTURE_STREAM: u64 = 0x0c17_70e5_0000_0000;
+/// The salt of the streams persons' names are drawn from.
+const NAME_STREAM: u64 = 0x0a3e_5000_0000_0000;
 
 /// A band's own stream, from the world's seed and its id.
 pub(crate) fn band_stream(seed: u64, id: u64) -> Rng {
@@ -540,6 +540,7 @@ impl People {
             self.bands[bi].members.push(pid);
             self.persons.push(p);
         }
+        self.name_members(bi, sp);
         self.mothers(bi, sp, now);
         self.settle_households(bi);
         self.acquaint(bi, now.day);
@@ -556,9 +557,34 @@ impl People {
         if b.culture.drawn() {
             return;
         }
-        let mut rng = Rng::new(hearth_math::hash::hash2(self.seed ^ CULTURE_STREAM, b.id));
+        let mut rng = Rng::new(hearth_math::hash::hash2(
+            self.seed ^ crate::culture::STREAM,
+            b.id,
+        ));
         let id = b.id;
         b.culture.draw(id, g, sp.ways.as_ref(), &mut rng, day);
+        b.culture.language = sp
+            .language
+            .as_ref()
+            .map(|d| crate::language::Language::draw(id, d, &mut rng));
+        self.name_members(bi, sp);
+    }
+
+    /// Its band's language names each of a band's living members who has no name yet (not a
+    /// player's person), on a stream of its own.
+    pub(crate) fn name_members(&mut self, bi: usize, sp: &Species) {
+        let (Some(d), Some(l)) = (&sp.language, self.bands[bi].culture.language.clone()) else {
+            return;
+        };
+        for i in self.band_members(bi) {
+            let seed = self.seed;
+            let p = &mut self.persons[i];
+            if !p.name.is_empty() || p.player.is_some() {
+                continue;
+            }
+            let mut rng = Rng::new(hearth_math::hash::hash2(seed ^ NAME_STREAM, p.id));
+            p.name = l.name(d, &mut rng);
+        }
     }
 
     /// A band's ways with strangers and quarrels: its culture's own, else its people's.

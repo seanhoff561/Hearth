@@ -1,0 +1,58 @@
+// What a people's languages are drawn from (V2.1 §10.1): the sounds human languages use and how
+// many of them have each, the shapes their syllables take, their word orders, and how fast a
+// language changes once its speakers part. Segments are written in a plain romanisation (ng the
+// sound in "sing", ny as in "canyon", ch, sh, kh as in "loch", ' a glottal stop, è and ò open e
+// and o, ë the vowel in "about").
+(
+    schema: 1,
+    entries: [
+        (
+            id: "human_speech", name: "Human languages", status: Implemented, species: "homo_sapiens",
+            // The share of the world's languages with each sound (PHOIBLE, Moran and McCloy 2019;
+            // Maddieson 1984): the commonest are drawn first, the rarer by chance.
+            consonants: [
+                ("m", 0.96), ("k", 0.90), ("y", 0.90), ("p", 0.86), ("w", 0.82), ("n", 0.78),
+                ("t", 0.68), ("l", 0.68), ("s", 0.67), ("b", 0.63), ("h", 0.62), ("ng", 0.62),
+                ("g", 0.56), ("d", 0.45), ("r", 0.44), ("f", 0.43), ("ny", 0.42), ("ch", 0.41),
+                ("'", 0.37), ("sh", 0.37), ("z", 0.29), ("v", 0.27), ("ts", 0.2), ("kh", 0.2),
+            ],
+            vowels: [("a", 0.98), ("i", 0.93), ("u", 0.88), ("e", 0.62), ("o", 0.6), ("è", 0.37), ("ò", 0.35), ("ë", 0.2)],
+            consonant_count: (8, 18),
+            vowel_count: (3, 7),
+            // Every language has CV syllables; these others, in as many languages as given.
+            shapes: [(V, 0.7), (Cvc, 0.6), (Ccv, 0.25), (Ccvc, 0.15)],
+            // Dryer's (2013) counts of dominant word order.
+            orders: [(Sov, 0.45), (Svo, 0.42), (Vso, 0.09), (Vos, 0.03), (Ovs, 0.01)],
+            // Adjectives after the noun in most; a plural and a past marked by affix in about half.
+            adjective_after: 0.6,
+            plural: 0.5,
+            past: 0.5,
+            // A word's chance a century to be replaced by a new one (glottochronology's core
+            // list keeps about 86 % in a thousand years, Swadesh 1955), and names' syllables.
+            replacement: 0.015,
+            name_syllables: (2, 3),
+            // Regular sound changes, each with its chance a century once a language is its own
+            // (lenition, voicing, palatalisation, loss and merger, as the historical record has
+            // them; Campbell 2013).
+            changes: [
+                (from: "p", to: "f", context: Anywhere, chance: 0.02),
+                (from: "k", to: "h", context: Anywhere, chance: 0.015),
+                (from: "t", to: "s", context: BeforeFront, chance: 0.02),
+                (from: "k", to: "ch", context: BeforeFront, chance: 0.03),
+                (from: "p", to: "b", context: BetweenVowels, chance: 0.03),
+                (from: "t", to: "d", context: BetweenVowels, chance: 0.03),
+                (from: "k", to: "g", context: BetweenVowels, chance: 0.03),
+                (from: "b", to: "v", context: BetweenVowels, chance: 0.02),
+                (from: "s", to: "h", context: WordStart, chance: 0.015),
+                (from: "n", to: "", context: WordEnd, chance: 0.015),
+                (from: "m", to: "n", context: WordEnd, chance: 0.015),
+                (from: "e", to: "i", context: Anywhere, chance: 0.015),
+                (from: "o", to: "u", context: Anywhere, chance: 0.015),
+                (from: "a", to: "e", context: BeforeFront, chance: 0.01),
+                (from: "l", to: "r", context: Anywhere, chance: 0.01),
+                (from: "w", to: "v", context: Anywhere, chance: 0.01),
+                (from: "h", to: "", context: Anywhere, chance: 0.01),
+            ],
+        ),
+    ],
+)

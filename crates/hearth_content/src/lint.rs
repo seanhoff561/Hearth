@@ -303,6 +303,28 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
     for (e, o) in c.ways.iter_with_origin() {
         r.check(&c.species, "species", &e.species, o, e.id());
     }
+    // Language generators (V2.1 §10.1): whose they are, and that their sound changes are of
+    // their own sounds.
+    for (e, o) in c.languages.iter_with_origin() {
+        r.check(&c.species, "species", &e.species, o, e.id());
+        let known = |s: &str| {
+            s.is_empty()
+                || e.consonants.iter().any(|(x, _)| x == s)
+                || e.vowels.iter().any(|(x, _)| x == s)
+        };
+        for ch in &e.changes {
+            for s in [&ch.from, &ch.to] {
+                if !known(s) {
+                    r.report.error(
+                        "unknown-ref",
+                        Some(o.file.clone()),
+                        o.line,
+                        format!("`{}` changes an unknown sound `{s}`", e.id()),
+                    );
+                }
+            }
+        }
+    }
     // Culture generators (V2.1 §9): whose they are, and the foods they may forbid.
     for (e, o) in c.culture_generators.iter_with_origin() {
         r.check(&c.species, "species", &e.species, o, e.id());

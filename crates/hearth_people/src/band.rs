@@ -42,6 +42,8 @@ pub struct Culture {
     pub motif: u32,
     /// Its ways with strangers and quarrels (its people's, tilted).
     pub ways: Option<crate::conflict::Ways>,
+    /// The language its people speak (V2.1 §10.1).
+    pub language: Option<crate::language::Language>,
 }
 
 /// The places in its range a band knows, shared by all of it.

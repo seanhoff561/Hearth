@@ -237,3 +237,174 @@ fn a_culture_shapes_who_works_who_moves_and_what_passes_at_death() {
         assert_eq!(inherited, passes, "{burial:?}");
     }
 }
+
+#[test]
+fn cultures_drift_apart_alone_and_stay_alike_in_contact() {
+    use hearth_math::hash::Rng;
+    let b = base();
+    let species = &b.species;
+    let k = species.index_of("homo_sapiens").expect("our species");
+    let sp = &species.list[k];
+    let g = sp.culture.clone().expect("our people have cultures");
+    let mut root = hearth_people::Culture::default();
+    root.draw(1, &g, sp.ways.as_ref(), &mut Rng::new(7), 0.0);
+    // Two daughters that never meet, and two that meet every year, for five hundred years.
+    let (mut a, mut c) = (root.daughter(2, 0.0), root.daughter(3, 0.0));
+    let (mut d, mut e) = (root.daughter(4, 0.0), root.daughter(5, 0.0));
+    let mut streams: Vec<Rng> = (11..16).map(Rng::new).collect();
+    for _ in 0..500 {
+        a.drift(&g, &mut streams[0]);
+        c.drift(&g, &mut streams[1]);
+        d.drift(&g, &mut streams[2]);
+        e.drift(&g, &mut streams[3]);
+        d.meet(&mut e, &g, 1.0, &mut streams[4]);
+    }
+    let (apart, together) = (a.value_gap(&c), d.value_gap(&e));
+    println!(
+        "after five hundred years: apart {apart:.2} ({} customs), in contact {together:.2} ({} customs)",
+        a.customs_apart(&c),
+        d.customs_apart(&e)
+    );
+    assert!(apart > 0.3, "those apart drift apart");
+    assert!(apart > 2.0 * together, "those in contact stay alike");
+}
+
+#[test]
+fn the_young_take_in_their_culture_sooner_than_the_grown() {
+    use hearth_people::psyche::Value;
+    let b = base();
+    let species = &b.species;
+    let k = species.index_of("homo_sapiens").expect("our species");
+    let mut world = Savanna::new();
+    let mut p = People::new(65);
+    let now = world.now();
+    let band = p.spawn_band(
+        species,
+        &b.graph,
+        &b.items,
+        &mut world,
+        k,
+        [3, 3, 6, 0],
+        DVec3::new(0.0, GROUND, 0.0),
+        now,
+    );
+    // A people that holds to honour above all.
+    for x in p.bands.iter_mut() {
+        x.culture.values.honour = 1.0;
+    }
+    let honour = |p: &People, id: u64| p.get(id).map_or(0.0, |q| q.psyche.value(Value::Honor));
+    let young: Vec<u64> = p
+        .members(band)
+        .filter(|q| q.age(&now) < 14.0)
+        .map(|q| q.id)
+        .collect();
+    let grown: Vec<u64> = p
+        .members(band)
+        .filter(|q| q.age(&now) >= 20.0)
+        .map(|q| q.id)
+        .collect();
+    let before: Vec<f32> = young
+        .iter()
+        .chain(&grown)
+        .map(|&id| honour(&p, id))
+        .collect();
+    p.live_course(species, &b.items, &world, now);
+    p.live_course(
+        species,
+        &b.items,
+        &world,
+        Now {
+            day: now.day + YEAR_DAYS,
+            ..now
+        },
+    );
+    let rise = |ids: &[u64], from: &[f32]| {
+        ids.iter()
+            .zip(from)
+            .map(|(&id, b)| honour(&p, id) - b)
+            .sum::<f32>()
+            / ids.len().max(1) as f32
+    };
+    let (y, g) = (
+        rise(&young, &before[..young.len()]),
+        rise(&grown, &before[young.len()..]),
+    );
+    println!(
+        "a year on: the young's honour up {y:.3} ({} of them), the grown's {g:.3}",
+        young.len()
+    );
+    assert!(!young.is_empty() && y > 0.05, "the young take it in");
+    assert!(y > g, "sooner than the grown");
+}
+
+#[test]
+fn languages_are_drawn_people_named_and_daughters_stay_related() {
+    use hearth_math::hash::Rng;
+    use hearth_people::Language;
+    let b = base();
+    let species = &b.species;
+    let k = species.index_of("homo_sapiens").expect("our species");
+    let d = species.list[k].language.clone().expect("our people speak");
+    let root = Language::draw(1, &d, &mut Rng::new(21));
+    assert_eq!(
+        root.words.len(),
+        d.meanings.len(),
+        "a word for every meaning"
+    );
+    let distinct: std::collections::BTreeSet<&Vec<u8>> =
+        root.words.iter().map(|(_, w)| w).collect();
+    assert_eq!(distinct.len(), root.words.len(), "no two alike");
+    let say = |l: &Language, m: &str| l.say(&d, m).unwrap_or_default();
+    println!(
+        "water {}, fire {}, mother {}, hello {}, go {}; names {} and {}",
+        say(&root, "water"),
+        say(&root, "fire"),
+        say(&root, "mother"),
+        say(&root, "hello"),
+        say(&root, "go"),
+        root.name(&d, &mut Rng::new(5)),
+        root.name(&d, &mut Rng::new(6))
+    );
+    // Two daughters five hundred years apart, and the tongue of another people altogether.
+    let (mut a, mut c) = (root.daughter(2), root.daughter(3));
+    let (mut ra, mut rc) = (Rng::new(31), Rng::new(32));
+    for _ in 0..500 {
+        a.drift(&d, &mut ra);
+        c.drift(&d, &mut rc);
+    }
+    let other = Language::draw(4, &d, &mut Rng::new(41));
+    let (related, unrelated) = (a.kinship(&c), a.kinship(&other));
+    println!(
+        "five hundred years on: water {} / {}, fire {} / {}; {} and {} sound changes; \
+         cognates {related:.2}, with a stranger's tongue {unrelated:.2}",
+        say(&a, "water"),
+        say(&c, "water"),
+        say(&a, "fire"),
+        say(&c, "fire"),
+        a.changed.len(),
+        c.changed.len()
+    );
+    assert!(a.words != c.words, "they changed apart");
+    assert!(related > 0.5, "related: many cognates");
+    assert!(
+        unrelated < related - 0.25,
+        "more alike than a stranger's tongue"
+    );
+    // People are named in their language.
+    let mut world = Savanna::new();
+    let mut p = People::new(66);
+    let now = world.now();
+    let band = p.spawn_band(
+        species,
+        &b.graph,
+        &b.items,
+        &mut world,
+        k,
+        [3, 3, 2, 0],
+        DVec3::new(0.0, GROUND, 0.0),
+        now,
+    );
+    let names: Vec<String> = p.members(band).map(|q| q.name.clone()).collect();
+    println!("{names:?}");
+    assert!(names.iter().all(|n| !n.is_empty()), "every one named");
+}

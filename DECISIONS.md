@@ -2202,3 +2202,16 @@ sex for pairs of two bands, and the division of labour weighs work choices — t
 shapes behaviour, and only as culture data says (ground rule 6). Burials with grave goods keep
 the dead's things from heirs; the rites' visible gatherings and graves wait for the world to show
 them (H8's eras).
+
+## D186 — Languages as sound inventories, lexicons and regular change, kept in the culture
+A language is data-light and simulation-heavy: sounds are indices into its people's inventory
+(written in a plain romanisation), its words a list of sound indices per core meaning, so a
+sound change is an index rewrite applied to every word at once — regular, as real sound change
+is, which is what lets related languages keep recognisable correspondences — and a word's
+replacement a fresh draw from the same sounds and syllables. Drawing sounds by their world
+frequencies (PHOIBLE) makes languages plausible without rules for every system; a hundred and ten
+meanings (a Swadesh-type list plus what speech acts need) is enough to measure kinship by
+cognates and to render H5's speech acts; grammar is only word order, adjective order and two
+affixes until speech needs more. The language lives in the culture so it splits, drifts and
+borrows with it. Persons get names in their band's language (a player's person keeps the
+player's); kin terms and place names will come from the same words as speech needs them.
