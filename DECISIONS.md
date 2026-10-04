@@ -2186,3 +2186,19 @@ the hominins do: they meet them instead (habituation stays for the apes and earl
 Group conflict beyond this — raids, war, alliances as institutions — waits for the eras that
 have them (H11–H12); kin married into another band are not strangers there, which is the
 forager alliance by marriage.
+
+## D185 — A culture per band, drawn from cross-cultural spans, its lineage kept
+V2.1 §9 gives each *population* a culture; until H8's deep-time layer makes populations, each
+**band** carries one: drawn at its founding from its people's generator (data: each trait's
+options weighted as the world's foragers have them, each value and labour share a span), and
+passed whole to a band that splits off, leaves or is cast out as a daughter with its lineage.
+Peoples are then clusters of bands with alike cultures, and parting into peoples of their own
+needs no rule: drift and contact (H5 (c)) do it. A culture is drawn on a stream of its own (the
+world's seed and the band's id) so adding cultures moved nothing else the band draws. Culture acts
+through what the people already do rather than new systems: its ways replace its people's in
+H4's strangers and quarrels, tightness and honour scale H4's thresholds and chances (neutral at
+the middle, so a culture-less band behaves as before), residence replaces the species' dispersing
+sex for pairs of two bands, and the division of labour weighs work choices — the one place sex
+shapes behaviour, and only as culture data says (ground rule 6). Burials with grave goods keep
+the dead's things from heirs; the rites' visible gatherings and graves wait for the world to show
+them (H8's eras).

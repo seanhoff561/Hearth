@@ -122,6 +122,10 @@ pub enum Event {
     GiftFrom {
         who: PersonId,
     },
+    /// Was laid to rest as its people do (V2.1 §9.1).
+    LaidToRest {
+        how: hearth_content::schema::culture::Burial,
+    },
     /// First came near a player.
     Met {
         player: crate::world::PlayerId,

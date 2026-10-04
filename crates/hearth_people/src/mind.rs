@@ -205,6 +205,9 @@ pub struct Offer {
     pub recipe: usize,
     pub at: DVec3,
     pub feeds: bool,
+    /// How much the work is its own by its culture's division of labour: 1 for anyone's, more
+    /// for its sex's work there, less for the other's (V2.1 §9.1; ground rule 6).
+    pub labour: f32,
 }
 
 /// What a person knows of the moment about it: what its senses tell it and its group remembers.
@@ -487,8 +490,7 @@ pub fn choose(
                 0.0
             }
         } else {
-            0.25 * (0.5 + psyche.tendency(Tendency::Diligence))
-                + 0.35 * roll
+            (0.25 * (0.5 + psyche.tendency(Tendency::Diligence)) + 0.35 * roll) * o.labour
                 + pull(Routinely::Work)
         };
         let d = if near(o.at) {

@@ -417,6 +417,7 @@ fn its_mind_chooses_by_its_needs_and_fears() {
         recipe: 3,
         at: DVec3::new(1.0, 0.0, 0.0),
         feeds: true,
+        labour: 1.0,
     });
     s.food = Some(DVec3::new(20.0, 0.0, 0.0));
     assert_eq!(

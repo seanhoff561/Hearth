@@ -18,6 +18,7 @@ the amendment, written and updated with the milestone that builds it (`PLAN.md`,
 | [genetics.md](genetics.md) | §4: the genome, meiosis, mutation, kinship and inbreeding, phenotypes with calibrated heritabilities, gene pools, the player's genome | H1 |
 | [life.md](life.md) | §7, §14.3: life tables, pairing, conception and birth, deaths by age, bands splitting; life stages, development, the player's childhood | H3 |
 | [social.md](social.md) | §8: kinship and households, ties and obligations, sharing and care, reputation, gossip, norms and sanctions, property, group decisions, conflict, strangers | H4 |
+| [culture.md](culture.md) | §9: the culture model and its generator, culture in what people do, transmission and evolution, daughter cultures | H5 |
 
-Planned with their milestones: `culture.md` and `language.md` (H5), `learning.md` (H6), `tiers.md` (H7),
+Planned with their milestones: `language.md` (H5), `learning.md` (H6), `tiers.md` (H7),
 `history.md` and `eras.md` (H8), `observer.md` (H9), `conversation.md` (H10).

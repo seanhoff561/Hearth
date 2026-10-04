@@ -22,8 +22,9 @@ use crate::sim::{People, carried_food, move_toward, species_body, yaw_toward};
 use crate::species::SpeciesSet;
 use crate::world::{Now, World};
 
-/// A people's ways with strangers and with quarrels (`humans/social/ways.ron`), resolved.
-#[derive(Debug, Clone, PartialEq)]
+/// A people's ways with strangers and with quarrels (`humans/social/ways.ron`), resolved (and a
+/// culture's own, tilted from them).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Ways {
     pub species: String,
     /// How near a stranger comes before it is watched, and before it is met (m).
@@ -316,12 +317,21 @@ impl People {
         if (at_a - at_b).length() > PARTED_M {
             return Some(Settled::Parted);
         }
+        // Their ways, and how much they hold to honour: the culture of the one who began it.
+        let bi = self
+            .bands
+            .iter()
+            .position(|b| b.id == self.persons[i].social.band);
         let Some(ways) = species
             .get(&self.persons[i].species)
-            .and_then(|sp| sp.ways.clone())
+            .and_then(|sp| match bi {
+                Some(bi) => self.ways_of(bi, sp),
+                None => sp.ways.clone(),
+            })
         else {
             return Some(Settled::Parted);
         };
+        let honour = bi.map_or(0.35, |bi| self.bands[bi].culture.honour());
         // A player is moved by the player, and a quarrel with one never comes to blows.
         let player = self.persons[i].player.is_some() || self.persons[j].player.is_some();
         // Each holds to it, facing the other, the angrier the further it has gone.
@@ -440,7 +450,9 @@ impl People {
                 .iter()
                 .find(|t| t.who == other)
                 .map_or(0.0, |t| t.fear);
-            let ready = 0.05 * (1.0 - w.psyche.tendency(Tendency::Dominance) + fear).min(1.0);
+            let ready = 0.05
+                * (1.0 - w.psyche.tendency(Tendency::Dominance) + fear).min(1.0)
+                * (1.35 - honour);
             if self.persons[weak].rng.next_f32() < ready {
                 return Some(Settled::BackedDown(weak_id));
             }
@@ -451,7 +463,7 @@ impl People {
             p.psyche.feeling(Feeling::Anger)
                 * (1.2 - p.psyche.tendency(Tendency::AggressionThreshold))
         };
-        let hot = heat(&self.persons[i]).max(heat(&self.persons[j]));
+        let hot = heat(&self.persons[i]).max(heat(&self.persons[j])) * (0.65 + honour);
         let roll = self.persons[i].rng.next_f32();
         let up = |people: &mut People, rung: Rung| {
             let q = &mut people.quarrels[k];
@@ -761,6 +773,7 @@ impl People {
         band.council = None;
         band.weighed = 0.0;
         band.guests = Vec::new();
+        band.culture = self.bands[bi].culture.daughter(id, day);
         band.rng = crate::sim::band_stream(self.seed, id);
         // They make for their new country, and keep camp there.
         let y = self.persons[i].place.pos.y;

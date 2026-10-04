@@ -1085,6 +1085,26 @@ H4 — Social systems (PLAN.md, V2.1 §8; `docs/design/humans/social.md`), in pa
   (a test build crawled at about a second of work a minute), so they run first when it allows,
   with the perf gate.
 
+H5 — Culture and language (PLAN.md, V2.1 §9–10; `docs/design/humans/culture.md`), in parts (built
+while the machine's memory allowed only `clippy` checks; their tests run with H4's):
+- [x] (a) The culture model and generator (`culture.rs`, `humans/culture/generators.ron`, D185):
+  every band's culture — its lineage, four values, residence, descent, polygyny, the share of each
+  work its women do, burial, greeting, taboos, motif and its own ways with strangers and quarrels
+  — drawn from the foragers' cross-cultural spans on a stream of its own; daughters for bands that
+  split off, leave or are cast out; the inspector's culture (`tests/culture.rs`).
+- [x] (b) Culture in what people do: its ways in all of H4's strangers and quarrels; tightness
+  moving when sanctions begin; honour raising quarrels and slowing backing down; residence
+  deciding where a pair of two bands lives; the division of labour weighing each work by the
+  chooser's sex; the dead laid to rest as their culture has it, grave goods kept from heirs;
+  taboo foods left uneaten unless starving (`tests/culture.rs`).
+- [ ] (c) Transmission and evolution: children taking in their culture's values; conformity and
+  prestige; drift; diffusion between neighbours; daughter cultures parting.
+- [ ] (d) Languages: phonology, lexicon, grammar, names; families and drift; loanwords.
+- [ ] (e) Speech acts and gestures, H4's exchanges among them.
+- [ ] (f) Subtitles translated as far as the player knows the language; the player learning it.
+- [ ] (g) The acceptance: two cultures from one ancestor diverge after a split with related
+  languages and customs; the player learns a language over play.
+
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
    `perf/baseline` in `bench-out/gate`, three alternating rounds of the quick scenes); a fall

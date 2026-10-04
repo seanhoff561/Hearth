@@ -1,0 +1,53 @@
+// What a culture is drawn from (V2.1 §9.1): each trait's options with how often the world's
+// peoples of a way of life have them, and how fast cultures change. Foragers now; farmers and
+// herders with H11.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "foragers", name: "A forager culture", status: Implemented, species: "homo_sapiens",
+            // Most foragers live with either spouse's people as suits them; of the rest, more
+            // with the husband's (Marlowe 2004; Alvarez 2004 on the old "patrilocal band").
+            residence: [(Multilocal, 0.55), (Patrilocal, 0.3), (Matrilocal, 0.12), (Neolocal, 0.03)],
+            // Mostly bilateral; unilineal descent rarer among mobile foragers (Ember and Ember).
+            descent: [(Bilateral, 0.7), (Patrilineal, 0.2), (Matrilineal, 0.1)],
+            // Polygyny allowed in most forager societies, practised by few men (Marlowe 2005).
+            polygyny: (0.0, 0.15),
+            // Foragers' egalitarian ethos, the would-be dominant checked (Boehm 1999); kin first
+            // but sharing widely; quarrels mostly eased; norms neither loose nor tight.
+            values: (
+                hierarchy: (0.05, 0.4),
+                wide: (0.3, 0.8),
+                honour: (0.1, 0.6),
+                tight: (0.2, 0.7),
+            ),
+            // The share of each work its women do: Murdock and Provost's (1973) cross-cultural
+            // ratings about each, a culture drawn anywhere within its span.
+            labour: [
+                ("hunting", (0.0, 0.2)),
+                ("butchery", (0.0, 0.25)),
+                ("throwing", (0.0, 0.2)),
+                ("knapping", (0.0, 0.3)),
+                ("boneworking", (0.0, 0.3)),
+                ("woodworking", (0.0, 0.3)),
+                ("firemaking", (0.2, 0.6)),
+                ("hideworking", (0.4, 0.9)),
+                ("fibrework", (0.5, 0.95)),
+                ("sewing", (0.6, 0.95)),
+                ("cooking", (0.7, 0.98)),
+                ("gathering", (0.6, 0.95)),
+                ("childcare", (0.75, 0.95)),
+            ],
+            // Foragers mostly bury their dead, some with what they carried; some lay them out
+            // away from camp; burning is rare.
+            burial: [(Buried, 0.45), (BuriedWithGoods, 0.25), (LaidOut, 0.25), (Burned, 0.05)],
+            greeting: [(Embrace, 0.3), (Hands, 0.3), (Call, 0.25), (Gift, 0.15)],
+            // A few foragers forbid fish (the Tasmanians scaled fish, Jones 1978; the Hadza,
+            // Woodburn 1968).
+            taboos: (0, 1),
+            taboo_foods: ["raw_fish", "shellfish"],
+            ways_spread: 0.3,
+            drift: (value_step: 0.01, custom: 0.004, motif: 0.02, contact: 0.05, borrow: 0.05),
+        ),
+    ],
+)

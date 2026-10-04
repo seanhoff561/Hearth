@@ -11,6 +11,7 @@ use crate::generate::{ItemDef, generate_items};
 use crate::id::IdRef;
 use crate::schema::body::{BodyParams, Garment, Illness, Injury};
 use crate::schema::config::{BalanceKey, BalancePreset, TimeConfig, Units};
+use crate::schema::culture::CultureGenerator;
 use crate::schema::ecosystem::Ecosystem;
 use crate::schema::era::Era;
 use crate::schema::fauna::Animal;
@@ -153,6 +154,7 @@ pub struct Content {
     pub moments: Table<Moment>,
     pub norms: Table<Norm>,
     pub ways: Table<Ways>,
+    pub culture_generators: Table<CultureGenerator>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -322,6 +324,7 @@ impl Content {
             moments: load_table(packs, &mut r),
             norms: load_table(packs, &mut r),
             ways: load_table(packs, &mut r),
+            culture_generators: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
@@ -413,6 +416,7 @@ impl Content {
         u(&self.moments, &mut out);
         u(&self.norms, &mut out);
         u(&self.ways, &mut out);
+        u(&self.culture_generators, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
         u(&self.knowledge, &mut out);
@@ -452,6 +456,7 @@ impl Content {
             c("Moments of childhood", &self.moments),
             c("Norms", &self.norms),
             c("Ways with strangers and quarrels", &self.ways),
+            c("Culture generators", &self.culture_generators),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),
             c("Knowledge nodes", &self.knowledge),

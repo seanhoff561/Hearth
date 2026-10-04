@@ -111,7 +111,21 @@ impl Norms {
     /// Whether a name brings a sanction on either breach (honesty for taking, generosity for
     /// withholding).
     pub fn sanctions(&self, r: &Repute, s: Sanction) -> bool {
-        self.brings(Breach::Taking, r.honest, s) || self.brings(Breach::Withholding, r.generous, s)
+        self.sanctions_in(r, s, 0.5)
+    }
+
+    /// Whether a name brings a sanction among a people whose norms are as tight as `tight` (0–1;
+    /// at a half as the norms have it): the tighter, the sooner (V2.1 §9.1).
+    pub fn sanctions_in(&self, r: &Repute, s: Sanction, tight: f32) -> bool {
+        let k = 1.15 - 0.3 * tight;
+        let brings = |b: Breach, badness: f32| {
+            self.list
+                .iter()
+                .filter(|(x, ..)| *x == b)
+                .flat_map(|(_, _, list)| list.iter())
+                .any(|(kind, from)| *kind == s && badness <= *from * k)
+        };
+        brings(Breach::Taking, r.honest) || brings(Breach::Withholding, r.generous)
     }
 }
 
@@ -333,7 +347,12 @@ impl People {
             .iter()
             .map(|&i| (i, self.band_view(bi, self.persons[i].id, day, year_days)))
             .filter(|(i, r)| {
-                self.persons[*i].player.is_none() && norms.sanctions(r, Sanction::Ostracism)
+                self.persons[*i].player.is_none()
+                    && norms.sanctions_in(
+                        r,
+                        Sanction::Ostracism,
+                        self.bands[bi].culture.tightness(),
+                    )
             })
             .min_by(|a, b| a.1.badness().total_cmp(&b.1.badness()));
         let Some((i, _)) = worst else {
@@ -353,6 +372,7 @@ impl People {
         band.council = None;
         band.weighed = 0.0;
         band.guests = Vec::new();
+        band.culture = self.bands[bi].culture.daughter(id, day);
         let y = self.persons[i].place.pos.y;
         band.camp = Some(DVec3::new(band.home.x, y, band.home.y));
         let pid = self.persons[i].id;

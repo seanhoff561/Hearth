@@ -49,6 +49,8 @@ pub struct Species {
     pub routine: Vec<hearth_content::schema::mind::Block>,
     /// Its people's ways with strangers and quarrels (V2.1 §8.6–8.7), if they have them.
     pub ways: Option<crate::conflict::Ways>,
+    /// What its people's cultures are drawn from (V2.1 §9), if they have cultures.
+    pub culture: Option<crate::culture::Generator>,
 }
 
 fn sex(female: bool) -> usize {
@@ -243,6 +245,7 @@ impl Species {
             },
             routine: Vec::new(),
             ways: None,
+            culture: None,
         }
     }
 
@@ -302,6 +305,7 @@ impl SpeciesSet {
     /// `base`.
     pub fn from_content(c: &Content, graph: &Graph, base: &BodyConfig) -> Self {
         let ways = crate::conflict::WaysSet::from_content(c);
+        let cultures = crate::culture::Generators::from_content(c);
         let list = c
             .species
             .iter()
@@ -309,6 +313,7 @@ impl SpeciesSet {
             .map(|s| {
                 let mut k = Species::of_profile(s, graph, base).with_routine(c);
                 k.ways = ways.of(&k.id).cloned();
+                k.culture = cultures.of(&k.id).cloned();
                 k
             })
             .collect();

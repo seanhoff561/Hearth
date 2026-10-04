@@ -158,6 +158,7 @@ impl People {
                 knowledge: knowledge.clone(),
                 techniques,
                 traditions: Vec::new(),
+                ..Culture::default()
             },
             population_group: None,
             tier: Tier::Full,
@@ -170,6 +171,7 @@ impl People {
             rng: band_stream(self.seed, id),
         });
         let bi = self.bands.len() - 1;
+        self.enculture(bi, &sp, now.day);
         let hearth = self.take_id();
         let born = |age: f64| now.day - age * years;
         // The parents, of the birth's genomes, paired before their first child.

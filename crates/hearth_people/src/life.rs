@@ -10,6 +10,7 @@
 
 use glam::{DVec2, DVec3};
 use hearth_content::Content;
+use hearth_content::schema::culture::{Burial, Residence};
 use hearth_content::schema::humans::{Disperser, LifeStage};
 use hearth_content::schema::life::{Crowding, Siler};
 use hearth_items::Items;
@@ -233,8 +234,8 @@ impl People {
             self.fade_ties(bi, day, year_days / STEPS_A_YEAR * PAIRING_EVERY as f64);
             self.fade_reputes(bi);
             self.cast_out(bi, &species.norms, day, year_days);
-            if let Some(w) = &sp.ways {
-                self.feuds(bi, w, &Now { day, ..now });
+            if let Some(w) = self.ways_of(bi, sp) {
+                self.feuds(bi, &w, &Now { day, ..now });
             }
         }
         let crowd = self.crowd(bi, table);
@@ -371,8 +372,23 @@ impl People {
         {
             self.persons[j].social.bond = None;
         }
+        self.laid_to_rest(i, day);
         self.bequeath(i, day, sp, items, &now);
         self.mourn(dead, band, day);
+    }
+
+    /// One who died is laid to rest as its band's culture has it (V2.1 §7.3, §9.1).
+    pub(crate) fn laid_to_rest(&mut self, i: usize, day: f64) {
+        let band = self.persons[i].social.band;
+        let Some(how) = self
+            .bands
+            .iter()
+            .find(|b| b.id == band && b.culture.drawn())
+            .map(|b| b.culture.burial)
+        else {
+            return;
+        };
+        self.persons[i].record(day, Event::LaidToRest { how });
     }
 
     /// What one who died carried in its hands and on its back goes to its heir, as much as the
@@ -381,6 +397,12 @@ impl People {
     /// children (until cultures say otherwise, H5).
     pub(crate) fn bequeath(&mut self, i: usize, day: f64, sp: &Species, items: &Items, now: &Now) {
         let (dead, band) = (self.persons[i].id, self.persons[i].social.band);
+        // Those who bury their dead with what they carried leave it with them.
+        if self.bands.iter().any(|b| {
+            b.id == band && b.culture.drawn() && b.culture.burial == Burial::BuriedWithGoods
+        }) {
+            return;
+        }
         let (bond, mother, father) = {
             let l = &self.persons[i];
             (l.social.bond, l.life.mother, l.life.father)
@@ -522,10 +544,25 @@ impl People {
             self.persons[w].record(day, Event::Paired { with: him });
             self.persons[m].record(day, Event::Paired { with: her });
             if b != bi {
-                // One of them goes to the other's band: whoever disperses in their kind.
-                let (mover, to) = match sp.social.disperses {
-                    Disperser::Males => (m, bi),
-                    Disperser::Females | Disperser::Both => (w, b),
+                // One of them goes to the other's band: as her people's culture has a new pair
+                // live — with his people, with hers, or with either as suits them — else
+                // whoever disperses in their kind.
+                let culture = &self.bands[bi].culture;
+                let residence = culture.drawn().then_some(culture.residence);
+                let (mover, to) = match residence {
+                    Some(Residence::Patrilocal) => (w, b),
+                    Some(Residence::Matrilocal) => (m, bi),
+                    Some(Residence::Multilocal | Residence::Neolocal) => {
+                        if self.bands[bi].rng.next_f32() < 0.5 {
+                            (w, b)
+                        } else {
+                            (m, bi)
+                        }
+                    }
+                    None => match sp.social.disperses {
+                        Disperser::Males => (m, bi),
+                        Disperser::Females | Disperser::Both => (w, b),
+                    },
                 };
                 self.move_to(mover, to, day, year_days);
             }
@@ -629,6 +666,7 @@ impl People {
         new.council = None;
         new.weighed = 0.0;
         new.guests = Vec::new();
+        new.culture = self.bands[bi].culture.daughter(id, day);
         new.camp = self.bands[bi]
             .camp
             .map(|c| DVec3::new(new.home.x, c.y, new.home.y));

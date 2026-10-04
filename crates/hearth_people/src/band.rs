@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::person::{PersonId, Tier};
 use crate::world::PlayerId;
 
-/// A band's ways: the techniques it practises (processes) and its traditions (H5: generated
-/// cultures).
+/// A band's culture (V2.1 §9; `culture.rs`): what it knows and the techniques it practises, its
+/// traditions, and its ways as its people's generator drew them.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Culture {
@@ -21,6 +21,27 @@ pub struct Culture {
     pub knowledge: Vec<String>,
     pub techniques: Vec<String>,
     pub traditions: Vec<String>,
+    /// Its lineage: its id (the band that first carried it; 0 not yet drawn), the culture it
+    /// came from, and the day it began.
+    pub id: u64,
+    pub parent: Option<u64>,
+    pub since: f64,
+    pub values: crate::culture::CultureValues,
+    /// Where a new pair lives, how descent is reckoned, the share of men who may have a second
+    /// wife.
+    pub residence: hearth_content::schema::culture::Residence,
+    pub descent: hearth_content::schema::culture::Descent,
+    pub polygyny: f32,
+    /// For each work, the share its women do.
+    pub labour: Vec<(String, f32)>,
+    /// How its dead are laid to rest, how it greets, the foods it forbids.
+    pub burial: hearth_content::schema::culture::Burial,
+    pub greeting: hearth_content::schema::culture::Greeting,
+    pub taboos: Vec<String>,
+    /// The seed of its motif.
+    pub motif: u32,
+    /// Its ways with strangers and quarrels (its people's, tilted).
+    pub ways: Option<crate::conflict::Ways>,
 }
 
 /// The places in its range a band knows, shared by all of it.

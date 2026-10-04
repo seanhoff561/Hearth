@@ -551,6 +551,41 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.culture_generators,
+        report,
+        |e| &e.id,
+        |g, c| {
+            let mut span = |what: &str, s: (f32, f32)| {
+                c.range(what, s.0, 0.0, 1.0);
+                c.range(what, s.1, s.0, 1.0);
+            };
+            span("polygyny", g.polygyny);
+            span("values.hierarchy", g.values.hierarchy);
+            span("values.wide", g.values.wide);
+            span("values.honour", g.values.honour);
+            span("values.tight", g.values.tight);
+            for (_, s) in &g.labour {
+                span("labour", *s);
+            }
+            let weights = g
+                .residence
+                .iter()
+                .map(|(_, w)| *w)
+                .chain(g.descent.iter().map(|(_, w)| *w))
+                .chain(g.burial.iter().map(|(_, w)| *w))
+                .chain(g.greeting.iter().map(|(_, w)| *w));
+            for w in weights {
+                c.range("weight", w, 0.0, 100.0);
+            }
+            c.range("ways_spread", g.ways_spread, 0.0, 1.0);
+            c.range("drift.value_step", g.drift.value_step, 0.0, 0.5);
+            c.range("drift.custom", g.drift.custom, 0.0, 1.0);
+            c.range("drift.motif", g.drift.motif, 0.0, 1.0);
+            c.range("drift.contact", g.drift.contact, 0.0, 1.0);
+            c.range("drift.borrow", g.drift.borrow, 0.0, 1.0);
+        },
+    );
+    each(
         &content.moments,
         report,
         |e| &e.id,

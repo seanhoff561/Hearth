@@ -284,6 +284,9 @@ fn milk(l: f64) -> Food {
     }
 }
 
+/// The salt of the streams bands' cultures are drawn from.
+const CULTURE_STREAM: u64 = 0x0c17_70e5_0000_0000;
+
 /// A band's own stream, from the world's seed and its id.
 pub(crate) fn band_stream(seed: u64, id: u64) -> Rng {
     Rng::new(hearth_math::hash::hash2(seed ^ 0x00ba_4d5e_ed00_0000, id))
@@ -509,6 +512,7 @@ impl People {
                 knowledge: knowledge.clone(),
                 techniques,
                 traditions: Vec::new(),
+                ..Culture::default()
             },
             population_group: None,
             tier: Tier::Full,
@@ -522,6 +526,7 @@ impl People {
         };
         self.bands.push(band);
         let bi = self.bands.len() - 1;
+        self.enculture(bi, sp, now.day);
         for (age, female) in ages {
             let born = now.day - age * now.year_days;
             let pos = self.scatter(bi, here, 2.0, 10.0);
@@ -539,6 +544,30 @@ impl People {
         self.settle_households(bi);
         self.acquaint(bi, now.day);
         bi
+    }
+
+    /// Draws a band's culture if it has none yet (V2.1 §9): from its people's generator, on a
+    /// stream of its own so that nothing else drawn for the band is moved.
+    pub(crate) fn enculture(&mut self, bi: usize, sp: &Species, day: f64) {
+        let Some(g) = &sp.culture else {
+            return;
+        };
+        let b = &mut self.bands[bi];
+        if b.culture.drawn() {
+            return;
+        }
+        let mut rng = Rng::new(hearth_math::hash::hash2(self.seed ^ CULTURE_STREAM, b.id));
+        let id = b.id;
+        b.culture.draw(id, g, sp.ways.as_ref(), &mut rng, day);
+    }
+
+    /// A band's ways with strangers and quarrels: its culture's own, else its people's.
+    pub(crate) fn ways_of(&self, bi: usize, sp: &Species) -> Option<crate::conflict::Ways> {
+        self.bands[bi]
+            .culture
+            .ways
+            .clone()
+            .or_else(|| sp.ways.clone())
     }
 
     /// Gives every living member of a band without a genome one (V2.1 §4): a child of its
@@ -1071,6 +1100,14 @@ impl People {
         dt: f32,
     ) {
         self.done.clear();
+        // Bands met again from before cultures (or drawn out without one) are given theirs.
+        for bi in 0..self.bands.len() {
+            if !self.bands[bi].culture.drawn()
+                && let Some(sp) = species.get(&self.bands[bi].species)
+            {
+                self.enculture(bi, sp, now.day);
+            }
+        }
         self.live_course(species, items, &*world, now);
         self.body_s -= dt;
         let body_step = self.body_s <= 0.0;
@@ -1129,7 +1166,7 @@ impl People {
                 b.tier == Tier::Full
                     && species
                         .get(&b.species)
-                        .and_then(|sp| sp.ways.as_ref())
+                        .and_then(|sp| b.culture.ways.as_ref().or(sp.ways.as_ref()))
                         .zip(species.life.of(&b.species))
                         .is_some_and(|(w, t)| self.crowd(bi, t) > w.warn_off_crowding)
             })
@@ -1286,8 +1323,8 @@ impl People {
                     self.council(bi, now, &|i| hungry[i]);
                 }
                 // Its guests weighed: one long among them whom most trust, taken in.
-                if let Some(w) = &sp.ways {
-                    self.weigh_guests(bi, w, &now);
+                if let Some(w) = self.ways_of(bi, sp) {
+                    self.weigh_guests(bi, &w, &now);
                 }
             }
         }
@@ -1348,6 +1385,7 @@ impl People {
         });
         p.record(now.day, Event::Died { cause });
         let (dead, band, household) = (p.id, p.social.band, p.social.household);
+        self.laid_to_rest(i, now.day);
         self.bequeath(i, now.day, sp, items, &now);
         self.mourn(dead, band, now.day);
         if let Some(h) = household {
@@ -1472,7 +1510,13 @@ impl People {
             Doing::Feeding => {
                 let p = &mut self.persons[i];
                 p.place.speed = 0.0;
-                if let Some(f) = world.food_at(p.place.pos) {
+                // What its culture forbids it leaves be, unless starving.
+                let starving = Needs::of(&p.body, cfg, 0.0).hunger >= 1.0;
+                let culture = &self.bands[bi].culture;
+                let food = world
+                    .food_at(p.place.pos)
+                    .filter(|f| starving || !culture.forbids(&f.material));
+                if let Some(f) = food {
                     let hunger = Needs::of(&p.body, cfg, 0.0).hunger;
                     p.psyche.feel(Feeling::Joy, 0.3 * hunger);
                     eat(p, cfg, content, &f.material, f.kg_min * PER_MIN * dt);
@@ -1762,8 +1806,8 @@ impl People {
                 p.place.yaw = yaw_toward(p.place.pos, at);
                 p.mind.doing = Doing::Idle;
                 p.mind.timer = 0.0;
-                if let Some(w) = &sp.ways {
-                    self.greet(i, j, w, now.day);
+                if let Some(w) = self.ways_of(bi, sp) {
+                    self.greet(i, j, &w, now.day);
                 }
             }
             Doing::WarningOff { who } => {
@@ -1797,7 +1841,7 @@ impl People {
                     self.persons[j].record(now.day, Event::Unwelcome { by: me });
                     self.aggrieve(j, me, 0.1, now.day);
                 }
-                let stays = sp.ways.as_ref().is_some_and(|w| d < w.greet_m);
+                let stays = self.ways_of(bi, sp).is_some_and(|w| d < w.greet_m);
                 if self.persons[i].mind.timer < 1.0
                     && stays
                     && self.persons[j].age(&now) >= crate::conflict::GROWN
@@ -2316,7 +2360,10 @@ fn situation(
     let carries_food = carried_food(p, items, content).is_some();
     let mut share_with: Option<(u64, DVec3, f32)> = None;
     let guest = |id: PersonId| band.guests.iter().any(|g| g.who == id);
-    let hospitality = sp.ways.as_ref().map_or(0.0, |w| w.hospitality);
+    let ways = band.culture.ways.as_ref().or(sp.ways.as_ref());
+    let hospitality = ways.map_or(0.0, |w| w.hospitality);
+    // How readily its people sanction, by how tight their norms are.
+    let tight = band.culture.tightness();
     if carries_food {
         for g in glimpses.iter().filter(|g| {
             (g.band == p.social.band || guest(g.id)) && g.alive && g.hungry && g.id != p.id
@@ -2330,7 +2377,7 @@ fn situation(
                 .reputes
                 .iter()
                 .find(|r| r.about == Who::Person(g.id))
-                .is_some_and(|r| norms.sanctions(r, Sanction::Withholding));
+                .is_some_and(|r| norms.sanctions_in(r, Sanction::Withholding, tight));
             if withheld && g.household != p.social.household {
                 continue;
             }
@@ -2358,7 +2405,7 @@ fn situation(
     // one it trusts — and one warning it off.
     let mut stranger: Option<Stranger> = None;
     let mut warned: Option<DVec3> = None;
-    if let Some(w) = &sp.ways {
+    if let Some(w) = ways {
         for g in glimpses
             .iter()
             .filter(|g| g.band != p.social.band && g.alive && g.id != p.id)
@@ -2418,8 +2465,8 @@ fn situation(
         };
         let bad = r.badness();
         if bad < 0.0 && scorn.is_none_or(|s| bad < s.2) {
-            let ridicule = norms.sanctions(r, Sanction::Ridicule);
-            let avoid = norms.sanctions(r, Sanction::Avoidance);
+            let ridicule = norms.sanctions_in(r, Sanction::Ridicule, tight);
+            let avoid = norms.sanctions_in(r, Sanction::Avoidance, tight);
             scorn = Some((g.id, g.pos, bad, ridicule, avoid));
         }
     }
@@ -2514,7 +2561,12 @@ fn situation(
         .or_else(|| trunk_near(senses.ground(), pos, 12.0).map(|(t, _)| t));
     let water = p.memory.nearest(PlaceKind::Water, pos).filter(safe);
     let water_here = water.is_some_and(|w| (w - pos).length() < 2.0);
-    let food_rate = senses.food_at(pos).map_or(0.0, |f| f.kg_min);
+    // What its culture forbids it does not eat, unless starving.
+    let starving = Needs::of(&p.body, &p.body_config(sp, &now), 0.0).hunger >= 1.0;
+    let food_rate = senses
+        .food_at(pos)
+        .filter(|f| starving || !band.culture.forbids(&f.material))
+        .map_or(0.0, |f| f.kg_min);
     let food_here = food_rate > 0.0;
     // Food elsewhere, when what is here is thin (or nothing): in sight, else remembered.
     let food = if food_rate >= RICH_KG_MIN {
@@ -2533,7 +2585,17 @@ fn situation(
     };
     // What it could do with what lies about: crack nuts at an anvil, strike a flake.
     let offers = if grown {
-        offers_for(p, sp, techniques, crafts, content, items, senses, &now)
+        offers_for(
+            p,
+            sp,
+            techniques,
+            &band.culture,
+            crafts,
+            content,
+            items,
+            senses,
+            &now,
+        )
     } else {
         Vec::new()
     };
@@ -3036,6 +3098,7 @@ fn offers_for(
     p: &Person,
     sp: &Species,
     techniques: &[String],
+    culture: &Culture,
     crafts: &Crafts,
     content: &Content,
     items: &Items,
@@ -3081,10 +3144,19 @@ fn offers_for(
                     .outputs
                     .iter()
                     .any(|o| output_is_food(content, &o.item));
+                // How much the work is its own by its culture's division of labour.
+                let labour = match crafts.recipes[r].def.skill.as_deref() {
+                    Some(skill) if culture.drawn() => {
+                        let women = culture.women_share(skill);
+                        0.3 + 1.4 * if p.life.female { women } else { 1.0 - women }
+                    }
+                    _ => 1.0,
+                };
                 out.push(Offer {
                     recipe: r,
                     at: spot,
                     feeds,
+                    labour,
                 });
             }
         }

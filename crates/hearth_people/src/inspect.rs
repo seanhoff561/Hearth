@@ -108,6 +108,7 @@ pub fn report(
             Event::Unwelcome { by } => format!("warned off by #{by}"),
             Event::TakenIn { band } => format!("taken into band {band}"),
             Event::GiftFrom { who } => format!("given a gift by #{who}"),
+            Event::LaidToRest { how } => format!("laid to rest: {how:?}"),
             Event::Hurt => "badly hurt".to_owned(),
             Event::Mourned { who } => format!("mourned #{who}"),
         };
@@ -480,6 +481,48 @@ pub fn report(
         }
     }
     sections.push(section("Social", social));
+
+    // Its band's culture (V2.1 §9).
+    if let Some(b) = band {
+        let c = &b.culture;
+        let mut lines = Vec::new();
+        if c.drawn() {
+            lines.push(format!(
+                "culture #{}{}, since day {:.0}",
+                c.id,
+                c.parent.map_or(String::new(), |p| format!(" (from #{p})")),
+                c.since
+            ));
+            let v = &c.values;
+            lines.push(format!(
+                "values: hierarchy {:.2}, wide cooperation {:.2}, honour {:.2}, tight norms {:.2}",
+                v.hierarchy, v.wide, v.honour, v.tight
+            ));
+            lines.push(format!(
+                "residence {:?}, descent {:?}, polygyny {:.2}",
+                c.residence, c.descent, c.polygyny
+            ));
+            lines.push(format!(
+                "laid to rest: {:?}; greets: {:?}{}",
+                c.burial,
+                c.greeting,
+                if c.taboos.is_empty() {
+                    String::new()
+                } else {
+                    format!("; forbids {}", c.taboos.join(", "))
+                }
+            ));
+            let work: Vec<String> = c
+                .labour
+                .iter()
+                .map(|(w, s)| format!("{w} {:.0}%", s * 100.0))
+                .collect();
+            lines.push(format!("women's share of the work: {}", work.join(", ")));
+        } else {
+            lines.push("no culture drawn yet".to_owned());
+        }
+        sections.push(section("Culture", lines));
+    }
 
     // Possessions.
     let carry = &p.possessions.carry;
