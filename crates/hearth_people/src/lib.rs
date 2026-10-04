@@ -28,6 +28,7 @@ pub mod psyche;
 pub mod save;
 pub mod sim;
 pub mod species;
+pub mod ties;
 pub mod watch;
 pub mod work;
 pub mod world;

@@ -326,6 +326,33 @@ pub fn report(
         let words: Vec<String> = kin.into_iter().take(10).map(|(_, w)| w).collect();
         social.push(format!("kin: {}", words.join(", ")));
     }
+    // Its closest ties, and what it owes and is owed.
+    let mut ties: Vec<&crate::ties::Tie> = p.social.ties.iter().collect();
+    ties.sort_by(|a, b| b.strength().total_cmp(&a.strength()));
+    if !ties.is_empty() {
+        let words: Vec<String> = ties
+            .iter()
+            .take(5)
+            .map(|t| {
+                format!(
+                    "#{} (fond {:.2}, trust {:.2}{})",
+                    t.who,
+                    t.affection,
+                    t.trust,
+                    if t.given + t.owed > 0.05 {
+                        format!(", gave {:.1}, owes {:.1}", t.given, t.owed)
+                    } else {
+                        String::new()
+                    }
+                )
+            })
+            .collect();
+        social.push(format!(
+            "knows {} — closest: {}",
+            p.social.ties.len(),
+            words.join("; ")
+        ));
+    }
     let children: Vec<String> = people
         .persons
         .iter()

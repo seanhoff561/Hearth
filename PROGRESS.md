@@ -1035,9 +1035,12 @@ H4 — Social systems (PLAN.md, V2.1 §8; `docs/design/humans/social.md`), in pa
   for every band, a pair's own when it bonds, a child born into its mother's, the young left
   without a grown one taken in by their nearest kin, a band splitting by them; the inspector's kin
   and household (`tests/social.rs`).
-- [ ] (b) Relationships and obligations: ties (affection, trust, respect, fear, rivalry) grown by
-  time together and what passes between, fading without contact; the ledger of help given and
-  owed; social worlds of realistic sizes.
+- [x] (b) Relationships and obligations (`ties.rs`): each person's ties to those they know —
+  affection, trust, respect, fear, rivalry and the ledger of what was given and is owed — begun
+  from kinship (a partner, parent or child close, a cousin less, band-mates a little), drawn closer
+  by time near and much more by grooming, fading back without contact, the dead let go; band-mates
+  all know one another; at most a hundred and fifty, the weakest let go; the inspector's closest
+  ties (`tests/social.rs`).
 - [ ] (c) Cooperation: food shared in the household and a large find with the band, help and care
   for the hurt, kin altruism by relatedness, reciprocity remembered.
 - [ ] (d) Reputation, gossip, norms and sanctions: what others believe of one, spread in company

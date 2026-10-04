@@ -241,6 +241,7 @@ impl People {
             self.persons[m].record(born(age), Event::Bore { child: pid });
         }
         self.form(bi, &species.psyche, now);
+        self.acquaint(bi, now.day);
         self.onto_the_ground(bi, &*world, f.at);
         know_about(&mut self.bands[bi], world, items, f.at);
         Some((id, you?))

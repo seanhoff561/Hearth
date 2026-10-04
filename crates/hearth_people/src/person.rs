@@ -164,6 +164,9 @@ pub struct Social {
     /// The household it belongs to: who shares its hearth and food (V2.1 §8.1).
     #[serde(default)]
     pub household: Option<u64>,
+    /// Its ties to those it knows, and the ledger with each (V2.1 §8.2).
+    #[serde(default)]
+    pub ties: Vec<crate::ties::Tie>,
 }
 
 /// What a person carries (property and claims join in H11).
@@ -282,6 +285,7 @@ impl Person {
                 band,
                 bond: None,
                 household: None,
+                ties: Vec::new(),
             },
             possessions: Possessions::default(),
             place: Place {
@@ -327,6 +331,7 @@ impl Person {
                 band,
                 bond: None,
                 household: None,
+                ties: Vec::new(),
             },
             possessions: Possessions::default(),
             place: Place {

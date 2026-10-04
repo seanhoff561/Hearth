@@ -186,12 +186,7 @@ impl People {
     /// alone.
     pub(crate) fn settle_households(&mut self, bi: usize) {
         let band = self.bands[bi].id;
-        let members: Vec<usize> = (0..self.persons.len())
-            .filter(|&i| {
-                let p = &self.persons[i];
-                p.alive() && p.social.band == band
-            })
-            .collect();
+        let members = self.band_members(bi);
         if members
             .iter()
             .all(|&i| self.persons[i].social.household.is_some())

@@ -275,6 +275,30 @@ impl People {
         self.bands.iter().position(|b| b.id == id)
     }
 
+    /// The indices of a band's living members: by its list where it keeps one (a band whose
+    /// course is lived), else by looking through everyone.
+    pub(crate) fn band_members(&self, bi: usize) -> Vec<usize> {
+        let band = self.bands[bi].id;
+        let listed: Vec<usize> = self.bands[bi]
+            .members
+            .iter()
+            .filter_map(|id| self.persons.binary_search_by_key(id, |p| p.id).ok())
+            .filter(|&i| {
+                let p = &self.persons[i];
+                p.alive() && p.social.band == band
+            })
+            .collect();
+        if !listed.is_empty() {
+            return listed;
+        }
+        (0..self.persons.len())
+            .filter(|&i| {
+                let p = &self.persons[i];
+                p.alive() && p.social.band == band
+            })
+            .collect()
+    }
+
     pub(crate) fn take_id(&mut self) -> PersonId {
         let id = self.next_id;
         self.next_id += 1;
@@ -457,6 +481,7 @@ impl People {
         }
         self.mothers(bi, sp, now);
         self.settle_households(bi);
+        self.acquaint(bi, now.day);
         bi
     }
 
@@ -783,6 +808,7 @@ impl People {
         self.bands[bi].dormant_since = None;
         self.endow(bi, sp, genetics, sun, now);
         self.settle_households(bi);
+        self.acquaint(bi, now.day);
     }
 
     /// Sets a band of a species down at a place (a test's, a screenshot's): its grown females and
@@ -994,6 +1020,8 @@ impl People {
         let body_step = self.body_s <= 0.0;
         if body_step {
             self.body_s += BODY_S;
+            // Time together draws people closer (V2.1 §8.2).
+            self.keep_company(BODY_S, now.day);
         }
         self.habituate(species, players, dt);
         // The others as the step finds them.
@@ -1166,6 +1194,7 @@ impl People {
         if let Some(h) = household {
             self.rehome(h, band, now.day, now.year_days.max(1.0));
         }
+        self.forget_dead(dead);
     }
 
     /// A death felt by the dead one's band: grief in its kin by how close they were (a mother,

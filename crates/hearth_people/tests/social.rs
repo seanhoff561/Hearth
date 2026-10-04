@@ -95,3 +95,52 @@ fn households_and_kin_hold_through_the_decades() {
         assert!(matches!(k, Some(Kin::Sibling | Kin::HalfSibling)), "{k:?}");
     }
 }
+
+#[test]
+fn ties_grow_in_company_kin_begin_closer_and_giving_is_owed() {
+    let mut world = Savanna::new();
+    let mut p = band(&mut world);
+    live(&mut p, &mut world, 300.0, &[]);
+    let members: Vec<u64> = p.full().map(|q| q.id).collect();
+    // Each knows the others of its band.
+    for q in p.full() {
+        assert!(
+            q.social.ties.len() + 1 >= members.len(),
+            "#{} knows {} of {}",
+            q.id,
+            q.social.ties.len(),
+            members.len()
+        );
+    }
+    // A mother is fonder of her child than of one of the band not her kin.
+    let tie = |p: &People, a: u64, b: u64| {
+        p.get(a)
+            .and_then(|q| q.social.ties.iter().find(|t| t.who == b))
+            .map(|t| t.affection)
+            .unwrap_or(0.0)
+    };
+    let child = p
+        .full()
+        .find(|q| q.life.mother.is_some())
+        .expect("a child with its mother");
+    let mother = child.life.mother.expect("its mother");
+    let stranger = p
+        .full()
+        .find(|q| q.id != mother && kin_of(&p, mother, q.id).is_none())
+        .map(|q| q.id)
+        .expect("one not her kin");
+    assert!(tie(&p, mother, child.id) > tie(&p, mother, stranger) + 0.2);
+    // What one gives the other owes, and is the fonder for.
+    let before = tie(&p, stranger, mother);
+    let day = world.now().day;
+    p.give(mother, stranger, 1.0, day);
+    let ledger = |p: &People, a: u64, b: u64| {
+        p.get(a)
+            .and_then(|q| q.social.ties.iter().find(|t| t.who == b))
+            .map(|t| (t.given, t.owed))
+            .unwrap_or_default()
+    };
+    assert!(ledger(&p, mother, stranger).0 >= 1.0, "she gave");
+    assert!(ledger(&p, stranger, mother).1 >= 1.0, "it is owed her");
+    assert!(tie(&p, stranger, mother) > before, "and the fonder");
+}
