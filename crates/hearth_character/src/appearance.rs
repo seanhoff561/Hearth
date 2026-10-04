@@ -201,8 +201,11 @@ pub struct Appearance {
     /// Optional.
     pub name: String,
     pub body: BodyType,
-    /// Standing height (m), 0.8–1.95: a child's to a tall grown one's.
+    /// Standing height (m), 0.4–1.95: a newborn's to a tall grown one's.
     pub height_m: f32,
+    /// How grown its body is, 0 a newborn's … 1 grown: a child's head is large and its legs
+    /// short for its height, its limbs round; a bust and a woman's hips come with puberty.
+    pub grown: f32,
     /// 0 slight – 0.5 average – 1 heavy.
     pub build: f32,
     /// 0 lightest – 1 darkest.
@@ -223,6 +226,7 @@ impl Default for Appearance {
             name: String::new(),
             body: BodyType::Male,
             height_m: 1.75,
+            grown: 1.0,
             build: 0.5,
             skin_tone: 0.5,
             undertone: 0.2,
@@ -235,9 +239,8 @@ impl Default for Appearance {
     }
 }
 
-/// The shortest a figure stands: a small child (until H3's children have their own proportions,
-/// a child is a grown body made small).
-pub const MIN_HEIGHT_M: f32 = 0.8;
+/// The shortest a figure stands: a newborn.
+pub const MIN_HEIGHT_M: f32 = 0.4;
 pub const MAX_HEIGHT_M: f32 = 1.95;
 
 impl Appearance {
@@ -260,6 +263,7 @@ impl Appearance {
         };
         let unit = |v: f32, d: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { d };
         self.build = unit(self.build, 0.5);
+        self.grown = unit(self.grown, 1.0);
         self.skin_tone = unit(self.skin_tone, 0.5);
         self.undertone = if self.undertone.is_finite() {
             self.undertone.clamp(-1.0, 1.0)

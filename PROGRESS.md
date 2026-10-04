@@ -1000,9 +1000,12 @@ H3 — Life course and demography (PLAN.md, V2.1 §7, §14.3; Addenda A and B;
   children in the inspector; people format 5. A 200-year run of six forager bands meets §14.3's
   targets (`tests/demography.rs`: e0 30.5, 5.1 children 4.1 years apart, near-zero growth once
   the land fills, bands of about thirty).
-- [ ] (b) Life stages and child bodies: infant to elder, sizes and proportions by age, the
-  children's behaviours (play, imitation), development (nutrition and stature, attachment),
-  ageing.
+- [x] (b) Life stages and child bodies (D178): stages and growth curves as species data (ours
+  and *Australopithecus*'s); bodies sized by age (metabolism, skin, gaits, blood, stomach); infants
+  carried on the hip and nursed; nutrition holding stature back, attachment in infancy weighing on
+  stress; children playing near their mothers and going to watch the grown at work, practising
+  and taking in what it shows; child figures with their own proportions, made again as they grow;
+  the inspector's stage and growth (`tests/growing.rs`, `tests/childhood.rs`).
 - [ ] (c) Death, mourning and inheritance; Wild Earth's families (D164) and the player born into
   one, growing up at the childhood pace through its moments.
 - [ ] (d) Death's choices (Addendum B): the death screen and the life story, spectate, restart,

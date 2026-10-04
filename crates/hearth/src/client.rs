@@ -2378,6 +2378,16 @@ impl Client {
                         .retain(|id, _| views.iter().any(|v| v.id == *id));
                     for v in views {
                         match self.people.get_mut(&v.id) {
+                            // Grown since its figure was made: made again, its motion kept.
+                            Some(s)
+                                if (s.target.height_m - v.height_m).abs() >= 0.01
+                                    || (s.target.grown - v.grown).abs() >= 0.02 =>
+                            {
+                                let animator = s.figure.animator;
+                                s.figure = crate::people::figure(&v);
+                                s.figure.animator = animator;
+                                s.target = v;
+                            }
                             Some(s) => s.target = v,
                             None => {
                                 let figure = crate::people::figure(&v);

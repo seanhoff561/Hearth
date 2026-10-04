@@ -149,6 +149,7 @@ fn a_woman_who_knows_how_makes_a_hafted_spear_from_scratch() {
         p.step(
             &species,
             &b.crafts,
+            &b.graph,
             &b.content,
             &b.items,
             &mut world,
@@ -176,6 +177,7 @@ fn a_woman_who_knows_how_makes_a_hafted_spear_from_scratch() {
         p.step(
             &species,
             &b.crafts,
+            &b.graph,
             &b.content,
             &b.items,
             &mut world,

@@ -286,6 +286,9 @@ pub struct Psyche {
     pub mood: f32,
     /// 0–1: what has threatened or worn on it for long.
     pub stress: f32,
+    /// 0–1: how little it had a carer to hold to as an infant (its mother away or dead): it
+    /// carries stress more heavily and longer all its life.
+    pub insecure: f32,
     /// The day of the world it was last reckoned at.
     pub day: f64,
 }
@@ -300,6 +303,7 @@ impl Default for Psyche {
             feelings: Feelings::default(),
             mood: 0.0,
             stress: 0.0,
+            insecure: 0.0,
             day: 0.0,
         }
     }
@@ -389,11 +393,13 @@ impl Psyche {
         let toward = (felt - strain).clamp(-1.0, 1.0);
         let follow = 1.0 - (-days / MOOD_DAYS).exp() as f32;
         self.mood += (toward - self.mood) * follow;
-        let load = (self.feelings[Feeling::Fear] + self.feelings[Feeling::Grief] + strain).min(1.0);
+        let load = ((self.feelings[Feeling::Fear] + self.feelings[Feeling::Grief] + strain)
+            * (1.0 + 0.5 * self.insecure))
+            .min(1.0);
         let k = if load > self.stress {
             STRESS_BUILD_DAYS
         } else {
-            STRESS_EASE_DAYS
+            STRESS_EASE_DAYS * (1.0 + self.insecure as f64)
         };
         self.stress += (load - self.stress) * (1.0 - (-days / k).exp() as f32);
     }

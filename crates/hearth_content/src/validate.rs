@@ -13,6 +13,16 @@ struct Check<'a> {
 }
 
 impl Check<'_> {
+    /// A field's values out of the order they must keep.
+    fn order(&mut self, field: &str, what: &str) {
+        self.report.error(
+            "unit-order",
+            Some(self.file.clone()),
+            self.line,
+            format!("`{}`: {field} must {what}", self.id),
+        );
+    }
+
     fn range(&mut self, field: &str, v: f32, lo: f32, hi: f32) {
         if !v.is_finite() || v < lo || v > hi {
             self.report.error(
@@ -603,6 +613,29 @@ pub fn validate(content: &Content, report: &mut Report) {
             c.range("life.gestation_days", h.life.gestation_days, 150.0, 330.0);
             c.range("life.weaning_years", h.life.weaning_years, 0.5, 8.0);
             c.range("life.maturity_years", h.life.maturity_years, 5.0, 25.0);
+            // Stages in order, each later than the one before; growth rising to all of it.
+            let mut last: Option<(crate::schema::humans::LifeStage, f32)> = None;
+            for &(stage, from) in &h.life.stages {
+                c.range("life.stages age", from, 0.0, 100.0);
+                if let Some((s0, a0)) = last
+                    && (stage <= s0 || from <= a0)
+                {
+                    c.order(
+                        "life.stages",
+                        "list each stage once, in order, each from a later age",
+                    );
+                }
+                last = Some((stage, from));
+            }
+            let mut prev = (-1.0f32, 0.0f32, 0.0f32);
+            for &(age, height, mass) in &h.life.growth {
+                c.range("life.growth height share", height, 0.05, 1.0);
+                c.range("life.growth mass share", mass, 0.01, 1.0);
+                if age <= prev.0 || height < prev.1 || mass < prev.2 {
+                    c.order("life.growth", "rise with age");
+                }
+                prev = (age, height, mass);
+            }
             c.pair(
                 "life.adult_death_years",
                 h.life.adult_death_years,

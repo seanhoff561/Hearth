@@ -25,6 +25,11 @@
             life: (
                 gestation_days: 240, weaning_years: 4.0, maturity_years: 11.5,
                 adult_death_years: (35, 50), birth_interval_years: 4.5,
+                // On its mother to four, then ranging with the others; growing to full size from
+                // nine (a chimpanzee's stages, as Lucy's kind's teeth suggest).
+                stages: [(Infant, 0.0), (Juvenile, 4.0), (Adolescent, 9.0), (Adult, 11.5), (Elder, 30.0)],
+                // A chimpanzee's growth: a newborn a third of grown height, a twentieth of its mass.
+                growth: [(0.0, 0.35, 0.06), (1.0, 0.48, 0.14), (2.0, 0.56, 0.2), (4.0, 0.67, 0.32), (6.0, 0.77, 0.45), (8.0, 0.87, 0.62), (10.0, 0.95, 0.84), (11.5, 1.0, 1.0)],
             ),
             social: (group_size: (5, 25), disperses: Females),
             habitat: ["savanna_woodland", "tropical_freshwater"],
@@ -106,6 +111,10 @@
             life: (
                 gestation_days: 268, weaning_years: 2.5, maturity_years: 18,
                 adult_death_years: (60, 80), birth_interval_years: 3.25,
+                stages: [(Infant, 0.0), (Child, 2.5), (Juvenile, 7.0), (Adolescent, 12.0), (Adult, 18.0), (Elder, 55.0)],
+                // Height and mass for age as shares of grown (foragers' growth: quick in infancy,
+                // slow through childhood, a spurt in adolescence, grown at eighteen).
+                growth: [(0.0, 0.29, 0.055), (0.5, 0.39, 0.12), (1.0, 0.44, 0.15), (2.0, 0.51, 0.2), (3.0, 0.56, 0.23), (5.0, 0.64, 0.3), (7.0, 0.7, 0.36), (10.0, 0.79, 0.47), (12.0, 0.85, 0.58), (14.0, 0.92, 0.74), (16.0, 0.97, 0.9), (18.0, 1.0, 1.0)],
             ),
             social: (group_size: (25, 50), disperses: Both),
             habitat: ["savanna_woodland", "tropical_freshwater", "tropical_rainforest", "temperate_grassland", "temperate_broadleaf_forest", "mediterranean_scrub", "boreal_forest_ecosystem", "tundra_ecosystem", "montane_forest_ecosystem", "alpine_ecosystem", "temperate_freshwater", "hot_desert", "cold_desert", "mangrove_forest", "coast"],

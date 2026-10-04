@@ -308,7 +308,7 @@ pub fn step(p: &mut People, world: &mut Savanna, players: &[PlayerSeen]) {
     world.advance();
     let now = world.now();
     p.step(
-        &b.species, &b.crafts, &b.content, &b.items, world, players, now, DT,
+        &b.species, &b.crafts, &b.graph, &b.content, &b.items, world, players, now, DT,
     );
 }
 

@@ -31,8 +31,10 @@ pub fn appearance(content: &Content, ph: &Phenotype, female: bool, age: f32) -> 
     let grown = profile.map_or(1.7, |s| {
         hearth_people::grown_height_m(s, female, ph.z("stature"))
     });
-    let height = grown * hearth_people::growth(maturity, age as f64).powf(0.4);
-    crate::people::appearance_of(&look, female, height)
+    let height = grown * profile.map_or(1.0, |s| s.life.grown_share(age as f64).0);
+    let mut a = crate::people::appearance_of(&look, female, height);
+    a.grown = (age / maturity.max(1.0)).clamp(0.0, 1.0);
+    a
 }
 
 /// A birth at a latitude: two parents of the place's pool and their child, a daughter or a son

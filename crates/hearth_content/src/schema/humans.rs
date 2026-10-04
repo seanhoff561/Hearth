@@ -135,6 +135,22 @@ pub struct Cognition {
     pub era_ceiling: u8,
 }
 
+/// The stages of a life (V2.1 §7), in order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum LifeStage {
+    /// Carried and nursed.
+    Infant,
+    /// Weaned, kept close, playing.
+    Child,
+    /// Ranging with the others, learning their ways.
+    Juvenile,
+    /// Growing to full size.
+    Adolescent,
+    Adult,
+    /// Slowing, still giving.
+    Elder,
+}
+
 /// A species' life history (years unless said).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,7 +162,61 @@ pub struct LifeParams {
     /// The ages by which most of those who outlive childhood die, and the oldest few.
     pub adult_death_years: Range,
     pub birth_interval_years: f32,
+    /// The age (years) each stage of its life begins, in order from infancy (none listed: infant
+    /// to weaning, juvenile to maturity, then adult).
+    #[serde(default)]
+    pub stages: Vec<(LifeStage, f32)>,
+    /// How it grows: (age, share of grown height, share of grown mass), from birth to maturity
+    /// (none listed: mass from a newborn's to a grown one's, height as mass to the 0.4).
+    #[serde(default)]
+    pub growth: Vec<(f32, f32, f32)>,
 }
+
+impl LifeParams {
+    /// The stage of life at an age.
+    pub fn stage(&self, age_years: f64) -> LifeStage {
+        let a = age_years as f32;
+        if self.stages.is_empty() {
+            return if a < self.weaning_years {
+                LifeStage::Infant
+            } else if a < self.maturity_years {
+                LifeStage::Juvenile
+            } else {
+                LifeStage::Adult
+            };
+        }
+        self.stages
+            .iter()
+            .take_while(|(_, from)| a >= *from)
+            .last()
+            .map_or(LifeStage::Infant, |(s, _)| *s)
+    }
+
+    /// The share of grown height and of grown mass at an age.
+    pub fn grown_share(&self, age_years: f64) -> (f32, f32) {
+        let a = age_years.max(0.0) as f32;
+        if self.growth.is_empty() {
+            let t = (a / self.maturity_years.max(1.0)).min(1.0);
+            let mass = NEWBORN_MASS + (1.0 - NEWBORN_MASS) * t.powf(1.1);
+            return (mass.powf(0.4), mass);
+        }
+        let first = self.growth[0];
+        if a <= first.0 {
+            return (first.1, first.2);
+        }
+        for w in self.growth.windows(2) {
+            let ((a0, h0, m0), (a1, h1, m1)) = (w[0], w[1]);
+            if a <= a1 {
+                let t = if a1 > a0 { (a - a0) / (a1 - a0) } else { 1.0 };
+                return (h0 + (h1 - h0) * t, m0 + (m1 - m0) * t);
+            }
+        }
+        (1.0, 1.0)
+    }
+}
+
+/// A newborn's share of a grown one's mass, where a species does not list its growth.
+pub const NEWBORN_MASS: f32 = 0.05;
 
 /// How a species lives together, before culture (V2.1 §8).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -67,9 +67,40 @@ fewer conceptions and a little through children's deaths, so life expectancy sta
 table's own; fertility responds weakly to fecundability (nursing sets most of the interval), so
 the conception exponent is strong.
 
+## Life stages, growing and childhood (H3 (b))
+
+A species profile lists when each **stage** of a life begins (`life.stages`: our species an
+infant to 2.5, a child to 7, a juvenile to 12, an adolescent to 18, an adult, an elder from 55;
+*Australopithecus* an infant to 4, a juvenile to 9, an adolescent to 11.5, an elder from 30) and
+how it **grows** (`life.growth`: the share of grown height and mass by age — a newborn of ours
+29 % of grown height and 5.5 % of grown mass, quick in infancy, slow through childhood, a spurt in
+adolescence). A growing body is its size: its metabolism (Kleiber), skin area (DuBois), gaits,
+blood and stomach scale with it (`Species::body_at`), so a child eats and tires as a child does.
+An elder walks a little slower.
+
+- **Infants** do not choose: they feel what those near them feel and see what there is to see,
+  and are carried — on their mother's hip, or the nearest grown one of the band's if she is gone
+  — asleep at her side when she sleeps, nursed when hungry or thirsty (breast milk: about
+  70 kcal, a gram of protein, 4 of fat and 7 of sugar to 100 ml).
+- **Development**: how thin a growing child goes (its body fat against a well-fed child's 15 %),
+  kept over about two years, holds its stature back — up to two standard deviations for a child
+  always underfed. An infant whose mother is away or dead comes to hold to no one over about
+  twenty weeks (`insecure`, to 0.5): all its life it carries stress more heavily and longer (a
+  sketch of attachment, kept small).
+- **Play**: children and juveniles play — chasing the nearest of the band's young within 12 m, or
+  romping on their own — never more than 8 m from their mother, more the more sociable.
+- **Imitation**: the young to their adolescence see a grown one of their band at work within
+  30 m, go over, crouch by it and watch, the curious the more readily; while they watch they
+  practise its skill at half the rate of doing it, and take in what it shows as the player does
+  by watching (the observation routes of its knowledge node and what that rests on): about once
+  a minute while they watch, and one finished work in four — insight, and in time the knowing.
+- **Figures**: a child is drawn with its own proportions — a newborn's head a quarter of its
+  height, its legs a third, its arms a little short, its trunk the rest, its limbs and belly round;
+  a woman's hips and bust from puberty (`Appearance::grown`, the rig's head, trunk and arm units).
+  A figure is made again as its person grows.
+
 ## To come in H3
 
-Child bodies and life stages with their animations; development (nutrition and stature,
-attachment); ageing; inheritance; Wild Earth's families and the player born into one, growing up
-at the childhood pace (Addendum A, `player-birth.md`); death as an event and its choices
-(Addendum B, `life-after-death.md`).
+Ageing's look and the elders' part; inheritance; Wild Earth's families and the player born into
+one, growing up at the childhood pace (Addendum A, `player-birth.md`); death as an event and its
+choices (Addendum B, `life-after-death.md`).

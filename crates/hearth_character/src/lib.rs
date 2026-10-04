@@ -62,7 +62,7 @@ impl Figure {
     pub fn hominin(appearance: Appearance) -> Self {
         let mut a = appearance;
         let height = if a.height_m.is_finite() {
-            a.height_m.clamp(0.8, 1.6)
+            a.height_m.clamp(0.3, 1.6)
         } else {
             1.25
         };

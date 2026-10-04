@@ -2071,3 +2071,21 @@ a short look up the pedigree instead of a kinship coefficient, which grows costl
 mourning reckons kinship six generations back for the same reason. Pair bonds are abstracted
 (ground rule 3): an event and a partner's id. *Homo sapiens* stays data until Wild Earth's
 families (later in H3) need it; the demography test adds it to its own species set.
+
+## D178 — Childhood: stages and growth as data, carried infants, play and learning by watching
+A species' life stages and its growth curve (height and mass shares by age) are profile data;
+growing bodies scale the player's physiology to their size. Infants do not choose but still feel
+and see: they are carried at their mother's hip (or the nearest grown one's of the band) and
+nursed on breast milk as food, which keeps them alive in the same body model as everyone. The
+lactating mother's extra cost is not yet charged (her energy goes with H6's food sharing).
+Development reads a growing child's fat stores (cheap, and the true signal of chronic shortage)
+over about two years and takes up to two standard deviations off its stature; attachment is a
+single "held little as an infant" measure that makes stress weigh more and ease slower — kept
+deliberately small, as the evidence is about tendencies, not fates. Children play near their
+mothers (play that carried them away left them never seeing the work: a young ape watches its
+mother crack nuts from arm's length) and go to watch a grown one's work within 30 m; watching
+practises its skill at half the rate of doing and gives insight through the same observation
+routes the player's watching uses, about once a minute and with one finished work in four, so a
+child comes to know its band's ways over many watchings rather than at a glance. A child's figure
+is the same rig with its head, trunk and arms reckoned in their own units, so a grown figure is
+drawn exactly as before.

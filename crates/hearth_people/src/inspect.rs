@@ -52,7 +52,7 @@ pub fn report(
     let mut life = vec![
         format!(
             "{:?}, {}; born day {:.1}{}",
-            p.stage(sp, now),
+            p.life_stage(sp, now),
             match p.tier {
                 Tier::Full => "lived in full",
                 Tier::Dormant => "dormant",
@@ -73,6 +73,15 @@ pub fn report(
                 .map_or("unknown".to_owned(), |m| format!("#{m}")),
         ),
     ];
+    if age < sp.life.maturity_years as f64 {
+        let (h, m) = sp.life.grown_share(age);
+        life.push(format!(
+            "growing: {:.0} % of grown height, {:.0} % of its mass; underfed {:.2}",
+            h * 100.0,
+            m * 100.0,
+            p.life.undernourished
+        ));
+    }
     if let Some(due) = &p.life.pregnant {
         life.push(format!("with child, due day {:.1}", due.due));
     }
@@ -93,7 +102,8 @@ pub fn report(
     sections.push(section("Life", life));
 
     // Body.
-    let cfg = sp.body(p.life.female);
+    let sized = p.body_config(sp, now);
+    let cfg: &hearth_body::BodyConfig = &sized;
     let s = p.body.status(cfg);
     sections.push(section(
         "Body",
@@ -202,9 +212,14 @@ pub fn report(
         "Psyche",
         vec![
             format!(
-                "mood {:+.2}, stress {:.2}; feeling {}",
+                "mood {:+.2}, stress {:.2}{}; feeling {}",
                 ps.mood,
                 ps.stress,
+                if ps.insecure > 0.05 {
+                    format!(" (held little as an infant: {:.2})", ps.insecure)
+                } else {
+                    String::new()
+                },
                 if felt.is_empty() {
                     "nothing much".to_owned()
                 } else {

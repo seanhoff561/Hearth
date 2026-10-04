@@ -76,6 +76,21 @@ pub enum Doing {
     Fleeing {
         to: DVec3,
     },
+    /// An infant carried by another (its mother, or else one of its band), nursed when hungry.
+    Carried {
+        by: u64,
+    },
+    /// A child at play: chasing another of the young, or romping about on its own.
+    Playing {
+        to: DVec3,
+        with: Option<u64>,
+    },
+    /// A child close by a grown one at its work, watching and trying it after them.
+    Imitating {
+        at: DVec3,
+        whom: u64,
+        recipe: usize,
+    },
 }
 
 /// How pressing a person's needs are, 0 not at all … 1 desperately.
@@ -175,6 +190,14 @@ pub struct Situation {
     pub from_group_m: f32,
     /// It is grown (the young keep to their mothers).
     pub grown: bool,
+    /// It is a child or a juvenile, who play; and one still learning by watching (to its
+    /// adolescence).
+    pub plays: bool,
+    pub learns: bool,
+    /// The nearest of the band's young to play with, and where.
+    pub playmate: Option<(u64, DVec3)>,
+    /// A grown one of the band at its work close by: who, where, and the work.
+    pub work_near: Option<(u64, DVec3, usize)>,
     /// The next step of what it means to do (its plan's), if it has one.
     pub project: Option<Doing>,
 }
@@ -344,6 +367,29 @@ pub fn choose(
         let social = 0.2 * (0.5 + psyche.tendency(Tendency::Sociability));
         let score = social + 0.4 * roll + pull(Routinely::Socialize);
         consider(Doing::Grooming { other: None }, score);
+    }
+    // The young watch the grown at their work and try it after them, the curious the more; and
+    // they play — chasing one another, or romping about on their own.
+    let curious = psyche.tendency(Tendency::Curiosity);
+    if s.learns
+        && let Some((whom, at, recipe)) = s.work_near
+    {
+        consider(
+            Doing::Imitating { at, whom, recipe },
+            0.3 + 0.4 * curious + 0.2 * roll,
+        );
+    }
+    if s.plays {
+        let (to, with) = match s.playmate {
+            Some((id, at)) => (at, Some(id)),
+            None => {
+                let a = roll as f64 * std::f64::consts::TAU;
+                (s.pos + DVec3::new(a.cos(), 0.0, a.sin()) * 5.0, None)
+            }
+        };
+        let company = if with.is_some() { 0.15 } else { 0.0 };
+        let score = 0.25 + 0.2 * psyche.tendency(Tendency::Sociability) + 0.3 * roll + company;
+        consider(Doing::Playing { to, with }, score);
     }
     // What it means to do, the diligent the more readily.
     if let Some(d) = &s.project {

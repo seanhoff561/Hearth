@@ -3,8 +3,11 @@
 //! component is its own type, its fields defaulting when a save from before they were added is
 //! read (D165).
 
+use std::borrow::Cow;
+
 use glam::DVec3;
-use hearth_body::Body;
+use hearth_body::{Body, BodyConfig};
+use hearth_content::schema::humans::LifeStage;
 use hearth_craft::Graph;
 use hearth_craft::knowledge::{KnowledgeState, Learned};
 use hearth_fauna::live::{Medium, Stage};
@@ -23,6 +26,8 @@ pub type PersonId = u64;
 const GROWN_PRACTICE_H: f32 = 60.0;
 /// A weaned, half-grown one's: learning still.
 const YOUNG_PRACTICE_H: f32 = 8.0;
+/// How much shorter a child always hungry grows (its stature's standard deviations).
+const STUNTING_SD: f32 = 2.0;
 
 /// How a person is lived now (V2.1 §17).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -125,6 +130,9 @@ pub struct LifeHistory {
     pub died: Option<Died>,
     /// The child it carries, if any.
     pub pregnant: Option<Pregnancy>,
+    /// How short of food it went while growing, 0 never … 1 always hungry: a running measure
+    /// over its childhood that holds its stature back.
+    pub undernourished: f32,
 }
 
 /// Where a person is and how it moves.
@@ -242,7 +250,7 @@ impl Person {
             }
         }
         let mut rng = stream(seed, id);
-        let body = Body::new(species.body(female), rng.next_u64());
+        let body = Body::new(&species.body_at(female, age, 0.0), rng.next_u64());
         Self {
             id,
             species: species.id.clone(),
@@ -282,7 +290,7 @@ impl Person {
         seed: u64,
     ) -> Self {
         let mut rng = stream(seed, id);
-        let body = Body::new(species.body(female), rng.next_u64());
+        let body = Body::new(&species.body_at(female, 0.0, 0.0), rng.next_u64());
         Self {
             id,
             species: species.id.clone(),
@@ -338,9 +346,21 @@ impl Person {
         self.genome = Some(genome);
     }
 
-    /// Its stature in its species' standard deviations (0 without a phenotype).
+    /// Its stature in its species' standard deviations: its genes' (0 without a phenotype), less
+    /// what going hungry while it grew held back.
     pub fn stature_z(&self) -> f32 {
         self.phenotype.as_ref().map_or(0.0, |p| p.z("stature"))
+            - STUNTING_SD * self.life.undernourished.clamp(0.0, 1.0)
+    }
+
+    /// Its stage of life at a moment.
+    pub fn life_stage(&self, species: &Species, now: &Now) -> LifeStage {
+        species.life_stage(self.age(now))
+    }
+
+    /// Its physiology at a moment, by its size.
+    pub fn body_config<'a>(&self, species: &'a Species, now: &Now) -> Cow<'a, BodyConfig> {
+        species.body_at(self.life.female, self.age(now), self.stature_z())
     }
 
     /// Whether it is alive.

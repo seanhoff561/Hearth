@@ -2,18 +2,18 @@
 //! by sex, in its coat; how it grows, ages and lives; what its bands know and the techniques that
 //! knowledge opens; what it does.
 
+use std::borrow::Cow;
+
 use hearth_body::BodyConfig;
 use hearth_body::clothing::Worn;
 use hearth_content::Content;
 use hearth_content::schema::Status;
+use hearth_content::schema::humans::LifeStage;
 use hearth_content::schema::humans::{
     Behavior, BodyPlan, Coat, Cognition, LifeParams, SocialDefaults,
 };
 use hearth_craft::Graph;
 use hearth_fauna::live::Stage;
-
-/// A newborn's share of a grown one's mass (a chimpanzee's 1.8 kg of 40, a human's 3.4 of 60).
-const NEWBORN: f32 = 0.05;
 
 /// A species, as its persons are made and lived.
 #[derive(Debug, Clone)]
@@ -61,9 +61,30 @@ impl Species {
     }
 
     /// How grown one of an age is: the share of a grown one's mass, from a newborn's to all of
-    /// it at maturity.
+    /// it at maturity (its growth curve's).
     pub fn growth(&self, age_years: f64) -> f32 {
-        growth(self.life.maturity_years, age_years)
+        self.life.grown_share(age_years).1
+    }
+
+    /// Its stage of life at an age.
+    pub fn life_stage(&self, age_years: f64) -> LifeStage {
+        self.life.stage(age_years)
+    }
+
+    /// The physiology of one of a sex, an age and a stature: a grown one's, or a growing one's
+    /// by its size — its metabolism, skin, gaits, blood and stomach.
+    pub fn body_at(&self, female: bool, age_years: f64, z: f32) -> Cow<'_, BodyConfig> {
+        let base = self.body(female);
+        if age_years >= self.life.maturity_years as f64 {
+            return Cow::Borrowed(base);
+        }
+        let mass = self.mass_kg(female, age_years) as f64;
+        let height = self.height_m(female, age_years, z) as f64;
+        let mut c = body_of(base, mass, height);
+        let share = (mass / base.mass_kg) as f32;
+        c.params.blood_l = base.params.blood_l * share;
+        c.params.stomach_capacity_l = base.params.stomach_capacity_l * share;
+        Cow::Owned(c)
     }
 
     /// The mass (kg) of one of its persons of a sex and age.
@@ -75,7 +96,7 @@ impl Species {
     /// stature `z` standard deviations from the species' middle.
     pub fn height_m(&self, female: bool, age_years: f64, z: f32) -> f32 {
         let grown = self.height_m[sex(female)] + z.clamp(-3.5, 3.5) * self.height_sd_m[sex(female)];
-        grown * self.growth(age_years).powf(0.4)
+        grown * self.life.grown_share(age_years).0
     }
 
     /// The age class of an age, as the ecological cells count them: the young of the year, the
@@ -94,13 +115,6 @@ impl Species {
     pub fn weaned(&self, age_years: f64) -> bool {
         age_years >= self.life.weaning_years as f64
     }
-}
-
-/// How grown one of an age is, of a species grown at `maturity_years`: the share of a grown one's
-/// mass, from a newborn's to all of it at maturity.
-pub fn growth(maturity_years: f32, age_years: f64) -> f32 {
-    let t = (age_years.max(0.0) as f32 / maturity_years.max(1.0)).min(1.0);
-    NEWBORN + (1.0 - NEWBORN) * t.powf(1.1)
 }
 
 /// A grown one's height (m) by a species profile (implemented or not: a player's): the middle

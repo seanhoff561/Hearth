@@ -15,9 +15,9 @@
 //! there is to eat, the weather on a body, the hunters about, and takes their calls and nests.
 
 use glam::{DVec2, DVec3};
-use hearth_body::Food;
+use hearth_body::{BodyConfig, Food};
 use hearth_content::Content;
-use hearth_content::schema::humans::{Behavior, BodyPlan, Disperser};
+use hearth_content::schema::humans::{Behavior, BodyPlan, Disperser, LifeStage};
 use hearth_craft::engine::Aimed;
 use hearth_craft::{Crafts, Graph};
 use hearth_fauna::ecology::Ecology;
@@ -102,12 +102,18 @@ pub struct PersonView {
     pub speed: f32,
     pub medium: Medium,
     pub doing: Doing,
-    /// Its height (m), and its looks, for its figure.
+    /// Its height (m), how grown its body is (0 a newborn's … 1), and its looks, for its figure.
     pub height_m: f32,
+    #[serde(default = "grown")]
+    pub grown: f32,
     pub look: crate::looks::Look,
     /// The feeling it shows on its body, and how strongly.
     #[serde(default)]
     pub shows: Option<(hearth_content::schema::psyche::Display, f32)>,
+}
+
+fn grown() -> f32 {
+    1.0
 }
 
 /// A band's numbers as the ecological cells count them: the young of the year, the young not yet
@@ -133,8 +139,12 @@ struct Glimpse {
     band: u64,
     pos: DVec3,
     grown: bool,
+    /// A child or a juvenile, to play with.
+    young: bool,
     alive: bool,
     alarm: bool,
+    /// The work it is at, if any.
+    working: Option<usize>,
     /// The feeling it shows, and how strongly.
     shows: Option<(Feeling, f32)>,
 }
@@ -175,6 +185,33 @@ pub fn light(hour: f32) -> f32 {
 /// Generations reckoned back for mourning and for passing over close kin: enough for any kin
 /// closer than second cousins.
 const NEAR_KIN: u32 = 6;
+
+/// How near the young play together, and see a grown one's work to go and watch it (m); how
+/// close they crouch to watch it, and to take it in.
+const PLAY_M: f64 = 12.0;
+const WATCH_M: f64 = 30.0;
+const BY_M: f64 = 1.5;
+/// How far from its mother a child's play takes it (m).
+const PLAY_ABOUT_M: f64 = 8.0;
+/// Hours of practice a second of watching and trying gives (half of doing, at the default day).
+const IMITATE_H_PER_S: f32 = 1.0 / 240.0;
+/// The share of the works a child watches finished that teach it something.
+const TAKEN_IN: f32 = 0.25;
+
+/// Breast milk, `l` litres of it: its energy, protein, fat, sugar and water (about 70 kcal, a
+/// gram of protein, 4 of fat and 7 of sugar to the 100 ml), and the vitamins of fresh food.
+fn milk(l: f64) -> Food {
+    let k = l / 0.1;
+    Food {
+        kcal: 70.0 * k,
+        protein_g: k,
+        fat_g: 4.2 * k,
+        carb_g: 7.0 * k,
+        water_l: 0.088 * k,
+        volume_l: l,
+        fresh_days: k,
+    }
+}
 
 /// A band's own stream, from the world's seed and its id.
 pub(crate) fn band_stream(seed: u64, id: u64) -> Rng {
@@ -855,7 +892,12 @@ impl People {
                     speed: p.place.speed,
                     medium: p.place.medium,
                     doing: p.mind.doing.clone(),
-                    height_m: p.height_m(sp, now),
+                    // To the centimetre and the hundredth, so a figure is made again only as it
+                    // grows.
+                    height_m: (p.height_m(sp, now) * 100.0).round() / 100.0,
+                    grown: ((p.age(now) as f32 / sp.life.maturity_years.max(1.0)).min(1.0) * 100.0)
+                        .round()
+                        / 100.0,
                     look: p.phenotype.as_ref().map_or_else(Default::default, |ph| {
                         crate::looks::look(
                             ph,
@@ -882,6 +924,7 @@ impl People {
         &mut self,
         species: &SpeciesSet,
         crafts: &Crafts,
+        graph: &Graph,
         content: &Content,
         items: &Items,
         world: &mut dyn World,
@@ -909,8 +952,18 @@ impl People {
                 grown: species
                     .get(&p.species)
                     .is_some_and(|sp| p.stage(sp, &now) == Stage::Adult),
+                young: species.get(&p.species).is_some_and(|sp| {
+                    matches!(
+                        p.life_stage(sp, &now),
+                        LifeStage::Child | LifeStage::Juvenile
+                    )
+                }),
                 alive: p.alive(),
                 alarm: matches!(p.mind.doing, Doing::Alarm { .. }),
+                working: match p.mind.doing {
+                    Doing::Working { recipe } => Some(recipe),
+                    _ => None,
+                },
                 shows: p.psyche.shown(&species.psyche),
             })
             .collect();
@@ -967,7 +1020,8 @@ impl People {
             self.act(i, bi, sp, crafts, content, items, world, now, dt);
             let p = &mut self.persons[i];
             if body_step {
-                let cfg = sp.body(p.life.female);
+                let sized = p.body_config(sp, &now);
+                let cfg: &BodyConfig = &sized;
                 let activity = cfg.activity(activity_of(&p.mind.doing, p.place.speed));
                 let exposure = world.exposure(p.place.pos, p.place.medium == Medium::Tree);
                 let hurt = p.body.injuries.len();
@@ -987,6 +1041,45 @@ impl People {
                     (0.35 * n.hunger + 0.35 * n.thirst + 0.15 * n.tiredness + pain).min(1.0);
                 if p.body.dead.is_some() {
                     self.died(i, now);
+                }
+            }
+        }
+        // 3. The young watching the grown at their work take in what it shows, as the player
+        // does by watching (V2-11): now and then as they watch, about once a minute, and the
+        // more often as a work is finished before them — insight toward its knowledge and what
+        // that rests on, and in time the knowing of it.
+        let working: Vec<(PersonId, DVec3)> = self
+            .persons
+            .iter()
+            .filter(|q| q.tier == Tier::Full && q.alive())
+            .filter(|q| matches!(q.mind.doing, Doing::Working { .. }))
+            .map(|q| (q.id, q.place.pos))
+            .collect();
+        for q in self.persons.iter_mut() {
+            let Doing::Imitating { whom, recipe, .. } = q.mind.doing else {
+                continue;
+            };
+            if q.tier != Tier::Full || !q.alive() {
+                continue;
+            }
+            let by = |at: DVec3| (q.place.pos - at).length() < BY_M * 2.0;
+            let finished = self.done.iter().any(|d| d.person == whom && by(d.at));
+            let at_it = working.iter().any(|(id, at)| *id == whom && by(*at));
+            let chance = if finished {
+                TAKEN_IN
+            } else if at_it {
+                dt / 60.0
+            } else {
+                0.0
+            };
+            if chance > 0.0 && q.rng.next_f32() < chance {
+                for t in crate::watch::watched(graph, crafts, recipe) {
+                    q.knowledge.observe(
+                        graph,
+                        &t,
+                        now.tick,
+                        hearth_craft::knowledge::Mode::Discovery,
+                    );
                 }
             }
         }
@@ -1087,9 +1180,16 @@ impl People {
         dt: f32,
     ) {
         let doing = self.persons[i].mind.doing.clone();
-        let cfg = sp.body(self.persons[i].life.female);
-        let walk = cfg.params.walk_m_s * self.persons[i].growth(sp, &now).powf(0.3);
-        let run = cfg.params.jog_m_s * 1.5;
+        let sized = self.persons[i].body_config(sp, &now);
+        let cfg: &BodyConfig = &sized;
+        // Its gaits by its size; an elder's slower.
+        let elder = if self.persons[i].life_stage(sp, &now) == LifeStage::Elder {
+            0.85
+        } else {
+            1.0
+        };
+        let walk = cfg.params.walk_m_s * elder;
+        let run = cfg.params.jog_m_s * 1.5 * elder;
         match doing {
             Doing::Going { to, then } => {
                 if self.persons[i].place.medium == Medium::Tree {
@@ -1214,6 +1314,67 @@ impl People {
             }
             Doing::Resting | Doing::Idle => {
                 self.persons[i].place.speed = 0.0;
+            }
+            Doing::Playing { to, with } => {
+                // Off after the other (or about on its own), never far from its mother; caught
+                // up, away again.
+                let p = &mut self.persons[i];
+                if move_toward(p, &*world, to, run * 0.5, dt) {
+                    let a = p.rng.next_f64() * std::f64::consts::TAU;
+                    let at = |id: Option<u64>| {
+                        id.and_then(|w| self.persons.binary_search_by_key(&w, |q| q.id).ok())
+                            .map(|j| self.persons[j].place.pos)
+                    };
+                    let me = self.persons[i].place.pos;
+                    let there = at(with).unwrap_or(me);
+                    let anchor = at(self.persons[i].life.mother).unwrap_or(me);
+                    let mut next = there + DVec3::new(a.cos(), 0.0, a.sin()) * 4.0;
+                    let off = next - anchor;
+                    if off.length() > PLAY_ABOUT_M {
+                        next = anchor + off.normalize() * PLAY_ABOUT_M;
+                    }
+                    self.persons[i].mind.doing = Doing::Playing { to: next, with };
+                }
+            }
+            Doing::Imitating { at, recipe, .. } => {
+                // Over to the work, then crouched by it, watching it and trying it after:
+                // practice, at half the rate of doing it.
+                let p = &mut self.persons[i];
+                let off = p.place.pos - at;
+                if off.x.hypot(off.z) > BY_M {
+                    move_toward(p, &*world, at, walk, dt);
+                    return;
+                }
+                p.place.speed = 0.0;
+                p.place.yaw = yaw_toward(p.place.pos, at);
+                if let Some(skill) = crafts.recipes[recipe].def.skill.clone() {
+                    p.knowledge.practice(&skill, dt * IMITATE_H_PER_S, now.tick);
+                }
+            }
+            Doing::Carried { by } => {
+                // On its carer's hip, or asleep at its side (in the nest with it at night);
+                // nursed when it wants.
+                let Ok(c) = self.persons.binary_search_by_key(&by, |q| q.id) else {
+                    return;
+                };
+                let carer = self.persons[c].place.clone();
+                let asleep = self.persons[c].mind.doing == Doing::Sleeping;
+                let hip = 0.42 * self.persons[c].height_m(sp, &now) as f64;
+                let p = &mut self.persons[i];
+                let right = DVec3::new(carer.yaw.cos() as f64, 0.0, -carer.yaw.sin() as f64);
+                p.place = carer;
+                p.place.speed = 0.0;
+                if asleep {
+                    p.place.pos += right * 0.3;
+                    p.mind.doing = Doing::Sleeping;
+                } else {
+                    p.place.pos += right * 0.16 + DVec3::Y * hip;
+                }
+                let n = Needs::of(&p.body, cfg, 0.0);
+                if n.hunger > 0.2 || n.thirst > 0.2 {
+                    let room = p.body.energy.room_l(cfg.params.stomach_capacity_l as f64);
+                    let _ = p.body.eat(cfg, &milk(room.min(0.15)));
+                }
             }
             Doing::Watching { at } => {
                 let p = &mut self.persons[i];
@@ -1483,6 +1644,27 @@ fn decide(
         }
     }
     p.psyche.pass(defs, dt, now.day, p.mind.strain);
+    // An infant feels and sees but does not choose: it is carried, by its mother or else the
+    // nearest grown one of its band.
+    if p.life_stage(sp, &now) == LifeStage::Infant {
+        let carer = |id: Option<u64>| {
+            glimpses
+                .iter()
+                .find(|g| Some(g.id) == id && g.alive && g.band == p.social.band)
+        };
+        let by = carer(p.life.mother).map(|g| g.id).or_else(|| {
+            glimpses
+                .iter()
+                .filter(|g| g.band == p.social.band && g.alive && g.grown && g.id != p.id)
+                .min_by(|a, b| {
+                    let d = |g: &Glimpse| (g.pos - p.place.pos).length();
+                    d(a).total_cmp(&d(b)).then(a.id.cmp(&b.id))
+                })
+                .map(|g| g.id)
+        });
+        p.mind.doing = by.map_or(Doing::Resting, |by| Doing::Carried { by });
+        return;
+    }
     let danger = threat.is_some_and(|t| t.dist < flight_m);
     let calm_while_fleeing = matches!(p.mind.doing, Doing::Fleeing { .. }) && !danger;
     p.mind.timer -= dt;
@@ -1531,7 +1713,7 @@ fn decide(
     s.flight_m = flight_m;
     let needs = Needs::of(
         &p.body,
-        sp.body(p.life.female),
+        &p.body_config(sp, &now),
         p.psyche.feeling(Feeling::Fear),
     );
     let roll = p.rng.next_f32();
@@ -1610,6 +1792,29 @@ fn situation(
 ) -> Situation {
     let pos = p.place.pos;
     let grown = p.stage(sp, &now) == Stage::Adult;
+    let stage = p.life_stage(sp, &now);
+    let plays = matches!(stage, LifeStage::Child | LifeStage::Juvenile);
+    let learns = plays || stage == LifeStage::Adolescent;
+    // The young of the band to play with, and a grown one at its work to watch.
+    let mut playmate: Option<(u64, DVec3, f64)> = None;
+    let mut work_near: Option<(u64, DVec3, usize, f64)> = None;
+    for g in glimpses
+        .iter()
+        .filter(|g| g.band == p.social.band && g.alive && g.id != p.id)
+    {
+        let d = (g.pos - pos).length();
+        if plays && g.young && d < PLAY_M && playmate.is_none_or(|m| d < m.2) {
+            playmate = Some((g.id, g.pos, d));
+        }
+        if learns
+            && g.grown
+            && d < WATCH_M
+            && let Some(r) = g.working
+            && work_near.is_none_or(|w| d < w.3)
+        {
+            work_near = Some((g.id, g.pos, r, d));
+        }
+    }
     // The band: its middle, its grown ones near, an alarm raised, the mother.
     let (mut cx, mut cz, mut cn) = (0.0, 0.0, 0.0);
     let mut grown_near = 0u16;
@@ -1704,6 +1909,10 @@ fn situation(
         group_at,
         from_group_m,
         grown,
+        plays,
+        learns,
+        playmate: playmate.map(|(id, at, _)| (id, at)),
+        work_near: work_near.map(|(id, at, r, _)| (id, at, r)),
         project: p
             .mind
             .plan
@@ -1929,6 +2138,9 @@ fn hold_for(d: &Doing) -> f32 {
         Doing::Alarm { .. } => 4.0,
         Doing::Mobbing { .. } => 12.0,
         Doing::Fleeing { .. } => 15.0,
+        Doing::Carried { .. } => 5.0,
+        Doing::Playing { .. } => 8.0,
+        Doing::Imitating { .. } => 20.0,
     }
 }
 
@@ -1936,12 +2148,20 @@ fn hold_for(d: &Doing) -> f32 {
 fn activity_of(d: &Doing, speed: f32) -> &'static str {
     match d {
         Doing::Sleeping => "sleeping",
-        Doing::Resting | Doing::Grooming { .. } | Doing::Feeding | Doing::Drinking => "resting",
+        Doing::Resting
+        | Doing::Grooming { .. }
+        | Doing::Feeding
+        | Doing::Drinking
+        | Doing::Carried { .. } => "resting",
         Doing::Watching { .. } | Doing::Alarm { .. } | Doing::Idle | Doing::Taking { .. } => {
             "standing"
         }
         Doing::Working { .. } | Doing::Nesting => "carrying_heavy",
-        Doing::Going { .. } | Doing::Mobbing { .. } | Doing::Fleeing { .. } => {
+        Doing::Imitating { .. } => "resting",
+        Doing::Going { .. }
+        | Doing::Mobbing { .. }
+        | Doing::Fleeing { .. }
+        | Doing::Playing { .. } => {
             if speed > 2.0 {
                 "jogging"
             } else if speed > 0.1 {

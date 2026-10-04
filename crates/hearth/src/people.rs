@@ -544,6 +544,7 @@ impl PeopleNear {
                 self.live.step(
                     &self.species,
                     crafts,
+                    graph,
                     &content,
                     items,
                     &mut world,
@@ -727,6 +728,11 @@ pub fn figure(v: &PersonView) -> Figure {
 /// sex; an australopith's hair a coat over all of it, not a style or a beard.
 pub fn looks(v: &PersonView) -> hearth_character::Appearance {
     let mut a = appearance_of(&v.look, v.female, v.height_m);
+    a.grown = v.grown;
+    // A baby's hair is short and fine.
+    if v.grown < 0.12 {
+        a.hair = hearth_character::HairStyle::ShortCrop;
+    }
     if v.plan == BodyPlan::Australopith {
         a.hair = hearth_character::HairStyle::ShortCrop;
         a.facial_hair = hearth_character::FacialHair::None;
@@ -798,7 +804,10 @@ pub fn drive(v: &PersonView) -> Drive {
         | Doing::Drinking
         | Doing::Nesting
         | Doing::Taking { .. } => Activity::Crouch,
-        Doing::Grooming { .. } | Doing::Resting => Activity::Crouch,
+        Doing::Grooming { .. }
+        | Doing::Resting
+        | Doing::Carried { .. }
+        | Doing::Imitating { .. } => Activity::Crouch,
         _ if v.speed > 3.0 => Activity::Sprint,
         _ if v.speed > 1.8 => Activity::Jog,
         _ if v.speed > 0.1 => Activity::Walk,

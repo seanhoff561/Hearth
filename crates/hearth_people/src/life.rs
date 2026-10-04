@@ -10,7 +10,7 @@
 
 use glam::{DVec2, DVec3};
 use hearth_content::Content;
-use hearth_content::schema::humans::Disperser;
+use hearth_content::schema::humans::{Disperser, LifeStage};
 use hearth_content::schema::life::{Crowding, Siler};
 
 use crate::lineage::ancestors;
@@ -111,6 +111,12 @@ pub const ROOM_M: f64 = 15_000.0;
 const MATES_M: f64 = 40_000.0;
 /// How far a band that splits off goes (m): this and up to as far again.
 const SPLIT_M: f64 = 8_000.0;
+/// A growing child's measure of how thin it goes follows the last two years or so.
+const GROWING_STEPS: f32 = 104.0;
+/// A well-fed child's share of fat in its body: thinner, its growth falls behind.
+const WELL_FED_FAT: f64 = 0.15;
+/// An infant comes to hold to its carer, or not, over about twenty weeks.
+const ATTACHING_STEPS: f32 = 20.0;
 
 /// A person and their parents and grandparents: two who share one are close kin (siblings, half
 /// siblings, first cousins, an aunt and her nephew, a parent or grandparent and its child).
@@ -219,6 +225,33 @@ impl People {
             }
             if self.bands[bi].rng.next_f64() < 1.0 - (-h * years).exp() {
                 self.dies(i, day, Cause::Course);
+            }
+        }
+        // The growing: how thin they go (their stature follows; a body lived in full only), and
+        // whether an infant has its mother by it (attachment).
+        let maturity = sp.life.maturity_years as f64;
+        for &i in &living {
+            let p = &self.persons[i];
+            let a = age(p);
+            if !p.alive() || p.tier != Tier::Full || a >= maturity {
+                continue;
+            }
+            let lived = p.body.age_s > 0.0;
+            let mass = sp.mass_kg(p.life.female, a) as f64;
+            let thin = (1.0 - p.body.energy.fat_share(mass) / WELL_FED_FAT).clamp(0.0, 1.0) as f32;
+            let infant = sp.life.stage(a) == LifeStage::Infant;
+            let mothered = p
+                .life
+                .mother
+                .and_then(|m| self.get(m))
+                .is_some_and(|m| m.alive() && m.social.band == band);
+            let p = &mut self.persons[i];
+            if lived {
+                p.life.undernourished += (thin - p.life.undernourished) / GROWING_STEPS;
+            }
+            if infant {
+                let toward = if mothered { 0.0 } else { 0.5 };
+                p.psyche.insecure += (toward - p.psyche.insecure) / ATTACHING_STEPS;
             }
         }
         // Pairing, about monthly.
