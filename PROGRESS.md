@@ -654,7 +654,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H0 — Framework migration (2026-10-03)
 - [x] H1 — Genetics engine (2026-10-03)
 - [x] H2 — Psyche and mind core (2026-10-03)
-- [ ] H3 — Life course and demography (the player is born)
+- [x] H3 — Life course and demography (the player is born) (2026-10-04)
 - [ ] H4 — Social systems
 - [ ] H5 — Culture and language
 - [ ] H6 — Knowledge and social learning
@@ -1035,14 +1035,15 @@ H3 — Life course and demography (PLAN.md, V2.1 §7, §14.3; Addenda A and B;
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. H3 — Life course and demography (PLAN.md, V2.1 §7, §14; Addenda A and B): pair bonds
-   (abstracted), pregnancy and birth, the life stages with child bodies, development (genes ×
-   environment), ageing, death, mourning and inheritance, life tables; the player born into a
-   family of the world (Wild Earth's wandering families, D164) and growing up at the childhood
-   pace; death as an event and its choices (spectate, restart, inhabit an adult). Build and test
-   gently (`low.sh`: two jobs, below-normal priority, the changed crates' tests only — the user's
-   machine froze under full checks). Amendment R (`dev/AMENDMENT_R.md`) waits until V2-16; only
-   its multiplayer-ready rule applies (D166).
+1. H4 — Social systems (PLAN.md, V2.1 §8): kinship systems and households, relationships and
+   obligations, cooperation and sharing, reputation and gossip, norms and sanctions, status and
+   group decisions (a band debating and deciding where to camp), conflict escalating and easing,
+   strangers (how people not of the player's family receive them). Build and test gently
+   (`low.sh`: two jobs, below-normal priority, the changed crates' tests only). Amendment R
+   (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready rule applies (D166).
+   Known from H3: the family takes things lying about, the player's own among them, until H4's
+   property norms; a mother carrying her infant is not drawn holding it; watching after death is
+   a free camera only (following comes with H9).
 2. Carried forward from the slice review (`docs/review/slice-1.md`, "Left where they belong"): a
    kill is more than one person can use in summer (sharing comes with others, H4); scavengers
    take a carcass within hours of play (the populations' year scale); joints are drawn, not
