@@ -217,6 +217,13 @@ const CAMP_MEAL_M: f64 = 20.0;
 const LYING_WIND: f32 = 0.37;
 /// What grass and leaves pulled together under a sleeper keep of the ground's cold (clo).
 const LYING_CLO: f32 = 1.0;
+/// Sleepers at camp lie between its fires (twice one fire's warmth) and in its lee (half the
+/// wind) (D202).
+const CAMP_SLEEP_M: f64 = 3.0;
+const BETWEEN_FIRES: f32 = 2.0;
+const CAMP_LEE: f32 = 0.5;
+/// Below this the people put on what they know to wear (°C).
+const DRESS_BELOW_C: f32 = 16.0;
 
 /// The horizontal distance between two places on the planet (wrapping in x).
 fn hdist(a: DVec3, b: DVec3, wrap: f64) -> f64 {
@@ -1329,6 +1336,36 @@ impl People {
         self.keep_budget(eco, species, players, wrap, now);
     }
 
+    /// What a band's people put on against the cold (D202): of each layer, the warmest garment
+    /// its people know how to make — a hide cape where they know hide wraps, a sewn parka,
+    /// leggings, moccasins and mittens where they sew. None where they know none.
+    pub(crate) fn dress_of(
+        &self,
+        bi: usize,
+        content: &Content,
+    ) -> Option<hearth_body::clothing::Worn> {
+        let known = &self.bands[bi].culture.knowledge;
+        let knows = |k: &str| {
+            let k = k.rsplit(':').next().unwrap_or(k);
+            known.iter().any(|n| n.rsplit(':').next() == Some(k))
+        };
+        let mut best: Vec<&hearth_content::schema::body::Garment> = Vec::new();
+        for g in content.garments.iter() {
+            if !g.knowledge.as_ref().is_some_and(|k| knows(k.as_str())) {
+                continue;
+            }
+            match best.iter_mut().find(|b| b.layer == g.layer) {
+                Some(b) if b.clo < g.clo => *b = g,
+                Some(_) => {}
+                None => best.push(g),
+            }
+        }
+        if best.is_empty() {
+            return None;
+        }
+        Some(hearth_body::clothing::Worn::of(best))
+    }
+
     /// Folds every band lived in full away (a save's copy: as if the player were far away): as
     /// households, kept whole for the player's return.
     pub fn fold_all(&mut self, _eco: &mut Ecology, _species: &SpeciesSet, now: Now) {
@@ -1793,12 +1830,15 @@ impl People {
                 .knowledge
                 .iter()
                 .any(|k| k.ends_with("cooking_roasting"));
+            let dress = self.dress_of(bi, content);
             let p = &mut self.persons[i];
             if body_step {
                 let sized = p.body_config(sp, &now);
                 let cfg: &BodyConfig = &sized;
                 let activity = cfg.activity(activity_of(&p.mind.doing, p.place.speed));
                 let mut exposure = world.exposure(p.place.pos, p.place.medium == Medium::Tree);
+                // The fires about them warm those beside them, as they warm the player.
+                let mut fire = world.warmth(p.place.pos + DVec3::new(0.0, 0.9, 0.0));
                 if matches!(p.mind.doing, Doing::Sleeping) && p.place.medium == Medium::Ground {
                     // Lying on the ground a body is in the wind of a third of a metre up, not of
                     // two (the wind's log profile over grass, roughness 0.1 m: ln 3 / ln 20).
@@ -1806,10 +1846,23 @@ impl People {
                     // And on what it lay down on: grass and leaves pulled together at least, as
                     // apes make their nests (the camp's beds, where it has them, more).
                     exposure.ground_clo = exposure.ground_clo.max(LYING_CLO);
+                    // At camp, between its fires in the lee of its brush, close by one another
+                    // (D202: Scholander et al. 1958's unclothed sleepers between small fires).
+                    if camp.is_some_and(|c| (c - p.place.pos).length() < CAMP_SLEEP_M) {
+                        fire *= BETWEEN_FIRES;
+                        exposure.wind_m_s *= CAMP_LEE;
+                    }
                 }
+                exposure.radiant_w_m2 += fire;
+                // What its people know to wear against the cold (drawn bare yet).
+                let worn = if exposure.air_c < DRESS_BELOW_C {
+                    dress.as_ref().unwrap_or(&sp.coat)
+                } else {
+                    &sp.coat
+                };
                 let hurt = p.body.injuries.len();
                 p.body
-                    .step(cfg, BODY_S as f64, &exposure, &sp.coat, &activity);
+                    .step(cfg, BODY_S as f64, &exposure, worn, &activity);
                 // The day's take, shared at camp of an evening (D202): the game and roots its
                 // people bring in beyond what is lived in full, eaten by those who are hungry —
                 // roasted where they know how — the nursed young aside.

@@ -77,6 +77,10 @@ pub trait Senses: Sync {
     fn food_near(&self, at: DVec3, within: f64) -> Option<DVec3>;
     /// The air and weather on a body at a place (up in a tree's crown or not).
     fn exposure(&self, at: DVec3, in_tree: bool) -> Exposure;
+    /// The fires' radiant heat at a place (W/m², as a body there takes it); none by default.
+    fn warmth(&self, _at: DVec3) -> f32 {
+        0.0
+    }
     /// The weather and the season for work at a place.
     fn surroundings(&self, at: DVec3) -> Surroundings;
     /// Hunters of people within `within` m of a place.

@@ -186,18 +186,18 @@ impl Senses for Surrounds<'_> {
             .min_by(|a, b| (*a - at).length().total_cmp(&(*b - at).length()))
     }
 
-    fn exposure(&self, at: DVec3, in_tree: bool) -> Exposure {
+    fn exposure(&self, _at: DVec3, in_tree: bool) -> Exposure {
         let mut e = self.exposure;
-        // The fires about them warm those beside them, as they warm the player.
-        let wm = (self.warmth)(at + DVec3::new(0.0, 0.9, 0.0));
-        if std::env::var("DEBUG_WEEK").is_ok() && fastrand_tick() { eprintln!("TEMPW warmth {wm:.0} base {:.0} air {:.1}", e.radiant_w_m2, e.air_c); }
-        e.radiant_w_m2 += wm;
         if in_tree {
             // In the crown's shade, on a nest of leaves.
             e.radiant_w_m2 *= 0.4;
             e.ground_clo = 0.6;
         }
         e
+    }
+
+    fn warmth(&self, at: DVec3) -> f32 {
+        (self.warmth)(at)
     }
 
     fn surroundings(&self, _at: DVec3) -> Surroundings {
@@ -1625,9 +1625,3 @@ fn gesture_words(g: hearth_people::Gesture) -> &'static str {
     }
 }
 
-// TEMP
-fn fastrand_tick() -> bool {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static N: AtomicU64 = AtomicU64::new(0);
-    N.fetch_add(1, Ordering::Relaxed) % 20000 == 0
-}
