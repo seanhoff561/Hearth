@@ -16,5 +16,27 @@
             breach: Withholding, severity: 0.25,
             sanctions: [(Ridicule, -0.2), (Avoidance, -0.45), (Withholding, -0.6)],
         ),
+        (
+            id: "erectus_sharing", name: "Food is shared with the hungry (Homo erectus)", status: Implemented, species: "homo_erectus",
+            // Meat carried back and shared, by the butchered bones at central places (Isaac 1978).
+            breach: Withholding, severity: 0.2,
+            sanctions: [(Avoidance, -0.45), (Withholding, -0.6)],
+            realism_source: "Isaac 1978 (food sharing at home bases), disputed; review",
+            uncertain: true,
+        ),
+        (
+            id: "neanderthal_sharing", name: "Food is shared with the hungry (Neanderthals)", status: Implemented, species: "homo_neanderthalensis",
+            breach: Withholding, severity: 0.25,
+            sanctions: [(Ridicule, -0.2), (Avoidance, -0.45), (Withholding, -0.6)],
+            realism_source: "the care of the injured (Shanidar 1, Spikins et al. 2018); review",
+            uncertain: true,
+        ),
+        (
+            id: "neanderthal_not_taking", name: "Another's things are theirs (Neanderthals)", status: Implemented, species: "homo_neanderthalensis",
+            breach: Taking, severity: 0.5,
+            sanctions: [(Ridicule, -0.2), (Avoidance, -0.35), (Withholding, -0.5), (Ostracism, -0.8)],
+            realism_source: "estimate; review",
+            uncertain: true,
+        ),
     ],
 )

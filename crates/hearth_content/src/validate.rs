@@ -622,6 +622,59 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.history,
+        report,
+        |e| &e.id,
+        |h, c| {
+            c.range("cell_km", h.cell_km, 0.1, 1000.0);
+            c.range("cells", h.cells.0 as f32, 8.0, 512.0);
+            c.range("cells", h.cells.1 as f32, h.cells.0 as f32, 512.0);
+            for (from, years) in &h.steps {
+                c.range("step from_ya", *from as f32, 0.0, 1.0e7);
+                c.range("step years", *years as f32, 1.0, 10_000.0);
+            }
+            for cy in &h.cycles {
+                c.range("cycle period_years", cy.period_years as f32, 1000.0, 1.0e6);
+                c.range("cycle low_m", cy.low_m, -200.0, 0.0);
+            }
+            for (_, m) in &h.curve {
+                c.range("curve m", *m, -200.0, 20.0);
+            }
+            for (_, f) in &h.biomes {
+                c.range("biome productivity", *f, 0.0, 3.0);
+            }
+            c.range("drift_reach_km", h.drift_reach_km, 0.0, 100.0);
+            for g in &h.craft {
+                c.range("craft reach", g.gives, 0.0, 5000.0);
+            }
+            c.range("crossing_share", h.crossing_share, 0.0, 1.0);
+            c.range("archaic_mixing", h.archaic_mixing, 0.0, 1.0);
+            for (what, v) in [
+                ("invent", h.invent),
+                ("diffuse", h.diffuse),
+                ("across_lineages", h.across_lineages),
+                ("lose", h.lose),
+            ] {
+                c.range(what, v, 0.0, 1.0);
+            }
+        },
+    );
+    each(
+        &content.eras,
+        report,
+        |e| &e.id,
+        |e, c| {
+            for p in &e.peoples {
+                c.range("band_size", p.band_size.0, 2.0, 500.0);
+                c.range("band_size", p.band_size.1, p.band_size.0, 500.0);
+                if let Some(a) = &p.aggregation {
+                    c.range("aggregation days", a.days, 1.0, 120.0);
+                    c.range("aggregation reach_km", a.reach_km, 1.0, 1000.0);
+                }
+            }
+        },
+    );
+    each(
         &content.meanings,
         report,
         |e| &e.id,

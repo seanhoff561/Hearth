@@ -113,7 +113,12 @@ impl LanguageDefs {
                     replacement: g.replacement,
                     name_syllables: g.name_syllables,
                     changes,
-                    meanings: meanings.clone(),
+                    // A proto-language's words are of its kinds of meaning only.
+                    meanings: meanings
+                        .iter()
+                        .filter(|m| g.kinds.is_empty() || g.kinds.contains(&m.kind))
+                        .cloned()
+                        .collect(),
                 }
             })
             .collect()

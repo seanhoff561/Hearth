@@ -194,6 +194,18 @@ pub fn skin_presets() -> [f32; 10] {
     std::array::from_fn(|i| i as f32 / 9.0)
 }
 
+/// The body plan a person is built on (V2.1 §2; H8): ours, or an archaic people's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Plan {
+    #[default]
+    Modern,
+    /// *Homo erectus*: tall and long-legged, narrow-hipped, a long low braincase.
+    Erectus,
+    /// Neanderthals: short and broad, barrel-chested, short in the forearm and shin, a long low
+    /// braincase over a big face.
+    Neanderthal,
+}
+
 /// A person's look.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -218,6 +230,8 @@ pub struct Appearance {
     pub facial_hair: FacialHair,
     pub eyes: EyeColor,
     pub loincloth: Loincloth,
+    /// The body plan its figure is built on.
+    pub plan: Plan,
 }
 
 impl Default for Appearance {
@@ -235,6 +249,7 @@ impl Default for Appearance {
             facial_hair: FacialHair::None,
             eyes: EyeColor::Brown,
             loincloth: Loincloth::Hide,
+            plan: Plan::Modern,
         }
     }
 }

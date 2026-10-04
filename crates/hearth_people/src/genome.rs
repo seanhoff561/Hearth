@@ -178,10 +178,20 @@ impl Phenotype {
 
     /// A trait's value in standard deviations (0 where it has none).
     pub fn z(&self, id: &str) -> f32 {
+        if let Some(v) = self.traits.get(id) {
+            return v.z();
+        }
+        // A bare id: the trait of that path in any namespace, the game's first.
+        let suffix = format!(":{id}");
         self.traits
-            .iter()
-            .find(|(k, _)| k.as_str() == id || k.ends_with(&format!(":{id}")))
-            .map_or(0.0, |(_, v)| v.z())
+            .get(&format!("hearth{suffix}"))
+            .or_else(|| {
+                self.traits
+                    .iter()
+                    .find(|(k, _)| k.ends_with(&suffix))
+                    .map(|(_, v)| v)
+            })
+            .map_or(0.0, TraitValue::z)
     }
 
     /// A trait read as a factor about 1.
@@ -506,13 +516,79 @@ impl Genetics {
         self.chromosomes[self.loci[li].chromosome].kind == ChromosomeKind::X
     }
 
+    /// The drift dimension of a locus whose frequencies differ by place (H8): a named locus
+    /// its own, a polygenic trait's loci their trait's, so that a trait's mean drifts as one.
+    fn drift_dim(&self, li: usize) -> usize {
+        let h = match &self.loci[li].role {
+            Role::Named(id) => id.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+                (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+            }),
+            Role::Polygenic(t) => (*t as u64 + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+            Role::Recessive | Role::Immune => 0,
+        };
+        (h % crate::history::POOL_DIMS as u64) as usize
+    }
+
+    /// A locus's allele frequencies in a people of deep time: its pool's at the sunlight it is
+    /// adapted to, the place-shifted allele moved by its people's drift (a logit offset).
+    fn frequencies_in<'a>(
+        &self,
+        pool: &'a Pool,
+        li: usize,
+        sun: f32,
+        drift: &[f32],
+    ) -> std::borrow::Cow<'a, [f32]> {
+        let f = self.frequencies(pool, li, sun);
+        let Some((a, _, _)) = self.loci[li].sunlight else {
+            return f;
+        };
+        if drift.is_empty() || !pool.sunlight {
+            return f;
+        }
+        let d = drift[self.drift_dim(li) % drift.len()];
+        let mut v = f.into_owned();
+        let a = a as usize;
+        let p = v[a].clamp(1e-4, 1.0 - 1e-4);
+        let q = 1.0 / (1.0 + (-((p / (1.0 - p)).ln() + d)).exp());
+        let rest: f32 = v
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| *k != a)
+            .map(|(_, x)| x)
+            .sum();
+        let others = (v.len() - 1).max(1) as f32;
+        for (k, x) in v.iter_mut().enumerate() {
+            *x = if k == a {
+                q
+            } else if rest > 0.0 {
+                *x * (1.0 - q) / rest
+            } else {
+                (1.0 - q) / others
+            };
+        }
+        std::borrow::Cow::Owned(v)
+    }
+
     /// A founder: every locus drawn from a pool's frequencies at a place's sunlight.
     pub fn founder(&self, pool: &Pool, sun: f32, female: bool, rng: &mut Rng) -> Genome {
+        self.founder_in(pool, sun, &[], female, rng)
+    }
+
+    /// A founder of a people of deep time (H8): every locus drawn from a pool's frequencies at
+    /// the sunlight its people are adapted to, moved by their drift.
+    pub fn founder_in(
+        &self,
+        pool: &Pool,
+        sun: f32,
+        drift: &[f32],
+        female: bool,
+        rng: &mut Rng,
+    ) -> Genome {
         let n = self.loci.len();
         let mut maternal = Vec::with_capacity(n);
         let mut paternal = Vec::with_capacity(n);
         for li in 0..n {
-            let f = self.frequencies(pool, li, sun);
+            let f = self.frequencies_in(pool, li, sun, drift);
             maternal.push(Self::draw(&f, rng));
             paternal.push(if !female && self.on_x(li) {
                 NONE

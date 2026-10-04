@@ -12,6 +12,8 @@ in, said plainly here. Numbers are filled in as each milestone lands.*
 | Real peoples and religions | Does not fit a random planet; invites stereotypes | Generated fictional cultures, languages and beliefs whose structures follow cross-cultural patterns | [culture.md](culture.md) (H5) |
 | Endless variety of behaviour | Authoring cost | Behaviour generated from personality × culture × situation × memory, over routines and norms authored as data | [mind.md](mind.md) (H2) |
 | A whole childhood lived through | Fifteen years of play | The player's childhood at a childhood pace: moments at normal speed, the years between at the household tier | [player-birth.md](player-birth.md) (H3) |
+| Two million years of human history over Earth | Earth's size; billions of lives | Demes of each species on a history grid of the planet's own geography, a few thousand cells, stepped by centuries to generations; the planet stands for Earth (numbers for inventing and keeping knowledge reckoned as Earth's) and, smaller than a people's mating network's country, holds its peoples up to thirty times denser than real; a century of households lived about the place a life begins | [history.md](history.md) (H8) |
+| An ice-age world | World generation is today's | The era's sea level and cold act in deep time (land bridges, glacial shelves, the cold's retreat); the land walked is today's | [history.md](history.md) (H8, D195) |
 
 ## Commitments carried by every substitute
 

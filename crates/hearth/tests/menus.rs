@@ -53,13 +53,28 @@ fn render(
                         "You had 2 children, 2 of them living.".into(),
                         "5 of your people mourn you.".into(),
                     ],
-                    kin: vec![
-                        (11, "your partner, 33 years".into()),
-                        (12, "your sister, 27 years".into()),
+                    others: vec![
+                        hearth_protocol::Other {
+                            id: 11,
+                            words: "your partner, 33 years".into(),
+                            family: true,
+                            group: true,
+                            near: true,
+                            child: false,
+                        },
+                        hearth_protocol::Other {
+                            id: 12,
+                            words: "your daughter, 6 years".into(),
+                            family: true,
+                            group: true,
+                            near: true,
+                            child: true,
+                        },
                     ],
                 }),
                 inventory: None,
                 journal: None,
+                eras: Vec::new(),
             };
             actions = menus.ui(ui, &mut cx);
         },
@@ -135,6 +150,30 @@ fn the_screens_draw_and_answer() {
                 seed: String::new(),
                 death: 0,
                 knowledge: 0,
+                era: 0,
+                inhabit: 0,
+            },
+        ),
+        (
+            "births",
+            Screen::Births {
+                choices: vec![
+                    hearth_protocol::BirthChoice {
+                        title: "A family of the Kaanu (Human)".into(),
+                        lines: vec![
+                            "Your mother: Ama, 24 years old".into(),
+                            "Your father: Tek, 29 years old".into(),
+                            "Brothers and sisters: a sister of 4".into(),
+                            "A band of 31, living in the savanna of the Afrotropical".into(),
+                        ],
+                    },
+                    hearth_protocol::BirthChoice {
+                        title: "A family of the Hiro (Human)".into(),
+                        lines: vec!["Your mother: Yali, 31 years old".into()],
+                    },
+                ],
+                selected: 0,
+                born: hearth::profiles::Born::Chance,
             },
         ),
         ("options", Screen::Options),

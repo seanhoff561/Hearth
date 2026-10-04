@@ -24,8 +24,23 @@ const FATHER_YEARS: f32 = 47.0;
 /// How one of the player's species with a phenotype looks, of a sex and an age, as their figure
 /// draws them.
 pub fn appearance(content: &Content, ph: &Phenotype, female: bool, age: f32) -> Appearance {
+    appearance_of(content, PLAYER_SPECIES, ph, female, age)
+}
+
+/// How one of a species with a phenotype looks, of a sex and an age, as their figure draws them
+/// (an era's archaic peoples on their own body plans, H8).
+pub fn appearance_of(
+    content: &Content,
+    species: &str,
+    ph: &Phenotype,
+    female: bool,
+    age: f32,
+) -> Appearance {
     use hearth_content::schema::humans::BodyPlan;
-    let profile = content.species.get(PLAYER_SPECIES);
+    let profile = content
+        .species
+        .iter()
+        .find(|s| s.id.rsplit(':').next() == species.rsplit(':').next());
     let (plan, maturity) = profile.map_or((BodyPlan::Modern, 18.0), |s| {
         (s.body.plan, s.life.maturity_years)
     });
@@ -36,6 +51,14 @@ pub fn appearance(content: &Content, ph: &Phenotype, female: bool, age: f32) -> 
     let height = grown * profile.map_or(1.0, |s| s.life.grown_share(age as f64).0);
     let mut a = crate::people::appearance_of(&look, female, height);
     a.grown = (age / maturity.max(1.0)).clamp(0.0, 1.0);
+    a.plan = match plan {
+        BodyPlan::Erectus => hearth_character::Plan::Erectus,
+        BodyPlan::Neanderthal => hearth_character::Plan::Neanderthal,
+        BodyPlan::Modern | BodyPlan::Australopith => hearth_character::Plan::Modern,
+    };
+    if plan == BodyPlan::Neanderthal {
+        a.build = (a.build + 0.25).min(1.0);
+    }
     a
 }
 
@@ -53,8 +76,13 @@ pub fn draw(
 
 /// The age the player's people count the young grown (their life table's; 16 without one).
 pub fn coming_of_age(content: &Content) -> f64 {
+    coming_of_age_of(content, PLAYER_SPECIES)
+}
+
+/// The age a species' people count the young grown (their life table's; 16 without one).
+pub fn coming_of_age_of(content: &Content, species: &str) -> f64 {
     hearth_people::life::Tables::from_content(content)
-        .of(PLAYER_SPECIES)
+        .of(species)
         .map_or(16.0, |t| t.coming_of_age as f64)
 }
 

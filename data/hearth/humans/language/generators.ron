@@ -54,5 +54,67 @@
                 (from: "h", to: "", context: Anywhere, chance: 0.01),
             ],
         ),
+        (
+            id: "erectus_proto_language", name: "A proto-language", status: Implemented, species: "homo_erectus",
+            // A simple, gesture-rich proto-language (V2.1 §15.3): a few sounds, syllables of a
+            // consonant and a vowel, words for things, kin and a few calls of greeting, warning
+            // and agreement, without grammar to speak of (Bickerton's protolanguage; Wray 1998).
+            // Its sounds are the commonest of ours, as the simplest to make.
+            consonants: [("m", 0.96), ("k", 0.9), ("p", 0.86), ("w", 0.82), ("n", 0.78), ("t", 0.68), ("h", 0.62), ("y", 0.6), ("b", 0.5), ("'", 0.4)],
+            vowels: [("a", 0.98), ("i", 0.93), ("u", 0.88)],
+            consonant_count: (5, 8),
+            vowel_count: (3, 3),
+            shapes: [(V, 0.4)],
+            orders: [(Svo, 0.5), (Sov, 0.5)],
+            adjective_after: 0.5,
+            plural: 0.0,
+            past: 0.0,
+            replacement: 0.03,
+            name_syllables: (1, 2),
+            changes: [
+                (from: "p", to: "b", context: BetweenVowels, chance: 0.03),
+                (from: "t", to: "n", context: WordEnd, chance: 0.02),
+                (from: "k", to: "h", context: Anywhere, chance: 0.015),
+                (from: "u", to: "a", context: Anywhere, chance: 0.01),
+            ],
+            kinds: [Noun, Kin, Pronoun, Particle],
+            realism_source: "Bickerton 1990, Wray 1998 (protolanguage); review",
+            uncertain: true,
+        ),
+        (
+            id: "neanderthal_speech", name: "Neanderthal languages", status: Implemented, species: "homo_neanderthalensis",
+            // Speech: a hyoid like ours (Kebara 2), ears tuned to its frequencies (Conde-Valverde et
+            // al. 2021), perhaps fewer vowels; nothing of its words is known, so its languages are
+            // drawn as ours are, with fewer vowels and simpler syllables.
+            consonants: [
+                ("m", 0.96), ("k", 0.9), ("y", 0.9), ("p", 0.86), ("w", 0.82), ("n", 0.78),
+                ("t", 0.68), ("l", 0.68), ("s", 0.67), ("b", 0.63), ("h", 0.62), ("ng", 0.62),
+                ("g", 0.56), ("d", 0.45), ("r", 0.44), ("kh", 0.3), ("'", 0.37), ("sh", 0.3),
+            ],
+            vowels: [("a", 0.98), ("i", 0.93), ("u", 0.88), ("e", 0.5), ("o", 0.5)],
+            consonant_count: (8, 14),
+            vowel_count: (3, 5),
+            shapes: [(V, 0.6), (Cvc, 0.5), (Ccv, 0.1)],
+            orders: [(Sov, 0.5), (Svo, 0.4), (Vso, 0.1)],
+            adjective_after: 0.6,
+            plural: 0.4,
+            past: 0.3,
+            replacement: 0.015,
+            name_syllables: (2, 3),
+            changes: [
+                (from: "k", to: "h", context: Anywhere, chance: 0.015),
+                (from: "t", to: "s", context: BeforeFront, chance: 0.02),
+                (from: "p", to: "b", context: BetweenVowels, chance: 0.03),
+                (from: "t", to: "d", context: BetweenVowels, chance: 0.03),
+                (from: "k", to: "g", context: BetweenVowels, chance: 0.03),
+                (from: "s", to: "h", context: WordStart, chance: 0.015),
+                (from: "n", to: "", context: WordEnd, chance: 0.015),
+                (from: "e", to: "i", context: Anywhere, chance: 0.015),
+                (from: "o", to: "u", context: Anywhere, chance: 0.015),
+                (from: "l", to: "r", context: Anywhere, chance: 0.01),
+            ],
+            realism_source: "Arensburg et al. 1989 (Kebara hyoid); Conde-Valverde et al. 2021 (hearing); Lieberman and Crelin 1971 on vowels, disputed; review",
+            uncertain: true,
+        ),
     ],
 )

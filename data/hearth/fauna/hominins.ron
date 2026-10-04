@@ -74,5 +74,73 @@
             realism_source: "forager ecology (Kelly 2013; Marlowe 2005 on home ranges and group sizes); Wild Earth's sparseness is the era's design (D164); review",
             uncertain: true,
         ),
+        (
+            id: "homo_erectus", name: "Homo erectus", scientific: "Homo erectus", body_plan: Primate, status: Implemented,
+            mass_kg: (48, 62), dimorphism: 1.2, length_m: 1.65, shoulder_height_m: 1.4,
+            speed: (walk_m_s: 1.3, run_m_s: 6, swim_m_s: 0.6),
+            senses: (vision_m: 1000, hearing_m: 400, smell_m: 20, night_vision: 0.2),
+            // Meat and marrow from hunting and scavenging, tubers dug, fruit, nuts and seeds by
+            // the season (Olduvai and Koobi Fora's butchered bones; Wrangham on cooked tubers).
+            diet: (kind: Omnivore, daily_food_kg: 1.2, foods: [
+                (food: "meat", preference: 0.9), (food: "wild_figs"), (food: "marula_fruit"),
+                (food: "marula_nut", preference: 0.7), (food: "baobab_fruit", preference: 0.6), (food: "acorn", preference: 0.5),
+                (food: "taro_corm", preference: 0.7), (food: "insect_larvae", preference: 0.4), (food: "grass_seed", preference: 0.3),
+                (food: "shellfish", preference: 0.6), (food: "blackberry"),
+            ]),
+            // Its bands, outside the eras' deep time (where the era says how large).
+            social: Herd(size: (15, 40)), activity: Diurnal,
+            habitat: ["savanna_woodland", "tropical_freshwater", "tropical_rainforest", "temperate_grassland", "temperate_broadleaf_forest", "mediterranean_scrub", "coast"],
+            seasonal: [],
+            danger: (defensive: true, aggression: 0.25),
+            // In the eras its numbers about the world come from deep time (D191); this is its
+            // density where none does.
+            growth_rate: 0.01, density_per_km2: 0.03, realms: ["Afrotropical", "Indomalayan", "Palearctic"], min_coldest_month_c: 0,
+            life: (maturity_years: 15, lifespan_years: 50, litter: (1, 1), births_per_year: 0.28, birth_day: 150, adult_survival: 0.975, young_survival: 0.55, birth_mass_kg: 2.6),
+            ranging: (home_range_km2: 400, dispersal_km: 40, dispersers: Females, cover: 0.1),
+            coat: (base: "#6a4a34", belly: "#6a4a34", points: "#2a1e14", face: "#5a3c28"),
+            shape: (neck: 0.08, head: 0.14, snout: 0.08, tail: 0.0, ears: 0.06, ear_shape: Round, legs: 1.05),
+            habits: (vigilance: 0.7),
+            track: (foot: Plantigrade, length_cm: 25, stride_m: 1.4),
+            calls: [
+                (kind: Scream, when: Alarm, loudness_db: 100, pitch_hz: (300, 2000), seconds: 0.8),
+                (kind: Grunt, when: Contact, loudness_db: 60, pitch_hz: (100, 400), seconds: 0.5),
+            ],
+            temperament: (flight_m: 40, boldness: 0.55),
+            notes: "The Lower Paleolithic's bands: fifteen to forty, ranging widely over open country and its woods and shores, making hand axes, keeping fire. Drawn out as persons near the player in the eras that have them.",
+            realism_source: "Ruff et al. (body size); Antón 2003; Domínguez-Rodrigo on Olduvai butchery; Wrangham 2009; review",
+            uncertain: true,
+        ),
+        (
+            id: "homo_neanderthalensis", name: "Neanderthal", scientific: "Homo neanderthalensis", body_plan: Primate, status: Implemented,
+            mass_kg: (64, 78), dimorphism: 1.15, length_m: 1.62, shoulder_height_m: 1.35,
+            speed: (walk_m_s: 1.25, run_m_s: 5.5, swim_m_s: 0.6),
+            senses: (vision_m: 1000, hearing_m: 400, smell_m: 20, night_vision: 0.25),
+            // Top carnivores by their bones' isotopes, but plants too, cooked (dental calculus at
+            // Shanidar and El Sidrón), shellfish and seals where there were shores (Vanguard Cave).
+            diet: (kind: Omnivore, daily_food_kg: 1.5, foods: [
+                (food: "meat", preference: 1.0), (food: "shellfish", preference: 0.7), (food: "acorn", preference: 0.6),
+                (food: "blackberry"), (food: "bilberry"), (food: "wild_cherry"), (food: "crowberry", preference: 0.6),
+                (food: "insect_larvae", preference: 0.3), (food: "grass_seed", preference: 0.3), (food: "watercress", preference: 0.4),
+            ]),
+            social: Herd(size: (10, 30)), activity: Diurnal,
+            habitat: ["temperate_broadleaf_forest", "temperate_grassland", "mediterranean_scrub", "boreal_forest_ecosystem", "montane_forest_ecosystem", "temperate_freshwater", "coast"],
+            seasonal: [],
+            danger: (defensive: true, aggression: 0.25),
+            growth_rate: 0.01, density_per_km2: 0.03, realms: ["Palearctic"], min_coldest_month_c: -15,
+            life: (maturity_years: 15, lifespan_years: 45, litter: (1, 1), births_per_year: 0.3, birth_day: 150, adult_survival: 0.97, young_survival: 0.55, birth_mass_kg: 3.2),
+            ranging: (home_range_km2: 500, dispersal_km: 30, dispersers: Females, cover: 0.1),
+            coat: (base: "#9a7a60", belly: "#9a7a60", points: "#4a3020", face: "#8a6a50"),
+            shape: (neck: 0.07, head: 0.15, snout: 0.09, tail: 0.0, ears: 0.06, ear_shape: Round, legs: 0.95),
+            habits: (vigilance: 0.6),
+            track: (foot: Plantigrade, length_cm: 26, stride_m: 1.3),
+            calls: [
+                (kind: Scream, when: Alarm, loudness_db: 100, pitch_hz: (250, 1800), seconds: 0.8),
+                (kind: Grunt, when: Contact, loudness_db: 60, pitch_hz: (90, 380), seconds: 0.5),
+            ],
+            temperament: (flight_m: 30, boldness: 0.6),
+            notes: "The Middle Paleolithic's people of the north: small close-knit bands of ten to thirty, hunters of big game, keeping and making fire, caring for their hurt and burying their dead. Drawn out as persons near the player in the eras that have them.",
+            realism_source: "Trinkaus, Ruff (body size); Richards and Trinkaus 2009 (isotopes); Henry et al. 2011 (plants in calculus); Stringer et al. 2008 (Vanguard Cave); review",
+            uncertain: true,
+        ),
     ],
 )

@@ -1,0 +1,13 @@
+# H8 the Paleolithic eras (V2.1 §15.3; docs/review/era-*.md): a world of each era on the Standard
+# planet of seed 3, its deep past run, the recent past lived where its peoples live about the
+# spawn, a life born into one of the households there (`era=`), the bands about it drawn out and
+# living a while, their camps kept — the fire, the beds — as the game keeps them; the camera at the
+# household's camp. In the afternoon and at dusk, when the bands are back at their fires.
+# `hearth --screenshot-list tools/shots/h8_eras.shots`
+defaults: seed=3, planet=standard, res=256, w=960, h=540, dist=6, clouds=0.25, season=summer
+era=lower_paleolithic, hour=15, run=40, out=bench-out/h8/lower_paleolithic_day.png
+era=lower_paleolithic, hour=19, run=40, out=bench-out/h8/lower_paleolithic_dusk.png
+era=middle_paleolithic, hour=15, run=40, out=bench-out/h8/middle_paleolithic_day.png
+era=middle_paleolithic, hour=19, run=40, out=bench-out/h8/middle_paleolithic_dusk.png
+era=upper_paleolithic, hour=15, run=40, out=bench-out/h8/upper_paleolithic_day.png
+era=upper_paleolithic, hour=19, run=40, out=bench-out/h8/upper_paleolithic_dusk.png

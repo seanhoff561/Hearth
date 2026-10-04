@@ -18,5 +18,32 @@
             argue_s: 25.0, threat_s: 12.0, blows_s: 6.0,
             leave_rivalry: 0.6, leave_quarrels: 3,
         ),
+        (
+            id: "erectus_ways", name: "Homo erectus's ways with strangers and quarrels", status: Implemented,
+            species: "homo_erectus",
+            // Warier of strangers than our kind (apes' groups meet strangers with hostility; no
+            // trade or exchange networks in the record): seen farther off, greeted nearer, taken
+            // in slowly, warned off sooner.
+            wary_m: 120.0, greet_m: 20.0, greeting_trust: 0.45, hospitality: 0.3,
+            warn_off_crowding: 1.2,
+            take_in_trust: 0.6, take_in_days: 4.0,
+            argue_s: 15.0, threat_s: 12.0, blows_s: 6.0,
+            leave_rivalry: 0.6, leave_quarrels: 3,
+            realism_source: "inferred from apes and the absence of exchange in the Lower Paleolithic record; review",
+            uncertain: true,
+        ),
+        (
+            id: "neanderthal_ways", name: "The Neanderthals' ways with strangers and quarrels", status: Implemented,
+            species: "homo_neanderthalensis",
+            // Small closed groups with little contact beyond (raw materials from within a few
+            // tens of kilometres; Féblot-Augustins 1999): wary, slow to take a stranger in.
+            wary_m: 100.0, greet_m: 25.0, greeting_trust: 0.4, hospitality: 0.4,
+            warn_off_crowding: 1.3,
+            take_in_trust: 0.55, take_in_days: 3.0,
+            argue_s: 20.0, threat_s: 12.0, blows_s: 6.0,
+            leave_rivalry: 0.6, leave_quarrels: 3,
+            realism_source: "Féblot-Augustins 1999 (raw material transfers); review",
+            uncertain: true,
+        ),
     ],
 )

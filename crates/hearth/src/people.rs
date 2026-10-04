@@ -359,6 +359,169 @@ impl PeopleNear {
         }
     }
 
+    /// An era's people about a place, as a new life finds them (H8; for pictures and tools as the
+    /// server does it for a player): the recent past lived there (a century of households), and
+    /// player 0 born into the first household offered — `age` years ago — the nearest anywhere if
+    /// none lives about it. The camp of the player's band (none: no household to be born into).
+    #[allow(clippy::too_many_arguments)]
+    pub fn born_in_era(
+        &mut self,
+        eco: &mut hearth_fauna::ecology::Ecology,
+        graph: &Graph,
+        items: &Items,
+        genetics: &hearth_people::Genetics,
+        latitude: &dyn Fn(DVec3) -> f64,
+        at: glam::DVec2,
+        age: f64,
+        now: Now,
+    ) -> Option<DVec3> {
+        let reach = hearth_people::sim::HOUSEHOLD_M;
+        self.live.recent_history(
+            eco,
+            &self.species,
+            graph,
+            items,
+            latitude,
+            at,
+            reach,
+            100.0,
+            now,
+            &|_| {},
+        );
+        let mut offered = self
+            .live
+            .birth_options(&self.species, at, reach, age, &now, 4);
+        if offered.is_empty() {
+            offered = self
+                .live
+                .birth_options(&self.species, at, f64::INFINITY, age, &now, 4);
+        }
+        let o = *offered.first()?;
+        self.live
+            .born_into(o, 0, None, age, genetics, &self.species, graph, now)?;
+        self.now = Some(now);
+        let band = self.live.bands.iter().find(|b| b.id == o.band)?;
+        Some(
+            band.camp
+                .unwrap_or_else(|| DVec3::new(band.home.x, 0.0, band.home.y)),
+        )
+    }
+
+    /// A household offered for a birth, as the player is told it (H8, Addendum A): the mother
+    /// and the father by name and age, their children, the grandparents living, the band and its
+    /// people, the country it lives in and what its people know — never how anyone looks.
+    pub fn birth_choice(
+        &self,
+        o: &hearth_people::BirthOption,
+        lw: &LocalWorld,
+        graph: &Graph,
+        now: &Now,
+    ) -> hearth_protocol::BirthChoice {
+        let live = &self.live;
+        let name = |id: u64| {
+            live.get(id)
+                .map(|p| p.name.clone())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| "one of them".to_owned())
+        };
+        let age = |id: u64| live.get(id).map_or(0.0, |p| p.age(now));
+        let band = live.bands.iter().find(|b| b.id == o.band);
+        let sp = band.and_then(|b| self.species.get(&b.species));
+        let people = band
+            .and_then(|b| {
+                let l = b.culture.language.as_ref()?;
+                let d = sp?.language.as_ref()?;
+                l.say(d, "people")
+            })
+            .map(|w| {
+                let mut c = w.chars();
+                c.next()
+                    .map(|f| f.to_uppercase().chain(c).collect::<String>())
+                    .unwrap_or_default()
+            });
+        let kind = sp.map_or_else(|| "people".to_owned(), |s| s.name.clone());
+        let title = match &people {
+            Some(p) => format!("A family of the {p} ({kind})"),
+            None => format!("A family of {kind}"),
+        };
+        // A parent since dead (a player starting grown may be an orphan of the band).
+        let parent = |who: &str, id: u64| match live.get(id).and_then(|p| p.life.died.as_ref()) {
+            Some(d) => format!(
+                "{who}: {}, who died at {:.0}",
+                name(id),
+                live.get(id)
+                    .map_or(0.0, |p| (d.day - p.life.born) / now.year_days.max(1.0))
+            ),
+            None => format!("{who}: {}, {:.0} years old", name(id), age(id)),
+        };
+        let mut lines = vec![
+            parent("Your mother", o.mother),
+            parent("Your father", o.father),
+        ];
+        let mut children: Vec<(f64, bool)> = live
+            .persons
+            .iter()
+            .filter(|p| p.life.mother == Some(o.mother) && p.alive())
+            .map(|p| (p.age(now), p.life.female))
+            .collect();
+        children.sort_by(|a, b| b.0.total_cmp(&a.0));
+        lines.push(if children.is_empty() {
+            "You would be their first child".to_owned()
+        } else {
+            let told: Vec<String> = children
+                .iter()
+                .map(|(a, f)| format!("a {} of {:.0}", if *f { "sister" } else { "brother" }, a))
+                .collect();
+            format!("Brothers and sisters: {}", told.join(", "))
+        });
+        let grand = [o.mother, o.father]
+            .iter()
+            .filter_map(|&p| live.get(p))
+            .flat_map(|p| [p.life.mother, p.life.father])
+            .flatten()
+            .filter(|g| live.get(*g).is_some_and(|g| g.alive()))
+            .count();
+        if grand > 0 {
+            lines.push(format!(
+                "{grand} grandparent{} living",
+                if grand == 1 { "" } else { "s" }
+            ));
+        }
+        if let Some(b) = band {
+            let n = live.members(b.id).filter(|p| p.alive()).count();
+            let at = b
+                .camp
+                .unwrap_or_else(|| DVec3::new(b.home.x, 0.0, b.home.y));
+            let s = lw.terrain().sample(at.x as i32, at.z as i32);
+            let biome = s.biome.name().replace('_', " ");
+            lines.push(format!(
+                "A band of {n}, living in the {biome} of the {}",
+                s.realm.name()
+            ));
+            // What its people know that most marks them: their deepest techniques.
+            let lore = &self.species.lore;
+            let mut known: Vec<(u8, String)> = b
+                .culture
+                .knowledge
+                .iter()
+                .filter_map(|k| {
+                    let depth = lore
+                        .nodes
+                        .iter()
+                        .find(|n| &n.id == k)
+                        .map_or(0, |n| n.depth);
+                    graph.node(k).map(|n| (depth, n.name.to_lowercase()))
+                })
+                .collect();
+            known.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+            let told: Vec<String> = known.into_iter().take(5).map(|k| k.1).collect();
+            if !told.is_empty() {
+                lines.push(format!("They know {}", told.join(", ")));
+            }
+        }
+        hearth_protocol::BirthChoice { title, lines }
+    }
+
     /// A player hands one of the people what it holds: a gift (V2.1 §8.7), taken into their
     /// keeping — or given back, when they have no room or the player is no one among them.
     /// Words for the player.
@@ -768,6 +931,51 @@ impl PeopleNear {
             .lessons_for(player, crafts, &self.species, eye, yaw, &now, dt)
     }
 
+    /// The camps of the bands lived in full whose people keep a fire there (V2.1 §15.3; H8):
+    /// where each is, whether any of its people are about it to tend the fire, and its beds —
+    /// one a household, of furs where they know fur bedding — where its era has them.
+    pub fn camps(&self) -> Vec<crate::workshop::CampKept> {
+        let knows = |b: &hearth_people::Band, key: &str| {
+            b.culture
+                .knowledge
+                .iter()
+                .any(|k| k.rsplit(':').next() == Some(key))
+        };
+        let mut out = Vec::new();
+        for b in &self.live.bands {
+            if b.tier != hearth_people::person::Tier::Full {
+                continue;
+            }
+            let (Some(ways), Some(at)) = (self.live.era.of(&b.species), b.camp) else {
+                continue;
+            };
+            if !ways.hearth || !knows(b, "fire_keeping") {
+                continue;
+            }
+            let members: Vec<&hearth_people::Person> =
+                self.live.members(b.id).filter(|p| p.alive()).collect();
+            if members.is_empty() {
+                continue;
+            }
+            let tend = members.iter().any(|p| (p.place.pos - at).length() < 20.0);
+            let mut households: Vec<u64> =
+                members.iter().filter_map(|p| p.social.household).collect();
+            households.sort_unstable();
+            households.dedup();
+            out.push(crate::workshop::CampKept {
+                at,
+                tend,
+                beds: if ways.bedding {
+                    households.len().clamp(1, 10) as u8
+                } else {
+                    0
+                },
+                fur: knows(b, "fur_bedding"),
+            });
+        }
+        out
+    }
+
     /// The people in full about a player, as that player's client draws them.
     pub fn views(&self, near: DVec3) -> Vec<PersonView> {
         self.now.map_or_else(Vec::new, |now| {
@@ -889,10 +1097,18 @@ pub fn looks(v: &PersonView) -> hearth_character::Appearance {
     if v.grown < 0.12 {
         a.hair = hearth_character::HairStyle::ShortCrop;
     }
-    if v.plan == BodyPlan::Australopith {
-        a.hair = hearth_character::HairStyle::ShortCrop;
-        a.facial_hair = hearth_character::FacialHair::None;
-        a.build = 0.7;
+    match v.plan {
+        BodyPlan::Australopith => {
+            a.hair = hearth_character::HairStyle::ShortCrop;
+            a.facial_hair = hearth_character::FacialHair::None;
+            a.build = 0.7;
+        }
+        BodyPlan::Erectus => a.plan = hearth_character::Plan::Erectus,
+        BodyPlan::Neanderthal => {
+            a.plan = hearth_character::Plan::Neanderthal;
+            a.build = (a.build + 0.25).min(1.0);
+        }
+        BodyPlan::Modern => {}
     }
     a
 }
@@ -1073,6 +1289,11 @@ fn found_family(
     }
 }
 
+/// Within this of where one died is "near" (m).
+const NEAR_DEATH_M: f64 = 2_000.0;
+/// The most offered to live on as.
+const OTHERS_MOST: usize = 48;
+
 /// What the player's own record adds to the story of their life.
 pub struct LifeFacts<'a> {
     pub name: &'a str,
@@ -1082,6 +1303,8 @@ pub struct LifeFacts<'a> {
     pub known: Vec<String>,
     /// Where they died.
     pub at: DVec3,
+    /// Who the world lets them live on as (Addendum B §2.3).
+    pub scope: hearth_save::InhabitScope,
 }
 
 /// Who another is to a person, in words ("your sister", "a man of your band"), and how near:
@@ -1121,9 +1344,9 @@ impl PeopleNear {
     /// band, and of others near where they died — told only by who they are to the dead.
     pub fn life_story(&self, facts: &LifeFacts<'_>) -> hearth_protocol::Story {
         let mut lines = Vec::new();
-        let mut kin = Vec::new();
+        let mut others = Vec::new();
         let Some(now) = self.now else {
-            return hearth_protocol::Story { lines, kin };
+            return hearth_protocol::Story { lines, others };
         };
         let name = if facts.name.trim().is_empty() {
             "You".to_owned()
@@ -1180,35 +1403,7 @@ impl PeopleNear {
             if mourners > 0 {
                 lines.push(format!("{mourners} of your people mourn you."));
             }
-            // Who could live on: the grown and living near, of the player's kind.
-            let maturity = |q: &hearth_people::Person| {
-                self.species
-                    .get(&q.species)
-                    .map_or(18.0, |sp| sp.life.maturity_years as f64)
-            };
-            let mut near: Vec<(u8, f64, u64, String)> = self
-                .live
-                .persons
-                .iter()
-                .filter(|q| {
-                    q.alive() && q.player.is_none() && q.tier == hearth_people::person::Tier::Full
-                })
-                .filter(|q| q.species == p.species && q.age(&now) >= maturity(q))
-                .filter(|q| {
-                    q.social.band == p.social.band || (q.place.pos - facts.at).length() < 300.0
-                })
-                .map(|q| {
-                    let (rank, words) = kin_words(p, q);
-                    let age = q.age(&now).floor();
-                    (rank, -age, q.id, format!("{words}, {age:.0} years"))
-                })
-                .collect();
-            near.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)));
-            kin = near
-                .into_iter()
-                .take(6)
-                .map(|(_, _, id, w)| (id, w))
-                .collect();
+            others = self.others(p, facts.at, &now, facts.scope, OTHERS_MOST);
         }
         if !facts.known.is_empty() {
             let mut known = facts.known.clone();
@@ -1225,7 +1420,139 @@ impl PeopleNear {
             "You walked {:.1} km in all, as far as {:.1} km from where your life began.",
             facts.walked_km, facts.farthest_km
         ));
-        hearth_protocol::Story { lines, kin }
+        hearth_protocol::Story { lines, others }
+    }
+
+    /// Those one who has died (`dead`, at `at`) may live on as (Addendum B §2.2–2.3): living
+    /// people of the world lived in full or as households, never another player's, nor anyone
+    /// fighting, fleeing, badly hurt and dying, or just giving birth; as the world's scope allows
+    /// — anyone, kin, group and region, or kin only. Their family first, then their group, then
+    /// those near, children among them (their childhood lived on from their age).
+    pub fn others(
+        &self,
+        dead: &hearth_people::Person,
+        at: DVec3,
+        now: &Now,
+        scope: hearth_save::InhabitScope,
+        most: usize,
+    ) -> Vec<hearth_protocol::Other> {
+        use hearth_people::person::Tier;
+        use hearth_save::InhabitScope;
+        if scope == InhabitScope::None {
+            return Vec::new();
+        }
+        let fighting: Vec<u64> = self.live.quarrels.iter().flat_map(|q| [q.a, q.b]).collect();
+        let not_now = |q: &hearth_people::Person| {
+            fighting.contains(&q.id)
+                || matches!(
+                    q.mind.doing,
+                    hearth_people::Doing::Fleeing { .. } | hearth_people::Doing::Mobbing { .. }
+                )
+                || q.body
+                    .injuries
+                    .iter()
+                    .any(|i| (i.severity >= 0.6 && i.healed < 0.5) || i.bleeding_ml_min > 20.0)
+                || q.life.events.iter().any(|e| {
+                    matches!(e.event, hearth_people::person::Event::Bore { .. })
+                        && now.day - e.day < 1.0
+                })
+        };
+        let mut found: Vec<(u8, f64, u64, hearth_protocol::Other)> = self
+            .live
+            .persons
+            .iter()
+            .filter(|q| q.alive() && q.player.is_none() && q.id != dead.id)
+            .filter(|q| matches!(q.tier, Tier::Full | Tier::Household))
+            .filter(|q| !not_now(q))
+            .filter_map(|q| {
+                let family = hearth_people::kin::kin_of(&self.live, dead.id, q.id).is_some()
+                    || dead.social.bond == Some(q.id);
+                let group = q.social.band == dead.social.band;
+                let d = {
+                    let dx = q.place.pos.x - at.x;
+                    let dz = q.place.pos.z - at.z;
+                    dx.hypot(dz)
+                };
+                let near = d <= NEAR_DEATH_M;
+                let region = d <= hearth_people::sim::HOUSEHOLD_M;
+                let allowed = match scope {
+                    InhabitScope::Anyone => true,
+                    InhabitScope::KinGroupRegion => family || group || region,
+                    InhabitScope::KinOnly => family,
+                    InhabitScope::None => false,
+                };
+                if !allowed {
+                    return None;
+                }
+                let maturity = self
+                    .species
+                    .get(&q.species)
+                    .map_or(18.0, |sp| sp.life.maturity_years as f64);
+                let age = q.age(now);
+                let child = age < maturity;
+                let (rank, who) = kin_words(dead, q);
+                let years = age.floor() as u32;
+                let words = if family || group {
+                    format!("{who}, {years} years")
+                } else {
+                    // A stranger, by their household.
+                    let household = q
+                        .social
+                        .household
+                        .map_or(1, |h| self.live.household_of(h).len());
+                    let kind = match (child, q.life.female) {
+                        (true, true) => "a girl",
+                        (true, false) => "a boy",
+                        (false, true) => "a woman",
+                        (false, false) => "a man",
+                    };
+                    format!(
+                        "{kind} of {years}, of a household of {household} {}",
+                        if near { "near" } else { "away" }
+                    )
+                };
+                let order = if family {
+                    rank
+                } else if group {
+                    4
+                } else if near {
+                    5
+                } else {
+                    6
+                };
+                Some((
+                    order,
+                    d,
+                    q.id,
+                    hearth_protocol::Other {
+                        id: q.id,
+                        words,
+                        family,
+                        group,
+                        near,
+                        child,
+                    },
+                ))
+            })
+            .collect();
+        found.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)));
+        found.into_iter().take(most).map(|(_, _, _, o)| o).collect()
+    }
+
+    /// Whether a dead player may live on as a person now (see [`Self::others`]).
+    pub fn may_live_as(
+        &self,
+        player: u64,
+        id: u64,
+        at: DVec3,
+        scope: hearth_save::InhabitScope,
+    ) -> bool {
+        let (Some(now), Some(me)) = (self.now, self.live.player_person(player)) else {
+            return false;
+        };
+        self.others(me, at, &now, scope, usize::MAX)
+            .iter()
+            .any(|o| o.id == id)
     }
 
     /// Who the player is, having taken up a person's life (Addendum B §2): the briefing.

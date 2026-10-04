@@ -10,8 +10,16 @@ Observer as a birth), R3 (births in multiplayer).*
 family set down in the world as one of Wild Earth's families with the player's own person among
 them, and the childhood — the moments of `humans/life/moments.ron` at the world's pace, the years
 between as a time-lapse, skipping ahead with N and Ctrl+N, the child safe, carried, kept and sized
-to its age, and learning its family's ways. The two to four births to choose from come with the
-eras' peoples (H8); until then the one birth is the place's.
+to its age, and learning its family's ways.
+
+**Built in H8 (D196–D197, D200):** in an era's world, the recent past about the place lived as
+households for a century and two to four of them offered (told by who they are, never how they
+look), the child the meiosis of the chosen parents' genomes and a person of their band, their body
+their species' (an *erectus* or a Neanderthal plan); where none lives about the place, the
+nearest anywhere. After death, being born again as a baby about where one died or a place picked
+on the globe, and living on as a child, its childhood taken up at its age ([eras.md](eras.md)).
+Wild Earth keeps one birth, the place's family, its families as many as the players a world
+expects.
 
 This is the single-player birth. In a shared world the clock cannot run fast for one player:
 friends may **start together** and share a childhood, and a player joining a running world lives

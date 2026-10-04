@@ -1,4 +1,13 @@
-// Eras (v2 §17.1). Only Wild Earth is playable now; the others are shown as "coming later".
+// Eras (v2 §17.1; V2.1 §15.3 makes them era profiles). Wild Earth and the three Paleolithic eras
+// are playable (H8); the later eras come with their technology (H11–H13) and are shown as "coming
+// later". An era's peoples are run through deep time from the first of them to its date (H8,
+// D191): `peoples` says who they are and how their bands live then — their sizes, what they may
+// come to know (`reach`: every technique of the knowledge graph's eras up to it, each no earlier
+// than the record dates it; or `repertoire`; or, with neither, their species profile's), whether
+// they keep a fire at camp and beds about it, their seasonal round (where their camps go, season
+// by season) and their yearly gathering (D199). Sea level and temperature are the era's against
+// today's (the deep-time layer's curve at its date; the world's terrain is drawn at today's
+// climate, D195).
 (
     schema: 1,
     entries: [
@@ -9,25 +18,65 @@
             systems: ["geology", "seasons", "flora", "fauna", "physiology", "processes", "knowledge", "building"],
         ),
         (
-            id: "last_glacial_maximum", name: "Ice Age", order: 1, available: false, years_bp: 21000,
-            description: "The last glacial maximum: ice sheets, land bridges, mammoths and cave bears, and modern humans with Upper Paleolithic skills.",
-            sea_level_offset_m: -120, temperature_offset_c: -6,
-            status: Planned,
+            id: "lower_paleolithic", name: "Lower Paleolithic", order: 1, available: true, years_bp: 400000,
+            description: "Four hundred thousand years ago: bands of Homo erectus range widely over open country and its woods and shores, making hand axes and wooden spears, keeping fire taken from wildfires and carried from camp to camp, and speaking a simple proto-language of a few words and many gestures.",
+            way_of_life: "Small bands of fifteen to forty, few and far apart, ranging widely; hand axes, choppers and wooden spears; fire kept and carried; no burials, no ornament.",
+            species: ["homo_erectus"],
+            knowledge_baseline: ["stone_as_hammer", "sharp_flake", "flake_cutting", "digging_stick", "throwing_stones", "carrying_bundle"],
+            peoples: [
+                (species: "homo_erectus", band_size: (15, 40), hearth: true),
+            ],
+            systems: ["geology", "seasons", "flora", "fauna", "physiology", "processes", "knowledge", "building"],
+            realism_source: "Acheulean sites (Boxgrove, Schöningen, Terra Amata, Gesher Benot Ya'aqov); Gamble 1999; review",
+            uncertain: true,
         ),
         (
-            id: "neolithic_dawn", name: "Neolithic Dawn", order: 2, available: false, years_bp: 10000,
+            id: "middle_paleolithic", name: "Middle Paleolithic", order: 2, available: true, years_bp: 45000,
+            sea_level_offset_m: -70, temperature_offset_c: -3.5,
+            description: "Forty-five thousand years ago, in the cold of the last glacial: Neanderthals in the northern realms, small close-knit bands making fire, hafting spears, caring for their injured and burying some of their dead; and in the warmer south Homo sapiens, spreading out of its cradle, so that here and there the two meet.",
+            way_of_life: "Small bands of ten to thirty Neanderthals, wintering in sheltered valleys and following the herds up in summer; bands of twenty-five to fifty of our kind; fire made at will; prepared cores, scrapers and hafted spears; a little ochre.",
+            species: ["homo_neanderthalensis", "homo_sapiens"],
+            knowledge_baseline: ["stone_as_hammer", "sharp_flake", "flake_cutting", "digging_stick", "throwing_stones", "carrying_bundle", "fire_keeping"],
+            peoples: [
+                (species: "homo_neanderthalensis", band_size: (10, 30), hearth: true, bedding: true,
+                 round: [(season: Winter, toward: Shelter), (season: Summer, toward: Uplands)]),
+                (species: "homo_sapiens", band_size: (25, 50), reach: 2, hearth: true, bedding: true,
+                 round: [(season: Winter, toward: Shelter), (season: Summer, toward: Water)]),
+            ],
+            systems: ["geology", "seasons", "flora", "fauna", "physiology", "processes", "knowledge", "building"],
+            realism_source: "Neanderthal settlement (Abric Romaní, Kebara); the dispersal of H. sapiens 60–45 thousand years ago (Bae et al. 2017); Higham et al. 2014 (the end of the Neanderthals); review",
+            uncertain: true,
+        ),
+        (
+            id: "upper_paleolithic", name: "Upper Paleolithic", order: 3, available: true, years_bp: 25000,
+            sea_level_offset_m: -121, temperature_offset_c: -6,
+            description: "Twenty-five thousand years ago, nearing the Last Glacial Maximum: ice sheets, land bridges where the sea has fallen, and Homo sapiens across the world in bands of a few families, linked by marriage and exchange into regional peoples that gather each year — with full language, sewn furs, needles and nets, music, ornament and art.",
+            way_of_life: "Bands of twenty-five to fifty within peoples of about fifteen hundred, moving camp with the seasons and gathering every autumn; blades, bone and antler, eyed needles and sewn clothing, nets and snares, spear-throwers yet to come; shells and fine stone passed hand to hand over hundreds of kilometres.",
+            species: ["homo_sapiens"],
+            knowledge_baseline: ["stone_as_hammer", "sharp_flake", "flake_cutting", "digging_stick", "throwing_stones", "carrying_bundle", "fire_keeping"],
+            peoples: [
+                (species: "homo_sapiens", band_size: (25, 50), reach: 2, hearth: true, bedding: true,
+                 round: [(season: Winter, toward: Shelter), (season: Spring, toward: Water), (season: Summer, toward: Uplands), (season: Autumn, toward: Water)],
+                 aggregation: (season: Autumn, days: 20, reach_km: 60)),
+            ],
+            systems: ["geology", "seasons", "flora", "fauna", "physiology", "processes", "knowledge", "building"],
+            realism_source: "Upper Paleolithic aggregation sites (Conkey 1980 on Altamira); Gamble 1999; Kelly 2013 on residential moves; review",
+            uncertain: true,
+        ),
+        (
+            id: "neolithic_dawn", name: "Neolithic Dawn", order: 4, available: false, years_bp: 10000,
             description: "The first farming villages and the domestication of plants and animals.",
             sea_level_offset_m: -40, temperature_offset_c: -0.5, status: Planned,
         ),
-        (id: "bronze_age", name: "Bronze Age", order: 3, available: false, years_bp: 4000,
+        (id: "bronze_age", name: "Bronze Age", order: 5, available: false, years_bp: 4000,
          description: "Towns, trade in copper and tin, the wheel and the sail.", status: Planned),
-        (id: "classical", name: "Classical Antiquity", order: 4, available: false, years_bp: 2000,
+        (id: "classical", name: "Classical Antiquity", order: 6, available: false, years_bp: 2000,
          description: "Iron, concrete, aqueducts and seafaring empires.", status: Planned),
-        (id: "medieval", name: "Middle Ages", order: 5, available: false, years_bp: 800,
+        (id: "medieval", name: "Middle Ages", order: 7, available: false, years_bp: 800,
          description: "Windmills, the compass and the mechanical clock.", status: Planned),
-        (id: "industrial", name: "Industrial Revolution", order: 6, available: false, years_bp: 150,
+        (id: "industrial", name: "Industrial Revolution", order: 8, available: false, years_bp: 150,
          description: "Steam, railways and the telegraph.", status: Planned),
-        (id: "modern", name: "Modern World", order: 7, available: false, years_bp: 0,
+        (id: "modern", name: "Modern World", order: 9, available: false, years_bp: 0,
          description: "Electricity, flight and computers.", status: Planned),
     ],
 )

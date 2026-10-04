@@ -215,6 +215,11 @@ pub struct ShotSpec {
     /// A player's household set down where the camera stands (H3): the player's age, the
     /// household's people living a while (`run`) as the game lives them.
     pub born: Option<f64>,
+    /// An era's world (H8, `era=upper_paleolithic`): its deep past run, the recent past lived
+    /// where its peoples live about the camera's place, a player born into a household there
+    /// (`born=` years ago, else at coming of age), its bands living a while (`run`) and keeping
+    /// their camps, the camera at the household's camp.
+    pub era: Option<String>,
     /// Seconds the animals live on before the shot with the camera as a person among them
     /// (they see it, and flee it).
     pub run: Option<f64>,
@@ -337,6 +342,7 @@ impl Default for ShotSpec {
             lying: Vec::new(),
             seek: None,
             born: None,
+            era: None,
             run: None,
             near_water: false,
             yaw_given: false,
@@ -490,6 +496,11 @@ impl ShotSpec {
                 "born" => {
                     spec.fauna = true;
                     spec.born = Some(v.parse()?);
+                }
+                // `era=middle_paleolithic`: the era's people about the place, as a life finds them.
+                "era" => {
+                    spec.fauna = true;
+                    spec.era = Some(v.to_owned());
                 }
                 // `animal=red_deer:adult:m:graze@20:-3:90` (species, stage, sex, what it does @
                 // metres ahead : to the right : facing in degrees from the camera's : above the
@@ -645,7 +656,7 @@ impl ShotSpec {
         }
         // Seeking a group, the camera stands a little above the ground, looking at it through
         // a longer lens.
-        if spec.seek.is_some() || spec.born.is_some() {
+        if spec.seek.is_some() || spec.born.is_some() || spec.era.is_some() {
             if !given.iter().any(|k| k == "above") {
                 spec.above = 4.0;
             }
@@ -904,10 +915,107 @@ pub fn render_shot(
     let mut fauna = None;
     // A hominin group sought: where it is.
     let mut hominins_at: Option<DVec3> = None;
+    // An era's people about the place, a life born among them (H8).
+    let mut era_people: Option<(crate::people::PeopleNear, f64)> = None;
     'seek: {
         if spec.fauna {
             let made = std::time::Instant::now();
-            let mut f = crate::fauna::Fauna::new(lw, spec.seed, 0.0, year_frac, None, false);
+            let content = lw.content.clone();
+            let era = spec
+                .era
+                .as_deref()
+                .and_then(|e| crate::eras::era_of(&content, e))
+                .filter(|e| !e.peoples.is_empty())
+                .cloned();
+            if spec.era.is_some() && era.is_none() {
+                anyhow::bail!("era={:?}: no era with peoples", spec.era);
+            }
+            let graph = hearth_craft::Graph::from_content(&content);
+            let history = era.as_ref().and_then(|e| {
+                crate::eras::history(lw, &content, &graph, e, spec.seed, None, &|_| {})
+            });
+            let peoples = crate::eras::peoples(
+                &content,
+                era.as_ref()
+                    .or_else(|| crate::eras::era_of(&content, crate::eras::WILD_EARTH)),
+            );
+            let mut f = crate::fauna::Fauna::new(
+                lw,
+                spec.seed,
+                0.0,
+                year_frac,
+                None,
+                false,
+                &peoples,
+                history
+                    .clone()
+                    .map(|h| h as std::sync::Arc<dyn hearth_fauna::ecology::Peopling>),
+                1,
+            );
+            if let (Some(e), Some(h)) = (&era, &history) {
+                // Where its peoples live well about the camera's place; the recent past lived
+                // there and a life born into one of its households, the camera to its camp.
+                let place = crate::eras::spawn_among(h, e, glam::DVec2::new(sx, sz));
+                f.ensure_about(lw, DVec3::new(place.x, 0.0, place.y));
+                let body = hearth_body::BodyConfig::with_rates(
+                    &content,
+                    hearth_body::Rates::authentic(),
+                    hearth_content::TimeScales::defaults(&content.time),
+                );
+                let items = hearth_items::Items::from_content(&content);
+                let genetics = hearth_people::Genetics::from_content(&content)
+                    .ok_or_else(|| anyhow::anyhow!("no genetics"))?;
+                let mut agents =
+                    crate::people::PeopleNear::new(&content, &graph, &body, spec.seed, None);
+                agents.live.history = Some(h.clone());
+                // The people's clock: the shot's season at day 200 years in.
+                let year_days = 32.0;
+                let day = 200.0 * year_days + spec.hour / 24.0;
+                let calendar = hearth_env::Calendar {
+                    year_offset: (year_frac - (day / year_days).fract()).rem_euclid(1.0),
+                    ..hearth_env::Calendar::new(1, 8, 23.44)
+                };
+                agents.live.era =
+                    crate::eras::ways(Some(e), &calendar, lw.generator.terrain.clone());
+                let age = spec
+                    .born
+                    .unwrap_or_else(|| crate::born::coming_of_age_of(&content, "homo_sapiens"));
+                let planet = *lw.map.planet();
+                let camp = agents
+                    .born_in_era(
+                        &mut f.eco,
+                        &graph,
+                        &items,
+                        &genetics,
+                        &|p: DVec3| planet.latitude_deg(p.z),
+                        place,
+                        age,
+                        hearth_people::Now {
+                            tick: 0,
+                            hour: spec.hour as f32,
+                            day,
+                            year_days,
+                        },
+                    )
+                    .ok_or_else(|| anyhow::anyhow!("era={:?}: no household", spec.era))?;
+                f.ensure_about(lw, camp);
+                log::info!(
+                    "{}: {} bands lived a century about the place; born at {:.0}, {:.0}",
+                    e.name,
+                    agents.live.bands.len(),
+                    camp.x,
+                    camp.z
+                );
+                let centre = DVec3::new(camp.x, lw.surface_y(camp.x, camp.z) + 0.8, camp.z);
+                let h = Herd::new(vec![centre]);
+                let (eye, yaw) = h.first_view(lw, spec.yaw, spec.above);
+                (sx, sz) = (eye.x, eye.z);
+                seen = Some((eye, yaw, h.mid));
+                hominins_at = Some(centre);
+                era_people = Some((agents, day));
+                fauna = Some(f);
+                break 'seek;
+            }
             f.ensure_about(lw, DVec3::new(sx, 0.0, sz));
             log::info!(
                 "{} regions of populations made in {:.2}s",
@@ -1520,7 +1628,15 @@ pub fn render_shot(
         }
         if let Some(centre) = hominins_at {
             // The group's agents drawn out as the game draws them, living their day a while.
-            let (views, eye) = hominins_living(spec, lw, f, centre, &camera, year_frac as f32);
+            let (views, eye) = hominins_living(
+                spec,
+                lw,
+                f,
+                centre,
+                &camera,
+                year_frac as f32,
+                era_people.take(),
+            );
             if let Some((eye, yaw, pitch)) = eye {
                 camera.pos = eye;
                 camera.yaw = yaw;
@@ -2317,6 +2433,7 @@ fn hominins_living(
     centre: DVec3,
     camera: &hearth_render::camera::Camera,
     year_frac: f32,
+    era: Option<(crate::people::PeopleNear, f64)>,
 ) -> Living {
     let content = lw.content.clone();
     let items = hearth_items::Items::from_content(&content);
@@ -2327,7 +2444,14 @@ fn hominins_living(
         hearth_body::Rates::authentic(),
         hearth_content::TimeScales::defaults(&content.time),
     );
-    let mut agents = crate::people::PeopleNear::new(&content, &graph, &body, spec.seed, None);
+    // An era's people come with their recent past and the life born among them (H8).
+    let (mut agents, day0) = match era {
+        Some((a, day)) => (a, day),
+        None => (
+            crate::people::PeopleNear::new(&content, &graph, &body, spec.seed, None),
+            0.0,
+        ),
+    };
     let mut lying = hearth_items::WorldItems::default();
     let mut changed = Vec::new();
     let hour = spec.hour as f32;
@@ -2374,11 +2498,39 @@ fn hominins_living(
             hearth_people::Now {
                 tick: t,
                 hour,
-                day: t as f64 * 0.05 / 2880.0,
+                day: day0 + t as f64 * 0.05 / 2880.0,
                 year_days: 32.0,
             },
             0.05,
         );
+    }
+    // Their camps as the game keeps them: the fire burning, the beds about it.
+    let camps = agents.camps();
+    if !camps.is_empty() {
+        let reg = lw.reg.clone();
+        let fire = reg.parse_state("hearth:campfire[fire=high]").ok();
+        let grass = reg.parse_state("hearth:grass_bed").ok();
+        let fur = reg.parse_state("hearth:fur_bed").ok();
+        for c in &camps {
+            let Some(layout) = crate::workshop::camp_layout(lw, c) else {
+                continue;
+            };
+            let bed = if c.fur { fur } else { grass };
+            let trodden = layout
+                .trodden
+                .into_iter()
+                .map(|p| (p, Some(hearth_world::BlockStateId::AIR)));
+            let laid = trodden
+                .chain(std::iter::once((layout.fire, fire)))
+                .chain(layout.beds.into_iter().map(|p| (p, bed)));
+            for (p, state) in laid {
+                if let Some(state) = state {
+                    lw.map.set_block(p, state, &reg);
+                    lw.light.block_changed(&mut lw.map, &reg, p);
+                }
+            }
+        }
+        log::info!("  {} camps laid", camps.len());
     }
     let views = agents.views(centre);
     log::info!(

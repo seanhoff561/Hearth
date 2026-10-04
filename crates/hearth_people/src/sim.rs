@@ -198,6 +198,15 @@ pub struct People {
     pub said: Vec<crate::speech::Said>,
     /// The day the long dead were last pruned to stubs.
     pub(crate) pruned_to: f64,
+    /// The world's deep past (H8): where the era's peoples live, their lineages, their pools.
+    pub history: Option<std::sync::Arc<crate::history::History>>,
+    /// The lineages' cultures and languages made so far (D193).
+    pub(crate) lineage_cultures: std::collections::BTreeMap<u32, crate::band::Culture>,
+    /// How the era's peoples live through the year, and the country they move in (H8; set by
+    /// the world, not saved).
+    pub era: crate::rounds::EraWays,
+    /// Each band's knowers as last counted (a cache of the yearly learning).
+    pub(crate) knower_counts: crate::learning::KnowerCounts,
 }
 
 /// The horizontal distance between two places on the planet (wrapping in x).
@@ -323,7 +332,74 @@ impl People {
             quarrels: Vec::new(),
             said: Vec::new(),
             pruned_to: 0.0,
+            history: None,
+            lineage_cultures: std::collections::BTreeMap::new(),
+            era: Default::default(),
+            knower_counts: Default::default(),
         }
+    }
+
+    /// Where a band of a species living about `home` comes from in deep time, if the world has
+    /// a deep past with that people there: its knowledge (with the processes it opens), its
+    /// lineage's culture and language, and its ancestry.
+    pub fn from_deep_time(
+        &mut self,
+        sp: &Species,
+        graph: &Graph,
+        home: DVec2,
+    ) -> Option<(
+        Vec<String>,
+        Vec<String>,
+        crate::band::Culture,
+        crate::band::Ancestry,
+    )> {
+        let h = self.history.clone()?;
+        let k = h.species_index(&sp.id)?;
+        let deme = *h.deme_at(k, home.x, home.y)?;
+        let mut knowledge: Vec<String> = h
+            .known(deme.knows())
+            .into_iter()
+            .filter_map(|id| {
+                graph
+                    .node(&id)
+                    .or_else(|| graph.node(id.rsplit(':').next().unwrap_or(&id)))
+                    .map(|n| n.id.clone())
+            })
+            .collect();
+        knowledge.sort();
+        knowledge.dedup();
+        let mut techniques: Vec<String> = knowledge
+            .iter()
+            .filter_map(|id| graph.node(id))
+            .flat_map(|n| n.enables.iter().cloned())
+            .collect();
+        techniques.sort();
+        techniques.dedup();
+        let culture = match self.lineage_cultures.get(&deme.lineage) {
+            Some(c) => c.clone(),
+            None => {
+                let c =
+                    crate::history::replay::culture_of(&h, deme.lineage, sp, h.branch_years, true)
+                        .unwrap_or_default();
+                self.lineage_cultures.insert(deme.lineage, c.clone());
+                c
+            }
+        };
+        let land = h
+            .land
+            .get(deme.cell as usize)
+            .copied()
+            .unwrap_or(1.0)
+            .max(0.05) as f64;
+        let km2 = (h.cell_m / 1000.0).powi(2) * land;
+        let ancestry = crate::band::Ancestry {
+            lineage: deme.lineage,
+            sun: deme.pool.sun,
+            drift: deme.pool.drift.to_vec(),
+            archaic: deme.pool.archaic,
+            density: (deme.people as f64 / km2) as f32,
+        };
+        Some((knowledge, techniques, culture, ancestry))
     }
 
     /// A person by id.
@@ -525,7 +601,7 @@ impl People {
     /// Founds a band of a species at a place: persons of the ages and sexes its numbers say, the
     /// young and half-grown with mothers among its grown females. Its index.
     #[allow(clippy::too_many_arguments)]
-    fn found(
+    pub(crate) fn found(
         &mut self,
         sp: &Species,
         graph: &Graph,
@@ -536,7 +612,13 @@ impl People {
         cold: bool,
         now: Now,
     ) -> usize {
-        let (knowledge, techniques) = sp.ways(cold);
+        // An era's people know what their people of deep time knew there, and carry its
+        // culture, language and ancestry (H8); else their species' ways.
+        let deep = self.from_deep_time(sp, graph, home);
+        let (knowledge, techniques) = match &deep {
+            Some((k, t, _, _)) => (k.clone(), t.clone()),
+            None => sp.ways(cold),
+        };
         let mut rng = band_stream(self.seed, id);
         let maturity = sp.life.maturity_years as f64;
         let prime = (sp.life.adult_death_years.0 as f64).max(maturity + 5.0);
@@ -572,10 +654,18 @@ impl People {
             council: None,
             weighed: 0.0,
             guests: Vec::new(),
+            deep: None,
+            round: Default::default(),
             rng,
         };
         self.bands.push(band);
         let bi = self.bands.len() - 1;
+        if let Some((_, _, mut culture, ancestry)) = deep {
+            culture.knowledge = self.bands[bi].culture.knowledge.clone();
+            culture.techniques = self.bands[bi].culture.techniques.clone();
+            self.bands[bi].culture = culture;
+            self.bands[bi].deep = Some(ancestry);
+        }
         self.enculture(bi, sp, now.day);
         for (age, female) in ages {
             let born = now.day - age * now.year_days;
@@ -623,6 +713,14 @@ impl People {
     /// Its band's language names each of a band's living members who has no name yet (not a
     /// player's person), on a stream of its own.
     pub(crate) fn name_members(&mut self, bi: usize, sp: &Species) {
+        // Only where there is someone to name (the language is cloned for it).
+        let unnamed = self.band_members(bi).into_iter().any(|i| {
+            let p = &self.persons[i];
+            p.name.is_empty() && p.player.is_none()
+        });
+        if !unnamed {
+            return;
+        }
         let (Some(d), Some(l)) = (&sp.language, self.bands[bi].culture.language.clone()) else {
             return;
         };
@@ -684,6 +782,10 @@ impl People {
                 id.and_then(|id| self.get(id))
                     .and_then(|q| q.genome.clone())
             };
+            let (sun, drift) = self.bands[bi]
+                .deep
+                .as_ref()
+                .map_or((sun, Vec::new()), |d| (d.sun, d.drift.clone()));
             let mut mother = genome(self.persons[i].life.mother);
             let mut father = genome(self.persons[i].life.father);
             // A forebear's children (founders sharing a mother kept as a stub) are brothers and
@@ -693,11 +795,12 @@ impl People {
                 && let Some(m) = self.persons[i].life.mother
                 && self.get(m).is_some_and(|q| q.life.stub)
             {
-                let (fm, ff) = self.forebear_genomes(genetics, &self.persons[i].species, m, sun);
+                let (fm, ff) =
+                    self.forebear_genomes(genetics, &self.persons[i].species, m, sun, &drift);
                 mother = fm;
                 father = father.or(ff);
             }
-            self.persons[i].inherit(genetics, mother.as_ref(), father.as_ref(), sun);
+            self.persons[i].inherit_in(genetics, mother.as_ref(), father.as_ref(), sun, &drift);
         }
     }
 
@@ -710,6 +813,7 @@ impl People {
         species: &str,
         mother: PersonId,
         sun: f32,
+        drift: &[f32],
     ) -> (Option<crate::genome::Genome>, Option<crate::genome::Genome>) {
         let Some(pool) = genetics.pool(species) else {
             return (None, None);
@@ -718,8 +822,8 @@ impl People {
             self.seed ^ FOREBEARS_STREAM ^ 0x6e,
             mother,
         ));
-        let m = genetics.founder(pool, sun, true, &mut rng);
-        let f = genetics.founder(pool, sun, false, &mut rng);
+        let m = genetics.founder_in(pool, sun, drift, true, &mut rng);
+        let f = genetics.founder_in(pool, sun, drift, false, &mut rng);
         (Some(m), Some(f))
     }
 
@@ -1289,6 +1393,10 @@ impl People {
         }
         self.bands[bi].tier = Tier::Full;
         self.bands[bi].dormant_since = None;
+        // A band that keeps camp has it where it comes into full: its camp's own ground.
+        if self.bands[bi].camp.is_some() || sp.does(Behavior::KeepCamp) {
+            self.bands[bi].camp = Some(here);
+        }
         self.settle_households(bi);
         self.acquaint(bi, now.day);
         self.onto_the_ground(bi, &*world, here);

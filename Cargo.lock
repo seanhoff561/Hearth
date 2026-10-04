@@ -1118,10 +1118,12 @@ dependencies = [
  "hearth_fauna",
  "hearth_items",
  "hearth_math",
+ "hearth_worldgen",
  "log",
  "rayon",
  "serde",
  "serde_json",
+ "zstd",
 ]
 
 [[package]]

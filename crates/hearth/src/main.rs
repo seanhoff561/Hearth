@@ -15,6 +15,8 @@ COMMANDS:
     content uncertain          List data entries marked for realism review
     content status             Implemented/planned counts per content domain
     bench [OPTIONS]            Rendering benchmark (see `hearth bench --help`)
+    history [--seed N] [--era ID] [--size NAME] [--all]
+                               Run a world's deep time and print its peoples and chronicle
 
 OPTIONS:
     --game-dir <PATH>          Use PATH as the game directory (options, saves, screenshots)
@@ -47,6 +49,9 @@ fn main() {
     let all: Vec<String> = std::env::args().skip(1).collect();
     if all.first().map(String::as_str) == Some("content") {
         std::process::exit(hearth::content_cli::run(&all[1..]));
+    }
+    if all.first().map(String::as_str) == Some("history") {
+        std::process::exit(hearth::history_cli::run(&all[1..]));
     }
     if all.first().map(String::as_str) == Some("bench") {
         let dirs = hearth::resolve_dirs(None);

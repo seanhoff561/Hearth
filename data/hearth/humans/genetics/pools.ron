@@ -26,5 +26,21 @@
             realism_source: "inferred from living African apes; review",
             uncertain: true,
         ),
+        (
+            id: "homo_erectus", name: "Homo erectus", status: Implemented, species: "homo_erectus", sunlight: true,
+            // Bare-skinned in the tropics' sun, dark there (Jablonski 2004 on the loss of body hair
+            // and the dark skin it called for); in deep time each people's pool comes toward its
+            // own sunlight as ours do (H8).
+            realism_source: "Jablonski 2004; review",
+            uncertain: true,
+        ),
+        (
+            id: "homo_neanderthalensis", name: "Neanderthal", status: Implemented, species: "homo_neanderthalensis", sunlight: true,
+            // A people of the weak northern sun, some of them pale and red-haired by an MC1R
+            // variant of their own (Lalueza-Fox et al. 2007).
+            loci: [(locus: "red_hair", frequencies: [0.93, 0.07])],
+            realism_source: "Lalueza-Fox et al. 2007 (MC1R); review",
+            uncertain: true,
+        ),
     ],
 )

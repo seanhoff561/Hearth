@@ -32,5 +32,44 @@
             realism_source: "Gurven and Kaplan 2007 (mortality); Howell 1979, Hill and Hurtado 1996, Blurton Jones 2016 (fertility, birth spacing); Marlowe 2005 (group size)",
             uncertain: true,
         ),
+        (
+            id: "erectus_foragers", name: "Homo erectus", status: Implemented, species: "homo_erectus",
+            // Estimates only: a forager's childhood dangers and a harder adult life — more die
+            // in their prime, few see sixty (the Dmanisi and Nariokotome remains; Caspari and Lee
+            // 2004's few old among archaic hominins): a life expectancy at birth near 21.
+            mortality: (a1: 0.45, b1: 1.1, a2: 0.02, a3: 0.0003, b3: 0.09),
+            fecundability: [(14.0, 0.02), (16.0, 0.07), (20.0, 0.1), (28.0, 0.09), (33.0, 0.05), (38.0, 0.012), (42.0, 0.002), (44.0, 0.0)],
+            // A faster life than ours (the Nariokotome boy's growth): weaned sooner, births
+            // closer, so that a people dying younger still replaces itself — unchecked, each
+            // generation about a sixth more, as the foragers' table (H8, D198).
+            nursing_years: 1.75, nursing_factor: 0.05,
+            twins: 0.012, maternal_death: 0.012,
+            pairing_age: (15.0, 17.0),
+            coming_of_age: 14.0,
+            // Thin on the ground; bands of fifteen to forty, splitting past forty-five.
+            density: 0.03, band_splits_at: 45,
+            crowding: (children: 0.5, conception: 3.0),
+            realism_source: "estimate from forager tables with higher adult mortality (Caspari and Lee 2004; Smith et al. on the Nariokotome boy's growth); review",
+            uncertain: true,
+        ),
+        (
+            id: "neanderthal_foragers", name: "Neanderthals", status: Implemented, species: "homo_neanderthalensis",
+            // Many dead as young adults (Trinkaus 1995), the injured cared for (Shanidar 1): a life
+            // expectancy at birth near 20. Births closer than ours by an earlier weaning (the
+            // Scladina child's at about 1.2 years, Austin et al. 2013), so that unchecked each
+            // generation is about a sixth more, as the foragers' table (H8, D198).
+            mortality: (a1: 0.42, b1: 1.1, a2: 0.025, a3: 0.0003, b3: 0.09),
+            fecundability: [(14.0, 0.02), (16.0, 0.07), (20.0, 0.1), (28.0, 0.09), (33.0, 0.05), (38.0, 0.012), (42.0, 0.002), (44.0, 0.0)],
+            nursing_years: 1.4, nursing_factor: 0.05,
+            twins: 0.012, maternal_death: 0.012,
+            pairing_age: (15.0, 17.0),
+            coming_of_age: 14.0,
+            // Fewer still to the square kilometre; bands of ten to thirty, splitting past
+            // thirty-five (El Sidrón's twelve; Vallverdú et al. 2010).
+            density: 0.025, band_splits_at: 35,
+            crowding: (children: 0.5, conception: 3.0),
+            realism_source: "Trinkaus 1995 (age at death); Austin et al. 2013 (weaning); Lalueza-Fox et al. 2011 (El Sidrón's group); review",
+            uncertain: true,
+        ),
     ],
 )

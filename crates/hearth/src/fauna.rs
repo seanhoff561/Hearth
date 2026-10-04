@@ -255,7 +255,10 @@ struct Saved {
 
 impl Fauna {
     /// The world's animals: as saved in `dir`, or new; the hominins in Africa alone when
-    /// `cradle` (the Hominin range setting).
+    /// `cradle` (the Hominin range setting); of the peoples, only the era's (H8) — those of
+    /// `peoples` (each population, and its bands' size where the era says), living where deep
+    /// time left them when `peopling` says.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         lw: &LocalWorld,
         seed: u64,
@@ -263,11 +266,16 @@ impl Fauna {
         years: f64,
         dir: Option<&Path>,
         cradle: bool,
+        peoples: &[(String, Option<(u16, u16)>)],
+        peopling: Option<Arc<dyn hearth_fauna::ecology::Peopling>>,
+        players: u8,
     ) -> Self {
         let mut catalog = Catalog::new(&lw.content);
         if cradle {
             catalog.hominins_in_cradle();
         }
+        catalog.peoples(peoples);
+        catalog.families_for(players);
         let catalog = Arc::new(catalog);
         let yields = TreeYields::new(&lw.generator, &lw.content);
         let land = GenLand {
@@ -277,6 +285,7 @@ impl Fauna {
             trees: &yields,
         };
         let mut eco = Ecology::new(catalog.clone(), seed, year_offset, &land);
+        eco.peopling = peopling;
         let mut at = years;
         if let Some(saved) = dir.and_then(|d| load(&d.join(FILE))) {
             eco.next_id = saved.next_id;

@@ -489,12 +489,36 @@ impl App {
     }
 
     /// Starts playing a world.
+    /// The eras a new world may be made in: (id, name, how its people live), playable ones in
+    /// their order.
+    fn eras(&self) -> Vec<(String, String, String)> {
+        let Some(c) = self.content.content.as_deref() else {
+            return Vec::new();
+        };
+        let mut eras: Vec<&hearth_content::schema::era::Era> =
+            c.eras.iter().filter(|e| e.available).collect();
+        eras.sort_by_key(|e| e.order);
+        eras.into_iter()
+            .map(|e| {
+                (
+                    e.id.clone(),
+                    e.name.clone(),
+                    e.way_of_life
+                        .clone()
+                        .unwrap_or_else(|| e.description.clone()),
+                )
+            })
+            .collect()
+    }
+
     fn play(
         &mut self,
         folder: &str,
         seed: u64,
         death_rules: hearth_save::DeathRules,
         knowledge: hearth_save::KnowledgeMode,
+        era: &str,
+        inhabit: hearth_save::InhabitScope,
     ) {
         let Some(run) = &mut self.running else {
             return;
@@ -509,6 +533,8 @@ impl App {
                 self.profiles.wish(),
                 death_rules,
                 knowledge,
+                era,
+                inhabit,
             ),
             &self.options,
             run.renderer.color_format(),
@@ -528,7 +554,17 @@ impl App {
                     seed,
                     death_rules,
                     knowledge,
-                } => self.play(&folder, seed, death_rules, knowledge),
+                    era,
+                    inhabit,
+                } => self.play(&folder, seed, death_rules, knowledge, &era, inhabit),
+                MenuAction::BeBorn { choice, female } => {
+                    if let Some(run) = &mut self.running {
+                        run.menus.close_all();
+                        if let Some(c) = &mut run.client {
+                            c.be_born(choice, female);
+                        }
+                    }
+                }
                 MenuAction::Knapped { process, aim, hand } => {
                     if let Some(run) = &mut self.running
                         && let Some(c) = &mut run.client
@@ -591,7 +627,22 @@ impl App {
                                 log::error!("could not archive the world: {e}");
                             }
                         }
-                        self.play(&spec.name, spec.seed, spec.death_rules, spec.knowledge);
+                        self.play(
+                            &spec.name,
+                            spec.seed,
+                            spec.death_rules,
+                            spec.knowledge,
+                            &spec.era,
+                            spec.inhabit,
+                        );
+                    }
+                }
+                MenuAction::BornAgain { elsewhere, female } => {
+                    if let Some(run) = &mut self.running {
+                        run.menus.close_all();
+                        if let Some(c) = &mut run.client {
+                            c.born_again(elsewhere, female);
+                        }
                     }
                 }
                 MenuAction::LiveOn(who) => {
@@ -734,6 +785,7 @@ impl App {
         let pad = self.pads.pad;
         let mut actions = Vec::new();
         let mut frame_dt = 0.0;
+        let eras = self.eras();
         if let Some(run) = &mut self.running {
             let now = Instant::now();
             let dt = (now - run.last_frame).as_secs_f64().min(0.25);
@@ -754,6 +806,22 @@ impl App {
                         light: 0,
                     });
                     c.pause(true);
+                    if run.captured {
+                        run.captured = false;
+                        let _ = run.window.set_cursor_grab(CursorGrabMode::None);
+                        run.window.set_cursor_visible(true);
+                    }
+                }
+                // Households to be born into (none: the place has none, as the player was told).
+                if let Some(choices) = c.births.take()
+                    && !choices.is_empty()
+                {
+                    run.menus.close_all();
+                    run.menus.open(Screen::Births {
+                        choices,
+                        selected: 0,
+                        born: crate::profiles::Born::Chance,
+                    });
                     if run.captured {
                         run.captured = false;
                         let _ = run.window.set_cursor_grab(CursorGrabMode::None);
@@ -830,6 +898,7 @@ impl App {
                         death: client.as_ref().and_then(|c| c.death_info(ui.lang)),
                         inventory: client.as_ref().and_then(|c| c.inventory_view()),
                         journal: client.as_ref().and_then(|c| c.journal_view()),
+                        eras: eras.clone(),
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
@@ -949,6 +1018,8 @@ impl ApplicationHandler for App {
                 self.seed,
                 hearth_save::DeathRules::default(),
                 hearth_save::KnowledgeMode::default(),
+                crate::eras::WILD_EARTH,
+                hearth_save::InhabitScope::default(),
             );
         }
         self.apply_display_mode();

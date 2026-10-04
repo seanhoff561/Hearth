@@ -39,6 +39,8 @@ const COUNTRY_M: f64 = 200.0;
 const ROUNDS: u8 = 6;
 /// The share that must agree.
 const AGREE: f32 = 0.6;
+/// Days a band gives a camp its round has made before it may hold a council on it.
+const SETTLING_DAYS: f64 = 10.0;
 
 impl People {
     /// How a band's grown hold one of them, on the whole: the mean of the respect in their ties
@@ -129,8 +131,14 @@ impl People {
             .map(|&i| self.persons[i].place.pos)
             .sum::<DVec3>()
             / members.len() as f64;
-        // A band that keeps no camp yet keeps it where its people are.
+        // A band that keeps no camp yet keeps it where its people are. A camp just made for the
+        // season or at a gathering is given time to be learned (H8).
         let camp = *self.bands[bi].camp.get_or_insert(centre);
+        let since = self.bands[bi].round.since;
+        if self.gathered(bi, now.day).is_some() || (since > 0.0 && now.day - since < SETTLING_DAYS)
+        {
+            return false;
+        }
         if !self.camp_is_poor(bi, camp, &now, hungry) {
             return false;
         }

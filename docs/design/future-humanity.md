@@ -1,7 +1,9 @@
 # Future humanity: eras and simulated humans
 
 *Design only (v2 §17). Hooks are built as their milestones arrive; nothing here may be blocked
-by current work.*
+by current work. Superseded for the people and the Paleolithic eras by V2.1 (H8):
+[humans/history.md](humans/history.md) and [humans/eras.md](humans/eras.md); kept for what it says
+of the later eras until H11–H13.*
 
 ## Eras as data
 `eras/` already defines Wild Earth (playable) and seven later eras shown as "coming later".

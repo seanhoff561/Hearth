@@ -43,6 +43,8 @@ pub struct World {
     pub animals: Vec<hearth_fauna::live::AnimalView>,
     /// The people near the player as the server last told of them.
     pub people: Vec<hearth_people::PersonView>,
+    /// What the people near said, as the player made it out.
+    pub heard: Vec<hearth_protocol::HeardLine>,
     /// The childhood as last told, and the moments told of so far (their names).
     pub childhood: Option<hearth_protocol::ChildhoodView>,
     pub moments: Vec<String>,
@@ -56,6 +58,9 @@ pub struct World {
     pub calls: Vec<hearth_fauna::voices::Called>,
     /// Whether the server said it saved since asked.
     pub saved: bool,
+    /// The births offered, and the birth shown (H8).
+    pub births: Vec<hearth_protocol::BirthChoice>,
+    pub born: Option<hearth_protocol::Born>,
 }
 
 /// Copies a directory and all in it.
@@ -91,10 +96,33 @@ impl World {
         seed: u64,
         childhood: bool,
     ) -> Self {
+        Self::start_in(
+            dir,
+            knowledge,
+            seed,
+            childhood,
+            hearth::eras::WILD_EARTH,
+            None,
+        )
+    }
+
+    /// A world of an era (H8), its player born into the household `birth` of those offered, or
+    /// left to choose.
+    pub fn start_in(
+        dir: &std::path::Path,
+        knowledge: hearth_save::KnowledgeMode,
+        seed: u64,
+        childhood: bool,
+        era: &str,
+        birth: Option<usize>,
+    ) -> Self {
+        let era_birth = era != hearth::eras::WILD_EARTH && birth.is_some();
         let spec = WorldSpec {
             name: "test".into(),
             seed,
-            planet: hearth_math::PlanetSize::Tiny,
+            // The default planet: a Tiny one holds only a band or two of an era's
+            // peoples (D196).
+            planet: hearth_math::PlanetSize::Standard,
             cache_dir: None,
             saves_dir: Some(dir.to_path_buf()),
             wish: hearth_protocol::Wish {
@@ -102,8 +130,11 @@ impl World {
                 ..Default::default()
             },
             death_rules: hearth_save::DeathRules::default(),
+            inhabit: hearth_save::InhabitScope::default(),
             knowledge,
             childhood,
+            era: era.to_owned(),
+            birth,
         };
         let atlas = Arc::new(TextureArray::from_entries(&hearth_texgen::textures_for(
             None,
@@ -147,6 +178,7 @@ impl World {
             generator: ready.generator.clone(),
             animals: Vec::new(),
             people: Vec::new(),
+            heard: Vec::new(),
             childhood: None,
             moments: Vec::new(),
             appearance: Some(ready.appearance.clone()),
@@ -154,7 +186,15 @@ impl World {
             signs: Vec::new(),
             calls: Vec::new(),
             saved: false,
+            births: Vec::new(),
+            born: None,
         };
+        // A life born into an era's household begins where that household lives (H8).
+        if era_birth {
+            // The recent past is lived first: a century of the place's households (minutes in
+            // a debug build on a busy machine).
+            w.until(900.0, |w| w.born.is_some());
+        }
         let feet = w.mover.pos;
         w.until(60.0, |w| {
             w.mirror
@@ -195,6 +235,9 @@ impl World {
                 ToClient::Signs { signs, .. } => self.signs = signs,
                 ToClient::Calls(c) => self.calls.extend(c),
                 ToClient::Saved => self.saved = true,
+                ToClient::Births(b) => self.births = b,
+                ToClient::Heard(lines) => self.heard.extend(lines),
+                ToClient::Born(b) => self.born = Some(*b),
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {
                     name,

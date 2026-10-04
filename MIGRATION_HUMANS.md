@@ -43,7 +43,7 @@ V2-11 (a)–(d), committed together with this file:
 | `Behavior` enum (Forage, DigTubers, CrackNuts, FishTermites, Scavenge, KnapFlakes, TreeNest, AlarmCall, MobThreat, FleeToTrees, Habituate) | `era.rs` | **Refactor** (H0 → H2) | Kept as the profile's capability flags in H0; in H2 the routines and HTN methods (data) take over what each names, gated by the flags. |
 | *Australopithecus* population (diet, life, density, range, realms) and the hunters' prey lists | `data/hearth/fauna/hominins.ron`, predator entries | **Keep** (until H7) | The ecology's group model stays the demographic tier of hominins until H7's household and demographic tiers take over people's numbers. |
 | Hominin populations drawn as agents, not animals (`Species.hominin`, `drawn()`, `materialize` skipping them) | `hearth_fauna/src/{species,live}.rs` | **Keep** | — |
-| Single cradle (`hominins_in_cradle`, `HomininRange::SingleCradleRegion`) | `species.rs`, `crates/hearth/src/fauna.rs` | **Keep** → extended (H8) | The deep-time layer starts from the cradle (V2.1 §15.1). |
+| Single cradle (`hominins_in_cradle`, `HomininRange::SingleCradleRegion`) | `species.rs`, `crates/hearth/src/fauna.rs` | **Keep** → extended (H8, done) | Deep time's *H. erectus* appears in the cradle's best country and spreads from it (V2.1 §15.1, D191). |
 | A group's tolerance of people kept with its numbers (`Group.tolerance`) | `hearth_fauna/src/ecology.rs` | **Refactor** (H4) | Becomes the group's and each person's relationship to the player (familiarity, trust, fear; §8.2, §8.7). |
 | Marula stones, `crack_marula_stones`, the nut-cracking node's processes | `data/hearth/{materials,flora,processes,knowledge}` | **Keep** | Agents keep using the player's processes. |
 | `leaf_nest` block and texture | `data/hearth/blocks/craft.json`, `hearth_texgen/src/craft.rs` | **Keep** | — |
@@ -76,7 +76,7 @@ V2-11 (a)–(d), committed together with this file:
 | `Proportions::hominin`, `Rig::hominin`, `Figure::hominin` | `hearth_character` | **Refactor** (H1) | The species' body plan in its profile, then the person's phenotype within it. |
 | `ToClient::Hominins(Vec<AgentView>)`, the client's `ShownHominin` | protocol, `client.rs` | **Refactor** (H0) | `ToClient::People(Vec<PersonView>)`. |
 | Server wiring (the tick, calls heard with the animals', what the player sees done heard an hour apart) | `server.rs` | **Keep** | Renamed with the module. |
-| Screenshot keys `hominin=` and `seek=` for a hominin population | `screenshot.rs` | **Keep** | `family=` (H1) sets three generations of the human pool before the camera; `person=` with a species when the eras' peoples are drawn (H8). |
+| Screenshot keys `hominin=` and `seek=` for a hominin population | `screenshot.rs` | **Keep** | `family=` (H1) sets three generations of the human pool before the camera; `era=` an era's people about a birth among them, living and keeping their camps (H8). |
 | The character creator's appearance editor | `crates/hearth/src/menus.rs`, `profiles.rs` (v2 §9.1) | **Replace** (H1, Addendum A) | The player is born: no appearance is chosen; the genome is a child's of two parents. |
 
 ### Docs
@@ -84,4 +84,4 @@ V2-11 (a)–(d), committed together with this file:
 | Piece | Decision | Note |
 |---|---|---|
 | `docs/design/agents.md` | **Replace** (H0) | By `docs/design/humans/` (one document per V2.1 section, written with its milestone). |
-| `docs/design/future-humanity.md` (v2 §17) | **Replace** (H8) | V2.1 §15 makes it concrete; kept until H8 for what it says of the later eras. |
+| `docs/design/future-humanity.md` (v2 §17) | **Replace** (H8, done) | By `docs/design/humans/history.md` and `eras.md`; kept for what it says of the later eras until H11–H13. |

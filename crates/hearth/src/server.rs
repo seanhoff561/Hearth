@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use glam::DVec3;
+use glam::{DVec2, DVec3};
 use hearth_body::{BodyConfig, Exposure, Posture, Worn};
 use hearth_content::balance::Balance;
 use hearth_content::time::TimeScales;
@@ -63,11 +63,18 @@ pub struct WorldSpec {
     pub wish: hearth_protocol::Wish,
     /// What death means in a new world (a saved world keeps its own rules).
     pub death_rules: hearth_save::DeathRules,
+    /// Who a dead player may live on as in a new world (Addendum B §2.3).
+    pub inhabit: hearth_save::InhabitScope,
     /// How knowledge is gained in a new world.
     pub knowledge: hearth_save::KnowledgeMode,
     /// Whether a new world's player lives their childhood (V2.1 Addendum A); tests and bots
     /// begin grown, at their people's coming of age.
     pub childhood: bool,
+    /// A new world's era (`eras/`; a saved world keeps its own).
+    pub era: String,
+    /// Tests and bots: which of the births offered in an era's world the player takes (none:
+    /// the player chooses).
+    pub birth: Option<usize>,
 }
 
 /// How much terrain to keep around the player (cubes).
@@ -77,6 +84,9 @@ pub struct View {
     pub vertical: i32,
 }
 
+/// The years of the recent past lived about a new life's birthplace (V2.1 §15.2: three or four
+/// generations).
+const RECENT_YEARS: f64 = 100.0;
 /// How much faster the world goes while the player sleeps (v2 §9.5: smoothly, up to 60–120×).
 const SLEEP_SPEED: f64 = 90.0;
 /// How near a person must be for the player to hand them a thing (m).
@@ -172,9 +182,11 @@ fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> 
     }
     .sanitized();
     let mut settings = WorldSettings::new(planet);
+    settings.era = spec.era.clone();
     settings.life = hearth_save::LifeSettings::from_content(&lw.content.time);
     settings.life.death_rules = spec.death_rules;
     settings.life.knowledge_mode = spec.knowledge;
+    settings.life.inhabit = spec.inhabit;
     let meta = WorldMeta::new(&spec.name, settings, lw.reg.state_names());
     let dir = WorldDir::create(saves, &meta)?;
     log::info!("created world {:?} in {}", spec.name, dir.root.display());
@@ -241,8 +253,24 @@ pub fn calendar_for(
     lw: &LocalWorld,
     starting: hearth_content::schema::Season,
 ) -> (Calendar, DVec3) {
+    calendar_at(lw, starting, None)
+}
+
+/// As [`calendar_for`], the first spawn moved by `place` (from the place found): an era's, among
+/// its people (H8).
+pub fn calendar_at(
+    lw: &LocalWorld,
+    starting: hearth_content::schema::Season,
+    place: Option<&dyn Fn(DVec2) -> DVec2>,
+) -> (Calendar, DVec3) {
     let planet = *lw.map.planet();
-    let (sx, sz) = lw.terrain().find_spawn(false);
+    let (mut sx, mut sz) = lw.terrain().find_spawn(false);
+    if let Some(place) = place {
+        let at = place(DVec2::new(sx as f64, sz as f64));
+        (sx, sz) = lw
+            .terrain()
+            .spawn_near(at.x.floor() as i32, at.y.floor() as i32);
+    }
     let first_spawn = ground_at(lw, sx, sz);
     let calendar = Calendar::from_config(&lw.content.time).start_at(
         starting,
@@ -479,6 +507,7 @@ fn run(
             let mut life = hearth_save::LifeSettings::from_content(&content.time);
             life.death_rules = spec.death_rules;
             life.knowledge_mode = spec.knowledge;
+            life.inhabit = spec.inhabit;
             (life, 0)
         }
     };
@@ -491,8 +520,36 @@ fn run(
         scales,
     ));
 
+    // The world's era (V2.1 §15.3) and its deep past (H8): run when the world is made and kept
+    // with it; the first spawn among the era's people.
+    let era_id = save_state
+        .as_ref()
+        .map_or_else(|| spec.era.clone(), |s| s.meta.settings.era.clone());
+    let era = crate::eras::era_of(&content, &era_id).cloned();
+    let history = era.as_ref().and_then(|e| {
+        let graph = hearth_craft::Graph::from_content(&content);
+        let file = save_state
+            .as_ref()
+            .map(|s| s.dir.root.join(crate::eras::FILE))
+            .or_else(|| {
+                spec.cache_dir.as_ref().map(|d| {
+                    d.join(format!(
+                        "history_{seed}_{}_{}.json.zst",
+                        e.id.rsplit(':').next().unwrap_or(&e.id),
+                        planet.circumference()
+                    ))
+                })
+            });
+        crate::eras::history(&lw, &content, &graph, e, seed, file.as_deref(), &|f| {
+            log::debug!("deep time {:.0}%", f * 100.0)
+        })
+    });
     // The calendar starts in the morning of the starting season at the world's first spawn.
-    let (calendar, first_spawn) = calendar_for(&lw, life.starting_season);
+    let among = |at: DVec2| match (&history, &era) {
+        (Some(h), Some(e)) => crate::eras::spawn_among(h, e, at),
+        _ => at,
+    };
+    let (calendar, first_spawn) = calendar_at(&lw, life.starting_season, Some(&among));
     let mut env = EnvSampler::new(lw.grid(), calendar);
 
     let saved =
@@ -534,7 +591,11 @@ fn run(
     } else {
         crate::born::coming_of_age(&content)
     };
+    // In an era's world a new life is born into one of its households, once the recent past
+    // about the place is lived (below); Wild Earth's is one of its wandering families (H3).
+    let era_birth = history.is_some() && new_life;
     if birth.is_none()
+        && !era_birth
         && let Some(g) = &genetics
     {
         let female = if new_life {
@@ -611,6 +672,14 @@ fn run(
             .flatten()
     });
     let mut death_told = player.body.dead.is_some();
+    // Where the player last died, and who the world lets them live on as (Addendum B §2.3;
+    // permadeath: no one).
+    let mut died_at: Option<DVec3> = player.body.dead.is_some().then_some(player.mover.pos);
+    let inhabit_scope = if death_rules == hearth_save::DeathRules::Permadeath {
+        hearth_save::InhabitScope::None
+    } else {
+        life.inhabit
+    };
     // Making and knowing: how knowledge is gained here, the stations and fires standing.
     let mode = match life.knowledge_mode {
         hearth_save::KnowledgeMode::Discovery => hearth_craft::Mode::Discovery,
@@ -642,6 +711,7 @@ fn run(
     let mut workshop = Workshop::new(&content, &items, mode, workshop_save, seed, ticks);
     // The animals: the populations about the player, saved with the world.
     let years_at = |t: u64| calendar.days(t) / calendar.days_per_year();
+    let peoples = crate::eras::peoples(&content, era.as_ref());
     let mut fauna = crate::fauna::Fauna::new(
         &lw,
         seed,
@@ -649,6 +719,11 @@ fn run(
         years_at(ticks),
         save_state.as_ref().map(|s| s.dir.root.as_path()),
         life.hominin_range == hearth_save::HomininRange::SingleCradleRegion,
+        &peoples,
+        history
+            .clone()
+            .map(|h| h as Arc<dyn hearth_fauna::ecology::Peopling>),
+        life.players,
     );
     let mut animals_shown = false;
     // The people about the player: persons drawn out of the populations' bands, and everyone
@@ -659,6 +734,14 @@ fn run(
         &cfg,
         seed,
         save_state.as_ref().map(|s| s.dir.root.as_path()),
+    );
+    people.live.history = history.clone();
+    // How the era's peoples move through the year: their rounds' camps, their gatherings.
+    people.live.era = crate::eras::ways(era.as_ref(), &calendar, lw.generator.terrain.clone());
+    // The player's species: their person's (an era's people may be another than ours, H8).
+    let mut player_species: String = people.live.player_person(0).map_or_else(
+        || crate::born::PLAYER_SPECIES.to_owned(),
+        |p| p.species.clone(),
     );
     let mut inspecting: Option<u64> = None;
     // How readily the animals turn on people: the world's Predator Behavior setting.
@@ -724,6 +807,127 @@ fn run(
         let shown = crate::born::shown(&content, b, &appearance, latitude, household.as_ref());
         let _ = tx.send(ToClient::Born(Box::new(shown)));
     }
+    // A life begun in one of an era's households (H8): the player's person a child of the
+    // mother and the father, the body their genes give, the place their band keeps, the
+    // childhood lived from `$age` (or none, starting grown).
+    macro_rules! era_life {
+        ($option:expr, $female:expr, $age:expr) => {{
+            let age: f64 = $age;
+            let now = hearth_people::Now {
+                tick: ticks,
+                hour: 12.0,
+                day: calendar.days(ticks),
+                year_days: calendar.days_per_year(),
+            };
+            let graph = workshop.graph.clone();
+            match genetics.as_ref().and_then(|g| {
+                people
+                    .live
+                    .born_into($option, 0, $female, age, g, &people.species, &graph, now)
+            }) {
+                Some((b, h, _)) => {
+                    let band = people.live.bands.iter().find(|x| x.id == $option.band);
+                    if let Some(band) = band {
+                        player_species = band.species.clone();
+                    }
+                    let home = band.map_or(player.mover.pos, |x| {
+                        x.camp
+                            .unwrap_or_else(|| DVec3::new(x.home.x, 0.0, x.home.y))
+                    });
+                    let at = ground_at(&lw, home.x.floor() as i32, home.z.floor() as i32);
+                    let mut looks = crate::born::appearance_of(
+                        &content,
+                        &player_species,
+                        &b.phenotype,
+                        b.genome.female,
+                        age as f32,
+                    );
+                    looks.name = appearance.name.clone();
+                    looks.loincloth = appearance.loincloth;
+                    appearance = looks.sanitized();
+                    player.mover = Mover::new(at);
+                    player.life = hearth_player::Life::begin(at, ticks);
+                    player.carry = outfit(&appearance);
+                    worn = dress_carry(&player.carry);
+                    childhood = (age <= 0.0)
+                        .then(|| crate::childhood::Childhood::new(calendar.days(ticks)));
+                    let latitude = planet.latitude_deg(at.z);
+                    let shown = crate::born::shown(&content, &b, &appearance, latitude, Some(&h));
+                    birth = Some(b);
+                    household = Some(h);
+                    let _ = tx.send(ToClient::Born(Box::new(shown)));
+                    let _ = tx.send(ToClient::Person(appearance.clone()));
+                    let _ = tx.send(ToClient::Placed(player.mover));
+                    true
+                }
+                None => false,
+            }
+        }};
+    }
+    // An era's new life (H8): the recent past about the place lived — a century of its
+    // households — then a birth into one of them: the one a test or bot asks for, or the
+    // player's choice of those offered.
+    let mut offered: Vec<hearth_people::BirthOption> = Vec::new();
+    let mut awaiting_birth = false;
+    if era_birth {
+        fauna.ensure_about(&lw, player.mover.pos);
+        let now = hearth_people::Now {
+            tick: ticks,
+            hour: 12.0,
+            day: calendar.days(ticks),
+            year_days: calendar.days_per_year(),
+        };
+        let at = DVec2::new(player.mover.pos.x, player.mover.pos.z);
+        let graph = workshop.graph.clone();
+        let t0 = Instant::now();
+        let bands = people.live.recent_history(
+            &mut fauna.eco,
+            &people.species,
+            &graph,
+            &items,
+            &|p: DVec3| planet.latitude_deg(p.z),
+            at,
+            hearth_people::sim::HOUSEHOLD_M,
+            RECENT_YEARS,
+            now,
+            &|f| log::debug!("the recent past {:.0}%", f * 100.0),
+        );
+        log::info!(
+            "the recent past lived: {bands} bands, a century, in {:.1} s",
+            t0.elapsed().as_secs_f64()
+        );
+        offered = people.live.birth_options(
+            &people.species,
+            at,
+            hearth_people::sim::HOUSEHOLD_M,
+            life_begins,
+            &now,
+            4,
+        );
+        // None about the place (a small world's few people): the households of the world's
+        // others, wherever they live; the life begins where its band keeps camp.
+        if offered.is_empty() {
+            offered =
+                people
+                    .live
+                    .birth_options(&people.species, at, f64::INFINITY, life_begins, &now, 4);
+        }
+        match (spec.birth, offered.is_empty()) {
+            (_, true) => log::warn!("no household to be born into about the place"),
+            (Some(k), false) => {
+                let o = offered[k.min(offered.len() - 1)];
+                era_life!(o, spec.wish.female, life_begins);
+            }
+            (None, false) => {
+                let choices = offered
+                    .iter()
+                    .map(|o| people.birth_choice(o, &lw, &graph, &now))
+                    .collect();
+                let _ = tx.send(ToClient::Births(choices));
+                awaiting_birth = true;
+            }
+        }
+    }
 
     let models = BlockModels::build(&lw.reg, &atlas);
     let opts = MeshOptions::default();
@@ -739,14 +943,15 @@ fn run(
     let mut warp_carry = 0.0f64;
     // The childhood (V2.1 Addendum A): its moments, the grown body it is sized from, the years
     // passing (extra ticks a second), where it holds the player, what the client was told.
-    let moments = crate::childhood::curriculum(&content, crate::born::PLAYER_SPECIES);
+    let mut moments = crate::childhood::curriculum(&content, &player_species);
     let grown_cfg = cfg.clone();
     let mut childhood_warp: f64;
     let mut held: Option<DVec3> = None;
     let mut childhood_told: Option<hearth_protocol::ChildhoodView> = None;
     let mut childhood_sent = u64::MAX;
     let mut sized_at = f64::NEG_INFINITY;
-    let mut paused = false;
+    // The world waits while the player chooses their birth.
+    let mut paused = awaiting_birth;
     // Tests and bots: ticks run only when asked for (lockstep), as fast as they go.
     let mut lockstep = false;
     let mut owed: u64 = 0;
@@ -1100,11 +1305,13 @@ fn run(
                     }
                 }
                 Ok(ToServer::Inhabit(id)) => {
-                    // Living on as one of their people (Addendum B §2): the person's body, what
-                    // it knows and carries, where it stands, taken up whole (never under
-                    // Permadeath).
+                    // Living on as another of the world's people (Addendum B §2): the person's
+                    // body, what it knows and carries, where it stands, taken up whole — one the
+                    // world's scope allows, not fighting, fleeing, dying or giving birth; a
+                    // child's childhood lived on from its age, safe throughout.
+                    let died = died_at.unwrap_or(player.mover.pos);
                     if player.body.dead.is_some()
-                        && death_rules != hearth_save::DeathRules::Permadeath
+                        && people.may_live_as(0, id, died, inhabit_scope)
                         && let Some(q) = people.live.inhabit(0, id)
                     {
                         let maturity = people
@@ -1113,6 +1320,8 @@ fn run(
                             .map_or(18.0, |sp| sp.life.maturity_years as f64);
                         let day = calendar.days(ticks);
                         let age = (day - q.life.born) / calendar.days_per_year().max(1.0);
+                        player_species = q.species.clone();
+                        moments = crate::childhood::curriculum(&content, &player_species);
                         cfg = grown_cfg.clone();
                         player.body = q.body.clone();
                         player.knowledge = q.knowledge.clone();
@@ -1122,10 +1331,20 @@ fn run(
                             player.carry = outfit(&appearance);
                         }
                         worn = dress_carry(&player.carry);
-                        player.mover = Mover::new(q.place.pos);
+                        // One lived as a household has no footing yet: the ground where it is.
+                        let at = if q.tier == hearth_people::person::Tier::Full {
+                            q.place.pos
+                        } else {
+                            ground_at(
+                                &lw,
+                                q.place.pos.x.floor() as i32,
+                                q.place.pos.z.floor() as i32,
+                            )
+                        };
+                        player.mover = Mover::new(at);
                         player.asleep = false;
                         player.lying = false;
-                        player.life = hearth_player::Life::begin(q.place.pos, ticks);
+                        player.life = hearth_player::Life::begin(at, ticks);
                         if let (Some(genome), Some(phenotype)) = (&q.genome, &q.phenotype) {
                             let parent = |id: Option<u64>| {
                                 id.and_then(|id| people.live.get(id))
@@ -1145,8 +1364,9 @@ fn run(
                                 genome: genome.clone(),
                                 phenotype: phenotype.clone(),
                             });
-                            let mut looks = crate::born::appearance(
+                            let mut looks = crate::born::appearance_of(
                                 &content,
+                                &player_species,
                                 phenotype,
                                 q.life.female,
                                 age.min(maturity.max(age)) as f32,
@@ -1156,8 +1376,12 @@ fn run(
                             appearance = looks.sanitized();
                         }
                         household = None;
-                        childhood = None;
+                        childhood = (age < maturity).then(|| {
+                            crate::childhood::Childhood::taken_up(q.life.born, age, &moments)
+                        });
+                        sized_at = f64::NEG_INFINITY;
                         death_told = false;
+                        died_at = None;
                         let known: Vec<String> = player
                             .knowledge
                             .known
@@ -1167,6 +1391,146 @@ fn run(
                         let _ = tx.send(ToClient::Person(appearance.clone()));
                         let _ = tx.send(ToClient::Placed(player.mover));
                         let _ = tx.send(ToClient::WhoYouAre(people.who_you_are(id, &known)));
+                    }
+                }
+                Ok(ToServer::BornAgain { at, female }) => {
+                    // Born again (Addendum B §2.2): about the place chosen (or where they died),
+                    // into one of its households — offered to choose from in an era's world, one
+                    // of Wild Earth's families there — the childhood lived from birth. Never
+                    // under permadeath.
+                    if player.body.dead.is_some()
+                        && death_rules != hearth_save::DeathRules::Permadeath
+                    {
+                        let here = at.unwrap_or_else(|| died_at.unwrap_or(player.mover.pos));
+                        let (x, z) = lw
+                            .terrain()
+                            .spawn_near(here.x.floor() as i32, here.z.floor() as i32);
+                        let place = ground_at(&lw, x, z);
+                        // The one who died lies where they fell, theirs no more.
+                        people.live.release_player(0);
+                        let fell = player.mover.pos;
+                        let left = std::mem::take(&mut player.carry);
+                        for (k, stack) in left.into_stacks().into_iter().enumerate() {
+                            let a = k as f64 * 2.4;
+                            let spot = fell + DVec3::new(a.cos() * 0.6, 0.5, a.sin() * 0.6);
+                            world_items.add(stack, rest_on(&lw, spot).to_array(), a as f32);
+                        }
+                        items_changed = true;
+                        let knew = std::mem::take(&mut player.knowledge);
+                        workshop.stop(&mut here!());
+                        cfg = grown_cfg.clone();
+                        player = Player::new(&cfg, place, seed ^ ticks);
+                        player.knowledge = knew.passed_on(&workshop.graph, ticks);
+                        workshop.knowledge_changed = true;
+                        player.life = hearth_player::Life::begin(place, ticks);
+                        household = None;
+                        childhood = None;
+                        sized_at = f64::NEG_INFINITY;
+                        death_told = false;
+                        died_at = None;
+                        let now = hearth_people::Now {
+                            tick: ticks,
+                            hour: 12.0,
+                            day: calendar.days(ticks),
+                            year_days: calendar.days_per_year(),
+                        };
+                        let at2 = DVec2::new(place.x, place.z);
+                        if history.is_some() {
+                            // The recent past about the place, where no band of the era's
+                            // peoples is lived yet; then the households offered.
+                            let lived = people.live.bands.iter().any(|b| {
+                                matches!(
+                                    b.tier,
+                                    hearth_people::person::Tier::Full
+                                        | hearth_people::person::Tier::Household
+                                ) && (b.home - at2).length() <= hearth_people::sim::HOUSEHOLD_M
+                            });
+                            if !lived {
+                                fauna.ensure_about(&lw, place);
+                                let graph = workshop.graph.clone();
+                                people.live.recent_history(
+                                    &mut fauna.eco,
+                                    &people.species,
+                                    &graph,
+                                    &items,
+                                    &|p: DVec3| planet.latitude_deg(p.z),
+                                    at2,
+                                    hearth_people::sim::HOUSEHOLD_M,
+                                    RECENT_YEARS,
+                                    now,
+                                    &|_| {},
+                                );
+                            }
+                            offered = people.live.birth_options(
+                                &people.species,
+                                at2,
+                                hearth_people::sim::HOUSEHOLD_M,
+                                life_begins,
+                                &now,
+                                4,
+                            );
+                            if offered.is_empty() {
+                                offered = people.live.birth_options(
+                                    &people.species,
+                                    at2,
+                                    f64::INFINITY,
+                                    life_begins,
+                                    &now,
+                                    4,
+                                );
+                            }
+                            let graph = workshop.graph.clone();
+                            let choices: Vec<hearth_protocol::BirthChoice> = offered
+                                .iter()
+                                .map(|o| people.birth_choice(o, &lw, &graph, &now))
+                                .collect();
+                            if choices.is_empty() {
+                                let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                                    process: String::new(),
+                                    done: false,
+                                    words:
+                                        "No household of the era's people lives about that place."
+                                            .into(),
+                                }));
+                            }
+                            let _ = tx.send(ToClient::Births(choices));
+                            awaiting_birth = !offered.is_empty();
+                            paused = awaiting_birth;
+                        } else if let Some(g) = &genetics {
+                            // Wild Earth: one of its families about the place (H3's birth).
+                            let latitude = planet.latitude_deg(place.z);
+                            birth = crate::born::draw(g, latitude, female, seed ^ ticks);
+                            if let Some(b) = &birth {
+                                appearance = crate::born::player(
+                                    &content,
+                                    b,
+                                    &appearance.name,
+                                    appearance.loincloth,
+                                    life_begins,
+                                );
+                                household =
+                                    Some(crate::born::household(g, b, life_begins, seed ^ ticks));
+                                if spec.childhood {
+                                    childhood = Some(crate::childhood::Childhood::new(
+                                        calendar.days(ticks),
+                                    ));
+                                }
+                                let shown = crate::born::shown(
+                                    &content,
+                                    b,
+                                    &appearance,
+                                    latitude,
+                                    household.as_ref(),
+                                );
+                                let _ = tx.send(ToClient::Born(Box::new(shown)));
+                            }
+                            player_species = crate::born::PLAYER_SPECIES.to_owned();
+                            moments = crate::childhood::curriculum(&content, &player_species);
+                        }
+                        player.carry = outfit(&appearance);
+                        worn = dress_carry(&player.carry);
+                        let _ = tx.send(ToClient::Person(appearance.clone()));
+                        let _ = tx.send(ToClient::Placed(player.mover));
                     }
                 }
                 Ok(ToServer::Childhood(skip)) => {
@@ -1201,7 +1565,17 @@ fn run(
                     ticks = (ticks as f64 + dt).max(0.0) as u64;
                 }
                 Ok(ToServer::TimeWarp(w)) => warp = w.max(0.0),
-                Ok(ToServer::Pause(p)) => paused = p,
+                Ok(ToServer::Pause(p)) => paused = p || awaiting_birth,
+                Ok(ToServer::BeBorn { choice, female }) => {
+                    if awaiting_birth && let Some(&o) = offered.get(choice) {
+                        let age = life_begins;
+                        if era_life!(o, female, age) {
+                            awaiting_birth = false;
+                            paused = false;
+                            moments = crate::childhood::curriculum(&content, &player_species);
+                        }
+                    }
+                }
                 Ok(ToServer::Shout) => shouted = ticks,
                 Ok(ToServer::Die { species, at }) => fauna.die(&species, at),
                 Ok(ToServer::Inspect(id)) => inspecting = id,
@@ -1356,24 +1730,34 @@ fn run(
                 // The body its age's, to full size: its physiology, its height, its looks.
                 let maturity = people
                     .species
-                    .get(crate::born::PLAYER_SPECIES)
+                    .get(&player_species)
                     .map_or(18.0, |sp| sp.life.maturity_years as f64);
                 if age < maturity + 0.1
                     && ((age - sized_at).abs() > 0.02 || began.is_some() || just_grown)
                 {
                     sized_at = age;
                     let female = b.genome.female;
-                    cfg = match people.species.get(crate::born::PLAYER_SPECIES) {
+                    cfg = match people.species.get(&player_species) {
                         Some(sp) if age < maturity => Arc::new(
                             sp.body_at(female, age, b.phenotype.z("stature"))
                                 .into_owned(),
                         ),
                         _ => grown_cfg.clone(),
                     };
-                    let mut looks =
-                        crate::born::appearance(&content, &b.phenotype, female, age as f32);
-                    let grown =
-                        crate::born::appearance(&content, &b.phenotype, female, maturity as f32);
+                    let mut looks = crate::born::appearance_of(
+                        &content,
+                        &player_species,
+                        &b.phenotype,
+                        female,
+                        age as f32,
+                    );
+                    let grown = crate::born::appearance_of(
+                        &content,
+                        &player_species,
+                        &b.phenotype,
+                        female,
+                        maturity as f32,
+                    );
                     player.mover.scale = (looks.height_m / grown.height_m.max(0.1)).min(1.0) as f64;
                     looks.name = appearance.name.clone();
                     looks.loincloth = appearance.loincloth;
@@ -1389,7 +1773,7 @@ fn run(
                 if !was_grown {
                     let infant = people
                         .species
-                        .get(crate::born::PLAYER_SPECIES)
+                        .get(&player_species)
                         .is_some_and(|sp| sp.life_stage(age) == hearth_people::LifeStage::Infant);
                     let passing = ch.phase == crate::childhood::Phase::Passing;
                     if let Some((_, at, yaw, height)) = keeper {
@@ -1572,6 +1956,12 @@ fn run(
                         TICK_S as f32,
                     ) {
                         items_changed = true;
+                    }
+                    // Their camps kept: the fire laid and fed, the beds about it (H8).
+                    if ticks.is_multiple_of(40) {
+                        for c in people.camps() {
+                            workshop.keep_camp(&mut here!(), &c);
+                        }
                     }
                     // What the people near say, as the player makes it out (V2.1 §10.3).
                     let heard = people.heard_by(0);
@@ -1810,12 +2200,14 @@ fn run(
                     .keys()
                     .filter_map(|k| workshop.graph.node(k).map(|n| n.name.clone()))
                     .collect();
+                died_at = Some(player.mover.pos);
                 let story = people.life_story(&crate::people::LifeFacts {
                     name: &appearance.name,
                     walked_km: player.life.walked_m / 1000.0,
                     farthest_km: player.life.farthest_m / 1000.0,
                     known,
                     at: player.mover.pos,
+                    scope: inhabit_scope,
                 });
                 let _ = tx.send(ToClient::Story(Box::new(story)));
                 if death_rules == hearth_save::DeathRules::Permadeath {

@@ -168,6 +168,8 @@ impl People {
             council: None,
             weighed: 0.0,
             guests: Vec::new(),
+            deep: None,
+            round: Default::default(),
             rng: band_stream(self.seed, id),
         });
         let bi = self.bands.len() - 1;
@@ -394,11 +396,12 @@ impl People {
     /// The player lives on as another (Addendum B §2): the record they were is theirs no more
     /// (it lies where it fell, if it died) and the living one is. The one taken up, as it was —
     /// its body, what it knows, what it carries, where it is — or none where it may not be
-    /// (dead, another player's, or not lived in full).
+    /// (dead, another player's, or not lived in full or as a household: a household's band comes
+    /// into full about the player).
     pub fn inhabit(&mut self, player: u64, id: PersonId) -> Option<Person> {
         let i = self.persons.binary_search_by_key(&id, |p| p.id).ok()?;
         let q = &self.persons[i];
-        if !q.alive() || q.player.is_some() || q.tier != Tier::Full {
+        if !q.alive() || q.player.is_some() || !matches!(q.tier, Tier::Full | Tier::Household) {
             return None;
         }
         for p in self.persons.iter_mut().filter(|p| p.player == Some(player)) {

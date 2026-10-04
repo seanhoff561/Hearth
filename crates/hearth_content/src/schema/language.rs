@@ -87,6 +87,11 @@ entry! {
         pub replacement: f32,
         pub name_syllables: (u8, u8),
         pub changes: Vec<SoundChange>,
+        /// The kinds of meaning it has words for; none listed: every kind. A proto-language
+        /// names things and kin and has a few particles, no more (V2.1 §15.3; D186's generator
+        /// gated, H8).
+        #[serde(default)]
+        pub kinds: Vec<WordKind>,
     }
 }
 

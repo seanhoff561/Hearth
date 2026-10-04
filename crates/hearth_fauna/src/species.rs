@@ -470,6 +470,29 @@ impl Catalog {
         self.index(id).map(|i| &self.species[i])
     }
 
+    /// Only the peoples of a world's era live in it (H8): each present one's bands as large as
+    /// the era says, if it says (`(population, band size)`), the others' populations emptied.
+    pub fn peoples(&mut self, present: &[(String, Option<(u16, u16)>)]) {
+        let key = |s: &str| s.rsplit(':').next().unwrap_or(s).to_owned();
+        for sp in self.species.iter_mut().filter(|s| s.hominin) {
+            match present.iter().find(|(p, _)| key(p) == key(&sp.id)) {
+                Some((_, Some(size))) => {
+                    sp.group = (size.0.max(1), size.1.max(size.0.max(1)));
+                }
+                Some((_, None)) => {}
+                None => sp.density = 0.0,
+            }
+        }
+    }
+
+    /// Wild Earth's wandering families (D164) as many as the players a world expects (Addendum B
+    /// §3.5): so many times one player's, still far apart.
+    pub fn families_for(&mut self, players: u8) {
+        for sp in self.species.iter_mut().filter(|s| s.hominin && s.worldwide) {
+            sp.density *= players.max(1) as f32;
+        }
+    }
+
     /// The hominins kept to their cradle, Africa: the Hominin range setting's single cradle
     /// region (v2 §8.1); by default they live in suitable habitat the world over.
     pub fn hominins_in_cradle(&mut self) {

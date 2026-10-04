@@ -71,6 +71,25 @@ impl Childhood {
         }
     }
 
+    /// A childhood taken up at an age (a child inhabited, Addendum B §2.2): its moments still to
+    /// come, what its years so far taught it already its own.
+    pub fn taken_up(born: f64, age: f64, moments: &[Moment]) -> Self {
+        let next = moments
+            .iter()
+            .position(|m| m.age as f64 > age)
+            .unwrap_or(moments.len());
+        Self {
+            born,
+            next,
+            phase: if next < moments.len() {
+                Phase::Passing
+            } else {
+                Phase::Grown
+            },
+            learned_to: age,
+        }
+    }
+
     /// The child's age (years) on a day.
     pub fn age(&self, day: f64, year_days: f64) -> f64 {
         ((day - self.born) / year_days.max(1.0)).max(0.0)

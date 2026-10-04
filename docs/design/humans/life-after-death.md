@@ -14,6 +14,16 @@ camera, and beginning the world again with the old save archived. Eligibility ru
 living, near, not another player's", the scope and knowledge-after-death settings, following a
 person or animal while watching, being born again and inhabiting a child come with H8 and H9.
 
+**Built in H8 (D200):** living on as anyone of the world lived in full or as a household, children
+too (their childhood taken up at their age, safe throughout), chosen by the filters *your family*,
+*your group*, *those near*, *anyone* and told by who they are; never another player's character,
+nor anyone fighting, fleeing, badly hurt and dying or just giving birth; the world's **scope**
+setting (anyone, kin, group and region, kin only, no one; permadeath allows no one); and **being
+born again** as a baby under Legacy's rules, about where one died or a place picked on the globe —
+in an era's world into one of the households offered there, in Wild Earth into one of its
+families. Consent prompts for another player's family wait for multiplayer (R3); knowledge after
+death, following while watching and the old rules' retirement for H9.
+
 **In short:** when your character dies, the death is real — the body stays where it fell and its
 people mourn it as their culture does — and then you choose: live on as another living person,
 be born again, restart the world, or watch.

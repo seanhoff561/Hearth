@@ -65,6 +65,8 @@ pub struct NodeFacts {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Lore {
     pub nodes: Vec<NodeFacts>,
+    /// Each node's place in `nodes` by its id (looked up for every learner every year).
+    index: BTreeMap<String, usize>,
 }
 
 impl Lore {
@@ -115,12 +117,17 @@ impl Lore {
                     .map(|r| r.insight)
                     .fold(0.0, f32::max),
             })
+            .collect::<Vec<NodeFacts>>();
+        let index = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.id.clone(), i))
             .collect();
-        Self { nodes }
+        Self { nodes, index }
     }
 
     pub fn get(&self, id: &str) -> Option<&NodeFacts> {
-        self.nodes.iter().find(|f| f.id == id)
+        self.index.get(id).map(|&i| &self.nodes[i])
     }
 
     /// The processes a set of nodes opens, each once, in order.
@@ -217,7 +224,58 @@ pub(crate) fn learn(p: &mut Person, lore: &Lore, node: &str, route: Route, tick:
     }
 }
 
+/// Each band's knowers of each technique as last counted — its id, the year counted and the
+/// counts — so that a band's neighbours count it once a year, not each of them again.
+#[derive(Clone, Default)]
+pub(crate) struct KnowerCounts(BTreeMap<u64, (u64, std::sync::Arc<BTreeMap<String, f32>>)>);
+
+impl PartialEq for KnowerCounts {
+    /// A cache: two people are alike whatever it holds.
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for KnowerCounts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "KnowerCounts({} bands)", self.0.len())
+    }
+}
+
 impl People {
+    /// How many of a band's living, ten and over, know each technique, in a year.
+    fn knowers_of(
+        &mut self,
+        bi: usize,
+        now: &Now,
+        year: u64,
+    ) -> std::sync::Arc<BTreeMap<String, f32>> {
+        let id = self.bands[bi].id;
+        if let Some((y, counts)) = self.knower_counts.0.get(&id)
+            && *y == year
+        {
+            return counts.clone();
+        }
+        let mut counts: BTreeMap<String, f32> = BTreeMap::new();
+        for i in self.band_members(bi) {
+            let p = &self.persons[i];
+            if !p.alive() || p.age(now) < KNOWER_AGE {
+                continue;
+            }
+            for k in p.knowledge.known.keys() {
+                match counts.get_mut(k) {
+                    Some(n) => *n += 1.0,
+                    None => {
+                        counts.insert(k.clone(), 1.0);
+                    }
+                }
+            }
+        }
+        let counts = std::sync::Arc::new(counts);
+        self.knower_counts.0.insert(id, (year, counts.clone()));
+        counts
+    }
+
     /// A year of a band's knowledge, as its life course reaches it (see the module).
     pub(crate) fn knowledge_year(
         &mut self,
@@ -237,32 +295,33 @@ impl People {
         let (id, home) = (self.bands[bi].id, self.bands[bi].home);
         let salt = year.wrapping_mul(0x9e37_79b9_7f4a_7c15);
         let mut rng = Rng::new(hash2(self.seed ^ STREAM ^ salt, id));
-        // Those it could learn from: its own knowers, and its neighbours' as far as they meet.
-        let count = |people: &People, i: usize, w: f32, knowers: &mut BTreeMap<String, f32>| {
-            let p = &people.persons[i];
-            if !p.alive() || p.age(now) < KNOWER_AGE {
-                return;
-            }
-            for k in p.knowledge.known.keys() {
-                *knowers.entry(k.clone()).or_insert(0.0) += w;
-            }
-        };
-        let mut knowers: BTreeMap<String, f32> = BTreeMap::new();
-        for &i in &members {
-            count(self, i, 1.0, &mut knowers);
-        }
+        // Those it could learn from: its own knowers, and its neighbours' as far as they meet
+        // (each band's counted once a year).
+        let mut knowers: BTreeMap<String, f32> = (*self.knowers_of(bi, now, year)).clone();
         let kind = self.bands[bi].species.clone();
         for b in 0..self.bands.len() {
             if b == bi || self.bands[b].species != kind {
                 continue;
             }
             let d = (self.bands[b].home - home).length();
-            if d >= CONTACT_M {
+            // Those met at the people's gathering this year, as near neighbours (H8).
+            let met = if self.gathered_together(bi, b, now.day, now.year_days.max(1.0)) {
+                crate::rounds::GATHERED_WEIGHT
+            } else {
+                0.0
+            };
+            if d >= CONTACT_M && met == 0.0 {
                 continue;
             }
-            let w = t.contact_weight * (1.0 - d / CONTACT_M) as f32;
-            for i in self.band_members(b) {
-                count(self, i, w, &mut knowers);
+            let w = (t.contact_weight * (1.0 - d / CONTACT_M).max(0.0) as f32).max(met);
+            let theirs = self.knowers_of(b, now, year);
+            for (k, n) in theirs.iter() {
+                match knowers.get_mut(k) {
+                    Some(m) => *m += w * n,
+                    None => {
+                        knowers.insert(k.clone(), w * n);
+                    }
+                }
             }
         }
         // The learners: each, for each technique it lacks whose groundwork it has.
@@ -368,10 +427,13 @@ impl People {
                 }
             }
         }
-        let techniques = lore.opened(&known);
-        let c = &mut self.bands[bi].culture;
-        c.knowledge = known;
-        c.techniques = techniques;
+        // The processes it opens, worked out again only when what it knows has changed.
+        if self.bands[bi].culture.knowledge != known {
+            let techniques = lore.opened(&known);
+            let c = &mut self.bands[bi].culture;
+            c.knowledge = known;
+            c.techniques = techniques;
+        }
     }
 }
 

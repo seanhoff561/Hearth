@@ -235,6 +235,13 @@ struct Disperser {
     from: [f64; 2],
 }
 
+/// Where a world's peoples live (H8): the deep-time layer's numbers — persons a km² — of a
+/// people (by its population's id) at a place (x and z in blocks); `None` for a population it
+/// does not place, which lives by its own density and habitat.
+pub trait Peopling: Send + Sync + std::fmt::Debug {
+    fn density(&self, population: &str, x: f64, z: f64) -> Option<f32>;
+}
+
 /// The whole simulation.
 #[derive(Debug, Clone)]
 pub struct Ecology {
@@ -271,6 +278,8 @@ pub struct Ecology {
     pub spin_up: f64,
     /// Young bound for another region, delivered after the step.
     emigrants: Vec<Disperser>,
+    /// Where the era's peoples live, from deep time (H8); none: by their habitat.
+    pub peopling: Option<Arc<dyn Peopling>>,
 }
 
 /// The mast factor of a year in a region: heavy crops every few years, synchronized over a
@@ -663,6 +672,7 @@ impl Ecology {
             forage_scale: scale,
             spin_up: 3.0,
             emigrants: Vec::new(),
+            peopling: None,
         };
         eco.prey_homes = eco.prey_homes_of(&reference);
         eco
@@ -886,9 +896,33 @@ impl Ecology {
         r.prey[species * nb + block_of(c)].clamp(0.1, 3.0)
     }
 
+    /// Where deep time places the peoples (H8): a people's quality in each cell of a region is
+    /// its numbers there against its own density, so that its capacity is what deep time left.
+    fn peopled(&self, key: (i64, i64), quality: &mut [f32]) {
+        let Some(map) = &self.peopling else {
+            return;
+        };
+        let (i0, j0) = (key.0 * REGION_CELLS, key.1 * REGION_CELLS);
+        for sp in self
+            .catalog
+            .species
+            .iter()
+            .filter(|s| s.hominin && s.density > 0.0)
+        {
+            for c in 0..REGION_LEN {
+                let x = ((i0 + c as i64 % REGION_CELLS) as f64 + 0.5) * CELL_M;
+                let z = ((j0 + c as i64 / REGION_CELLS) as f64 + 0.5) * CELL_M;
+                if let Some(d) = map.density(&sp.id, x, z) {
+                    quality[sp.index * REGION_LEN + c] = d.max(0.0) / sp.density;
+                }
+            }
+        }
+    }
+
     /// The animals of each species the region's habitat holds at the species' density.
     pub fn compute_capacity(&self, r: &mut Region) {
-        let (quality, prey) = self.qualities(&r.habitat);
+        let (mut quality, prey) = self.qualities(&r.habitat);
+        self.peopled(r.key, &mut quality);
         r.quality = quality;
         r.prey = prey;
         let nb = (BLOCKS * BLOCKS) as usize;
@@ -925,6 +959,7 @@ impl Ecology {
             forage_scale: self.forage_scale,
             spin_up: self.spin_up,
             emigrants: Vec::new(),
+            peopling: self.peopling.clone(),
         }
     }
 
@@ -1000,7 +1035,8 @@ impl Ecology {
             .map(|s| s.index as u16)
             .collect();
         let n = pool_species.len() * REGION_LEN;
-        let (quality, prey) = self.qualities(&habitat);
+        let (mut quality, prey) = self.qualities(&habitat);
+        self.peopled(key, &mut quality);
         let capacity_of = |sp: &Species, c: usize| {
             sp.density * Self::area(sp, &habitat[c]) * quality[sp.index * REGION_LEN + c]
         };

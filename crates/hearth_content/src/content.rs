@@ -17,6 +17,7 @@ use crate::schema::era::Era;
 use crate::schema::fauna::Animal;
 use crate::schema::flora::Plant;
 use crate::schema::geology::{Deposit, Mineral, Province, Rock, Soil};
+use crate::schema::history::HistorySettings;
 use crate::schema::humans::{Chromosome, GenePool, GeneticsSettings, Locus, Species, Trait};
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
@@ -160,6 +161,8 @@ pub struct Content {
     pub languages: Table<LanguageGenerator>,
     pub meanings: Table<Meaning>,
     pub transmission: Table<Transmission>,
+    /// How deep time runs (V2.1 §15.1).
+    pub history: Table<HistorySettings>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -333,6 +336,7 @@ impl Content {
             languages: load_table(packs, &mut r),
             meanings: load_table(packs, &mut r),
             transmission: load_table(packs, &mut r),
+            history: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,

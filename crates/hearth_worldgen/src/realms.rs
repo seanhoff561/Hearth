@@ -363,6 +363,12 @@ impl Realms {
         self.landmasses.get(self.mass[self.index(x, z)] as usize)
     }
 
+    /// The index of the landmass at (or nearest) a world position, if any.
+    pub fn landmass_index_at(&self, x: f64, z: f64) -> Option<u32> {
+        let m = self.mass[self.index(x, z)];
+        ((m as usize) < self.landmasses.len()).then_some(m)
+    }
+
     /// Whether a world position is on an island (poorer in species than a continent).
     pub fn island_at(&self, x: f64, z: f64) -> bool {
         self.landmass_at(x, z).is_some_and(|l| !l.continent)

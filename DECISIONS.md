@@ -2282,3 +2282,157 @@ reasoning. Their first runs (2026-10-04, on a 4-core cloud machine) passed but f
 The perf gate (`scripts/perf-gate.sh`) and screenshots need the user's GPU: the cloud machine
 renders only on a software device (llvmpipe), whose frame rates say nothing of the reference
 machine's, so the gate for H4–H7 waits for the PC.
+
+## D191 — Deep time as demes on a history grid over the planet's own geography
+V2.1 §15.1 asks for a fast abstract simulation of peoples over the planet from the cradle to the
+era's date. Peoples are **demes** — a number of people, a lineage, a gene pool, what it knows — of
+each species in each cell of a coarse **history grid** (about 8 km cells, 32 to 128 along the
+circumference) that reads the planet at 4 × 4 points per cell: the ground (so the share of land
+follows the sea's level and glacial shelves and land bridges come out of the sea), the climate,
+the biomes' worth to foragers (data), realm, landmass, rivers and sunlight. Each step a deme grows
+logistically toward its cell's capacity and spreads to its eight neighbours as a Fisher wave of
+its species' speed (twice as fast along coasts and rivers), across water only within the reach
+its techniques give (12 km drifting, 120 km with rafts) — capped at a cell a step where cells are
+small. Capacity is a species' base density, the biome's worth, the land's share, water's foods
+(more with fishing gear), what its food techniques win (D194) and the cold it can winter in by
+its body and what it knows (fire, hide wraps, sewn clothing); species in a cell compete by
+counting everyone against what the land would feed of each (the better equipped need less land a
+head and in the end crowd the others out — the Neanderthals' fate where *H. sapiens* comes with
+the Upper Paleolithic's techniques, not before). The ice ages are a stylised sea-level curve
+(41,000- then 100,000-year cycles, the last glacial cycle's own record), temperature and rain
+following the sea. Species appear by data (`origin`, `first_appearance_ya`): from the cradle's
+best country, or out of an earlier species' people in a realm; past `extinction_ya` they are gone.
+Steps are 250 years before 200,000 years ago, 100 to 60,000 and a generation after; slower things
+are reckoned every 500 years. The run is deterministic (streams of seed, step and cell; two-phase
+updates) and parallel; a Standard planet takes seconds, an Earth-sized one about a minute. The
+world's terrain stays today's: the era's sea level and cold act in deep time only (D195).
+
+## D192 — Gene pools in deep time as adapted sunlight, drift and archaic share
+§4.5's pools are kept per deme as the sunlight its physical frequencies are adapted to (moving
+toward its cell's own over about ten thousand years), a drift for each place-shifted locus or
+trait (a logit offset; a trait's loci share one) that wanders by how few the deme is and is undone
+over a hundred thousand years, and a share of another species' ancestry gained where two live
+together. Migrants mix pools by their numbers; founders of a new cell add their own drift. A band
+drawn from a deme draws its founders' genomes from its species' pool at the deme's adapted
+sunlight, moved by its drift (`Genetics::founder_in`). Behavioural loci have no place here.
+
+## D193 — Lineages as a tree, cultures and languages replayed along it
+Each deme carries a lineage — its culture with its language. A lineage splits when its connected
+people pass what one people holds (data: about 1,500 for our kind, after Birdsell's dialect
+tribe), the half farthest from where it began becoming a daughter, and at once where a part is
+cut off by land (an island, a deserted gap) with enough people. Neighbouring lineages build up
+contact. Deep time keeps only the tree; a lineage's culture and language are made when a band of
+it is first met: drawn at its root on the root's stream, a daughter at each split, a year's drift
+for each year of the branch (at most twenty thousand: nothing older would tell), customs and words
+taken from its closest contacts. Bands of one lineage share its culture's id; recent splits are
+visibly kin, old ones are strangers.
+
+## D194 — Knowledge geography from the record's dates, numbers and contact
+A deme knows a set of techniques of its species' repertoire (its profile's, or the era's
+`repertoire` or `reach` of graph eras; within its cognitive ceiling). A technique is invented by
+a lineage no earlier than the record's first date for it (`years_bp`), at a rate by its people;
+spreads between neighbouring demes at about half a kilometre a year (less across lineages); and is
+lost where those joined to the deme by land are too few to keep it (rising steeply with its depth,
+Henrich 2004): islands cut off lose their deepest techniques, continents keep them. What a
+people's techniques win from the land raises its density (data `food` gains: a Middle Paleolithic
+people about 0.06 a km² of open country, an Upper Paleolithic one about 0.12). Numbers for
+invention, keeping and drift are reckoned as Earth's: a deme's people as its share of the species'
+people on the planet times the species' numbers at their height on Earth (`deep.people`) — the
+planet stands for Earth here, so a small world's peoples know what their era's did.
+
+## D195 — The eras' climate acts in deep time; the world is drawn at today's
+The era profiles keep their sea level and temperature offsets, and deep time runs the whole ice-
+age curve to the era's date — land bridges, glacial shelves, the cold's retreat. The world the
+player walks in is still generated at today's climate and sea level: drawing an ice-age world
+(the shelves as land, the cold biomes moved) is a change to world generation that waits for its
+own milestone. The era reviews say so.
+
+## D196 — Small planets hold denser peoples; the recent past is a century of households
+A Standard planet has less land than one people's country: at real densities it would hold a band
+or two of each species. So on a planet with less land, its peoples live denser by as much, at most
+thirty times (`people_km2`, `most_denser`; first five thousand km² and ten times, raised by D198) —
+a liberty, like Wild Earth's families (D164), for the people only; its animals stay real. About the place a life begins, the era's
+bands of the ecological cells within the household region (40 km) are founded a century before
+the era's date from their demes (knowledge, lineage culture and language, ancestry) and lived as
+households (H7's tier) to the date, a year at a time: four generations of births, deaths,
+pairings and ties, so the people met have parents, grandparents, the dead remembered and kin in
+the next band (V2.1 §15.2). The ecological cells' groups of the era's peoples come from deep time's
+densities (`Ecology::peopling`); only the era's peoples live in its world (`Catalog::peoples`).
+
+## D197 — Births among the era's households; the archaic peoples' bodies
+A new life in an era's world is born into one of the households about the place: two to four
+offered (`People::birth_options`) — a living mother of bearing age, no other child of hers born
+within a year and a half of the birth (before it, or after it for a player starting grown),
+paired with a living father of her band — spread over as many species,
+peoples and bands as there are; told by who they are (names, ages, brothers and sisters,
+grandparents, the band, its country, what its people know), never how they look. The player
+chooses one and a daughter, a son or chance; the child's genome is the meiosis of the two parents'
+genomes and their person is born into the band (`People::born_into`), the mother tongue its
+language. The player may be born an *H. erectus* or a Neanderthal: their body is built on their
+species' plan (`Appearance::plan`: *erectus* long-legged and narrow-hipped, Neanderthals short,
+broad and barrel-chested), their childhood, size and coming of age their species'.
+
+## D198 — The archaic peoples replace themselves; deep time sets the recent past's crowding
+The first runs of the Lower Paleolithic's recent past ended with a band or two of a few people:
+H8's first *H. erectus* and Neanderthal life tables doubled the foragers' prime-age mortality and
+kept their long nursing, so that unchecked each generation was only four fifths of the last (a
+cohort run of the tables: net reproduction 0.83 and 0.80, the foragers' 1.17) — a people that
+could not have lasted. They now die nearly as young (a life expectancy at birth near 21 and 20,
+against the foragers' 29) but wean sooner — the Neanderthal child of Scladina at about 1.2 years
+(Austin et al. 2013), *erectus* by its faster growth — so that unchecked they grow as the
+foragers do (1.17 and 1.15) and crowding holds them. And a band founded from deep time reckons
+its crowding by deep time's own density where it was founded (`Ancestry::density`, the deme's
+people per km² of its cell's land) rather than its life table's: on a small planet deep time's
+peoples live denser (D196), and the table's figure crowded the recent past's bands toward a tenth
+of their numbers within the century. Last, a band alone dies out: within a century its people are
+all one another's kin and none can pair (incest avoidance, H3), and partners come only from other
+bands within reach. A Standard planet at five times real density held 82 *erectus*, 27 Neanderthals
+and 87 of our kind in the Middle Paleolithic — fewer than a mating network (Wobst 1974: 175–475 at
+the least) — and the Lower Paleolithic's recent past ended with one old woman. A people's country
+is now reckoned as its mating network's, 25,000 km², at most thirty times real: the same planet
+holds 409 *erectus*; 138 Neanderthals in two peoples and 434 of our kind; 1,221 of our kind in the
+Upper Paleolithic.
+
+## D199 — Camps, seasonal rounds and gatherings
+V2.1 §15.3's era profiles name routines, camps, seasonal rounds and aggregation. The era says, for
+each of its peoples, whether its bands keep a fire at camp (`hearth`) and beds about it
+(`bedding`), its **round** — where camp goes each season: by the water, up on the open uplands, down
+in the shelter of the woods — and its yearly **gathering** (season, days, how far bands come).
+The rounds and gatherings are the bands' own state, lived at both the full and the household tier
+(so the recent past's century has them too, and a band met keeps its habits): when the season
+turns (its hemisphere's) a band moves camp to its round's place, which the world finds in its
+terrain about the band's home (`Country`, the game's `Lands`: water near, height over the country
+and openness, wood and lowness) and keeps, so a band comes back to the same camps year after
+year — the best not within 800 m of another band's camp (else it stays where it is: bands of
+overlapping ranges all chose one best spot by the water, and three hundred people stood at it); a camp just made is given ten days before a council may find it poor. In its season the
+bands of one people (species and lineage) within reach gather by the water near the largest
+band's home, each at its own fire thirty metres apart, for the days given: each grown one meets a
+few of the others' people, pairing looks first among those met there, and each band learns from
+those it gathered with as from its nearest neighbours; then they go home. A camp is the
+player's own campfire and beds (the workshop's stations), laid by the game where a band lived in
+full keeps camp, the fire lit from carried embers and fed while its people are about. The
+Upper Paleolithic has four camps a year and an autumn gathering of twenty days (Conkey 1980;
+Kelly 2013 on residential moves), the Middle Paleolithic two camps (winter shelter; summer
+uplands for Neanderthals, water for our kind), the Lower Paleolithic none (where the food is).
+Houses and windbreaks raised by the people themselves wait for H11's villages.
+
+## D200 — After death in an era's world; Wild Earth's families by players
+Addendum B §2's choices, as far as H8 takes them: **living on as another** reaches every living
+person of the world lived in full or as a household (a household's band comes into full about
+the player), children too — whose childhood is taken up at their age, the moments still to come,
+safe throughout (`Childhood::taken_up`) — listed by the death screen's filters (family, group,
+near, anyone), told by who they are to the dead or, for a stranger, by their household, never by
+their looks; never another player's character, nor anyone fighting (in a quarrel), fleeing,
+badly hurt and dying (a severe fresh injury or heavy bleeding) or just giving birth (a child borne
+within a day). The world's **scope** setting (`InhabitScope`: anyone — single-player's default —,
+kin, group and region, kin only, no one) limits whom, and permadeath allows no one. **Being born
+again** (Legacy) is Addendum A's birth as a baby: about where the player died or a place picked on
+the globe; in an era's world the recent past is lived there first if no band of the era's peoples
+is yet, and two to four households are offered, in Wild Earth a family of the place is drawn as
+at a world's start. Consent for another player's immediate family waits for multiplayer (R3).
+The births offered ease their rule a step at a time where a place's few have no household fitting
+it — births closer together, a mother as young as her people pair, a father since dead — and, none
+about the place at all (a small world holds few: a Standard planet's Lower Paleolithic has about
+eighty *erectus*), the households nearest anywhere are offered and the life begins at that band's
+camp. Wild Earth's wandering families are as many times one player's as the players a world
+expects (the world's `players` setting, 1 for single-player; Addendum B §3.5).

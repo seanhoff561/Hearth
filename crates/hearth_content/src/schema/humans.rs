@@ -228,6 +228,41 @@ pub struct SocialDefaults {
     pub disperses: Disperser,
 }
 
+/// Where and from whom a species arises in deep time (V2.1 §15.1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Origin {
+    /// The realm it appears in (a world's realm by name: "Afrotropical", "Palearctic", ...).
+    pub realm: String,
+    /// The species whose people there become it; none: it appears in the realm's country best
+    /// for it (the cradle).
+    #[serde(default)]
+    pub from: Option<IdRef>,
+}
+
+/// How a species lives through deep time (V2.1 §15.1): growth, spread and how many one people
+/// holds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Deep {
+    /// Persons a km² of open savanna–woodland its people live at knowing nothing that wins more
+    /// food (each such technique raises it, D194).
+    pub density: f32,
+    /// How much colder a winter its body bears than ours (°C, negative: hardier).
+    #[serde(default)]
+    pub cold_c: f32,
+    /// Growth a year (per person) where the land has room.
+    pub growth: f32,
+    /// How fast its settling front advances over open land (km a year).
+    pub spread_km_year: f32,
+    /// The most people one of its cultures (with its language) holds before it splits.
+    pub lineage_people: f32,
+    /// Its numbers at their height on Earth: what its peoples can invent and keep is reckoned by
+    /// their share of the species on the planet as a share of these (the planet standing in for
+    /// Earth, D194).
+    pub people: f32,
+}
+
 entry! {
     /// A species of person (V2.1 §2): the ranges its persons' components take, what it knows and
     /// does, where and when it lived.
@@ -262,6 +297,12 @@ entry! {
         pub first_appearance_ya: Option<f64>,
         #[serde(default)]
         pub extinction_ya: Option<f64>,
+        /// Where it arises in deep time, and from whom (H8).
+        #[serde(default)]
+        pub origin: Option<Origin>,
+        /// How it lives through deep time (H8).
+        #[serde(default)]
+        pub deep: Option<Deep>,
     }
 }
 

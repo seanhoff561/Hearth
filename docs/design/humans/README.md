@@ -22,6 +22,7 @@ the amendment, written and updated with the milestone that builds it (`PLAN.md`,
 | [language.md](language.md) | §10: generated languages, names, families, drift and borrowing; speech acts and gestures; subtitles and the player learning a language | H5 |
 | [learning.md](learning.md) | §11: knowing and the anachronism guard, learning across a life, finding things out, the collective brain; teaching, apprenticeship, stories, the player taught | H6 |
 | [tiers.md](tiers.md) | §17: the full, household and demographic tiers, promotion and demotion conserving state, coherent families and forebears, budgets, pruning to genealogy stubs | H7 |
+| [history.md](history.md) | §15.1–15.2: deep time over the planet's geography — demes, dispersal, the ice ages, gene pools, lineages, knowledge geography, the chronicle — and the recent past lived as households | H8 |
+| [eras.md](eras.md) | §15.3: the era profiles and selector, the archaic peoples, camps, seasonal rounds and gatherings, births among an era's households, life after death in an era's world | H8 |
 
-Planned with their milestones:
-`history.md` and `eras.md` (H8), `observer.md` (H9), `conversation.md` (H10).
+Planned with their milestones: `observer.md` (H9), `conversation.md` (H10).

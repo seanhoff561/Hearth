@@ -1128,6 +1128,106 @@ impl Workshop {
         self.show_station(h, at);
     }
 
+    /// A band's camp as its people keep it (V2.1 §15.3; H8): its hearth — the campfire standing
+    /// at the camp, or one laid there with the band's beds about it — lit, and fed with dry wood
+    /// whenever it burns low while its people are about it. A fire its people have left burns
+    /// out where it stands.
+    pub fn keep_camp(&mut self, h: &mut Here, c: &CampKept) {
+        let content = h.lw.content.clone();
+        let Some(campfire) = station_named(&content, "campfire") else {
+            return;
+        };
+        let near = self
+            .stations
+            .iter()
+            .position(|s| s.id == campfire && (center(s.pos) - c.at).length() < CAMP_FIRE_M);
+        let i = match near {
+            Some(i) => i,
+            None => {
+                let Some(CampLayout {
+                    fire: pos,
+                    beds,
+                    trodden,
+                }) = camp_layout(h.lw, c)
+                else {
+                    return;
+                };
+                for p in trodden {
+                    self.set_block(h, p, BlockStateId::AIR);
+                }
+                let max_c = content
+                    .workstations
+                    .get(&campfire)
+                    .and_then(|w| {
+                        w.provides.iter().find_map(|c| match c {
+                            Capability::MaxTempC(t) => Some(*t),
+                            _ => None,
+                        })
+                    })
+                    .unwrap_or(800.0);
+                // Tinder, sticks and a split log, lit from the embers they carry.
+                let mut fire = Fire::laid(
+                    max_c,
+                    vec![
+                        dry_wood(0.1, 0.004),
+                        dry_wood(1.2, 0.03),
+                        dry_wood(2.0, 0.06),
+                    ],
+                );
+                fire.ignite();
+                if !self.stand(h, &campfire, pos, Some(fire)) {
+                    return;
+                }
+                // Its beds about it: grass heaped, or hides over it where they know fur bedding.
+                let bed = station_named(&content, if c.fur { "fur_bed" } else { "grass_bed" });
+                if let Some(bed) = bed {
+                    for p in beds {
+                        if self.station_at(p).is_none() {
+                            self.stand(h, &bed, p, None);
+                        }
+                    }
+                }
+                self.stations
+                    .iter()
+                    .position(|s| s.pos == pos)
+                    .unwrap_or(self.stations.len() - 1)
+            }
+        };
+        if c.tend
+            && let Some(f) = self.stations[i].fire.as_mut()
+            && f.fuel_kg() < 1.5
+        {
+            f.feed(dry_wood(2.0, 0.05));
+            if !f.lit() {
+                f.ignite();
+            }
+            let pos = self.stations[i].pos;
+            self.show_station(h, pos);
+        }
+    }
+
+    /// Stands a workstation's block at `at` with its fire (whether it could).
+    fn stand(&mut self, h: &mut Here, station: &str, at: BlockPos, fire: Option<Fire>) -> bool {
+        let content = h.lw.content.clone();
+        let Some(state) = content
+            .workstations
+            .get(station)
+            .and_then(|w| w.block.as_ref())
+            .and_then(|b| h.lw.reg.parse_state(b.as_str()).ok())
+        else {
+            return false;
+        };
+        self.set_block(h, at, state);
+        self.stations.retain(|s| s.pos != at);
+        self.stations.push(Station {
+            pos: at,
+            id: station.to_owned(),
+            fire,
+        });
+        self.show_station(h, at);
+        true
+    }
+
     /// Shows a station's fire in its block's state.
     fn show_station(&mut self, h: &mut Here, pos: BlockPos) {
         let Some(st) = self.stations.iter().find(|s| s.pos == pos) else {
@@ -2469,4 +2569,120 @@ mod tests {
         axe.decay = 1.6;
         assert!(!rotted_away(&content, &items, &axe), "stone does not rot");
     }
+}
+
+/// A band's camp as its people keep it (H8): where it is, whether its people are about it to
+/// tend the fire, and its beds — how many, and whether of furs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CampKept {
+    pub at: DVec3,
+    pub tend: bool,
+    pub beds: u8,
+    pub fur: bool,
+}
+
+/// How near a camp's place its fire stands (m).
+const CAMP_FIRE_M: f64 = 8.0;
+
+/// Dry wood of a thickness for a fire.
+fn dry_wood(kg: f32, thick_m: f32) -> Fuel {
+    Fuel {
+        kg,
+        mj_kg: 17.0,
+        thick_m,
+        wet: 0.1,
+    }
+}
+
+/// A workstation's id by its key ("campfire").
+fn station_named(content: &Content, key: &str) -> Option<String> {
+    content
+        .workstations
+        .iter()
+        .find(|w| triggers::key(&w.id) == key)
+        .map(|w| w.id.clone())
+}
+
+/// Where a camp's fire and beds stand (see [`Workshop::keep_camp`]): the fire on the open ground
+/// at the camp, a bed for each household in a ring a few steps out (as many as find open ground
+/// there), and the plants of its floor, trodden down about them.
+pub struct CampLayout {
+    pub fire: BlockPos,
+    pub beds: Vec<BlockPos>,
+    pub trodden: Vec<BlockPos>,
+}
+
+/// How far about its fire a camp's floor is trodden clear (m).
+const CAMP_FLOOR_M: f64 = 4.5;
+
+pub fn camp_layout(lw: &LocalWorld, c: &CampKept) -> Option<CampLayout> {
+    let fire = open_ground(lw, c.at)?;
+    let n = c.beds.min(10) as usize;
+    let mut beds = Vec::new();
+    for k in 0..n {
+        let a = (k as f64 + 0.5) / n as f64 * std::f64::consts::TAU;
+        let r = 2.5 + 0.5 * (k % 2) as f64;
+        let at = center(fire) + DVec3::new(a.cos() * r, 0.0, a.sin() * r);
+        if let Some(p) = open_ground(lw, at)
+            && p != fire
+            && !beds.contains(&p)
+        {
+            beds.push(p);
+        }
+    }
+    // The plants standing on the floor about the fire (the ground's own block over it, and a
+    // tall plant's upper half).
+    let mut trodden = Vec::new();
+    let r = CAMP_FLOOR_M.ceil() as i32;
+    for dz in -r..=r {
+        for dx in -r..=r {
+            if ((dx * dx + dz * dz) as f64) > CAMP_FLOOR_M * CAMP_FLOOR_M {
+                continue;
+            }
+            let at = center(fire) + DVec3::new(dx as f64, 0.0, dz as f64);
+            let Some(p) = open_ground(lw, at) else {
+                continue;
+            };
+            for up in 0..2 {
+                let q = BlockPos::new(p.x, p.y + up, p.z);
+                if q == fire || beds.contains(&q) {
+                    continue;
+                }
+                if let Some(s) = lw.map.block(q)
+                    && s != BlockStateId::AIR
+                    && lw.reg.has(s, hearth_world::StateFlags::REPLACEABLE)
+                    && !lw.reg.has(s, hearth_world::StateFlags::FLUID)
+                {
+                    trodden.push(q);
+                }
+            }
+        }
+    }
+    Some(CampLayout {
+        fire,
+        beds,
+        trodden,
+    })
+}
+
+/// The free place on the ground about a point: the block over the solid ground there, if it is
+/// loaded and dry, and air or a plant to tread down (not up in a tree).
+fn open_ground(lw: &LocalWorld, at: DVec3) -> Option<BlockPos> {
+    let (x, z) = (at.x.floor() as i32, at.z.floor() as i32);
+    let y0 = at.y.round() as i32;
+    for y in (y0 - 8..=y0 + 4).rev() {
+        let p = BlockPos::new(x, y, z);
+        let s = lw.map.block(p)?;
+        if lw.reg.has(s, hearth_world::StateFlags::FULL_COLLISION) {
+            if lw.reg.has(s, hearth_world::StateFlags::LAYER_CUTOUT) {
+                return None;
+            }
+            let above = lw.map.block(p.up())?;
+            let free = above == BlockStateId::AIR
+                || (lw.reg.has(above, hearth_world::StateFlags::REPLACEABLE)
+                    && !lw.reg.has(above, hearth_world::StateFlags::FLUID));
+            return free.then_some(p.up());
+        }
+    }
+    None
 }

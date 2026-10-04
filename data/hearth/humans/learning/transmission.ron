@@ -30,5 +30,32 @@
             teach: 1.0,
             story_second: 0.0,
         ),
+        (
+            id: "erectus_learning", name: "How Homo erectus passes on what it knows", status: Implemented,
+            species: "homo_erectus",
+            // Acheulean knapping wants teaching, perhaps by gesture (Morgan et al. 2015): taught,
+            // slowly; few stories without full language.
+            learn_year: 0.13, depth_factor: 1.0,
+            learn_ages: (3.0, 16.0), grown_factor: 0.2,
+            contact_weight: 0.15,
+            innovate_month: 0.0008, innovate_insight: 0.15,
+            teach: 2.0,
+            story_second: 0.0,
+            realism_source: "Morgan et al. 2015 (teaching Oldowan and Acheulean knapping); review",
+            uncertain: true,
+        ),
+        (
+            id: "neanderthal_learning", name: "How Neanderthals pass on what they know", status: Implemented,
+            species: "homo_neanderthalensis",
+            // Real teaching and speech; small groups with little contact keep less (D188).
+            learn_year: 0.14, depth_factor: 0.95,
+            learn_ages: (4.0, 20.0), grown_factor: 0.25,
+            contact_weight: 0.15,
+            innovate_month: 0.0015, innovate_insight: 0.18,
+            teach: 3.5,
+            story_second: 0.001,
+            realism_source: "estimate; review",
+            uncertain: true,
+        ),
     ],
 )

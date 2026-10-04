@@ -474,16 +474,29 @@ impl Person {
         father: Option<&crate::genome::Genome>,
         sun: f32,
     ) {
+        self.inherit_in(genetics, mother, father, sun, &[]);
+    }
+
+    /// As [`Self::inherit`], an unknown parent drawn from a people of deep time: its pool at the
+    /// sunlight it is adapted to, moved by its drift (H8).
+    pub fn inherit_in(
+        &mut self,
+        genetics: &crate::genome::Genetics,
+        mother: Option<&crate::genome::Genome>,
+        father: Option<&crate::genome::Genome>,
+        sun: f32,
+        drift: &[f32],
+    ) {
         let Some(pool) = genetics.pool(&self.species) else {
             return;
         };
         let genome = if mother.is_none() && father.is_none() {
-            genetics.founder(pool, sun, self.life.female, &mut self.rng)
+            genetics.founder_in(pool, sun, drift, self.life.female, &mut self.rng)
         } else {
             let mut parent = |known: Option<&crate::genome::Genome>, female: bool| {
                 known
                     .cloned()
-                    .unwrap_or_else(|| genetics.founder(pool, sun, female, &mut self.rng))
+                    .unwrap_or_else(|| genetics.founder_in(pool, sun, drift, female, &mut self.rng))
             };
             let (m, f) = (parent(mother, true), parent(father, false));
             genetics.child(&m, &f, Some(self.life.female), &mut self.rng)

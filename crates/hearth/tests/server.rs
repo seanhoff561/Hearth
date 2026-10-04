@@ -22,8 +22,11 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
             ..Default::default()
         },
         death_rules: hearth_save::DeathRules::default(),
+        inhabit: hearth_save::InhabitScope::default(),
         knowledge: hearth_save::KnowledgeMode::default(),
         childhood: false,
+        era: hearth::eras::WILD_EARTH.to_owned(),
+        birth: None,
     }
 }
 

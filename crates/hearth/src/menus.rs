@@ -62,6 +62,17 @@ pub enum Screen {
         death: usize,
         /// How knowledge is gained (Discovery, Guided, Open).
         knowledge: usize,
+        /// Which of the eras there are to play (V2.1 §15.3).
+        era: usize,
+        /// Who a dead player may live on as (Addendum B §2.3).
+        inhabit: usize,
+    },
+    /// The households the player may be born into (H8): one chosen, and a daughter, a son or
+    /// as chance has it.
+    Births {
+        choices: Vec<hearth_protocol::BirthChoice>,
+        selected: usize,
+        born: Born,
     },
     /// After death: what the world's rules allow.
     Death,
@@ -138,11 +149,26 @@ pub enum MenuAction {
         seed: u64,
         death_rules: hearth_save::DeathRules,
         knowledge: hearth_save::KnowledgeMode,
+        /// A new world's era (its id).
+        era: String,
+        /// Who a dead player may live on as (Addendum B §2.3).
+        inhabit: hearth_save::InhabitScope,
+    },
+    /// Born into the household chosen of those offered (H8).
+    BeBorn {
+        choice: usize,
+        female: Option<bool>,
     },
     /// Live on after death (born again with these wishes, under Legacy; the same person, Hardy).
     LiveOn(Option<hearth_protocol::Wish>),
-    /// After death: live on as one of the player's people (their person's id).
+    /// After death: live on as one of the world's people (their person's id).
     LiveAs(u64),
+    /// After death: be born again about where the player died, or (`elsewhere`) a place picked
+    /// on the globe; a daughter, a son or as chance has it (Addendum B §2.2).
+    BornAgain {
+        elsewhere: bool,
+        female: Option<bool>,
+    },
     /// After death: watch the world.
     Spectate,
     /// After death: begin this world again (the old one archived).
@@ -193,6 +219,8 @@ pub struct MenuContext<'a> {
     pub inventory: Option<crate::inventory_ui::InventoryView<'a>>,
     /// What the player knows, in a world.
     pub journal: Option<crate::journal_ui::JournalView<'a>>,
+    /// The eras a new world may be made in (id, name, how its people live), playable first.
+    pub eras: Vec<(String, String, String)>,
 }
 
 /// What the death screen says.
@@ -202,15 +230,26 @@ pub struct DeathInfo {
     pub rules: hearth_save::DeathRules,
     /// The life's tale, when it ended the world.
     pub summary: Option<Vec<String>>,
-    /// The life told (Addendum B §2), and who of their people the player could live on as.
+    /// The life told (Addendum B §2), and who the player could live on as.
     pub story: Vec<String>,
-    pub kin: Vec<(u64, String)>,
+    pub others: Vec<hearth_protocol::Other>,
 }
 
 const KNOWLEDGE_MODES: [hearth_save::KnowledgeMode; 3] = [
     hearth_save::KnowledgeMode::Discovery,
     hearth_save::KnowledgeMode::Guided,
     hearth_save::KnowledgeMode::Open,
+];
+
+/// Whom a dead player may live on as, as the Create World screen offers it.
+const INHABIT_SCOPES: [(&str, hearth_save::InhabitScope); 4] = [
+    ("inhabit.anyone", hearth_save::InhabitScope::Anyone),
+    (
+        "inhabit.kin_group_region",
+        hearth_save::InhabitScope::KinGroupRegion,
+    ),
+    ("inhabit.kin_only", hearth_save::InhabitScope::KinOnly),
+    ("inhabit.none", hearth_save::InhabitScope::None),
 ];
 
 const DEATH_RULES: [hearth_save::DeathRules; 3] = [
@@ -224,6 +263,8 @@ pub struct Menus {
     stack: Vec<Screen>,
     /// The people a screen shows this frame.
     preview: Option<Preview>,
+    /// Whom the death screen lists to live on as: family, group, near, anywhere.
+    death_filter: usize,
 }
 
 const W: f32 = 220.0;
@@ -234,6 +275,7 @@ impl Menus {
         Self {
             stack: vec![Screen::Title],
             preview: None,
+            death_filter: 0,
         }
     }
 
@@ -241,6 +283,7 @@ impl Menus {
         Self {
             stack: Vec::new(),
             preview: None,
+            death_filter: 0,
         }
     }
 
@@ -264,7 +307,7 @@ impl Menus {
     /// Back one screen (Escape). Closing the pause screen resumes the game.
     pub fn back(&mut self) -> Option<MenuAction> {
         match self.stack.last() {
-            Some(Screen::Title) | Some(Screen::Death) | None => None,
+            Some(Screen::Title) | Some(Screen::Death) | Some(Screen::Births { .. }) | None => None,
             Some(Screen::Pause) | Some(Screen::Born { .. }) => {
                 self.stack.pop();
                 Some(MenuAction::Resume)
@@ -395,6 +438,8 @@ impl Menus {
                             seed: 0,
                             death_rules: Default::default(),
                             knowledge: Default::default(),
+                            era: crate::eras::WILD_EARTH.to_owned(),
+                            inhabit: Default::default(),
                         });
                     }
                     *selected = Some(i);
@@ -412,6 +457,8 @@ impl Menus {
                         seed: 0,
                         death_rules: Default::default(),
                         knowledge: Default::default(),
+                        era: crate::eras::WILD_EARTH.to_owned(),
+                        inhabit: Default::default(),
                     });
                 }
                 if ui.button(b, &ui.t("menu.worlds.new")) {
@@ -420,6 +467,8 @@ impl Menus {
                         seed: String::new(),
                         death: 0,
                         knowledge: 0,
+                        era: 0,
+                        inhabit: 0,
                     });
                 }
                 if ui.button(d, &ui.t("menu.back")) {
@@ -431,6 +480,8 @@ impl Menus {
                 seed,
                 death,
                 knowledge,
+                era,
+                inhabit,
             } => {
                 ui.title(30.0, &ui.t("menu.new_world.title"));
                 let mut c = Column::new(x, 60.0, W);
@@ -483,6 +534,14 @@ impl Menus {
                     .map(|k| ui.t(k))
                     .collect();
                 ui.cycle(c.row(ROW), &ui.t("menu.new_world.death"), &rules, death);
+                // Whom one may live on as after death (Addendum B §2.3).
+                let scopes: Vec<String> = INHABIT_SCOPES.iter().map(|(k, _)| ui.t(k)).collect();
+                ui.cycle(
+                    c.row(ROW),
+                    &ui.t("menu.new_world.inhabit"),
+                    &scopes,
+                    inhabit,
+                );
                 let modes: Vec<String> = [
                     "menu.knowledge.discovery",
                     "menu.knowledge.guided",
@@ -497,6 +556,16 @@ impl Menus {
                     &modes,
                     knowledge,
                 );
+                // When the world is: its era, and how its people live then (V2.1 §15.3).
+                if !cx.eras.is_empty() {
+                    let names: Vec<String> = cx.eras.iter().map(|e| e.1.clone()).collect();
+                    *era = (*era).min(names.len() - 1);
+                    ui.cycle(c.row(ROW), &ui.t("menu.new_world.era"), &names, era);
+                    for l in ui.font.wrap(&cx.eras[*era].2, (W + 60.0) as u32) {
+                        ui.label(x, c.y, &l, theme::DIM);
+                        c.space(hearth_ui::font::LINE as f32);
+                    }
+                }
                 c.space(10.0);
                 let folder = folder_name(name);
                 let exists = cx.saves.join(&folder).join("level.json").exists();
@@ -510,6 +579,11 @@ impl Menus {
                         seed: parse_seed(seed),
                         death_rules: DEATH_RULES[(*death).min(DEATH_RULES.len() - 1)],
                         knowledge: KNOWLEDGE_MODES[(*knowledge).min(KNOWLEDGE_MODES.len() - 1)],
+                        era: cx
+                            .eras
+                            .get(*era)
+                            .map_or_else(|| crate::eras::WILD_EARTH.to_owned(), |e| e.0.clone()),
+                        inhabit: INHABIT_SCOPES[(*inhabit).min(INHABIT_SCOPES.len() - 1)].1,
                     });
                 }
                 if ui.button(c.row(ROW), &ui.t("menu.back")) {
@@ -905,7 +979,7 @@ impl Menus {
                 }
             }
             Screen::Death => {
-                death_screen(ui, cx, &mut out);
+                death_screen(ui, cx, &mut self.death_filter, &mut out);
             }
             Screen::WhoYouAre { lines } => {
                 ui.title((size_of(ui).1 * 0.18).round(), &ui.t("menu.who.title"));
@@ -954,6 +1028,13 @@ impl Menus {
                 }
                 None => pop = true,
             },
+            Screen::Births {
+                choices,
+                selected,
+                born,
+            } => {
+                births_screen(ui, choices, selected, born, &mut out);
+            }
             Screen::Born { born, sway, light } => {
                 let (preview, begin) = born_screen(ui, born, sway, light);
                 self.preview = Some(preview);
@@ -1111,6 +1192,47 @@ fn born_screen(
 }
 
 /// A daughter, a son, or as chance has it.
+/// The households the player may be born into (H8): each told by who its people are, never how
+/// they look; one chosen, and a daughter, a son or as chance has it.
+fn births_screen(
+    ui: &mut Ui<'_>,
+    choices: &[hearth_protocol::BirthChoice],
+    selected: &mut usize,
+    born: &mut Born,
+    out: &mut Vec<MenuAction>,
+) {
+    let size = ui.size;
+    let wide = (W + 160.0).min(size.0 - 16.0);
+    let x = ((size.0 - wide) / 2.0).round();
+    ui.title(16.0, &ui.t("menu.births.title"));
+    let mut c = Column::new(x, 36.0, wide);
+    for (k, choice) in choices.iter().enumerate() {
+        let mark = if k == *selected { "> " } else { "" };
+        if ui.button(c.row(ROW), &format!("{mark}{}", choice.title)) {
+            *selected = k;
+        }
+        if k == *selected {
+            for line in &choice.lines {
+                for l in ui.font.wrap(line, wide as u32) {
+                    ui.label(x + 8.0, c.y, &l, theme::TEXT);
+                    c.space(hearth_ui::font::LINE as f32);
+                }
+            }
+            c.space(4.0);
+        }
+    }
+    c.space(6.0);
+    born_choice(ui, c.row(ROW), born);
+    ui.label(x, c.y, &ui.t("menu.births.looks"), theme::DIM);
+    c.space(hearth_ui::font::LINE as f32 + 4.0);
+    if !choices.is_empty() && ui.button(c.row(ROW), &ui.t("menu.births.born")) {
+        out.push(MenuAction::BeBorn {
+            choice: (*selected).min(choices.len() - 1),
+            female: born.female(),
+        });
+    }
+}
+
 fn born_choice(ui: &mut Ui<'_>, r: Rect, born: &mut Born) {
     let names: Vec<String> = Born::ALL.iter().map(|b| ui.t(b.key())).collect();
     let mut i = Born::ALL.iter().position(|b| b == born).unwrap_or(0);
@@ -1119,19 +1241,26 @@ fn born_choice(ui: &mut Ui<'_>, r: Rect, born: &mut Born) {
     }
 }
 
-/// After death: how it happened, and what the world's rules allow — live on as someone new
-/// (Legacy), live again (Hardy), or the tale of the life that ended the world (permadeath).
-fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAction>) {
+/// After death: how it happened, the life told, and what the world's rules allow (Addendum B
+/// §2): live on as another — chosen among the dead one's family, group, those near where they
+/// died, or anyone, as the world's scope lets, told by who they are and never how they look —
+/// be born again here or elsewhere on the globe (Legacy), live again (Hardy), or the tale of the
+/// life that ended the world (permadeath); watch the world, or begin it again.
+fn death_screen(
+    ui: &mut Ui<'_>,
+    cx: &mut MenuContext<'_>,
+    filter: &mut usize,
+    out: &mut Vec<MenuAction>,
+) {
     let size = ui.size;
     let Some(d) = cx.death.clone() else {
         // Alive again: nothing to face.
         return;
     };
     let x = ((size.0 - W) / 2.0).round();
-    let top = if d.story.is_empty() { 0.22 } else { 0.06 };
+    let top = if d.story.is_empty() { 0.22 } else { 0.05 };
     ui.title((size.1 * top).round(), &d.words);
     let mut c = Column::new(x, (size.1 * top + 20.0).round(), W);
-    // The life told, and who of their people the player could live on as (Addendum B §2).
     for line in &d.story {
         for l in ui.font.wrap(line, (W + 120.0) as u32) {
             let lw = ui.font.width(&l) as f32;
@@ -1142,18 +1271,36 @@ fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAct
     if !d.story.is_empty() {
         c.space(6.0);
     }
-    let kin: &[(u64, String)] = if d.rules == hearth_save::DeathRules::Permadeath {
-        &[]
-    } else {
-        &d.kin
-    };
-    for (id, who) in kin.iter().take(4) {
-        let words = ui.lang.format("menu.death.live_as", &[("who", who)]);
-        if ui.button(c.row(ROW), &words) {
-            out.push(MenuAction::LiveAs(*id));
+    // Who to live on as, by the filter chosen (those the world's scope allows were sent).
+    if d.rules != hearth_save::DeathRules::Permadeath && !d.others.is_empty() {
+        let names: Vec<String> = DEATH_FILTERS.iter().map(|k| ui.t(k)).collect();
+        ui.cycle(c.row(ROW), &ui.t("menu.death.among"), &names, filter);
+        let shown: Vec<&hearth_protocol::Other> = d
+            .others
+            .iter()
+            .filter(|o| match *filter {
+                0 => o.family,
+                1 => o.group,
+                2 => o.near,
+                _ => true,
+            })
+            .take(5)
+            .collect();
+        if shown.is_empty() {
+            ui.label(x, c.y, &ui.t("menu.death.none"), theme::DIM);
+            c.space(hearth_ui::font::LINE as f32 + 2.0);
         }
-    }
-    if !kin.is_empty() {
+        for o in shown {
+            let key = if o.child {
+                "menu.death.live_as_child"
+            } else {
+                "menu.death.live_as"
+            };
+            let words = ui.lang.format(key, &[("who", &o.words)]);
+            if ui.button(c.row(ROW), &words) {
+                out.push(MenuAction::LiveAs(o.id));
+            }
+        }
         c.space(6.0);
     }
     let rules = match d.rules {
@@ -1169,15 +1316,25 @@ fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAct
     c.space(8.0);
     match d.rules {
         hearth_save::DeathRules::Legacy => {
-            // Born again in this land (V2.1 Addendum A): a daughter or a son, or as chance has
-            // it; the name kept.
+            // Born again as a baby (Addendum A's birth): here or elsewhere, a daughter or a son
+            // or as chance has it.
             let before = cx.profiles.born;
             born_choice(ui, c.row(ROW), &mut cx.profiles.born);
             if cx.profiles.born != before {
                 out.push(MenuAction::ProfilesChanged);
             }
+            let female = cx.profiles.born.female();
             if ui.button(c.row(ROW), &ui.t("menu.death.born_again")) {
-                out.push(MenuAction::LiveOn(Some(cx.profiles.wish())));
+                out.push(MenuAction::BornAgain {
+                    elsewhere: false,
+                    female,
+                });
+            }
+            if ui.button(c.row(ROW), &ui.t("menu.death.born_elsewhere")) {
+                out.push(MenuAction::BornAgain {
+                    elsewhere: true,
+                    female,
+                });
             }
         }
         hearth_save::DeathRules::Hardy => {
@@ -1205,6 +1362,14 @@ fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAct
         out.push(MenuAction::QuitToTitle);
     }
 }
+
+/// The death screen's filters of whom to live on as (Addendum B §2.2).
+const DEATH_FILTERS: [&str; 4] = [
+    "menu.death.family",
+    "menu.death.group",
+    "menu.death.near",
+    "menu.death.anywhere",
+];
 
 /// A screen's size.
 fn size_of(ui: &Ui<'_>) -> (f32, f32) {

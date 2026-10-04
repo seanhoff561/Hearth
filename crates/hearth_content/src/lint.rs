@@ -403,6 +403,9 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
         for k in e.knowledge.iter().chain(&e.cold_knowledge) {
             r.check(&c.knowledge, "knowledge", k, o, e.id());
         }
+        if let Some(from) = e.origin.as_ref().and_then(|g| g.from.as_ref()) {
+            r.check(&c.species, "species", from, o, e.id());
+        }
         match &e.population {
             Some(p) => r.check(&c.animals, "animal", p, o, e.id()),
             None if e.status == crate::schema::Status::Implemented => r.report.error(
@@ -509,6 +512,43 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
         }
         for k in &e.knowledge_baseline {
             r.check(&c.knowledge, "knowledge", k, o, e.id());
+        }
+        // Its peoples (H8): species of person, each living by a life table, knowing only
+        // knowledge of the graph.
+        for p in &e.peoples {
+            r.check(&c.species, "species", &p.species, o, e.id());
+            for k in &p.repertoire {
+                r.check(&c.knowledge, "knowledge", k, o, e.id());
+            }
+            let key = |s: &str| s.rsplit(':').next().unwrap_or(s).to_owned();
+            if e.available
+                && !c
+                    .life_tables
+                    .iter()
+                    .any(|t| key(t.species.as_str()) == key(p.species.as_str()))
+            {
+                r.report.error(
+                    "no-life-table",
+                    Some(o.file.clone()),
+                    o.line,
+                    format!(
+                        "era `{}` has the people `{}`, which has no life table",
+                        e.id(),
+                        p.species
+                    ),
+                );
+            }
+        }
+    }
+    // Deep time (H8): the techniques that bring fishing, warmth and craft.
+    for (e, o) in c.history.iter_with_origin() {
+        for g in e.fishing.iter().chain(&e.craft) {
+            r.check(&c.knowledge, "knowledge", &g.knowledge, o, e.id());
+        }
+        for step in &e.cold {
+            for k in &step.needs {
+                r.check(&c.knowledge, "knowledge", k, o, e.id());
+            }
         }
     }
     for (p, o) in c.balance_presets.iter_with_origin() {

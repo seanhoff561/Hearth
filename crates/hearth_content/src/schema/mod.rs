@@ -14,6 +14,7 @@ pub mod era;
 pub mod fauna;
 pub mod flora;
 pub mod geology;
+pub mod history;
 pub mod humans;
 pub mod item;
 pub mod knowledge;

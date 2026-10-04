@@ -143,6 +143,18 @@ impl People {
         senses: &dyn Senses,
         now: Now,
     ) {
+        self.live_course_by(species, items, &|at| senses.latitude(at), now);
+    }
+
+    /// As [`Self::live_course`], a place's latitude told by `latitude` (the recent past, lived
+    /// before the world about it is loaded).
+    pub fn live_course_by(
+        &mut self,
+        species: &SpeciesSet,
+        items: &Items,
+        latitude: &dyn Fn(DVec3) -> f64,
+        now: Now,
+    ) {
         let step = now.year_days.max(1.0) / STEPS_A_YEAR;
         // Bands lived in full or as households live their courses (V2.1 §17.1).
         for band in &mut self.bands {
@@ -176,10 +188,13 @@ impl People {
             };
             let home = self.bands[bi].home;
             let sun = species.genetics.as_ref().map_or(1.0, |g| {
-                g.sunlight(senses.latitude(DVec3::new(home.x, 0.0, home.y)))
+                g.sunlight(latitude(DVec3::new(home.x, 0.0, home.y)))
             });
             let n = (day / step).round() as u64;
             self.course_step(bi, sp, species, items, table, sun, day, n, now);
+            // Its year: its round's camps, its people's gathering (H8).
+            let southern = latitude(DVec3::new(home.x, 0.0, home.y)) < 0.0;
+            self.round_step(bi, day, southern, &now);
         }
     }
 
@@ -198,9 +213,17 @@ impl People {
     }
 
     /// How many more of its kind live within [`ROOM_M`] of a band's home than the land feeds
-    /// well, as a part (1 where no more).
+    /// well, as a part (1 where no more): the land feeding as many as deep time has there, for a
+    /// band of its peoples (on a small planet, denser than real, D196), else its life table's.
     pub fn crowd(&self, bi: usize, table: &Table) -> f64 {
         let (home, kind) = (self.bands[bi].home, &self.bands[bi].species);
+        let feeds = match self.bands[bi].deep.as_ref().filter(|d| d.density > 0.0) {
+            Some(d) => {
+                let km = ROOM_M / 1000.0;
+                (d.density as f64 * std::f64::consts::PI * km * km).max(1.0)
+            }
+            None => table.feeds(),
+        };
         let n: usize = self
             .bands
             .iter()
@@ -208,7 +231,7 @@ impl People {
             .filter(|b| (b.home - home).length() <= ROOM_M)
             .map(|b| b.members.len())
             .sum();
-        (n as f64 / table.feeds()).max(1.0)
+        (n as f64 / feeds).max(1.0)
     }
 
     /// One step of a band's life course, ending on `day`.
@@ -518,8 +541,11 @@ impl People {
                     && self.bands[b].species == kind
             })
             .map(|b| {
+                // Her own band first, then those she met at her people's gathering this year.
                 let d = if b == bi {
                     -1.0
+                } else if self.gathered_together(bi, b, day, year_days) {
+                    0.0
                 } else {
                     (self.bands[b].home - home).length()
                 };

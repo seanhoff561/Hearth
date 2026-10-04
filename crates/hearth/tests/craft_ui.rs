@@ -96,6 +96,7 @@ fn the_making_screens_draw() {
                         mode: Mode::Discovery,
                         ticks_per_day: 57_600.0,
                     }),
+                    eras: Vec::new(),
                 };
                 menus.ui(ui, &mut cx);
             },

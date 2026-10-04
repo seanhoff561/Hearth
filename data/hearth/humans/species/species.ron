@@ -1,7 +1,9 @@
 // Species of person (V2.1 §2): the ranges every person's components take. *Australopithecus* runs
-// now (H0); *Homo erectus*, Neanderthals and *Homo sapiens* are data until their eras (H3's
-// families, H8). Ages are years; sizes are grown adults'. Values are central estimates from the
-// fossil and comparative record, many disputed: each is marked for review.
+// in Wild Earth (H0), *Homo sapiens* as Wild Earth's families (H3) and in the eras, *Homo erectus*
+// and Neanderthals in the Paleolithic eras (H8). `origin` is where and from whom a species arises
+// in deep time, `deep` how it grows, spreads and splits into peoples there (H8, D191). Ages are
+// years; sizes are grown adults'. Values are central estimates from the fossil and comparative
+// record, many disputed: each is marked for review.
 (
     schema: 1,
     entries: [
@@ -41,7 +43,7 @@
             uncertain: true,
         ),
         (
-            id: "homo_erectus", name: "Homo erectus", scientific: "Homo erectus", status: Planned,
+            id: "homo_erectus", name: "Homo erectus", scientific: "Homo erectus", status: Implemented,
             // Tall and long-legged, a walker and runner of open country; bare-skinned (inferred).
             body: (
                 height_m: (female: (1.45, 1.6), male: (1.6, 1.8)),
@@ -54,21 +56,35 @@
                 language: ProtoLanguage, planning_depth: 3, symbolic: false, teaching: Real,
                 fire: Keeping, era_ceiling: 0,
             ),
+            // The Nariokotome boy's teeth and bones: growing faster than we do, grown at about
+            // fifteen; few lived past fifty.
             life: (
                 gestation_days: 255, weaning_years: 3.0, maturity_years: 15,
                 adult_death_years: (35, 55), birth_interval_years: 3.5,
+                stages: [(Infant, 0.0), (Child, 3.0), (Juvenile, 6.0), (Adolescent, 10.0), (Adult, 15.0), (Elder, 45.0)],
+                growth: [(0.0, 0.3, 0.06), (1.0, 0.45, 0.15), (3.0, 0.57, 0.24), (6.0, 0.7, 0.36), (10.0, 0.84, 0.55), (12.0, 0.91, 0.7), (14.0, 0.97, 0.88), (15.0, 1.0, 1.0)],
             ),
             social: (group_size: (15, 40), disperses: Females),
             habitat: ["savanna_woodland", "tropical_freshwater", "tropical_rainforest", "temperate_grassland", "temperate_broadleaf_forest", "coast"],
-            knowledge: ["stone_as_hammer", "anvil_use", "sharp_flake", "flake_cutting", "chopper", "hand_axe", "digging_stick", "throwing_stones", "carrying_bundle", "tracking", "butchery", "marrow_extraction", "fire_keeping", "cooking_roasting"],
+            // The Acheulean's makers: hand axes and choppers, butchery and marrow, digging sticks,
+            // carrying, tracking; fire kept (Wonderwerk, Gesher Benot Ya'aqov) and food roasted
+            // on it; by four hundred thousand years ago wooden spears hardened in the fire and
+            // windbreaks (Schöningen, Terra Amata) — its people's repertoire in deep time.
+            knowledge: ["stone_as_hammer", "anvil_use", "nut_cracking", "sharp_flake", "flake_cutting", "chopper", "hand_axe", "digging_stick", "throwing_stones", "carrying_bundle", "tracking", "butchery", "marrow_extraction", "fire_keeping", "cooking_roasting", "wooden_spear", "fire_hardening", "windbreak_shelter"],
             behaviors: [Forage, DigTubers, Scavenge, KnapFlakes, AlarmCall, MobThreat, Habituate, KeepCamp],
+            population: "homo_erectus",
             first_appearance_ya: 1900000, extinction_ya: 110000,
+            // In the cradle, out of its australopith forebears, and out of Africa within a few
+            // hundred thousand years (Dmanisi 1.8 million years ago); a slow spreader, few on the
+            // ground.
+            origin: (realm: "Afrotropical"),
+            deep: (density: 0.03, growth: 0.004, spread_km_year: 0.3, lineage_people: 800, people: 300000),
             realism_source: "Ruff et al. (body size); the Nariokotome boy's development; Acheulean teaching (Morgan et al. 2015); fire at Wonderwerk Cave; review",
             uncertain: true,
         ),
         (
             id: "homo_neanderthalensis", name: "Neanderthal", scientific: "Homo neanderthalensis",
-            status: Planned,
+            status: Implemented,
             // Short, broad and heavy: a cold climate's body.
             body: (
                 height_m: (female: (1.48, 1.6), male: (1.6, 1.72)),
@@ -81,15 +97,28 @@
                 language: Full, planning_depth: 4, symbolic: true, teaching: Real,
                 fire: Making, era_ceiling: 1,
             ),
+            // Growing about as we do, a little faster; grown at fifteen; many dead by forty
+            // (Trinkaus 1995's skeletons, most of them young adults).
             life: (
                 gestation_days: 270, weaning_years: 2.5, maturity_years: 15,
                 adult_death_years: (35, 55), birth_interval_years: 3.0,
+                stages: [(Infant, 0.0), (Child, 2.5), (Juvenile, 6.5), (Adolescent, 11.0), (Adult, 15.0), (Elder, 45.0)],
+                growth: [(0.0, 0.3, 0.06), (1.0, 0.45, 0.16), (2.5, 0.54, 0.22), (5.0, 0.65, 0.32), (8.0, 0.76, 0.45), (11.0, 0.87, 0.62), (13.0, 0.94, 0.8), (15.0, 1.0, 1.0)],
             ),
             social: (group_size: (10, 30), disperses: Females),
             habitat: ["temperate_broadleaf_forest", "temperate_grassland", "mediterranean_scrub", "boreal_forest_ecosystem", "montane_forest_ecosystem", "temperate_freshwater", "coast"],
-            knowledge: ["stone_as_hammer", "anvil_use", "sharp_flake", "flake_cutting", "chopper", "hand_axe", "digging_stick", "throwing_stones", "carrying_bundle", "tracking", "butchery", "marrow_extraction", "fire_keeping", "cooking_roasting", "wooden_spear", "fire_hardening", "windbreak_shelter", "prepared_core", "scraper", "hide_scraping", "hide_wrap_clothing", "birch_tar", "hafting_binding", "stone_tipped_spear", "fire_by_friction_hand_drill", "cordage_basic", "ochre_pigment"],
+            // Nuts cracked and plants known as well as ours (Gesher Benot Ya'aqov's pitted
+            // anvils; Hardy et al. 2012 on plants in their teeth); shelters at Molodova.
+            knowledge: ["stone_as_hammer", "anvil_use", "nut_cracking", "sharp_flake", "flake_cutting", "chopper", "hand_axe", "digging_stick", "throwing_stones", "carrying_bundle", "tracking", "butchery", "marrow_extraction", "fire_keeping", "cooking_roasting", "wooden_spear", "fire_hardening", "windbreak_shelter", "telling_umbellifer", "telling_white_mushroom", "telling_dark_berry", "prepared_core", "scraper", "hide_scraping", "hide_wrap_clothing", "birch_tar", "hafting_binding", "stone_tipped_spear", "fire_by_friction_hand_drill", "cordage_basic", "ochre_pigment", "lean_to"],
             behaviors: [Forage, DigTubers, Scavenge, KnapFlakes, AlarmCall, MobThreat, Habituate, KeepCamp],
+            population: "homo_neanderthalensis",
             first_appearance_ya: 400000, extinction_ya: 40000,
+            // From the people of the north (Sima de los Huesos, 430,000 years ago); never many —
+            // perhaps tens of thousands at once (Prüfer et al. 2014's small effective numbers);
+            // bodies built for the cold (short limbs, a high metabolism: Steegmann et al. 2002),
+            // bearing winters some degrees harder than ours.
+            origin: (realm: "Palearctic", from: "homo_erectus"),
+            deep: (density: 0.03, cold_c: -8.0, growth: 0.004, spread_km_year: 0.2, lineage_people: 500, people: 50000),
             realism_source: "body size and proportions (Ruff, Trinkaus); weaning at about 2.5 years from barium in teeth (Smith et al. 2018); fire-making wear on bifaces (Sorensen et al. 2018); patrilocality at El Sidrón; review",
             uncertain: true,
         ),
@@ -129,6 +158,12 @@
             worldwide: true,
             behaviors: [Forage, DigTubers, CrackNuts, Scavenge, KnapFlakes, Habituate, KeepCamp],
             first_appearance_ya: 300000,
+            // From the cradle's people (Jebel Irhoud, 300,000 years ago); out of it in earnest
+            // sixty to fifty thousand years ago, spreading about a kilometre a year; a million or
+            // two at the Last Glacial Maximum; peoples of about fifteen hundred (Birdsell's
+            // dialect tribe).
+            origin: (realm: "Afrotropical", from: "homo_erectus"),
+            deep: (density: 0.03, growth: 0.006, spread_km_year: 1.0, lineage_people: 1500, people: 2000000),
             realism_source: "forager life history (Gurven and Kaplan 2007; Marlowe 2004 on bilocal residence); review",
             uncertain: true,
         ),

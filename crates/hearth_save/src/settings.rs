@@ -45,6 +45,22 @@ pub enum DeathRules {
     Hardy,
 }
 
+/// Who a player may live on as after their death (Addendum B §2.3): the world's (and server's)
+/// scope for inhabiting another living person.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InhabitScope {
+    /// Any eligible living person (single-player's default).
+    #[default]
+    Anyone,
+    /// The dead one's kin, their group, or anyone of the region where they died (multiplayer's).
+    KinGroupRegion,
+    /// Living kin only.
+    KinOnly,
+    /// No one: being born again, restarting and watching remain.
+    None,
+}
+
 /// Realism preset (a `balance/presets` id) plus Custom overrides per balance key.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Realism {
@@ -83,6 +99,17 @@ pub struct LifeSettings {
     /// Reveal the whole map instead of only what the character has seen.
     #[serde(default)]
     pub full_map_knowledge: bool,
+    /// Who a player may live on as after death (Addendum B §2.3).
+    #[serde(default)]
+    pub inhabit: InhabitScope,
+    /// The players the world expects (Addendum B §3.5): Wild Earth holds as many times its
+    /// wandering families, so that each may be born into one.
+    #[serde(default = "one")]
+    pub players: u8,
+}
+
+fn one() -> u8 {
+    1
 }
 
 impl Default for LifeSettings {
@@ -98,6 +125,8 @@ impl Default for LifeSettings {
             hominin_range: HomininRange::default(),
             death_rules: DeathRules::default(),
             full_map_knowledge: false,
+            inhabit: InhabitScope::default(),
+            players: 1,
         }
     }
 }

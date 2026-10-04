@@ -96,6 +96,16 @@ pub enum ToServer {
     Childhood(Skip),
     /// The player, dead, lives on as one of their people (Addendum B §2): that person's id.
     Inhabit(u64),
+    /// Born into the household chosen of those offered (H8): its place in the list, a daughter
+    /// or a son or as chance has it.
+    BeBorn { choice: usize, female: Option<bool> },
+    /// The player, dead, is born again (Addendum B §2.2): about a place on the globe (none: where
+    /// they died), into a household of it offered by `Births` (in an era) or one of its families
+    /// (Wild Earth), with a daughter, a son or chance.
+    BornAgain {
+        at: Option<DVec3>,
+        female: Option<bool>,
+    },
     /// Debug: extra ticks per second of play (0 for none).
     TimeWarp(f64),
     /// Tests and bots: from now on the world ticks only when asked; run this many game ticks
@@ -419,15 +429,38 @@ pub enum ToClient {
     Story(Box<Story>),
     /// Who the player is now, having taken up another's life: the briefing's lines.
     WhoYouAre(Vec<String>),
+    /// The households of the place the player may be born into (H8): who they are, never how
+    /// they look.
+    Births(Vec<BirthChoice>),
+}
+
+/// A household a player may be born into (H8, Addendum A), told by who its people are.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BirthChoice {
+    pub title: String,
+    pub lines: Vec<String>,
 }
 
 /// A life told at its end (Addendum B §2).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Story {
     pub lines: Vec<String>,
-    /// The living grown of the dead one's kin and people near: each person's id and who they
-    /// are to the dead (never how they look).
-    pub kin: Vec<(u64, String)>,
+    /// Those the dead one may live on as, as the world's scope allows: their kin first.
+    pub others: Vec<Other>,
+}
+
+/// One a dead player may live on as (Addendum B §2.2–2.3): their id, who they are to the dead
+/// (a stranger by their household; never how they look), and which of the choosing's filters
+/// they answer to — the dead one's family, their group, near where they died — and whether a
+/// child, whose childhood would be lived on from its age.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Other {
+    pub id: u64,
+    pub words: String,
+    pub family: bool,
+    pub group: bool,
+    pub near: bool,
+    pub child: bool,
 }
 
 /// Skipping ahead in a childhood.

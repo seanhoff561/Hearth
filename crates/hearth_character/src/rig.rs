@@ -198,6 +198,65 @@ impl Proportions {
         }
     }
 
+    /// A body of the appearance's plan: ours, or an archaic people's.
+    pub fn of_plan(a: &Appearance) -> Self {
+        match a.plan {
+            crate::appearance::Plan::Modern => Self::of(a),
+            crate::appearance::Plan::Erectus => Self::erectus(a),
+            crate::appearance::Plan::Neanderthal => Self::neanderthal(a),
+        }
+    }
+
+    /// *Homo erectus*'s body (the Nariokotome boy, Ruff's reconstructions): legs a little long
+    /// for its height, narrow hips and a narrow, flat-sided chest, the braincase long and low
+    /// over a jutting face.
+    pub fn erectus(a: &Appearance) -> Self {
+        let mut d = Self::of(a);
+        let longer = 1.04;
+        d.thigh *= longer;
+        d.shank *= longer;
+        d.hip = d.thigh + d.shank + d.ankle;
+        d.upper_arm *= 0.98;
+        d.forearm *= 0.98;
+        d.hip_w *= 0.92;
+        d.hip_spacing *= 0.94;
+        d.chest_w *= 0.96;
+        d.waist_w *= 0.95;
+        d.head_w *= 0.96;
+        d.head_d *= 1.12;
+        d.head_h *= 0.94;
+        d.neck_w *= 1.06;
+        d
+    }
+
+    /// A Neanderthal's body (Trinkaus, Ruff, Weaver): short, broad and heavy — a barrel chest,
+    /// wide hips, forearms and shins short for the limbs, thick limbs, a long low braincase over a
+    /// big face on a thick neck.
+    pub fn neanderthal(a: &Appearance) -> Self {
+        let mut d = Self::of(a);
+        d.forearm *= 0.92;
+        d.shank *= 0.92;
+        d.thigh *= 1.02;
+        d.hip = d.thigh + d.shank + d.ankle;
+        d.shoulder_w *= 1.06;
+        d.chest_w *= 1.14;
+        d.chest_d *= 1.16;
+        d.waist_w *= 1.1;
+        d.waist_d *= 1.1;
+        d.hip_w *= 1.08;
+        d.pelvis_d *= 1.06;
+        d.arm_t *= 1.12;
+        d.forearm_t *= 1.1;
+        d.thigh_t *= 1.1;
+        d.shank_t *= 1.08;
+        d.head_w *= 1.04;
+        d.head_d *= 1.16;
+        d.head_h *= 0.96;
+        d.neck_w *= 1.12;
+        d.neck_d *= 1.1;
+        d
+    }
+
     /// An australopith's body at the appearance's stature (not a person's 1.55–1.95 m): arms long
     /// for its height and legs short, the chest broad and funnel-shaped over a pot belly, the face
     /// jutting forward from a small braincase.
@@ -323,7 +382,7 @@ impl Rig {
 
     pub fn new(a: &Appearance) -> Self {
         let a = a.clone().sanitized();
-        let dims = Proportions::of(&a);
+        let dims = Proportions::of_plan(&a);
         let mut parts = Vec::new();
         body(&dims, &mut parts);
         face(&a, &dims, &mut parts);

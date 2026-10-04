@@ -58,13 +58,17 @@ fn a_band_carries_genes_and_its_children_their_parents() {
     // Grown brothers and sisters of a forebear (H7) share more of their genes than unrelated
     // grown ones do: alike at a locus when they carry an allele in common.
     let alike = |a: &hearth_people::Person, b: &hearth_people::Person| {
-        let (ga, gb) = (a.genome.as_ref().expect("genome"), b.genome.as_ref().expect("genome"));
+        let (ga, gb) = (
+            a.genome.as_ref().expect("genome"),
+            b.genome.as_ref().expect("genome"),
+        );
         let n = ga.maternal.len();
         let shared = (0..n)
             .filter(|&i| {
                 let x = [ga.maternal[i], ga.paternal[i]];
                 let y = [gb.maternal[i], gb.paternal[i]];
-                x.iter().any(|&v| v != hearth_people::genome::NONE && y.contains(&v))
+                x.iter()
+                    .any(|&v| v != hearth_people::genome::NONE && y.contains(&v))
             })
             .count();
         shared as f64 / n as f64

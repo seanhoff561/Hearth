@@ -127,6 +127,8 @@ pub struct Client {
     world: Option<World>,
     /// The planet as a globe to pick a place on (the world-map key).
     pub globe: GlobePicker,
+    /// Being born again about a place picked on the globe, with this wish of a daughter or a son.
+    birth_place: Option<Option<bool>>,
     pub camera: Camera,
     pub mode: CameraMode,
     /// The player's body as the server last told it, and the player's movement here.
@@ -221,6 +223,8 @@ pub struct Client {
     woke: Option<(hearth_body::Wake, f64)>,
     /// A birth to show the player (taken by the app for its screen).
     pub born: Option<hearth_protocol::Born>,
+    /// The households offered for the player's birth, to choose from (H8).
+    pub births: Option<Vec<hearth_protocol::BirthChoice>>,
     /// Where the heart and the breath are in their cycles (for the pulse at the edges of
     /// sight and the breath's fog).
     heart_phase: f64,
@@ -357,6 +361,7 @@ impl Client {
             color_format,
             world: None,
             globe: GlobePicker::default(),
+            birth_place: None,
             camera: Camera {
                 fov_y: options.video.fov,
                 ..Camera::default()
@@ -420,6 +425,7 @@ impl Client {
             eyes_shut: 0.0,
             woke: None,
             born: None,
+            births: None,
             heart_phase: 0.0,
             breath_phase: 0.0,
             reduce_motion: options.accessibility.reduce_motion,
@@ -1665,7 +1671,10 @@ impl Client {
                 .story
                 .as_ref()
                 .map_or_else(Vec::new, |s| s.lines.clone()),
-            kin: self.story.as_ref().map_or_else(Vec::new, |s| s.kin.clone()),
+            others: self
+                .story
+                .as_ref()
+                .map_or_else(Vec::new, |s| s.others.clone()),
         })
     }
 
@@ -2013,6 +2022,8 @@ impl Client {
         wish: hearth_protocol::Wish,
         death_rules: hearth_save::DeathRules,
         knowledge: hearth_save::KnowledgeMode,
+        era: &str,
+        inhabit: hearth_save::InhabitScope,
     ) -> WorldSpec {
         WorldSpec {
             name: name.to_owned(),
@@ -2022,9 +2033,17 @@ impl Client {
             saves_dir,
             wish,
             death_rules,
+            inhabit,
             knowledge,
             childhood: true,
+            era: era.to_owned(),
+            birth: None,
         }
+    }
+
+    /// Born into the household chosen of those offered (H8).
+    pub fn be_born(&mut self, choice: usize, female: Option<bool>) {
+        self.server.send(ToServer::BeBorn { choice, female });
     }
 
     /// Jumps the clock forward (or back) by a number of game hours.
@@ -2086,6 +2105,22 @@ impl Client {
         self.body.as_ref().is_some_and(|b| b.dead.is_some())
     }
 
+    /// After death: be born again (Addendum B §2.2) — about where the player died, or (with
+    /// `elsewhere`) where they pick on the globe, which opens for it.
+    pub fn born_again(&mut self, elsewhere: bool, female: Option<bool>) {
+        if !self.dead() {
+            return;
+        }
+        if elsewhere {
+            self.birth_place = Some(female);
+            if !self.globe.open {
+                self.toggle_globe();
+            }
+        } else {
+            self.server.send(ToServer::BornAgain { at: None, female });
+        }
+    }
+
     /// Opens or closes the globe; whether it is open. It opens once the world is ready,
     /// centred on the player.
     pub fn toggle_globe(&mut self) -> bool {
@@ -2099,15 +2134,29 @@ impl Client {
     }
 
     /// The mouse button over the globe went down or up: a click puts the player at the place
-    /// under it (closing the globe).
+    /// under it (closing the globe) — or, the player being born again, is born about it.
     pub fn globe_button(&mut self, pressed: bool) {
         if let Some((lat, lon)) = self.globe.button(pressed)
             && let Some(w) = &self.world
         {
             let (x, z) = crate::globe::world_xz(&w.planet, lat, lon);
-            log::info!("going to {}", crate::globe::describe(&w.terrain, lat, lon));
-            self.server
-                .send(ToServer::Place(DVec3::new(x as f64, 0.0, z as f64)));
+            let at = DVec3::new(x as f64, 0.0, z as f64);
+            match self.birth_place.take() {
+                Some(female) if self.dead() => {
+                    log::info!(
+                        "born again about {}",
+                        crate::globe::describe(&w.terrain, lat, lon)
+                    );
+                    self.server.send(ToServer::BornAgain {
+                        at: Some(at),
+                        female,
+                    });
+                }
+                _ => {
+                    log::info!("going to {}", crate::globe::describe(&w.terrain, lat, lon));
+                    self.server.send(ToServer::Place(at));
+                }
+            }
             self.globe.close();
         }
     }
@@ -2537,6 +2586,7 @@ impl Client {
                 }
                 ToClient::Ended(s) => self.ended = Some(s),
                 ToClient::Born(b) => self.born = Some(*b),
+                ToClient::Births(choices) => self.births = Some(choices),
                 ToClient::Carried(c) => {
                     self.carry = c;
                     self.redress();

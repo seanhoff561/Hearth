@@ -123,9 +123,30 @@ pub struct Band {
     /// Strangers it has met and greeted (V2.1 §8.7).
     #[serde(default)]
     pub guests: Vec<crate::strangers::Guest>,
+    /// Where it comes from in deep time, a band of an era's people (H8).
+    #[serde(default)]
+    pub deep: Option<Ancestry>,
+    /// Its way through the year: its round's camps and its people's gatherings (H8).
+    #[serde(default)]
+    pub round: crate::rounds::Round,
     /// Its own random stream: where its members come down, who dies and who is born while the
     /// player is away.
     pub rng: Rng,
+}
+
+/// Where a band of an era's people comes from in deep time (H8): its people's lineage (whose
+/// culture and language it carries), the sunlight its gene pool is adapted to, the pool's drift
+/// and its share of another species' ancestry.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Ancestry {
+    pub lineage: u32,
+    pub sun: f32,
+    pub drift: Vec<f32>,
+    pub archaic: f32,
+    /// How many of its kind deep time has to the km² where it was founded: what the land feeds
+    /// there, as its people live (0: unknown, its life table's density instead).
+    #[serde(default)]
+    pub density: f32,
 }
 
 impl Band {
