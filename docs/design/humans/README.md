@@ -13,9 +13,10 @@ the amendment, written and updated with the milestone that builds it (`PLAN.md`,
 | [multiplayer-births.md](multiplayer-births.md) | Addendum B §3–4: a shared start and childhood, Remembered Childhood, being born into a friend's family | R3 |
 | [persons.md](persons.md) | §2–3: the Person composition, species profiles, the registry, determinism, saves, the inspector | H0 |
 | [australopithecus.md](australopithecus.md) | The first species profile: its population, its days, its traces, learning by watching it | H0 (V2-11) |
+| [mind.md](mind.md) | §6: perception, memory and belief, choosing, planning on the process engine | H2 |
 | [psyche.md](psyche.md) | §5: behaviour tendencies from temperament, feelings and their contagion, mood, stress, values | H2 |
 | [genetics.md](genetics.md) | §4: the genome, meiosis, mutation, kinship and inbreeding, phenotypes with calibrated heritabilities, gene pools, the player's genome | H1 |
 
-Planned with their milestones: `mind.md` (H2), `life.md`
+Planned with their milestones: `life.md`
 (H3), `social.md` (H4), `culture.md` and `language.md` (H5), `learning.md` (H6), `tiers.md` (H7),
 `history.md` and `eras.md` (H8), `observer.md` (H9), `conversation.md` (H10).

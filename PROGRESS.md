@@ -965,8 +965,13 @@ H2 — Psyche and mind core (PLAN.md, V2.1 §5–6), in parts:
   at most half as strongly as seen, shown on the body; mood, stress and values; tendencies tilting
   flight distance, persistence, grooming, work and straying, courage the mobbing of a hunter;
   the inspector's Psyche section; people format 3 (`tests/psyche.rs`).
-- [ ] (b) Perception and memory: what each person sees and hears; a mental map of places, people
-  known, episodes and beliefs, bounded and compressed into the life history.
+- [x] (b) Perception and memory (`docs/design/humans/mind.md`): sight by daylight (a quarter at
+  night) and hearing (alarms carry 300 m), the others seen or remembered where last seen; each
+  person's own mental map started from the band's and grown by its days and by watching the
+  others (water, sleeping trees, food, anvils), places found wrong let go, danger believed where
+  a hunter was seen and its water and food passed over for days; people known by sight, more
+  familiar with time together; weighted episodes, the defining ones into the life history
+  (`Met`, `Hurt`, `Mourned`); people format 4 (`tests/memory.rs`).
 - [ ] (c) The layered mind: reflexes, routines from data, utility selection over goals, HTN
   planning on the process engine with an executor, budgets.
 - [ ] (d) The acceptance: a *Homo sapiens* agent makes a hafted spear from scratch, knowing how;

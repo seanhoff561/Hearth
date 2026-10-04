@@ -52,6 +52,16 @@ pub enum Event {
     Died {
         cause: Cause,
     },
+    /// First came near a player.
+    Met {
+        player: crate::world::PlayerId,
+    },
+    /// Was badly hurt.
+    Hurt,
+    /// Mourned one of its close kin.
+    Mourned {
+        who: PersonId,
+    },
 }
 
 /// A life's event and its day.
@@ -157,6 +167,9 @@ pub struct Person {
     /// Its tendencies, feelings, mood, stress and values (V2.1 §5).
     #[serde(default)]
     pub psyche: crate::psyche::Psyche,
+    /// Its mental map, the people it knows, what happened to it (V2.1 §6.3).
+    #[serde(default)]
+    pub memory: crate::memory::Memory,
     /// Its own random stream: what it draws does not depend on who else drew first.
     pub rng: Rng,
 }
@@ -228,6 +241,7 @@ impl Person {
             genome: None,
             phenotype: None,
             psyche: crate::psyche::Psyche::default(),
+            memory: crate::memory::Memory::default(),
             rng,
         }
     }

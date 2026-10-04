@@ -31,6 +31,7 @@ use rayon::prelude::*;
 use crate::band::{Band, Culture, Places};
 use crate::genome::Genetics;
 use crate::lineage::Kinship;
+use crate::memory::{Happened, PlaceKind, Who};
 use crate::mind::{Doing, Intent, Needs, Offer, Situation, Threat, choose};
 use crate::person::{Cause, Died, Event, Person, PersonId, Tier};
 use crate::psyche::{Feeling, PsycheDefs, Tendency};
@@ -45,8 +46,12 @@ pub const NEAR_M: f64 = 112.0;
 pub const FAR_M: f64 = 150.0;
 /// How far a person looks about for a tree, water or food it does not yet know (m).
 const LOOK_M: f64 = 40.0;
-/// How far it sees a hunter or the player (m), by day.
+/// How far it sees a hunter or the player (m), by day; at night a quarter of it.
 const SEE_M: f64 = 120.0;
+/// How far an alarm call carries (m).
+const HEAR_M: f64 = 300.0;
+/// How near (m) one must be to see where another drinks, sleeps or works, and learn the place.
+const LEARN_M: f64 = 30.0;
 /// How near (m) another must be for what it shows (fear, joy) to be caught at all.
 const CATCH_M: f32 = 25.0;
 /// How far a hunter or the player may come before it runs, when it has not come to tolerate them.
@@ -151,6 +156,15 @@ fn hdist(a: DVec3, b: DVec3, wrap: f64) -> f64 {
         dx = dx.min(wrap - dx);
     }
     dx.hypot(a.z - b.z)
+}
+
+/// How much of the day's sight is left at a local hour: full by day, a quarter by moon and
+/// starlight, between them at dawn and dusk.
+pub fn light(hour: f32) -> f32 {
+    let h = hour.rem_euclid(24.0);
+    let up = ((h - 5.0) / 2.0).clamp(0.0, 1.0);
+    let down = 1.0 - ((h - 17.5) / 2.0).clamp(0.0, 1.0);
+    0.25 + 0.75 * up.min(down)
 }
 
 /// A band's own stream, from the world's seed and its id.
@@ -278,7 +292,6 @@ impl People {
             {
                 Some(bi) => {
                     self.redraw(bi, sp, genes, sun, graph, want, here, now);
-                    self.form(bi, &species.psyche, now);
                     bi
                 }
                 None => {
@@ -286,13 +299,13 @@ impl People {
                     self.bands[bi].range_m = range_m;
                     self.bands[bi].population_group = Some(gid);
                     self.endow(bi, sp, genes, sun, now);
-                    self.form(bi, &species.psyche, now);
                     world.settle(here, sp);
                     bi
                 }
             };
             self.onto_the_ground(bi, &*world, here);
             know_about(&mut self.bands[bi], world, items, here);
+            self.form(bi, &species.psyche, now);
             drawn.push(gid);
         }
         for r in eco.regions.values_mut() {
@@ -399,15 +412,58 @@ impl People {
         }
     }
 
-    /// Forms the psyche of every living member of a band who has none yet, from its phenotype.
+    /// Forms the psyche of every living member of a band who has none yet, from its phenotype;
+    /// one who remembers nothing of the range starts from what the band knows of it.
     fn form(&mut self, bi: usize, defs: &PsycheDefs, now: Now) {
         let band = self.bands[bi].id;
+        let places = self.bands[bi].places.clone();
         for p in self
             .persons
             .iter_mut()
-            .filter(|p| p.social.band == band && p.alive() && !p.psyche.formed)
+            .filter(|p| p.social.band == band && p.alive())
         {
-            p.psyche = crate::psyche::Psyche::form(defs, p.phenotype.as_ref(), now.day);
+            if !p.psyche.formed {
+                p.psyche = crate::psyche::Psyche::form(defs, p.phenotype.as_ref(), now.day);
+            }
+            if p.memory.places.is_empty() {
+                p.memory.day = now.day;
+                let known = [
+                    (PlaceKind::Water, &places.water),
+                    (PlaceKind::Sleep, &places.sleep),
+                    (PlaceKind::Anvil, &places.anvils),
+                    (PlaceKind::Food, &places.food),
+                ];
+                for (kind, list) in known {
+                    for at in list {
+                        p.memory.remember(kind, *at, now.day, 0.7);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A place of a kind come to: remembered by the one who came to it, by those of its band who
+    /// saw it there, and by the band.
+    fn remember_place(&mut self, i: usize, bi: usize, kind: PlaceKind, at: DVec3, now: Now) {
+        let band = self.persons[i].social.band;
+        let from = self.persons[i].place.pos;
+        for (j, q) in self.persons.iter_mut().enumerate() {
+            if q.social.band != band || !q.alive() || q.tier != Tier::Full {
+                continue;
+            }
+            if j == i {
+                q.memory.remember(kind, at, now.day, 1.0);
+            } else if (q.place.pos - from).length() < LEARN_M {
+                q.memory.remember(kind, at, now.day, 0.6);
+            }
+        }
+        let b = &mut self.bands[bi].places;
+        match kind {
+            PlaceKind::Water => Places::remember(&mut b.water, at, 10.0, 6),
+            PlaceKind::Sleep => Places::remember(&mut b.sleep, at, 6.0, 12),
+            PlaceKind::Food => Places::remember(&mut b.food, at, 15.0, 12),
+            PlaceKind::Anvil => Places::remember(&mut b.anvils, at, 8.0, 8),
+            PlaceKind::Danger => {}
         }
     }
 
@@ -655,9 +711,9 @@ impl People {
         let genes = species.genetics.as_ref();
         let sun = genes.map_or(1.0, |g| g.sunlight(world.latitude(at)));
         self.endow(bi, sp, genes, sun, now);
-        self.form(bi, &species.psyche, now);
         self.onto_the_ground(bi, &*world, at);
         know_about(&mut self.bands[bi], world, items, at);
+        self.form(bi, &species.psyche, now);
         id
     }
 
@@ -704,9 +760,9 @@ impl People {
         let genes = species.genetics.as_ref();
         let sun = genes.map_or(1.0, |g| g.sunlight(world.latitude(here)));
         self.redraw(bi, sp, genes, sun, graph, want, here, now);
-        self.form(bi, &species.psyche, now);
         self.onto_the_ground(bi, &*world, here);
         know_about(&mut self.bands[bi], world, items, here);
+        self.form(bi, &species.psyche, now);
     }
 
     /// Folds back into their numbers the bands whose persons are all beyond [`FAR_M`] of every
@@ -903,6 +959,9 @@ impl People {
                 if p.body.injuries.len() > hurt {
                     p.psyche.feel(Feeling::Fear, 0.6);
                     p.psyche.feel(Feeling::Anger, 0.4);
+                    let at = p.place.pos;
+                    p.memory.happened(Happened::Hurt, at, now.day, 0.7);
+                    p.record(now.day, Event::Hurt);
                 }
                 let n = Needs::of(&p.body, cfg, 0.0);
                 let pain = (p.body.injuries.len() as f32 * 0.2).min(0.6);
@@ -931,12 +990,12 @@ impl People {
         });
         p.record(now.day, Event::Died { cause });
         let (dead, band) = (p.id, p.social.band);
-        self.mourn(dead, band);
+        self.mourn(dead, band, now.day);
     }
 
     /// A death felt by the dead one's band: grief in its kin by how close they were (a mother,
     /// a child, a brother or sister most; a grandparent or a half-sibling half as much).
-    fn mourn(&mut self, dead: PersonId, band: u64) {
+    fn mourn(&mut self, dead: PersonId, band: u64, day: f64) {
         let kin: Vec<(usize, f64)> = {
             let mut k = Kinship::new(&*self);
             (0..self.persons.len())
@@ -949,9 +1008,16 @@ impl People {
                 .collect()
         };
         for (j, r) in kin {
-            self.persons[j]
-                .psyche
-                .feel(Feeling::Grief, (4.0 * r).min(1.0) as f32);
+            let q = &mut self.persons[j];
+            let grief = (4.0 * r).min(1.0) as f32;
+            q.psyche.feel(Feeling::Grief, grief);
+            let at = q.place.pos;
+            let felt = q.psyche.feeling(Feeling::Grief);
+            q.memory
+                .happened(Happened::Loss { who: dead }, at, day, felt);
+            if r >= 0.25 {
+                q.record(day, Event::Mourned { who: dead });
+            }
         }
     }
 
@@ -1025,7 +1091,7 @@ impl People {
                     p.mind.timer = hold_for(&p.mind.doing);
                     if then == Intent::Drink {
                         let w = p.place.pos;
-                        Places::remember(&mut self.bands[bi].places.water, w, 10.0, 6);
+                        self.remember_place(i, bi, PlaceKind::Water, w, now);
                     }
                 }
             }
@@ -1046,7 +1112,13 @@ impl People {
                         let _ = p.possessions.carry.stow(items, Stack::of(&id, 4), mass);
                     }
                     let here = p.place.pos;
-                    Places::remember(&mut self.bands[bi].places.food, here, 15.0, 12);
+                    self.remember_place(i, bi, PlaceKind::Food, here, now);
+                } else {
+                    // Nothing here after all (eaten, out of season): the place let go.
+                    let p = &mut self.persons[i];
+                    let here = p.place.pos;
+                    p.memory.forget(PlaceKind::Food, here);
+                    p.mind.timer = 0.0;
                 }
                 if Needs::of(&self.persons[i].body, cfg, 0.0).hunger <= 0.0 {
                     self.persons[i].mind.timer = 0.0;
@@ -1083,7 +1155,7 @@ impl People {
                     }
                     p.mind.doing = Doing::Sleeping;
                     p.mind.timer = hold_for(&Doing::Sleeping);
-                    Places::remember(&mut self.bands[bi].places.sleep, at, 6.0, 12);
+                    self.remember_place(i, bi, PlaceKind::Sleep, at, now);
                 }
             }
             Doing::Sleeping => {
@@ -1229,7 +1301,7 @@ impl People {
             &mut rng,
         );
         if outcome.done {
-            Places::remember(&mut self.bands[bi].places.anvils, pos, 8.0, 8);
+            self.remember_place(i, bi, PlaceKind::Anvil, pos, now);
             let p = &mut self.persons[i];
             p.psyche.feel(Feeling::Joy, 0.25);
             p.psyche.feel(Feeling::Pride, 0.3);
@@ -1265,7 +1337,8 @@ fn decide(
     now: Now,
     dt: f32,
 ) {
-    let (threat, flight_m) = threat_of(p, band, senses, players);
+    let sight = SEE_M * light(now.hour) as f64;
+    let (threat, flight_m) = threat_of(p, band, senses, players, sight);
     // The bold let a threat come nearer before they run.
     let flight_m = flight_m * (1.3 - 0.6 * p.psyche.tendency(Tendency::RiskTolerance));
     // Fear rises at a threat; what the others nearby show is caught; feelings fade.
@@ -1274,18 +1347,45 @@ fn decide(
     });
     p.psyche.feel(Feeling::Fear, scare);
     let pos = p.place.pos;
+    // A hunter seen: the place believed dangerous a while, the fright kept.
+    if let Some(t) = threat.filter(|t| t.hunter) {
+        p.memory
+            .remember(PlaceKind::Danger, t.at, now.day, scare.max(0.5));
+        p.memory.happened(
+            Happened::Threat,
+            pos,
+            now.day,
+            p.psyche.feeling(Feeling::Fear),
+        );
+    }
+    // The players it sees: known, and the first sight of one is a thing to remember.
+    for q in players {
+        let d = (q.pos - pos).length();
+        if d < sight * q.plain.clamp(0.1, 1.0) as f64
+            && p.memory.see(Who::Player(q.id), q.pos, now.day, dt)
+        {
+            p.memory
+                .happened(Happened::Met { player: q.id }, pos, now.day, 0.6);
+            p.record(now.day, Event::Met { player: q.id });
+        }
+    }
+    p.memory.fade(now.day);
     for g in glimpses
         .iter()
         .filter(|g| g.band == p.social.band && g.alive && g.id != p.id)
     {
+        let d = (g.pos - pos).length();
+        if d < sight {
+            p.memory.see(Who::Person(g.id), g.pos, now.day, dt);
+        }
         if let Some((f, v)) = g.shows {
-            let near = (1.0 - (g.pos - pos).length() as f32 / CATCH_M).clamp(0.0, 1.0);
+            let near = (1.0 - d as f32 / CATCH_M).clamp(0.0, 1.0);
             if near > 0.0 {
                 p.psyche.catch(defs, f, v * near, dt);
             }
         }
         // An alarm heard frightens.
-        if g.alarm && (g.pos - pos).length() < SEE_M {
+        if g.alarm && d < HEAR_M {
             p.psyche.feel(Feeling::Fear, 0.45);
         }
     }
@@ -1303,7 +1403,7 @@ fn decide(
     if !choosing {
         return;
     }
-    let mut s = situation(p, sp, band, glimpses, senses, crafts, content, items, now);
+    let mut s = situation(p, sp, glimpses, senses, crafts, content, items, now, sight);
     s.threat = threat;
     s.flight_m = flight_m;
     let needs = Needs::of(
@@ -1326,10 +1426,11 @@ fn threat_of(
     band: &Band,
     senses: &dyn Senses,
     players: &[PlayerSeen],
+    sight: f64,
 ) -> (Option<Threat>, f32) {
     let pos = p.place.pos;
     let hunter: Option<Threat> = senses
-        .hunters_near(pos, SEE_M)
+        .hunters_near(pos, sight)
         .into_iter()
         .map(|h| Threat {
             at: h,
@@ -1345,7 +1446,7 @@ fn threat_of(
     for q in players {
         let d = (q.pos - pos).length() as f32;
         // Unnoticed: too far, or crouched and crawling in the grass.
-        if d >= SEE_M as f32 * q.plain.clamp(0.1, 1.0) {
+        if d >= sight as f32 * q.plain.clamp(0.1, 1.0) {
             continue;
         }
         // A player coming on fast, or hunting near them, is a hunter for the while; a calm one
@@ -1376,13 +1477,13 @@ fn threat_of(
 fn situation(
     p: &Person,
     sp: &Species,
-    band: &Band,
     glimpses: &[Glimpse],
     senses: &dyn Senses,
     crafts: &Crafts,
     content: &Content,
     items: &Items,
     now: Now,
+    sight: f64,
 ) -> Situation {
     let pos = p.place.pos;
     let grown = p.stage(sp, &now) == Stage::Adult;
@@ -1395,14 +1496,25 @@ fn situation(
         .iter()
         .filter(|b| b.band == p.social.band && b.alive && b.id != p.id)
     {
+        let d = (b.pos - pos).length();
+        if b.alarm && d < HEAR_M {
+            alarm_raised = true;
+        }
+        // The others it sees; of those it does not, where it last saw them.
+        let at = if d < sight {
+            b.pos
+        } else {
+            match p.memory.last_seen(Who::Person(b.id)) {
+                Some((at, _)) => at,
+                None => continue,
+            }
+        };
+        let b = Glimpse { pos: at, ..*b };
         cx += b.pos.x;
         cz += b.pos.z;
         cn += 1.0;
         if b.grown && (b.pos - pos).length() < 20.0 {
             grown_near += 1;
-        }
-        if b.alarm {
-            alarm_raised = true;
         }
         if !grown && p.life.mother == Some(b.id) {
             mother = Some(b.pos);
@@ -1418,21 +1530,27 @@ fn situation(
         // The young keep to their mothers.
         if grown { d } else { d * 3.0 }
     });
-    // Trees, water and food it knows of, or sees.
-    let tree = Places::nearest(&band.places.sleep, pos)
+    // Trees, water and food it remembers, or sees — not where it believes danger waits.
+    let safe = |at: &DVec3| p.memory.danger_at(*at) < 0.5;
+    let tree = p
+        .memory
+        .nearest(PlaceKind::Sleep, pos)
         .filter(|t| (*t - pos).length() < LOOK_M * 2.0)
         .or_else(|| trunk_near(senses.ground(), pos, 12.0).map(|(t, _)| t));
-    let water = Places::nearest(&band.places.water, pos);
+    let water = p.memory.nearest(PlaceKind::Water, pos).filter(safe);
     let water_here = water.is_some_and(|w| (w - pos).length() < 2.0);
     let food_here = senses.food_at(pos).is_some();
     let food = if food_here {
         None
     } else {
-        senses.food_near(pos, LOOK_M)
+        senses
+            .food_near(pos, LOOK_M)
+            .filter(safe)
+            .or_else(|| p.memory.nearest(PlaceKind::Food, pos).filter(safe))
     };
     // What it could do with what lies about: crack nuts at an anvil, strike a flake.
     let offers = if grown {
-        offers_for(p, sp, crafts, content, items, senses, &band.places, &now)
+        offers_for(p, sp, crafts, content, items, senses, &now)
     } else {
         Vec::new()
     };
@@ -1792,13 +1910,12 @@ fn offers_for(
     content: &Content,
     items: &Items,
     senses: &dyn Senses,
-    places: &Places,
     now: &Now,
 ) -> Vec<Offer> {
     let mut out = Vec::new();
     // Here, and at the band's anvils it carries nuts to.
     let mut spots = vec![p.place.pos];
-    if let Some(anvil) = Places::nearest(&places.anvils, p.place.pos) {
+    if let Some(anvil) = p.memory.nearest(PlaceKind::Anvil, p.place.pos) {
         spots.push(anvil);
     }
     for spot in spots {

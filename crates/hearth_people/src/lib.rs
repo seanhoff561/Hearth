@@ -17,6 +17,7 @@ pub mod genome;
 pub mod inspect;
 pub mod lineage;
 pub mod looks;
+pub mod memory;
 pub mod mind;
 pub mod person;
 pub mod psyche;
@@ -32,6 +33,7 @@ pub use birth::Birth;
 pub use genome::{Genetics, Genome, Phenotype};
 pub use lineage::{Kinship, Pedigree};
 pub use looks::{Eyes, Look, look};
+pub use memory::{Happened, Memory, PlaceKind, Who};
 pub use mind::{Doing, Intent, Mind, Needs, Offer, Situation, Threat, choose};
 pub use person::{
     Cause, Died, Event, LifeEvent, LifeHistory, Person, PersonId, Place, Possessions, Social, Tier,

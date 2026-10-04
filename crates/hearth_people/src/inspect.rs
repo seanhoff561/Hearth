@@ -79,6 +79,9 @@ pub fn report(
             Event::Found { band } => format!("first seen, in band {band}"),
             Event::Joined { band } => format!("joined band {band}"),
             Event::Died { cause } => format!("died: {cause:?}"),
+            Event::Met { player } => format!("first met player {player}"),
+            Event::Hurt => "badly hurt".to_owned(),
+            Event::Mourned { who } => format!("mourned #{who}"),
         };
         life.push(format!("day {:.1}: {what}", e.day));
     }
@@ -207,6 +210,27 @@ pub fn report(
             values.join(", "),
         ],
     ));
+
+    // Memory: the mental map, the people known, what happened.
+    let m = &p.memory;
+    let count = |k: crate::memory::PlaceKind| m.all(k).count();
+    use crate::memory::PlaceKind as K;
+    let well = m.known.iter().filter(|k| k.familiarity > 0.5).count();
+    let mut memory = vec![format!(
+        "places: water {}, sleep {}, food {}, anvils {}, danger {}; knows {} ({well} well)",
+        count(K::Water),
+        count(K::Sleep),
+        count(K::Food),
+        count(K::Anvil),
+        count(K::Danger),
+        m.known.len()
+    )];
+    let mut episodes: Vec<&crate::memory::Episode> = m.episodes.iter().collect();
+    episodes.sort_by(|a, b| b.weight.total_cmp(&a.weight));
+    for e in episodes.iter().take(4) {
+        memory.push(format!("day {:.1}: {:?} ({:.2})", e.day, e.what, e.weight));
+    }
+    sections.push(section("Memory", memory));
 
     // Mind.
     let needs = Needs::of(&p.body, cfg, p.psyche.feeling(crate::psyche::Feeling::Fear));

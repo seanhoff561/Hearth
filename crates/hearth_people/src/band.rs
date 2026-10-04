@@ -1,7 +1,8 @@
 //! Bands: the company a person keeps — who belongs, the range they share and the places in it
-//! they know, how they have come to take the player, their ways. (Households, kinship and
-//! relationships replace and extend it in H4; the places become each person's own mental map in
-//! H2.)
+//! they know between them, how they have come to take the player, their ways. (Households,
+//! kinship and relationships replace and extend it in H4.) The band's places are what its people
+//! know of their range between them: each member's own mental map (`memory.rs`, H2) starts from
+//! them and grows by its own days.
 
 use glam::{DVec2, DVec3};
 use hearth_math::hash::Rng;
