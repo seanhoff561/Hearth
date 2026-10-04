@@ -61,6 +61,8 @@ pub struct World {
     /// The births offered, and the birth shown (H8).
     pub births: Vec<hearth_protocol::BirthChoice>,
     pub born: Option<hearth_protocol::Born>,
+    /// The developer's inspector's last record of the person it looks at.
+    pub inspected: Option<hearth_people::inspect::Report>,
 }
 
 /// Copies a directory and all in it.
@@ -188,6 +190,7 @@ impl World {
             saved: false,
             births: Vec::new(),
             born: None,
+            inspected: None,
         };
         // A life born into an era's household begins where that household lives (H8).
         if era_birth {
@@ -238,6 +241,7 @@ impl World {
                 ToClient::Births(b) => self.births = b,
                 ToClient::Heard(lines) => self.heard.extend(lines),
                 ToClient::Born(b) => self.born = Some(*b),
+                ToClient::Inspected(r) => self.inspected = r.map(|r| *r),
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {
                     name,

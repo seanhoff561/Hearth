@@ -100,11 +100,20 @@ impl People {
             if sp.does(hearth_content::schema::humans::Behavior::KeepCamp)
                 && self.bands[bi].camp.is_none()
             {
-                let dry = self
-                    .era
-                    .country
-                    .as_ref()
-                    .and_then(|c| c.dry_ground(DVec2::from_array(pos), 3000.0));
+                let taken: Vec<DVec2> = self
+                    .bands
+                    .iter()
+                    .filter(|b| b.id != self.bands[bi].id)
+                    .filter_map(|b| b.camp.map(|c| DVec2::new(c.x, c.z)))
+                    .collect();
+                let dry = self.era.country.as_ref().and_then(|c| {
+                    c.dry_ground(
+                        DVec2::from_array(pos),
+                        3000.0,
+                        &taken,
+                        crate::rounds::CAMPS_APART_M,
+                    )
+                });
                 self.bands[bi].camp = Some(dry.unwrap_or(here));
             }
             self.bands[bi].population_group = Some(gid);

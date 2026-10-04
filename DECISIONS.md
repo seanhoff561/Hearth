@@ -2409,26 +2409,36 @@ Upper Paleolithic.
 
 ## D199 — Camps, seasonal rounds and gatherings
 V2.1 §15.3's era profiles name routines, camps, seasonal rounds and aggregation. The era says, for
-each of its peoples, whether its bands keep a fire at camp (`hearth`) and beds about it
-(`bedding`), its **round** — where camp goes each season: by the water, up on the open uplands, down
-in the shelter of the woods — and its yearly **gathering** (season, days, how far bands come).
-The rounds and gatherings are the bands' own state, lived at both the full and the household tier
-(so the recent past's century has them too, and a band met keeps its habits): when the season
-turns (its hemisphere's) a band moves camp to its round's place, which the world finds in its
-terrain about the band's home (`Country`, the game's `Lands`: water near, height over the country
-and openness, wood and lowness) and keeps, so a band comes back to the same camps year after
-year — the best not within 800 m of another band's camp (else it stays where it is: bands of
-overlapping ranges all chose one best spot by the water, and three hundred people stood at it); a camp just made is given ten days before a council may find it poor. In its season the
-bands of one people (species and lineage) within reach gather by the water near the largest
-band's home, each at its own fire thirty metres apart, for the days given: each grown one meets a
-few of the others' people, pairing looks first among those met there, and each band learns from
-those it gathered with as from its nearest neighbours; then they go home. A camp is the
-player's own campfire and beds (the workshop's stations), laid by the game where a band lived in
-full keeps camp, the fire lit from carried embers and fed while its people are about. The
-Upper Paleolithic has four camps a year and an autumn gathering of twenty days (Conkey 1980;
-Kelly 2013 on residential moves), the Middle Paleolithic two camps (winter shelter; summer
-uplands for Neanderthals, water for our kind), the Lower Paleolithic none (where the food is).
-Houses and windbreaks raised by the people themselves wait for H11's villages.
+each of its peoples, whether its bands keep a fire at camp (`hearth`) and beds about it (`bedding`),
+its **round** — where camp goes each season: by the water, up on the open uplands, down in the
+shelter of the woods — and its yearly **gathering** (season, days, how far bands come). The rounds
+and gatherings are the bands' own state, lived at both the full and the household tier (so the
+recent past's century has them too, and a band met keeps its habits): when the season turns (its
+hemisphere's) a band moves camp to its round's place, which the world finds in its terrain about the
+band's home (`Country`, the game's `Lands`: water near, height over the country and openness, wood
+and lowness) and keeps, so a band comes back to the same camps year after year — the best not within
+800 m of another band's camp (else it stays where it is: bands of overlapping ranges all chose one
+best spot by the water, and three hundred people stood at it); a band's first camp, too, is on dry
+ground (a block over any water, two over the sea's, and so the steps about it — the round's places
+as well) and 800 m from the others'; a band split off goes to dry land, the way it goes turned from
+the water, else the nearest dry ground clear of the others' camps (a split had sent one into the
+sea, where it camped, and a life was born into it there); a band coming into full sets its camp on
+standing ground at its place, or a few steps off where a tree's trunk stands; a camp just made is
+given ten days before a council may find it poor. In its season the nearest bands of one people
+(species and lineage) within reach, as many as the era says — six in the Upper Paleolithic, a few
+hundred people, as at the aggregation sites — gather by the water near the largest band's home,
+each at its own fire thirty metres from the next, on dry ground, for the days given: a real year's
+days, so as long a part of the game's shorter year (taken as the game's days, an autumn gathering
+of twenty ran through most of a 32-day year, and forty-seven bands camped all summer on a ring of
+thirty metres about one fire). Each grown one meets a few of the others' people, pairing looks
+first among those met there, and each band learns from those it gathered with as from its nearest
+neighbours; then they go home. A camp is the player's own campfire and beds (the workshop's
+stations), laid by the game where a band lived in full keeps camp, the fire lit from carried embers
+and fed while its people are about. The Upper Paleolithic has four camps a year and an autumn
+gathering of twenty days (Conkey 1980; Kelly 2013 on residential moves), the Middle Paleolithic two
+camps (winter shelter; summer uplands for Neanderthals, water for our kind), the Lower Paleolithic
+none (where the food is). Houses and windbreaks raised by the people themselves wait for H11's
+villages.
 
 ## D200 — After death in an era's world; Wild Earth's families by players
 Addendum B §2's choices, as far as H8 takes them: **living on as another** reaches every living
@@ -2450,3 +2460,36 @@ about the place at all (a small world holds few: a Standard planet's Lower Paleo
 eighty *erectus*), the households nearest anywhere are offered and the life begins at that band's
 camp. Wild Earth's wandering families are as many times one player's as the players a world
 expects (the world's `players` setting, 1 for single-player; Addendum B §3.5).
+
+## D201 — The era reviews' first runs: what they changed
+The era reviews (V2.1 §15.5) were run as screenshots of each era's camps, a sample week of its
+people about a life born among them, deep time on the Standard planet and an Earth-sized one, and
+the archaic peoples' demography. Each failure below was fixed and the run repeated:
+- **A gathering lasted most of the year.** The era's twenty days were taken as the game's days of
+  a 32-day year, so a people's bands gathered in autumn were still at it in summer — forty-seven
+  bands on a ring of thirty metres about one fire. The era's days are now a real year's (as long
+  a part of the game's year: twenty are under two of its days); the nearest bands come, at most
+  as many as the era says (`Aggregation::bands`: six in the Upper Paleolithic, a few hundred
+  people, as at the aggregation sites); their fires stand thirty metres from the next, on dry
+  ground.
+- **A band split off camped in the sea**, its new home thrown 8–16 km whatever lay there, and a
+  life was born into it there (the Lower Paleolithic's first shot was open water). A band split
+  off now goes to dry land — the way it goes turned from the water, else the nearest dry ground
+  clear of the others' camps — and every world has its land for this (`Lands`, Wild Earth's
+  too). The round's places pass the same dry test as a first camp.
+- **A band over a tree's trunk was never drawn out**: coming into full asked for the ground's top
+  at its very camp, which a trunk standing there does not give; now the nearest standing ground a
+  few steps about, dry first.
+- **A camp on moss laid nothing**: a carpet of moss, lichen or litter was not open ground, so a
+  bog's camp had no fire; carpets now count as ground cover, trodden down like plants.
+- **The shots' camps never showed**: they were laid after the scene was meshed. The cubes they
+  are laid in are meshed again.
+- **The sample week** logged the world's clock rather than the place's own solar hour, so its
+  people seemed to sleep through the day; and a player standing still lost its band within the
+  day as it moved camp. It now logs the local hour and follows the band.
+- **A fire at night seen from beyond its light washes its ground white**: the eye's adaptation is
+  reckoned from the light where the camera stands, so a camera in the dark, adapted to the floor
+  of 0.3 lux, sees the fire's ground at up to 60 lux, two hundred times what it is adapted to. The
+  shots are taken at dusk, the sun three degrees down at each place's latitude; the renderer's
+  night is a known issue.
+- The four playable eras are marked implemented (the content status counted them as planned).

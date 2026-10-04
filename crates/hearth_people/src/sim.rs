@@ -218,6 +218,28 @@ fn hdist(a: DVec3, b: DVec3, wrap: f64) -> f64 {
     dx.hypot(a.z - b.z)
 }
 
+/// Ground to stand on at a place, or a few steps about it where the place itself gives none (a
+/// tree's trunk stands there): dry ground first, else the water's top. None where not loaded.
+fn standing_about(ground: &dyn Ground, at: DVec3) -> Option<DVec3> {
+    let about = |k: usize| {
+        let (ring, n) = (k / 8, k % 8);
+        let a = n as f64 / 8.0 * std::f64::consts::TAU;
+        let d = ring as f64 * 2.5;
+        (at.x + a.cos() * d, at.z + a.sin() * d)
+    };
+    // The place itself, then three rings of eight about it.
+    let places = || std::iter::once((at.x, at.z)).chain((8..32).map(about));
+    let on = |(x, z): (f64, f64), dry: bool| {
+        ground
+            .top(x, z)
+            .filter(|f| !dry || !f.water)
+            .map(|f| DVec3::new(x, f.level(), z))
+    };
+    places()
+        .find_map(|p| on(p, true))
+        .or_else(|| places().find_map(|p| on(p, false)))
+}
+
 /// How much of the day's sight is left at a local hour: full by day, a quarter by moon and
 /// starlight, between them at dawn and dusk.
 pub fn light(hour: f32) -> f32 {
@@ -540,10 +562,9 @@ impl People {
             let at = b
                 .camp
                 .unwrap_or_else(|| DVec3::new(b.home.x, 0.0, b.home.y));
-            let Some(top) = world.ground().top(at.x, at.z) else {
+            let Some(here) = standing_about(world.ground(), at) else {
                 continue;
             };
-            let here = DVec3::new(at.x, top.level(), at.z);
             self.lift(bi, species, world, items, here, now);
         }
         let mut drawn = Vec::new();
@@ -552,11 +573,10 @@ impl People {
                 continue;
             }
             let sp = &species.list[si];
-            let Some(centre) = world.ground().top(pos[0], pos[1]) else {
+            let Some(here) = standing_about(world.ground(), DVec3::new(pos[0], 0.0, pos[1])) else {
                 // Not loaded yet: it waits.
                 continue;
             };
-            let here = DVec3::new(pos[0], centre.level(), pos[1]);
             let genes = species.genetics.as_ref();
             let sun = genes.map_or(1.0, |g| g.sunlight(world.latitude(here)));
             let bi = match self

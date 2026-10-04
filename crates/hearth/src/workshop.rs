@@ -2650,8 +2650,7 @@ pub fn camp_layout(lw: &LocalWorld, c: &CampKept) -> Option<CampLayout> {
                 }
                 if let Some(s) = lw.map.block(q)
                     && s != BlockStateId::AIR
-                    && lw.reg.has(s, hearth_world::StateFlags::REPLACEABLE)
-                    && !lw.reg.has(s, hearth_world::StateFlags::FLUID)
+                    && ground_cover(lw, s)
                 {
                     trodden.push(q);
                 }
@@ -2665,8 +2664,19 @@ pub fn camp_layout(lw: &LocalWorld, c: &CampKept) -> Option<CampLayout> {
     })
 }
 
+/// Whether a block is no more than what covers the ground — air, a plant to tread down, a carpet
+/// of moss, lichen or litter — so a camp may be laid over it (not water).
+fn ground_cover(lw: &LocalWorld, s: BlockStateId) -> bool {
+    use hearth_world::StateFlags as F;
+    s == BlockStateId::AIR
+        || (!lw.reg.has(s, F::FLUID)
+            && !lw.reg.has(s, F::WATERLOGGED)
+            && !lw.reg.has(s, F::FULL_COLLISION)
+            && (lw.reg.has(s, F::REPLACEABLE) || lw.reg.collision_shape(s).top() <= 0.25))
+}
+
 /// The free place on the ground about a point: the block over the solid ground there, if it is
-/// loaded and dry, and air or a plant to tread down (not up in a tree).
+/// loaded and dry, and air, a plant to tread down or a carpet of moss (not up in a tree).
 fn open_ground(lw: &LocalWorld, at: DVec3) -> Option<BlockPos> {
     let (x, z) = (at.x.floor() as i32, at.z.floor() as i32);
     let y0 = at.y.round() as i32;
@@ -2678,10 +2688,7 @@ fn open_ground(lw: &LocalWorld, at: DVec3) -> Option<BlockPos> {
                 return None;
             }
             let above = lw.map.block(p.up())?;
-            let free = above == BlockStateId::AIR
-                || (lw.reg.has(above, hearth_world::StateFlags::REPLACEABLE)
-                    && !lw.reg.has(above, hearth_world::StateFlags::FLUID));
-            return free.then_some(p.up());
+            return ground_cover(lw, above).then_some(p.up());
         }
     }
     None

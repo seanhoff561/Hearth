@@ -17,7 +17,7 @@ live then:
 | **Wild Earth** | sporadic *Australopithecus*; a few wandering families of our kind (D164), as many as the players the world expects | families of 4–10 | their country's needs (D164) | — | — |
 | **Lower Paleolithic** (400,000 years ago) | *Homo erectus* | 15–40 | the species' repertoire: hand axes, wooden spears, fire kept and carried | a kept fire | where the food is |
 | **Middle Paleolithic** (45,000 years ago, −70 m, −3.5 °C) | Neanderthals in the cold north; *H. sapiens* spreading out of its cradle in the south; where they meet, both | 10–30; 25–50 | fire made, prepared cores, hafted spears, a little ochre | a kept fire, beds of grass or furs | Neanderthals winter in sheltered valleys and follow the herds up in summer; ours winter in shelter and summer by the water |
-| **Upper Paleolithic** (25,000 years ago, −121 m, −6 °C) | *H. sapiens* across the world | 25–50, in peoples of about 1,500 | every technique of the graph's eras to 2: blades, bone and antler, needles and sewn clothing, nets and snares, ornament | a kept fire, beds | four camps a year (shelter, water, uplands, water) and an autumn gathering of twenty days |
+| **Upper Paleolithic** (25,000 years ago, −121 m, −6 °C) | *H. sapiens* across the world | 25–50, in peoples of about 1,500 | every technique of the graph's eras to 2: blades, bone and antler, needles and sewn clothing, nets and snares, ornament | a kept fire, beds | four camps a year (shelter, water, uplands, water) and an autumn gathering of up to six bands for twenty days |
 
 The **era selector** (Create World) lists the playable eras first with how their people live; the
 later ones (Neolithic, Bronze Age, Iron Age, and the planned) show as "coming later" until their
@@ -56,22 +56,29 @@ woods), each band moves camp when the season turns (its hemisphere's) to the bes
 within its range: the world reads its terrain about the band's home for it (`Lands`, the
 `Country` trait) — water within a few hundred metres, height over the country about and how open
 it is, how wooded and low — and keeps each band's places, so that a band comes back to the same
-camps year after year, as foragers do; bands keep their camps at least 800 m apart (a band whose
-places are all taken stays where it is). A band lived in full walks there; a band of the household
-tier is there. A camp just made is given ten days before the band's council may find it poor
-(H4). A season the round does not name keeps the camp where it is.
+camps year after year, as foragers do. A camp is made on dry ground — a block over any water and
+two over the sea's level, as are the few steps about it — and at least 800 m from other bands'
+camps (a band whose places are all taken stays where it is); a band split off makes its own camp
+so, near its new home, and finds its own round's places from the next season. A band lived in full
+walks there; a band of the household tier is there; a band coming into full about a player sets
+its camp on standing ground at its place (or a few steps off where a tree's trunk stands there). A
+camp just made is given ten days before the band's council may find it poor (H4). A season the
+round does not name keeps the camp where it is.
 
 ## Gatherings
 
 Where the era has one (`aggregation`: the Upper Paleolithic's autumn gathering of twenty days,
-bands coming 60 km), when its season comes the bands of one people (its species and lineage)
-within reach gather at one camp — by the water near the largest band's home — each band at its
-own fire thirty metres apart, for the days the era says, once a year. At a gathering each one
-grown meets a few of the other bands' people (ties begun or warmed, H4); pairing looks first among
-those met there, so marriages are made across bands (H3's residence rules then move one of the
-pair); and a band learns from the bands it gathered with that year as from its nearest neighbours
-(H6). Then each band goes back to its round's camp for the season, or the camp it left. A people
-with no other band within reach stays on its round.
+bands coming 60 km, six at most), when its season comes the nearest bands of one people (its
+species and lineage) within reach, as many as the era says — a few hundred people, as at the
+aggregation sites (Conkey 1980; Kelly 2013) — gather at one camp by the water near the largest
+band's home, each band at its own fire, thirty metres from the next in a ring about the host's
+and on dry ground, once a year. The era's days are a real year's, so a gathering takes as long a
+part of the game's shorter year (twenty days of 365 are under two of the game's 32). At a
+gathering each one grown meets a few of the other bands' people (ties begun or warmed, H4);
+pairing looks first among those met there, so marriages are made across bands (H3's residence
+rules then move one of the pair); and a band learns from the bands it gathered with that year as
+from its nearest neighbours (H6). Then each band goes back to its round's camp for the season, or
+the camp it left. A people with no other band within reach stays on its round.
 
 ## Births in an era's world (Addendum A)
 

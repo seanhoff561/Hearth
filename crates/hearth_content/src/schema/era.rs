@@ -26,13 +26,16 @@ pub struct RoundStop {
 }
 
 /// A people's bands of one culture gathering in one camp for a while each year (V2.1 §15.3):
-/// the season, how many days, and how far (km) bands come to it.
+/// the season, how many days (of a real year: the game's year is shorter, and the gathering
+/// with it), how far (km) bands come to it, and how many bands at most (the nearest) gather in
+/// one camp.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Aggregation {
     pub season: Season,
     pub days: f32,
     pub reach_km: f32,
+    pub bands: u16,
 }
 
 /// One of an era's peoples (V2.1 §15.3): a species and how its bands live in the era.

@@ -718,6 +718,30 @@ impl People {
         new.camp = self.bands[bi]
             .camp
             .map(|c| DVec3::new(new.home.x, c.y, new.home.y));
+        // Where the world says, it goes to dry land — the way it goes turned from the water, else
+        // the nearest dry ground clear of the others' camps about the band it leaves — and keeps
+        // camp there, away from the others'.
+        if let Some(k) = self.era.country.clone() {
+            let from = self.bands[bi].home;
+            let apart = crate::rounds::CAMPS_APART_M;
+            let taken = self.camps_near(usize::MAX, from, 2.5 * SPLIT_M + apart);
+            let landed = (0..8)
+                .find_map(|t| {
+                    let a = a + t as f64 / 8.0 * std::f64::consts::TAU;
+                    let to = from + DVec2::new(a.cos(), a.sin()) * d;
+                    k.dry_ground(to, SPLIT_M * 0.25, &taken, apart)
+                })
+                .or_else(|| k.dry_ground(from, SPLIT_M, &taken, apart));
+            if let Some(at) = landed {
+                new.home = DVec2::new(at.x, at.z);
+                if new.camp.is_some() {
+                    new.camp = Some(at);
+                }
+            }
+        }
+        // Its own round's places, from the season's turn.
+        new.round.season = None;
+        new.round.left = None;
         for (head, i) in household {
             if !going.contains(&head) {
                 continue;

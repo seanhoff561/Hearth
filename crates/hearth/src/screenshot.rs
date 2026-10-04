@@ -999,8 +999,24 @@ pub fn render_shot(
                     )
                     .ok_or_else(|| anyhow::anyhow!("era={:?}: no household", spec.era))?;
                 f.ensure_about(lw, camp);
+                // The people of the household's band, by species.
+                let kind = agents
+                    .live
+                    .bands
+                    .iter()
+                    .filter(|b| b.camp.is_some_and(|c| (c - camp).length() < 1.0))
+                    .map(|b| {
+                        b.species
+                            .rsplit(':')
+                            .next()
+                            .unwrap_or(&b.species)
+                            .to_owned()
+                    })
+                    .next()
+                    .unwrap_or_default();
                 log::info!(
-                    "{}: {} bands lived a century about the place; born at {:.0}, {:.0}",
+                    "{}: {} bands lived a century about the place; born among {kind} at {:.0}, \
+                     {:.0}",
                     e.name,
                     agents.live.bands.len(),
                     camp.x,
@@ -1628,6 +1644,7 @@ pub fn render_shot(
         }
         if let Some(centre) = hominins_at {
             // The group's agents drawn out as the game draws them, living their day a while.
+            let mut laid = Vec::new();
             let (views, eye) = hominins_living(
                 spec,
                 lw,
@@ -1636,7 +1653,28 @@ pub fn render_shot(
                 &camera,
                 year_frac as f32,
                 era_people.take(),
+                &mut laid,
             );
+            // The cubes their camps were laid in (and those beside them), meshed again.
+            let mut cubes: Vec<hearth_math::CubePos> = laid
+                .iter()
+                .flat_map(|p| {
+                    let c = p.cube();
+                    (-1..=1).flat_map(move |dx| {
+                        (-1..=1).flat_map(move |dy| {
+                            (-1..=1).map(move |dz| {
+                                hearth_math::CubePos::new(c.x + dx, c.y + dy, c.z + dz)
+                            })
+                        })
+                    })
+                })
+                .filter(|c| positions.contains(c))
+                .collect();
+            cubes.sort();
+            cubes.dedup();
+            for m in lw.mesh(&models, &cubes, MeshOptions::default()) {
+                scene.terrain.upload(ctx, &m);
+            }
             if let Some((eye, yaw, pitch)) = eye {
                 camera.pos = eye;
                 camera.yaw = yaw;
@@ -2426,6 +2464,7 @@ type Living = (Vec<hearth_people::PersonView>, Option<(DVec3, f32, f32)>);
 
 /// The agents of a hominin group sought, drawn out about its place as the game draws them and
 /// living a while of their day (`run` seconds, half a minute without) with no one about.
+#[allow(clippy::too_many_arguments)]
 fn hominins_living(
     spec: &ShotSpec,
     lw: &mut LocalWorld,
@@ -2434,6 +2473,7 @@ fn hominins_living(
     camera: &hearth_render::camera::Camera,
     year_frac: f32,
     era: Option<(crate::people::PeopleNear, f64)>,
+    laid: &mut Vec<hearth_math::BlockPos>,
 ) -> Living {
     let content = lw.content.clone();
     let items = hearth_items::Items::from_content(&content);
@@ -2506,6 +2546,7 @@ fn hominins_living(
     }
     // Their camps as the game keeps them: the fire burning, the beds about it.
     let camps = agents.camps();
+    let mut fires: Vec<DVec3> = Vec::new();
     if !camps.is_empty() {
         let reg = lw.reg.clone();
         let fire = reg.parse_state("hearth:campfire[fire=high]").ok();
@@ -2515,20 +2556,32 @@ fn hominins_living(
             let Some(layout) = crate::workshop::camp_layout(lw, c) else {
                 continue;
             };
+            let f = layout.fire;
+            fires.push(DVec3::new(f.x as f64 + 0.5, f.y as f64, f.z as f64 + 0.5));
             let bed = if c.fur { fur } else { grass };
             let trodden = layout
                 .trodden
                 .into_iter()
                 .map(|p| (p, Some(hearth_world::BlockStateId::AIR)));
-            let laid = trodden
+            let layout_beds = layout.beds.len();
+            let blocks = trodden
                 .chain(std::iter::once((layout.fire, fire)))
                 .chain(layout.beds.into_iter().map(|p| (p, bed)));
-            for (p, state) in laid {
+            for (p, state) in blocks {
                 if let Some(state) = state {
                     lw.map.set_block(p, state, &reg);
                     lw.light.block_changed(&mut lw.map, &reg, p);
+                    laid.push(p);
                 }
             }
+            let d = DVec3::new(f.x as f64 + 0.5, f.y as f64, f.z as f64 + 0.5) - camera.pos;
+            log::info!(
+                "  a camp: its fire {:.0} m east, {:.0} m south, {:+.1} m up; {} beds",
+                d.x,
+                d.z,
+                d.y,
+                layout_beds
+            );
         }
         log::info!("  {} camps laid", camps.len());
     }
@@ -2557,7 +2610,9 @@ fn hominins_living(
     if views.is_empty() {
         return (views, None);
     }
-    let backs = views.iter().map(|v| v.pos + DVec3::Y * 0.8).collect();
+    // The people, and their camp's fire where they keep one, framed together.
+    let mut backs: Vec<DVec3> = views.iter().map(|v| v.pos + DVec3::Y * 0.8).collect();
+    backs.extend(fires.iter().map(|f| *f + DVec3::Y * 0.4));
     let h = Herd::new(backs);
     let (mut eye, yaw, n) = h.best_view(lw, spec.yaw, spec.above);
     // Nearer (or farther) along the way it looks, by `back`.

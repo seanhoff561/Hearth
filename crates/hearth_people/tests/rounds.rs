@@ -87,8 +87,9 @@ fn lived(gather: bool) -> (People, usize, Now) {
         ],
         aggregation: gather.then_some(Aggregation {
             season: Season::Autumn,
-            days: 3.0,
+            days: 20.0,
             reach_km: 60.0,
+            bands: 4,
         }),
     };
     people.era = EraWays {
@@ -153,7 +154,8 @@ fn bands_keep_their_rounds_camps_and_gather_in_their_season() {
         kept += 1;
     }
     assert!(kept >= 3);
-    // Last autumn its people gathered at one camp, each band at its own fire, for three days.
+    // Last autumn its people gathered, the nearest four bands at most at one camp, each band at
+    // its own fire, for twenty days of the real year (as long a part of the game's).
     let gathered: Vec<_> = people
         .bands
         .iter()
@@ -162,12 +164,13 @@ fn bands_keep_their_rounds_camps_and_gather_in_their_season() {
         .collect();
     println!("gathered last autumn: {gathered:?}");
     assert!(gathered.len() >= 2, "bands gathered");
-    let host = gathered[0].1.host;
-    assert!(
-        gathered
-            .iter()
-            .all(|(_, g)| g.host == host && (g.until - g.from - 3.0).abs() < 1e-9)
-    );
+    let mut camps: std::collections::BTreeMap<u64, usize> = Default::default();
+    for (_, g) in &gathered {
+        *camps.entry(g.host).or_default() += 1;
+        assert!((g.until - g.from - 20.0 / 365.0 * YEAR_DAYS).abs() < 1e-9);
+        assert!((2..=4).contains(&g.bands), "{} bands at one camp", g.bands);
+    }
+    assert!(camps.values().all(|&n| n <= 4), "gatherings: {camps:?}");
     // Gathering, people came to know those of other bands, as people kept apart did not.
     let (apart, _, _) = lived(false);
     let (with, without) = (met(&people), met(&apart));

@@ -670,6 +670,7 @@ pub fn validate(content: &Content, report: &mut Report) {
                 if let Some(a) = &p.aggregation {
                     c.range("aggregation days", a.days, 1.0, 120.0);
                     c.range("aggregation reach_km", a.reach_km, 1.0, 1000.0);
+                    c.range("aggregation bands", a.bands as f32, 2.0, 40.0);
                 }
             }
         },

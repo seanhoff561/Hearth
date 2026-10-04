@@ -5,20 +5,21 @@
 // come to know (`reach`: every technique of the knowledge graph's eras up to it, each no earlier
 // than the record dates it; or `repertoire`; or, with neither, their species profile's), whether
 // they keep a fire at camp and beds about it, their seasonal round (where their camps go, season
-// by season) and their yearly gathering (D199). Sea level and temperature are the era's against
+// by season) and their yearly gathering — the nearest few bands of a people, a few hundred people,
+// for some weeks of the real year (D199). Sea level and temperature are the era's against
 // today's (the deep-time layer's curve at its date; the world's terrain is drawn at today's
 // climate, D195).
 (
     schema: 1,
     entries: [
         (
-            id: "wild_earth", name: "Wild Earth", order: 0, available: true, wild_ancestors: true,
+            id: "wild_earth", name: "Wild Earth", order: 0, available: true, status: Implemented, wild_ancestors: true,
             description: "A timeless wild Earth with no civilisation: present-day wild plants and animals, the wild ancestors of domesticated species, and rare groups of Australopithecus.",
             species: ["australopithecus"],
             systems: ["geology", "seasons", "flora", "fauna", "physiology", "processes", "knowledge", "building"],
         ),
         (
-            id: "lower_paleolithic", name: "Lower Paleolithic", order: 1, available: true, years_bp: 400000,
+            id: "lower_paleolithic", name: "Lower Paleolithic", order: 1, available: true, status: Implemented, years_bp: 400000,
             description: "Four hundred thousand years ago: bands of Homo erectus range widely over open country and its woods and shores, making hand axes and wooden spears, keeping fire taken from wildfires and carried from camp to camp, and speaking a simple proto-language of a few words and many gestures.",
             way_of_life: "Small bands of fifteen to forty, few and far apart, ranging widely; hand axes, choppers and wooden spears; fire kept and carried; no burials, no ornament.",
             species: ["homo_erectus"],
@@ -31,7 +32,7 @@
             uncertain: true,
         ),
         (
-            id: "middle_paleolithic", name: "Middle Paleolithic", order: 2, available: true, years_bp: 45000,
+            id: "middle_paleolithic", name: "Middle Paleolithic", order: 2, available: true, status: Implemented, years_bp: 45000,
             sea_level_offset_m: -70, temperature_offset_c: -3.5,
             description: "Forty-five thousand years ago, in the cold of the last glacial: Neanderthals in the northern realms, small close-knit bands making fire, hafting spears, caring for their injured and burying some of their dead; and in the warmer south Homo sapiens, spreading out of its cradle, so that here and there the two meet.",
             way_of_life: "Small bands of ten to thirty Neanderthals, wintering in sheltered valleys and following the herds up in summer; bands of twenty-five to fifty of our kind; fire made at will; prepared cores, scrapers and hafted spears; a little ochre.",
@@ -48,7 +49,7 @@
             uncertain: true,
         ),
         (
-            id: "upper_paleolithic", name: "Upper Paleolithic", order: 3, available: true, years_bp: 25000,
+            id: "upper_paleolithic", name: "Upper Paleolithic", order: 3, available: true, status: Implemented, years_bp: 25000,
             sea_level_offset_m: -121, temperature_offset_c: -6,
             description: "Twenty-five thousand years ago, nearing the Last Glacial Maximum: ice sheets, land bridges where the sea has fallen, and Homo sapiens across the world in bands of a few families, linked by marriage and exchange into regional peoples that gather each year — with full language, sewn furs, needles and nets, music, ornament and art.",
             way_of_life: "Bands of twenty-five to fifty within peoples of about fifteen hundred, moving camp with the seasons and gathering every autumn; blades, bone and antler, eyed needles and sewn clothing, nets and snares, spear-throwers yet to come; shells and fine stone passed hand to hand over hundreds of kilometres.",
@@ -57,7 +58,7 @@
             peoples: [
                 (species: "homo_sapiens", band_size: (25, 50), reach: 2, hearth: true, bedding: true,
                  round: [(season: Winter, toward: Shelter), (season: Spring, toward: Water), (season: Summer, toward: Uplands), (season: Autumn, toward: Water)],
-                 aggregation: (season: Autumn, days: 20, reach_km: 60)),
+                 aggregation: (season: Autumn, days: 20, reach_km: 60, bands: 6)),
             ],
             systems: ["geology", "seasons", "flora", "fauna", "physiology", "processes", "knowledge", "building"],
             realism_source: "Upper Paleolithic aggregation sites (Conkey 1980 on Altamira); Gamble 1999; Kelly 2013 on residential moves; review",

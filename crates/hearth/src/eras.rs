@@ -169,6 +169,30 @@ impl Lands {
         }
     }
 
+    /// The ground's height where a camp may be made: dry — a block over any water there and two
+    /// over the sea's level (the samples round a shore otherwise than its blocks), and so a few
+    /// steps about it — and not steep.
+    fn dry(&self, x: f64, z: f64) -> Option<f32> {
+        let t = &self.terrain;
+        let dry_at = |x: f64, z: f64| {
+            let s = t.sample(x.floor() as i32, z.floor() as i32);
+            let wet = s.is_underwater()
+                || s.ocean
+                || s.lake
+                || (s.water.is_finite() && s.height_i() <= s.water_i() + 1)
+                || s.height < 2.0
+                || s.river
+                    .as_ref()
+                    .is_some_and(|r| r.distance < r.width * 0.5 + 2.0);
+            (!wet && s.slope < 0.8).then_some(s.height)
+        };
+        let h = dry_at(x, z)?;
+        [(6.0, 0.0), (-6.0, 0.0), (0.0, 6.0), (0.0, -6.0)]
+            .iter()
+            .all(|(dx, dz)| dry_at(x + dx, z + dz).is_some())
+            .then_some(h)
+    }
+
     /// The best camps of a kind about a place, best first (see [`hearth_people::Country`]).
     fn seek(&self, toward: Toward, from: DVec2, within_m: f64) -> Vec<DVec3> {
         let t = &self.terrain;
@@ -186,7 +210,7 @@ impl Lands {
                 let a = (k as f64 + 0.5 * (ring % 2) as f64) / n as f64 * std::f64::consts::TAU;
                 let (x, z) = (from.x + a.cos() * r, from.y + a.sin() * r);
                 let s = sample(x, z);
-                if wet(&s) || s.ocean || s.lake || s.slope > 0.6 {
+                if s.slope > 0.6 || self.dry(x, z).is_none() {
                     continue;
                 }
                 // The country about it: how high it stands over it, and water near.
@@ -271,49 +295,52 @@ impl hearth_people::Country for Lands {
         best.iter().find(|p| free(p)).copied()
     }
 
-    fn dry_ground(&self, near: DVec2, within_m: f64) -> Option<DVec3> {
-        let t = &self.terrain;
+    fn dry_ground(
+        &self,
+        near: DVec2,
+        within_m: f64,
+        taken: &[DVec2],
+        apart_m: f64,
+    ) -> Option<DVec3> {
         let dry = |x: f64, z: f64| {
-            let s = t.sample(x.floor() as i32, z.floor() as i32);
-            let wet = s.is_underwater()
-                || s.ocean
-                || s.lake
-                || s.river
-                    .as_ref()
-                    .is_some_and(|r| r.distance < r.width * 0.5 + 2.0);
-            (!wet && s.slope < 0.8).then(|| DVec3::new(x, s.height as f64, z))
+            let free = taken
+                .iter()
+                .all(|t| (DVec2::new(x, z) - *t).length() >= apart_m);
+            if !free {
+                return None;
+            }
+            self.dry(x, z).map(|h| DVec3::new(x, h as f64, z))
         };
         if let Some(at) = dry(near.x, near.y) {
             return Some(at);
         }
-        // Rings outward, nearest first.
-        let mut r = 40.0;
+        // Rings outward, nearest first, as close as the camps may be.
+        let step = (apart_m * 0.5).clamp(5.0, 40.0);
+        let mut r = step;
         while r <= within_m {
-            let n = ((std::f64::consts::TAU * r / 40.0).ceil() as usize).max(8);
+            let n = ((std::f64::consts::TAU * r / step).ceil() as usize).max(8);
             for k in 0..n {
                 let a = k as f64 / n as f64 * std::f64::consts::TAU;
                 if let Some(at) = dry(near.x + a.cos() * r, near.y + a.sin() * r) {
                     return Some(at);
                 }
             }
-            r += 40.0;
+            r += step;
         }
         None
     }
 }
 
-/// How an era's peoples live through the year in a world (none outside the eras).
+/// How an era's peoples live through the year in a world (none outside the eras), and the land
+/// they live in (every world's: a band split off goes to dry land in Wild Earth too).
 pub fn ways(
     era: Option<&Era>,
     calendar: &hearth_env::Calendar,
     terrain: Arc<hearth_worldgen::region::Terrain>,
 ) -> hearth_people::EraWays {
-    match era {
-        Some(e) if !e.peoples.is_empty() => hearth_people::EraWays {
-            peoples: e.peoples.clone(),
-            year_offset: calendar.year_offset,
-            country: Some(Arc::new(Lands::new(terrain))),
-        },
-        _ => hearth_people::EraWays::default(),
+    hearth_people::EraWays {
+        peoples: era.map(|e| e.peoples.clone()).unwrap_or_default(),
+        year_offset: calendar.year_offset,
+        country: Some(Arc::new(Lands::new(terrain))),
     }
 }

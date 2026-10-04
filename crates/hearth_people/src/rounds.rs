@@ -31,9 +31,16 @@ pub trait Country: Send + Sync {
         taken: &[DVec2],
     ) -> Option<DVec3>;
 
-    /// The dry ground nearest a place within `within_m` (a camp is not made in the water): its
-    /// ground. None where the world does not say.
-    fn dry_ground(&self, _near: DVec2, _within_m: f64) -> Option<DVec3> {
+    /// The dry ground nearest a place within `within_m` (a camp is not made in the water), at
+    /// least `apart_m` from other bands' camps (`taken`): its ground. None where the world does
+    /// not say.
+    fn dry_ground(
+        &self,
+        _near: DVec2,
+        _within_m: f64,
+        _taken: &[DVec2],
+        _apart_m: f64,
+    ) -> Option<DVec3> {
         None
     }
 }
@@ -116,7 +123,7 @@ pub struct Gathering {
     pub bands: u16,
 }
 
-/// Bands at a gathering keep their fires this far apart (m), in a ring about its middle.
+/// Bands at a gathering keep their fires this far apart (m), in a ring about the host's.
 const APART_M: f64 = 30.0;
 /// Each one of a gathering meets as many of the other bands' people.
 const MEETS: usize = 8;
@@ -200,8 +207,8 @@ impl People {
         }
     }
 
-    /// The camps other bands keep within `within_m` of a place.
-    fn camps_near(&self, bi: usize, at: DVec2, within_m: f64) -> Vec<DVec2> {
+    /// The camps other bands than `bi` keep within `within_m` of a place.
+    pub(crate) fn camps_near(&self, bi: usize, at: DVec2, within_m: f64) -> Vec<DVec2> {
         self.bands
             .iter()
             .enumerate()
@@ -227,9 +234,10 @@ impl People {
         }
     }
 
-    /// The bands of a band's people (its species and lineage) within the gathering's reach of it
-    /// gather at one camp — by the water near the largest band's home — each at its own fire
-    /// there; its people meet the others'. None to gather with: it stays on its round.
+    /// The nearest bands of a band's people (its species and lineage) within the gathering's
+    /// reach of it, as many as gather in one camp, gather there — by the water near the largest
+    /// band's home — each at its own fire, for the gathering's part of the year; its people meet
+    /// the others'. None to gather with: it stays on its round.
     fn gather(&mut self, bi: usize, a: &Aggregation, day: f64, year_days: f64) {
         let (home, kind) = (self.bands[bi].home, self.bands[bi].species.clone());
         let lineage = self.bands[bi].deep.as_ref().map(|d| d.lineage);
@@ -247,6 +255,13 @@ impl People {
                         .is_none_or(|g| day - g.from > 0.5 * year_days)
             })
             .collect();
+        // The nearest come (the band itself first), as many as gather in one camp.
+        come.sort_by(|&x, &y| {
+            let d = |b: usize| (self.bands[b].home - home).length();
+            d(x).total_cmp(&d(y))
+                .then(self.bands[x].id.cmp(&self.bands[y].id))
+        });
+        come.truncate(a.bands.max(2) as usize);
         if come.len() < 2 {
             // Marked as gathered (alone), so it is not looked for again this season.
             self.bands[bi].round.gathering = Some(Gathering {
@@ -277,21 +292,34 @@ impl People {
             .and_then(|c| c.camp_toward(Toward::Water, hhome, hrange, &[]))
             .or(self.bands[host].camp)
             .unwrap_or(DVec3::new(hhome.x, 0.0, hhome.y));
+        // Its days are a real year's: as long a part of the game's year.
         let g = Gathering {
             at,
             host: self.bands[host].id,
             from: day,
-            until: day + a.days as f64,
+            until: day + a.days as f64 / 365.0 * year_days,
             bands: come.len() as u16,
         };
-        let n = come.len();
+        // The host's fire, the others' in a ring about it, each its own distance from the next,
+        // on dry ground.
+        let ring = (APART_M * (come.len() - 1) as f64 / std::f64::consts::TAU).max(APART_M);
+        let mut fires: Vec<DVec2> = Vec::new();
         for (k, &b) in come.iter().enumerate() {
-            let angle = k as f64 / n as f64 * std::f64::consts::TAU;
-            let spot = if k == 0 {
+            let angle =
+                k.saturating_sub(1) as f64 / (come.len() - 1) as f64 * std::f64::consts::TAU;
+            let mut spot = if k == 0 {
                 at
             } else {
-                at + DVec3::new(angle.cos() * APART_M, 0.0, angle.sin() * APART_M)
+                at + DVec3::new(angle.cos() * ring, 0.0, angle.sin() * ring)
             };
+            if let Some(dry) =
+                self.era.country.as_ref().and_then(|c| {
+                    c.dry_ground(DVec2::new(spot.x, spot.z), ring, &fires, APART_M * 0.8)
+                })
+            {
+                spot = dry;
+            }
+            fires.push(DVec2::new(spot.x, spot.z));
             self.bands[b].round.gathering = Some(g);
             self.bands[b].round.left = self.bands[b].camp;
             self.move_camp(b, spot, day);

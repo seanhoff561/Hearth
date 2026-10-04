@@ -2,7 +2,8 @@
 //! table land near the forager targets — a life expectancy at birth about thirty, most children
 //! who outlive childhood living past sixty, four to six children to a woman who lives to
 //! forty-five, three to four years between births — and the numbers about a home, once the land
-//! there fills, hold near what it feeds.
+//! there fills, hold near what it feeds. H8 (D198): the archaic peoples on theirs — dying younger,
+//! weaned sooner, replacing themselves.
 
 mod common;
 
@@ -13,29 +14,41 @@ use hearth_people::{Now, People};
 
 const YEARS: u32 = 200;
 
-#[test]
-fn foragers_live_near_the_forager_targets() {
+/// Two hundred years of six bands of a species twenty kilometres apart: the cohort born from the
+/// thirtieth year to the hundredth followed to their deaths, and the bands at the end.
+struct Lived {
+    /// Born in the cohort; their life expectancy at birth; the share alive at fifteen; of those,
+    /// the share to sixty.
+    n: f64,
+    e0: f64,
+    l15: f64,
+    to60: f64,
+    /// Its women who lived to forty-five: how many, the children they bore, years between births.
+    women: usize,
+    ceb: f64,
+    ibi: f64,
+    /// The living at the end, in how many bands; those with a grandmother born in the run.
+    living: usize,
+    bands: usize,
+    grand: usize,
+    /// How crowded the bands felt each twentieth year, and how many lived in the first country.
+    crowding: Vec<f64>,
+    there: Vec<f64>,
+}
+
+fn lived(species_id: &str, seed: u64, founders: [u16; 4]) -> Lived {
     let b = base();
     let species = b.species.clone();
-    let k = species.index_of("homo_sapiens").expect("our species");
+    let k = species.index_of(species_id).expect("the species");
     let mut w = Savanna::new();
-    let mut p = People::new(11);
+    let mut p = People::new(seed);
     let mut now = w.now();
     for (x, z) in [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)] {
         let at = DVec3::new(x as f64 * 20_000.0, GROUND, z as f64 * 20_000.0);
-        p.spawn_band(
-            &species,
-            &b.graph,
-            &b.items,
-            &mut w,
-            k,
-            [9, 8, 10, 3],
-            at,
-            now,
-        );
+        p.spawn_band(&species, &b.graph, &b.items, &mut w, k, founders, at, now);
     }
     let start = now.day;
-    let table = species.life.of("homo_sapiens").expect("a table");
+    let table = species.life.of(species_id).expect("a table");
     // How crowded the land is about the bands, as they feel it, on the whole.
     let felt = |p: &People| {
         let (mut sum, mut all) = (0.0, 0.0);
@@ -111,12 +124,6 @@ fn foragers_live_near_the_forager_targets() {
         .collect();
     let ibi = gaps.iter().sum::<f64>() / gaps.len() as f64;
     let living = p.persons.iter().filter(|q| q.alive()).count();
-    println!(
-        "{n} born: e0 {e0:.1}, l15 {l15:.2}, {to60:.2} of those to 60; {} women to 45 bore \
-         {ceb:.2}, {ibi:.2} years apart; {} bands, {living} living",
-        women.len(),
-        p.bands.len()
-    );
     // Families persist across generations: the living have grandmothers born in the run.
     let grand = p
         .persons
@@ -131,7 +138,59 @@ fn foragers_live_near_the_forager_targets() {
                 .is_some_and(|g| g.life.born > start)
         })
         .count();
-    println!("{grand} living with a grandmother born in the run");
+    let out = Lived {
+        n,
+        e0,
+        l15,
+        to60,
+        women: women.len(),
+        ceb,
+        ibi,
+        living,
+        bands: p.bands.len(),
+        grand,
+        crowding,
+        there,
+    };
+    println!(
+        "{species_id}: {} born: e0 {:.1}, l15 {:.2}, {:.2} of those to 60; {} women to 45 bore \
+         {:.2}, {:.2} years apart; {} bands, {} living; {} living with a grandmother born in the \
+         run",
+        out.n,
+        out.e0,
+        out.l15,
+        out.to60,
+        out.women,
+        out.ceb,
+        out.ibi,
+        out.bands,
+        out.living,
+        out.grand
+    );
+    out
+}
+
+/// Once the country fills, its numbers grow no more (the last sixty years).
+fn growth(there: &[f64]) -> f64 {
+    let k = there.len();
+    (there[k - 1] / there[k - 4]).ln() / 60.0
+}
+
+#[test]
+fn foragers_live_near_the_forager_targets() {
+    let Lived {
+        n,
+        e0,
+        l15,
+        to60,
+        ceb,
+        ibi,
+        living,
+        grand,
+        crowding,
+        there,
+        ..
+    } = lived("homo_sapiens", 11, [9, 8, 10, 3]);
     assert!(grand > 20, "three generations and more");
     assert!(n > 300.0, "too few born to judge");
     assert!(
@@ -147,12 +206,42 @@ fn foragers_live_near_the_forager_targets() {
     for c in &crowding[crowding.len() - 3..] {
         assert!(*c < 1.4, "crowding {c:.2}");
     }
-    // Once the country fills, its numbers grow no more (the last sixty years).
-    let k = there.len();
-    let growth = (there[k - 1] / there[k - 4]).ln() / 60.0;
-    assert!(
-        growth.abs() < 0.006,
-        "growth {:.2} % a year",
-        growth * 100.0
-    );
+    let g = growth(&there);
+    assert!(g.abs() < 0.006, "growth {:.2} % a year", g * 100.0);
+}
+
+/// H8 (D198): *Homo erectus* and the Neanderthals on their own tables — a life expectancy at birth
+/// near twenty, few past sixty, births closer than ours by an earlier weaning — keep going through
+/// three generations and more, their numbers held by what their thin country feeds (the founders
+/// are more than it feeds at their tables' three and two and a half to the hundred km², so their
+/// numbers fall toward it).
+#[test]
+fn the_archaic_peoples_live_and_die_by_their_tables() {
+    for (species, seed, founders, e0_near, spacing) in [
+        ("homo_erectus", 12, [9, 8, 10, 3], 21.0, 2.4..4.2),
+        ("homo_neanderthalensis", 13, [6, 5, 7, 3], 20.0, 2.2..4.0),
+    ] {
+        let l = lived(species, seed, founders);
+        assert!(l.n > 150.0, "{species}: too few born to judge");
+        assert!(
+            (e0_near - 5.0..e0_near + 5.0).contains(&l.e0),
+            "{species}: life expectancy at birth {:.1}",
+            l.e0
+        );
+        assert!(
+            l.to60 < 0.3,
+            "{species}: of those past fifteen, to sixty {:.2}",
+            l.to60
+        );
+        assert!(
+            spacing.contains(&l.ibi),
+            "{species}: years between births {:.2}",
+            l.ibi
+        );
+        assert!(l.grand > 10, "{species}: three generations and more");
+        assert!(l.living >= 30, "{species}: {} living", l.living);
+        for c in &l.crowding[l.crowding.len() - 3..] {
+            assert!(*c < 1.6, "{species}: crowding {c:.2}");
+        }
+    }
 }
