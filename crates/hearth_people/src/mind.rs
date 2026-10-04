@@ -91,6 +91,16 @@ pub enum Doing {
         whom: u64,
         recipe: usize,
     },
+    /// Taking food it carries to one who is hungry (V2.1 §8.3).
+    Sharing {
+        to: u64,
+        at: DVec3,
+    },
+    /// Staying by one of its own who is hurt, a comfort to them (V2.1 §8.3).
+    Tending {
+        who: u64,
+        at: DVec3,
+    },
 }
 
 /// How pressing a person's needs are, 0 not at all … 1 desperately.
@@ -198,6 +208,11 @@ pub struct Situation {
     pub playmate: Option<(u64, DVec3)>,
     /// A grown one of the band at its work close by: who, where, and the work.
     pub work_near: Option<(u64, DVec3, usize)>,
+    /// It carries food, and one near it is hungry whom it would feed: who, where, and how
+    /// dearly (1 its own household's young … a band-mate it is not fond of).
+    pub share_with: Option<(u64, DVec3, f32)>,
+    /// One of its own is hurt near: who, where, and how fond of them it is.
+    pub hurt_near: Option<(u64, DVec3, f32)>,
     /// The next step of what it means to do (its plan's), if it has one.
     pub project: Option<Doing>,
 }
@@ -390,6 +405,20 @@ pub fn choose(
         let company = if with.is_some() { 0.15 } else { 0.0 };
         let score = 0.25 + 0.2 * psyche.tendency(Tendency::Sociability) + 0.3 * roll + company;
         consider(Doing::Playing { to, with }, score);
+    }
+    // Food it carries to one who is hungry: its household's first, kin and those it is fond of,
+    // the generous the more readily (V2.1 §8.3); not while hungry itself.
+    if let Some((to, at, dear)) = s.share_with
+        && needs.hunger < 0.3
+    {
+        let score = 0.2 + 0.6 * dear + 0.3 * psyche.value(Value::Generosity) + 0.1 * roll;
+        consider(Doing::Sharing { to, at }, score);
+    }
+    // One of its own hurt: staying by them (a child by its mother too), the fonder the more
+    // readily.
+    if let Some((who, at, fond)) = s.hurt_near {
+        let score = 0.15 + 0.6 * fond + 0.1 * psyche.tendency(Tendency::Cooperativeness);
+        consider(Doing::Tending { who, at }, score);
     }
     // What it means to do, the diligent the more readily.
     if let Some(d) = &s.project {

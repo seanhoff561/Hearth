@@ -1041,8 +1041,10 @@ H4 — Social systems (PLAN.md, V2.1 §8; `docs/design/humans/social.md`), in pa
   by time near and much more by grooming, fading back without contact, the dead let go; band-mates
   all know one another; at most a hundred and fifty, the weakest let go; the inspector's closest
   ties (`tests/social.rs`).
-- [ ] (c) Cooperation: food shared in the household and a large find with the band, help and care
-  for the hurt, kin altruism by relatedness, reciprocity remembered.
+- [x] (c) Cooperation: food carried brought to one hungry near — its household's first, then kin
+  and those it is fond of, the generous the more readily, never while hungry itself — the gift
+  eaten and both ledgers moved; one of a person's own hurt is stayed by (a child by its mother
+  too), their fear eased and the tie warmed (`tests/social.rs`).
 - [ ] (d) Reputation, gossip, norms and sanctions: what others believe of one, spread in company
   with decay and distortion; norms as data; violations noticed, felt, told and sanctioned
   (ridicule, avoidance, withheld cooperation, ostracism); levelling among foragers; property (the

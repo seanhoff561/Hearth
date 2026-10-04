@@ -148,6 +148,12 @@ struct Glimpse {
     alarm: bool,
     /// The work it is at, if any.
     working: Option<usize>,
+    /// Hungry enough to be fed.
+    hungry: bool,
+    /// Its household.
+    household: Option<u64>,
+    /// Hurt (a wound not healed).
+    hurt: bool,
     /// The feeling it shows, and how strongly.
     shows: Option<(Feeling, f32)>,
 }
@@ -218,6 +224,33 @@ const PLAY_ABOUT_M: f64 = 8.0;
 const IMITATE_H_PER_S: f32 = 1.0 / 240.0;
 /// The share of the works a child watches finished that teach it something.
 const TAKEN_IN: f32 = 0.25;
+
+/// How far off one sees another hungry to bring food to, and one hurt to stay by (m).
+const SHARE_M: f64 = 15.0;
+const TEND_M: f64 = 30.0;
+
+/// Where in what it carries a person has food: in a hand, or in a basket or pouch.
+fn carried_food(p: &Person, items: &Items, content: &Content) -> Option<hearth_items::Path> {
+    use hearth_items::{Hand, Path, Root};
+    let edible = |s: &Stack| {
+        items
+            .get(&s.id)
+            .and_then(|k| hearth_craft::food::bite_of(content, k, s))
+            .is_some()
+    };
+    let c = &p.possessions.carry;
+    for (hand, held) in [(Hand::Right, &c.right), (Hand::Left, &c.left)] {
+        if held.as_ref().is_some_and(&edible) {
+            return Some(Path::at(Root::Hand(hand)));
+        }
+    }
+    in_containers(c, &edible)
+}
+
+/// A person's physiology now, by its size.
+fn species_body(p: &Person, sp: &Species, now: &Now) -> hearth_body::BodyConfig {
+    p.body_config(sp, now).into_owned()
+}
 
 /// Breast milk, `l` litres of it: its energy, protein, fat, sugar and water (about 70 kcal, a
 /// gram of protein, 4 of fat and 7 of sugar to the 100 ml), and the vitamins of fresh food.
@@ -1048,6 +1081,11 @@ impl People {
                     Doing::Working { recipe } => Some(recipe),
                     _ => None,
                 },
+                hungry: species.get(&p.species).is_some_and(|sp| {
+                    Needs::of(&p.body, &p.body_config(sp, &now), 0.0).hunger > 0.35
+                }),
+                household: p.social.household,
+                hurt: p.body.injuries.iter().any(|i| i.healed < 1.0),
                 shows: p.psyche.shown(&species.psyche),
             })
             .collect();
@@ -1428,6 +1466,85 @@ impl People {
                     }
                     self.persons[i].mind.doing = Doing::Playing { to: next, with };
                 }
+            }
+            Doing::Sharing { to, .. } => {
+                // To the hungry one; there, what it carries of food given into their hands.
+                let Ok(j) = self.persons.binary_search_by_key(&to, |q| q.id) else {
+                    self.persons[i].mind.doing = Doing::Idle;
+                    return;
+                };
+                let at = self.persons[j].place.pos;
+                let p = &mut self.persons[i];
+                if (p.place.pos - at).length() > 1.5 {
+                    move_toward(p, &*world, at, walk, dt);
+                    return;
+                }
+                p.place.speed = 0.0;
+                p.place.yaw = yaw_toward(p.place.pos, at);
+                if let Some(path) = carried_food(p, items, content)
+                    && let Some(stack) = p.possessions.carry.take(items, &path, Some(1))
+                {
+                    let worth = items
+                        .get(&stack.id)
+                        .and_then(|k| hearth_craft::food::bite_of(content, k, &stack))
+                        .map_or(0.1, |b| (b.kcal / 2000.0).max(0.05));
+                    let from = p.id;
+                    let q = &mut self.persons[j];
+                    let qcfg = species_body(q, sp, &now);
+                    if let Some(b) = items
+                        .get(&stack.id)
+                        .and_then(|k| hearth_craft::food::bite_of(content, k, &stack))
+                    {
+                        let _ = q.body.eat(
+                            &qcfg,
+                            &Food {
+                                kcal: b.kcal as f64,
+                                protein_g: b.protein_g as f64,
+                                fat_g: b.fat_g as f64,
+                                carb_g: b.carb_g as f64,
+                                water_l: b.water_l as f64,
+                                volume_l: b.volume_l as f64,
+                                fresh_days: b.fresh_days as f64,
+                            },
+                        );
+                    }
+                    q.psyche.feel(Feeling::Affection, 0.4);
+                    self.give(from, to, worth, now.day);
+                    self.persons[i].psyche.feel(Feeling::Joy, 0.2);
+                }
+                self.persons[i].mind.doing = Doing::Idle;
+                self.persons[i].mind.timer = 0.0;
+            }
+            Doing::Tending { who, .. } => {
+                // By the hurt one's side, crouched with them: their fear eased, the tie warmed.
+                let Ok(j) = self.persons.binary_search_by_key(&who, |q| q.id) else {
+                    self.persons[i].mind.doing = Doing::Idle;
+                    return;
+                };
+                let at = self.persons[j].place.pos;
+                let healed = !self.persons[j].alive()
+                    || self.persons[j]
+                        .body
+                        .injuries
+                        .iter()
+                        .all(|inj| inj.healed >= 1.0);
+                let p = &mut self.persons[i];
+                if healed {
+                    p.mind.doing = Doing::Idle;
+                    p.mind.timer = 0.0;
+                    return;
+                }
+                if (p.place.pos - at).length() > 1.2 {
+                    move_toward(p, &*world, at, walk, dt);
+                    return;
+                }
+                p.place.speed = 0.0;
+                p.place.yaw = yaw_toward(p.place.pos, at);
+                let from = p.id;
+                let q = &mut self.persons[j];
+                q.psyche.feelings[Feeling::Fear] *= 1.0 - (0.05 * dt).min(1.0);
+                q.psyche.feel(Feeling::Affection, 0.2);
+                self.give(from, who, 0.01 * dt, now.day);
             }
             Doing::Imitating { at, recipe, .. } => {
                 // Over to the work, then crouched by it, watching it and trying it after:
@@ -1897,6 +2014,50 @@ fn situation(
     let stage = p.life_stage(sp, &now);
     let plays = matches!(stage, LifeStage::Child | LifeStage::Juvenile);
     let learns = plays || stage == LifeStage::Adolescent;
+    // One hungry near whom it would feed with the food it carries: its household's first, then
+    // those it is fondest of.
+    let carries_food = carried_food(p, items, content).is_some();
+    let mut share_with: Option<(u64, DVec3, f32)> = None;
+    if carries_food {
+        for g in glimpses
+            .iter()
+            .filter(|g| g.band == p.social.band && g.alive && g.hungry && g.id != p.id)
+        {
+            if (g.pos - pos).length() > SHARE_M {
+                continue;
+            }
+            let fond = p
+                .social
+                .ties
+                .iter()
+                .find(|t| t.who == g.id)
+                .map_or(0.1, |t| t.affection);
+            let home = p.social.household.is_some() && g.household == p.social.household;
+            let dear = if home { fond.max(0.8) } else { fond };
+            if share_with.is_none_or(|s| dear > s.2) {
+                share_with = Some((g.id, g.pos, dear));
+            }
+        }
+    }
+    // One of its own hurt near, whom it is fond of.
+    let mut hurt_near: Option<(u64, DVec3, f32)> = None;
+    for g in glimpses
+        .iter()
+        .filter(|g| g.band == p.social.band && g.alive && g.hurt && g.id != p.id)
+    {
+        if (g.pos - pos).length() > TEND_M {
+            continue;
+        }
+        let fond = p
+            .social
+            .ties
+            .iter()
+            .find(|t| t.who == g.id)
+            .map_or(0.0, |t| t.affection);
+        if fond >= 0.4 && hurt_near.is_none_or(|h| fond > h.2) {
+            hurt_near = Some((g.id, g.pos, fond));
+        }
+    }
     // The young of the band to play with, and a grown one at its work to watch.
     let mut playmate: Option<(u64, DVec3, f64)> = None;
     let mut work_near: Option<(u64, DVec3, usize, f64)> = None;
@@ -2015,6 +2176,8 @@ fn situation(
         learns,
         playmate: playmate.map(|(id, at, _)| (id, at)),
         work_near: work_near.map(|(id, at, r, _)| (id, at, r)),
+        share_with,
+        hurt_near,
         project: p
             .mind
             .plan
@@ -2243,6 +2406,8 @@ fn hold_for(d: &Doing) -> f32 {
         Doing::Carried { .. } => 5.0,
         Doing::Playing { .. } => 8.0,
         Doing::Imitating { .. } => 20.0,
+        Doing::Sharing { .. } => 20.0,
+        Doing::Tending { .. } => 30.0,
     }
 }
 
@@ -2259,11 +2424,12 @@ fn activity_of(d: &Doing, speed: f32) -> &'static str {
             "standing"
         }
         Doing::Working { .. } | Doing::Nesting => "carrying_heavy",
-        Doing::Imitating { .. } => "resting",
+        Doing::Imitating { .. } | Doing::Tending { .. } => "resting",
         Doing::Going { .. }
         | Doing::Mobbing { .. }
         | Doing::Fleeing { .. }
-        | Doing::Playing { .. } => {
+        | Doing::Playing { .. }
+        | Doing::Sharing { .. } => {
             if speed > 2.0 {
                 "jogging"
             } else if speed > 0.1 {

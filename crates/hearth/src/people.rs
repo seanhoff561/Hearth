@@ -828,7 +828,8 @@ pub fn drive(v: &PersonView) -> Drive {
         Doing::Grooming { .. }
         | Doing::Resting
         | Doing::Carried { .. }
-        | Doing::Imitating { .. } => Activity::Crouch,
+        | Doing::Imitating { .. }
+        | Doing::Tending { .. } => Activity::Crouch,
         _ if v.speed > 3.0 => Activity::Sprint,
         _ if v.speed > 1.8 => Activity::Jog,
         _ if v.speed > 0.1 => Activity::Walk,

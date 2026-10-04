@@ -144,3 +144,86 @@ fn ties_grow_in_company_kin_begin_closer_and_giving_is_owed() {
     assert!(ledger(&p, stranger, mother).1 >= 1.0, "it is owed her");
     assert!(tie(&p, stranger, mother) > before, "and the fonder");
 }
+
+#[test]
+fn a_mother_with_food_feeds_her_hungry_child() {
+    let b = base();
+    let mut world = Savanna::new();
+    let mut p = band(&mut world);
+    let sp = &b.species.list[b.species.index_of("australopithecus").expect("the hominin")];
+    let now = world.now();
+    // A weaned child of the band and its mother.
+    let child = p
+        .full()
+        .find(|q| {
+            q.life.mother.is_some() && q.life_stage(sp, &now) != hearth_people::LifeStage::Infant
+        })
+        .map(|q| q.id)
+        .expect("a weaned child with its mother");
+    let mother = p
+        .get(child)
+        .and_then(|q| q.life.mother)
+        .expect("its mother");
+    // Something good to eat in her hand; the child hungry.
+    let food = b
+        .items
+        .iter()
+        .find(|k| {
+            hearth_craft::food::bite_of(&b.content, k, &hearth_items::Stack::of(&k.id, 1))
+                .is_some_and(|f| f.kcal > 20.0)
+        })
+        .map(|k| k.id.clone())
+        .expect("a food");
+    for q in p.persons.iter_mut() {
+        if q.id == mother {
+            q.possessions.carry.right = Some(hearth_items::Stack::of(&food, 4));
+        }
+        if q.id == child {
+            q.body.energy.glycogen_kcal = 0.0;
+            q.body.energy.fat_kcal *= 0.4;
+        }
+    }
+    live(&mut p, &mut world, 120.0, &[]);
+    let gave = p
+        .get(mother)
+        .and_then(|q| q.social.ties.iter().find(|t| t.who == child))
+        .map_or(0.0, |t| t.given);
+    println!("she gave {gave:.2} of {food}");
+    assert!(gave > 0.0, "she fed her child");
+}
+
+#[test]
+fn one_hurt_is_tended_by_those_fond_of_them() {
+    let b = base();
+    let mut world = Savanna::new();
+    let mut p = band(&mut world);
+    let sp = &b.species.list[b.species.index_of("australopithecus").expect("the hominin")];
+    let now = world.now();
+    // A mother hurt: a deep cut to the leg.
+    let mother = p
+        .full()
+        .find(|q| p.full().any(|c| c.life.mother == Some(q.id)))
+        .map(|q| q.id)
+        .expect("a mother");
+    for q in p.persons.iter_mut().filter(|q| q.id == mother) {
+        let cfg = q.body_config(sp, &now).into_owned();
+        q.body
+            .injure(
+                &cfg,
+                "cut",
+                hearth_content::schema::body::BodyRegion::LowerLeg,
+                hearth_body::Side::Left,
+                0.5,
+            )
+            .expect("a cut");
+    }
+    live(&mut p, &mut world, 120.0, &[]);
+    let tended: f32 = p
+        .full()
+        .filter(|q| q.id != mother)
+        .filter_map(|q| q.social.ties.iter().find(|t| t.who == mother))
+        .map(|t| t.given)
+        .sum();
+    println!("tended her for {tended:.2}");
+    assert!(tended > 0.0, "someone stayed by her");
+}
