@@ -21,6 +21,7 @@ use crate::schema::humans::{Chromosome, GenePool, GeneticsSettings, Locus, Speci
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
 use crate::schema::language::{LanguageGenerator, Meaning};
+use crate::schema::learning::Transmission;
 use crate::schema::life::{LifeTable, Moment};
 use crate::schema::material::Material;
 use crate::schema::mind::Routine;
@@ -158,6 +159,7 @@ pub struct Content {
     pub culture_generators: Table<CultureGenerator>,
     pub languages: Table<LanguageGenerator>,
     pub meanings: Table<Meaning>,
+    pub transmission: Table<Transmission>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -330,6 +332,7 @@ impl Content {
             culture_generators: load_table(packs, &mut r),
             languages: load_table(packs, &mut r),
             meanings: load_table(packs, &mut r),
+            transmission: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
@@ -424,6 +427,7 @@ impl Content {
         u(&self.culture_generators, &mut out);
         u(&self.languages, &mut out);
         u(&self.meanings, &mut out);
+        u(&self.transmission, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
         u(&self.knowledge, &mut out);
@@ -466,6 +470,7 @@ impl Content {
             c("Culture generators", &self.culture_generators),
             c("Language generators", &self.languages),
             c("Meanings", &self.meanings),
+            c("Ways of passing on knowledge", &self.transmission),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),
             c("Knowledge nodes", &self.knowledge),

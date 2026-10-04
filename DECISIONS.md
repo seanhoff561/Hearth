@@ -2228,3 +2228,18 @@ picks up a language among speakers), and a related language is made out through 
 is what makes language families matter to the player. The player sees subtitles (the sounds and
 the sense made of them) in the message list for now; the speech-act wheel by which the player
 speaks comes with H9's interaction UI.
+
+## D188 — The collective brain as yearly transmission from knowers, deeper the slower
+V2.1 §11.4 asks for minimum practitioners and transmission fidelity per node. Rather than a
+threshold per node, each year each learner takes each technique with chance `1 − (1 − f)^k` — `k`
+the knowers within reach (its band's, its neighbours' weighted by contact), `f` falling by
+`e^(−depth_factor·depth)` with how deep the technique rests in the graph — so a node's knowers grow
+when learners·f exceeds their death rate: a minimum population per technique emerges, rising with
+its depth, which is Henrich's (2004) result without tracking skill distributions. Depth comes
+from the graph (no new data per node); the rates are a people's data. A band's knowledge and
+techniques are recomputed from its living members each year, which makes the life course's
+newborns learn (before H6 they grew up knowing nothing outside play) and lets techniques be lost
+and found. Teaching in play is a direct insight toward the shown work's node (a new route, Taught)
+at a people's teaching factor, which for the player is the one fast way to learn from people
+(watching gives them a trigger an hour); apprenticeship biases whom the young watch; stories move
+places and, as legends, techniques. Records and writing wait for the eras that have them.

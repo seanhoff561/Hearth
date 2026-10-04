@@ -325,6 +325,10 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
             }
         }
     }
+    // Ways of passing on knowledge (V2.1 §11): whose they are.
+    for (e, o) in c.transmission.iter_with_origin() {
+        r.check(&c.species, "species", &e.species, o, e.id());
+    }
     // Culture generators (V2.1 §9): whose they are, and the foods they may forbid.
     for (e, o) in c.culture_generators.iter_with_origin() {
         r.check(&c.species, "species", &e.species, o, e.id());

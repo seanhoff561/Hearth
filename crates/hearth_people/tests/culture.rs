@@ -679,3 +679,201 @@ fn h5_accepted_cultures_part_with_related_tongues_and_a_newcomer_learns() {
     assert!(late.1 > 0.0, "it heard them talk");
     assert!(l > e + 0.2, "it learned their tongue");
 }
+
+#[test]
+fn a_hard_skill_is_lost_by_a_small_band_alone_and_kept_by_a_large_one() {
+    use hearth_craft::knowledge::Learned;
+    let b = base();
+    let mut species = b.species.clone();
+    let k = species.index_of("homo_sapiens").expect("our species");
+    // The deepest technique whose groundwork our people know, and is not yet theirs.
+    let known = species.list[k].knowledge.clone();
+    let (hard, depth) = species
+        .lore
+        .nodes
+        .iter()
+        .filter(|f| {
+            f.implemented && !known.contains(&f.id) && f.requires.iter().all(|r| known.contains(r))
+        })
+        .max_by_key(|f| f.depth)
+        .map(|f| (f.id.clone(), f.depth))
+        .expect("a technique to learn");
+    // As hard to pass on as a fine skill: from one knower, once in five hundred years.
+    if let Some(t) = species.list[k].learning.as_mut() {
+        t.depth_factor = (t.learn_year / 0.002).ln() / depth.max(1) as f32;
+    }
+    let run = |bands: &[([u16; 4], f64, f64)], seed: u64| -> (usize, bool) {
+        let mut world = Savanna::new();
+        let mut p = People::new(seed);
+        let now = world.now();
+        for (n, x, z) in bands {
+            p.spawn_band(
+                &species,
+                &b.graph,
+                &b.items,
+                &mut world,
+                k,
+                *n,
+                DVec3::new(*x, GROUND, *z),
+                now,
+            );
+        }
+        // The first band's grown all know it.
+        let first = p.bands[0].id;
+        for q in p.persons.iter_mut() {
+            if q.social.band == first && q.age(&now) >= 15.0 {
+                q.knowledge.known.insert(
+                    hard.clone(),
+                    Learned {
+                        tick: 0,
+                        route: None,
+                    },
+                );
+            }
+        }
+        p.bands[0].culture.knowledge.push(hard.clone());
+        p.live_course(&species, &b.items, &world, now);
+        p.live_course(
+            &species,
+            &b.items,
+            &world,
+            Now {
+                day: now.day + 150.0 * YEAR_DAYS,
+                ..now
+            },
+        );
+        let knowers = p
+            .persons
+            .iter()
+            .filter(|q| q.alive() && q.knowledge.knows(&hard))
+            .count();
+        let kept = p.bands.iter().any(|x| x.culture.knowledge.contains(&hard));
+        (knowers, kept)
+    };
+    let (alone, alone_kept) = run(&[([3, 3, 2, 0], 0.0, 0.0)], 70);
+    let (many, many_kept) = run(
+        &[
+            ([16, 16, 12, 0], 0.0, 0.0),
+            ([8, 8, 6, 0], 8_000.0, 0.0),
+            ([8, 8, 6, 0], 0.0, 8_000.0),
+        ],
+        71,
+    );
+    println!(
+        "{hard} (depth {depth}) a hundred and fifty years on: {alone} knowers in the small band \
+         alone, {many} among the large one and its neighbours"
+    );
+    assert!(alone == 0 && !alone_kept, "lost by the small band alone");
+    assert!(many > 0 && many_kept, "kept by the large connected one");
+}
+
+#[test]
+fn shown_how_the_player_learns_faster_than_by_watching() {
+    use hearth_craft::KnowledgeState;
+    let b = base();
+    let species = &b.species;
+    let k = species.index_of("homo_sapiens").expect("our species");
+    let mut world = Savanna::new();
+    let mut p = People::new(72);
+    let now = world.now();
+    let band = p.spawn_band(
+        species,
+        &b.graph,
+        &b.items,
+        &mut world,
+        k,
+        [3, 3, 0, 0],
+        DVec3::new(2.0, GROUND, 2.0),
+        now,
+    );
+    // A work of theirs resting on something, its knowledge one the player lacks.
+    let techniques = p.bands[0].culture.techniques.clone();
+    let (recipe, node) = techniques
+        .iter()
+        .filter_map(|t| b.crafts.index_of(t))
+        .filter_map(|r| {
+            let node = b.crafts.recipes[r].def.knowledge.as_ref()?.to_string();
+            let depth = species.lore.get(&node)?.depth;
+            (1..=3).contains(&depth).then_some((r, node))
+        })
+        .next()
+        .expect("a work to be shown");
+    let members: Vec<u64> = p.members(band).map(|q| q.id).collect();
+    let (teacher, player) = (members[0], members[1]);
+    let at = p.get(teacher).expect("the teacher").place.pos;
+    for q in p.persons.iter_mut() {
+        if q.id == teacher {
+            q.mind.doing = hearth_people::Doing::Working { recipe };
+        }
+        if q.id == player {
+            q.player = Some(1);
+            q.place.pos = at + DVec3::new(0.0, 0.0, -2.0);
+        }
+    }
+    let eye = at + DVec3::new(0.0, 1.5, -2.0);
+    // Facing +z, toward the teacher.
+    let yaw = 0.0;
+    let (mut shown, mut watching) = (KnowledgeState::default(), KnowledgeState::default());
+    // The player knows what it rests on, as one of the land would: only the work itself is new.
+    let mut ground: Vec<String> = species
+        .lore
+        .get(&node)
+        .map(|f| f.requires.clone())
+        .unwrap_or_default();
+    let mut i = 0;
+    while i < ground.len() {
+        let more = species
+            .lore
+            .get(&ground[i])
+            .map(|f| f.requires.clone())
+            .unwrap_or_default();
+        for m in more {
+            if !ground.contains(&m) {
+                ground.push(m);
+            }
+        }
+        i += 1;
+    }
+    for g in &ground {
+        for k in [&mut shown, &mut watching] {
+            k.known.insert(
+                g.clone(),
+                hearth_craft::knowledge::Learned {
+                    tick: 0,
+                    route: None,
+                },
+            );
+        }
+    }
+    let mut learned_in = None;
+    for minute in 0..30 {
+        for _ in 0..60 {
+            for (n, insight) in p.lessons_for(1, &b.crafts, species, eye, yaw, &now, 1.0) {
+                shown.taught(&b.graph, &n, insight, now.tick);
+            }
+        }
+        // Watching alone, the player takes in what it sees an hour apart at most: once here.
+        if minute == 0 {
+            for t in hearth_people::watched(&b.graph, &b.crafts, recipe) {
+                watching.observe(
+                    &b.graph,
+                    &t,
+                    now.tick,
+                    hearth_craft::knowledge::Mode::Discovery,
+                );
+            }
+        }
+        if learned_in.is_none() && shown.knows(&node) {
+            learned_in = Some(minute + 1);
+        }
+    }
+    println!(
+        "{node}: shown how, learned in {learned_in:?} minutes; by watching, {:.2} of the way",
+        watching.insight.get(&node).copied().unwrap_or(0.0)
+    );
+    assert!(
+        learned_in.is_some(),
+        "shown how, learned within half an hour"
+    );
+    assert!(!watching.knows(&node), "not by watching alone");
+}

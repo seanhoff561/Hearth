@@ -16,6 +16,8 @@ pub enum Route {
     Inference,
     /// Studying found evidence (tool scatters, remains).
     Evidence,
+    /// Shown by one who knew it (V2.1 §11.2; never a discovery route in the data).
+    Taught,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

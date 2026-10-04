@@ -241,9 +241,13 @@ impl People {
             self.enculturate(bi, &species.psyche, &Now { day, ..now });
             self.name_members(bi, sp);
         }
-        // A year of its culture: drift, and its neighbours'.
+        // A year of its culture: drift, and its neighbours'; and of its knowledge: what its
+        // young learn, what is found out, what is lost.
         if n.is_multiple_of(STEPS_A_YEAR as u64) {
-            self.culture_year(bi, sp, n / STEPS_A_YEAR as u64);
+            let year = n / STEPS_A_YEAR as u64;
+            self.culture_year(bi, sp, year);
+            self.knowledge_year(bi, sp, &species.lore, &Now { day, ..now }, year);
+            self.apprentice(bi, &species.lore, &Now { day, ..now });
         }
         let crowd = self.crowd(bi, table);
         // Deaths, by age; more children die where the land is crowded.

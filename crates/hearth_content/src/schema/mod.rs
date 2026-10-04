@@ -18,6 +18,7 @@ pub mod humans;
 pub mod item;
 pub mod knowledge;
 pub mod language;
+pub mod learning;
 pub mod life;
 pub mod material;
 pub mod mind;

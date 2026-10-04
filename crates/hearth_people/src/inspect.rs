@@ -113,6 +113,8 @@ pub fn report(
             Event::TakenIn { band } => format!("taken into band {band}"),
             Event::GiftFrom { who } => format!("given a gift by #{who}"),
             Event::LaidToRest { how } => format!("laid to rest: {how:?}"),
+            Event::Discovered { node } => format!("found out {node} for itself"),
+            Event::KnowledgeLost { nodes } => format!("its band lost {}", nodes.join(", ")),
             Event::Hurt => "badly hurt".to_owned(),
             Event::Mourned { who } => format!("mourned #{who}"),
         };
@@ -315,6 +317,15 @@ pub fn report(
     }];
     if !skills.is_empty() {
         knowledge.push(format!("skills: {}", skills.join(", ")));
+    }
+    if !p.knowledge.legends.is_empty() {
+        let told: Vec<String> = p
+            .knowledge
+            .legends
+            .iter()
+            .map(|k| graph.node(k).map_or_else(|| k.clone(), |n| n.name.clone()))
+            .collect();
+        knowledge.push(format!("knows of, from stories: {}", told.join(", ")));
     }
     sections.push(section("Knowledge", knowledge));
 

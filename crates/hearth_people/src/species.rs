@@ -53,6 +53,8 @@ pub struct Species {
     pub culture: Option<crate::culture::Generator>,
     /// What its people's languages are drawn from, and the meanings (V2.1 §10.1), if they speak.
     pub language: Option<crate::language::LanguageDefs>,
+    /// How its people pass on what they know (V2.1 §11).
+    pub learning: Option<crate::learning::Transmission>,
 }
 
 fn sex(female: bool) -> usize {
@@ -249,6 +251,7 @@ impl Species {
             ways: None,
             culture: None,
             language: None,
+            learning: None,
         }
     }
 
@@ -301,6 +304,8 @@ pub struct SpeciesSet {
     pub life: crate::life::Tables,
     /// The peoples' norms and their sanctions (until cultures carry their own, H5).
     pub norms: crate::repute::Norms,
+    /// The technology graph as the life course reads it (V2.1 §11).
+    pub lore: crate::learning::Lore,
 }
 
 impl SpeciesSet {
@@ -310,6 +315,7 @@ impl SpeciesSet {
         let ways = crate::conflict::WaysSet::from_content(c);
         let cultures = crate::culture::Generators::from_content(c);
         let languages = crate::language::LanguageDefs::from_content(c);
+        let learning = crate::learning::Transmission::from_content(c);
         let list = c
             .species
             .iter()
@@ -319,6 +325,7 @@ impl SpeciesSet {
                 k.ways = ways.of(&k.id).cloned();
                 k.culture = cultures.of(&k.id).cloned();
                 k.language = crate::language::LanguageDefs::of(&languages, &k.id).cloned();
+                k.learning = crate::learning::Transmission::of(&learning, &k.id).cloned();
                 k
             })
             .collect();
@@ -328,6 +335,7 @@ impl SpeciesSet {
             psyche: crate::psyche::PsycheDefs::from_content(c),
             life: crate::life::Tables::from_content(c),
             norms: crate::repute::Norms::from_content(c),
+            lore: crate::learning::Lore::from_graph(graph),
         }
     }
 

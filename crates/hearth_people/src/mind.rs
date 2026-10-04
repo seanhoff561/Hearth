@@ -294,6 +294,8 @@ pub struct Mind {
     pub withheld: u8,
     #[serde(skip)]
     pub stingy_to: Option<u64>,
+    /// The one of its band it is apprenticed to, while young (V2.1 §11.2).
+    pub master: Option<u64>,
 }
 
 /// How far a person strays from its group's middle before it goes back to them (m).
@@ -511,12 +513,13 @@ pub fn choose(
     // The young watch the grown at their work and try it after them, the curious the more; and
     // they play — chasing one another, or romping about on their own.
     let curious = psyche.tendency(Tendency::Curiosity);
-    if s.learns
-        && let Some((whom, at, recipe)) = s.work_near
-    {
+    if let Some((whom, at, recipe)) = s.work_near {
+        // The grown watch too, a work they do not know, the curious the more.
+        let base = if s.learns { 0.3 } else { 0.1 };
+        let roll_w = if s.learns { 0.2 } else { 0.15 };
         consider(
             Doing::Imitating { at, whom, recipe },
-            0.3 + 0.4 * curious + 0.2 * roll,
+            base + 0.4 * curious + roll_w * roll,
         );
     }
     if s.plays {

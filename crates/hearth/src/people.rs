@@ -751,6 +751,23 @@ impl PeopleNear {
         out
     }
 
+    /// What the people at their work in front of a player, who would teach the player, show it
+    /// this tick (V2.1 §11.2): each work's knowledge and the insight toward it.
+    pub fn lessons(
+        &mut self,
+        player: u64,
+        crafts: &Crafts,
+        eye: DVec3,
+        yaw: f32,
+        dt: f32,
+    ) -> Vec<(String, f32)> {
+        let Some(now) = self.now else {
+            return Vec::new();
+        };
+        self.live
+            .lessons_for(player, crafts, &self.species, eye, yaw, &now, dt)
+    }
+
     /// The people in full about a player, as that player's client draws them.
     pub fn views(&self, near: DVec3) -> Vec<PersonView> {
         self.now.map_or_else(Vec::new, |now| {

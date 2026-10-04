@@ -126,6 +126,14 @@ pub enum Event {
     LaidToRest {
         how: hearth_content::schema::culture::Burial,
     },
+    /// Found out a technique for itself (V2.1 §11.3).
+    Discovered {
+        node: String,
+    },
+    /// Saw its band lose techniques none of them knew any longer (V2.1 §11.4).
+    KnowledgeLost {
+        nodes: Vec<String>,
+    },
     /// First came near a player.
     Met {
         player: crate::world::PlayerId,

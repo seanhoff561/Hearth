@@ -1595,6 +1595,10 @@ fn run(
                         for t in people.watched(&crafts, &graph, &world_items, eye, yaw) {
                             workshop.hear_now_and_then(&mut here!(), t, hour);
                         }
+                        // Shown how by those at their work who would teach the player.
+                        for (node, insight) in people.lessons(0, &crafts, eye, yaw, TICK_S as f32) {
+                            workshop.taught(&mut here!(), &node, insight);
+                        }
                     }
                 }
                 // What the animals called, in the world and about it.

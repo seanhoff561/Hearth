@@ -605,6 +605,23 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.transmission,
+        report,
+        |e| &e.id,
+        |t, c| {
+            c.range("learn_year", t.learn_year, 0.0, 1.0);
+            c.range("depth_factor", t.depth_factor, 0.0, 10.0);
+            c.range("learn_ages", t.learn_ages.0, 0.0, 80.0);
+            c.range("learn_ages", t.learn_ages.1, t.learn_ages.0, 80.0);
+            c.range("grown_factor", t.grown_factor, 0.0, 1.0);
+            c.range("contact_weight", t.contact_weight, 0.0, 1.0);
+            c.range("innovate_month", t.innovate_month, 0.0, 1.0);
+            c.range("innovate_insight", t.innovate_insight, 0.0, 1.0);
+            c.range("teach", t.teach, 1.0, 100.0);
+            c.range("story_second", t.story_second, 0.0, 1.0);
+        },
+    );
+    each(
         &content.meanings,
         report,
         |e| &e.id,

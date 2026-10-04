@@ -1369,6 +1369,39 @@ impl People {
             .filter(|q| matches!(q.mind.doing, Doing::Working { .. }))
             .map(|q| (q.id, q.place.pos))
             .collect();
+        // Who teaches whom: a knower at its work shows how to the one watching it — its own
+        // band's, or one it trusts — as fast as its people teach, the faster for its apprentice
+        // (V2.1 §11.2).
+        let teaching: Vec<(PersonId, PersonId, f32)> = self
+            .persons
+            .iter()
+            .filter(|q| q.tier == Tier::Full && q.alive())
+            .filter_map(|q| {
+                let Doing::Imitating { whom, .. } = q.mind.doing else {
+                    return None;
+                };
+                let t = self.get(whom)?;
+                let teach = species
+                    .get(&t.species)
+                    .and_then(|sp| sp.learning.as_ref())
+                    .map_or(1.0, |l| l.teach);
+                let willing = t.social.band == q.social.band
+                    || t.social
+                        .ties
+                        .iter()
+                        .any(|x| x.who == q.id && x.trust >= 0.3);
+                if teach <= 1.0 || !willing {
+                    return None;
+                }
+                let master = if q.mind.master == Some(whom) {
+                    1.5
+                } else {
+                    1.0
+                };
+                Some((q.id, whom, teach * master))
+            })
+            .collect();
+        let mut shown: Vec<(PersonId, PersonId)> = Vec::new();
         for q in self.persons.iter_mut() {
             let Doing::Imitating { whom, recipe, .. } = q.mind.doing else {
                 continue;
@@ -1396,6 +1429,35 @@ impl People {
                     );
                 }
             }
+            // Taught: insight straight toward the work's knowledge, and now and then the
+            // showing in words.
+            if at_it
+                && let Some(&(_, teacher, teach)) =
+                    teaching.iter().find(|(l, t, _)| *l == q.id && *t == whom)
+                && let Some(node) = crafts.recipes[recipe].def.knowledge.as_ref()
+            {
+                let insight = crate::learning::TAUGHT_PER_MIN * teach * dt / 60.0;
+                q.knowledge.taught(graph, node.as_str(), insight, now.tick);
+                if q.rng.next_f32() < dt / 20.0 {
+                    shown.push((teacher, q.id));
+                }
+            }
+        }
+        for (teacher, learner) in shown {
+            use crate::speech::{Act, Gesture, words};
+            let show = words(&["see", "this"]);
+            self.say(
+                teacher,
+                Some(learner),
+                Act::Teach,
+                show,
+                Some(Gesture::Show),
+                now.day,
+            );
+        }
+        // In the evening's company, stories.
+        if body_step && (18.0..22.0).contains(&now.hour) {
+            self.stories(species, &now);
         }
     }
 
@@ -1581,6 +1643,18 @@ impl People {
                 }
             }
             Doing::Working { recipe } => {
+                // Never a work it does not know (V2.1 §11.1).
+                debug_assert!(
+                    self.persons[i].knowledge.may_attempt(
+                        crafts.recipes[recipe]
+                            .def
+                            .knowledge
+                            .as_ref()
+                            .map(|k| k.as_str()),
+                    ),
+                    "a person works {:?} it does not know",
+                    crafts.recipes[recipe].def.knowledge
+                );
                 self.persons[i].place.speed = 0.0;
                 self.work(i, bi, recipe, sp, crafts, content, items, world, now, dt);
             }
@@ -2565,13 +2639,23 @@ fn situation(
         if plays && g.young && d < PLAY_M && playmate.is_none_or(|m| d < m.2) {
             playmate = Some((g.id, g.pos, d));
         }
-        if learns
-            && g.grown
+        // A grown one at a work it is learning (the young), or does not know (the grown): its
+        // master's the more readily.
+        let near = if p.mind.master == Some(g.id) {
+            d * 0.3
+        } else {
+            d
+        };
+        if g.grown
             && d < WATCH_M
             && let Some(r) = g.working
-            && work_near.is_none_or(|w| d < w.3)
+            && (learns
+                || !p
+                    .knowledge
+                    .may_attempt(crafts.recipes[r].def.knowledge.as_ref().map(|k| k.as_str())))
+            && work_near.is_none_or(|w| near < w.3)
         {
-            work_near = Some((g.id, g.pos, r, d));
+            work_near = Some((g.id, g.pos, r, near));
         }
     }
     // The band: its middle, its grown ones near, an alarm raised, the mother.
@@ -3191,6 +3275,13 @@ fn offers_for(
                 continue;
             }
             if out.iter().any(|o: &Offer| o.recipe == r) {
+                continue;
+            }
+            // Only what it knows (V2.1 §11.1: the anachronism guard).
+            if !p
+                .knowledge
+                .may_attempt(crafts.recipes[r].def.knowledge.as_ref().map(|k| k.as_str()))
+            {
                 continue;
             }
             // At the anvil it stands by the things there, the tools lying by it in its hands.

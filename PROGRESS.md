@@ -657,7 +657,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H3 — Life course and demography (the player is born) (2026-10-04)
 - [ ] H4 — Social systems (built 2026-10-04; its tests to run)
 - [ ] H5 — Culture and language (built 2026-10-04; its tests to run)
-- [ ] H6 — Knowledge and social learning
+- [ ] H6 — Knowledge and social learning (built 2026-10-04; its tests to run)
 - [ ] H7 — Tiers and persistence
 - [ ] H8 — History simulation and Paleolithic eras (birth options)
 - [ ] H9 — Observer mode and the player in society
@@ -1126,6 +1126,23 @@ while the machine's memory allowed only `clippy` checks; their tests run with H4
   makes out little of its hosts' speech at first and most after half an hour among them. As with
   H4, the tests compile and lint clean but wait for the machine's memory to run.
 
+H6 — Knowledge and social learning (PLAN.md, V2.1 §11; `docs/design/humans/learning.md`), built
+while only `clippy` checks could run (its tests run with H4's and H5's):
+- [x] (a) Learning across a life and the collective brain (`learning.rs`,
+  `humans/learning/transmission.ron`, D188): each year the young (and the grown, less) learn each
+  technique whose groundwork they have from the knowers of their band and its neighbours, the
+  deeper the slower; the curious now and then find something out; a band knows what its living
+  members know, a technique none knows is lost (kept as a legend by its grown) and its processes
+  with it; persons are offered only works they know, and a debug assertion guards every work.
+- [x] (b) In play: one at its work shows how to one watching it of its band or trusted (four times
+  watching's pace for our kind; `KnowledgeState::taught`, `Route::Taught`), saying so; the grown
+  watch works they do not know; the young take a master each year; evening stories pass on places
+  and, as legends, techniques; the player is shown how by people at work in front of it who would
+  teach it.
+- [x] (c) The acceptance (`tests/culture.rs`): a deep technique lost by a small band alone in a
+  hundred and fifty years and kept by a large connected one; the player shown how learns a work in
+  minutes that watching alone does not teach.
+
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
    `perf/baseline` in `bench-out/gate`, three alternating rounds of the quick scenes); a fall
@@ -1138,8 +1155,8 @@ while the machine's memory allowed only `clippy` checks; their tests run with H4
    (`cargo test -p hearth_people`, above all `tests/social.rs` and `tests/childhood.rs`, which the
    council broke for the tree-nesting hominins and `KeepCamp` mended;
    `cargo test -p hearth_content --test base_content`; the game's `tests/family.rs`), fix what
-   fails, tick H4 and run the perf gate. Then H5 — Culture and language (PLAN.md, V2.1 §9–10):
-   the culture generator and model, its
+   fails, tick H4 and run the perf gate; then H5's and H6's tests (`tests/culture.rs`), likewise.
+   H5 — Culture and language (PLAN.md, V2.1 §9–10), built: the culture generator and model, its
    transmission and evolution (H4's norms and ways become a culture's, varying by its values);
    generated languages, their families and drift, names; speech acts, gestures, subtitles with
    partial translation (replacing the words the game tells the player when strangers greet or

@@ -1,0 +1,34 @@
+// How the peoples pass on what they know (V2.1 §11): how readily the young take a technique from
+// those who know it — the simple quickly, the deep slowly, since a skill resting on others is
+// copied less faithfully and a small population cannot keep what too few can pass on (Henrich
+// 2004; the Tasmanians' losses, Jones 1977) — how much less the grown learn, how far neighbours'
+// knowers count, how often one tries something new, how much teaching speeds learning, how often
+// the old tell stories in the evening.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "human_learning", name: "How our kind passes on what it knows", status: Implemented,
+            species: "homo_sapiens",
+            learn_year: 0.15, depth_factor: 0.9,
+            learn_ages: (5.0, 25.0), grown_factor: 0.3,
+            contact_weight: 0.25,
+            innovate_month: 0.002, innovate_insight: 0.2,
+            // Real teaching (V2.1 §11.2): shown and corrected, several times faster than watching.
+            teach: 4.0,
+            story_second: 0.002,
+        ),
+        (
+            id: "australopith_learning", name: "How australopiths pass on what they know", status: Implemented,
+            species: "australopithecus",
+            // By watching alone, over years, as young chimpanzees learn to crack nuts (Biro et al.
+            // 2003); no teaching to speak of, no stories.
+            learn_year: 0.12, depth_factor: 1.2,
+            learn_ages: (2.0, 12.0), grown_factor: 0.1,
+            contact_weight: 0.1,
+            innovate_month: 0.0003, innovate_insight: 0.1,
+            teach: 1.0,
+            story_second: 0.0,
+        ),
+    ],
+)
