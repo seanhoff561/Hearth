@@ -1848,7 +1848,7 @@ impl People {
                     exposure.ground_clo = exposure.ground_clo.max(LYING_CLO);
                     // At camp, between its fires in the lee of its brush, close by one another
                     // (D202: Scholander et al. 1958's unclothed sleepers between small fires).
-                    if camp.is_some_and(|c| (c - p.place.pos).length() < CAMP_SLEEP_M) {
+                    if camp.is_some_and(|c| (c - p.place.pos).with_y(0.0).length() < CAMP_SLEEP_M) {
                         fire *= BETWEEN_FIRES;
                         exposure.wind_m_s *= CAMP_LEE;
                     }
@@ -1867,7 +1867,7 @@ impl People {
                 // roasted where they know how — the nursed young aside.
                 if CAMP_MEAL_HOURS.contains(&now.hour)
                     && let Some(c) = camp
-                    && (c - p.place.pos).length() < CAMP_MEAL_M
+                    && (c - p.place.pos).with_y(0.0).length() < CAMP_MEAL_M
                     && p.stage(sp, &now) != Stage::Young
                     && Needs::of(&p.body, cfg, 0.0).hunger >= 0.3
                 {

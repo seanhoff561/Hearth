@@ -271,7 +271,10 @@ impl People {
                 };
                 let living = f.alive() && f.social.band == b.id;
                 let conceived = born - 0.75 * years;
+                // A father grown at the conception, as a mother is at the birth.
+                let grown_then = (conceived - f.life.born) / years >= youngest;
                 if (!living && ease < 2)
+                    || !grown_then
                     || f.life.died.as_ref().is_some_and(|d| d.day <= conceived)
                     || f.genome.is_none()
                     || f.player.is_some()

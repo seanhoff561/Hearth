@@ -369,7 +369,7 @@ pub fn choose(
         // Those who keep camp sleep there, about its fire, on the side they come from.
         if let Some(camp) = s.camp
             && !species.does(Behavior::TreeNest)
-            && (camp - s.pos).length() > CAMP_SLEEP_M
+            && DVec3::new(camp.x - s.pos.x, 0.0, camp.z - s.pos.z).length() > CAMP_SLEEP_M
         {
             let from = DVec3::new(s.pos.x - camp.x, 0.0, s.pos.z - camp.z).normalize_or(DVec3::X);
             return Doing::Going {
