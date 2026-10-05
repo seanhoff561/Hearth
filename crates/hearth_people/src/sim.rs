@@ -224,6 +224,8 @@ const BETWEEN_FIRES: f32 = 2.0;
 const CAMP_LEE: f32 = 0.5;
 /// How far about its place a band coming into full knows its water (m).
 const WATER_KNOWN_M: f64 = 300.0;
+/// A core this cool sends one to the fire (°C).
+const CHILLED_C: f32 = 36.0;
 /// Below this the people warm themselves at the fires (°C).
 const FIRE_BELOW_C: f32 = 20.0;
 /// What a child asleep against its kin has of their warmth, as clothes (clo).
@@ -3025,6 +3027,7 @@ fn decide(
         crowded, hosts,
     );
     s.camp = band.camp;
+    s.chilled = p.body.status(&p.body_config(sp, &now)).core_c < CHILLED_C;
     s.threat = threat;
     s.flight_m = flight_m;
     let needs = Needs::of(
@@ -3413,6 +3416,7 @@ fn situation(
         hurt_near,
         scorn,
         camp: None,
+        chilled: false,
         stranger,
         warned,
         project: p

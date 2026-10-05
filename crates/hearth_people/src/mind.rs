@@ -262,6 +262,8 @@ pub struct Situation {
     pub scorn: Option<(u64, DVec3, f32, bool, bool)>,
     /// Where its band keeps camp.
     pub camp: Option<DVec3>,
+    /// Chilled: its core cooling in the cold (so it goes to sit by the camp's fire).
+    pub chilled: bool,
     /// The nearest stranger it sees, if any (V2.1 §8.7).
     pub stranger: Option<Stranger>,
     /// One warning it off: where they stand.
@@ -361,6 +363,22 @@ pub fn choose(
             to: s.pos + away * 60.0,
             then: Intent::Roam,
         };
+    }
+    // Chilled, to the camp's fire, to sit by it until warm (D205).
+    if s.chilled
+        && let Some(camp) = s.camp
+        && !species.does(Behavior::TreeNest)
+    {
+        let off = DVec3::new(s.pos.x - camp.x, 0.0, s.pos.z - camp.z);
+        if off.length() > CAMP_SLEEP_M {
+            return Doing::Going {
+                to: camp + off.normalize_or(DVec3::X) * CAMP_SLEEP_RING_M,
+                then: Intent::Rejoin,
+            };
+        }
+        if !night {
+            return Doing::Resting;
+        }
     }
     if night {
         if s.in_nest {
