@@ -158,6 +158,9 @@ pub struct Lands {
     found: std::sync::Mutex<rustc_hash::FxHashMap<(i64, i64, u8), Vec<DVec3>>>,
 }
 
+/// How far from water a camp may be for its people to fetch it (m).
+const WATER_BY_M: f64 = 300.0;
+
 /// The best places of a kind kept for a band's home.
 const KEPT: usize = 12;
 
@@ -191,6 +194,25 @@ impl Lands {
             .iter()
             .all(|(dx, dz)| dry_at(x + dx, z + dz).is_some())
             .then_some(h)
+    }
+
+    /// Whether there is water — a river, a lake, the shore — within a few hundred metres of a
+    /// place: people camp where they can fetch it.
+    fn water_by(&self, x: f64, z: f64) -> bool {
+        let t = &self.terrain;
+        let wet = |x: f64, z: f64| {
+            let s = t.sample(x.floor() as i32, z.floor() as i32);
+            s.is_underwater() || s.river.as_ref().is_some_and(|r| r.distance < r.width * 0.5)
+        };
+        [40.0, 90.0, 160.0, WATER_BY_M]
+            .iter()
+            .enumerate()
+            .any(|(j, d)| {
+                (0..8).any(|q| {
+                    let b = (q as f64 + 0.25 * j as f64) / 8.0 * std::f64::consts::TAU;
+                    wet(x + b.cos() * d, z + b.sin() * d)
+                })
+            })
     }
 
     /// The best camps of a kind about a place, best first (see [`hearth_people::Country`]).
@@ -236,14 +258,15 @@ impl Lands {
                         Some(w) => 2.0 - (w / 160.0) as f32 + 0.2 * open,
                         None => continue,
                     },
-                    // Up on the open high ground, looking out over the country.
+                    // Up on the open high ground, looking out over the country, water not far.
                     Toward::Uplands => {
-                        if s.tree_density > 0.6 {
+                        if s.tree_density > 0.6 || water_m.is_none() {
                             continue;
                         }
                         (rise / 20.0).clamp(-1.0, 2.0) + 0.6 * open
                     }
                     // Down in the woods' shelter, out of the wind, water not far.
+                    Toward::Shelter if water_m.is_none() => continue,
                     Toward::Shelter => {
                         (-rise / 20.0).clamp(-1.0, 1.5)
                             + 1.2 * s.tree_density.clamp(0.0, 1.0)
@@ -302,30 +325,33 @@ impl hearth_people::Country for Lands {
         taken: &[DVec2],
         apart_m: f64,
     ) -> Option<DVec3> {
-        let dry = |x: f64, z: f64| {
+        let dry = |x: f64, z: f64, water: bool| {
             let free = taken
                 .iter()
                 .all(|t| (DVec2::new(x, z) - *t).length() >= apart_m);
-            if !free {
+            if !free || (water && !self.water_by(x, z)) {
                 return None;
             }
             self.dry(x, z).map(|h| DVec3::new(x, h as f64, z))
         };
-        if let Some(at) = dry(near.x, near.y) {
-            return Some(at);
-        }
-        // Rings outward, nearest first, as close as the camps may be.
-        let step = (apart_m * 0.5).clamp(5.0, 40.0);
-        let mut r = step;
-        while r <= within_m {
-            let n = ((std::f64::consts::TAU * r / step).ceil() as usize).max(8);
-            for k in 0..n {
-                let a = k as f64 / n as f64 * std::f64::consts::TAU;
-                if let Some(at) = dry(near.x + a.cos() * r, near.y + a.sin() * r) {
-                    return Some(at);
-                }
+        // Within reach of water first, then anywhere dry.
+        for water in [true, false] {
+            if let Some(at) = dry(near.x, near.y, water) {
+                return Some(at);
             }
-            r += step;
+            // Rings outward, nearest first, as close as the camps may be.
+            let step = (apart_m * 0.5).clamp(5.0, 40.0);
+            let mut r = step;
+            while r <= within_m {
+                let n = ((std::f64::consts::TAU * r / step).ceil() as usize).max(8);
+                for k in 0..n {
+                    let a = k as f64 / n as f64 * std::f64::consts::TAU;
+                    if let Some(at) = dry(near.x + a.cos() * r, near.y + a.sin() * r, water) {
+                        return Some(at);
+                    }
+                }
+                r += step;
+            }
         }
         None
     }

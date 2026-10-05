@@ -153,20 +153,6 @@ fn a_sample_week_of_each_era() {
             if !seen_them {
                 lost += 1;
             }
-            // The player drinks, every six hours, at the nearest open water (it stands about,
-            // and would otherwise die of thirst in the week).
-            if step % 12 == 11
-                && let Some(p) = w.find(24, |n, _| n == "water").into_iter().next()
-            {
-                let back = w.mover.pos;
-                w.go_to_block(p);
-                w.server
-                    .send(ToServer::Drink(hearth_protocol::DrinkFrom::Water(
-                        hearth_protocol::AimAt::Block { pos: p, top: true },
-                    )));
-                w.run(2);
-                w.go(back.x, back.z);
-            }
             if died.is_none()
                 && let Some(d) = w.body.as_ref().and_then(|b| b.dead.as_ref())
             {
@@ -174,6 +160,36 @@ fn a_sample_week_of_each_era() {
                     "{:.1} days in: {d:?}",
                     (w.ticks as f64 - t_start) / w.ticks_per_day
                 ));
+            }
+            // The player drinks, every six hours, at the nearest open water within 400 m (it
+            // stands about, and would otherwise die of thirst in the week).
+            if step % 12 == 11 {
+                let back = w.mover.pos;
+                let t = w.generator.terrain.clone();
+                let water = (1..=40).find_map(|ring| {
+                    let r = ring as f64 * 10.0;
+                    let n = (r * std::f64::consts::TAU / 8.0).ceil() as usize;
+                    (0..n).find_map(|k| {
+                        let a = k as f64 / n as f64 * std::f64::consts::TAU;
+                        let (x, z) = (back.x + a.cos() * r, back.z + a.sin() * r);
+                        let c = t.sample(x.floor() as i32, z.floor() as i32);
+                        (c.water.is_finite() && c.water > c.height + 0.3 && !c.ocean)
+                            .then_some((x, z))
+                    })
+                });
+                if let Some((x, z)) = water {
+                    w.go(x, z);
+                    w.until(10.0, |w| !w.find(6, |n, _| n == "water").is_empty());
+                    if let Some(p) = w.find(6, |n, _| n == "water").into_iter().next() {
+                        w.go_to_block(p);
+                        w.server
+                            .send(ToServer::Drink(hearth_protocol::DrinkFrom::Water(
+                                hearth_protocol::AimAt::Block { pos: p, top: true },
+                            )));
+                        w.run(2);
+                    }
+                    w.go(back.x, back.z);
+                }
             }
             let me = w.mover.pos;
             let local = w

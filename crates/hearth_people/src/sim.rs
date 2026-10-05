@@ -222,6 +222,12 @@ const LYING_CLO: f32 = 1.0;
 const CAMP_SLEEP_M: f64 = 3.0;
 const BETWEEN_FIRES: f32 = 2.0;
 const CAMP_LEE: f32 = 0.5;
+/// How far about its place a band coming into full knows its water (m).
+const WATER_KNOWN_M: f64 = 300.0;
+/// Below this the people warm themselves at the fires (°C).
+const FIRE_BELOW_C: f32 = 20.0;
+/// What a child asleep against its kin has of their warmth, as clothes (clo).
+const HUDDLE_CLO: f32 = 0.6;
 /// Below this the people put on what they know to wear (°C).
 const DRESS_BELOW_C: f32 = 16.0;
 
@@ -1858,7 +1864,14 @@ impl People {
                 let activity = cfg.activity(activity_of(&p.mind.doing, p.place.speed));
                 let mut exposure = world.exposure(p.place.pos, p.place.medium == Medium::Tree);
                 // The fires about them warm those beside them, as they warm the player.
-                let mut fire = world.warmth(p.place.pos + DVec3::new(0.0, 0.9, 0.0));
+                // The fires about them warm those beside them, as they warm the player — when the
+                // air is cool; in the heat they keep away from them.
+                let mut fire = if exposure.air_c < FIRE_BELOW_C {
+                    world.warmth(p.place.pos + DVec3::new(0.0, 0.9, 0.0))
+                } else {
+                    0.0
+                };
+                let mut huddled = false;
                 if matches!(p.mind.doing, Doing::Sleeping) && p.place.medium == Medium::Ground {
                     // Lying on the ground a body is in the wind of a third of a metre up, not of
                     // two (the wind's log profile over grass, roughness 0.1 m: ln 3 / ln 20).
@@ -1867,19 +1880,28 @@ impl People {
                     // apes make their nests (the camp's beds, where it has them, more).
                     exposure.ground_clo = exposure.ground_clo.max(LYING_CLO);
                     // At camp, between its fires in the lee of its brush, close by one another
-                    // (D202: Scholander et al. 1958's unclothed sleepers between small fires).
+                    // (D202: Scholander et al. 1958's unclothed sleepers between small fires); a
+                    // child held against its mother or its brothers and sisters.
                     if camp.is_some_and(|c| (c - p.place.pos).with_y(0.0).length() < CAMP_SLEEP_M) {
                         fire *= BETWEEN_FIRES;
                         exposure.wind_m_s *= CAMP_LEE;
+                        huddled = p.stage(sp, &now) != Stage::Adult;
                     }
                 }
                 exposure.radiant_w_m2 += fire;
                 // What its people know to wear against the cold (drawn bare yet).
-                let worn = if exposure.air_c < DRESS_BELOW_C {
-                    dress.as_ref().unwrap_or(&sp.coat)
+                let mut worn = if exposure.air_c < DRESS_BELOW_C {
+                    dress.clone().unwrap_or_else(|| sp.coat.clone())
                 } else {
-                    &sp.coat
+                    sp.coat.clone()
                 };
+                if huddled {
+                    for r in &mut worn.regions {
+                        r.clo += HUDDLE_CLO;
+                        r.wind = 1.0 - (1.0 - r.wind) * 0.5;
+                    }
+                }
+                let worn = &worn;
                 let hurt = p.body.injuries.len();
                 p.body.step(cfg, BODY_S as f64, &exposure, worn, &activity);
                 // The day's take, shared at camp of an evening (D202): the game and roots its
@@ -3572,7 +3594,7 @@ fn trunk_top(ground: &dyn Ground, foot: DVec3, height: f64) -> f64 {
 /// Learns the places about a band as it is drawn out: the water, the trees to sleep in, the
 /// anvils lying about.
 pub(crate) fn know_about(band: &mut Band, world: &mut dyn World, items: &Items, here: DVec3) {
-    if let Some((bank, _)) = water_near(world.ground(), here, 80.0) {
+    if let Some((bank, _)) = water_near(world.ground(), here, WATER_KNOWN_M) {
         Places::remember(&mut band.places.water, bank, 10.0, 6);
     }
     let anvils: Vec<DVec3> = world
