@@ -122,9 +122,13 @@ impl World {
         let spec = WorldSpec {
             name: "test".into(),
             seed,
-            // The default planet: a Tiny one holds only a band or two of an era's
-            // peoples (D196).
-            planet: hearth_math::PlanetSize::Standard,
+            // An era's world on the default planet: a Tiny one holds only a band or two of its
+            // peoples (D196). Wild Earth's tests keep the Tiny planet they were written on.
+            planet: if era == hearth::eras::WILD_EARTH {
+                hearth_math::PlanetSize::Tiny
+            } else {
+                hearth_math::PlanetSize::Standard
+            },
             cache_dir: None,
             saves_dir: Some(dir.to_path_buf()),
             wish: hearth_protocol::Wish {
