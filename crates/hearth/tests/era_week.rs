@@ -113,7 +113,7 @@ fn a_sample_week_of_each_era() {
         let mut seen: BTreeMap<u64, (bool, String, f32)> = BTreeMap::new();
         let mut near_counts: Vec<usize> = Vec::new();
         let mut asleep_by_day = 0u32;
-        for _ in 0..days * 48 {
+        for step in 0..days * 48 {
             // The half hour a few minutes at a time, so the band is not lost between looks.
             let mut seen_them = false;
             for _ in 0..6 {
@@ -152,6 +152,20 @@ fn a_sample_week_of_each_era() {
             }
             if !seen_them {
                 lost += 1;
+            }
+            // The player drinks, every six hours, at the nearest open water (it stands about,
+            // and would otherwise die of thirst in the week).
+            if step % 12 == 11
+                && let Some(p) = w.find(24, |n, _| n == "water").into_iter().next()
+            {
+                let back = w.mover.pos;
+                w.go_to_block(p);
+                w.server
+                    .send(ToServer::Drink(hearth_protocol::DrinkFrom::Water(
+                        hearth_protocol::AimAt::Block { pos: p, top: true },
+                    )));
+                w.run(2);
+                w.go(back.x, back.z);
             }
             if died.is_none()
                 && let Some(d) = w.body.as_ref().and_then(|b| b.dead.as_ref())
@@ -315,6 +329,35 @@ fn a_sample_week_of_each_era() {
             },
             fires.join(", ")
         );
+        // Those of the band no longer about at the week's end: how each went, by the inspector.
+        let about_now: std::collections::BTreeSet<u64> =
+            w.people.iter().filter(|v| !v.dead).map(|v| v.id).collect();
+        let gone: Vec<u64> = band
+            .iter()
+            .copied()
+            .filter(|id| !about_now.contains(id))
+            .collect();
+        let _ = writeln!(log, "\n## Gone from the band\n");
+        if gone.is_empty() {
+            let _ = writeln!(log, "None: all {} are about at the week's end.", band.len());
+        }
+        for id in gone {
+            w.inspected = None;
+            w.server.send(ToServer::Inspect(Some(id)));
+            w.run(40);
+            w.until(5.0, |w| w.inspected.as_ref().is_some_and(|r| r.id == id));
+            let Some(r) = w.inspected.clone() else {
+                let _ = writeln!(log, "- #{id}: no record");
+                continue;
+            };
+            let life = r
+                .sections
+                .iter()
+                .find(|s| s.name == "Life")
+                .and_then(|s| s.lines.first().cloned())
+                .unwrap_or_default();
+            let _ = writeln!(log, "- {}: {life}", r.title);
+        }
         // The inspector's record of two of them: a grown woman and a grown man of the band.
         let mut grown: Vec<(bool, u64)> = Vec::new();
         for female in [true, false] {
