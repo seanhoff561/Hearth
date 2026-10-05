@@ -491,7 +491,17 @@ impl Fauna {
             }
             // The populations to the calendar every few days, in steps of at most 1/32 year.
             if years - self.years >= 1.0 / 128.0 {
+                let t0 = std::time::Instant::now();
                 self.eco.advance(years, 1.0 / 32.0);
+                // A long catch-up (years skipped) told of, for the profiler.
+                if t0.elapsed().as_secs_f64() > 1.0 {
+                    log::info!(
+                        "the animals caught up {:.2} years in {:.1} s over {} regions",
+                        years - self.years,
+                        t0.elapsed().as_secs_f64(),
+                        self.eco.regions.len()
+                    );
+                }
                 self.years = years;
             }
             let ground = MapGround {
