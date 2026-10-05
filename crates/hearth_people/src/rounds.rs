@@ -45,6 +45,9 @@ pub trait Country: Send + Sync {
     }
 }
 
+/// A band lived in full moves camp at most this far (m).
+const FULL_MOVE_M: f64 = 1_500.0;
+
 /// Bands keep their camps at least this far apart, but at a gathering (m).
 pub const CAMPS_APART_M: f64 = 800.0;
 
@@ -194,7 +197,15 @@ impl People {
                 .country
                 .as_ref()
                 .and_then(|c| c.camp_toward(stop.toward, home, range, &taken));
-            if let Some(at) = at {
+            // A band lived in full walks to its new camp: not further than a short day's walk
+            // over the land as the full tier walks it (else it stays, D203).
+            let near = |at: &DVec3| {
+                self.bands[bi].tier != Tier::Full
+                    || self.bands[bi]
+                        .camp
+                        .is_none_or(|c| DVec2::new(c.x - at.x, c.z - at.z).length() <= FULL_MOVE_M)
+            };
+            if let Some(at) = at.filter(near) {
                 self.move_camp(bi, at, day);
             }
         }
@@ -292,6 +303,25 @@ impl People {
             .and_then(|c| c.camp_toward(Toward::Water, hhome, hrange, &[]))
             .or(self.bands[host].camp)
             .unwrap_or(DVec3::new(hhome.x, 0.0, hhome.y));
+        // Those lived in full come only from a short day's walk (D203).
+        come.retain(|&b| {
+            let x = &self.bands[b];
+            x.tier != Tier::Full
+                || x.camp
+                    .is_none_or(|c| DVec2::new(c.x - at.x, c.z - at.z).length() <= FULL_MOVE_M)
+        });
+        if come.len() < 2 {
+            self.bands[bi].round.gathering = Some(Gathering {
+                at: self.bands[bi]
+                    .camp
+                    .unwrap_or(DVec3::new(home.x, 0.0, home.y)),
+                host: self.bands[bi].id,
+                from: day,
+                until: day,
+                bands: 1,
+            });
+            return;
+        }
         // Its days are a real year's: as long a part of the game's year.
         let g = Gathering {
             at,

@@ -1472,6 +1472,16 @@ impl People {
         // A band that keeps camp has it where it comes into full: its camp's own ground.
         if self.bands[bi].camp.is_some() || sp.does(Behavior::KeepCamp) {
             self.bands[bi].camp = Some(here);
+            // It is this season's camp: the round goes on from the season's turn.
+            if self.era.of(&self.bands[bi].species).is_some() {
+                let southern = world.latitude(here) < 0.0;
+                let season = self.era.season(now.day, now.year_days, southern);
+                let r = &mut self.bands[bi].round;
+                if r.season.is_none() {
+                    r.season = Some(season);
+                    r.since = now.day;
+                }
+            }
         }
         self.settle_households(bi);
         self.acquaint(bi, now.day);
