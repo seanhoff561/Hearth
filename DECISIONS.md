@@ -2533,7 +2533,7 @@ died of cold where the grown did not. So every camp of a round is within 300 m o
 lakes, the shore; the uplands' too), a first camp or a split band's is too where the land allows,
 and a band coming into full knows its water that far about; the fires warm people only below
 20 °C (in the heat they keep away from them); and a child or youth asleep at camp lies against its
-kin, as warm as a cape of 0.6 clo.
+kin under the grass and leaves they lie in, as warm as 1.2 clo.
 - (D205) The chilled go to the fire: a person whose core falls below 36 °C goes to sit by its
   camp's fire until warm — the Lower Paleolithic's small children, cooling in the evening wind
   before they lay down, no longer die of it.
@@ -2544,3 +2544,11 @@ ochre: in the recent past's century their curious had found them out for themsel
 things open to every technique whose groundwork they had. In an era's world a person now finds
 out for itself only what deep time lets its era's peoples come to know (its repertoire, within
 the record's dates); learning from others is bounded by what they know.
+
+## D207 — The camp's lee by day; the carried held
+The Lower Paleolithic's small children lived the night at the fire, huddled with their kin, and
+died the next morning: awake, sitting at the same fire in six degrees, a drizzle and a wind of six
+metres a second, with neither the lee of the camp's brush nor anyone against them, their cores
+fell two degrees an hour. The camp's lee (D202) is now everyone's who keeps still within three
+metres of its fire, asleep or awake — they know the windbreak — and a child is held against its
+kin there by day as by night, and wherever it is carried.

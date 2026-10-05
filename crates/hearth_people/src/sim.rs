@@ -228,8 +228,8 @@ const WATER_KNOWN_M: f64 = 300.0;
 const CHILLED_C: f32 = 36.0;
 /// Below this the people warm themselves at the fires (°C).
 const FIRE_BELOW_C: f32 = 20.0;
-/// What a child asleep against its kin has of their warmth, as clothes (clo).
-const HUDDLE_CLO: f32 = 0.6;
+/// What a child held against its kin has of their warmth, as clothes (clo).
+const HUDDLE_CLO: f32 = 1.2;
 /// Below this the people put on what they know to wear (°C).
 const DRESS_BELOW_C: f32 = 16.0;
 
@@ -1865,7 +1865,6 @@ impl People {
                 let cfg: &BodyConfig = &sized;
                 let activity = cfg.activity(activity_of(&p.mind.doing, p.place.speed));
                 let mut exposure = world.exposure(p.place.pos, p.place.medium == Medium::Tree);
-                // The fires about them warm those beside them, as they warm the player.
                 // The fires about them warm those beside them, as they warm the player — when the
                 // air is cool; in the heat they keep away from them.
                 let mut fire = if exposure.air_c < FIRE_BELOW_C {
@@ -1873,23 +1872,31 @@ impl People {
                 } else {
                     0.0
                 };
-                let mut huddled = false;
-                if matches!(p.mind.doing, Doing::Sleeping) && p.place.medium == Medium::Ground {
+                let sleeping =
+                    matches!(p.mind.doing, Doing::Sleeping) && p.place.medium == Medium::Ground;
+                if sleeping {
                     // Lying on the ground a body is in the wind of a third of a metre up, not of
                     // two (the wind's log profile over grass, roughness 0.1 m: ln 3 / ln 20).
                     exposure.wind_m_s *= LYING_WIND;
                     // And on what it lay down on: grass and leaves pulled together at least, as
                     // apes make their nests (the camp's beds, where it has them, more).
                     exposure.ground_clo = exposure.ground_clo.max(LYING_CLO);
-                    // At camp, between its fires in the lee of its brush, close by one another
-                    // (D202: Scholander et al. 1958's unclothed sleepers between small fires); a
-                    // child held against its mother or its brothers and sisters.
-                    if camp.is_some_and(|c| (c - p.place.pos).with_y(0.0).length() < CAMP_SLEEP_M) {
+                }
+                // At camp, in the lee of its brush, close by one another, asleep between its fires
+                // (D202: Scholander et al. 1958's unclothed sleepers between small fires) or
+                // sitting at them by day (D207); a child held against its mother or its brothers
+                // and sisters there, and wherever it is carried.
+                let at_camp = p.place.medium == Medium::Ground
+                    && p.place.speed < 0.5
+                    && camp.is_some_and(|c| (c - p.place.pos).with_y(0.0).length() < CAMP_SLEEP_M);
+                if at_camp {
+                    exposure.wind_m_s *= CAMP_LEE;
+                    if sleeping {
                         fire *= BETWEEN_FIRES;
-                        exposure.wind_m_s *= CAMP_LEE;
-                        huddled = p.stage(sp, &now) != Stage::Adult;
                     }
                 }
+                let huddled = matches!(p.mind.doing, Doing::Carried { .. })
+                    || (at_camp && p.stage(sp, &now) != Stage::Adult);
                 exposure.radiant_w_m2 += fire;
                 // What its people know to wear against the cold (drawn bare yet).
                 let mut worn = if exposure.air_c < DRESS_BELOW_C {

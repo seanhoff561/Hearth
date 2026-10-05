@@ -107,6 +107,8 @@ fn a_sample_week_of_each_era() {
         let (mut walked, mut farthest, mut lost) = (0.0f64, 0.0f64, 0u32);
         let mut last: Option<glam::DVec3> = None;
         let mut died: Option<String> = None;
+        // Whom the player lives on as, once it has died.
+        let mut became: Option<u64> = None;
         let t_start = w.ticks as f64;
         let mut by_hour: BTreeMap<String, BTreeMap<String, u32>> = BTreeMap::new();
         let mut work: BTreeMap<String, BTreeMap<String, u32>> = BTreeMap::new();
@@ -172,6 +174,7 @@ fn a_sample_week_of_each_era() {
                 {
                     w.server.send(ToServer::Inhabit(id));
                     w.until(10.0, |w| w.body.as_ref().is_some_and(|b| b.dead.is_none()));
+                    became = Some(id);
                 }
             }
             // The player drinks, every six hours, at the nearest open water within 400 m (it
@@ -364,7 +367,7 @@ fn a_sample_week_of_each_era() {
         let gone: Vec<u64> = band
             .iter()
             .copied()
-            .filter(|id| !about_now.contains(id))
+            .filter(|id| !about_now.contains(id) && Some(*id) != became)
             .collect();
         let _ = writeln!(log, "\n## Gone from the band\n");
         if gone.is_empty() {
@@ -392,7 +395,9 @@ fn a_sample_week_of_each_era() {
         for female in [true, false] {
             if let Some((id, _)) = seen
                 .iter()
-                .filter(|(id, (f, stage, _))| band.contains(id) && *f == female && stage == "Adult")
+                .filter(|(id, (f, stage, _))| {
+                    band.contains(id) && Some(**id) != became && *f == female && stage == "Adult"
+                })
                 .min_by_key(|(id, _)| **id)
             {
                 grown.push((female, *id));
@@ -433,6 +438,9 @@ fn a_sample_week_of_each_era() {
             "\nThe player {}.",
             died.map_or("lived the week".to_owned(), |d| format!("died {d}"))
         );
+        if let Some(id) = became {
+            let _ = writeln!(log, "It lived on as #{id}, one of its band's grown.");
+        }
         let _ = writeln!(
             log,
             "\nThe week took {:.0} s to run.",
