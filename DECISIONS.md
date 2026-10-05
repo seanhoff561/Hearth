@@ -2524,3 +2524,13 @@ season's turn; and lived in full it moves camp, or goes to a gathering, only wit
 walk (1.5 km) — farther it stays where it is (as households it keeps its whole round). Bands met
 far from their round's places keep the camps they were met at; long moves wait for paths found
 over the land.
+
+## D204 — Camps by water; the fire in the cool; children held at night
+The next sample weeks lived through the night, and found what else killed: the Upper
+Paleolithic's band, camped on a dry upland with no water it knew, drank nothing all week and died
+of heat stroke and thirst on hot days; the Lower Paleolithic's children, smaller and lying apart,
+died of cold where the grown did not. So every camp of a round is within 300 m of water (rivers,
+lakes, the shore; the uplands' too), a first camp or a split band's is too where the land allows,
+and a band coming into full knows its water that far about; the fires warm people only below
+20 °C (in the heat they keep away from them); and a child or youth asleep at camp lies against its
+kin, as warm as a cape of 0.6 clo.
