@@ -1906,10 +1906,6 @@ impl People {
                 let worn = &worn;
                 let hurt = p.body.injuries.len();
                 p.body.step(cfg, BODY_S as f64, &exposure, worn, &activity);
-                if std::env::var("DEBUG_WEEK").is_ok() && p.age(&now) < 12.0 && now.tick % 1200 < 20 && (now.hour > 20.0 || now.hour < 5.0) {
-                    // TEMP
-                    eprintln!("TEMPC {} age {:.1} {:?} medium {:?} camp_d {:?} core {:.2} wind {:.1} rad {:.0} gclo {:.1} huddled {huddled} air {:.1}", p.id, p.age(&now), p.mind.doing, p.place.medium, camp.map(|c| (c - p.place.pos).with_y(0.0).length() as i32), p.body.status(cfg).core_c, exposure.wind_m_s, exposure.radiant_w_m2, exposure.ground_clo, exposure.air_c);
-                }
                 // The day's take, shared at camp of an evening (D202): the game and roots its
                 // people bring in beyond what is lived in full, eaten by those who are hungry —
                 // roasted where they know how — the nursed young aside.

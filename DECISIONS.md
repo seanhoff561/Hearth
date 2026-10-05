@@ -2534,3 +2534,6 @@ lakes, the shore; the uplands' too), a first camp or a split band's is too where
 and a band coming into full knows its water that far about; the fires warm people only below
 20 °C (in the heat they keep away from them); and a child or youth asleep at camp lies against its
 kin, as warm as a cape of 0.6 clo.
+- (D205) The chilled go to the fire: a person whose core falls below 36 °C goes to sit by its
+  camp's fire until warm — the Lower Paleolithic's small children, cooling in the evening wind
+  before they lay down, no longer die of it.
