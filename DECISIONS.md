@@ -2493,3 +2493,23 @@ the archaic peoples' demography. Each failure below was fixed and the run repeat
   shots are taken at dusk, the sun three degrees down at each place's latitude; the renderer's
   night is a known issue.
 - The four playable eras are marked implemented (the content status counted them as planned).
+
+## D202 — An era's people live through the night at their camp
+The sample week of the Lower Paleolithic found a band of *H. erectus* at 43° dead of cold on its
+first summer night (8 °C, wind and drizzle): the people were given the open air's weather at two
+metres, bare, with no fire's warmth, starving by the evening on the thin ground food that is all
+the full tier yet gathers, and — sent to a spot by the fire they never quite reached — standing
+up all night. The body model itself was right: a bare sleeper at 10 °C in the open loses half a
+degree an hour, and one by a fire out of the wind holds its core. So:
+- **The fires warm them** as they warm the player (`Senses::warmth`, the workshop's fires).
+- **They sleep about the fire**, on a ring a metre and a half out (and settle there), lying in
+  the wind a third of a metre up (the log profile over grass, a third of two metres' wind), on
+  grass and leaves pulled together (1 clo under them, as apes' nests); at camp **between its
+  fires in its lee** — twice one fire's warmth, half the wind — as unclothed foragers slept
+  between small fires (Scholander et al. 1958).
+- **The day's take** — the game and roots its people bring in beyond what is lived in full — is
+  eaten at camp of an evening by those hungry (roasted where they know how), until hunting and
+  gathering are lived in full.
+- **They wear what they know** against the cold (below 16 °C): of each layer the warmest garment
+  their knowledge makes — hide capes, sewn parkas, leggings, moccasins and mittens. They are still
+  drawn bare (a known issue).
