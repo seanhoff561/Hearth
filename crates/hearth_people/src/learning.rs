@@ -367,11 +367,22 @@ impl People {
             if rng.next_f32() >= chance {
                 continue;
             }
+            // In an era's world, only what its peoples could come to know then (deep time's
+            // repertoire, within the record's dates): no bow drill among Homo erectus (D206).
+            let of_era = |id: &str| {
+                let key = id.rsplit(':').next().unwrap_or(id);
+                self.history.as_ref().is_none_or(|h| {
+                    h.techniques
+                        .iter()
+                        .any(|t| t.rsplit(':').next().unwrap_or(t) == key)
+                })
+            };
             let open: Vec<&NodeFacts> = lore
                 .nodes
                 .iter()
                 .filter(|f| {
                     f.implemented
+                        && of_era(&f.id)
                         && f.tried > 0.0
                         && !p.knowledge.knows(&f.id)
                         && f.requires.iter().all(|r| p.knowledge.knows(r))

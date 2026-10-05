@@ -2537,3 +2537,10 @@ kin, as warm as a cape of 0.6 clo.
 - (D205) The chilled go to the fire: a person whose core falls below 36 °C goes to sit by its
   camp's fire until warm — the Lower Paleolithic's small children, cooling in the evening wind
   before they lay down, no longer die of it.
+
+## D206 — In an era's world, people find out only what their era could
+The Lower Paleolithic's *H. erectus* knew the bow drill, basketry, thatching, stone boiling and
+ochre: in the recent past's century their curious had found them out for themselves, H6's trying
+things open to every technique whose groundwork they had. In an era's world a person now finds
+out for itself only what deep time lets its era's peoples come to know (its repertoire, within
+the record's dates); learning from others is bounded by what they know.
