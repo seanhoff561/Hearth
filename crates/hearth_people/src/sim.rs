@@ -1900,9 +1900,9 @@ impl People {
                 exposure.radiant_w_m2 += fire;
                 // What its people know to wear against the cold (drawn bare yet).
                 let mut worn = if exposure.air_c < DRESS_BELOW_C {
-                    dress.clone().unwrap_or_else(|| sp.coat.clone())
+                    dress.unwrap_or(sp.coat)
                 } else {
-                    sp.coat.clone()
+                    sp.coat
                 };
                 if huddled {
                     for r in &mut worn.regions {
