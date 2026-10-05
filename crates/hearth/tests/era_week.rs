@@ -153,36 +153,6 @@ fn a_sample_week_of_each_era() {
             if !seen_them {
                 lost += 1;
             }
-            if std::env::var("DEBUG_WEEK").is_ok() && step % 2 == 0 {
-                // TEMP
-                if let Some(&id0) = band.iter().next() {
-                    w.server.send(ToServer::Inspect(Some(id0)));
-                    w.run(25);
-                }
-                let soc = w.inspected.as_ref().and_then(|r| {
-                    r.sections
-                        .iter()
-                        .find(|x| x.name == "Social")
-                        .map(|x| x.lines.get(1).cloned().unwrap_or_default())
-                });
-                let mind = w.inspected.as_ref().and_then(|r| {
-                    r.sections
-                        .iter()
-                        .find(|x| x.name == "Mind")
-                        .map(|x| x.lines.join("; "))
-                });
-                println!(
-                    "TEMP step {step} mid {:?} me {:?} {:?} {:?}",
-                    last.map(|m| (m.x as i64, m.y as i64, m.z as i64)),
-                    (
-                        w.mover.pos.x as i64,
-                        w.mover.pos.y as i64,
-                        w.mover.pos.z as i64
-                    ),
-                    soc,
-                    mind
-                );
-            }
             // The player drinks, every six hours, at the nearest open water (it stands about,
             // and would otherwise die of thirst in the week).
             if step % 12 == 11
