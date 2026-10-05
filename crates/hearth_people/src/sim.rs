@@ -1861,12 +1861,7 @@ impl People {
                     &sp.coat
                 };
                 let hurt = p.body.injuries.len();
-                p.body
-                    .step(cfg, BODY_S as f64, &exposure, worn, &activity);
-                if std::env::var("DEBUG_WEEK").is_ok() && p.id % 97 == 0 && now.tick % 600 < 20 {
-                    // TEMP
-                    eprintln!("TEMPX {} {:?} core {:.2} exp {:?} act {:?} dt {dt} body_s {}", p.id, p.mind.doing, p.body.status(cfg).core_c, exposure, activity, self.body_s);
-                }
+                p.body.step(cfg, BODY_S as f64, &exposure, worn, &activity);
                 // The day's take, shared at camp of an evening (D202): the game and roots its
                 // people bring in beyond what is lived in full, eaten by those who are hungry —
                 // roasted where they know how — the nursed young aside.
@@ -1876,7 +1871,13 @@ impl People {
                     && p.stage(sp, &now) != Stage::Young
                     && Needs::of(&p.body, cfg, 0.0).hunger >= 0.3
                 {
-                    eat(p, cfg, content, if cooks { "cooked_meat" } else { "meat" }, 0.15);
+                    eat(
+                        p,
+                        cfg,
+                        content,
+                        if cooks { "cooked_meat" } else { "meat" },
+                        0.15,
+                    );
                     eat(p, cfg, content, "cattail_root", 0.15);
                 }
                 // A new hurt frightens and angers; the body's needs and pains strain it.

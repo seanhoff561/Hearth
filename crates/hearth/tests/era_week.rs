@@ -167,24 +167,6 @@ fn a_sample_week_of_each_era() {
                 .at(w.ticks)
                 .local_time(planet.solar_time_offset(me.x));
             let hour = (local * 24.0) as u32 / 3 * 3;
-            if std::env::var("DEBUG_WEEK").is_ok() {
-                // TEMP
-                let e = w.body.as_ref().map(|b| b.exposure);
-                let mut kinds: BTreeMap<String, u32> = BTreeMap::new();
-                for v in w.people.iter().filter(|v| !v.dead) {
-                    *kinds.entry(about(&v.doing)).or_default() += 1;
-                }
-                let dists: Vec<i32> = w.people.iter().filter(|v| !v.dead).map(|v| (v.pos - w.mover.pos).length() as i32).collect();
-                if let Some(&id0) = band.iter().next() {
-                    w.server.send(ToServer::Inspect(Some(id0)));
-                }
-                if let Some(r) = &w.inspected {
-                    for sec in r.sections.iter().filter(|x| x.name == "Body" || x.name == "Mind") {
-                        println!("TEMPB {}", sec.lines.join("; "));
-                    }
-                }
-                println!("TEMP {:.2} h {:.1} exp {:?} doing {:?} dist {:?}", (w.ticks as f64 - t_start) / w.ticks_per_day, local * 24.0, e.map(|e| (e.air_c, e.wind_m_s, e.rain_mm_h, e.radiant_w_m2)), kinds, dists);
-            }
             let near: Vec<_> = w
                 .people
                 .iter()

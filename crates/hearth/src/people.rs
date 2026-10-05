@@ -1624,4 +1624,3 @@ fn gesture_words(g: hearth_people::Gesture) -> &'static str {
         Gesture::Hands => "hands held out",
     }
 }
-
