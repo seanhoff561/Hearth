@@ -1339,12 +1339,15 @@ impl People {
     /// What a band's people put on against the cold (D202): of each layer, the warmest garment
     /// its people know how to make — a hide cape where they know hide wraps, a sewn parka,
     /// leggings, moccasins and mittens where they sew. None where they know none.
-    pub(crate) fn dress_of(
+    pub fn dress<'a>(
         &self,
-        bi: usize,
-        content: &Content,
-    ) -> Option<hearth_body::clothing::Worn> {
-        let known = &self.bands[bi].culture.knowledge;
+        band: u64,
+        content: &'a Content,
+    ) -> Vec<&'a hearth_content::schema::body::Garment> {
+        let Some(b) = self.bands.iter().find(|b| b.id == band) else {
+            return Vec::new();
+        };
+        let known = &b.culture.knowledge;
         let knows = |k: &str| {
             let k = k.rsplit(':').next().unwrap_or(k);
             known.iter().any(|n| n.rsplit(':').next() == Some(k))
@@ -1360,10 +1363,17 @@ impl People {
                 None => best.push(g),
             }
         }
-        if best.is_empty() {
-            return None;
-        }
-        Some(hearth_body::clothing::Worn::of(best))
+        best
+    }
+
+    /// The cover of a band's dress (see [`Self::dress`]), if it has any.
+    pub(crate) fn dress_of(
+        &self,
+        bi: usize,
+        content: &Content,
+    ) -> Option<hearth_body::clothing::Worn> {
+        let best = self.dress(self.bands[bi].id, content);
+        (!best.is_empty()).then(|| hearth_body::clothing::Worn::of(best))
     }
 
     /// Folds every band lived in full away (a save's copy: as if the player were far away): as

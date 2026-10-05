@@ -848,6 +848,12 @@ fn run(
                     player.mover = Mover::new(at);
                     player.life = hearth_player::Life::begin(at, ticks);
                     player.carry = outfit(&appearance);
+                    // And what the band's people wear against the cold, of hide (D202).
+                    for g in people.live.dress($option.band, &content) {
+                        if let Some(k) = items.garment(&g.id, "hearth:rawhide") {
+                            let _ = player.carry.wear(&items, hearth_items::Stack::one(&k.id));
+                        }
+                    }
                     worn = dress_carry(&player.carry);
                     childhood = (age <= 0.0)
                         .then(|| crate::childhood::Childhood::new(calendar.days(ticks)));
