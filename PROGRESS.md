@@ -659,7 +659,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H5 — Culture and language (2026-10-04; tests run, D190)
 - [x] H6 — Knowledge and social learning (2026-10-04; tests run, D190)
 - [x] H7 — Tiers and persistence (2026-10-04; tests run, D190)
-- [x] H8 — History simulation and Paleolithic eras (birth options) (2026-10-04)
+- [x] H8 — History simulation and Paleolithic eras (birth options) (2026-10-05)
 - [ ] H9 — Observer mode and the player in society
 - [ ] H10 — Optional conversation backend
 - [ ] V2-12 — Neolithic
@@ -1161,7 +1161,7 @@ save keeps bands in full as households; at most 300 in full and 20,000 as househ
 pruned to genealogy stubs (`tests/persist.rs`).
 
 H8 — History simulation and Paleolithic eras (PLAN.md, V2.1 §15; `docs/design/humans/history.md`
-and `eras.md`; D191–D201), in parts:
+and `eras.md`; D191–D206), in parts:
 - [x] (a) The archaic peoples: *Homo erectus* and Neanderthals implemented — species and
   population profiles, life tables that replace themselves (D198), culture generators, a
   proto-language for *erectus* (D186's generator gated by the kinds of word it has) and
@@ -1204,7 +1204,10 @@ and `eras.md`; D191–D201), in parts:
   afternoon and at dusk (`tools/shots/h8_eras.shots`, rendered on the cloud machine's software
   device); deep time on the Standard planet and on an Earth-sized one of the same seed (`hearth
   history`); the archaic peoples' lives against their tables (`hearth_people/tests/
-  demography.rs`). What the first runs changed is D201.
+  demography.rs`). What the first runs changed is D201; what the sample weeks found and what
+  was done about it — the people living through the night at their camps (D202), keeping near
+  their camps (D203), camping by water (D204), going to the fire when chilled (D205) and finding
+  out only what their era could (D206) — the rest.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -1214,24 +1217,23 @@ and `eras.md`; D191–D201), in parts:
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. H4–H7's tests ran on 2026-10-04 in the cloud (`hearth_people`, `hearth_content`'s base
-   content, `hearth_craft` and every test of the game crate) and pass after the fixes D190 tells.
-   The perf gate (`scripts/perf-gate.sh`) and screenshots need a GPU: the cloud machine renders
-   only on a software device (llvmpipe), whose frame rates say nothing of the reference
-   machine's, so the gate for H4–H7 (and H8) is to run on the PC. Amendment R
-   (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready rule applies (D166).
-   Then H8 — History simulation and the Paleolithic eras (PLAN.md; V2.1 §15; design to write in
-   `docs/design/humans/history.md` and `eras.md`): the deep-time layer on the ecological cell
-   grid (populations as gene pools, cultures, languages and knowledge distributions; growth by
-   biome capacity and technology; dispersal along coasts, rivers and open land, strait crossings
-   and land bridges by era sea level; splits, contact and borrowing; the chronicle) run at world
-   creation behind a progress bar and cached; the recent-history layer about the spawn (the
-   household tier, H7, run for three or four generations); *H. erectus* (proto-language, D186's
-   generator gated) and Neanderthals implemented with their life tables, cultures and languages;
-   Lower, Middle and Upper Paleolithic era profiles (routines, camps, seasonal rounds,
-   aggregation) and the era selector; birth options (two to four households of the chosen area);
-   after death, be born again and inhabit a child; `docs/review/era-*.md` with screenshots — it
-   needs the game running, so it waits for the restart.
+1. H8 — History simulation and Paleolithic eras — is done (2026-10-05; D191–D206): deep time, the
+   recent past, *H. erectus* and Neanderthals, the three Paleolithic eras with their camps, rounds
+   and gatherings, births among their households, and life after death; its reviews are
+   `docs/review/era-*.md`. The perf gate (`scripts/perf-gate.sh`) and the screenshots' looks
+   need the PC: the cloud machine renders only on a software device (llvmpipe), whose frame rates
+   say nothing. Amendment R (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready
+   rule applies (D166). Then H9 — Observer mode and the player in society (PLAN.md).
+   Known from H8 (the era reviews have the detail): the people are drawn bare (they wear what
+   they know against the cold, D202); the world is drawn at today's climate and sea level, not
+   the era's (D195); the people raise no shelters (H11) and make little in a week, their food the
+   day's take eaten at camp (D202) until hunting and gathering are lived in full; a band lived in
+   full moves camp only within a short walk (D203: long moves wait for paths found over the
+   land); *erectus*'s proto-language says little more than names; deep time lets Neanderthals
+   live in the tropics; the recent past is not yet the same from run to run of a seed; the
+   recent past takes a minute or two in a debug build, and the finite water simulation about a
+   camp by water slows a debug build several times over; a first life's place picked on the
+   globe waits for V2-15.
    Known from H4–H7: levelling among egalitarian foragers waits for H9's interaction of values;
    the people do not yet give gifts to strangers themselves, nor raid (H11–H12); the household
    tier has no coarse daily outcomes (food got, work done) beyond the life course's crowding; a
@@ -1245,6 +1247,9 @@ and `eras.md`; D191–D201), in parts:
    next winter.
 
 ## Known issues
+- Night by a fire (H8, D201): a camera in the dark looking at a fire from beyond its light washes
+  the firelit ground out white — the eye's adaptation is reckoned from the light where the camera
+  stands (the moonlight floor), not from what it looks at.
 - Finite water (V2-8), since V2-10 (e)'s rivers: a channel or pit dug through a river's bank where
   it stands a block below the water, or beside a stream stepping down its bed, takes the river's
   water without end and sends it down the land, and the water never rests there (the hydrology's
