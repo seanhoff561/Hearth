@@ -160,6 +160,19 @@ fn a_sample_week_of_each_era() {
                     "{:.1} days in: {d:?}",
                     (w.ticks as f64 - t_start) / w.ticks_per_day
                 ));
+                // The week goes on with the player living on as one of the grown of its band
+                // (life after death, H8), so the band is watched to its end.
+                if let Some(id) = w
+                    .people
+                    .iter()
+                    .filter(|v| !v.dead && band.contains(&v.id))
+                    .filter(|v| format!("{:?}", v.stage) == "Adult")
+                    .map(|v| v.id)
+                    .min()
+                {
+                    w.server.send(ToServer::Inhabit(id));
+                    w.until(10.0, |w| w.body.as_ref().is_some_and(|b| b.dead.is_none()));
+                }
             }
             // The player drinks, every six hours, at the nearest open water within 400 m (it
             // stands about, and would otherwise die of thirst in the week).

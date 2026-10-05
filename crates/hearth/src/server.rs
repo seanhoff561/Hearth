@@ -331,6 +331,10 @@ fn lee(lw: &LocalWorld, feet: DVec3) -> f64 {
 }
 
 /// The weather, water and shelter where the player is, as the body feels them.
+/// A life born in a country of a mean year colder than this (°C) begins dressed as its people
+/// dress against the cold.
+const DRESSED_BELOW_C: f32 = 12.0;
+
 fn exposure(
     env: &EnvSampler,
     lw: &LocalWorld,
@@ -848,8 +852,19 @@ fn run(
                     player.mover = Mover::new(at);
                     player.life = hearth_player::Life::begin(at, ticks);
                     player.carry = outfit(&appearance);
-                    // And what the band's people wear against the cold, of hide (D202).
-                    for g in people.live.dress($option.band, &content) {
+                    // And, where the country is cold, what the band's people wear against it,
+                    // of hide (D202).
+                    let cold = lw
+                        .terrain()
+                        .sample(at.x.floor() as i32, at.z.floor() as i32)
+                        .temperature
+                        < DRESSED_BELOW_C;
+                    for g in people
+                        .live
+                        .dress($option.band, &content)
+                        .into_iter()
+                        .filter(|_| cold)
+                    {
                         if let Some(k) = items.garment(&g.id, "hearth:rawhide") {
                             let _ = player.carry.wear(&items, hearth_items::Stack::one(&k.id));
                         }
