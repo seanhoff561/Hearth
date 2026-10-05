@@ -1206,8 +1206,9 @@ and `eras.md`; D191–D206), in parts:
   history`); the archaic peoples' lives against their tables (`hearth_people/tests/
   demography.rs`). What the first runs changed is D201; what the sample weeks found and what
   was done about it — the people living through the night at their camps (D202), keeping near
-  their camps (D203), camping by water (D204), going to the fire when chilled (D205) and finding
-  out only what their era could (D206) — the rest.
+  their camps (D203), camping by water (D204), going to the fire when chilled (D205), finding
+  out only what their era could (D206) and keeping in the camp's lee by day, its children held
+  (D207) — the rest.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
@@ -1217,7 +1218,7 @@ and `eras.md`; D191–D206), in parts:
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. H8 — History simulation and Paleolithic eras — is done (2026-10-05; D191–D206): deep time, the
+1. H8 — History simulation and Paleolithic eras — is done (2026-10-05; D191–D207): deep time, the
    recent past, *H. erectus* and Neanderthals, the three Paleolithic eras with their camps, rounds
    and gatherings, births among their households, and life after death; its reviews are
    `docs/review/era-*.md`. The perf gate (`scripts/perf-gate.sh`) and the screenshots' looks
@@ -1229,7 +1230,7 @@ and `eras.md`; D191–D206), in parts:
    the era's (D195); the people raise no shelters (H11) and make little in a week, their food the
    day's take eaten at camp (D202) until hunting and gathering are lived in full; a band lived in
    full moves camp only within a short walk (D203: long moves wait for paths found over the
-   land); *erectus*'s proto-language says little more than names; deep time lets Neanderthals
+   land); *erectus*'s proto-language says little more than names, and in a quiet week nothing; deep time lets Neanderthals
    live in the tropics; the recent past is not yet the same from run to run of a seed; the
    recent past takes a minute or two in a debug build, and the finite water simulation about a
    camp by water slows a debug build several times over; a first life's place picked on the

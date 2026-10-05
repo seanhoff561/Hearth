@@ -25,7 +25,7 @@ its households lived, a life born into one of them and two days of its band watc
   of a grown woman and a grown man. The test's player follows its band. **Two days, not seven**:
   this band camps by water and the finite water simulation about the player (`water_table` under
   `WorldWater::ground`, every tick) runs a debug build at about a sixth of the speed, a week some
-  three hours; the Lower and Upper Paleolithic weeks ran all seven days.
+  three hours; the Lower Paleolithic week, its camp on a still lake, ran all seven days.
 - **Deep time**: `hearth history --seed 3 --era middle_paleolithic --size standard`, and
   `--size earth` for the dispersal on a planet of Earth's size.
 - **Demography**: `hearth_people/tests/demography.rs` (`the_archaic_peoples_live_and_die_by_their_tables`).
