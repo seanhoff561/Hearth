@@ -2513,3 +2513,14 @@ degree an hour, and one by a fire out of the wind holds its core. So:
 - **They wear what they know** against the cold (below 16 °C): of each layer the warmest garment
   their knowledge makes — hide capes, sewn parkas, leggings, moccasins and mittens. They are still
   drawn bare (a known issue).
+
+## D203 — A band lived in full keeps near its camp
+The Upper Paleolithic's sample week found a band about the player walking day and night: coming
+into full it had no season of its round yet, so its first step of the year sent its camp to its
+round's place three kilometres off and three hundred metres down, and the full tier's walking —
+step by step over the blocks, without a way found — never got it there over the terraced slopes.
+A band coming into full now takes the camp it has as this season's, its round going on from the
+season's turn; and lived in full it moves camp, or goes to a gathering, only within a short day's
+walk (1.5 km) — farther it stays where it is (as households it keeps its whole round). Bands met
+far from their round's places keep the camps they were met at; long moves wait for paths found
+over the land.
