@@ -1863,6 +1863,10 @@ impl People {
                 let hurt = p.body.injuries.len();
                 p.body
                     .step(cfg, BODY_S as f64, &exposure, worn, &activity);
+                if std::env::var("DEBUG_WEEK").is_ok() && p.id % 97 == 0 && now.tick % 600 < 20 {
+                    // TEMP
+                    eprintln!("TEMPX {} {:?} core {:.2} exp {:?} act {:?} dt {dt} body_s {}", p.id, p.mind.doing, p.body.status(cfg).core_c, exposure, activity, self.body_s);
+                }
                 // The day's take, shared at camp of an evening (D202): the game and roots its
                 // people bring in beyond what is lived in full, eaten by those who are hungry —
                 // roasted where they know how — the nursed young aside.
