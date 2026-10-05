@@ -176,8 +176,12 @@ fn a_cleared_area_goes_through_succession_over_simulated_years() {
         w.server.send(ToServer::SkipHours(hours));
         w.server.send(ToServer::Run(1));
         // The populations about the player are caught up through the skipped years as well
-        // (some three tenths of a second a year in a debug build).
-        assert!(w.until(180.0, |w| w.ticks >= want), "the clock moved on");
+        // (a second and a half a year in a debug build on a slow machine, two regions).
+        let skipped = target - year(&w);
+        assert!(
+            w.until(120.0 + 3.0 * skipped, |w| w.ticks >= want),
+            "the clock moved on"
+        );
         // The terrain about the player grows again.
         w.run(30);
         table.push((target, census(&w, at, r)));
