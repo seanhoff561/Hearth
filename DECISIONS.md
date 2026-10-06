@@ -2604,6 +2604,13 @@ on the cloud machine in a release build on an era's world, ten years pass in 0.8
 years a second; the budget ten). The fauna's catch-up no longer waits for a tick divisible by
 forty under the warp (it had saved up twenty years at a time). The living world's notable events
 (a camp moved, a band split, a technique found out, one taken in or cast out, a fight) are kept
-for the chronicle while the world runs, not saved. A woman grown fond of a player who courts her
-(0.5) waits for that player rather than be paired off by the table; who is of an age to pair is
-the people's life table's (men of our kind from twenty, women from seventeen).
+for the chronicle while the world runs, not saved. Who is of an age to pair is the people's life
+table's (men of our kind from twenty, women from seventeen).
+
+## D211 — Courting: the player's intent known, she waits
+The table pairs the unpaired as they come of age, every month or so, and a player — whom it does
+not pair, since a player pairs as it chooses — courting a girl of its band would find her paired
+off before either was of an age. Asking to pair and being told "too young yet" or "not yet
+willing" makes the player's intent known: for a year from the last asking, while she is at all
+fond of the player (0.3), she waits for it rather than be paired by the table. Ties untended fade
+back as anyone's do, so a courtship is kept up as one living in the band would keep it up.

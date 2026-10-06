@@ -212,15 +212,15 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         for &g in &courted {
             court(&mut w, g, 2);
         }
-        // From the fourth year the player is of an age to pair.
-        if season >= 16 {
-            for &g in &courted {
-                let (yes, words) = ask(&mut w, g, Ask::Pair);
-                println!("season {season}, asked #{g} to pair: {words}");
-                if yes {
-                    woman = Some(g);
-                    break 'seasons;
-                }
+        // Asked each season: "too young yet", "not yet willing" — the player's intent known,
+        // the girl it courts waits for it — until the player is of an age (twenty) and she
+        // willing.
+        for &g in &courted {
+            let (yes, words) = ask(&mut w, g, Ask::Pair);
+            println!("season {season}, asked #{g} to pair: {words}");
+            if yes {
+                woman = Some(g);
+                break 'seasons;
             }
         }
     }

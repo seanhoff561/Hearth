@@ -408,12 +408,6 @@ impl People {
                     .is_some_and(|sp| x.stage(sp, now) == Stage::Adult),
             }
         };
-        if !of_age(a) {
-            return Answer::no("You are too young yet to pair.");
-        }
-        if !of_age(b) {
-            return Answer::no("They are too young yet to pair.");
-        }
         if p.social.band != q.social.band {
             return Answer::no("They would pair only with one of their own band.");
         }
@@ -429,6 +423,22 @@ impl People {
         );
         if kin_of(self, me, to).is_some() && !in_law {
             return Answer::no("You are kin: it is not done.");
+        }
+        // Too young yet, or not yet willing: the player's intent is known, and one grown fond of
+        // it waits for it a while rather than be paired off (D211).
+        let (mine, theirs) = (of_age(a), of_age(b));
+        let unwilling = {
+            let t = &self.persons[b].social.ties[k];
+            t.affection < PAIR_FOND || t.trust < PAIR_TRUST
+        };
+        if !mine || !theirs || unwilling {
+            self.persons[b].social.ties[k].courted = Some(day);
+        }
+        if !mine {
+            return Answer::no("You are too young yet to pair.");
+        }
+        if !theirs {
+            return Answer::no("They are too young yet to pair.");
         }
         let t = &self.persons[b].social.ties[k];
         if t.affection < PAIR_FOND || t.trust < PAIR_TRUST {

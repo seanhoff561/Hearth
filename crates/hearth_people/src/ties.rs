@@ -37,6 +37,9 @@ pub struct Tie {
     /// Told one's name (H9): known by it since.
     #[serde(default)]
     pub named: bool,
+    /// The day a player last asked to pair with one (H9): it waits for that player a while.
+    #[serde(default)]
+    pub courted: Option<f64>,
 }
 
 /// The most ties a person keeps.
@@ -83,6 +86,7 @@ impl Tie {
             quarrels: 0,
             quarrelled: None,
             named: false,
+            courted: None,
         }
     }
 

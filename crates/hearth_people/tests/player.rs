@@ -287,6 +287,7 @@ fn a_stranger_trusted_is_taken_in() {
             quarrels: 0,
             quarrelled: None,
             named: false,
+            courted: None,
         };
         q.social.ties.retain(|x| x.who != me);
         q.social.ties.push(t);
