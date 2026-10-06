@@ -119,12 +119,19 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
     let woman = band
         .iter()
         .find(|(id, lines)| {
-            !lines[0].contains("your")
+            // Not kin ("…, your sister"); of the band ("…, of your band").
+            lines[0].ends_with("of your band")
                 && !lines.iter().any(|l| l.contains("Paired"))
                 && w.people.iter().any(|v| v.id == *id && v.female)
         })
         .map(|(id, _)| *id)
-        .expect("an unpaired woman of the band, not kin");
+        .unwrap_or_else(|| {
+            let women: Vec<&(u64, Vec<String>)> = band
+                .iter()
+                .filter(|(id, _)| w.people.iter().any(|v| v.id == *id && v.female))
+                .collect();
+            panic!("an unpaired woman of the band, not kin: {women:?}")
+        });
     let mut paired = false;
     for round in 0..60 {
         let kind = if round % 2 == 0 { Ask::Praise } else { Ask::Thank };
