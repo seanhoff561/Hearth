@@ -660,7 +660,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H6 — Knowledge and social learning (2026-10-04; tests run, D190)
 - [x] H7 — Tiers and persistence (2026-10-04; tests run, D190)
 - [x] H8 — History simulation and Paleolithic eras (birth options) (2026-10-05)
-- [ ] H9 — Observer mode and the player in society
+- [x] H9 — Observer mode and the player in society (2026-10-06)
 - [ ] H10 — Optional conversation backend
 - [ ] V2-12 — Neolithic
 - [ ] H11 — Neolithic society
@@ -1243,7 +1243,7 @@ H9 — Observer mode and the player in society (PLAN.md, V2.1 §15.4 and §16, A
   demographic tier, the land's growth held, the animals as numbers, the slow work coarse — ten
   years in 0.8–0.9 s in a release build on the cloud machine (`tests/observer.rs`'s ignored
   benchmark); the fauna catch-up no longer saved up under the warp.
-- [ ] (g) The acceptance (`tests/acceptance_h9.rs`): a scripted player born into an Upper
+- [x] (g) The acceptance (`tests/acceptance_h9.rs`): a scripted player born into an Upper
   Paleolithic band asks one of its band to show it how and learns; courts girls of the band
   season by season until one is willing at twenty and pairs; their children are born and one
   grows up; the player dies and lives on as their grown child, told who it is.
