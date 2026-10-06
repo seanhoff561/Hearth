@@ -63,6 +63,12 @@ pub struct World {
     pub born: Option<hearth_protocol::Born>,
     /// The developer's inspector's last record of the person it looks at.
     pub inspected: Option<hearth_people::inspect::Report>,
+    /// Watching (H9): the followed life, the chronicle and the overlay as last told; what the
+    /// player knows of the one it looks at.
+    pub life_of: Option<(u64, Vec<String>)>,
+    pub chronicle: Option<Vec<hearth_protocol::ChronicleEntry>>,
+    pub overlay: Option<Option<hearth_protocol::OverlayMap>>,
+    pub regarded: Option<(u64, Vec<String>)>,
 }
 
 /// Copies a directory and all in it.
@@ -194,6 +200,10 @@ impl World {
             births: Vec::new(),
             born: None,
             inspected: None,
+            life_of: None,
+            chronicle: None,
+            overlay: None,
+            regarded: None,
         };
         // A life born into an era's household begins where that household lives (H8).
         if era_birth {
@@ -245,6 +255,10 @@ impl World {
                 ToClient::Heard(lines) => self.heard.extend(lines),
                 ToClient::Born(b) => self.born = Some(*b),
                 ToClient::Inspected(r) => self.inspected = r.map(|r| *r),
+                ToClient::LifeOf(l) => self.life_of = l,
+                ToClient::Chronicle(c) => self.chronicle = Some(c),
+                ToClient::Overlay(o) => self.overlay = Some(o),
+                ToClient::Regarded(r) => self.regarded = r,
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {
                     name,

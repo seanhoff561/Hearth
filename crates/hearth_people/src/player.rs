@@ -127,11 +127,13 @@ impl People {
         let day = now.day;
         let k = self.tie_index(b, me, day);
         let same_band = self.persons[a].social.band == self.persons[b].social.band;
-        let them = |s: &People| {
+        // Words of what they did: by name once the player knows it (one of them, so the verb
+        // agrees), else as "they".
+        let told = |s: &People, they: &str, named: &str| {
             if s.knows_name(me, to) && !s.persons[b].name.is_empty() {
-                s.persons[b].name.clone()
+                format!("{} {named}", s.persons[b].name)
             } else {
-                "They".to_owned()
+                format!("They {they}")
             }
         };
         match ask {
@@ -140,7 +142,7 @@ impl People {
                 t.affection += (1.0 - t.affection) * 0.03;
                 t.day = day;
                 self.say(to, Some(me), Act::Greet, words(&["hello"]), None, day);
-                Answer::yes(format!("{} greet you back.", them(self)))
+                Answer::yes(told(self, "greet you back.", "greets you back."))
             }
             Ask::Introduce => {
                 // Each tells the other its name.
@@ -171,14 +173,14 @@ impl People {
                 t.day = day;
                 self.persons[b].psyche.feel(Feeling::Joy, 0.2);
                 self.persons[b].psyche.feel(Feeling::Pride, 0.1);
-                Answer::yes(format!("{} are pleased.", them(self)))
+                Answer::yes(told(self, "are pleased.", "is pleased."))
             }
             Ask::Apologise => {
                 let t = &mut self.persons[b].social.ties[k];
                 t.rivalry *= 0.6;
                 t.trust += (1.0 - t.trust) * 0.03;
                 t.day = day;
-                Answer::yes(format!("{} let it go.", them(self)))
+                Answer::yes(told(self, "let it go.", "lets it go."))
             }
             Ask::Joke => {
                 // A joke lands with those fond of one; with others it falls flat.
@@ -188,9 +190,9 @@ impl People {
                     t.affection += (1.0 - t.affection) * 0.04;
                     t.day = day;
                     self.persons[b].psyche.feel(Feeling::Joy, 0.3);
-                    Answer::yes(format!("{} laugh.", them(self)))
+                    Answer::yes(told(self, "laugh.", "laughs."))
                 } else {
-                    Answer::no(format!("{} do not laugh.", them(self)))
+                    Answer::no(told(self, "do not laugh.", "does not laugh."))
                 }
             }
             Ask::Insult => {
@@ -208,7 +210,7 @@ impl People {
                     Some(Gesture::ThreatDisplay),
                     day,
                 );
-                Answer::no(format!("{} take it badly.", them(self)))
+                Answer::no(told(self, "take it badly.", "takes it badly."))
             }
             Ask::Gesture(g) => {
                 let words = match g {
@@ -243,9 +245,10 @@ impl People {
                 }
                 if !same_band && trust < TEACH_TRUST {
                     self.say(to, Some(me), Act::Refuse, words(&["no"]), None, day);
-                    return Answer::no(format!(
-                        "{} do not trust you enough to show you.",
-                        them(self)
+                    return Answer::no(told(
+                        self,
+                        "do not trust you enough to show you.",
+                        "does not trust you enough to show you.",
                     ));
                 }
                 // What they know that the player does not: the one asked for, else the first.
@@ -256,7 +259,11 @@ impl People {
                     None => theirs.known.keys().find(|n| !knows(n)).cloned(),
                 };
                 let Some(node) = node else {
-                    return Answer::no(format!("{} know nothing of that to show you.", them(self)));
+                    return Answer::no(told(
+                        self,
+                        "know nothing of that to show you.",
+                        "knows nothing of that to show you.",
+                    ));
                 };
                 self.lessons.retain(|l| l.pupil != me);
                 self.lessons.push(Lesson {
@@ -275,7 +282,11 @@ impl People {
                 );
                 Answer {
                     about: Some(node),
-                    ..Answer::yes(format!("{} agree to show you; keep near them.", them(self)))
+                    ..Answer::yes(told(
+                        self,
+                        "agree to show you; keep near them.",
+                        "agrees to show you; keep near them.",
+                    ))
                 }
             }
             Ask::Teach(node) => {
@@ -286,7 +297,7 @@ impl People {
                     return Answer::no("You do not know that well enough to teach it.");
                 }
                 if self.persons[b].knowledge.knows(&node) {
-                    return Answer::no(format!("{} know it already.", them(self)));
+                    return Answer::no(told(self, "know it already.", "knows it already."));
                 }
                 let child = matches!(
                     kin_of(self, me, to),
@@ -294,7 +305,11 @@ impl People {
                 );
                 let trust = self.persons[b].social.ties[k].trust;
                 if !same_band && !child && trust < TEACH_TRUST {
-                    return Answer::no(format!("{} will not learn from a stranger.", them(self)));
+                    return Answer::no(told(
+                        self,
+                        "will not learn from a stranger.",
+                        "will not learn from a stranger.",
+                    ));
                 }
                 self.lessons.retain(|l| l.pupil != to);
                 self.lessons.push(Lesson {
@@ -305,7 +320,7 @@ impl People {
                 });
                 Answer {
                     about: Some(node),
-                    ..Answer::yes(format!("{} watch you closely.", them(self)))
+                    ..Answer::yes(told(self, "watch you closely.", "watches you closely."))
                 }
             }
             Ask::Join => {
@@ -326,9 +341,10 @@ impl People {
                         Some(Gesture::Shoo),
                         day,
                     );
-                    return Answer::no(format!(
-                        "{} wave you off: they do not know you well enough yet.",
-                        them(self)
+                    return Answer::no(told(
+                        self,
+                        "wave you off: they do not know you well enough yet.",
+                        "waves you off: they do not know you well enough yet.",
                     ));
                 }
                 if !self.bands[bi].guests.iter().any(|g| g.who == me) {
@@ -348,9 +364,10 @@ impl People {
                     Some(Gesture::Beckon),
                     day,
                 );
-                Answer::yes(format!(
-                    "{} let you stay among them; if they come to trust you, they will take you in.",
-                    them(self)
+                Answer::yes(told(
+                    self,
+                    "let you stay among them; if they come to trust you, they will take you in.",
+                    "lets you stay among them; if they come to trust you, they will take you in.",
                 ))
             }
             Ask::Pair => self.proposed(a, b, k, me, to, species, now),
