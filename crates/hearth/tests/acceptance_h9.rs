@@ -218,10 +218,17 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
     // living in the band would — ties left untended fade back a fifth a season.
     girls.sort_by_key(|g| !g.2);
     let courted: Vec<u64> = girls.iter().take(3).map(|g| g.0).collect();
-    assert!(!courted.is_empty(), "a girl or young woman of the band, not kin");
+    assert!(
+        !courted.is_empty(),
+        "a girl or young woman of the band, not kin"
+    );
     let court = |w: &mut World, who: u64, rounds: usize| {
         for round in 0..rounds {
-            let kind = if round % 2 == 0 { Ask::Praise } else { Ask::Thank };
+            let kind = if round % 2 == 0 {
+                Ask::Praise
+            } else {
+                Ask::Thank
+            };
             ask(w, who, kind);
             w.run(100);
         }

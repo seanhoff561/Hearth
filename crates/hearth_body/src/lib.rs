@@ -408,6 +408,14 @@ pub struct Body {
     /// Short-term stamina, 0–1.
     pub stamina: f64,
     pub blood_l: f64,
+    /// The full blood of the body as last sized (l): a growing body's blood grows with it, the
+    /// share of it lost the same (a year's growth at a stroke is no wound).
+    #[serde(default)]
+    pub blood_full_l: f64,
+    /// Its mass as last sized (kg): a body grown at a stroke keeps its stores in the same share
+    /// of it.
+    #[serde(default)]
+    pub sized_kg: f64,
     pub injuries: Vec<InjuryState>,
     pub illnesses: Vec<IllnessState>,
     pub dead: Option<Death>,
@@ -448,6 +456,8 @@ impl Body {
             sleep: Sleep::default(),
             stamina: 1.0,
             blood_l: cfg.params.blood_l as f64,
+            blood_full_l: cfg.params.blood_l as f64,
+            sized_kg: cfg.mass_kg,
             injuries: Vec::new(),
             medicines: Vec::new(),
             illnesses: Vec::new(),
@@ -478,6 +488,18 @@ impl Body {
         if self.dead.is_some() || play_dt <= 0.0 {
             return;
         }
+        // Grown (or shrunk) since the last step: the blood with the body.
+        let full = cfg.params.blood_l as f64;
+        if self.blood_full_l > 0.0 && (full - self.blood_full_l).abs() > 1e-9 {
+            self.blood_l *= full / self.blood_full_l;
+        }
+        self.blood_full_l = full;
+        if self.sized_kg > 0.0 && (cfg.mass_kg - self.sized_kg).abs() > 1e-6 {
+            let k = cfg.mass_kg / self.sized_kg;
+            self.energy.fat_kcal *= k;
+            self.energy.glycogen_kcal *= k;
+        }
+        self.sized_kg = cfg.mass_kg;
         let dt = play_dt / cfg.scales.factor(TimeScale::Day);
         let mass = cfg.mass_kg;
         self.age_s += dt;

@@ -591,3 +591,29 @@ fn yarrow_stems_bleeding_and_willow_bark_eases_pain() {
     );
     assert!(b.medicines.is_empty(), "worn off");
 }
+
+/// H9: a body grown at a stroke (a year passed at once, a child sized to its new age) keeps the
+/// share of its blood: growing is no wound.
+#[test]
+fn a_body_grown_at_a_stroke_has_lost_no_blood() {
+    let mut small = config();
+    small.params.blood_l = 0.5;
+    small.mass_kg = 12.0;
+    let big = config();
+    let mut body = Body::new(&small, 3);
+    let rest = small.activity("resting");
+    body.step(&small, 1.0, &Exposure::mild(), &Worn::naked(), &rest);
+    body.step(&big, 1.0, &Exposure::mild(), &Worn::naked(), &rest);
+    let lost = body.status(&big).blood_lost;
+    assert!(
+        lost < 0.01,
+        "grown, it has lost {:.0} % of its blood",
+        lost * 100.0
+    );
+    // Its stores grown with it: no hungrier for it.
+    assert_eq!(
+        body.status(&big).hunger,
+        Body::new(&big, 3).status(&big).hunger
+    );
+    assert!(body.dead.is_none());
+}

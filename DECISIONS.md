@@ -2614,3 +2614,11 @@ off before either was of an age. Asking to pair and being told "too young yet" o
 willing" makes the player's intent known: for a year from the last asking, while she is at all
 fond of the player (0.3), she waits for it rather than be paired by the table. Ties untended fade
 back as anyone's do, so a courtship is kept up as one living in the band would keep it up.
+
+## D212 — A body grown at a stroke keeps its blood and its stores
+A child's body is sized to its age each step; its blood was held in litres and its fat and
+glycogen in kilocalories, against full measures that grow with it. Grown a year at a stroke — a
+skip of time, a childhood's years passing, the Observer's fast-forward — its blood was suddenly
+a small share of what it should be and its stores thin: in the H9 acceptance's first runs every
+child of the player's pair died, of "blood loss" exactly at the skips or underfed. A body now keeps
+the share: grown or shrunk since its last step, its blood and its stores are scaled with it.

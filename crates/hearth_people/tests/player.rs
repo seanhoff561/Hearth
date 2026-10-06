@@ -314,3 +314,61 @@ fn a_stranger_trusted_is_taken_in() {
     assert!(taken.contains(&me), "the trusted guest is taken in");
     assert_eq!(p.get(me).map(|q| q.social.band), Some(other));
 }
+
+#[test]
+fn the_players_children_live_as_others_do() {
+    let b = base();
+    let (mut world, mut p, band, me, now) = world();
+    let her = p
+        .members(band)
+        .filter(|q| q.life.female && hearth_people::kin::kin_of(&p, me, q.id).is_none())
+        .max_by(|a, b| a.life.born.total_cmp(&b.life.born))
+        .map(|q| q.id)
+        .expect("a woman");
+    let was = p.get(her).and_then(|q| q.social.bond);
+    for q in p.persons.iter_mut() {
+        if q.id == her || Some(q.id) == was {
+            q.social.bond = None;
+        }
+        if q.id == her {
+            if let Some(t) = q.social.ties.iter_mut().find(|t| t.who == me) {
+                t.affection = 0.9;
+                t.trust = 0.9;
+            }
+        }
+    }
+    let mine = KnowledgeState::default();
+    let a = p.player_asks(1, her, Ask::Pair, &|n| mine.knows(n), &b.species, &now);
+    assert!(a.yes, "{}", a.words);
+    let start = now.day;
+    for year in 1..=15 {
+        let now = Now {
+            day: start + year as f64 * YEAR_DAYS,
+            ..now
+        };
+        p.live_course(&b.species, &b.items, &world, now);
+        world.advance();
+    }
+    let (mut ours, mut ours_dead, mut others, mut others_dead) = (0, 0, 0, 0);
+    for q in p.persons.iter().filter(|q| q.life.born > start) {
+        let dead = !q.alive();
+        if q.life.father == Some(me) {
+            ours += 1;
+            if dead {
+                ours_dead += 1;
+                println!("ours #{} died: {:?}", q.id, q.life.died);
+            }
+        } else {
+            others += 1;
+            if dead {
+                others_dead += 1;
+            }
+        }
+    }
+    println!("ours {ours_dead}/{ours} dead; others {others_dead}/{others} dead");
+    assert!(ours > 0);
+    assert!(
+        (ours_dead as f64 / ours as f64) < (others_dead as f64 / others.max(1) as f64) + 0.5,
+        "the player's children die far more than others'"
+    );
+}
