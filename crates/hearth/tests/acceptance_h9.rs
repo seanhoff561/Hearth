@@ -22,6 +22,9 @@ fn regard(w: &mut World, id: u64) -> Vec<String> {
 /// Goes beside a person and says or does something to them; the answer.
 fn ask(w: &mut World, id: u64, what: Ask) -> (bool, String) {
     go_to_band_of(w, id);
+    if !w.people.iter().any(|v| v.id == id) {
+        return (false, String::new());
+    }
     if let Some(v) = w.people.iter().find(|v| v.id == id) {
         let at = v.pos;
         w.go(at.x + 1.2, at.z);
@@ -57,6 +60,9 @@ fn go_to_band_of(w: &mut World, id: u64) {
             .map(|s| s.lines.join("; "))
             .unwrap_or_default()
     };
+    if line("Life").contains("died day") {
+        return;
+    }
     let social = line("Social");
     let camp = social.split("camp at ").nth(1).and_then(|at| {
         let mut xz = at.split([',', ';']).map(|n| n.trim().parse::<f64>());
@@ -184,40 +190,42 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         }
     }
     println!("those the player might court: {girls:?}");
-    // A young woman first, else a girl.
+    // Young women first, then girls: three of them courted, a few kind words each season, as
+    // one living in the band would — ties left untended fade back.
     girls.sort_by_key(|g| !g.2);
-    let woman = girls
-        .first()
-        .map(|g| g.0)
-        .expect("a girl or young woman of the band, not kin");
-    let court = |w: &mut World, rounds: usize| {
+    let courted: Vec<u64> = girls.iter().take(3).map(|g| g.0).collect();
+    assert!(!courted.is_empty(), "a girl or young woman of the band, not kin");
+    let court = |w: &mut World, who: u64, rounds: usize| {
         for round in 0..rounds {
-            let kind = if round % 2 == 0 {
-                Ask::Praise
-            } else {
-                Ask::Thank
-            };
-            ask(w, woman, kind);
+            let kind = if round % 2 == 0 { Ask::Praise } else { Ask::Thank };
+            ask(w, who, kind);
             w.run(100);
         }
     };
-    court(&mut w, 16);
-    let mut paired = false;
-    for year in 1..=10 {
-        w.server.send(ToServer::SkipHours(32.0 * 24.0));
+    for &g in &courted {
+        court(&mut w, g, 12);
+    }
+    let mut woman = None;
+    'seasons: for season in 1..=40 {
+        w.server.send(ToServer::SkipHours(8.0 * 24.0));
         w.run(40);
-        // Back among the band, wherever its camp is now.
-        go_to_band_of(&mut w, woman);
-        court(&mut w, 4);
-        if year >= 4 {
-            let (yes, words) = ask(&mut w, woman, Ask::Pair);
-            println!("year {year}, asked to pair: {words}");
-            if yes {
-                paired = true;
-                break;
+        for &g in &courted {
+            court(&mut w, g, 2);
+        }
+        // From the fourth year the player is of an age to pair.
+        if season >= 16 {
+            for &g in &courted {
+                let (yes, words) = ask(&mut w, g, Ask::Pair);
+                println!("season {season}, asked #{g} to pair: {words}");
+                if yes {
+                    woman = Some(g);
+                    break 'seasons;
+                }
             }
         }
     }
+    let paired = woman.is_some();
+    let woman = woman.unwrap_or(courted[0]);
     assert!(paired, "she comes to be willing");
     let lines = regard(&mut w, woman);
     assert!(
