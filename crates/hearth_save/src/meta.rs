@@ -10,7 +10,9 @@ use crate::settings::WorldSettings;
 /// * 1 — v1 of the game (never released with saves); refused.
 /// * 2 — first v2 format: flat seed/planet fields, `time.ticks`.
 /// * 3 — settings grouped into `settings.{planet,life,era}`, `clock` replaces `time`.
-pub const FORMAT: u32 = 3;
+/// * 4 — v2's death rules retired (D167, H9): `life.death_rules` becomes `life.after_death` and
+///   `life.born_again` (and Permadeath's scope).
+pub const FORMAT: u32 = 4;
 
 /// Oldest format this build can migrate from.
 pub const OLDEST_SUPPORTED: u32 = 2;

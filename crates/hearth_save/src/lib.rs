@@ -20,8 +20,8 @@ pub use meta::{Clock, FORMAT, WorldMeta};
 pub use migrate::MigrationReport;
 pub use region::RegionStore;
 pub use settings::{
-    DeathRules, HomininRange, InhabitScope, KnowledgeMode, LifeSettings, PredatorBehavior, Realism,
-    WorldSettings,
+    AfterDeath, Death, DeathPreset, HomininRange, InhabitScope, KnowledgeMode, LifeSettings,
+    PredatorBehavior, Realism, WorldSettings,
 };
 
 #[derive(Debug, thiserror::Error)]

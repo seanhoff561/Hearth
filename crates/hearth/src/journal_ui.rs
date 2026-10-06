@@ -177,7 +177,7 @@ fn lines_of(ui: &Ui<'_>, view: &JournalView, tab: u8, width: f32) -> Vec<(String
                 let color = match n.kind {
                     NoteKind::Discovery => Rgba([240, 220, 150, 255]),
                     NoteKind::Hunch => Rgba([200, 210, 240, 255]),
-                    NoteKind::Legend => theme::DIM,
+                    NoteKind::Legend | NoteKind::PastLife => theme::DIM,
                     NoteKind::Made => Rgba([220, 225, 215, 255]),
                 };
                 push(&format!("  {}", n.text), color, &mut out);

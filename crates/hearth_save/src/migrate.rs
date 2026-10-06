@@ -51,6 +51,7 @@ pub fn migrate(v: &mut Value) -> Result<MigrationReport, SaveError> {
             .ok_or_else(|| SaveError::Corrupt("level.json is not an object".into()))?;
         let step = match report.to {
             2 => v2_to_v3(obj)?,
+            3 => v3_to_v4(obj),
             other => {
                 return Err(SaveError::Corrupt(format!(
                     "no migration from format {other}"
@@ -91,6 +92,36 @@ fn v2_to_v3(obj: &mut Map<String, Value>) -> Result<String, SaveError> {
     Ok("2→3: grouped world settings, added life & time settings (defaults) and the era, renamed time → clock".into())
 }
 
+/// Format 3 → 4: v2's death rules (D167) become the settings that replaced them — Legacy a head
+/// start on what earlier lives knew, Hardy all of it kept, Permadeath no one to live on as and
+/// no being born again.
+fn v3_to_v4(obj: &mut Map<String, Value>) -> String {
+    let life = obj
+        .get_mut("settings")
+        .and_then(|s| s.get_mut("life"))
+        .and_then(Value::as_object_mut);
+    let Some(life) = life else {
+        return "3→4: no life settings to carry over".into();
+    };
+    let rule = life
+        .remove("death_rules")
+        .and_then(|r| r.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "legacy".into());
+    let (after, born_again) = match rule.as_str() {
+        "hardy" => ("keep_everything", true),
+        "permadeath" => ("theirs_only", false),
+        _ => ("head_start", true),
+    };
+    if rule == "permadeath" {
+        life.insert("inhabit".into(), json!("none"));
+    }
+    life.insert("after_death".into(), json!(after));
+    life.insert("born_again".into(), json!(born_again));
+    format!(
+        "3→4: the death rule {rule} became knowledge after death {after}, born again {born_again}"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +158,32 @@ mod tests {
         assert_eq!(meta.clock.ticks, 1234);
         assert_eq!(meta.settings.era, "hearth:wild_earth");
         assert_eq!(meta.settings.life.day_length_min, 48);
+    }
+
+    #[test]
+    fn the_old_death_rules_become_their_presets() {
+        for (rule, preset) in [
+            ("legacy", crate::DeathPreset::Legacy),
+            ("hardy", crate::DeathPreset::Hardy),
+            ("permadeath", crate::DeathPreset::Permadeath),
+        ] {
+            let mut v = v2();
+            migrate(&mut v).unwrap();
+            v["format"] = json!(3);
+            let life = v["settings"]["life"].as_object_mut().unwrap();
+            life.remove("after_death");
+            life.remove("born_again");
+            life.insert("death_rules".into(), json!(rule));
+            let r = migrate(&mut v).unwrap();
+            assert_eq!((r.from, r.to), (3, FORMAT));
+            let meta: crate::meta::WorldMeta = serde_json::from_value(v).unwrap();
+            let l = &meta.settings.life;
+            assert_eq!(
+                crate::DeathPreset::of(l.inhabit, l.after_death, l.born_again),
+                Some(preset),
+                "{rule}"
+            );
+        }
     }
 
     #[test]

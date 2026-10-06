@@ -21,8 +21,7 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
             female: Some(false),
             ..Default::default()
         },
-        death_rules: hearth_save::DeathRules::default(),
-        inhabit: hearth_save::InhabitScope::default(),
+        death: hearth_save::Death::default(),
         knowledge: hearth_save::KnowledgeMode::default(),
         childhood: false,
         era: hearth::eras::WILD_EARTH.to_owned(),
@@ -154,20 +153,20 @@ fn drown(server: &Server, at: hearth_physics::Mover) {
 }
 
 #[test]
-fn death_follows_the_world_rules() {
+fn death_follows_the_world_settings() {
     let view = View {
         radius: 2,
         vertical: 2,
     };
-    // Legacy: someone new arrives near where the player died.
-    let dir = std::env::temp_dir().join(format!("hearth-death-legacy-{}", std::process::id()));
+    // By default (Authentic): born again, a baby about where the player died.
+    let dir = std::env::temp_dir().join(format!("hearth-death-reborn-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let server = Server::start(spec(&dir), atlas(), view);
     let ready = wait(&server, 120.0, |m| match m {
         ToClient::Ready(r) => Some(r),
         _ => None,
     });
-    assert_eq!(ready.death_rules, hearth_save::DeathRules::Legacy);
+    assert_eq!(ready.death.is(), Some(hearth_save::DeathPreset::Authentic));
     let mut there = ready.player;
     there.pos += DVec3::new(30.0, 0.0, 0.0);
     drown(&server, there);
@@ -175,26 +174,22 @@ fn death_follows_the_world_rules() {
         ToClient::Body(b) if b.dead.is_some() => Some(()),
         _ => None,
     });
-    // Born again: a daughter, as wished, of two parents of the region; her name kept.
-    let next = hearth_protocol::Wish {
-        name: "Ash".into(),
+    // Born again: a daughter, as asked, of two parents of the region.
+    server.send(ToServer::BornAgain {
+        at: None,
         female: Some(true),
-        loincloth: hearth_character::Loincloth::PlantFibre,
-    };
-    server.send(ToServer::Respawn(Some(next.clone())));
+    });
+    let born = wait(&server, 10.0, |m| match m {
+        ToClient::Born(b) => Some(b),
+        _ => None,
+    });
+    assert_eq!(born.mother.body, hearth_character::BodyType::Female);
     let who = wait(&server, 10.0, |m| match m {
         ToClient::Person(a) => Some(a),
         _ => None,
     });
     assert_eq!(who.body, hearth_character::BodyType::Female, "a daughter");
-    assert_eq!(who.name, "Ash");
-    assert_eq!(who.loincloth, next.loincloth);
-    let born = wait(&server, 10.0, |m| match m {
-        ToClient::Born(b) => Some(b),
-        _ => None,
-    });
     assert_eq!(born.you, who, "the birth shown is hers");
-    assert_eq!(born.mother.body, hearth_character::BodyType::Female);
     let placed = wait(&server, 10.0, |m| match m {
         ToClient::Placed(p) => Some(p),
         _ => None,
@@ -213,7 +208,7 @@ fn death_follows_the_world_rules() {
     let dir = std::env::temp_dir().join(format!("hearth-death-perma-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut s = spec(&dir);
-    s.death_rules = hearth_save::DeathRules::Permadeath;
+    s.death = hearth_save::Death::preset(hearth_save::DeathPreset::Permadeath);
     let server = Server::start(s.clone(), atlas(), view);
     let ready = wait(&server, 120.0, |m| match m {
         ToClient::Ready(r) => Some(r),
@@ -238,8 +233,11 @@ fn death_follows_the_world_rules() {
     });
     assert_eq!(tale.cause, hearth_body::Death::Drowning);
     assert!((tale.walked_km - 0.005).abs() < 0.002, "{}", tale.walked_km);
-    // No living on.
-    server.send(ToServer::Respawn(None));
+    // No living on: neither born again nor as another.
+    server.send(ToServer::BornAgain {
+        at: None,
+        female: None,
+    });
     let t0 = Instant::now();
     while t0.elapsed() < Duration::from_millis(500) {
         if let Some(ToClient::Placed(_)) = server.poll() {

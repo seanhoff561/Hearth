@@ -39,9 +39,6 @@ pub enum ToServer {
     /// Put the player at a place (the globe's choice, a debug move): the server finds solid
     /// ground there.
     Place(DVec3),
-    /// After death, live on as the world's rules allow: Legacy, born again in the region with
-    /// these wishes (or the last ones); Hardy, the same person again.
-    Respawn(Option<Wish>),
     /// Move a carried thing (or `count` of a stack) somewhere else carried.
     Shift {
         from: hearth_items::Path,
@@ -247,8 +244,9 @@ pub struct Ready {
     pub player: Mover,
     /// How the player looks.
     pub appearance: hearth_character::Appearance,
-    /// What death means in this world.
-    pub death_rules: hearth_save::DeathRules,
+    /// What death means in this world (Addendum B §2): whom one may live on as, what is kept of
+    /// what was known, and whether one may be born again.
+    pub death: hearth_save::Death,
     /// The kinds of things.
     pub items: Arc<hearth_items::Items>,
     /// The game data, and the processes and knowledge the client lists from it.

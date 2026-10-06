@@ -515,10 +515,9 @@ impl App {
         &mut self,
         folder: &str,
         seed: u64,
-        death_rules: hearth_save::DeathRules,
+        death: hearth_save::Death,
         knowledge: hearth_save::KnowledgeMode,
         era: &str,
-        inhabit: hearth_save::InhabitScope,
     ) {
         let Some(run) = &mut self.running else {
             return;
@@ -531,10 +530,9 @@ impl App {
                 Some(self.dirs.cache()),
                 Some(self.dirs.saves()),
                 self.profiles.wish(),
-                death_rules,
+                death,
                 knowledge,
                 era,
-                inhabit,
             ),
             &self.options,
             run.renderer.color_format(),
@@ -552,11 +550,10 @@ impl App {
                 MenuAction::Play {
                     folder,
                     seed,
-                    death_rules,
+                    death,
                     knowledge,
                     era,
-                    inhabit,
-                } => self.play(&folder, seed, death_rules, knowledge, &era, inhabit),
+                } => self.play(&folder, seed, death, knowledge, &era),
                 MenuAction::BeBorn { choice, female } => {
                     if let Some(run) = &mut self.running {
                         run.menus.close_all();
@@ -627,14 +624,7 @@ impl App {
                                 log::error!("could not archive the world: {e}");
                             }
                         }
-                        self.play(
-                            &spec.name,
-                            spec.seed,
-                            spec.death_rules,
-                            spec.knowledge,
-                            &spec.era,
-                            spec.inhabit,
-                        );
+                        self.play(&spec.name, spec.seed, spec.death, spec.knowledge, &spec.era);
                     }
                 }
                 MenuAction::BornAgain { elsewhere, female } => {
@@ -642,14 +632,6 @@ impl App {
                         run.menus.close_all();
                         if let Some(c) = &mut run.client {
                             c.born_again(elsewhere, female);
-                        }
-                    }
-                }
-                MenuAction::LiveOn(who) => {
-                    if let Some(run) = &mut self.running {
-                        run.menus.close_all();
-                        if let Some(c) = &mut run.client {
-                            c.respawn(who);
                         }
                     }
                 }
@@ -1016,10 +998,9 @@ impl ApplicationHandler for App {
             self.play(
                 &world,
                 self.seed,
-                hearth_save::DeathRules::default(),
+                hearth_save::Death::default(),
                 hearth_save::KnowledgeMode::default(),
                 crate::eras::WILD_EARTH,
-                hearth_save::InhabitScope::default(),
             );
         }
         self.apply_display_mode();

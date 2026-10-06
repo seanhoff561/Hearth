@@ -45,7 +45,7 @@ fn render(
                 profiles: &mut profiles,
                 death: Some(hearth::menus::DeathInfo {
                     words: "You froze to death.".into(),
-                    rules: hearth_save::DeathRules::Legacy,
+                    death: hearth_save::Death::default(),
                     summary: None,
                     story: vec![
                         "You lived 31 years.".into(),
@@ -148,10 +148,9 @@ fn the_screens_draw_and_answer() {
             Screen::NewWorld {
                 name: "Hearthstead".into(),
                 seed: String::new(),
-                death: 0,
+                death: hearth_save::Death::default(),
                 knowledge: 0,
                 era: 0,
-                inhabit: 0,
             },
         ),
         (

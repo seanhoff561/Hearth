@@ -158,6 +158,21 @@ pub enum NoteKind {
     Legend,
     /// The first of a kind of thing made.
     Made,
+    /// A note from a life lived before (Addendum B §2.4): readable, unlocking nothing.
+    PastLife,
+}
+
+/// What a player keeps of what their earlier lives knew when they live on as another person or
+/// are born again (Addendum B §2.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Kept {
+    /// Only what the new person knows.
+    #[default]
+    TheirsOnly,
+    /// What earlier lives knew, as legends to learn again by doing.
+    HeadStart,
+    /// What earlier lives knew, known (at a beginner's skill: skills stay the new person's).
+    Everything,
 }
 
 /// A skill: how practised a technique is.
@@ -473,25 +488,59 @@ impl KnowledgeState {
         true
     }
 
-    /// What a new person inherits under the Legacy rule (v2 §9.8): what the dead knew, as
-    /// legends to practise again, and the journal; no skills.
-    pub fn passed_on(&self, graph: &Graph, tick: u64) -> Self {
-        let mut legends: BTreeSet<String> = self.legends.clone();
-        legends.extend(self.known.keys().cloned());
-        let mut journal = self.journal.clone();
-        for id in &legends {
-            let name = graph.node(id).map_or(id.as_str(), |n| n.name.as_str());
-            journal.push(Note {
-                tick,
-                kind: NoteKind::Legend,
-                node: Some(id.clone()),
-                text: format!("They say the one before me knew {name}. I must learn it by doing."),
+    /// What the player knows as the person they now are (Addendum B §2.4): this person's own
+    /// knowledge and skills, the old journal kept as notes from a past life, and, as `kept`
+    /// says, what the player's earlier lives knew (`past`) as legends or known outright.
+    pub fn lived_on(
+        mut self,
+        old_journal: &[Note],
+        past: &BTreeSet<String>,
+        kept: Kept,
+        graph: &Graph,
+        tick: u64,
+    ) -> Self {
+        for n in old_journal.iter().filter(|n| n.kind != NoteKind::PastLife) {
+            self.journal.push(Note {
+                tick: n.tick,
+                kind: NoteKind::PastLife,
+                node: None,
+                text: n.text.clone(),
             });
         }
-        Self {
-            legends,
-            journal,
-            ..Self::default()
+        match kept {
+            Kept::TheirsOnly => {}
+            Kept::HeadStart => {
+                let new: Vec<&String> = past.iter().filter(|id| !self.knows(id)).collect();
+                for id in new {
+                    if self.legends.insert(id.clone()) {
+                        let name = graph.node(id).map_or(id.as_str(), |n| n.name.as_str());
+                        self.journal.push(Note {
+                            tick,
+                            kind: NoteKind::Legend,
+                            node: Some(id.clone()),
+                            text: format!(
+                                "I remember, as from a dream, knowing {name}. I must learn it by doing."
+                            ),
+                        });
+                    }
+                }
+            }
+            Kept::Everything => {
+                // Each node once what it rests on is known, until nothing more comes.
+                let mut events = Vec::new();
+                loop {
+                    let before = self.known.len();
+                    for i in 0..graph.nodes.len() {
+                        if past.contains(&graph.nodes[i].id) {
+                            self.learn(graph, i, None, tick, &mut events);
+                        }
+                    }
+                    if self.known.len() == before {
+                        break;
+                    }
+                }
+            }
         }
+        self
     }
 }

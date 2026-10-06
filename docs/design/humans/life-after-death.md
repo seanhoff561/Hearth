@@ -24,6 +24,10 @@ in an era's world into one of the households offered there, in Wild Earth into o
 families. Consent prompts for another player's family wait for multiplayer (R3); knowledge after
 death, following while watching and the old rules' retirement for H9.
 
+**Built in H9 (D208):** knowledge after death (theirs only, a head start, keep everything), kept
+per player through every death; being born again a setting of its own; v2's rules retired into
+the presets Authentic, Legacy, Hardy and Permadeath, with the save migration.
+
 **In short:** when your character dies, the death is real — the body stays where it fell and its
 people mourn it as their culture does — and then you choose: live on as another living person,
 be born again, restart the world, or watch.

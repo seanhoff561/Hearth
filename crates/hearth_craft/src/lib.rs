@@ -20,4 +20,4 @@ pub use engine::{
     Aimed, Bench, Crafts, FireSeen, Handy, Lack, Outcome, Plan, Recipe, Source, Surroundings,
 };
 pub use fire::{Fire, FireState, Fuel};
-pub use knowledge::{Event, Graph, KnowledgeState, Mode, Note, NoteKind, Skill};
+pub use knowledge::{Event, Graph, Kept, KnowledgeState, Mode, Note, NoteKind, Skill};

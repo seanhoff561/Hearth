@@ -61,10 +61,10 @@ pub struct WorldSpec {
     /// What the player asks of their birth in a new world (a saved world keeps its own person):
     /// their looks come from the parents the place gives them (V2.1 Addendum A).
     pub wish: hearth_protocol::Wish,
-    /// What death means in a new world (a saved world keeps its own rules).
-    pub death_rules: hearth_save::DeathRules,
-    /// Who a dead player may live on as in a new world (Addendum B §2.3).
-    pub inhabit: hearth_save::InhabitScope,
+    /// What death means in a new world: whom a dead player may live on as, what is kept of what
+    /// was known, whether one may be born again (Addendum B §2.3–2.5; a saved world keeps its
+    /// own).
+    pub death: hearth_save::Death,
     /// How knowledge is gained in a new world.
     pub knowledge: hearth_save::KnowledgeMode,
     /// Whether a new world's player lives their childhood (V2.1 Addendum A); tests and bots
@@ -111,6 +111,10 @@ struct PlayerSave {
     /// Their childhood, while it lasts (and after: grown).
     #[serde(default)]
     childhood: Option<crate::childhood::Childhood>,
+    /// What the player's lives before this one knew (Addendum B §2.4): kept per player, not per
+    /// person, through any number of deaths.
+    #[serde(default)]
+    past_lives: std::collections::BTreeSet<String>,
 }
 
 /// Handle to the server thread; it saves and stops when dropped.
@@ -184,9 +188,8 @@ fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> 
     let mut settings = WorldSettings::new(planet);
     settings.era = spec.era.clone();
     settings.life = hearth_save::LifeSettings::from_content(&lw.content.time);
-    settings.life.death_rules = spec.death_rules;
+    settings.life.set_death(spec.death);
     settings.life.knowledge_mode = spec.knowledge;
-    settings.life.inhabit = spec.inhabit;
     let meta = WorldMeta::new(&spec.name, settings, lw.reg.state_names());
     let dir = WorldDir::create(saves, &meta)?;
     log::info!("created world {:?} in {}", spec.name, dir.root.display());
@@ -445,6 +448,7 @@ fn save(
     birth: &Option<hearth_people::Birth>,
     household: &Option<hearth_people::Household>,
     childhood: &Option<crate::childhood::Childhood>,
+    past_lives: &std::collections::BTreeSet<String>,
     world_items: &hearth_items::WorldItems,
     workshop: &Workshop,
     lw: &LocalWorld,
@@ -465,6 +469,7 @@ fn save(
         birth: birth.clone(),
         household: household.clone(),
         childhood: childhood.clone(),
+        past_lives: past_lives.clone(),
     };
     if let Err(e) = s
         .dir
@@ -509,9 +514,8 @@ fn run(
         Some(s) => (s.meta.settings.life.clone(), s.meta.clock.ticks),
         None => {
             let mut life = hearth_save::LifeSettings::from_content(&content.time);
-            life.death_rules = spec.death_rules;
+            life.set_death(spec.death);
             life.knowledge_mode = spec.knowledge;
-            life.inhabit = spec.inhabit;
             (life, 0)
         }
     };
@@ -569,25 +573,34 @@ fn run(
     // Who the player is: the child of two parents of the place they begin (V2.1 Addendum A,
     // D173), looking as their genes make them; a save from before genes draws its birth now.
     let genetics = hearth_people::Genetics::from_content(&content);
-    let (mut player, mut appearance, mut birth, mut household, mut childhood, new_life) =
-        match saved {
-            Some(p) => (
-                p.player,
-                p.appearance.sanitized(),
-                p.birth,
-                p.household,
-                p.childhood,
-                false,
-            ),
-            None => (
-                Player::new(&cfg, first_spawn, seed ^ 0x5eed),
-                crate::born::unborn(&spec.wish),
-                None,
-                None,
-                None,
-                true,
-            ),
-        };
+    let (
+        mut player,
+        mut appearance,
+        mut birth,
+        mut household,
+        mut childhood,
+        mut past_lives,
+        new_life,
+    ) = match saved {
+        Some(p) => (
+            p.player,
+            p.appearance.sanitized(),
+            p.birth,
+            p.household,
+            p.childhood,
+            p.past_lives,
+            false,
+        ),
+        None => (
+            Player::new(&cfg, first_spawn, seed ^ 0x5eed),
+            crate::born::unborn(&spec.wish),
+            None,
+            None,
+            None,
+            Default::default(),
+            true,
+        ),
+    };
     // A new life begins at birth, in a family of the place, and its childhood is lived (V2.1
     // Addendum A) — or, for tests and bots, at its people's coming of age.
     let life_begins = if spec.childhood {
@@ -666,9 +679,15 @@ fn run(
     let mut items_changed = true;
     // Blocks changed by the player since the last tick.
     let mut gathered: Vec<BlockPos> = Vec::new();
-    let death_rules = save_state
-        .as_ref()
-        .map_or(spec.death_rules, |s| s.meta.settings.life.death_rules);
+    // What is kept after death, whether one may be born again, and whether a death ends the
+    // world (the Permadeath preset: no one to live on as, no being born again).
+    let kept = match life.after_death {
+        hearth_save::AfterDeath::TheirsOnly => hearth_craft::Kept::TheirsOnly,
+        hearth_save::AfterDeath::HeadStart => hearth_craft::Kept::HeadStart,
+        hearth_save::AfterDeath::KeepEverything => hearth_craft::Kept::Everything,
+    };
+    let born_again = life.born_again;
+    let permadeath = life.death().ends_the_world();
     let ended = save_state.as_ref().and_then(|s| {
         s.meta
             .ended
@@ -676,14 +695,9 @@ fn run(
             .flatten()
     });
     let mut death_told = player.body.dead.is_some();
-    // Where the player last died, and who the world lets them live on as (Addendum B §2.3;
-    // permadeath: no one).
+    // Where the player last died, and who the world lets them live on as (Addendum B §2.3).
     let mut died_at: Option<DVec3> = player.body.dead.is_some().then_some(player.mover.pos);
-    let inhabit_scope = if death_rules == hearth_save::DeathRules::Permadeath {
-        hearth_save::InhabitScope::None
-    } else {
-        life.inhabit
-    };
+    let inhabit_scope = life.inhabit;
     // Making and knowing: how knowledge is gained here, the stations and fires standing.
     let mode = match life.knowledge_mode {
         hearth_save::KnowledgeMode::Discovery => hearth_craft::Mode::Discovery,
@@ -789,7 +803,7 @@ fn run(
             ticks,
             player: player.mover,
             appearance: appearance.clone(),
-            death_rules,
+            death: life.death(),
             items: items.clone(),
             content: content.clone(),
             crafts: workshop.crafts.clone(),
@@ -1037,86 +1051,6 @@ fn run(
                     player.mover = Mover::new(ground_at(&lw, x, z));
                     let _ = tx.send(ToClient::Placed(player.mover));
                 }
-                Ok(ToServer::Respawn(who)) => {
-                    let mut reborn = false;
-                    if player.body.dead.is_some() {
-                        // v2 §9.8 as Addendum A has it (until Addendum B's choice, H3). Legacy:
-                        // born again in the same region; Hardy: the same person again where the
-                        // world began; permadeath: the end.
-                        let at = match death_rules {
-                            hearth_save::DeathRules::Legacy => {
-                                let at = player.mover.pos;
-                                let (x, z) = lw
-                                    .terrain()
-                                    .spawn_near(at.x.floor() as i32, at.z.floor() as i32);
-                                // Born again in the region, of two parents of its pool, with
-                                // the wishes asked (or the last ones).
-                                let wish = who.unwrap_or_else(|| hearth_protocol::Wish {
-                                    name: appearance.name.clone(),
-                                    female: None,
-                                    loincloth: appearance.loincloth,
-                                });
-                                if let Some(g) = &genetics {
-                                    let latitude = planet.latitude_deg(z as f64);
-                                    let next =
-                                        crate::born::draw(g, latitude, wish.female, seed ^ ticks);
-                                    if let Some(b) = &next {
-                                        appearance = crate::born::player(
-                                            &content,
-                                            b,
-                                            &wish.name,
-                                            wish.loincloth,
-                                            crate::born::GROWN_YEARS,
-                                        );
-                                        birth = next;
-                                        reborn = true;
-                                    }
-                                } else {
-                                    appearance = crate::born::unborn(&wish);
-                                }
-                                Some(ground_at(&lw, x, z))
-                            }
-                            hearth_save::DeathRules::Hardy => Some(first_spawn),
-                            hearth_save::DeathRules::Permadeath => None,
-                        };
-                        if let Some(at) = at {
-                            // The one who died lies where they fell, theirs no more; the new
-                            // life is grown, without the old one's family.
-                            people.live.release_player(0);
-                            household = None;
-                            childhood = None;
-                            cfg = grown_cfg.clone();
-                            let fell = player.mover.pos;
-                            let left = std::mem::take(&mut player.carry);
-                            for (k, stack) in left.into_stacks().into_iter().enumerate() {
-                                let a = k as f64 * 2.4;
-                                let spot = fell + DVec3::new(a.cos() * 0.6, 0.5, a.sin() * 0.6);
-                                world_items.add(stack, rest_on(&lw, spot).to_array(), a as f32);
-                            }
-                            items_changed = true;
-                            let knew = std::mem::take(&mut player.knowledge);
-                            workshop.stop(&mut here!());
-                            player = Player::new(&cfg, at, seed ^ ticks);
-                            player.knowledge = match death_rules {
-                                hearth_save::DeathRules::Hardy => knew,
-                                _ => knew.passed_on(&workshop.graph, ticks),
-                            };
-                            workshop.knowledge_changed = true;
-                            player.life = hearth_player::Life::begin(at, ticks);
-                            player.carry = outfit(&appearance);
-                            worn = dress_carry(&player.carry);
-                            death_told = false;
-                            let _ = tx.send(ToClient::Person(appearance.clone()));
-                            if reborn && let Some(b) = &birth {
-                                let latitude = planet.latitude_deg(at.z);
-                                let shown =
-                                    crate::born::shown(&content, b, &appearance, latitude, None);
-                                let _ = tx.send(ToClient::Born(Box::new(shown)));
-                            }
-                            let _ = tx.send(ToClient::Placed(player.mover));
-                        }
-                    }
-                }
                 Ok(ToServer::PickUp(id)) => {
                     let near = world_items
                         .get(id)
@@ -1345,7 +1279,14 @@ fn run(
                         moments = crate::childhood::curriculum(&content, &player_species);
                         cfg = grown_cfg.clone();
                         player.body = q.body.clone();
-                        player.knowledge = q.knowledge.clone();
+                        let knew = std::mem::take(&mut player.knowledge);
+                        player.knowledge = q.knowledge.clone().lived_on(
+                            &knew.journal,
+                            &past_lives,
+                            kept,
+                            &workshop.graph,
+                            ticks,
+                        );
                         workshop.knowledge_changed = true;
                         player.carry = q.possessions.carry.clone();
                         if player.carry.worn.is_empty() {
@@ -1419,9 +1360,7 @@ fn run(
                     // into one of its households — offered to choose from in an era's world, one
                     // of Wild Earth's families there — the childhood lived from birth. Never
                     // under permadeath.
-                    if player.body.dead.is_some()
-                        && death_rules != hearth_save::DeathRules::Permadeath
-                    {
+                    if player.body.dead.is_some() && born_again {
                         let here = at.unwrap_or_else(|| died_at.unwrap_or(player.mover.pos));
                         let (x, z) = lw
                             .terrain()
@@ -1441,7 +1380,13 @@ fn run(
                         workshop.stop(&mut here!());
                         cfg = grown_cfg.clone();
                         player = Player::new(&cfg, place, seed ^ ticks);
-                        player.knowledge = knew.passed_on(&workshop.graph, ticks);
+                        player.knowledge = hearth_craft::KnowledgeState::default().lived_on(
+                            &knew.journal,
+                            &past_lives,
+                            kept,
+                            &workshop.graph,
+                            ticks,
+                        );
                         workshop.knowledge_changed = true;
                         player.life = hearth_player::Life::begin(place, ticks);
                         household = None;
@@ -1642,6 +1587,7 @@ fn run(
                         &birth,
                         &household,
                         &childhood,
+                        &past_lives,
                         &world_items,
                         &workshop,
                         &lw,
@@ -1659,6 +1605,7 @@ fn run(
                         &birth,
                         &household,
                         &childhood,
+                        &past_lives,
                         &world_items,
                         &workshop,
                         &lw,
@@ -2216,6 +2163,8 @@ fn run(
                 people
                     .live
                     .player_died(0, format!("{cause:?}"), calendar.days(ticks));
+                // What this life knew joins what the player's lives have known (Addendum B §2.4).
+                past_lives.extend(player.knowledge.known.keys().cloned());
                 let known: Vec<String> = player
                     .knowledge
                     .known
@@ -2232,7 +2181,7 @@ fn run(
                     scope: inhabit_scope,
                 });
                 let _ = tx.send(ToClient::Story(Box::new(story)));
-                if death_rules == hearth_save::DeathRules::Permadeath {
+                if permadeath {
                     let summary = LifeSummary {
                         name: appearance.name.clone(),
                         days: ticks.saturating_sub(player.life.born_tick) as f64
@@ -2260,6 +2209,7 @@ fn run(
                         &birth,
                         &household,
                         &childhood,
+                        &past_lives,
                         &world_items,
                         &workshop,
                         &lw,
@@ -2429,6 +2379,7 @@ fn run(
                     &birth,
                     &household,
                     &childhood,
+                    &past_lives,
                     &world_items,
                     &workshop,
                     &lw,
@@ -2485,6 +2436,7 @@ fn run(
                     &birth,
                     &household,
                     &childhood,
+                    &past_lives,
                     &world_items,
                     &workshop,
                     &lw,
@@ -2503,6 +2455,7 @@ fn run(
                     &birth,
                     &household,
                     &childhood,
+                    &past_lives,
                     &world_items,
                     &workshop,
                     &lw,
@@ -2560,6 +2513,7 @@ fn run(
                     &birth,
                     &household,
                     &childhood,
+                    &past_lives,
                     &world_items,
                     &workshop,
                     &lw,

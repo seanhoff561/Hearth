@@ -135,8 +135,7 @@ impl World {
                 female: Some(false),
                 ..Default::default()
             },
-            death_rules: hearth_save::DeathRules::default(),
-            inhabit: hearth_save::InhabitScope::default(),
+            death: hearth_save::Death::default(),
             knowledge,
             childhood,
             era: era.to_owned(),

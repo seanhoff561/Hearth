@@ -35,14 +35,89 @@ pub enum HomininRange {
     SingleCradleRegion,
 }
 
-/// What happens when the character dies (v2 §9.8).
+/// What a player keeps of what they knew when they live on as another or are born again
+/// (Addendum B §2.4, the world setting "Knowledge after death").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DeathRules {
+pub enum AfterDeath {
+    /// Exactly what the new person knows; the old journal readable as notes from a past life.
     #[default]
+    TheirsOnly,
+    /// What earlier lives discovered comes back quickly: legends, learned again by doing.
+    HeadStart,
+    /// What earlier lives discovered is known, at a beginner's skill.
+    KeepEverything,
+}
+
+/// The ways of death as one choice (Addendum B §2.5, D167): v2's three rules, retired in H9, live
+/// on as presets of the settings that replaced them, beside the default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeathPreset {
+    /// Anyone may be lived on as, knowing only what they know; being born again allowed.
+    Authentic,
+    /// v2's Legacy: as Authentic, with a head start on what earlier lives discovered.
     Legacy,
-    Permadeath,
+    /// v2's Hardy: what earlier lives discovered is kept.
     Hardy,
+    /// No one may be lived on as and no one born again: one may watch, begin again, or end.
+    Permadeath,
+}
+
+impl DeathPreset {
+    pub const ALL: [Self; 4] = [Self::Authentic, Self::Legacy, Self::Hardy, Self::Permadeath];
+
+    /// The settings the preset stands for: inhabiting's scope, what is kept, being born again.
+    pub fn settings(self) -> (InhabitScope, AfterDeath, bool) {
+        match self {
+            Self::Authentic => (InhabitScope::Anyone, AfterDeath::TheirsOnly, true),
+            Self::Legacy => (InhabitScope::Anyone, AfterDeath::HeadStart, true),
+            Self::Hardy => (InhabitScope::Anyone, AfterDeath::KeepEverything, true),
+            Self::Permadeath => (InhabitScope::None, AfterDeath::TheirsOnly, false),
+        }
+    }
+
+    /// The preset these settings are, if any.
+    pub fn of(inhabit: InhabitScope, after: AfterDeath, born_again: bool) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|p| p.settings() == (inhabit, after, born_again))
+    }
+}
+
+/// What death means in a world (Addendum B §2.3–2.5): whom one may live on as, what is kept of
+/// what was known, whether one may be born again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Death {
+    pub inhabit: InhabitScope,
+    pub after: AfterDeath,
+    pub born_again: bool,
+}
+
+impl Default for Death {
+    fn default() -> Self {
+        Self::preset(DeathPreset::Authentic)
+    }
+}
+
+impl Death {
+    pub fn preset(p: DeathPreset) -> Self {
+        let (inhabit, after, born_again) = p.settings();
+        Self {
+            inhabit,
+            after,
+            born_again,
+        }
+    }
+
+    /// The preset these settings are, if any.
+    pub fn is(&self) -> Option<DeathPreset> {
+        DeathPreset::of(self.inhabit, self.after, self.born_again)
+    }
+
+    /// Death ends the world: no one to live on as, no being born again.
+    pub fn ends_the_world(&self) -> bool {
+        !self.born_again && self.inhabit == InhabitScope::None
+    }
 }
 
 /// Who a player may live on as after their death (Addendum B §2.3): the world's (and server's)
@@ -94,8 +169,12 @@ pub struct LifeSettings {
     pub knowledge_mode: KnowledgeMode,
     #[serde(default)]
     pub hominin_range: HomininRange,
+    /// What is kept of what was known after death (Addendum B §2.4).
     #[serde(default)]
-    pub death_rules: DeathRules,
+    pub after_death: AfterDeath,
+    /// Whether a dead player may be born again (Permadeath: not).
+    #[serde(default = "yes")]
+    pub born_again: bool,
     /// Reveal the whole map instead of only what the character has seen.
     #[serde(default)]
     pub full_map_knowledge: bool,
@@ -112,6 +191,10 @@ fn one() -> u8 {
     1
 }
 
+fn yes() -> bool {
+    true
+}
+
 impl Default for LifeSettings {
     fn default() -> Self {
         Self {
@@ -123,7 +206,8 @@ impl Default for LifeSettings {
             predator_behavior: PredatorBehavior::default(),
             knowledge_mode: KnowledgeMode::default(),
             hominin_range: HomininRange::default(),
-            death_rules: DeathRules::default(),
+            after_death: AfterDeath::default(),
+            born_again: true,
             full_map_knowledge: false,
             inhabit: InhabitScope::default(),
             players: 1,
@@ -132,6 +216,21 @@ impl Default for LifeSettings {
 }
 
 impl LifeSettings {
+    /// What death means in this world.
+    pub fn death(&self) -> Death {
+        Death {
+            inhabit: self.inhabit,
+            after: self.after_death,
+            born_again: self.born_again,
+        }
+    }
+
+    pub fn set_death(&mut self, d: Death) {
+        self.inhabit = d.inhabit;
+        self.after_death = d.after;
+        self.born_again = d.born_again;
+    }
+
     /// Defaults taken from the content's `time.ron`.
     pub fn from_content(time: &hearth_content::schema::config::TimeConfig) -> Self {
         Self {

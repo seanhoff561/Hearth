@@ -235,7 +235,7 @@ pub struct Client {
     pub body_panel: bool,
     body_cfg: Option<Arc<hearth_body::BodyConfig>>,
     /// What death means in this world, and the life's tale if it has ended.
-    pub death_rules: hearth_save::DeathRules,
+    pub death: hearth_save::Death,
     pub ended: Option<hearth_protocol::LifeSummary>,
     /// The kinds of things, and what the player carries (as the server last said).
     pub items: Option<Arc<hearth_items::Items>>,
@@ -432,7 +432,7 @@ impl Client {
             guided_hud: options.accessibility.guided_hud,
             body_panel: false,
             body_cfg: None,
-            death_rules: hearth_save::DeathRules::default(),
+            death: hearth_save::Death::default(),
             ended: None,
             items: None,
             carry: hearth_items::Carry::default(),
@@ -1665,7 +1665,7 @@ impl Client {
         });
         Some(crate::menus::DeathInfo {
             words: death_words(l, death),
-            rules: self.death_rules,
+            death: self.death,
             summary,
             story: self
                 .story
@@ -2020,10 +2020,9 @@ impl Client {
         cache_dir: Option<std::path::PathBuf>,
         saves_dir: Option<std::path::PathBuf>,
         wish: hearth_protocol::Wish,
-        death_rules: hearth_save::DeathRules,
+        death: hearth_save::Death,
         knowledge: hearth_save::KnowledgeMode,
         era: &str,
-        inhabit: hearth_save::InhabitScope,
     ) -> WorldSpec {
         WorldSpec {
             name: name.to_owned(),
@@ -2032,8 +2031,7 @@ impl Client {
             cache_dir,
             saves_dir,
             wish,
-            death_rules,
-            inhabit,
+            death,
             knowledge,
             childhood: true,
             era: era.to_owned(),
@@ -2091,14 +2089,6 @@ impl Client {
     /// The world as it was asked for.
     pub fn world_spec(&self) -> &WorldSpec {
         &self.world_spec
-    }
-
-    /// Asks to live on as a new person (after death).
-    /// After death: live on as the world's rules allow (as `who`, under Legacy).
-    pub fn respawn(&mut self, wish: Option<hearth_protocol::Wish>) {
-        if self.dead() {
-            self.server.send(ToServer::Respawn(wish));
-        }
     }
 
     pub fn dead(&self) -> bool {
@@ -2422,7 +2412,7 @@ impl Client {
                     self.camera.pos = self.mover.eye();
                     self.figure = Some(Figure::new(r.appearance));
                     self.body_cfg = Some(r.body);
-                    self.death_rules = r.death_rules;
+                    self.death = r.death;
                     self.ended = r.ended;
                     self.base_items = Some(r.items.clone());
                     self.items = Some(r.items);

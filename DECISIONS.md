@@ -2552,3 +2552,17 @@ metres a second, with neither the lee of the camp's brush nor anyone against the
 fell two degrees an hour. The camp's lee (D202) is now everyone's who keeps still within three
 metres of its fire, asleep or awake — they know the windbreak — and a child is held against its
 kin there by day as by night, and wherever it is carried.
+
+## D208 — v2's death rules retired into the settings of Addendum B (H9)
+A world's death is now three settings, each chosen at Create World: whom a dead player may live
+on as (the scope, D200), **knowledge after death** — *theirs only* (the new person's knowledge;
+the old journal kept as notes from a past life, unlocking nothing), *a head start* (what the
+player's earlier lives knew comes back as legends, learned again by doing) or *keep everything*
+(known again; skills always the new person's) — and whether one may **be born again**. What
+every past life knew is kept per player in `player.json`, through any number of deaths. The
+four presets: **Authentic** (anyone, theirs only, born again: the default, as the Addendum has
+it), **Legacy** (a head start), **Hardy** (keep everything), **Permadeath** (no one, no being
+born again: a death ends the world with its tale). v2's "live again" — the same person back at
+the world's first spawn — and the grown rebirth went with the rules: a life goes on as another
+person or as a baby. Saves of format 3 migrate to 4: Legacy to its preset, Hardy to its,
+Permadeath to its.
