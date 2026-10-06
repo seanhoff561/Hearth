@@ -330,11 +330,11 @@ fn the_players_children_live_as_others_do() {
         if q.id == her || Some(q.id) == was {
             q.social.bond = None;
         }
-        if q.id == her {
-            if let Some(t) = q.social.ties.iter_mut().find(|t| t.who == me) {
-                t.affection = 0.9;
-                t.trust = 0.9;
-            }
+        if q.id == her
+            && let Some(t) = q.social.ties.iter_mut().find(|t| t.who == me)
+        {
+            t.affection = 0.9;
+            t.trust = 0.9;
         }
     }
     let mine = KnowledgeState::default();
