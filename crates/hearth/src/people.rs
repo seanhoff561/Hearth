@@ -1345,8 +1345,14 @@ pub struct LifeFacts<'a> {
 
 /// Who another is to a person, in words ("your sister", "a man of your band"), and how near:
 /// a partner first, then children, brothers and sisters, parents, the band, others.
-fn kin_words(of: &hearth_people::Person, q: &hearth_people::Person) -> (u8, String) {
+fn kin_words(of: &hearth_people::Person, q: &hearth_people::Person, child: bool) -> (u8, String) {
     let sex = |f: bool, a: &str, b: &str| if f { a.to_owned() } else { b.to_owned() };
+    // One not grown: a girl or a boy, not a woman or a man.
+    let (woman, man) = if child {
+        ("a girl", "a boy")
+    } else {
+        ("a woman", "a man")
+    };
     if of.social.bond == Some(q.id) || q.social.bond == Some(of.id) {
         (0, "your partner".into())
     } else if q.life.mother == Some(of.id) || q.life.father == Some(of.id) {
@@ -1360,15 +1366,19 @@ fn kin_words(of: &hearth_people::Person, q: &hearth_people::Person) -> (u8, Stri
     } else if q.social.band == of.social.band {
         (
             4,
-            sex(q.life.female, "a woman of your band", "a man of your band"),
+            sex(
+                q.life.female,
+                &format!("{woman} of your band"),
+                &format!("{man} of your band"),
+            ),
         )
     } else {
         (
             5,
             sex(
                 q.life.female,
-                "a woman of another family",
-                "a man of another family",
+                &format!("{woman} of another family"),
+                &format!("{man} of another family"),
             ),
         )
     }
@@ -1409,7 +1419,7 @@ impl PeopleNear {
                 parent(p.life.father, "Your father")
             ));
             if let Some(b) = p.social.bond.and_then(|b| self.live.get(b)) {
-                let (_, words) = kin_words(p, b);
+                let (_, words) = kin_words(p, b, false);
                 lines.push(format!("You lived with {words}."));
             }
             let children: Vec<&hearth_people::Person> = self
@@ -1526,7 +1536,7 @@ impl PeopleNear {
                     .map_or(18.0, |sp| sp.life.maturity_years as f64);
                 let age = q.age(now);
                 let child = age < maturity;
-                let (rank, who) = kin_words(dead, q);
+                let (rank, who) = kin_words(dead, q, child);
                 let years = age.floor() as u32;
                 let words = if family || group {
                     format!("{who}, {years} years")
@@ -1607,7 +1617,7 @@ impl PeopleNear {
             .persons
             .iter()
             .filter(|q| q.alive() && q.id != p.id)
-            .map(|q| (q, kin_words(p, q)))
+            .map(|q| (q, kin_words(p, q, false)))
             .filter(|(_, (rank, _))| *rank <= 3)
             .map(|(q, (rank, words))| (rank, format!("{words}, {:.0}", q.age(&now).floor())))
             .collect();

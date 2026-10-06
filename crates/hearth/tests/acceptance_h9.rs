@@ -83,7 +83,7 @@ fn go_to_band_of(w: &mut World, id: u64) {
     }
 }
 
-/// Whether a person is living and sixteen or more, by the inspector's record of its life.
+/// Whether a person is living and eighteen or more, by the inspector's record of its life.
 fn grown_up(w: &mut World, id: u64) -> bool {
     w.inspected = None;
     w.server.send(ToServer::Inspect(Some(id)));
@@ -104,7 +104,8 @@ fn grown_up(w: &mut World, id: u64) -> bool {
         .and_then(|b| b.split(';').next())
         .and_then(|b| b.trim().parse::<f64>().ok());
     let today = w.ticks as f64 / w.ticks_per_day;
-    !life.contains("died day") && born.is_some_and(|b| (today - b) / 32.0 >= 16.0)
+    // Grown as the death screen has it: at our kind's maturity, eighteen.
+    !life.contains("died day") && born.is_some_and(|b| (today - b) / 32.0 >= 18.0)
 }
 
 /// The children a woman bore, by the inspector's record of her life.
@@ -264,7 +265,7 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         "{lines:?}"
     );
 
-    // 3. The years pass: their children, until one of them is grown (sixteen; many die young,
+    // 3. The years pass: their children, until one of them is grown (eighteen; many die young,
     // as foragers' children do).
     let mut children: Vec<u64> = Vec::new();
     let mut grown = None;
