@@ -129,9 +129,15 @@ fn the_observers_fast_forward_meets_its_budget() {
         .send(ToServer::TimeWarp(year_ticks * 0.5 / 0.05));
     // Settle in a year, then measure ten.
     w.run(year_ticks as u64);
+    // Ten years (OBSERVER_YEARS, for profiling it longer).
+    let span: f64 = std::env::var("OBSERVER_YEARS")
+        .ok()
+        .and_then(|y| y.parse().ok())
+        .unwrap_or(10.0);
+    println!("measuring {span} years");
     let t0 = std::time::Instant::now();
     let from = w.ticks;
-    w.run((year_ticks * 10.0) as u64);
+    w.run((year_ticks * span) as u64);
     let years = (w.ticks - from) as f64 / year_ticks;
     let per_s = years / t0.elapsed().as_secs_f64();
     println!(

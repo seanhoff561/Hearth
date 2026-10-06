@@ -253,6 +253,9 @@ struct Saved {
     regions: Vec<Region>,
 }
 
+/// A catch-up this long (years) is stepped a season at a time (D210).
+const FAST_YEARS: f64 = 0.25;
+
 impl Fauna {
     /// The world's animals: as saved in `dir`, or new; the hominins in Africa alone when
     /// `cradle` (the Hominin range setting); of the peoples, only the era's (H8) — those of
@@ -489,10 +492,16 @@ impl Fauna {
                     self.making.push((key, rx));
                 }
             }
-            // The populations to the calendar every few days, in steps of at most 1/32 year.
+            // The populations to the calendar every few days, in steps of at most 1/32 year — a
+            // season at a time when years pass at a stroke (the Observer's fast-forward, H9).
             if years - self.years >= 1.0 / 128.0 {
                 let t0 = std::time::Instant::now();
-                self.eco.advance(years, 1.0 / 32.0);
+                let step = if years - self.years > FAST_YEARS {
+                    1.0 / 4.0
+                } else {
+                    1.0 / 32.0
+                };
+                self.eco.advance(years, step);
                 // A long catch-up (years skipped) told of, for the profiler.
                 if t0.elapsed().as_secs_f64() > 1.0 {
                     log::info!(

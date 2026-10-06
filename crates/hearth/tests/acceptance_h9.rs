@@ -47,6 +47,9 @@ fn children_of(w: &mut World, mother: u64) -> Vec<u64> {
         return Vec::new();
     };
     w.server.send(ToServer::Inspect(None));
+    for s in r.sections.iter().filter(|s| s.name == "Life" || s.name == "Social") {
+        println!("  {}: {}", s.name, s.lines.join("; "));
+    }
     r.sections
         .iter()
         .filter(|s| s.name == "Life")
@@ -150,6 +153,7 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         .find(|(id, lines)| {
             // Not kin ("…, your sister"); of the band ("…, of your band").
             lines[0].ends_with("of your band")
+                && lines.iter().any(|l| l == "Young." || l == "In the prime of life.")
                 && !lines.iter().any(|l| l.contains("Paired"))
                 && w.people.iter().any(|v| v.id == *id && v.female)
         })

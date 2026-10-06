@@ -574,6 +574,17 @@ impl People {
             first = format!("{first}, a stranger");
         }
         lines.push(first);
+        // Their age, as it is plain to see.
+        if grown == Stage::Adult {
+            let age = q.age(now);
+            let looks = match age {
+                a if a < 25.0 => "Young.",
+                a if a < 45.0 => "In the prime of life.",
+                a if a < 60.0 => "Getting on in years.",
+                _ => "Old.",
+            };
+            lines.push(looks.to_owned());
+        }
         if q.social.bond == Some(me.id) {
             lines.push("Your partner.".to_owned());
         } else if q.social.bond.is_some() && grown == Stage::Adult {
