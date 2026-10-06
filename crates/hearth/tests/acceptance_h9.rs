@@ -21,6 +21,7 @@ fn regard(w: &mut World, id: u64) -> Vec<String> {
 
 /// Goes beside a person and says or does something to them; the answer.
 fn ask(w: &mut World, id: u64, what: Ask) -> (bool, String) {
+    go_to_band_of(w, id);
     if let Some(v) = w.people.iter().find(|v| v.id == id) {
         let at = v.pos;
         w.go(at.x + 1.2, at.z);
@@ -35,6 +36,29 @@ fn ask(w: &mut World, id: u64, what: Ask) -> (bool, String) {
     w.acted
         .get(n)
         .map_or((false, String::new()), |a| (a.1, a.2.clone()))
+}
+
+/// Goes to where a person's band has its camp (the inspector's record of them), until they are
+/// in sight.
+fn go_to_band_of(w: &mut World, id: u64) {
+    if w.people.iter().any(|v| v.id == id) {
+        return;
+    }
+    w.inspected = None;
+    w.server.send(ToServer::Inspect(Some(id)));
+    w.run(40);
+    w.until(10.0, |w| w.inspected.as_ref().is_some_and(|r| r.id == id));
+    w.server.send(ToServer::Inspect(None));
+    let camp = w.inspected.as_ref().and_then(|r| {
+        let social = r.sections.iter().find(|s| s.name == "Social")?;
+        let at = social.lines.iter().find_map(|l| l.split("camp at ").nth(1))?;
+        let mut xz = at.split(|c| c == ',' || c == ';').map(|n| n.trim().parse::<f64>());
+        Some((xz.next()?.ok()?, xz.next()?.ok()?))
+    });
+    if let Some((x, z)) = camp {
+        w.go(x, z);
+        w.until(60.0, |w| w.people.iter().any(|v| v.id == id));
+    }
 }
 
 /// The children a woman bore, by the inspector's record of her life.
@@ -167,26 +191,7 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         w.server.send(ToServer::SkipHours(32.0 * 24.0));
         w.run(40);
         // Back among the band, wherever its camp is now.
-        let at = w
-            .people
-            .iter()
-            .find(|v| v.id == woman)
-            .map(|v| v.pos)
-            .or_else(|| {
-                w.people
-                    .iter()
-                    .filter(|v| !v.dead)
-                    .map(|v| v.pos)
-                    .min_by(|a, b| {
-                        (*a - w.mover.pos)
-                            .length()
-                            .total_cmp(&(*b - w.mover.pos).length())
-                    })
-            });
-        if let Some(at) = at {
-            w.go(at.x, at.z);
-            w.run(200);
-        }
+        go_to_band_of(&mut w, woman);
         court(&mut w, 4);
         if year >= 4 {
             let (yes, words) = ask(&mut w, woman, Ask::Pair);
