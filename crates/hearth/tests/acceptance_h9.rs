@@ -83,6 +83,30 @@ fn go_to_band_of(w: &mut World, id: u64) {
     }
 }
 
+/// Whether a person is living and sixteen or more, by the inspector's record of its life.
+fn grown_up(w: &mut World, id: u64) -> bool {
+    w.inspected = None;
+    w.server.send(ToServer::Inspect(Some(id)));
+    w.run(40);
+    w.until(10.0, |w| w.inspected.as_ref().is_some_and(|r| r.id == id));
+    w.server.send(ToServer::Inspect(None));
+    let Some(life) = w.inspected.as_ref().and_then(|r| {
+        r.sections
+            .iter()
+            .find(|s| s.name == "Life")
+            .map(|s| s.lines.join("; "))
+    }) else {
+        return false;
+    };
+    let born = life
+        .split("born day ")
+        .nth(1)
+        .and_then(|b| b.split(';').next())
+        .and_then(|b| b.trim().parse::<f64>().ok());
+    let today = w.ticks as f64 / w.ticks_per_day;
+    !life.contains("died day") && born.is_some_and(|b| (today - b) / 32.0 >= 16.0)
+}
+
 /// The children a woman bore, by the inspector's record of her life.
 fn children_of(w: &mut World, mother: u64) -> Vec<u64> {
     w.inspected = None;
@@ -233,24 +257,26 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         "{lines:?}"
     );
 
-    // 3. The years pass: their children.
-    let mut children = Vec::new();
-    for _ in 0..8 {
+    // 3. The years pass: their children, until one of them is grown (sixteen; many die young,
+    // as foragers' children do).
+    let mut children: Vec<u64> = Vec::new();
+    let mut grown = None;
+    for year in 1..=35 {
         w.server.send(ToServer::SkipHours(32.0 * 24.0));
         w.run(40);
-        children = children_of(&mut w, woman);
-        if !children.is_empty() {
+        for c in children_of(&mut w, woman) {
+            if !children.contains(&c) {
+                children.push(c);
+            }
+        }
+        grown = children.iter().copied().find(|&c| grown_up(&mut w, c));
+        println!("year {year}: their children {children:?}, grown {grown:?}");
+        if grown.is_some() {
             break;
         }
     }
-    println!("their children: {children:?}");
-    assert!(!children.is_empty(), "a child of theirs in eight years");
-    // Twenty years more: the children grow up.
-    for _ in 0..20 {
-        w.server.send(ToServer::SkipHours(32.0 * 24.0));
-        w.run(40);
-    }
-    children = children_of(&mut w, woman);
+    assert!(!children.is_empty(), "children of theirs");
+    let grown = grown.expect("a child of theirs grown");
 
     // 4. The player dies, and goes on as their grown child.
     w.server.send(ToServer::Moved(Moved {
@@ -278,7 +304,7 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
     let heir = story
         .others
         .iter()
-        .find(|o| children.contains(&o.id) && !o.child)
+        .find(|o| o.id == grown && !o.child)
         .cloned()
         .unwrap_or_else(|| panic!("a grown child to live on as: {:?}", story.others));
     println!("lives on as {}", heir.words);
