@@ -190,8 +190,8 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         }
     }
     println!("those the player might court: {girls:?}");
-    // Young women first, then girls: three of them courted, a few kind words each season, as
-    // one living in the band would — ties left untended fade back.
+    // Young women first, then girls: three of them courted, kind words often each season, as one
+    // living in the band would — ties left untended fade back a fifth a season.
     girls.sort_by_key(|g| !g.2);
     let courted: Vec<u64> = girls.iter().take(3).map(|g| g.0).collect();
     assert!(!courted.is_empty(), "a girl or young woman of the band, not kin");
@@ -210,7 +210,7 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         w.server.send(ToServer::SkipHours(8.0 * 24.0));
         w.run(40);
         for &g in &courted {
-            court(&mut w, g, 2);
+            court(&mut w, g, 8);
         }
         // Asked each season: "too young yet", "not yet willing" — the player's intent known,
         // the girl it courts waits for it — until the player is of an age (twenty) and she
