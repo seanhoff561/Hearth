@@ -43,10 +43,7 @@ fn the_player_speaks_with_its_people_then_watches_the_world_and_steps_back_in() 
         ask: Ask::Greet,
     });
     w.run(5);
-    assert!(
-        w.until(10.0, |w| w.acted.len() > n),
-        "a greeting answered"
-    );
+    assert!(w.until(10.0, |w| w.acted.len() > n), "a greeting answered");
     println!("answered: {:?}", w.acted[n..].to_vec());
 
     // Watching, two hundred metres off: the player put aside.
@@ -82,7 +79,10 @@ fn the_player_speaks_with_its_people_then_watches_the_world_and_steps_back_in() 
     // The chronicle (Wild Earth has no deep time: the living world's only).
     w.server.send(ToServer::Chronicle);
     w.run(5);
-    assert!(w.until(10.0, |w| w.chronicle.is_some()), "the chronicle told");
+    assert!(
+        w.until(10.0, |w| w.chronicle.is_some()),
+        "the chronicle told"
+    );
     // Faster: a day and a half of the world, its ticks taken some hundred and fifty at a step.
     let day0 = w.ticks;
     w.server
@@ -111,6 +111,7 @@ fn the_player_speaks_with_its_people_then_watches_the_world_and_steps_back_in() 
 #[test]
 #[ignore]
 fn the_observers_fast_forward_meets_its_budget() {
+    let _ = env_logger::builder().is_test(true).try_init();
     let dir = temp("observer-fast");
     let mut w = World::start_in(
         &dir,
@@ -125,8 +126,7 @@ fn the_observers_fast_forward_meets_its_budget() {
     w.run(40);
     let year_ticks = w.ticks_per_day * 32.0;
     // Half a year a step: each tick warped by that many.
-    w.server
-        .send(ToServer::TimeWarp(year_ticks * 0.5 / 0.05));
+    w.server.send(ToServer::TimeWarp(year_ticks * 0.5 / 0.05));
     // Settle in a year, then measure ten.
     w.run(year_ticks as u64);
     // Ten years (OBSERVER_YEARS, for profiling it longer).

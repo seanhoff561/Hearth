@@ -668,11 +668,20 @@ impl Workshop {
         if self.blaze.is_burning() {
             self.fire_step(h);
         }
-        // The world, a game minute at a time.
+        // The world, a game minute at a time — an hour at a time when a day or more has passed
+        // at a stroke, a day at a time when a month has (the Observer's fast-forward, D210).
         let minute = (h.ticks_per_day / 1440.0).max(1.0);
         while (h.ticks.saturating_sub(self.last_update)) as f64 >= minute {
-            self.last_update += minute as u64;
-            self.minute(h, 1.0 / 60.0);
+            let behind = h.ticks.saturating_sub(self.last_update) as f64 / h.ticks_per_day.max(1.0);
+            let (step, hours) = if behind > 30.0 {
+                (minute * 1440.0, 24.0)
+            } else if behind > 1.0 {
+                (minute * 60.0, 1.0)
+            } else {
+                (minute, 1.0 / 60.0)
+            };
+            self.last_update += step as u64;
+            self.minute(h, hours);
         }
     }
 

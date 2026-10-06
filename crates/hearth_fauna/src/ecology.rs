@@ -1126,6 +1126,65 @@ impl Ecology {
         region
     }
 
+    /// The animals' demographic tier (H9, D210): every loaded region stepped to `time` a year at
+    /// a time as numbers alone — each small species' numbers in each cell, and each species'
+    /// groups together, toward what the land holds of it at its growth at low density — with no
+    /// hunting, foraging, seasons or wandering. For the Observer passing the years at a stroke;
+    /// the full step takes up again from where it leaves them.
+    pub fn advance_coarse(&mut self, time: f64) {
+        let cat = self.catalog.clone();
+        let rate = |sp: &Species| sp.growth_rate.unwrap_or(COARSE_GROWTH).max(0.0);
+        for r in self.regions.values_mut() {
+            while r.time < time - 1e-9 {
+                let dt = (time - r.time).min(1.0);
+                let dtf = dt as f32;
+                for (slot, &s) in r.pool_species.iter().enumerate() {
+                    let sp = &cat.species[s as usize];
+                    let g = rate(sp);
+                    for c in 0..REGION_LEN {
+                        let i = slot * REGION_LEN + c;
+                        let q = r
+                            .quality
+                            .get(sp.index * REGION_LEN + c)
+                            .copied()
+                            .unwrap_or(0.0);
+                        let k = sp.density * Self::area(sp, &r.habitat[c]) * q;
+                        let n = r.adults[i] + r.young[i];
+                        let f = if n > 0.0 {
+                            logistic(n, k, g, dtf) / n
+                        } else {
+                            0.0
+                        };
+                        r.adults[i] *= f;
+                        r.young[i] *= f;
+                    }
+                }
+                // The groups of a species share what the region holds of it.
+                let mut totals: FxHashMap<u16, f32> = FxHashMap::default();
+                for g in r.groups.iter().filter(|g| !g.live) {
+                    *totals.entry(g.species).or_default() += g.size() as f32;
+                }
+                for (&s, &n) in &totals {
+                    let sp = &cat.species[s as usize];
+                    let k = r.capacity.get(s as usize).copied().unwrap_or(n);
+                    let f = if n > 0.0 {
+                        logistic(n, k, rate(sp), dtf) / n
+                    } else {
+                        0.0
+                    };
+                    let scale = |x: u16| (x as f32 * f).round().clamp(0.0, u16::MAX as f32) as u16;
+                    for g in r.groups.iter_mut().filter(|g| !g.live && g.species == s) {
+                        g.young = scale(g.young);
+                        g.juveniles = scale(g.juveniles);
+                        g.females = scale(g.females);
+                        g.males = scale(g.males);
+                    }
+                }
+                r.time += dt;
+            }
+        }
+    }
+
     /// Steps every loaded region to `time` (years), together, in steps of at most `max_dt`;
     /// young bound for another loaded region arrive there after each step.
     pub fn advance(&mut self, time: f64, max_dt: f64) {
@@ -2990,4 +3049,15 @@ fn attack_in(cat: &Catalog, sp: &Species, realm: Realm) -> f32 {
     } else {
         target / (s - target * t)
     }
+}
+
+/// A population's growth at low density where its content gives none (a year).
+const COARSE_GROWTH: f32 = 0.3;
+
+/// Numbers `n` after `t` years of logistic growth at `rate` toward what the land holds, `k`.
+fn logistic(n: f32, k: f32, rate: f32, t: f32) -> f32 {
+    if k <= 0.0 || n <= 0.0 {
+        return 0.0;
+    }
+    k / (1.0 + (k - n) / n * (-rate * t).exp())
 }

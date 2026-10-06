@@ -253,8 +253,9 @@ struct Saved {
     regions: Vec<Region>,
 }
 
-/// A catch-up this long (years) is stepped a season at a time (D210).
-const FAST_YEARS: f64 = 0.25;
+/// A catch-up this long (years: a week of the world a tick, the Observer's year a second and
+/// faster) is lived at the animals' demographic tier (D210).
+const FAST_YEARS: f64 = 1.0 / 48.0;
 
 impl Fauna {
     /// The world's animals: as saved in `dir`, or new; the hominins in Africa alone when
@@ -434,7 +435,11 @@ impl Fauna {
     ) {
         let player = presence.pos;
         self.now = years;
-        if tick.is_multiple_of(40) {
+        // The years passing at a stroke (the Observer's fast-forward, D210): the populations as
+        // numbers every tick, so that the warp does not save them up, and none of the animals
+        // drawn out about the eye while they do (the view is the globe's).
+        let fast = years - self.years > FAST_YEARS;
+        if tick.is_multiple_of(40) || fast {
             // The regions about the player, the player's own first, made on workers (each takes a
             // tenth of a second or more), a few at a time, taken in when made.
             let mut made = Vec::new();
@@ -492,20 +497,19 @@ impl Fauna {
                     self.making.push((key, rx));
                 }
             }
-            // The populations to the calendar every few days, in steps of at most 1/32 year — a
-            // season at a time when years pass at a stroke (the Observer's fast-forward, H9).
+            // The populations to the calendar every few days, in steps of at most 1/32 year — as
+            // numbers alone when years pass at a stroke (the Observer's fast-forward, D210).
             if years - self.years >= 1.0 / 128.0 {
                 let t0 = std::time::Instant::now();
-                let step = if years - self.years > FAST_YEARS {
-                    1.0 / 4.0
+                if years - self.years > FAST_YEARS {
+                    self.eco.advance_coarse(years);
                 } else {
-                    1.0 / 32.0
-                };
-                self.eco.advance(years, step);
+                    self.eco.advance(years, 1.0 / 32.0);
+                }
                 // A long catch-up (years skipped) told of, for the profiler.
-                if t0.elapsed().as_secs_f64() > 1.0 {
-                    log::info!(
-                        "the animals caught up {:.2} years in {:.1} s over {} regions",
+                if t0.elapsed().as_secs_f64() > 0.01 {
+                    log::debug!(
+                        "the animals caught up {:.2} years in {:.3} s over {} regions",
                         years - self.years,
                         t0.elapsed().as_secs_f64(),
                         self.eco.regions.len()
@@ -519,8 +523,10 @@ impl Fauna {
                 lw,
                 cells: &self.cells,
             };
-            self.live.fold(&mut self.eco, player);
-            self.live.materialize(&mut self.eco, &ground, player);
+            if !fast {
+                self.live.fold(&mut self.eco, player);
+                self.live.materialize(&mut self.eco, &ground, player);
+            }
         }
         let ground = MapGround {
             map: &lw.map,
@@ -528,7 +534,9 @@ impl Fauna {
             lw,
             cells: &self.cells,
         };
-        self.live.step(&self.eco, &ground, Some(presence), now, dt);
+        if !fast {
+            self.live.step(&self.eco, &ground, Some(presence), now, dt);
+        }
     }
 
     /// The animals near the player, for the client.

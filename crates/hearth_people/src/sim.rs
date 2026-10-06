@@ -211,6 +211,9 @@ pub struct People {
     pub lessons: Vec<crate::player::Lesson>,
     /// What was notable of late, for the Observer's chronicle (H9; not saved).
     pub notable: Vec<crate::notable::Notable>,
+    /// How far from a player a band's home keeps it lived as households: [`HOUSEHOLD_M`], or
+    /// none while the Observer passes the years fast (D210; set by the world, not saved).
+    pub household_m: f64,
 }
 
 /// When and how near its camp a band's people eat the day's take (D202).
@@ -388,6 +391,7 @@ impl People {
             knower_counts: Default::default(),
             lessons: Vec::new(),
             notable: Vec::new(),
+            household_m: HOUSEHOLD_M,
         }
     }
 
@@ -1312,7 +1316,7 @@ impl People {
 
     /// Folds the bands away from the players (V2.1 §17.1): a band lived in full whose persons are
     /// all beyond [`FAR_M`] of every player goes on as households — its persons kept whole, their
-    /// lives lived by the life course — while its home is within [`HOUSEHOLD_M`] of one or it
+    /// lives lived by the life course — while its home is within `household_m` of one or it
     /// holds someone a player knows; beyond that, and not so held, its records wait, dormant, and
     /// the cells count its numbers again. Then the budgets (see `keep_budget`).
     pub fn fold(&mut self, eco: &mut Ecology, species: &SpeciesSet, players: &[DVec3], now: Now) {
@@ -1320,7 +1324,9 @@ impl People {
         let home_near = |people: &People, bi: usize| {
             let h = people.bands[bi].home;
             let at = DVec3::new(h.x, 0.0, h.y);
-            players.iter().any(|q| hdist(at, *q, wrap) <= HOUSEHOLD_M)
+            players
+                .iter()
+                .any(|q| hdist(at, *q, wrap) <= people.household_m)
         };
         for bi in 0..self.bands.len() {
             match self.bands[bi].tier {

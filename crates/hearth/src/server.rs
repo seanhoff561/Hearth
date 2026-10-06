@@ -2002,7 +2002,20 @@ fn run(
                     } else {
                         std::slice::from_ref(&seen)
                     };
-                    if people.tick(
+                    // Watching the years pass fast (a day of the world or more a tick: a month a
+                    // second and faster), the people live at the demographic tier: a
+                    // band lived as households only while it holds someone the player knows
+                    // (D210).
+                    let fast = observing.is_some() && warp * TICK_S >= calendar.ticks_per_day();
+                    people.live.household_m = if fast {
+                        0.0
+                    } else {
+                        hearth_people::sim::HOUSEHOLD_M
+                    };
+                    // Nor is any lived in full about the eye: the view is the globe's.
+                    let eyes: &[DVec3] = if fast { &[] } else { std::slice::from_ref(&at) };
+                    let t_people = std::time::Instant::now();
+                    let ticked = people.tick(
                         &mut lw,
                         &mut fauna,
                         &mut world_items,
@@ -2014,13 +2027,20 @@ fn run(
                         &|p| workshop.radiant_w_m2(p),
                         around,
                         now.year_frac,
-                        &[at],
+                        eyes,
                         seen,
                         birth.as_ref().zip(household.as_ref()),
                         people_now,
                         TICK_S as f32,
-                    ) {
+                    );
+                    if ticked {
                         items_changed = true;
+                    }
+                    if t_people.elapsed().as_secs_f64() > 0.05 {
+                        log::debug!(
+                            "the people lived their tick in {:.2} s",
+                            t_people.elapsed().as_secs_f64()
+                        );
                     }
                     // Their camps kept: the fire laid and fed, the beds about it (H8).
                     if ticks.is_multiple_of(40) {
@@ -2594,6 +2614,8 @@ fn run(
         // Terrain around the player between ticks, grown to the calendar's year.
         let year_frac = calendar.at(ticks).year_frac;
         lw.vegetation.year = vegetation_year(&calendar, ticks);
+        // Watching at a month a second or faster: a day of the world or more a tick.
+        stream.hold_growth = observing.is_some() && warp * TICK_S >= calendar.ticks_per_day();
         let worked = stream
             .work(
                 &mut lw,
@@ -2645,6 +2667,9 @@ fn run(
 /// Terrain streaming around a point.
 #[derive(Default)]
 struct Stream {
+    /// The land's growth held back while the Observer passes the years fast (D210): the globe
+    /// is the view; the cubes about the eye grow on when time slows.
+    hold_growth: bool,
     loaded: FxHashSet<CubePos>,
     meshed: FxHashSet<CubePos>,
     wanted: Vec<(i64, CubePos)>,
@@ -2832,6 +2857,9 @@ impl Stream {
         year_frac: f64,
         tx: &Sender<ToClient>,
     ) -> Result<Vec<BlockPos>, ()> {
+        if self.hold_growth {
+            return Ok(Vec::new());
+        }
         let now = lw.vegetation.clone();
         if let Some(seen) = &self.veg_seen
             && !now.same_disturbances(seen)

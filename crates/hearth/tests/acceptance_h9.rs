@@ -42,12 +42,18 @@ fn children_of(w: &mut World, mother: u64) -> Vec<u64> {
     w.inspected = None;
     w.server.send(ToServer::Inspect(Some(mother)));
     w.run(40);
-    w.until(10.0, |w| w.inspected.as_ref().is_some_and(|r| r.id == mother));
+    w.until(10.0, |w| {
+        w.inspected.as_ref().is_some_and(|r| r.id == mother)
+    });
     let Some(r) = w.inspected.clone() else {
         return Vec::new();
     };
     w.server.send(ToServer::Inspect(None));
-    for s in r.sections.iter().filter(|s| s.name == "Life" || s.name == "Social") {
+    for s in r
+        .sections
+        .iter()
+        .filter(|s| s.name == "Life" || s.name == "Social")
+    {
         println!("  {}: {}", s.name, s.lines.join("; "));
     }
     r.sections
@@ -118,61 +124,73 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         w.knowledge.known.keys().collect::<Vec<_>>()
     );
 
-    // 2. A family. The player came of age at sixteen and men of its people pair from twenty:
-    // five years pass first, the band about it seen anew.
-    for _ in 0..5 {
-        w.server.send(ToServer::SkipHours(32.0 * 24.0));
-        w.run(40);
-    }
-    let at = w
+    // 2. A family. A girl or young woman of the band, not kin and not paired: courted now, and
+    // the years let pass until both are of an age to pair (men of the player's people pair from
+    // twenty, women from seventeen) — she, grown fond of the player, waiting for it.
+    let mut girls: Vec<(u64, Vec<String>, bool)> = Vec::new();
+    let females: Vec<(u64, bool)> = w
         .people
         .iter()
-        .filter(|v| !v.dead)
-        .map(|v| v.pos)
-        .min_by(|a, b| (*a - w.mover.pos).length().total_cmp(&(*b - w.mover.pos).length()));
-    if let Some(at) = at {
-        w.go(at.x, at.z);
-        w.run(200);
-    }
-    band.clear();
-    let near: Vec<u64> = w
-        .people
-        .iter()
-        .filter(|v| !v.dead && format!("{:?}", v.stage) == "Adult")
-        .map(|v| v.id)
+        .filter(|v| !v.dead && v.female)
+        .map(|v| (v.id, format!("{:?}", v.stage) == "Adult"))
         .collect();
-    for id in near {
+    for (id, grown) in females {
         let lines = regard(&mut w, id);
-        if lines.first().is_some_and(|l| l.contains("your")) {
-            band.push((id, lines));
+        if lines.first().is_some_and(|l| l.ends_with("of your band"))
+            && !lines.iter().any(|l| l.contains("Paired"))
+            && (!grown || lines.iter().any(|l| l == "Young."))
+        {
+            girls.push((id, lines, grown));
         }
     }
-    // A woman of the band, not kin and not paired, courted until she is willing.
-    let woman = band
-        .iter()
-        .find(|(id, lines)| {
-            // Not kin ("…, your sister"); of the band ("…, of your band").
-            lines[0].ends_with("of your band")
-                && lines.iter().any(|l| l == "Young." || l == "In the prime of life.")
-                && !lines.iter().any(|l| l.contains("Paired"))
-                && w.people.iter().any(|v| v.id == *id && v.female)
-        })
-        .map(|(id, _)| *id)
-        .unwrap_or_else(|| {
-            let women: Vec<&(u64, Vec<String>)> = band
-                .iter()
-                .filter(|(id, _)| w.people.iter().any(|v| v.id == *id && v.female))
-                .collect();
-            panic!("an unpaired woman of the band, not kin: {women:?}")
-        });
+    println!("those the player might court: {girls:?}");
+    // A young woman first, else a girl.
+    girls.sort_by_key(|g| !g.2);
+    let woman = girls
+        .first()
+        .map(|g| g.0)
+        .expect("a girl or young woman of the band, not kin");
+    let court = |w: &mut World, rounds: usize| {
+        for round in 0..rounds {
+            let kind = if round % 2 == 0 {
+                Ask::Praise
+            } else {
+                Ask::Thank
+            };
+            ask(w, woman, kind);
+            w.run(100);
+        }
+    };
+    court(&mut w, 16);
     let mut paired = false;
-    for round in 0..60 {
-        let kind = if round % 2 == 0 { Ask::Praise } else { Ask::Thank };
-        ask(&mut w, woman, kind);
-        w.run(100);
-        if round % 5 == 4 {
+    for year in 1..=10 {
+        w.server.send(ToServer::SkipHours(32.0 * 24.0));
+        w.run(40);
+        // Back among the band, wherever its camp is now.
+        let at = w
+            .people
+            .iter()
+            .find(|v| v.id == woman)
+            .map(|v| v.pos)
+            .or_else(|| {
+                w.people
+                    .iter()
+                    .filter(|v| !v.dead)
+                    .map(|v| v.pos)
+                    .min_by(|a, b| {
+                        (*a - w.mover.pos)
+                            .length()
+                            .total_cmp(&(*b - w.mover.pos).length())
+                    })
+            });
+        if let Some(at) = at {
+            w.go(at.x, at.z);
+            w.run(200);
+        }
+        court(&mut w, 4);
+        if year >= 4 {
             let (yes, words) = ask(&mut w, woman, Ask::Pair);
-            println!("asked to pair: {words}");
+            println!("year {year}, asked to pair: {words}");
             if yes {
                 paired = true;
                 break;
@@ -181,7 +199,10 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
     }
     assert!(paired, "she comes to be willing");
     let lines = regard(&mut w, woman);
-    assert!(lines.iter().any(|l| l.contains("Your partner")), "{lines:?}");
+    assert!(
+        lines.iter().any(|l| l.contains("Your partner")),
+        "{lines:?}"
+    );
 
     // 3. The years pass: their children.
     let mut children = Vec::new();
@@ -246,7 +267,8 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
     let who = who.expect("told who they are");
     println!("{who:#?}");
     assert!(
-        who.iter().any(|l| l.contains("father") || l.contains("mother")),
+        who.iter()
+            .any(|l| l.contains("father") || l.contains("mother")),
         "the one lived on as knows its parents: {who:?}"
     );
 }

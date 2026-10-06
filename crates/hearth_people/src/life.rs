@@ -105,6 +105,8 @@ impl Tables {
 pub const STEPS_A_YEAR: f64 = 52.0;
 /// Every so many steps the unpaired look for a partner (about monthly).
 const PAIRING_EVERY: u64 = 4;
+/// How fond of a player one must be to wait for it rather than be paired off (H9).
+const SPOKEN_FOR: f32 = 0.5;
 /// The widest age gap between partners (years).
 const AGE_GAP: f64 = 15.0;
 /// Women past this age pair no more (years).
@@ -515,8 +517,22 @@ impl People {
     /// their kind within [`MATES_M`], the one of them who disperses moving to the other's band.
     fn pair(&mut self, bi: usize, sp: &Species, table: &Table, day: f64, year_days: f64) {
         let age = |p: &Person| (day - p.life.born) / year_days;
-        // Players pair as they choose (H4), not by the table.
-        let free = |p: &Person| p.alive() && p.social.bond.is_none() && p.player.is_none();
+        // Players pair as they choose (H4), not by the table — and one grown fond of a player who
+        // courts it waits for that player rather than be paired off (H9).
+        let players: Vec<PersonId> = self
+            .persons
+            .iter()
+            .filter(|p| p.player.is_some())
+            .map(|p| p.id)
+            .collect();
+        let courted = move |p: &Person| {
+            p.social
+                .ties
+                .iter()
+                .any(|t| t.affection >= SPOKEN_FOR && players.contains(&t.who))
+        };
+        let free =
+            |p: &Person| p.alive() && p.social.bond.is_none() && p.player.is_none() && !courted(p);
         let mut women: Vec<usize> = self
             .living(bi)
             .into_iter()

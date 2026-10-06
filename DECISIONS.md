@@ -2587,3 +2587,23 @@ a grown person of the player's band, unpaired, not its kin, fond of the player (
 trusting it (0.5) agrees; anyone else says no. A player's person, paired, has children as
 anyone (abstracted; a player's body is its own, so the table takes no player mother in
 childbirth).
+
+## D210 — The Observer: watching put aside, and the years passed at the demographic tier (H9)
+Watching while alive puts the player aside where it stands: its body still and unharmed, its
+person in its band; the world streams and lives about the eye instead, and nothing perceives the
+eye. Time is watched stopped, as lived, or at a minute, an hour, a day, a month, a year, ten or a
+hundred years a second. From a day of the world a tick (a month a second) the world passes the
+years coarsely, as V2.1 §15.4 and §17 have it: no band is lived in full about the eye (the view
+is the globe's) and a band is lived as households only while it holds someone the player knows,
+the rest sleeping as numbers; the land's growth about the eye waits until time slows; the
+animals about it are not drawn out, and from a week a tick their regions are stepped as numbers
+alone — each species toward what the land holds of it at its growth at low density, with no
+hunting, foraging, seasons or wandering — the full step taking up from where it leaves them; the
+world's slow work (fires, drying, things going off) comes an hour or a day at a time. Measured
+on the cloud machine in a release build on an era's world, ten years pass in 0.8–0.9 s (10.7–12.3
+years a second; the budget ten). The fauna's catch-up no longer waits for a tick divisible by
+forty under the warp (it had saved up twenty years at a time). The living world's notable events
+(a camp moved, a band split, a technique found out, one taken in or cast out, a fight) are kept
+for the chronicle while the world runs, not saved. A woman grown fond of a player who courts her
+(0.5) waits for that player rather than be paired off by the table; who is of an age to pair is
+the people's life table's (men of our kind from twenty, women from seventeen).
