@@ -390,13 +390,29 @@ impl People {
     ) -> Answer {
         let day = now.day;
         let (p, q) = (&self.persons[a], &self.persons[b]);
-        let grown = |i: usize| {
-            species
-                .get(&self.persons[i].species)
-                .is_some_and(|sp| self.persons[i].stage(sp, now) == Stage::Adult)
+        // Of an age to pair, by the people's life table (a woman from its first age, a man
+        // from its second); without one, grown.
+        let of_age = |i: usize| {
+            let x = &self.persons[i];
+            match species.life.of(&x.species) {
+                Some(t) => {
+                    let from = if x.life.female {
+                        t.pairing_age.0
+                    } else {
+                        t.pairing_age.1
+                    };
+                    x.age(now) >= from as f64
+                }
+                None => species
+                    .get(&x.species)
+                    .is_some_and(|sp| x.stage(sp, now) == Stage::Adult),
+            }
         };
-        if !grown(a) || !grown(b) {
-            return Answer::no("Neither of you is of an age for that.");
+        if !of_age(a) {
+            return Answer::no("You are too young yet to pair.");
+        }
+        if !of_age(b) {
+            return Answer::no("They are too young yet to pair.");
         }
         if p.social.band != q.social.band {
             return Answer::no("They would pair only with one of their own band.");

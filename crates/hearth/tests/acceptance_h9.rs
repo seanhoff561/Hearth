@@ -115,7 +115,36 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         w.knowledge.known.keys().collect::<Vec<_>>()
     );
 
-    // 2. A family: a woman of the band, not kin and not paired, courted until she is willing.
+    // 2. A family. The player came of age at sixteen and men of its people pair from twenty:
+    // five years pass first, the band about it seen anew.
+    for _ in 0..5 {
+        w.server.send(ToServer::SkipHours(32.0 * 24.0));
+        w.run(40);
+    }
+    let at = w
+        .people
+        .iter()
+        .filter(|v| !v.dead)
+        .map(|v| v.pos)
+        .min_by(|a, b| (*a - w.mover.pos).length().total_cmp(&(*b - w.mover.pos).length()));
+    if let Some(at) = at {
+        w.go(at.x, at.z);
+        w.run(200);
+    }
+    band.clear();
+    let near: Vec<u64> = w
+        .people
+        .iter()
+        .filter(|v| !v.dead && format!("{:?}", v.stage) == "Adult")
+        .map(|v| v.id)
+        .collect();
+    for id in near {
+        let lines = regard(&mut w, id);
+        if lines.first().is_some_and(|l| l.contains("your")) {
+            band.push((id, lines));
+        }
+    }
+    // A woman of the band, not kin and not paired, courted until she is willing.
     let woman = band
         .iter()
         .find(|(id, lines)| {
