@@ -49,15 +49,31 @@ fn go_to_band_of(w: &mut World, id: u64) {
     w.run(40);
     w.until(10.0, |w| w.inspected.as_ref().is_some_and(|r| r.id == id));
     w.server.send(ToServer::Inspect(None));
-    let camp = w.inspected.as_ref().and_then(|r| {
-        let social = r.sections.iter().find(|s| s.name == "Social")?;
-        let at = social.lines.iter().find_map(|l| l.split("camp at ").nth(1))?;
-        let mut xz = at.split(|c| c == ',' || c == ';').map(|n| n.trim().parse::<f64>());
+    let report = w.inspected.clone();
+    let line = |name: &str| {
+        report
+            .as_ref()
+            .and_then(|r| r.sections.iter().find(|s| s.name == name))
+            .map(|s| s.lines.join("; "))
+            .unwrap_or_default()
+    };
+    let social = line("Social");
+    let camp = social.split("camp at ").nth(1).and_then(|at| {
+        let mut xz = at.split([',', ';']).map(|n| n.trim().parse::<f64>());
         Some((xz.next()?.ok()?, xz.next()?.ok()?))
     });
     if let Some((x, z)) = camp {
         w.go(x, z);
-        w.until(60.0, |w| w.people.iter().any(|v| v.id == id));
+        w.until(30.0, |w| w.people.iter().any(|v| v.id == id));
+    }
+    if !w.people.iter().any(|v| v.id == id) {
+        println!(
+            "  #{id} not in sight at {:?} ({} about); camp {camp:?}; life: {}; social: {}",
+            w.mover.pos,
+            w.people.len(),
+            line("Life").chars().take(300).collect::<String>(),
+            social.chars().take(200).collect::<String>()
+        );
     }
 }
 
