@@ -207,6 +207,10 @@ pub struct People {
     pub era: crate::rounds::EraWays,
     /// Each band's knowers as last counted (a cache of the yearly learning).
     pub(crate) knower_counts: crate::learning::KnowerCounts,
+    /// The lessons a player asked for or offered, under way (H9; not saved).
+    pub lessons: Vec<crate::player::Lesson>,
+    /// What was notable of late, for the Observer's chronicle (H9; not saved).
+    pub notable: Vec<crate::notable::Notable>,
 }
 
 /// When and how near its camp a band's people eat the day's take (D202).
@@ -382,6 +386,8 @@ impl People {
             lineage_cultures: std::collections::BTreeMap::new(),
             era: Default::default(),
             knower_counts: Default::default(),
+            lessons: Vec::new(),
+            notable: Vec::new(),
         }
     }
 

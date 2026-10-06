@@ -552,6 +552,34 @@ impl PeopleNear {
         Ok(format!("You hold out {what}, and it is taken."))
     }
 
+    /// What a player knows of a person it looks at (H9).
+    pub fn regard(&self, player: u64, person: u64) -> Vec<String> {
+        let Some(now) = self.now else {
+            return Vec::new();
+        };
+        self.live.regard(player, person, &self.species, &now)
+    }
+
+    /// A player says or does something to a person (V2.1 §16; H9): how they take it. `knows`
+    /// says whether the player knows a technique.
+    pub fn ask(
+        &mut self,
+        player: u64,
+        person: u64,
+        ask: hearth_people::player::Ask,
+        knows: &dyn Fn(&str) -> bool,
+    ) -> hearth_people::player::Answer {
+        let Some(now) = self.now else {
+            return hearth_people::player::Answer {
+                words: "No one hears you.".into(),
+                yes: false,
+                about: None,
+            };
+        };
+        self.live
+            .player_asks(player, person, ask, knows, &self.species, &now)
+    }
+
     /// What the people near a player have said since the player was last told, as the player
     /// makes it out (V2.1 §10.3) — and the player's person learning their words by hearing them.
     pub fn heard_by(&mut self, player: u64) -> Vec<hearth_protocol::HeardLine> {

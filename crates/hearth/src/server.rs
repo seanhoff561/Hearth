@@ -91,6 +91,8 @@ const RECENT_YEARS: f64 = 100.0;
 const SLEEP_SPEED: f64 = 90.0;
 /// How near a person must be for the player to hand them a thing (m).
 const GIVE_M: f64 = 3.5;
+/// How near a person must be for the player to speak with them (m).
+const SPEAK_M: f64 = 8.0;
 
 /// What `player.json` holds.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -762,6 +764,11 @@ fn run(
         |p| p.species.clone(),
     );
     let mut inspecting: Option<u64> = None;
+    // The person the player looks at (H9).
+    let mut regarding: Option<u64> = None;
+    // Watching the world (the Observer, H9): where its eye is, and whom it follows.
+    let mut observing: Option<DVec3> = None;
+    let mut following: Option<u64> = None;
     // How readily the animals turn on people: the world's Predator Behavior setting.
     fauna.live.aggression = match life.predator_behavior {
         hearth_save::PredatorBehavior::Authentic => 1.0,
@@ -1216,6 +1223,41 @@ fn run(
                         }
                     }
                 }
+                Ok(ToServer::Speak { person, ask }) => {
+                    // Said or done to one within speaking distance (V2.1 §16; H9): their answer,
+                    // and the technique a lesson agreed on is of.
+                    let near = people.live.get(person).is_some_and(|q| {
+                        q.alive() && (q.place.pos - player.mover.pos).length() < SPEAK_M
+                    });
+                    if near && player.body.dead.is_none() {
+                        let knew = &player.knowledge;
+                        // Offering to teach, unnamed: the first thing the player knows that they
+                        // do not.
+                        let ask = match ask {
+                            hearth_people::player::Ask::Teach(None) => {
+                                let theirs = people.live.get(person).map(|q| &q.knowledge);
+                                hearth_people::player::Ask::Teach(
+                                    knew.known
+                                        .keys()
+                                        .find(|n| theirs.is_some_and(|t| !t.knows(n)))
+                                        .cloned(),
+                                )
+                            }
+                            other => other,
+                        };
+                        let a = people.ask(0, person, ask, &|n| knew.knows(n));
+                        let about = a
+                            .about
+                            .as_deref()
+                            .and_then(|n| workshop.graph.node(n))
+                            .map_or(String::new(), |n| format!(" ({})", n.name));
+                        let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                            process: String::new(),
+                            done: a.yes,
+                            words: format!("{}{about}", a.words),
+                        }));
+                    }
+                }
                 Ok(ToServer::GiveTo { person }) => {
                     // A gift (V2.1 §8.7): what the hands hold, the right first, to one within
                     // reach; kept when they cannot take it.
@@ -1545,6 +1587,45 @@ fn run(
                 Ok(ToServer::Shout) => shouted = ticks,
                 Ok(ToServer::Die { species, at }) => fauna.die(&species, at),
                 Ok(ToServer::Inspect(id)) => inspecting = id,
+                Ok(ToServer::Observe(eye)) => observing = eye,
+                Ok(ToServer::Follow(id)) => {
+                    following = id;
+                    if id.is_none() {
+                        let _ = tx.send(ToClient::LifeOf(None));
+                    }
+                }
+                Ok(ToServer::Chronicle) => {
+                    let lines = crate::observer::chronicle(
+                        &people.live.notable,
+                        history.as_deref(),
+                        lw.terrain(),
+                        calendar.days(ticks),
+                        calendar.days_per_year(),
+                    );
+                    let _ = tx.send(ToClient::Chronicle(lines));
+                }
+                Ok(ToServer::Overlay(kind)) => {
+                    let map = kind.and_then(|k| {
+                        let bands: Vec<(DVec3, usize)> = people
+                            .live
+                            .bands
+                            .iter()
+                            .filter(|b| b.tier != hearth_people::person::Tier::Dormant)
+                            .map(|b| {
+                                let at = b.camp.unwrap_or(DVec3::new(b.home.x, 0.0, b.home.y));
+                                (at, b.members.len())
+                            })
+                            .collect();
+                        crate::observer::overlay(k, history.as_deref(), &bands, &planet)
+                    });
+                    let _ = tx.send(ToClient::Overlay(map));
+                }
+                Ok(ToServer::Regard(id)) => {
+                    regarding = id;
+                    if id.is_none() {
+                        let _ = tx.send(ToClient::Regarded(None));
+                    }
+                }
                 Ok(ToServer::Census) => {
                     let _ = tx.send(ToClient::Census(fauna.census()));
                 }
@@ -1858,7 +1939,8 @@ fn run(
             }
             {
                 let moment = calendar.at(ticks);
-                let at = player.mover.pos;
+                // The world about the player — or about the Observer's eye, unseen there.
+                let at = observing.unwrap_or(player.mover.pos);
                 let now = hearth_fauna::live::Now {
                     hour: env.local_time(&moment, at.x) as f32,
                     day_s: (calendar.ticks_per_day() * TICK_S) as f32,
@@ -1872,7 +1954,7 @@ fn run(
                     .iter()
                     .filter(|i| i.healed < 1.0)
                     .count();
-                let presence = fauna.presence_of(
+                let mut presence = fauna.presence_of(
                     &player.mover,
                     last_moved.as_ref().map_or(0.0, |m| m.yaw),
                     ticks.saturating_sub(shouted) < 20,
@@ -1881,6 +1963,15 @@ fn run(
                     &lw.map,
                     &lw.reg,
                 );
+                if observing.is_some() {
+                    // An Observer is perceived by nothing.
+                    presence.pos = at;
+                    presence.noise = 0.0;
+                    presence.plain = 0.0;
+                    presence.shouting = false;
+                    presence.running = false;
+                    presence.vulnerable = 0.0;
+                }
                 fauna.tick(&lw, &presence, &now, years_at(ticks), TICK_S as f32, ticks);
                 // The people about the player live their tick, their calls heard with the
                 // animals'.
@@ -1905,7 +1996,12 @@ fn run(
                     let graph = workshop.graph.clone();
                     // The player's person where the player is.
                     let yaw = last_moved.as_ref().map_or(0.0, |m| m.yaw);
-                    people.live.place_player(0, at, yaw);
+                    people.live.place_player(0, player.mover.pos, yaw);
+                    let seen: &[hearth_people::PlayerSeen] = if observing.is_some() {
+                        &[]
+                    } else {
+                        std::slice::from_ref(&seen)
+                    };
                     if people.tick(
                         &mut lw,
                         &mut fauna,
@@ -1919,7 +2015,7 @@ fn run(
                         around,
                         now.year_frac,
                         &[at],
-                        &[seen],
+                        seen,
                         birth.as_ref().zip(household.as_ref()),
                         people_now,
                         TICK_S as f32,
@@ -2061,6 +2157,24 @@ fn run(
                     let report = people.inspect(id, &workshop.graph).map(Box::new);
                     let _ = tx.send(ToClient::Inspected(report));
                 }
+                if ticks.is_multiple_of(20)
+                    && let Some(id) = following
+                {
+                    let now = hearth_people::Now {
+                        tick: ticks,
+                        hour: 12.0,
+                        day: calendar.days(ticks),
+                        year_days: calendar.days_per_year(),
+                    };
+                    let lines = people.live.life_of(id, &now);
+                    let _ = tx.send(ToClient::LifeOf(Some((id, lines))));
+                }
+                if ticks.is_multiple_of(10)
+                    && let Some(id) = regarding
+                {
+                    let lines = people.regard(0, id);
+                    let _ = tx.send(ToClient::Regarded(Some((id, lines))));
+                }
                 if ticks.is_multiple_of(2) {
                     let views = fauna.views();
                     if !views.is_empty() || animals_shown {
@@ -2118,7 +2232,8 @@ fn run(
                 e.ground_clo = e.ground_clo.max(workshop.bedding_clo(player.mover.pos));
             }
             let report = last_moved.as_ref().map(report_of).unwrap_or_default();
-            if player.body.dead.is_none() {
+            // Watching the world, a living player is put aside: its body still, unharmed.
+            if player.body.dead.is_none() && observing.is_none() {
                 let load = player.carry.load(&items, cfg.mass_kg as f32);
                 let mu = drag_friction(&lw, player.mover.pos);
                 let mut activity = player.activity_with(&cfg, &report, &load, mu);
@@ -2486,7 +2601,7 @@ fn run(
                 &models,
                 opts,
                 planet,
-                player.mover.pos,
+                observing.unwrap_or(player.mover.pos),
                 view,
                 year_frac,
                 tx,

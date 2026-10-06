@@ -95,6 +95,10 @@ pub enum Screen {
         capture: RebindCapture,
     },
     Accessibility,
+    /// Watching the world: the chronicle (V2.1 §15.4), how far it is scrolled.
+    Chronicle {
+        scroll: usize,
+    },
     /// Having taken up another's life: who the player is now (Addendum B §2).
     WhoYouAre {
         lines: Vec<String>,
@@ -195,6 +199,14 @@ pub enum MenuAction {
     LanguageChanged,
     /// The wishes for a birth changed: save them.
     ProfilesChanged,
+    /// Watch the world (the Observer), the player put aside.
+    Watch,
+    /// Open a world to watch it.
+    WatchWorld {
+        folder: String,
+    },
+    /// Watching: take the eye to a place of the chronicle.
+    JumpTo(glam::DVec3),
 }
 
 /// What the screens edit and need.
@@ -216,6 +228,8 @@ pub struct MenuContext<'a> {
     pub journal: Option<crate::journal_ui::JournalView<'a>>,
     /// The eras a new world may be made in (id, name, how its people live), playable first.
     pub eras: Vec<(String, String, String)>,
+    /// The chronicle, while watching the world.
+    pub chronicle: Vec<hearth_protocol::ChronicleEntry>,
 }
 
 /// What the death screen says.
@@ -455,7 +469,16 @@ impl Menus {
                     }
                     *selected = Some(i);
                 }
-                let mut c = Column::new(x - 40.0, size.1 - 60.0, W + 80.0);
+                let mut c = Column::new(x - 40.0, size.1 - 82.0, W + 80.0);
+                // Any world may be watched (the Observer, V2.1 §15.4), an ended one too.
+                if ui.button_enabled(c.row(ROW), &ui.t("menu.worlds.watch"), selected.is_some())
+                    && let Some(i) = *selected
+                {
+                    out.push(MenuAction::WatchWorld {
+                        folder: entries[i].folder.clone(),
+                    });
+                }
+                c.space(4.0);
                 let row = c.row(ROW);
                 let (a, rest) = row.split_left((W + 80.0 - 8.0) / 3.0, 4.0);
                 let (b, d) = rest.split_left((W + 80.0 - 8.0) / 3.0, 4.0);
@@ -633,11 +656,50 @@ impl Menus {
                     pop = true;
                 }
             }
+            Screen::Chronicle { scroll } => {
+                ui.title(24.0, &ui.t("menu.chronicle.title"));
+                let rows = ((size.1 - 90.0) / ROW).max(4.0) as usize;
+                let wide = (size.0 - 40.0).min(560.0);
+                let x0 = ((size.0 - wide) / 2.0).round();
+                let mut c = Column::new(x0, 44.0, wide);
+                if cx.chronicle.is_empty() {
+                    ui.label(x0, c.y, &ui.t("menu.chronicle.empty"), theme::DIM);
+                    c.space(ROW);
+                }
+                *scroll = (*scroll).min(cx.chronicle.len().saturating_sub(rows));
+                for e in cx.chronicle.iter().skip(*scroll).take(rows) {
+                    let words = format!("{} — {}", e.when, e.text);
+                    if ui.button(c.row(ROW - 2.0), &words)
+                        && let Some(at) = e.at
+                    {
+                        out.push(MenuAction::JumpTo(at));
+                    }
+                }
+                let row = Column::new(x0, size.1 - 40.0, wide).row(ROW);
+                let (a, rest) = row.split_left((wide - 8.0) / 3.0, 4.0);
+                let (b, d) = rest.split_left((wide - 8.0) / 3.0, 4.0);
+                if ui.button_enabled(a, &ui.t("menu.chronicle.newer"), *scroll > 0) {
+                    *scroll = scroll.saturating_sub(rows);
+                }
+                if ui.button_enabled(
+                    b,
+                    &ui.t("menu.chronicle.older"),
+                    *scroll + rows < cx.chronicle.len(),
+                ) {
+                    *scroll += rows;
+                }
+                if ui.button(d, &ui.t("menu.back")) {
+                    pop = true;
+                }
+            }
             Screen::Pause => {
                 ui.title((size.1 * 0.3).round(), &ui.t("menu.pause.title"));
                 let mut c = Column::new(x, (size.1 * 0.3 + 20.0).round(), W);
                 if ui.button(c.row(ROW), &ui.t("menu.pause.resume")) {
                     out.push(MenuAction::Resume);
+                }
+                if ui.button(c.row(ROW), &ui.t("menu.pause.watch")) {
+                    out.push(MenuAction::Watch);
                 }
                 if ui.button(c.row(ROW), &ui.t("menu.options")) {
                     push = Some(Screen::Options);

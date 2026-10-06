@@ -135,6 +135,7 @@ fn the_inventory_moves_things_where_they_are_put() {
                     }),
                     journal: None,
                     eras: Vec::new(),
+                    chronicle: Vec::new(),
                 };
                 actions = menus.ui(ui, &mut cx);
             },

@@ -398,7 +398,14 @@ impl People {
             *v += t.innovate_insight;
             if *v >= 1.0 {
                 learn(p, lore, &node, Route::Experiment, now.tick);
-                p.record(now.day, Event::Discovered { node });
+                let (who, at) = (p.id, p.place.pos);
+                p.record(now.day, Event::Discovered { node: node.clone() });
+                let text = format!(
+                    "{} finds out {} for themselves.",
+                    self.called(who),
+                    crate::notable::technique(&node)
+                );
+                self.note(now.day, text, at);
             }
         }
         // What the band knows now: what its living members know. What none of them knows any
@@ -600,8 +607,9 @@ impl People {
         }
     }
 
-    /// What a player is shown, one tick of it (V2.1 §11.2): of the people at their work within
-    /// reach in front of the player's eyes, those who would teach the player — of the player's
+    /// What a player is shown, one tick of it (V2.1 §11.2): what those it asked to teach it give
+    /// it while it keeps near them (H9), and of the people at their work within reach in front
+    /// of the player's eyes, those who would teach the player — of the player's
     /// own band, or trusting it — each give insight toward its work's knowledge, as fast as their
     /// people teach; and now and then they say so. The knowledge and the insight, for the
     /// player's own.
@@ -624,8 +632,11 @@ impl People {
         else {
             return Vec::new();
         };
+        // The lessons asked for or offered (H9): the player's pupils taught, and what the
+        // player's teachers give it while it keeps near them.
+        self.teach_step(species, now, dt);
         let facing = DVec3::new(yaw.sin() as f64, 0.0, yaw.cos() as f64);
-        let mut out = Vec::new();
+        let mut out = self.asked_lessons(me, eye, species, now, dt);
         let mut showing: Vec<usize> = Vec::new();
         for (i, q) in self.persons.iter().enumerate() {
             if q.tier != Tier::Full || !q.alive() || q.id == me {

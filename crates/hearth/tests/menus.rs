@@ -75,6 +75,7 @@ fn render(
                 inventory: None,
                 journal: None,
                 eras: Vec::new(),
+                chronicle: Vec::new(),
             };
             actions = menus.ui(ui, &mut cx);
         },

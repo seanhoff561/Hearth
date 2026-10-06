@@ -97,6 +97,7 @@ fn the_making_screens_draw() {
                         ticks_per_day: 57_600.0,
                     }),
                     eras: Vec::new(),
+                    chronicle: Vec::new(),
                 };
                 menus.ui(ui, &mut cx);
             },

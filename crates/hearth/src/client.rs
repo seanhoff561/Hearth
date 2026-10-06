@@ -92,6 +92,29 @@ fn ray_box(from: DVec3, dir: DVec3, lo: DVec3, hi: DVec3) -> Option<f64> {
 
 /// How far a third-person camera stands from the eyes (m).
 const THIRD_PERSON_M: f64 = 3.5;
+/// How near a person must be to speak with them (m; the server's own).
+const TALK_M: f64 = 8.0;
+/// The talk wheel (H9): what may be said or done to a person, clockwise from the top.
+const TALK: [(&str, hearth_people::player::Ask); 14] = {
+    use hearth_people::player::Ask;
+    use hearth_people::speech::Gesture;
+    [
+        ("talk.greet", Ask::Greet),
+        ("talk.introduce", Ask::Introduce),
+        ("talk.thank", Ask::Thank),
+        ("talk.praise", Ask::Praise),
+        ("talk.joke", Ask::Joke),
+        ("talk.apologise", Ask::Apologise),
+        ("talk.be_taught", Ask::BeTaught(None)),
+        ("talk.teach", Ask::Teach(None)),
+        ("talk.join", Ask::Join),
+        ("talk.pair", Ask::Pair),
+        ("talk.beckon", Ask::Gesture(Gesture::Beckon)),
+        ("talk.embrace", Ask::Gesture(Gesture::Embrace)),
+        ("talk.threaten", Ask::Gesture(Gesture::ThreatDisplay)),
+        ("talk.insult", Ask::Insult),
+    ]
+};
 
 /// Where the camera is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,6 +227,16 @@ pub struct Client {
     /// The person the developer's inspector looks at (F3), and their record.
     inspecting: Option<u64>,
     inspected: Option<Box<hearth_people::inspect::Report>>,
+    /// The person the player looks at, near enough to speak with, and what it knows of them
+    /// (H9).
+    regarding: Option<u64>,
+    regarded: Option<(u64, Vec<String>)>,
+    /// The talk wheel, open (TALK held) toward a person: whom, and where the pointer leans.
+    talk: Option<(u64, DVec2)>,
+    /// Watching the world (the Observer, H9), and whether to begin watching once the world is
+    /// ready (Watch from the worlds list).
+    pub watching: Option<crate::observer_ui::Watching>,
+    pub watch_on_ready: bool,
     /// The signs animals left about the player: the world's seconds they are timed by, how long
     /// a day is (s), and the signs.
     signs: (f64, f32, Vec<hearth_fauna::live::Sign>),
@@ -415,6 +448,11 @@ impl Client {
             animals: rustc_hash::FxHashMap::default(),
             people: rustc_hash::FxHashMap::default(),
             inspecting: None,
+            regarding: None,
+            regarded: None,
+            talk: None,
+            watching: None,
+            watch_on_ready: false,
             inspected: None,
             signs: (0.0, 1200.0, Vec::new()),
             insects: (0.0, 15.0),
@@ -995,6 +1033,77 @@ impl Client {
             self.inspecting = target;
             self.inspected = None;
             self.server.send(ToServer::Inspect(target));
+        }
+    }
+
+    /// The person the player looks at near enough to speak with (H9): the nearest within
+    /// [`TALK_M`] whose middle lies near where the eye looks, told to the server when it changes.
+    fn regard_target(&mut self) {
+        let target = if self.mode == CameraMode::Body && !self.dead() {
+            self.talk
+                .map(|(id, _)| id)
+                .or_else(|| self.person_in_sight(TALK_M, 0.97))
+        } else {
+            None
+        };
+        if target != self.regarding {
+            self.regarding = target;
+            self.regarded = None;
+            self.server.send(ToServer::Regard(target));
+        }
+    }
+
+    /// The nearest person within `range` whose middle lies within the cone `cos` of the eye's
+    /// look.
+    fn person_in_sight(&self, range: f64, cos: f64) -> Option<u64> {
+        let eye = self.camera.pos;
+        let ahead = self.camera.forward().as_dvec3();
+        self.people
+            .iter()
+            .filter(|(_, s)| !s.target.dead)
+            .filter_map(|(id, s)| {
+                let to = s.pos + DVec3::Y * (s.target.height_m as f64 * 0.6) - eye;
+                let d = to.length();
+                (d < range && to.dot(ahead) / d.max(1e-6) > cos).then_some((*id, d))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _)| id)
+    }
+
+    /// The talk wheel's choice the pointer leans toward.
+    fn talk_choice(&self) -> Option<usize> {
+        let (_, v) = self.talk?;
+        if v.length() < 20.0 {
+            return None;
+        }
+        let n = TALK.len();
+        let angle = v.x.atan2(-v.y).rem_euclid(std::f64::consts::TAU);
+        Some(((angle / std::f64::consts::TAU * n as f64 + 0.5) as usize) % n)
+    }
+
+    /// Says or does to a person what the talk wheel chose (H9).
+    pub fn speak(&mut self, person: u64, ask: hearth_people::player::Ask) {
+        self.server.send(ToServer::Speak { person, ask });
+    }
+
+    fn draw_talk(&self, ui: &mut Ui<'_>) {
+        let (w, h) = ui.size;
+        let (cx, cy) = (w / 2.0, h / 2.0);
+        let chosen = self.talk_choice();
+        let r = 70.0;
+        for (k, (key, _)) in TALK.iter().enumerate() {
+            let a = k as f32 / TALK.len() as f32 * std::f32::consts::TAU;
+            let (x, y) = (cx + r * a.sin(), cy - r * a.cos());
+            let label = ui.t(key);
+            let lw = ui.font.width(&label) as f32;
+            let bg = if chosen == Some(k) {
+                Rgba([70, 80, 96, 230])
+            } else {
+                Rgba([10, 12, 16, 200])
+            };
+            ui.draw
+                .rect(x - lw / 2.0 - 3.0, y - 6.0, lw + 6.0, 12.0, bg);
+            ui.label(x - lw / 2.0, y - 4.0, &label, Rgba([235, 235, 230, 240]));
         }
     }
 
@@ -2079,6 +2188,184 @@ impl Client {
         if self.mode == CameraMode::Body {
             self.toggle_free_camera();
         }
+        self.watching = Some(crate::observer_ui::Watching::new(false));
+        self.server.send(ToServer::Observe(Some(self.camera.pos)));
+    }
+
+    /// Watches the world while alive (the Observer, V2.1 §15.4): the player put aside, its
+    /// body still and safe, the eye free.
+    pub fn observe(&mut self) {
+        if self.dead() {
+            self.spectate();
+            return;
+        }
+        if self.mode == CameraMode::Body {
+            self.toggle_free_camera();
+        }
+        self.watching = Some(crate::observer_ui::Watching::new(true));
+        self.server.send(ToServer::Observe(Some(self.camera.pos)));
+    }
+
+    /// Watching while alive (Esc steps back in).
+    pub fn watching_alive(&self) -> bool {
+        self.watching.as_ref().is_some_and(|w| w.alive) && !self.dead()
+    }
+
+    /// Steps back into the player's life from watching: time as lived again, the eye its own.
+    pub fn step_in(&mut self) {
+        if self.watching.take().is_some() {
+            self.server.send(ToServer::Observe(None));
+            self.server.send(ToServer::Follow(None));
+            self.server.send(ToServer::Pause(false));
+            self.set_time_warp(0.0);
+            self.globe.set_overlay(None);
+            if self.mode == CameraMode::Free && !self.dead() {
+                self.toggle_free_camera();
+            }
+        }
+    }
+
+    /// Watches time a step faster (or slower): stopped, as lived, a minute, an hour, a day, a
+    /// month, a year, ten or a hundred years a second; at a month a second and faster, the
+    /// globe.
+    pub fn watch_faster(&mut self, by: i32) {
+        let Some(w) = &mut self.watching else {
+            return;
+        };
+        w.faster(by);
+        let (g, lived) = (w.game_s_per_s(), w.as_lived());
+        if g <= 0.0 {
+            self.server.send(ToServer::Pause(true));
+        } else {
+            self.server.send(ToServer::Pause(false));
+            // The ticks a real second that pass `g` game seconds, less the twenty that are the
+            // world's own (as lived: no more than those).
+            let ticks = g * self.calendar.ticks_per_day() / 86_400.0;
+            self.set_time_warp(if lived { 0.0 } else { (ticks - 20.0).max(0.0) });
+            if g >= 30.0 * 86_400.0 && !self.globe.open {
+                self.toggle_globe();
+            }
+        }
+    }
+
+    /// Follows the one in sight (a person, else an animal), or stops following.
+    pub fn watch_follow(&mut self) {
+        let follow = if self.watching.as_ref().is_some_and(|w| w.follow.is_some()) {
+            None
+        } else if let Some(id) = self.person_in_sight(80.0, 0.99) {
+            Some(crate::observer_ui::Followed::Person(id))
+        } else {
+            let eye = self.camera.pos;
+            let ahead = self.camera.forward().as_dvec3();
+            self.animals
+                .iter()
+                .filter_map(|(id, a)| {
+                    let to = a.pos - eye;
+                    let d = to.length();
+                    (d < 80.0 && to.dot(ahead) / d.max(1e-6) > 0.99).then_some((*id, d))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|(id, _)| crate::observer_ui::Followed::Animal(id))
+        };
+        if let Some(w) = &mut self.watching {
+            w.follow = follow;
+            w.life = None;
+        }
+        let person = match follow {
+            Some(crate::observer_ui::Followed::Person(id)) => Some(id),
+            _ => None,
+        };
+        self.server.send(ToServer::Follow(person));
+    }
+
+    /// Asks the server for the chronicle.
+    pub fn ask_chronicle(&mut self) {
+        if self.watching.is_some() {
+            self.server.send(ToServer::Chronicle);
+        }
+    }
+
+    /// The globe's overlay chosen (1 people, 2 cultures, 3 knowledge — again for the next
+    /// technique — 4 looks; 0 none).
+    pub fn watch_overlay(&mut self, n: usize) {
+        let Some(w) = &mut self.watching else {
+            return;
+        };
+        let kind = match n {
+            1 => Some(hearth_protocol::OverlayKind::People),
+            2 => Some(hearth_protocol::OverlayKind::Cultures),
+            3 => {
+                if matches!(w.overlay, Some(hearth_protocol::OverlayKind::Knowledge(_))) {
+                    w.technique += 1;
+                }
+                Some(hearth_protocol::OverlayKind::Knowledge(w.technique % 128))
+            }
+            4 => Some(hearth_protocol::OverlayKind::Looks),
+            _ => None,
+        };
+        w.overlay = kind;
+        self.server.send(ToServer::Overlay(kind));
+    }
+
+    /// Takes the eye to a place (a chronicle's event, a point on the globe).
+    pub fn jump_to(&mut self, at: DVec3) {
+        if let Some(w) = &mut self.watching {
+            w.follow = None;
+            w.life = None;
+            w.told_s = f64::INFINITY;
+        }
+        self.server.send(ToServer::Follow(None));
+        self.camera.pos = at + DVec3::new(0.0, 25.0, 0.0);
+        self.camera.pitch = -35.0;
+    }
+
+    /// Watching, a frame: the eye after the one it follows, and told to the server now and then.
+    fn watch_frame(&mut self, dt: f64) {
+        let Some(follow) = self.watching.as_ref().map(|w| w.follow) else {
+            return;
+        };
+        let target = match follow {
+            Some(crate::observer_ui::Followed::Person(id)) => self.people.get(&id).map(|s| s.pos),
+            Some(crate::observer_ui::Followed::Animal(id)) => self.animals.get(&id).map(|a| a.pos),
+            None => None,
+        };
+        if let Some(t) = target {
+            let back = self.camera.forward().as_dvec3();
+            let want = t + DVec3::new(0.0, 1.2, 0.0) - back * 6.0;
+            let k = 1.0 - (-dt * 4.0).exp();
+            self.camera.pos += (want - self.camera.pos) * k;
+        } else if follow.is_some()
+            && let Some(w) = &mut self.watching
+        {
+            // Gone from sight (dead, or out of reach): no longer followed.
+            w.follow = None;
+            w.life = None;
+            self.server.send(ToServer::Follow(None));
+        }
+        let eye = self.camera.pos;
+        if let Some(w) = &mut self.watching {
+            w.told_s += dt;
+            if w.told_s >= 0.25 {
+                w.told_s = 0.0;
+                self.server.send(ToServer::Observe(Some(eye)));
+            }
+        }
+    }
+
+    /// Who the eye follows, as the headline names them.
+    fn followed_name(&self) -> Option<String> {
+        let w = self.watching.as_ref()?;
+        match w.follow? {
+            crate::observer_ui::Followed::Person(_) => Some(
+                w.life
+                    .as_ref()
+                    .and_then(|(_, l)| l.first())
+                    .and_then(|l| l.split(',').next())
+                    .unwrap_or("someone")
+                    .to_owned(),
+            ),
+            crate::observer_ui::Followed::Animal(_) => Some("an animal".to_owned()),
+        }
     }
 
     /// Dead and watching the world.
@@ -2142,6 +2429,12 @@ impl Client {
                         female,
                     });
                 }
+                _ if self.watching.is_some() => {
+                    // Watching: the eye goes there.
+                    let s = w.terrain.sample(x, z);
+                    let ground = DVec3::new(x as f64, s.height.max(s.water) as f64, z as f64);
+                    self.jump_to(ground);
+                }
                 _ => {
                     log::info!("going to {}", crate::globe::describe(&w.terrain, lat, lon));
                     self.server.send(ToServer::Place(at));
@@ -2195,8 +2488,32 @@ impl Client {
         let r = self.hearing.rhythms;
         self.heart_phase += dt * r.heart_bpm as f64 / 60.0;
         self.breath_phase += dt * r.breaths_per_min as f64 / 60.0;
-        // Holding the quick-choice key, the mouse leans the wheel instead of turning the head.
-        if self.mode == CameraMode::Body && input.is_active(builtin::RADIAL) && !self.dead() {
+        // Holding the talk key toward a person, the mouse leans the talk wheel (H9); let go, it
+        // says or does what it leans to.
+        let talking = self.mode == CameraMode::Body
+            && input.is_active(builtin::TALK)
+            && !self.dead()
+            && (self.talk.is_some() || self.regarding.is_some());
+        if talking {
+            let to = self.talk.map_or(self.regarding, |(id, _)| Some(id));
+            if let Some(id) = to {
+                let lean = self.talk.map_or(DVec2::ZERO, |(_, v)| v);
+                let mut v = lean;
+                if let Some((dx, dy)) = look {
+                    v += DVec2::new(dx, dy);
+                    if v.length() > 120.0 {
+                        v = v.normalize() * 120.0;
+                    }
+                }
+                self.talk = Some((id, v));
+            }
+        } else if let Some((id, _)) = self.talk {
+            if let Some(k) = self.talk_choice() {
+                self.speak(id, TALK[k].1.clone());
+            }
+            self.talk = None;
+        } else if self.mode == CameraMode::Body && input.is_active(builtin::RADIAL) && !self.dead()
+        {
             let v = self.radial.get_or_insert(DVec2::ZERO);
             if let Some((dx, dy)) = look {
                 *v += DVec2::new(dx, dy);
@@ -2447,6 +2764,9 @@ impl Client {
                     self.scene = Some(scene);
                     self.env = Some(EnvSampler::new(r.grid, self.calendar));
                     self.status = "streaming".into();
+                    if std::mem::take(&mut self.watch_on_ready) {
+                        self.observe();
+                    }
                 }
                 ToClient::Cube(p, cube) => {
                     if let Some(w) = &mut self.world {
@@ -2493,6 +2813,20 @@ impl Client {
                     }
                 }
                 ToClient::Inspected(r) => self.inspected = r,
+                ToClient::LifeOf(r) => {
+                    if let Some(w) = &mut self.watching {
+                        w.life = r;
+                    }
+                }
+                ToClient::Chronicle(lines) => {
+                    if let Some(w) = &mut self.watching {
+                        w.chronicle = lines;
+                    }
+                }
+                ToClient::Overlay(m) => self.globe.set_overlay(m),
+                ToClient::Regarded(r) => {
+                    self.regarded = r.filter(|(id, _)| Some(*id) == self.regarding);
+                }
                 ToClient::People(views) => {
                     self.people
                         .retain(|id, _| views.iter().any(|v| v.id == *id));
@@ -2826,6 +3160,8 @@ impl Client {
         self.animal_boxes(view.pos, dt);
         self.people_boxes(view.pos, dt);
         self.inspect_target();
+        self.regard_target();
+        self.watch_frame(dt as f64);
         self.carcass_boxes(view.pos);
         self.sign_boxes(view.pos);
         self.ghost_boxes(view.pos);
@@ -2931,6 +3267,27 @@ impl Client {
         }
         if self.radial.is_some() {
             self.draw_radial(ui);
+        }
+        if let Some(watch) = &self.watching {
+            let name = self.followed_name();
+            watch.draw(ui, name, self.globe.legend());
+        }
+        if self.talk.is_some() {
+            self.draw_talk(ui);
+        } else if let Some((_, lines)) = &self.regarded
+            && self.mode == CameraMode::Body
+            && !self.dead()
+        {
+            // What the player knows of the one it looks at, beneath where it looks.
+            for (k, l) in lines.iter().enumerate() {
+                let lw = ui.font.width(l) as f32;
+                ui.label(
+                    ((w - lw) / 2.0).round(),
+                    (h / 2.0 + 20.0 + k as f32 * 10.0).round(),
+                    l,
+                    Rgba([225, 225, 210, 220]),
+                );
+            }
         }
         if self.mode == CameraMode::Body
             && self.perspective == Perspective::First

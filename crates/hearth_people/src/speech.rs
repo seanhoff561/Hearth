@@ -265,11 +265,13 @@ impl People {
                 }
             }
         }
-        let speaker = self
-            .get(s.speaker)
-            .map(|p| p.name.clone())
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| "Someone".to_owned());
+        // A player knows a speaker by name only once it has learned it (V2.1 §16; H9).
+        let named = listener.player.is_none() || self.knows_name(listener.id, s.speaker);
+        let speaker = match self.get(s.speaker) {
+            Some(p) if named && !p.name.is_empty() => p.name.clone(),
+            Some(p) if !named => if p.life.female { "A woman" } else { "A man" }.to_owned(),
+            _ => "Someone".to_owned(),
+        };
         Some(Heard {
             speaker,
             to_you: s.to == Some(listener.id),

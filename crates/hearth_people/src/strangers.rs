@@ -243,6 +243,9 @@ impl People {
             old.members.retain(|m| *m != who);
         }
         let band = self.bands[bi].id;
+        let text = format!("{} is taken into a band.", self.called(who));
+        let at = self.persons[j].place.pos;
+        self.note(day, text, at);
         self.bands[bi].members.push(who);
         let p = &mut self.persons[j];
         p.social.band = band;

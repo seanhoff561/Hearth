@@ -34,6 +34,9 @@ pub struct Tie {
     pub quarrels: u8,
     #[serde(default)]
     pub quarrelled: Option<f64>,
+    /// Told one's name (H9): known by it since.
+    #[serde(default)]
+    pub named: bool,
 }
 
 /// The most ties a person keeps.
@@ -79,6 +82,7 @@ impl Tie {
             day,
             quarrels: 0,
             quarrelled: None,
+            named: false,
         }
     }
 

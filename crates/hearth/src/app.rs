@@ -407,6 +407,8 @@ impl App {
                     };
                     match &mut run.client {
                         Some(c) if c.globe.open => c.globe.close(),
+                        // Watching the world alive: back into the player's life.
+                        Some(c) if c.watching_alive() => c.step_in(),
                         // Watching the world after death: the choices again.
                         Some(c) if c.spectating() => run.menus.open(Screen::Death),
                         Some(c) => {
@@ -421,8 +423,25 @@ impl App {
                 } else if let Some(run) = &mut self.running
                     && let Some(p) = &mut run.client
                 {
+                    let watching = p.watching.is_some();
+                    let overlay_key = builtin::HOTBAR.iter().take(5).position(|k| *k == action);
                     if action == builtin::WORLD_MAP {
                         release_mouse |= p.toggle_globe();
+                    } else if watching && action == builtin::WATCH_FASTER {
+                        p.watch_faster(1);
+                    } else if watching && action == builtin::WATCH_SLOWER {
+                        p.watch_faster(-1);
+                    } else if watching && action == builtin::INTERACT {
+                        p.watch_follow();
+                    } else if watching
+                        && p.globe.open
+                        && let Some(n) = overlay_key
+                    {
+                        p.watch_overlay((n + 1) % 5);
+                    } else if watching && action == builtin::JOURNAL {
+                        p.ask_chronicle();
+                        run.menus.open(Screen::Chronicle { scroll: 0 });
+                        release_mouse = true;
                     } else if action == builtin::CHILDHOOD_NEXT {
                         p.childhood_skip(hearth_protocol::Skip::Next);
                     } else if action == builtin::CHILDHOOD_GROW_UP {
@@ -554,6 +573,36 @@ impl App {
                     knowledge,
                     era,
                 } => self.play(&folder, seed, death, knowledge, &era),
+                MenuAction::WatchWorld { folder } => {
+                    self.play(
+                        &folder,
+                        0,
+                        Default::default(),
+                        Default::default(),
+                        crate::eras::WILD_EARTH,
+                    );
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.watch_on_ready = true;
+                    }
+                }
+                MenuAction::Watch => {
+                    if let Some(run) = &mut self.running {
+                        run.menus.close_all();
+                        if let Some(c) = &mut run.client {
+                            c.pause(false);
+                            c.observe();
+                        }
+                    }
+                }
+                MenuAction::JumpTo(at) => {
+                    if let Some(run) = &mut self.running {
+                        run.menus.close_all();
+                        if let Some(c) = &mut run.client {
+                            c.jump_to(at);
+                        }
+                    }
+                    self.set_captured(true);
+                }
                 MenuAction::BeBorn { choice, female } => {
                     if let Some(run) = &mut self.running {
                         run.menus.close_all();
@@ -881,6 +930,10 @@ impl App {
                         inventory: client.as_ref().and_then(|c| c.inventory_view()),
                         journal: client.as_ref().and_then(|c| c.journal_view()),
                         eras: eras.clone(),
+                        chronicle: client
+                            .as_ref()
+                            .and_then(|c| c.watching.as_ref())
+                            .map_or_else(Vec::new, |w| w.chronicle.clone()),
                     };
                     actions = menus.ui(ui, &mut cx);
                 });

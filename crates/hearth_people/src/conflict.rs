@@ -738,6 +738,13 @@ impl People {
                 let (fa, fb) = (force(&mut self.persons[i]), force(&mut self.persons[j]));
                 let (loser, winner) = if fa < fb { (i, j) } else { (j, i) };
                 let (lid, wid) = (self.persons[loser].id, self.persons[winner].id);
+                let text = format!(
+                    "{} and {} come to blows.",
+                    self.called(q.a),
+                    self.called(q.b)
+                );
+                let at = self.persons[i].place.pos;
+                self.note(day, text, at);
                 self.persons[i].record(day, Event::Fought { with: q.b });
                 self.persons[j].record(day, Event::Fought { with: q.a });
                 let k = self.tie_index(loser, wid, day);

@@ -2566,3 +2566,23 @@ born again: a death ends the world with its tale). v2's "live again" — the sam
 the world's first spawn — and the grown rebirth went with the rules: a life goes on as another
 person or as a baby. Saves of format 3 migrate to 4: Legacy to its preset, Hardy to its,
 Permadeath to its.
+
+## D209 — The player among people: the talk wheel, lessons, staying and pairing (H9)
+Looking at a person within eight metres tells what the player's person knows of them, and no
+more (V2.1 §16): their name once told it (kin and band-mates are known by name; a stranger is
+"a woman", "a man"), their kinship or band, how they seem to take the player, the ledger between
+them, what the player has heard of them. Speakers in the subtitles are named the same way.
+Holding the talk key (K) toward one opens a wheel of fourteen: greet, tell one's name, thank,
+praise, joke (it lands only with those fond of one), apologise, ask to be shown how, offer to
+show them, ask to stay, ask to pair, beckon, embrace, threaten, insult. Each moves the person's
+tie to the player as the ties of anyone move (H4). **Asked to show how**, a person of the
+player's band, or one who trusts it (0.3), teaches it something it knows that the player does
+not, at twice the rate of one merely shown at another's work, for about an hour and a half
+while the player keeps within three metres; **offered**, a band-mate, the player's child or one
+who trusts it learns from the player at the same rate. **Asking to stay** with another band
+makes the player its guest when the one asked trusts it (0.4); the band takes it in as it takes
+in any guest, once most of its grown trust it (H4). **Pairing** is mutual only (ground rule 3):
+a grown person of the player's band, unpaired, not its kin, fond of the player (0.6) and
+trusting it (0.5) agrees; anyone else says no. A player's person, paired, has children as
+anyone (abstracted; a player's body is its own, so the table takes no player mother in
+childbirth).

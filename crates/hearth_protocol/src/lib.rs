@@ -34,6 +34,17 @@ pub enum ToServer {
     Moved(Moved),
     /// The person the developer's inspector looks at (F3), or none.
     Inspect(Option<u64>),
+    /// The person the player looks at, near enough to speak with, or none (H9).
+    Regard(Option<u64>),
+    /// Watching the world (the Observer, V2.1 §15.4): from where the eye is, or none to stop. A
+    /// living player is put aside meanwhile — its body still, unharmed, unseen.
+    Observe(Option<DVec3>),
+    /// The one the Observer follows (its life read), or none.
+    Follow(Option<u64>),
+    /// Asks for the chronicle: deep time's and the living world's notable events.
+    Chronicle,
+    /// Asks for a map overlay of the globe (none: no overlay).
+    Overlay(Option<OverlayKind>),
     /// Lie down to sleep (true) or get up.
     Sleep(bool),
     /// Put the player at a place (the globe's choice, a debug move): the server finds solid
@@ -49,6 +60,12 @@ pub enum ToServer {
     PickUp(u64),
     /// Hand what the hands hold (the right first) to a person within reach: a gift (V2.1 §8.7).
     GiveTo { person: u64 },
+    /// Say or do something to a person within speaking distance (V2.1 §16; H9): greet, tell
+    /// one's name, thank, ask to be taught, offer to teach, ask to stay, propose to pair …
+    Speak {
+        person: u64,
+        ask: hearth_people::player::Ask,
+    },
     /// Put a carried thing (or `count` of a stack) down on the ground at a point.
     PutDown {
         from: hearth_items::Path,
@@ -355,6 +372,15 @@ pub enum ToClient {
     People(Vec<hearth_people::PersonView>),
     /// The record of the person the developer's inspector looks at (F3), once a second.
     Inspected(Option<Box<hearth_people::inspect::Report>>),
+    /// What the player knows of the person it looks at (H9: its name if learned, kinship, how
+    /// they seem to take the player, what it has heard of them).
+    Regarded(Option<(u64, Vec<String>)>),
+    /// The life of the one the Observer follows.
+    LifeOf(Option<(u64, Vec<String>)>),
+    /// The chronicle, newest first.
+    Chronicle(Vec<ChronicleEntry>),
+    /// A map overlay of the globe.
+    Overlay(Option<OverlayMap>),
     /// Calls the animals made (those in the world and those about it).
     Calls(Vec<hearth_fauna::voices::Called>),
     /// The signs animals left near the player (tracks, blood, droppings), with the world's
@@ -480,4 +506,36 @@ pub struct ChildhoodView {
     pub age: f32,
     /// The years passing quickly to the next moment.
     pub passing: bool,
+}
+
+/// What a map overlay of the globe shows (V2.1 §15.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum OverlayKind {
+    /// How many live where.
+    People,
+    /// Whose culture and language, each its own colour.
+    Cultures,
+    /// Where a technique is known (its index among the world's techniques followed).
+    Knowledge(usize),
+    /// The people's looks as their gene pools have them (skin, the darker the deeper).
+    Looks,
+}
+
+/// An overlay: a picture over the globe's map (equirectangular, west to east from longitude
+/// −180°, north to south), what it shows, and its key.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OverlayMap {
+    pub kind: OverlayKind,
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<[u8; 4]>,
+    pub legend: String,
+}
+
+/// A line of the chronicle: when, what, and where (to go there).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChronicleEntry {
+    pub when: String,
+    pub text: String,
+    pub at: Option<DVec3>,
 }

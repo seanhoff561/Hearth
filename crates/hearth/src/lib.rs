@@ -27,6 +27,8 @@ pub mod journal_ui;
 pub mod knapping_ui;
 pub mod lod_stream;
 pub mod menus;
+pub mod observer;
+pub mod observer_ui;
 pub mod people;
 pub mod preview;
 pub mod profiles;

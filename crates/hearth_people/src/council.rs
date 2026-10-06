@@ -298,6 +298,8 @@ impl People {
             return false;
         };
         // The band moves its camp there, all of it.
+        let kind = crate::notable::technique(&self.bands[bi].species);
+        self.note(now.day, format!("A band of {kind} moves its camp."), to);
         self.bands[bi].camp = Some(to);
         self.bands[bi].home = DVec2::new(to.x, to.z);
         let band = self.bands[bi].id;

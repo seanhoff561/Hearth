@@ -332,7 +332,8 @@ impl People {
         let mut born_any = false;
         for &i in &living {
             let p = &self.persons[i];
-            if !p.life.female || !p.alive() || p.player.is_some() {
+            // A player's person conceives and bears as anyone (abstracted, V2.1 §1.3; H9).
+            if !p.life.female || !p.alive() {
                 continue;
             }
             if let Some(due) = p.life.pregnant.clone() {
@@ -679,7 +680,9 @@ impl People {
         }
         // The newborn named in its people's tongue.
         self.name_members(bi, sp);
-        if self.bands[bi].rng.next_f32() < table.maternal_death {
+        // A player's own body is the player's to live or die by, not the table's.
+        if self.persons[i].player.is_none() && self.bands[bi].rng.next_f32() < table.maternal_death
+        {
             self.dies(i, day, Cause::Childbirth, sp, items, now);
         }
     }
@@ -753,6 +756,18 @@ impl People {
         }
         let moved = new.members.clone();
         self.bands[bi].members.retain(|m| !moved.contains(m));
+        let at = DVec3::new(new.home.x, GROUND_GUESS, new.home.y);
+        let at = new.camp.unwrap_or(at);
+        let kind = crate::notable::technique(&new.species);
         self.bands.push(new);
+        self.note(
+            day,
+            format!("A band of {kind} grown too large splits in two."),
+            at,
+        );
     }
 }
+
+/// The height a place is told at when its ground is not known (the chronicle's jump finds the
+/// ground there).
+const GROUND_GUESS: f64 = 64.0;

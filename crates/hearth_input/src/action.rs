@@ -121,10 +121,11 @@ pub mod builtin {
         DEBUG_TIME_WARP = 45; CRAWL = 46; DEBUG_FREE_CAMERA = 47;
         SLEEP = 48; BODY_PANEL = 49; INTERACT = 50; DRAG = 51; RADIAL = 52;
         THROW = 53; JOURNAL = 54; SHOUT = 55; BUILDER_VIEW = 56;
-        CHILDHOOD_NEXT = 57; CHILDHOOD_GROW_UP = 58;
+        CHILDHOOD_NEXT = 57; CHILDHOOD_GROW_UP = 58; TALK = 59;
+        WATCH_FASTER = 60; WATCH_SLOWER = 61;
     }
     /// Number of built-in actions.
-    pub const COUNT: usize = 59;
+    pub const COUNT: usize = 62;
 
     /// Hotbar actions in slot order.
     pub const HOTBAR: [ActionId; 9] = [
@@ -247,6 +248,9 @@ impl ActionRegistry {
             Some(Binding::with(Key::N, Modifiers::CTRL)),
             H,
         );
+        add("key.talk", C::Gameplay, g, k(Key::K), H);
+        add("key.watch.faster", C::Gameplay, g, k(Key::RightBracket), H);
+        add("key.watch.slower", C::Gameplay, g, k(Key::LeftBracket), H);
         debug_assert_eq!(r.defs.len(), builtin::COUNT);
         r
     }

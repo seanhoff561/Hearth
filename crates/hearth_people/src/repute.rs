@@ -405,6 +405,9 @@ impl People {
         p.psyche.feel(Feeling::Shame, 0.8);
         p.psyche.feel(Feeling::Grief, 0.5);
         p.record(day, Event::CastOut { from });
+        let at = p.place.pos;
         self.bands.push(band);
+        let text = format!("{} is cast out of their band.", self.called(pid));
+        self.note(day, text, at);
     }
 }
