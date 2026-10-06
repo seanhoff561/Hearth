@@ -25,4 +25,6 @@ the amendment, written and updated with the milestone that builds it (`PLAN.md`,
 | [history.md](history.md) | §15.1–15.2: deep time over the planet's geography — demes, dispersal, the ice ages, gene pools, lineages, knowledge geography, the chronicle — and the recent past lived as households | H8 |
 | [eras.md](eras.md) | §15.3: the era profiles and selector, the archaic peoples, camps, seasonal rounds and gatherings, births among an era's households, life after death in an era's world | H8 |
 
-Planned with their milestones: `observer.md` (H9), `conversation.md` (H10).
+| [observer.md](observer.md) | §15.4, §16: the Observer — watching alive or dead, following and lives, time from stopped to a century a second, the chronicle, the globe's overlays — and the player among people: what it knows of a person, the talk wheel, being taught and teaching, joining a band, a family | H9 |
+
+Planned with its milestone: `conversation.md` (H10).

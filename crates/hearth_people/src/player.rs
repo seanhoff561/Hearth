@@ -169,6 +169,7 @@ impl People {
             Ask::Thank | Ask::Praise => {
                 let t = &mut self.persons[b].social.ties[k];
                 t.affection += (1.0 - t.affection) * 0.05;
+                t.trust += (1.0 - t.trust) * 0.03;
                 t.respect += (1.0 - t.respect) * 0.02;
                 t.day = day;
                 self.persons[b].psyche.feel(Feeling::Joy, 0.2);

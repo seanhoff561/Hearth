@@ -2575,7 +2575,8 @@ them, what the player has heard of them. Speakers in the subtitles are named the
 Holding the talk key (K) toward one opens a wheel of fourteen: greet, tell one's name, thank,
 praise, joke (it lands only with those fond of one), apologise, ask to be shown how, offer to
 show them, ask to stay, ask to pair, beckon, embrace, threaten, insult. Each moves the person's
-tie to the player as the ties of anyone move (H4). **Asked to show how**, a person of the
+tie to the player as the ties of anyone move (H4): a greeting a little warmer, thanks and praise
+warmer and a little more trusting, a joke warmer with one already fond, an insult colder. **Asked to show how**, a person of the
 player's band, or one who trusts it (0.3), teaches it something it knows that the player does
 not, at twice the rate of one merely shown at another's work, for about an hour and a half
 while the player keeps within three metres; **offered**, a band-mate, the player's child or one
