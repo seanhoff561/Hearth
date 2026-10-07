@@ -204,6 +204,12 @@ fn vegetation_year(calendar: &Calendar, ticks: u64) -> f64 {
     ticks as f64 / calendar.ticks_per_day() / calendar.days_per_year()
 }
 
+/// How much of a line the player must make out for it to be phrased (H10): a phrasing is a
+/// translation, and the player is given none of what it does not understand.
+const PHRASED_UNDERSTOOD: f32 = 0.9;
+/// The most characters of typed words read.
+const SAID_CHARS: usize = 400;
+
 fn within_reach(player: &Player, at: DVec3) -> bool {
     let eye = player.mover.pos + DVec3::new(0.0, 1.6, 0.0);
     (at - eye).length() <= 3.0 && at.is_finite()
@@ -763,6 +769,8 @@ fn run(
         || crate::born::PLAYER_SPECIES.to_owned(),
         |p| p.species.clone(),
     );
+    // The optional conversation backend (V2.1 §10.4; H10): off until the client sets it up.
+    let mut conversation = crate::conversation::Conversation::new(&content, &workshop.graph);
     let mut inspecting: Option<u64> = None;
     // The person the player looks at (H9).
     let mut regarding: Option<u64> = None;
@@ -1224,39 +1232,42 @@ fn run(
                     }
                 }
                 Ok(ToServer::Speak { person, ask }) => {
-                    // Said or done to one within speaking distance (V2.1 §16; H9): their answer,
-                    // and the technique a lesson agreed on is of.
+                    speak(&mut people, &player, &workshop.graph, person, ask, tx);
+                }
+                Ok(ToServer::SayText { person, text }) => {
+                    // Typed words (V2.1 §10.4; H10): read by the backend as an act, to one within
+                    // speaking distance; with none, not heard.
                     let near = people.live.get(person).is_some_and(|q| {
                         q.alive() && (q.place.pos - player.mover.pos).length() < SPEAK_M
                     });
-                    if near && player.body.dead.is_none() {
-                        let knew = &player.knowledge;
-                        // Offering to teach, unnamed: the first thing the player knows that they
-                        // do not.
-                        let ask = match ask {
-                            hearth_people::player::Ask::Teach(None) => {
-                                let theirs = people.live.get(person).map(|q| &q.knowledge);
-                                hearth_people::player::Ask::Teach(
-                                    knew.known
-                                        .keys()
-                                        .find(|n| theirs.is_some_and(|t| !t.knows(n)))
-                                        .cloned(),
-                                )
-                            }
-                            other => other,
-                        };
-                        let a = people.ask(0, person, ask, &|n| knew.knows(n));
-                        let about = a
-                            .about
-                            .as_deref()
-                            .and_then(|n| workshop.graph.node(n))
-                            .map_or(String::new(), |n| format!(" ({})", n.name));
+                    let text: String = text.trim().chars().take(SAID_CHARS).collect();
+                    if !conversation.free_text() {
                         let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
                             process: String::new(),
-                            done: a.yes,
-                            words: format!("{}{about}", a.words),
+                            done: false,
+                            words: "No one takes your meaning: speak with the talk wheel."
+                                .to_owned(),
                         }));
+                    } else if near && player.body.dead.is_none() && !text.is_empty() {
+                        // The techniques the words may mean: every one the game has.
+                        let offered: Vec<(String, String)> = workshop
+                            .graph
+                            .nodes
+                            .iter()
+                            .filter(|n| n.implemented)
+                            .map(|n| (n.id.clone(), n.name.clone()))
+                            .collect();
+                        let whom = people.as_known(0, person);
+                        conversation.read(person, &text, &whom, offered);
                     }
+                }
+                Ok(ToServer::Conversation(o)) => {
+                    conversation.configure(&o);
+                    let _ = tx.send(ToClient::Conversing {
+                        on: conversation.on(),
+                        free_text: conversation.free_text(),
+                        trouble: conversation.trouble.clone(),
+                    });
                 }
                 Ok(ToServer::GiveTo { person }) => {
                     // A gift (V2.1 §8.7): what the hands hold, the right first, to one within
@@ -2048,10 +2059,60 @@ fn run(
                             workshop.keep_camp(&mut here!(), &c);
                         }
                     }
-                    // What the people near say, as the player makes it out (V2.1 §10.3).
+                    // What the people near say, as the player makes it out (V2.1 §10.3) — and,
+                    // with a conversation backend, what is said to the player (or overheard while
+                    // it is idle) and wholly made out, phrased from the speaker's state (H10).
                     let heard = people.heard_by(0);
                     if !heard.is_empty() && !player.asleep {
-                        let _ = tx.send(ToClient::Heard(heard));
+                        let mut lines = Vec::with_capacity(heard.len());
+                        let mut phrased = Vec::new();
+                        for (line, said) in heard {
+                            if conversation.on()
+                                && line.understood >= PHRASED_UNDERSTOOD
+                                && (line.to_you || conversation.idle())
+                                && let Some((context, guard)) =
+                                    people.context_for(&said, &workshop.graph)
+                                && let Some(o) = conversation.phrase(line.id, &context, guard)
+                            {
+                                phrased.push(o);
+                            }
+                            lines.push(line);
+                        }
+                        let _ = tx.send(ToClient::Heard(lines));
+                        for o in phrased {
+                            if let crate::conversation::Outcome::Phrased { line, text } = o {
+                                let _ = tx.send(ToClient::Phrased { line, text });
+                            }
+                        }
+                    }
+                    // What the backend has come back with.
+                    for o in conversation.poll() {
+                        match o {
+                            crate::conversation::Outcome::Phrased { line, text } => {
+                                let _ = tx.send(ToClient::Phrased { line, text });
+                            }
+                            crate::conversation::Outcome::Act { person, ask } => {
+                                speak(&mut people, &player, &workshop.graph, person, ask, tx);
+                            }
+                            crate::conversation::Outcome::Unclear {
+                                person,
+                                text,
+                                options,
+                            } => {
+                                let options = options
+                                    .into_iter()
+                                    .map(|a| {
+                                        let w = ask_words(&a, &workshop.graph);
+                                        (a, w)
+                                    })
+                                    .collect();
+                                let _ = tx.send(ToClient::Clarify {
+                                    person,
+                                    text,
+                                    options,
+                                });
+                            }
+                        }
                     }
                     // How the people have met the player (V2.1 §8.7), told.
                     for (words, done) in people.news_for(0) {
@@ -3038,6 +3099,79 @@ impl Stream {
         }
         self.heights_dirty |= !changed.is_empty();
         Ok(n)
+    }
+}
+
+/// Said or done to a person within speaking distance (V2.1 §16; H9) — chosen on the wheel, or
+/// read from typed words (H10): their answer, and the technique a lesson agreed on is of.
+fn speak(
+    people: &mut crate::people::PeopleNear,
+    player: &Player,
+    graph: &hearth_craft::Graph,
+    person: u64,
+    ask: hearth_people::player::Ask,
+    tx: &Sender<ToClient>,
+) {
+    let near = people
+        .live
+        .get(person)
+        .is_some_and(|q| q.alive() && (q.place.pos - player.mover.pos).length() < SPEAK_M);
+    if !near || player.body.dead.is_some() {
+        return;
+    }
+    let knew = &player.knowledge;
+    // Offering to teach, unnamed: the first thing the player knows that they do not.
+    let ask = match ask {
+        hearth_people::player::Ask::Teach(None) => {
+            let theirs = people.live.get(person).map(|q| &q.knowledge);
+            hearth_people::player::Ask::Teach(
+                knew.known
+                    .keys()
+                    .find(|n| theirs.is_some_and(|t| !t.knows(n)))
+                    .cloned(),
+            )
+        }
+        other => other,
+    };
+    let a = people.ask(0, person, ask, &|n| knew.knows(n));
+    let about = a
+        .about
+        .as_deref()
+        .and_then(|n| graph.node(n))
+        .map_or(String::new(), |n| format!(" ({})", n.name));
+    let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+        process: String::new(),
+        done: a.yes,
+        words: format!("{}{about}", a.words),
+    }));
+}
+
+/// An act offered to choose from, in words.
+fn ask_words(a: &hearth_people::player::Ask, graph: &hearth_craft::Graph) -> String {
+    use hearth_people::player::Ask;
+    let of = |n: &Option<String>| {
+        n.as_deref()
+            .and_then(|n| graph.node(n))
+            .map_or(String::new(), |n| format!(": {}", n.name))
+    };
+    match a {
+        Ask::Greet => "Greet them".to_owned(),
+        Ask::Introduce => "Tell them your name".to_owned(),
+        Ask::Thank => "Thank them".to_owned(),
+        Ask::Apologise => "Say sorry".to_owned(),
+        Ask::Praise => "Praise them".to_owned(),
+        Ask::Joke => "Joke with them".to_owned(),
+        Ask::Insult => "Insult them".to_owned(),
+        Ask::BeTaught(n) => format!("Ask to be shown how{}", of(n)),
+        Ask::Teach(n) => format!("Offer to show them how{}", of(n)),
+        Ask::Join => "Ask to stay with their band".to_owned(),
+        Ask::Pair => "Ask them to be your partner".to_owned(),
+        Ask::Gesture(g) => format!(
+            "A gesture: {}",
+            hearth_people::converse::gesture_words(*g)
+                .replace("your", "the")
+                .replace("yourself", "oneself")
+        ),
     }
 }
 

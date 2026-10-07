@@ -6,6 +6,7 @@
 //! and `uncertain: true` for values a realism review should look at. Quantities are SI with the
 //! unit in the field name (`_kg`, `_m`, `_c`, `_mpa`, ...).
 
+pub mod ai;
 pub mod body;
 pub mod config;
 pub mod culture;

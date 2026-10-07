@@ -661,7 +661,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H7 — Tiers and persistence (2026-10-04; tests run, D190)
 - [x] H8 — History simulation and Paleolithic eras (birth options) (2026-10-05)
 - [x] H9 — Observer mode and the player in society (2026-10-06)
-- [ ] H10 — Optional conversation backend
+- [x] H10 — Optional conversation backend (2026-10-07)
 - [ ] V2-12 — Neolithic
 - [ ] H11 — Neolithic society
 - [ ] V2-13 — Metallurgy & mining
@@ -683,7 +683,7 @@ design only). Updated with each H milestone.
 | Routines | *Australopithecus*'s day, a forager's day (H2); *H. erectus*'s and the Neanderthals' days (H8) | cultures' own routines |
 | Life tables | foragers': deaths by age, fertility, nursing, pairing, crowding, bands splitting (H3); *H. erectus*'s and the Neanderthals' (H8, D198) | the eras' (Neolithic H11, later H12–H13) |
 | Norms | the foragers': another's things are theirs, food is shared with the hungry, with their sanctions; their ways with strangers and quarrels (H4) | cultures' own (H5) |
-| Speech acts | every exchange a structured act with its words and a gesture, heard and made out by the player (H5); *erectus*'s proto-language of nouns, kin, pronouns and particles (H8) | a conversation backend (H10) |
+| Speech acts | every exchange a structured act with its words and a gesture, heard and made out by the player (H5); *erectus*'s proto-language of nouns, kin, pronouns and particles (H8); the optional conversation backend — a local or a provider's model phrasing what is said to the player within a closed vocabulary of what the speaker may say, and reading the player's typed words as a wheel's act (H10) | the AI bridge's deliberation, voices and agent protocol (Amendment R, V2-16+) |
 | The player's birth | genome from two parents of the place, shown at birth; no appearance chosen (H1); born into a family of the place, its household shown, the childhood lived through its moments (H3); two to four households of an era's peoples offered, an *erectus* or a Neanderthal body and childhood where born among them (H8) | births in multiplayer (R3) |
 | The player among people | what the player knows of a person (its name once learned, kinship, a rough age, how they take it, the ledger, what it has heard); the talk wheel of speech acts and gestures; being taught and teaching; staying with a band; courting and pairing, children (H9) | trade, invitations to a plan (V2.1 §16) |
 | The Observer | watching alive or dead; following and lives; time from stopped to a century a second within its budget; the chronicle; the globe's overlays (H9) | in multiplayer: spectators without time controls (R3) |
@@ -1248,6 +1248,36 @@ H9 — Observer mode and the player in society (PLAN.md, V2.1 §15.4 and §16, A
   season by season until one is willing at twenty and pairs; their children are born and one
   grows up; the player dies and lives on as their grown child, told who it is.
 
+H10 — Optional conversation backend (PLAN.md, V2.1 §10.4; `docs/design/humans/conversation.md`;
+D213–D216), in parts:
+- [x] (a) The backend (D213): `hearth_ai`, a trait with none (the default), a local server and a
+  provider's model through the chat-completions and Anthropic Messages adapters; no model named
+  by the game (typed, or chosen from the server's list); the key read from the variable the
+  player names, never saved; asked on a thread of its own, a player's typed words first, a job
+  waiting too long let go; Options → Conversation, with a Test and the provider's note
+  (`hearth_ai/tests/adapters.rs` against a mock server of each API).
+- [x] (b) What the model is told: a speaker's own state only (`hearth_people::converse`) — name,
+  looks and age, nature, feelings, values and its people's, the techniques it knows, its kin,
+  what befell it lately, whom it speaks to and how it stands with them, the names it may say, the
+  act in its words; the prompts as data (`data/hearth/ai/prompts.ron`).
+- [x] (c) The knowledge and anachronism filter (D214): a closed vocabulary of some 1,800 everyday
+  words, the glosses, the words of the techniques a speaker knows (311 owned by techniques), names
+  given it and kin it has; later ages' words and words never said labelled; a spoken line's form
+  and the act's sense kept (`data/hearth/ai/words/`).
+- [x] (d) Phrasing (D215): lines said to the player and nine tenths made out, overheard ones when
+  the backend is idle; the templated line at once, the phrasing in its sense's place when it
+  passes in time; the same act to the same listener said the same way.
+- [x] (e) Reading typed words (D216): T opens a line to the person looked at; read as a wheel's
+  act, made at once only when plain and not a proposal or an insult, else offered with the
+  words' cue-word guesses (`data/hearth/ai/cues.ron`) to choose from.
+- [x] (f) The acceptance: with no backend nothing changes (typed words not heard, no phrasing or
+  choice sent; `tests/conversation.rs`); with one, a conversation suite of every act a band said
+  over eight minutes — the prompts holding nothing the speaker does not know, 91 willing lines
+  passing and 17,159 leaking ones refused — and two worlds of one seed, wheel in one, typed words
+  and every line phrased in the other, ending byte for byte the same (`hearth_ai/tests/
+  conversations.rs`); through the server a greeting phrased, a leaking phrasing never sent, typed
+  words answered or offered (`tests/conversation.rs`).
+
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
    `perf/baseline` in `bench-out/gate`, three alternating rounds of the quick scenes); a fall
@@ -1264,7 +1294,15 @@ H9 — Observer mode and the player in society (PLAN.md, V2.1 §15.4 and §16, A
    `docs/review/era-*.md`. The perf gate (`scripts/perf-gate.sh`) and the screenshots' looks
    need the PC: the cloud machine renders only on a software device (llvmpipe), whose frame rates
    say nothing. Amendment R (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready
-   rule applies (D166). Then H10 — the optional conversation backend (PLAN.md).
+   rule applies (D166). H10 — the optional conversation backend — is done (2026-10-07;
+   D213–D216): off by default; set up, a local or a provider's model phrases what is said to the
+   player within a closed vocabulary of what the speaker may say, and reads typed words as a
+   wheel's act. Then V2-12 — the Neolithic (PLAN.md).
+   Known from H10: no real model was asked (the cloud machine has none, and tests never call a
+   service): the adapters are tested against mock servers of each API, and how often a small
+   local model's lines pass the closed vocabulary is to be seen on the PC; the Options screen's
+   conversation rows and the typed line are drawn but not yet seen on a screen; the vocabulary is
+   English only.
    Known from H9: the talk wheel, the regard and the Observer's headline, chronicle and overlays
    are drawn but not yet seen on a screen (the cloud machine's shots draw no interface); trading
    and inviting to a plan wait (V2.1 §16); a culture's rite of adoption is the guest's taking-in;

@@ -66,6 +66,12 @@ pub enum ToServer {
         person: u64,
         ask: hearth_people::player::Ask,
     },
+    /// Words the player typed to a person within speaking distance (V2.1 §10.4; H10), read by
+    /// the conversation backend as one of the acts of [`ToServer::Speak`]; with no backend, not
+    /// heard.
+    SayText { person: u64, text: String },
+    /// The conversation backend as the player set it up (off by default).
+    Conversation(hearth_core::options::ConversationOptions),
     /// Put a carried thing (or `count` of a stack) down on the ground at a point.
     PutDown {
         from: hearth_items::Path,
@@ -206,6 +212,8 @@ pub struct WorkView {
 /// Something said near the player, as the player makes it out (V2.1 §10.3).
 #[derive(Debug, Clone, PartialEq)]
 pub struct HeardLine {
+    /// Its id (a phrasing of it comes as [`ToClient::Phrased`] with it).
+    pub id: u64,
     /// Who said it (its name), and whether to the player.
     pub speaker: String,
     pub to_you: bool,
@@ -375,6 +383,26 @@ pub enum ToClient {
     /// What the player knows of the person it looks at (H9: its name if learned, kinship, how
     /// they seem to take the player, what it has heard of them).
     Regarded(Option<(u64, Vec<String>)>),
+    /// A line heard (its id) as the conversation backend phrased it, the filter passing it
+    /// (V2.1 §10.4; H10): shown in place of the templated sense.
+    Phrased {
+        line: u64,
+        text: String,
+    },
+    /// The player's typed words were unclear: the acts they may be, each with its words, to
+    /// choose from (none: nothing could be made of them).
+    Clarify {
+        person: u64,
+        text: String,
+        options: Vec<(hearth_people::player::Ask, String)>,
+    },
+    /// Whether the conversation backend is asked, whether the player may type to people, and
+    /// why it is not when set up (no key, no model …).
+    Conversing {
+        on: bool,
+        free_text: bool,
+        trouble: Option<String>,
+    },
     /// The life of the one the Observer follows.
     LifeOf(Option<(u64, Vec<String>)>),
     /// The chronicle, newest first.

@@ -35,6 +35,7 @@ hearth_craft.workspace = true
 hearth_flora.workspace = true
 hearth_fauna.workspace = true
 hearth_people.workspace = true
+hearth_ai.workspace = true
 bytemuck.workspace = true
 anyhow.workspace = true
 png.workspace = true

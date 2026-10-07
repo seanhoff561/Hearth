@@ -164,6 +164,11 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
             r.check(&c.rocks, "rock", h, o, e.id());
         }
     }
+    for (e, o) in c.word_lists.iter_with_origin() {
+        if let Some(k) = &e.known_with {
+            r.check(&c.knowledge, "knowledge node", k, o, e.id());
+        }
+    }
     for (e, o) in c.soils.iter_with_origin() {
         for h in &e.horizons {
             r.material(&h.material, o, e.id());

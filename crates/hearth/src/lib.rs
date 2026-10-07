@@ -11,6 +11,7 @@ pub mod childhood;
 pub mod client;
 pub mod content_cli;
 pub mod content_state;
+pub mod conversation;
 pub mod crafting_ui;
 pub mod edits;
 pub mod environment;

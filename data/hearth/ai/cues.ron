@@ -1,0 +1,28 @@
+// Words that point to a speech act in what a player types (V2.1 §10.4; H10): when the backend
+// cannot say which act was meant — it is slow, unsure or unreachable — the acts whose cues the
+// words hold are offered for the player to choose, best first.
+(
+    schema: 1,
+    entries: [
+        (id: "greet", name: "Greeting", act: "greet", status: Implemented, words: ["hello", "hi", "hey", "greetings", "good morning", "good day", "good evening", "well met", "how are you"]),
+        (id: "introduce", name: "Introducing oneself", act: "introduce", status: Implemented, words: ["my name", "i am called", "i'm called", "call me", "your name", "who are you", "what are you called", "name is"]),
+        (id: "thank", name: "Thanks", act: "thank", status: Implemented, words: ["thank", "thanks", "grateful"]),
+        (id: "apologise", name: "Saying sorry", act: "apologise", status: Implemented, words: ["sorry", "apologise", "apologize", "forgive me", "my fault", "pardon"]),
+        (id: "praise", name: "Praise", act: "praise", status: Implemented, words: ["well done", "good job", "you are good", "you're good", "skilled", "clever", "beautiful", "strong", "brave", "wise", "impressive", "amazing", "great"]),
+        (id: "joke", name: "A joke", act: "joke", status: Implemented, words: ["joke", "funny", "haha", "ha ha", "kidding", "jest", "laugh"]),
+        (id: "insult", name: "An insult", act: "insult", status: Implemented, words: ["stupid", "idiot", "fool", "useless", "ugly", "lazy", "coward", "hate you", "shut up", "worthless", "smell"]),
+        (id: "be_taught", name: "Asking to be shown", act: "be_taught", status: Implemented, words: ["teach me", "show me", "how do you", "how to", "can you show", "learn from you", "i want to learn", "will you show"]),
+        (id: "teach", name: "Offering to show", act: "teach", status: Implemented, words: ["let me show", "i can show", "i'll show", "i will show", "i will teach", "let me teach", "i can teach", "watch me", "i know how"]),
+        (id: "join", name: "Asking to stay", act: "join", status: Implemented, words: ["join", "stay with you", "stay with your", "come with you", "travel with", "live with", "one of you", "your band", "take me in"]),
+        (id: "pair", name: "Proposing to pair", act: "pair", status: Implemented, words: ["be my partner", "partner", "marry", "be with me", "my wife", "my husband", "pair with", "be mine"]),
+        (id: "point", name: "Pointing", act: "gesture:point", status: Implemented, words: ["*points*", "look there", "over there"]),
+        (id: "show", name: "Showing", act: "gesture:show", status: Implemented, words: ["*shows*", "look at this"]),
+        (id: "offer", name: "Holding something out", act: "gesture:offer", status: Implemented, words: ["*offers*", "take this", "for you", "here, take"]),
+        (id: "beckon", name: "Beckoning", act: "gesture:beckon", status: Implemented, words: ["*beckons*", "come here", "follow me", "come with me"]),
+        (id: "shoo", name: "Waving off", act: "gesture:shoo", status: Implemented, words: ["go away", "shoo", "leave me", "get away", "begone"]),
+        (id: "threat", name: "A threat", act: "gesture:threat_display", status: Implemented, words: ["*threatens*", "back off", "i'll hurt", "i will hurt"]),
+        (id: "submission", name: "Bowing the head", act: "gesture:submission", status: Implemented, words: ["*bows*", "i mean no harm", "i yield", "i submit"]),
+        (id: "embrace", name: "Open arms", act: "gesture:embrace", status: Implemented, words: ["*hugs*", "hug", "embrace"]),
+        (id: "hands", name: "Open hands", act: "gesture:hands", status: Implemented, words: ["*open hands*", "in peace", "i come in peace"]),
+    ],
+)

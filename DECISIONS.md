@@ -2622,3 +2622,47 @@ skip of time, a childhood's years passing, the Observer's fast-forward — its b
 a small share of what it should be and its stores thin: in the H9 acceptance's first runs every
 child of the player's pair died, of "blood loss" exactly at the skips or underfed. A body now keeps
 the share: grown or shrunk since its last step, its blood and its stores are scaled with it.
+
+## D213 — The conversation backend: a crate of its own, asked on a thread of its own
+V2.1 §10.4's optional backend is `hearth_ai` (the crate Amendment R names for the later AI
+bridge), not part of the people: `hearth_people::converse` only reads a speaker's own state into
+a context and a guard, and changes nothing. The backend is a trait with three makings — none (the
+default: nothing is asked or sent), a model served on the player's computer, a provider's over
+the internet — through two HTTP adapters, the chat-completions API most servers speak and the
+Anthropic Messages API (ureq, blocking, on a worker thread; an address on this computer is never
+asked through a proxy). No model is named by the game: the player types one or picks it from the
+server's own list. A provider's key is read from the environment variable the player names and
+never written down. Settings are the player's (`options.toml`), sent to the server with the view;
+in a world with several players only the host's would count (D166). Prompts, word lists and cues
+are content (`data/hearth/ai/`), validated and linted like any other.
+
+## D214 — Phrased lines are held to a closed vocabulary
+A filter listing forbidden things would always miss one; the filter lists what a speaker may say
+instead, and refuses everything else. A line passes only if each word is an everyday word any
+forager has, a gloss of its language, a word of a technique it knows, or a name given it; kin
+words only of kin it has; letters and speech's punctuation only, thirty words at most; a refusal
+saying no and a yes not beginning with one. Technique words are owned by their techniques (a list
+each, or the words of the technique's name that are no one's everyday words), so "pot" and
+"kiln" are a potter's and an anachronism in a forager's mouth; words of later ages and words
+never said are listed only to say why a line was refused. The names a model is given and may say
+are the speaker's own, the listener's if it knows it, those of the kin and happenings it is told
+and those its act carries: a claim about anyone else cannot be phrased. False refusals cost only
+the templated line; a false pass would put a word in a person's mouth it could not say.
+
+## D215 — Only what the player understands is phrased, and the templated line stands
+A phrasing is a translation: a line is phrased only when the player made out nine tenths of its
+words, so a speaker of a tongue the player half knows keeps its dots and doubts (V2.1 §10.3).
+Lines said to the player are phrased; overheard ones only when the backend has nothing waiting.
+The templated line is shown at once; a phrasing that passes within the time allowed takes the
+place of its sense on the same subtitle, and a late or refused one is let go. A speaker saying
+the same act to the same listener again says it the same way.
+
+## D216 — Typed words become a wheel's act, or a choice
+The model reads typed words as one of the acts a player may make on the wheel — with a technique
+only from those offered, any other field of its answer ignored — and the act is made through the
+wheel's own path. It is made at once only when the model is seven tenths sure and the act is not a
+proposal to pair or an insult; otherwise, or when the model is unsure, unreadable or late, the
+player is offered the model's readings and those the words' cue words point to, and nothing is
+done until it chooses. Free text never reaches the people, and their decisions never wait on the
+backend: two worlds of one seed, the player speaking on the wheel in one and typing in the other
+with every line phrased, end the same byte for byte.

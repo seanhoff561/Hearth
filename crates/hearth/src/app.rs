@@ -83,6 +83,17 @@ pub struct App {
     /// The player's wishes for a birth, and the figures a screen shows as drawn.
     profiles: Profiles,
     people_preview: crate::preview::PeoplePreview,
+    /// The conversation backend tried or its models asked for (H10): what came of it, and the
+    /// answer still on its way.
+    conversation_probe: Option<String>,
+    conversation_models: Vec<String>,
+    probing: Option<std::sync::mpsc::Receiver<Probe>>,
+}
+
+/// What came of trying the conversation backend from the options screen.
+enum Probe {
+    Tried(Result<(String, std::time::Duration), hearth_ai::Error>),
+    Listed(Result<Vec<String>, hearth_ai::Error>),
 }
 
 impl App {
@@ -138,7 +149,60 @@ impl App {
             ambience_sent: Instant::now(),
             profiles,
             people_preview: crate::preview::PeoplePreview::new(),
+            conversation_probe: None,
+            conversation_models: Vec::new(),
+            probing: None,
         }
+    }
+
+    /// Tries the conversation backend, or asks its server for its models, off the main thread.
+    fn probe_conversation(&mut self, list: bool) {
+        let o = self.options.conversation.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new()
+            .name("conversation-probe".to_owned())
+            .spawn(move || {
+                let p = if list {
+                    Probe::Listed(hearth_ai::backend(&o).and_then(|mut b| b.models()))
+                } else {
+                    Probe::Tried(hearth_ai::test(&o))
+                };
+                let _ = tx.send(p);
+            });
+        if spawned.is_ok() {
+            self.probing = Some(rx);
+            self.conversation_probe = Some(if list {
+                "Asking the server for its models…".to_owned()
+            } else {
+                "Asking the model…".to_owned()
+            });
+        }
+    }
+
+    /// What has come of a probe.
+    fn probed(&mut self) {
+        let Some(rx) = &self.probing else {
+            return;
+        };
+        let Ok(p) = rx.try_recv() else {
+            return;
+        };
+        self.probing = None;
+        self.conversation_probe = Some(match p {
+            Probe::Tried(Ok((reply, took))) => {
+                format!("It answered in {:.1} s: “{reply}”", took.as_secs_f64())
+            }
+            Probe::Tried(Err(e)) => format!("No answer: {e}."),
+            Probe::Listed(Ok(models)) if models.is_empty() => {
+                "The server lists no models.".to_owned()
+            }
+            Probe::Listed(Ok(models)) => {
+                let n = models.len();
+                self.conversation_models = models;
+                format!("The server lists {n} models.")
+            }
+            Probe::Listed(Err(e)) => format!("No list: {e}."),
+        });
     }
 
     fn save_profiles(&self) {
@@ -481,6 +545,17 @@ impl App {
                     } else if action == builtin::JOURNAL && p.crafting.is_some() {
                         run.menus.open(Screen::Journal { tab: 0, scroll: 0 });
                         release_mouse = true;
+                    } else if action == builtin::CHAT
+                        && let Some((person, whom)) = p.say_to()
+                    {
+                        // Words typed to the one looked at (H10), with a backend to read them.
+                        run.menus.open(Screen::Say {
+                            person,
+                            whom,
+                            text: String::new(),
+                            options: Vec::new(),
+                        });
+                        release_mouse = true;
                     }
                 }
             }
@@ -594,6 +669,20 @@ impl App {
                         }
                     }
                 }
+                MenuAction::SayText { person, text } => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.say_text(person, text);
+                    }
+                    self.set_captured(true);
+                }
+                MenuAction::Speak { person, ask } => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.speak(person, ask);
+                    }
+                    self.set_captured(true);
+                }
+                MenuAction::TestConversation => self.probe_conversation(false),
+                MenuAction::ListModels => self.probe_conversation(true),
                 MenuAction::JumpTo(at) => {
                     if let Some(run) = &mut self.running {
                         run.menus.close_all();
@@ -806,6 +895,7 @@ impl App {
     }
 
     fn frame(&mut self) {
+        self.probed();
         let sensitivity = self.options.controls.mouse_sensitivity;
         let invert = self.options.controls.invert_y;
         let pad_sensitivity = self.options.controls.controller_sensitivity;
@@ -829,6 +919,20 @@ impl App {
             });
             if let Some(c) = &mut run.client {
                 c.pump(&run.renderer.ctx);
+                // Typed words read unclearly: the acts they may be, to choose from (H10).
+                if let Some((person, text, options)) = c.clarify.take() {
+                    run.menus.open(Screen::Say {
+                        person,
+                        whom: String::new(),
+                        text,
+                        options,
+                    });
+                    if run.captured {
+                        run.captured = false;
+                        let _ = run.window.set_cursor_grab(CursorGrabMode::None);
+                        run.window.set_cursor_visible(true);
+                    }
+                }
                 if let Some(b) = c.born.take() {
                     run.menus.close_all();
                     run.menus.open(Screen::Born {
@@ -906,6 +1010,8 @@ impl App {
             let audio_devices = &self.audio_devices;
             let profiles = &mut self.profiles;
             let people_preview = &mut self.people_preview;
+            let conversation_probe = self.conversation_probe.clone();
+            let conversation_models = self.conversation_models.clone();
             let format = run.renderer.color_format();
             if run.renderer.render_with(|ctx, enc, targets| {
                 match client.as_mut() {
@@ -934,6 +1040,8 @@ impl App {
                             .as_ref()
                             .and_then(|c| c.watching.as_ref())
                             .map_or_else(Vec::new, |w| w.chronicle.clone()),
+                        conversation_probe: conversation_probe.clone(),
+                        conversation_models: conversation_models.clone(),
                     };
                     actions = menus.ui(ui, &mut cx);
                 });

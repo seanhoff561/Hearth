@@ -1,0 +1,76 @@
+// Words no one in the world may say (V2.1 §10.4 and §1; H10): things of later ages that are no
+// technique of the graph (writing, money, kings, machines, the words of our own day and of those
+// who study the past), and words a phrased line may never hold whatever its speaker knows. The
+// filter rejects a line holding any of them, naming the word; it rejects any other word not on
+// its speaker's lists as well — these lists say why.
+(
+    schema: 1,
+    entries: [
+        (
+            id: "later_ages",
+            name: "Things of later ages",
+            kind: LaterAges,
+            status: Implemented,
+            words: [
+                // Machines and the like.
+                "phone", "telephone", "smartphone", "computer", "internet", "email", "radio",
+                "television", "camera", "photograph", "photo", "video", "film", "movie",
+                "car", "truck", "bus", "railway", "railroad", "plane", "airplane",
+                "aeroplane", "aircraft", "helicopter", "rocket", "spaceship", "satellite",
+                "engine", "motor", "machine", "machinery", "robot", "electricity", "electric",
+                "electronic", "battery", "plastic", "steel", "gold", "silver", "metal",
+                "iron", "bronze", "copper", "wheel", "glass", "clock", "compass", "telescope",
+                "microscope", "lens", "mirror", "soap", "toilet", "gunpowder", "nuclear",
+                "atom", "atomic", "magnet", "chemical", "mining", "miner",
+                // Money, rule and war.
+                "coin", "money", "cash", "price", "buy", "bought", "sell", "sold", "market",
+                "merchant", "shop", "wage", "salary", "tax", "rent", "dollar", "king",
+                "queen", "prince", "princess", "lord", "emperor", "empire", "kingdom",
+                "nation", "country", "government", "president", "army", "soldier", "war",
+                "warrior", "sword", "shield", "armour", "armor", "helmet", "gun", "rifle",
+                "pistol", "bullet", "bomb", "cannon", "crossbow", "catapult", "law", "court",
+                "judge", "police", "crime", "prison", "jail", "job", "office", "business",
+                "factory", "industry", "vote", "election", "citizen",
+                // Towns, houses and fields.
+                "road", "street", "highway", "bridge", "town", "city", "village", "castle",
+                "palace", "temple", "church", "house", "door", "window", "chair", "table",
+                "farm", "farmer", "farming", "crop", "plough", "plow", "bread", "beer",
+                "wine", "cheese", "butter", "sugar", "rice", "wheat", "barley", "corn",
+                "maize", "potato", "tomato", "coffee", "tea", "chocolate", "tobacco",
+                "cotton", "silk", "wool", "linen", "pottery", "pot", "kiln", "brick",
+                "cattle", "boat", "ship", "sail", "cart", "wagon", "ride", "rider", "saddle",
+                // Writing and reckoning.
+                "book", "paper", "pen", "pencil", "ink", "letter", "write", "wrote",
+                "written", "writing", "read", "alphabet", "school", "university", "hour",
+                "minute", "week", "month", "calendar", "mile", "kilometre", "kilometer",
+                "metre", "meter", "inch", "ton", "degree", "temperature", "zero",
+                "hundred", "thousand", "million", "billion", "percent",
+                // Knowledge of our own day.
+                "science", "scientist", "doctor", "medicine", "hospital", "pill", "vaccine",
+                "virus", "bacteria", "germ", "gene", "dna", "evolution", "evolve", "species",
+                "fossil", "dinosaur", "planet", "continent", "prehistoric", "prehistory",
+                "paleolithic", "palaeolithic", "neolithic", "mesolithic", "caveman",
+                "cavemen", "neanderthal", "sapiens", "homo", "erectus", "hominin",
+                "hominid", "primate", "mammal", "reptile", "calorie", "vitamin", "protein",
+                "chemistry", "physics", "mathematics", "math",
+                // Belief of later ages.
+                "god", "goddess", "priest", "prayer", "pray", "heaven", "hell", "devil",
+                "demon", "angel",
+                // The talk of our own day.
+                "okay", "ok", "awesome", "dude", "guys", "yeah", "yep", "nope", "gonna",
+                "wanna", "gotta", "hi", "bye", "wow", "lol",
+            ],
+        ),
+        (
+            id: "forbidden",
+            name: "Never said",
+            kind: Forbidden,
+            status: Implemented,
+            words: [
+                "sex", "sexual", "sexy", "naked", "nude", "rape", "raped", "rapist",
+                "molest", "molested", "incest", "torture", "tortured", "torment",
+                "mutilate", "behead", "dismember", "slave", "slaves", "slavery", "enslave",
+            ],
+        ),
+    ],
+)

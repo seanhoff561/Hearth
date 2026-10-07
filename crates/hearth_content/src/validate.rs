@@ -676,6 +676,58 @@ pub fn validate(content: &Content, report: &mut Report) {
         },
     );
     each(
+        &content.word_lists,
+        report,
+        |e| &e.id,
+        |w, c| {
+            if w.words.is_empty() {
+                c.order("words", "not be empty");
+            }
+            for word in &w.words {
+                let plain = !word.is_empty()
+                    && word
+                        .chars()
+                        .all(|ch| ch.is_ascii_lowercase() || ch == '\'' || ch == '-');
+                if !plain {
+                    c.order(
+                        "words",
+                        &format!("be single lower-case words (`{word}` is not)"),
+                    );
+                }
+            }
+        },
+    );
+    each(
+        &content.prompts,
+        report,
+        |e| &e.id,
+        |p, c| {
+            c.range("max_tokens", p.max_tokens as f32, 1.0, 4096.0);
+            if p.system.trim().is_empty() || p.user.trim().is_empty() {
+                c.order("system and user", "not be empty");
+            }
+        },
+    );
+    each(
+        &content.cues,
+        report,
+        |e| &e.id,
+        |q, c| {
+            if !crate::schema::ai::is_act(&q.act) {
+                c.order(
+                    "act",
+                    &format!("be a speech act a player may make (`{}` is not)", q.act),
+                );
+            }
+            if q.words
+                .iter()
+                .any(|w| w.trim().is_empty() || *w != w.to_lowercase())
+            {
+                c.order("words", "be lower case and not empty");
+            }
+        },
+    );
+    each(
         &content.meanings,
         report,
         |e| &e.id,

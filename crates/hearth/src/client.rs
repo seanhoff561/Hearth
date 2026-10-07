@@ -93,6 +93,8 @@ fn ray_box(from: DVec3, dir: DVec3, lo: DVec3, hi: DVec3) -> Option<f64> {
 /// How far a third-person camera stands from the eyes (m).
 const THIRD_PERSON_M: f64 = 3.5;
 /// How near a person must be to speak with them (m; the server's own).
+/// The heard lines kept for a phrasing to find (H10).
+const HEARD_SHOWN: usize = 16;
 const TALK_M: f64 = 8.0;
 /// The talk wheel (H9): what may be said or done to a person, clockwise from the top.
 const TALK: [(&str, hearth_people::player::Ask); 14] = {
@@ -233,6 +235,14 @@ pub struct Client {
     regarded: Option<(u64, Vec<String>)>,
     /// The talk wheel, open (TALK held) toward a person: whom, and where the pointer leans.
     talk: Option<(u64, DVec2)>,
+    /// The conversation backend (V2.1 §10.4; H10): as last told the server; whether it is asked
+    /// and whether the player may type to people; the lines heard lately (id, the words before
+    /// their sense, the line shown) for a phrasing to take the sense's place; typed words read
+    /// unclearly (whom to, the words, the acts to choose from).
+    conversation_sent: Option<hearth_core::options::ConversationOptions>,
+    pub conversing: (bool, bool),
+    heard_shown: Vec<(u64, String, String)>,
+    pub clarify: Option<(u64, String, Vec<(hearth_people::player::Ask, String)>)>,
     /// Watching the world (the Observer, H9), and whether to begin watching once the world is
     /// ready (Watch from the worlds list).
     pub watching: Option<crate::observer_ui::Watching>,
@@ -450,6 +460,10 @@ impl Client {
             inspecting: None,
             regarding: None,
             regarded: None,
+            conversation_sent: None,
+            conversing: (false, false),
+            heard_shown: Vec::new(),
+            clarify: None,
             talk: None,
             watching: None,
             watch_on_ready: false,
@@ -1084,6 +1098,27 @@ impl Client {
     /// Says or does to a person what the talk wheel chose (H9).
     pub fn speak(&mut self, person: u64, ask: hearth_people::player::Ask) {
         self.server.send(ToServer::Speak { person, ask });
+    }
+
+    /// Says typed words to a person, for the conversation backend to read (H10).
+    pub fn say_text(&mut self, person: u64, text: String) {
+        self.server.send(ToServer::SayText { person, text });
+    }
+
+    /// The person the player may type to now — the one it looks at, near enough to speak with,
+    /// a backend there to read the words — and how the player knows them.
+    pub fn say_to(&self) -> Option<(u64, String)> {
+        if !self.conversing.1 || self.dead() || self.watching.is_some() {
+            return None;
+        }
+        let person = self.regarding?;
+        let whom = self
+            .regarded
+            .as_ref()
+            .filter(|(id, _)| *id == person)
+            .and_then(|(_, lines)| lines.first().cloned())
+            .unwrap_or_default();
+        Some((person, whom))
     }
 
     fn draw_talk(&self, ui: &mut Ui<'_>) {
@@ -2090,9 +2125,14 @@ impl Client {
         )
     }
 
-    /// Takes changed options: the view, distances and detail.
+    /// Takes changed options: the view, distances and detail; the conversation backend.
     pub fn apply_options(&mut self, options: &Options) {
         self.captions = options.sound.subtitles;
+        if self.conversation_sent.as_ref() != Some(&options.conversation) {
+            self.conversation_sent = Some(options.conversation.clone());
+            self.server
+                .send(ToServer::Conversation(options.conversation.clone()));
+        }
         self.reduce_motion = options.accessibility.reduce_motion;
         self.guided_hud = options.accessibility.guided_hud;
         let v = &options.video;
@@ -2827,6 +2867,43 @@ impl Client {
                 ToClient::Regarded(r) => {
                     self.regarded = r.filter(|(id, _)| Some(*id) == self.regarding);
                 }
+                ToClient::Phrased { line, text } => {
+                    // A heard line phrased (H10): its sense given in natural words, in place of
+                    // the templated one if still shown, else anew.
+                    if let Some(k) = self.heard_shown.iter().position(|h| h.0 == line) {
+                        let new = format!("{} — {text}", self.heard_shown[k].1);
+                        let old = std::mem::replace(&mut self.heard_shown[k].2, new.clone());
+                        if let Some(c) = &mut self.crafting {
+                            match c.news.iter_mut().find(|n| n.0 == old) {
+                                Some(n) => {
+                                    n.0 = new;
+                                    n.1 = 0.0;
+                                }
+                                None => c.tell(new, News::Hunch),
+                            }
+                        }
+                    }
+                }
+                ToClient::Clarify {
+                    person,
+                    text,
+                    options,
+                } => {
+                    self.clarify = Some((person, text, options));
+                }
+                ToClient::Conversing {
+                    on,
+                    free_text,
+                    trouble,
+                } => {
+                    self.conversing = (on, free_text);
+                    if let (Some(t), Some(c)) = (trouble, &mut self.crafting) {
+                        c.tell(
+                            format!("The conversation backend is not asked: {t}."),
+                            News::Failed,
+                        );
+                    }
+                }
                 ToClient::People(views) => {
                     self.people
                         .retain(|id, _| views.iter().any(|v| v.id == *id));
@@ -3063,7 +3140,12 @@ impl Client {
                             } else {
                                 String::new()
                             };
-                            let line = format!("{}{to}{with}: “{}”{sense}", l.speaker, l.spoken);
+                            let said = format!("{}{to}{with}: “{}”", l.speaker, l.spoken);
+                            let line = format!("{said}{sense}");
+                            self.heard_shown.push((l.id, said, line.clone()));
+                            if self.heard_shown.len() > HEARD_SHOWN {
+                                self.heard_shown.remove(0);
+                            }
                             c.tell(line, News::Hunch);
                         }
                     }

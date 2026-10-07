@@ -73,6 +73,8 @@ pub struct PeopleNear {
     told: Option<(u64, usize)>,
     /// The day of the last speech the player has been told of.
     heard_to: f64,
+    /// The id the next heard line is given (a phrasing of it is sent with it, H10).
+    heard_id: u64,
 }
 
 /// The world as the people live in it, for one tick.
@@ -362,6 +364,7 @@ impl PeopleNear {
             now: None,
             told: None,
             heard_to: f64::NEG_INFINITY,
+            heard_id: 1,
         }
     }
 
@@ -582,7 +585,10 @@ impl PeopleNear {
 
     /// What the people near a player have said since the player was last told, as the player
     /// makes it out (V2.1 §10.3) — and the player's person learning their words by hearing them.
-    pub fn heard_by(&mut self, player: u64) -> Vec<hearth_protocol::HeardLine> {
+    pub fn heard_by(
+        &mut self,
+        player: u64,
+    ) -> Vec<(hearth_protocol::HeardLine, hearth_people::Said)> {
         let Some((me, at)) = self.live.player_person(player).map(|p| (p.id, p.place.pos)) else {
             return Vec::new();
         };
@@ -609,18 +615,51 @@ impl PeopleNear {
             if let (Some(d), Some(listener)) = (defs, self.live.get(me))
                 && let Some(h) = self.live.heard(d, listener, s)
             {
-                out.push(hearth_protocol::HeardLine {
-                    speaker: h.speaker,
-                    to_you: h.to_you,
-                    spoken: h.spoken,
-                    sense: h.sense,
-                    understood: h.understood,
-                    gesture: h.gesture.map(|g| gesture_words(g).to_owned()),
-                });
+                let id = self.heard_id;
+                self.heard_id += 1;
+                out.push((
+                    hearth_protocol::HeardLine {
+                        id,
+                        speaker: h.speaker,
+                        to_you: h.to_you,
+                        spoken: h.spoken,
+                        sense: h.sense,
+                        understood: h.understood,
+                        gesture: h.gesture.map(|g| gesture_words(g).to_owned()),
+                    },
+                    s.clone(),
+                ));
             }
             self.live.learn_from(me, s);
         }
         out
+    }
+
+    /// What the conversation backend may be told of a speaker saying `said`, and the guard its
+    /// phrasing is held to (V2.1 §10.4; H10).
+    pub fn context_for(
+        &self,
+        said: &hearth_people::Said,
+        graph: &hearth_craft::Graph,
+    ) -> Option<(
+        hearth_people::converse::Context,
+        hearth_people::converse::Guard,
+    )> {
+        let now = self.now?;
+        self.live.context_for(said, graph, &self.species, &now)
+    }
+
+    /// A person as the player knows them, in words (for reading what the player types to them):
+    /// their name if the player has learned it, what it sees of them, and what they are to it.
+    pub fn as_known(&self, player: u64, person: u64) -> String {
+        let Some(now) = self.now else {
+            return "someone".to_owned();
+        };
+        let lines = self.live.regard(player, person, &self.species, &now);
+        lines
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "someone".to_owned())
     }
 
     /// What has befallen the player's person among others since the player was last told, in

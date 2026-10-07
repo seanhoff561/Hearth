@@ -69,6 +69,11 @@ pub struct World {
     pub chronicle: Option<Vec<hearth_protocol::ChronicleEntry>>,
     pub overlay: Option<Option<hearth_protocol::OverlayMap>>,
     pub regarded: Option<(u64, Vec<String>)>,
+    /// The conversation backend (H10): heard lines phrased (their ids and words), typed words to
+    /// choose an act for, and how the backend is.
+    pub phrased: Vec<(u64, String)>,
+    pub clarify: Option<(u64, String, Vec<(hearth_people::player::Ask, String)>)>,
+    pub conversing: Option<(bool, bool, Option<String>)>,
 }
 
 /// Copies a directory and all in it.
@@ -204,6 +209,9 @@ impl World {
             chronicle: None,
             overlay: None,
             regarded: None,
+            phrased: Vec::new(),
+            clarify: None,
+            conversing: None,
         };
         // A life born into an era's household begins where that household lives (H8).
         if era_birth {
@@ -259,6 +267,17 @@ impl World {
                 ToClient::Chronicle(c) => self.chronicle = Some(c),
                 ToClient::Overlay(o) => self.overlay = Some(o),
                 ToClient::Regarded(r) => self.regarded = r,
+                ToClient::Phrased { line, text } => self.phrased.push((line, text)),
+                ToClient::Clarify {
+                    person,
+                    text,
+                    options,
+                } => self.clarify = Some((person, text, options)),
+                ToClient::Conversing {
+                    on,
+                    free_text,
+                    trouble,
+                } => self.conversing = Some((on, free_text, trouble)),
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {
                     name,

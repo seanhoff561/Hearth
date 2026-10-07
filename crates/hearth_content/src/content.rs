@@ -9,6 +9,7 @@ use serde::de::DeserializeOwned;
 use crate::diag::Report;
 use crate::generate::{ItemDef, generate_items};
 use crate::id::IdRef;
+use crate::schema::ai::{Cue, Prompt, WordList};
 use crate::schema::body::{BodyParams, Garment, Illness, Injury};
 use crate::schema::config::{BalanceKey, BalancePreset, TimeConfig, Units};
 use crate::schema::culture::CultureGenerator;
@@ -160,6 +161,10 @@ pub struct Content {
     pub culture_generators: Table<CultureGenerator>,
     pub languages: Table<LanguageGenerator>,
     pub meanings: Table<Meaning>,
+    /// The conversation backend's words, prompts and cues (V2.1 §10.4; H10).
+    pub word_lists: Table<WordList>,
+    pub prompts: Table<Prompt>,
+    pub cues: Table<Cue>,
     pub transmission: Table<Transmission>,
     /// How deep time runs (V2.1 §15.1).
     pub history: Table<HistorySettings>,
@@ -335,6 +340,9 @@ impl Content {
             culture_generators: load_table(packs, &mut r),
             languages: load_table(packs, &mut r),
             meanings: load_table(packs, &mut r),
+            word_lists: load_table(packs, &mut r),
+            prompts: load_table(packs, &mut r),
+            cues: load_table(packs, &mut r),
             transmission: load_table(packs, &mut r),
             history: load_table(packs, &mut r),
             forms,
@@ -431,6 +439,9 @@ impl Content {
         u(&self.culture_generators, &mut out);
         u(&self.languages, &mut out);
         u(&self.meanings, &mut out);
+        u(&self.word_lists, &mut out);
+        u(&self.prompts, &mut out);
+        u(&self.cues, &mut out);
         u(&self.transmission, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
@@ -474,6 +485,9 @@ impl Content {
             c("Culture generators", &self.culture_generators),
             c("Language generators", &self.languages),
             c("Meanings", &self.meanings),
+            c("Conversation word lists", &self.word_lists),
+            c("Conversation prompts", &self.prompts),
+            c("Conversation cues", &self.cues),
             c("Ways of passing on knowledge", &self.transmission),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),

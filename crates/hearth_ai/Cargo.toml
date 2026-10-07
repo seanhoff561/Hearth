@@ -1,0 +1,28 @@
+[package]
+name = "hearth_ai"
+description = "The optional conversation backend (V2.1 §10.4): language models that phrase the people's speech acts and read the player's typed words as speech acts, behind the knowledge and anachronism filters."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+hearth_core.workspace = true
+hearth_content.workspace = true
+hearth_craft.workspace = true
+hearth_people.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
+
+[dev-dependencies]
+glam.workspace = true
+hearth_body.workspace = true
+hearth_fauna.workspace = true
+hearth_items.workspace = true
+hearth_worldgen.workspace = true
+
+[lints]
+workspace = true

@@ -99,6 +99,16 @@ pub enum Screen {
     Chronicle {
         scroll: usize,
     },
+    /// Words typed to a person (V2.1 §10.4; H10): whom to, as the player knows them, the words
+    /// being typed — or, the words read unclearly, the acts they may be, to choose from.
+    Say {
+        person: u64,
+        whom: String,
+        text: String,
+        options: Vec<(hearth_people::player::Ask, String)>,
+    },
+    /// The optional conversation backend's settings.
+    Conversation,
     /// Having taken up another's life: who the player is now (Addendum B §2).
     WhoYouAre {
         lines: Vec<String>,
@@ -207,6 +217,19 @@ pub enum MenuAction {
     },
     /// Watching: take the eye to a place of the chronicle.
     JumpTo(glam::DVec3),
+    /// Typed words said to a person (H10).
+    SayText {
+        person: u64,
+        text: String,
+    },
+    /// An act chosen of those typed words may have meant.
+    Speak {
+        person: u64,
+        ask: hearth_people::player::Ask,
+    },
+    /// Try the conversation backend with a harmless request, or ask it for its models.
+    TestConversation,
+    ListModels,
 }
 
 /// What the screens edit and need.
@@ -230,6 +253,9 @@ pub struct MenuContext<'a> {
     pub eras: Vec<(String, String, String)>,
     /// The chronicle, while watching the world.
     pub chronicle: Vec<hearth_protocol::ChronicleEntry>,
+    /// What came of trying the conversation backend, and the models its server lists.
+    pub conversation_probe: Option<String>,
+    pub conversation_models: Vec<String>,
 }
 
 /// What the death screen says.
@@ -726,6 +752,9 @@ impl Menus {
                 if ui.button(c.row(ROW), &ui.t("menu.options.accessibility")) {
                     push = Some(Screen::Accessibility);
                 }
+                if ui.button(c.row(ROW), &ui.t("menu.options.conversation")) {
+                    push = Some(Screen::Conversation);
+                }
                 let names: Vec<String> = cx
                     .languages
                     .iter()
@@ -1145,6 +1174,227 @@ impl Menus {
                 self.preview = Some(preview);
                 if begin {
                     out.push(MenuAction::Resume);
+                }
+            }
+            Screen::Say {
+                person,
+                whom,
+                text,
+                options,
+            } => {
+                let person = *person;
+                let wide = W + 120.0;
+                let xw = ((size.0 - wide) / 2.0).round();
+                let mut c = Column::new(xw, 60.0, wide);
+                if options.is_empty() {
+                    ui.title(30.0, &format!("{} {whom}", ui.t("menu.say.to")));
+                    let r = c.row(ROW);
+                    let hint = ui.t("menu.say.hint");
+                    if ui.state.focus.is_none() {
+                        ui.state.focus = Some(hearth_ui::widgets::id_of(&hint, &r));
+                        ui.state.cursor = usize::MAX;
+                    }
+                    ui.text_field(r, &hint, text, 200);
+                    c.space(6.0);
+                    let enter = ui.input.key(hearth_ui::NavKey::Enter);
+                    if (ui.button(c.row(ROW), &ui.t("menu.say.say")) || enter)
+                        && !text.trim().is_empty()
+                    {
+                        out.push(MenuAction::SayText {
+                            person,
+                            text: text.trim().to_owned(),
+                        });
+                        pop = true;
+                    }
+                } else {
+                    ui.title(30.0, &ui.t("menu.say.unclear"));
+                    if !text.is_empty() {
+                        for l in ui.font.wrap(&format!("“{text}”"), wide as u32) {
+                            ui.label(xw, c.y, &l, theme::DIM);
+                            c.space(10.0);
+                        }
+                        c.space(6.0);
+                    }
+                    for (ask, words) in options.iter() {
+                        if ui.button(c.row(ROW), words) {
+                            out.push(MenuAction::Speak {
+                                person,
+                                ask: ask.clone(),
+                            });
+                            pop = true;
+                        }
+                    }
+                    if options.is_empty() {
+                        ui.label(xw, c.y, &ui.t("menu.say.none"), theme::DIM);
+                        c.space(12.0);
+                    }
+                }
+                c.space(8.0);
+                if ui.button(c.row(ROW), &ui.t("menu.say.never_mind")) {
+                    pop = true;
+                }
+            }
+            Screen::Conversation => {
+                use hearth_core::options::{ConversationApi, ConversationBackend};
+                ui.title(12.0, &ui.t("menu.options.conversation"));
+                let wide = W + 120.0;
+                let xw = ((size.0 - wide) / 2.0).round();
+                let mut c = Column::new(xw, 28.0, wide);
+                c.gap = 3.0;
+                let o = &mut cx.options.conversation;
+                let before = o.clone();
+                let kinds = [
+                    ConversationBackend::Off,
+                    ConversationBackend::Local,
+                    ConversationBackend::Remote,
+                ];
+                let kind_names: Vec<String> = [
+                    "menu.conversation.off",
+                    "menu.conversation.local",
+                    "menu.conversation.remote",
+                ]
+                .iter()
+                .map(|k| ui.t(k))
+                .collect();
+                let mut i = kinds.iter().position(|k| *k == o.backend).unwrap_or(0);
+                if ui.cycle(
+                    c.row(ROW),
+                    &ui.t("menu.conversation.backend"),
+                    &kind_names,
+                    &mut i,
+                ) {
+                    o.backend = kinds[i];
+                    // A provider over the internet: the Messages API's address and key, until
+                    // the player says otherwise; this computer's own server: Ollama's.
+                    match o.backend {
+                        ConversationBackend::Remote
+                            if before.backend != ConversationBackend::Remote =>
+                        {
+                            o.api = ConversationApi::Anthropic;
+                            o.url = "https://api.anthropic.com/v1".to_owned();
+                            o.key_env = "ANTHROPIC_API_KEY".to_owned();
+                            o.model.clear();
+                        }
+                        ConversationBackend::Local
+                            if before.backend != ConversationBackend::Local =>
+                        {
+                            o.api = ConversationApi::OpenAiCompatible;
+                            o.url = "http://127.0.0.1:11434/v1".to_owned();
+                            o.key_env.clear();
+                            o.model.clear();
+                        }
+                        _ => {}
+                    }
+                }
+                if o.backend != ConversationBackend::Off {
+                    let apis = [
+                        ConversationApi::OpenAiCompatible,
+                        ConversationApi::Anthropic,
+                    ];
+                    let api_names: Vec<String> =
+                        ["menu.conversation.openai", "menu.conversation.anthropic"]
+                            .iter()
+                            .map(|k| ui.t(k))
+                            .collect();
+                    let mut a = apis.iter().position(|k| *k == o.api).unwrap_or(0);
+                    if ui.cycle(
+                        c.row(ROW),
+                        &ui.t("menu.conversation.api"),
+                        &api_names,
+                        &mut a,
+                    ) {
+                        o.api = apis[a];
+                    }
+                    ui.label(xw, c.y, &ui.t("menu.conversation.url"), theme::DIM);
+                    c.space(10.0);
+                    ui.text_field(c.row(ROW), &ui.t("menu.conversation.url"), &mut o.url, 120);
+                    ui.label(xw, c.y, &ui.t("menu.conversation.model"), theme::DIM);
+                    c.space(10.0);
+                    ui.text_field(
+                        c.row(ROW),
+                        &ui.t("menu.conversation.model_hint"),
+                        &mut o.model,
+                        80,
+                    );
+                    if !cx.conversation_models.is_empty() {
+                        let mut m = cx
+                            .conversation_models
+                            .iter()
+                            .position(|x| *x == o.model)
+                            .unwrap_or(0);
+                        if ui.cycle(
+                            c.row(ROW),
+                            &ui.t("menu.conversation.listed"),
+                            &cx.conversation_models,
+                            &mut m,
+                        ) || o.model.is_empty()
+                        {
+                            o.model = cx.conversation_models[m].clone();
+                        }
+                    } else if ui.button(c.row(ROW), &ui.t("menu.conversation.list")) {
+                        out.push(MenuAction::ListModels);
+                    }
+                    ui.label(xw, c.y, &ui.t("menu.conversation.key"), theme::DIM);
+                    c.space(10.0);
+                    ui.text_field(
+                        c.row(ROW),
+                        &ui.t("menu.conversation.key_hint"),
+                        &mut o.key_env,
+                        60,
+                    );
+                    ui.toggle(
+                        c.row(ROW),
+                        &ui.t("menu.conversation.free_text"),
+                        &mut o.free_text,
+                    );
+                    let budgets = [2000u32, 4000, 8000, 15000];
+                    let budget_names: Vec<String> =
+                        budgets.iter().map(|b| format!("{} s", b / 1000)).collect();
+                    let mut b = budgets
+                        .iter()
+                        .position(|x| *x >= o.budget_ms)
+                        .unwrap_or(budgets.len() - 1);
+                    if ui.cycle(
+                        c.row(ROW),
+                        &ui.t("menu.conversation.budget"),
+                        &budget_names,
+                        &mut b,
+                    ) {
+                        o.budget_ms = budgets[b];
+                    }
+                    if ui.button(c.row(ROW), &ui.t("menu.conversation.test")) {
+                        out.push(MenuAction::TestConversation);
+                    }
+                    if let Some(p) = &cx.conversation_probe {
+                        for l in ui.font.wrap(p, wide as u32) {
+                            ui.label(xw, c.y, &l, theme::TEXT);
+                            c.space(10.0);
+                        }
+                    }
+                    let note = if o.backend == ConversationBackend::Remote {
+                        "menu.conversation.remote_note"
+                    } else {
+                        "menu.conversation.local_note"
+                    };
+                    for l in ui.font.wrap(&ui.t(note), wide as u32) {
+                        ui.label(xw, c.y, &l, theme::DIM);
+                        c.space(10.0);
+                    }
+                } else {
+                    for l in ui
+                        .font
+                        .wrap(&ui.t("menu.conversation.off_note"), wide as u32)
+                    {
+                        ui.label(xw, c.y, &l, theme::DIM);
+                        c.space(10.0);
+                    }
+                }
+                if *o != before {
+                    out.push(MenuAction::OptionsChanged);
+                }
+                c.space(6.0);
+                if ui.button(c.row(ROW), &ui.t("menu.done")) {
+                    pop = true;
                 }
             }
             Screen::Accessibility => {
