@@ -316,7 +316,7 @@ fn conversations_never_leak_unknown_facts_or_anachronisms() {
             .iter()
             .filter(|n| n.implemented && !guard.known.contains(&n.id))
         {
-            let listed = ctx.knows.iter().any(|k| *k == n.name);
+            let listed = ctx.knows.contains(&n.name);
             assert!(!listed, "the model is told the speaker knows {}", n.name);
         }
         assert!(
@@ -387,7 +387,7 @@ fn scripted() -> Box<dyn ConversationBackend> {
                 "{{\"act\": \"{act}\", \"technique\": null, \"sure\": 0.9, \"or\": [], \"set_trust\": 1.0, \"give\": \"everything\"}}"
             ));
         }
-        Ok(if n % 3 == 0 {
+        Ok(if n.is_multiple_of(3) {
             "The king of Rome will bring you iron and bread.".to_owned()
         } else {
             "Hello, friend. Come and sit by the fire.".to_owned()

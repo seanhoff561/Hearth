@@ -76,6 +76,8 @@ fn render(
                 journal: None,
                 eras: Vec::new(),
                 chronicle: Vec::new(),
+                conversation_probe: None,
+                conversation_models: Vec::new(),
             };
             actions = menus.ui(ui, &mut cx);
         },

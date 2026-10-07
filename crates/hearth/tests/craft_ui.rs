@@ -98,6 +98,8 @@ fn the_making_screens_draw() {
                     }),
                     eras: Vec::new(),
                     chronicle: Vec::new(),
+                    conversation_probe: None,
+                    conversation_models: Vec::new(),
                 };
                 menus.ui(ui, &mut cx);
             },
