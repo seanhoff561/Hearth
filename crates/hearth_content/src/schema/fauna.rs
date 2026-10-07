@@ -152,6 +152,17 @@ pub struct Domestication {
     pub era: u8,
     /// 0 = easy, 1 = only tameable, never domesticated.
     pub difficulty: f32,
+    /// Milk a day at the height of a mother's milk (kg): a wild one's to spare beyond her
+    /// young's need, and a bred one's (V2-12).
+    #[serde(default)]
+    pub milk_kg_day: Option<(f32, f32)>,
+    /// Fleece grown a year, plucked as it moults or shorn (kg): a wild coat's underwool, and a
+    /// bred one's.
+    #[serde(default)]
+    pub fleece_kg: Option<(f32, f32)>,
+    /// The bred form's coat colour where it differs (a woolly sheep's cream).
+    #[serde(default)]
+    pub bred_coat: Option<super::Color>,
 }
 
 /// How it breeds, grows up and dies (V2-7).

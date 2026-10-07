@@ -1,0 +1,36 @@
+// The grain of the first crops and what is made of it (V2-12): einkorn, emmer and barley
+// (hulled: a spikelet's grain in its husks, as the threshing floor gives it), linseed and the
+// flax's stems; flour ground on a quern, flatbread baked on hot stones, porridge boiled in a pot.
+(
+    schema: 1,
+    entries: [
+        (id: "einkorn", status: Implemented, name: "einkorn", category: PlantTissue, tags: ["food", "cereal", "seed"], density_kg_m3: 760,
+         kcal_per_kg: 3350, nutrition: Some((protein_g: 150, fat_g: 25, carb_g: 680, water: 0.11)), keeps_days: Some(730.0),
+         appearance: (color: "#c9a96a", pattern: Grainy, roughness: 0.7), uncertain: true),
+        (id: "emmer", status: Implemented, name: "emmer", category: PlantTissue, tags: ["food", "cereal", "seed"], density_kg_m3: 770,
+         kcal_per_kg: 3400, nutrition: Some((protein_g: 150, fat_g: 25, carb_g: 700, water: 0.11)), keeps_days: Some(730.0),
+         appearance: (color: "#c29d5e", pattern: Grainy, roughness: 0.7), uncertain: true),
+        (id: "barley", status: Implemented, name: "barley", category: PlantTissue, tags: ["food", "cereal", "seed"], density_kg_m3: 700,
+         kcal_per_kg: 3500, nutrition: Some((protein_g: 110, fat_g: 20, carb_g: 730, water: 0.11)), keeps_days: Some(730.0),
+         appearance: (color: "#d4b679", pattern: Grainy, roughness: 0.7), uncertain: true),
+        (id: "linseed", status: Implemented, name: "linseed", category: PlantTissue, tags: ["food", "cereal", "seed", "oily"], density_kg_m3: 680,
+         kcal_per_kg: 5340, nutrition: Some((protein_g: 180, fat_g: 420, carb_g: 290, water: 0.07)), keeps_days: Some(365.0),
+         appearance: (color: "#7a4e2c", pattern: Grainy, roughness: 0.3), uncertain: true),
+        (id: "flax_stems", status: Implemented, name: "flax stems", category: PlantFibre, tags: ["plant_stems"], density_kg_m3: 150,
+         strength: (tensile_mpa: 50), workability: 0.6,
+         appearance: (color: "#b59a62", pattern: Fibrous, roughness: 0.8),
+         notes: "Pulled whole, roots and all: the fibre runs the stem's length, inside its woody core."),
+        (id: "dung", status: Implemented, name: "dung", category: Other, tags: ["manure", "fuel"], density_kg_m3: 900, fuel_mj_kg: 15.0,
+         thermal: (ignition_c: 300), appearance: (color: "#5a4a32", pattern: Clumpy, roughness: 1.0),
+         notes: "Herd animals' droppings: spread on fields it feeds the soil; dried, it burns."),
+        (id: "flour", status: Implemented, name: "flour", category: PlantTissue, tags: ["food", "meal"], density_kg_m3: 600,
+         kcal_per_kg: 3400, nutrition: Some((protein_g: 130, fat_g: 20, carb_g: 720, water: 0.12)), keeps_days: Some(150.0),
+         appearance: (color: "#e2d6b8", pattern: Powder, roughness: 0.9), uncertain: true),
+        (id: "bread", status: Implemented, name: "flatbread", category: PlantTissue, tags: ["food", "baked"], density_kg_m3: 450,
+         kcal_per_kg: 2700, nutrition: Some((protein_g: 90, fat_g: 15, carb_g: 560, water: 0.3)), keeps_days: Some(7.0),
+         appearance: (color: "#c08a4e", pattern: Clumpy, roughness: 0.8), uncertain: true),
+        (id: "porridge", status: Implemented, name: "porridge", category: PlantTissue, tags: ["food", "cooked"], density_kg_m3: 1050,
+         kcal_per_kg: 800, nutrition: Some((protein_g: 30, fat_g: 6, carb_g: 165, water: 0.78)), keeps_days: Some(2.0),
+         appearance: (color: "#d8c49a", pattern: Plain, roughness: 0.4), uncertain: true),
+    ],
+)

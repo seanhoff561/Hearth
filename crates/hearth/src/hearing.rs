@@ -170,7 +170,7 @@ impl Hearing {
             Motion::Wading => (0.7, 0.7),
             Motion::Climbing => (0.55, 0.45),
             Motion::Swimming => (1.1, 0.0),
-            Motion::Still | Motion::Falling => (0.0, 0.0),
+            Motion::Still | Motion::Falling | Motion::Paddling => (0.0, 0.0),
         };
         let moving = match report.motion {
             Motion::Climbing => mover.vel.y.abs(),
@@ -292,6 +292,7 @@ impl Hearing {
             Motion::Wading => 0.4,
             Motion::Jogging => 0.55,
             Motion::Swimming => 0.6,
+            Motion::Paddling => 0.45,
             Motion::Climbing => 0.7,
             Motion::Sprinting => 0.95,
         };

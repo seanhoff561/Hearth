@@ -331,6 +331,20 @@ impl Carry {
                 }
             }
         }
+        // Onto a handful of the same (grain into the hand that holds grain).
+        if let Some(kind) = stack.kind(items) {
+            let per = kind.per_cell();
+            for held in [&mut self.right, &mut self.left].into_iter().flatten() {
+                if per > 1
+                    && held.joins(&stack)
+                    && held.count + stack.count <= per
+                    && held.mass(items) + stack.mass(items) <= ONE_HAND_KG
+                {
+                    held.absorb(stack);
+                    return Ok(());
+                }
+            }
+        }
         // Into a hand.
         for hand in [Hand::Right, Hand::Left] {
             match self.hold(items, stack, hand, body_kg) {

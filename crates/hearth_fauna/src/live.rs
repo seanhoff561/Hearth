@@ -17,6 +17,7 @@ use crate::anim::scale_of;
 use crate::danger::{Attack, Cause, Hostile, Kill, blow, closes, faced_down, lean, provoked};
 use crate::ecology::{Ecology, REGION_LEN, about, dist};
 use crate::habitat::CELL_M;
+use crate::herd::{Kept, Tiding};
 use crate::mind::{Air, Presence, Sense, Wary, sense, yaw_toward};
 use crate::nav::{FISH_DEPTH, Flight, Walker, find_way, perch_near, trunk_near, water_near};
 use crate::rig::{Frame, Rig, frame_of};
@@ -221,6 +222,8 @@ pub struct Animal {
     pub drip: f32,
     /// What it was doing the step before (a run begun is an alarm called).
     pub was: Act,
+    /// Kept by people (V2-12): its makeup, how tame it is, where it is tethered.
+    pub kept: Option<Kept>,
 }
 
 /// What a sign is: a print of a foot, a drop of blood, droppings.
@@ -354,6 +357,7 @@ impl Animal {
             printed: 0.0,
             drip: 0.0,
             was: Act::Graze,
+            kept: None,
         }
     }
 }
@@ -399,6 +403,15 @@ pub struct AnimalView {
     /// Wounded (bleeding, lame).
     #[serde(default)]
     pub wounded: bool,
+    /// Kept by people (V2-12).
+    #[serde(default)]
+    pub kept: bool,
+    /// How woolly its coat is now (0 a wild coat … 1 a bred fleece at its full growth).
+    #[serde(default)]
+    pub fleece: f32,
+    /// How easy a kept one is with people, as its keeper knows it (0 wild … 1 hand-tame).
+    #[serde(default)]
+    pub tame: f32,
 }
 
 /// The animals near the player.
@@ -423,6 +436,8 @@ pub struct Live {
     pub clock: f64,
     /// The calls they made since these were last taken.
     pub calls: Vec<Called>,
+    /// The world's years the kept animals were last tended to (V2-12).
+    pub years: Option<f64>,
 }
 
 /// Within this distance of the player groups become animals.
@@ -542,6 +557,7 @@ impl Live {
             signs: Vec::new(),
             clock: 0.0,
             calls: Vec::new(),
+            years: None,
         }
     }
 
@@ -978,7 +994,9 @@ impl Live {
             if let Some(m) = a.mother {
                 young_of.entry(m).or_default().push(a.pos);
             }
-            if matches!(a.medium, Medium::Ground | Medium::Water) {
+            // A herd with its keeper beside it is left alone.
+            let guarded = a.kept.is_some() && presence.is_some_and(|p| hdist(p.pos, a.pos) < 40.0);
+            if matches!(a.medium, Medium::Ground | Medium::Water) && !guarded {
                 quarry.push((a.id, a.species, a.pos));
             }
             if let Some(h) = a.hunt {
@@ -1091,7 +1109,14 @@ impl Live {
                         && a.stage == Stage::Adult
                         && sp.rut.is_some_and(|s| s as usize == season);
                     let cornered = a.act == Act::Flee && a.repath > 0.0 && a.way.is_empty();
-                    let aggression = sp.danger.aggression * self.aggression * (1.0 - a.fear);
+                    // A kept one knows its keeper and is the calmer the tamer it is; a young one
+                    // does not turn on a person.
+                    let calm = match &a.kept {
+                        Some(k) => 0.3 * (1.0 - k.tame) * (1.0 - k.tame),
+                        None if a.stage != Stage::Adult => 0.0,
+                        None => 1.0,
+                    };
+                    let aggression = sp.danger.aggression * self.aggression * (1.0 - a.fear) * calm;
                     let roll = self.rng.next_f32();
                     let weighed = provoked(
                         sp,
@@ -1160,7 +1185,16 @@ impl Live {
                 let d = hdist(a.pos, threat);
                 let away = DVec2::new(a.pos.x - threat.x, a.pos.z - threat.z).normalize_or_zero();
                 let away = if away == DVec2::ZERO { DVec2::X } else { away };
-                let flight = sp.flight_m() as f64 * (1.15 - 0.3 * sp.boldness as f64);
+                // Kept, as tame as it is; a young one whose mother is gone does not run (it
+                // stands and calls for her).
+                let orphan = a.stage != Stage::Adult
+                    && a.mother.is_none_or(|m| !whereabouts.contains_key(&m));
+                let shy: f64 = match &a.kept {
+                    Some(k) => k.shyness() as f64,
+                    None if orphan => 0.0,
+                    None => 1.0,
+                };
+                let flight = sp.flight_m() as f64 * (1.15 - 0.3 * sp.boldness as f64) * shy;
                 let warned = a.wary.how == Some(Sense::Alarm);
                 let runs = a.wary.aware() && (d < flight || (warned && d < flight * 2.5));
                 let running = matches!(a.act, Act::Flee | Act::Fly);
@@ -1208,12 +1242,23 @@ impl Live {
             }
             a.timer -= dt;
             if a.timer <= 0.0 {
-                let (centre, herd) = a
-                    .group
-                    .and_then(|g| centres.get(&g))
-                    .map(|(s, n)| (*s / *n, *n))
-                    .unwrap_or((DVec2::new(a.pos.x, a.pos.z), 1.0));
-                let mother = a.mother.and_then(|m| whereabouts.get(&m).copied());
+                // A kept one grazes about its stake, and one that follows its keeper keeps by
+                // them as a young one by its mother.
+                let tether = a.kept.as_ref().and_then(|k| k.tether);
+                let (centre, herd) = match tether {
+                    Some((stake, _)) => (DVec2::new(stake.x, stake.z), 3.0),
+                    None => a
+                        .group
+                        .and_then(|g| centres.get(&g))
+                        .map(|(s, n)| (*s / *n, *n))
+                        .unwrap_or((DVec2::new(a.pos.x, a.pos.z), 1.0)),
+                };
+                let follows = a.kept.as_ref().is_some_and(|k| k.follows);
+                let mother = if follows {
+                    presence.map(|p| p.pos)
+                } else {
+                    a.mother.and_then(|m| whereabouts.get(&m).copied())
+                };
                 a.kill_at = None;
                 next_act(
                     a,
@@ -1254,6 +1299,19 @@ impl Live {
                 ),
             };
             a.stride += moved / sp.stride_m().max(0.05);
+            // A tethered one goes no further than its tether lets it.
+            if let Some((stake, reach)) = a.kept.as_ref().and_then(|k| k.tether) {
+                let off = DVec2::new(a.pos.x - stake.x, a.pos.z - stake.z);
+                if off.length() > reach {
+                    let at = DVec2::new(stake.x, stake.z) + off.normalize() * reach;
+                    let y = ground.footing(at.x, at.y, a.pos.y).map_or(a.pos.y, |f| f.y);
+                    a.pos = DVec3::new(at.x, y, at.y);
+                    // Brought up short (one running from a person strains at it).
+                    a.goal = None;
+                    a.way.clear();
+                    a.speed = 0.0;
+                }
+            }
         }
         // The kills: the prey dead where it fell, the hunter (and its pack about it) making a
         // meal of it.
@@ -1515,6 +1573,15 @@ impl Live {
                 stride: a.stride,
                 medium: a.medium,
                 wounded: a.hurt.wounded(),
+                kept: a.kept.is_some(),
+                fleece: a.kept.as_ref().map_or(0.0, |k| {
+                    let grown = match (k.plucked, self.years) {
+                        (Some(p), Some(y)) => ((y - p) as f32).clamp(0.0, 1.0),
+                        _ => 1.0,
+                    };
+                    k.breed.wool * grown
+                }),
+                tame: a.kept.as_ref().map_or(0.0, |k| k.tame),
             })
             .collect()
     }
@@ -1688,6 +1755,387 @@ impl Live {
             Medium::Ground,
         ));
         id
+    }
+}
+
+/// A kept animal as a save keeps it (V2-12): kept animals belong to no group or cell, so they
+/// are kept apart from the populations' numbers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KeptSaved {
+    /// Its id when saved (its young's mother is found by it).
+    pub id: u64,
+    pub species: String,
+    pub stage: Stage,
+    pub female: bool,
+    pub pos: [f64; 3],
+    pub yaw: f32,
+    pub mother: Option<u64>,
+    pub kept: Kept,
+}
+
+/// Why a kept animal will not do what is asked, in words.
+pub type Refused = String;
+
+impl Live {
+    /// The kept animal with an id (living).
+    fn kept_mut(&mut self, id: u64) -> Result<&mut Animal, Refused> {
+        let a = self
+            .animals
+            .iter_mut()
+            .find(|a| a.id == id && !a.dead)
+            .ok_or_else(|| "It is gone.".to_owned())?;
+        if a.kept.is_none() {
+            return Err("It is not yours: it is wild.".into());
+        }
+        Ok(a)
+    }
+
+    /// Whether an animal is a kept one, and living (or why not, in words).
+    pub fn is_kept(&mut self, id: u64) -> Result<(), Refused> {
+        self.kept_mut(id).map(|_| ())
+    }
+
+    /// A wild young one taken in hand to keep (V2-12): raised by hand, it follows its keeper. A
+    /// grown wild one will not be held. Only weighed, unless `commit`.
+    pub fn catch(
+        &mut self,
+        cat: &Catalog,
+        id: u64,
+        years: f64,
+        commit: bool,
+    ) -> Result<String, Refused> {
+        let a = self
+            .animals
+            .iter_mut()
+            .find(|a| a.id == id && !a.dead)
+            .ok_or_else(|| "It is gone.".to_owned())?;
+        let sp = &cat.species[a.species as usize];
+        if a.kept.is_some() {
+            return Err("It is already yours.".into());
+        }
+        if sp.domestication.is_none() {
+            return Err(format!(
+                "The {} will not be kept: it is not a kind that takes to people.",
+                sp.name.to_lowercase()
+            ));
+        }
+        if a.stage == Stage::Adult {
+            return Err(format!(
+                "The grown {} twists free: only a young one can be raised by hand.",
+                sp.name.to_lowercase()
+            ));
+        }
+        if matches!(a.act, Act::Flee) {
+            return Err("It is off before your hands close on it.".into());
+        }
+        let words = format!(
+            "You have the young {}: it will follow you now.",
+            sp.name.to_lowercase()
+        );
+        if !commit {
+            return Ok(words);
+        }
+        // Its age: a young one of the year was born at its kind's birth season.
+        let age = if a.stage == Stage::Young { 0.2 } else { 0.8 };
+        a.kept = Some(Kept::caught(
+            crate::herd::Breed::wild(&mut self.rng),
+            years - age,
+        ));
+        a.group = None;
+        a.cell = None;
+        a.mother = None;
+        a.hostile = None;
+        a.hunt = None;
+        a.goal = None;
+        a.way.clear();
+        a.act = Act::Alert;
+        a.timer = 2.0;
+        Ok(words)
+    }
+
+    /// A kept animal tethered to a stake where it stands.
+    pub fn tether(&mut self, id: u64, reach: f64) -> Result<DVec3, Refused> {
+        let a = self.kept_mut(id)?;
+        let at = a.pos;
+        if let Some(k) = a.kept.as_mut() {
+            k.tether = Some((at, reach));
+            k.follows = false;
+        }
+        a.mother = None;
+        a.goal = None;
+        a.way.clear();
+        Ok(at)
+    }
+
+    /// A kept animal led off on a halter: untethered, it follows its keeper. Where its stake
+    /// was, if it was tethered. Only weighed, unless `commit`.
+    pub fn lead(&mut self, id: u64, commit: bool) -> Result<Option<DVec3>, Refused> {
+        let a = self.kept_mut(id)?;
+        let k = a.kept.as_mut().expect("kept");
+        if k.tame < 0.3 {
+            return Err("It pulls back, wild-eyed, and will not be led.".into());
+        }
+        if !commit {
+            return Ok(k.tether.map(|(s, _)| s));
+        }
+        let stake = k.tether.take().map(|(s, _)| s);
+        k.follows = true;
+        Ok(stake)
+    }
+
+    /// Milking a kept mother in milk (once a day): the milk (kg). Only weighed, unless
+    /// `commit`.
+    pub fn milk(
+        &mut self,
+        cat: &Catalog,
+        id: u64,
+        years: f64,
+        day_years: f64,
+        commit: bool,
+    ) -> Result<f32, Refused> {
+        let a = self.kept_mut(id)?;
+        let sp = &cat.species[a.species as usize];
+        let k = a.kept.as_mut().expect("kept");
+        if !a.female || a.stage != Stage::Adult {
+            return Err("Only a mother in milk gives milk.".into());
+        }
+        if k.in_milk(years).is_none() {
+            return Err("She is dry: she has no young at foot.".into());
+        }
+        if k.tame < 0.5 {
+            return Err("She kicks and will not stand to be milked.".into());
+        }
+        if k.milked.is_some_and(|m| years - m < day_years * 0.75) {
+            return Err("She has been milked today.".into());
+        }
+        let kg = crate::herd::milk_kg(sp, k, years);
+        if kg <= 0.0 {
+            return Err("There is nothing to spare from her young.".into());
+        }
+        if commit {
+            k.milked = Some(years);
+        }
+        Ok(kg)
+    }
+
+    /// Plucking a kept animal's fleece as it moults (or shearing it): the wool (kg). Only
+    /// weighed, unless `commit`.
+    pub fn pluck(
+        &mut self,
+        cat: &Catalog,
+        id: u64,
+        years: f64,
+        commit: bool,
+    ) -> Result<f32, Refused> {
+        let a = self.kept_mut(id)?;
+        let sp = &cat.species[a.species as usize];
+        let k = a.kept.as_mut().expect("kept");
+        if k.tame < 0.3 {
+            return Err("It will not stand to be handled.".into());
+        }
+        let kg = crate::herd::fleece_kg(sp, k, years);
+        if kg < 0.02 {
+            return Err("There is no fleece on it to take.".into());
+        }
+        if commit {
+            k.plucked = Some(years);
+        }
+        Ok(kg)
+    }
+
+    /// A kept animal killed for its meat: it lies dead, to be butchered.
+    pub fn slaughter(&mut self, id: u64) -> Result<(), Refused> {
+        let a = self.kept_mut(id)?;
+        a.dead = true;
+        a.speed = 0.0;
+        a.act = Act::Dead;
+        a.hostile = None;
+        // Dead of what a person did.
+        a.hurt.since = Some(0.0);
+        Ok(())
+    }
+
+    /// The kept animals through the calendar to `years` (the world's years; `year_frac` the
+    /// time of year, 0 at the March equinox): grown older and used to their keeping, in young
+    /// after the rut where a male of their kind is near, giving birth in their season, dying of
+    /// age.
+    pub fn tend(
+        &mut self,
+        cat: &Catalog,
+        years: f64,
+        year_frac: f32,
+        southern: bool,
+    ) -> Vec<Tiding> {
+        let Some(last) = self.years.replace(years) else {
+            return Vec::new();
+        };
+        let dt = years - last;
+        if dt <= 0.0 {
+            return Vec::new();
+        }
+        let season = {
+            let f = if southern {
+                (year_frac + 0.5).rem_euclid(1.0)
+            } else {
+                year_frac
+            };
+            ((f * 4.0).floor() as usize).min(3)
+        };
+        let year = years.floor() as i64;
+        // The grown males in the rut, where they are.
+        let males: Vec<(u16, DVec3, crate::herd::Breed, u16)> = self
+            .animals
+            .iter()
+            .filter(|a| !a.dead && !a.female && a.stage == Stage::Adult)
+            .filter_map(|a| a.kept.as_ref().map(|k| (a, k)))
+            .filter(|(a, _)| crate::herd::in_rut(&cat.species[a.species as usize], season))
+            .map(|(a, k)| (a.species, a.pos, k.breed, k.generation))
+            .collect();
+        let mut tidings = Vec::new();
+        let mut born: Vec<Animal> = Vec::new();
+        for a in self.animals.iter_mut().filter(|a| !a.dead) {
+            let Some(k) = a.kept.as_mut() else {
+                continue;
+            };
+            let sp = &cat.species[a.species as usize];
+            let age = years - k.born;
+            let stage = crate::herd::stage_at(sp, k, age);
+            if stage != a.stage {
+                a.stage = stage;
+                if stage != Stage::Young {
+                    a.mother = None;
+                }
+            }
+            crate::herd::settle(k, stage, dt);
+            // A tethered one is watered by its keeper.
+            if k.tether.is_some() {
+                a.thirst = 0.0;
+            }
+            if age > sp.life.lifespan_years as f64 {
+                a.dead = true;
+                a.act = Act::Dead;
+                a.speed = 0.0;
+                tidings.push(Tiding::Died {
+                    species: a.species,
+                    at: a.pos,
+                });
+                continue;
+            }
+            // In young after the rut, beside a male of her kind.
+            if a.female
+                && stage == Stage::Adult
+                && k.carrying.is_none()
+                && k.rut_year != Some(year)
+                && crate::herd::in_rut(sp, season)
+                && let Some(m) = males
+                    .iter()
+                    .find(|m| m.0 == a.species && crate::herd::near_mate(m.1, a.pos))
+            {
+                k.rut_year = Some(year);
+                if self.rng.next_f32() < crate::herd::conceives(sp, k) {
+                    k.carrying = Some(crate::herd::Carrying {
+                        sire: m.2,
+                        sire_generation: m.3,
+                        due: crate::herd::due_after(sp, years, year_frac),
+                    });
+                }
+            }
+            // Her young born in their season.
+            if let Some(c) = k.carrying
+                && years >= c.due
+            {
+                k.carrying = None;
+                k.birth = Some(years);
+                let (lo, hi) = sp.life.litter;
+                let n = (lo + self.rng.next_f32() * (hi - lo + 1.0))
+                    .floor()
+                    .clamp(lo, hi) as u32;
+                for i in 0..n.max(1) {
+                    let ang = (i as f64 + 0.5) * 2.1;
+                    let pos = a.pos + DVec3::new(ang.cos() * 0.8, 0.0, ang.sin() * 0.8);
+                    let mut y = Animal::new(
+                        0,
+                        a.species,
+                        None,
+                        None,
+                        Stage::Young,
+                        self.rng.next_f32() < 0.5,
+                        pos,
+                        self.rng.next_f32() * std::f32::consts::TAU,
+                        3.0,
+                        Medium::Ground,
+                    );
+                    y.mother = Some(a.id);
+                    y.kept = Some(Kept::born_of(k, &c, years, &mut self.rng));
+                    born.push(y);
+                }
+                tidings.push(Tiding::Born {
+                    species: a.species,
+                    mother: a.id,
+                    young: n.max(1),
+                    at: a.pos,
+                });
+            }
+        }
+        for mut y in born {
+            y.id = self.id();
+            self.animals.push(y);
+        }
+        tidings
+    }
+
+    /// The kept animals, for a save.
+    pub fn kept_saved(&self, cat: &Catalog) -> Vec<KeptSaved> {
+        self.animals
+            .iter()
+            .filter(|a| !a.dead)
+            .filter_map(|a| {
+                a.kept.as_ref().map(|k| KeptSaved {
+                    id: a.id,
+                    species: cat.species[a.species as usize].id.clone(),
+                    stage: a.stage,
+                    female: a.female,
+                    pos: a.pos.to_array(),
+                    yaw: a.yaw,
+                    mother: a.mother,
+                    kept: k.clone(),
+                })
+            })
+            .collect()
+    }
+
+    /// The kept animals of a save back in the world (their kinds by id; one of a kind no
+    /// longer known is lost).
+    pub fn restore_kept(&mut self, cat: &Catalog, saved: Vec<KeptSaved>) {
+        let mut ids: FxHashMap<u64, u64> = FxHashMap::default();
+        let mut made = Vec::new();
+        for s in saved {
+            let Some(species) = cat.index(&s.species) else {
+                log::warn!("a kept {} is lost: its kind is no longer known", s.species);
+                continue;
+            };
+            let id = self.id();
+            ids.insert(s.id, id);
+            let mut a = Animal::new(
+                id,
+                species as u16,
+                None,
+                None,
+                s.stage,
+                s.female,
+                DVec3::from_array(s.pos),
+                s.yaw,
+                2.0,
+                Medium::Ground,
+            );
+            a.mother = s.mother;
+            a.kept = Some(s.kept);
+            made.push(a);
+        }
+        for a in made.iter_mut() {
+            a.mother = a.mother.and_then(|m| ids.get(&m).copied());
+        }
+        self.animals.extend(made);
     }
 }
 

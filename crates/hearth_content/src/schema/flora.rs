@@ -181,6 +181,8 @@ pub enum Sprite {
     Creeper,
     /// Grassy leaves in a tuft, its flowers or seed heads on stalks above (sedges, cottongrass).
     Tuft,
+    /// Stalks of a cereal, each topped with its ear (wild wheats and barley).
+    Grain,
     /// A mat over the ground, seen from above (mosses, lichens): its block is a carpet.
     Carpet,
     /// Spined green paddles one on another (a prickly pear).
@@ -408,5 +410,47 @@ entry! {
         /// Wild ancestor this is a domesticated form of.
         #[serde(default)]
         pub domesticated_from: Option<IdRef>,
+        /// A crop it may be grown as (V2-12): sown, tended and reaped in a field.
+        #[serde(default)]
+        pub crop: Option<Crop>,
     }
+}
+
+/// How a plant grows as a crop (V2-12, v2 Era 3): when it is sown and ripens, what a wild stand
+/// and a domestic crop give, what it needs. Times are fractions of the year from the spring
+/// equinox (the northern hemisphere's; the southern's half a year on).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Crop {
+    /// The grain (or seed) it gives: a material.
+    pub grain: IdRef,
+    /// The crop block it stands as in a field (with stages 0–4: sown, shoots, leaf, ears, ripe).
+    pub block: IdRef,
+    /// Its fibre, where its stems give one (flax), and what of its straw is useful.
+    #[serde(default)]
+    pub fibre: Option<IdRef>,
+    #[serde(default)]
+    pub straw: Option<IdRef>,
+    /// When it ripens sown in autumn (the next year), and sown in spring (none: it is not).
+    pub ripe_autumn_sown: f32,
+    #[serde(default)]
+    pub ripe_spring_sown: Option<f32>,
+    /// What a spring-sown crop gives of an autumn-sown one's.
+    #[serde(default = "spring_share")]
+    pub spring_yield: f32,
+    /// Grain weight (mg): the wild's, and the most a domestic lot reaches.
+    pub grain_mg: Range,
+    /// Grain a square metre gives at its best (kg): a wild stand, a domestic crop on good soil.
+    pub yield_kg_m2: Range,
+    /// Water it needs over its season (mm of rain or irrigation).
+    pub water_mm: f32,
+    /// Share of a fertile soil's nitrogen a full domestic crop takes from it.
+    pub draws: f32,
+    /// A wild stand's lines with a tough rachis, and its seed lying dormant a year.
+    pub wild_tough: f32,
+    pub wild_dormant: f32,
+}
+
+fn spring_share() -> f32 {
+    0.75
 }

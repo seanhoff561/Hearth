@@ -196,6 +196,15 @@ pub enum Aimed {
     Station { id: String, fire: Option<FireSeen> },
     /// A natural fire.
     Fire(FireSeen),
+    /// A live animal (V2-12): its kind's content id, whether people keep it, whether it is
+    /// young, female, and of a kind people can keep.
+    Animal {
+        species: String,
+        kept: bool,
+        young: bool,
+        female: bool,
+        domesticable: bool,
+    },
 }
 
 /// A fire as a process sees it.
@@ -429,6 +438,16 @@ fn target_ok(r: &Recipe, bench: &Bench) -> bool {
             .target_thing()
             .and_then(|h| bench.kind(h))
             .is_some_and(|k| matches(m, k, c)),
+        (
+            Some(Target::Animal(m)),
+            Some(Aimed::Animal {
+                kept,
+                young,
+                female,
+                domesticable,
+                ..
+            }),
+        ) => m.accepts(*kept, *young, *female, *domesticable),
         _ => false,
     }
 }
@@ -747,6 +766,10 @@ pub fn triggers_of(crafts: &Crafts, plan: &Plan, bench: &Bench) -> Vec<String> {
             Some(Aimed::Water) => out.push(format!("{verb}:water")),
             Some(Aimed::Fire(_)) | Some(Aimed::Station { fire: Some(_), .. }) => {
                 out.push(format!("{verb}:fire"))
+            }
+            Some(Aimed::Animal { species, .. }) => {
+                out.push(format!("{verb}:animal"));
+                out.push(format!("{verb}:{}", key(species)));
             }
             _ => {}
         }

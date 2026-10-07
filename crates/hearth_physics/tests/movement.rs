@@ -243,6 +243,38 @@ fn swimmers_float_and_divers_run_out_of_breath() {
 }
 
 #[test]
+fn a_boat_floats_its_paddler_dry_and_grounds_in_the_shallows() {
+    // A lake shelving from dry ground (x < 0) to five metres deep (x ≥ 4).
+    let mut g = Grid::floor(30);
+    g.fill((-30, -6, -30), (30, -6, 30), Cell::Solid);
+    g.fill((0, -5, -30), (30, -1, 30), Cell::Water);
+    g.fill((0, -5, -30), (1, -2, 30), Cell::Solid);
+    g.fill((-30, -5, -30), (-1, -1, 30), Cell::Solid);
+    let boat = Ability {
+        boat_m_s: 1.8,
+        ..Ability::human()
+    };
+    // Out from the shore (wading the shallows, then afloat).
+    let mut m = Mover::new(DVec3::new(-2.0, 0.5, 0.5));
+    run(&g, &mut m, &Intent::default(), &boat, 1.0);
+    let r = run(&g, &mut m, &go((1.0, 0.0), Gait::Walk), &boat, 12.0);
+    let last = r.last().expect("steps");
+    assert_eq!(last.motion, Motion::Paddling, "{m:?}");
+    assert!(!m.wet && last.immersion == 0.0, "dry in the hull");
+    assert!((last.speed - 1.8).abs() < 0.1, "paddled: {}", last.speed);
+    assert!(m.pos.y > -0.3, "afloat at the surface: {}", m.pos.y);
+    // Without a boat, the same water is swum.
+    let mut swimmer = Mover::new(DVec3::new(10.5, -1.0, 0.5));
+    run(&g, &mut swimmer, &Intent::default(), &Ability::human(), 5.0);
+    assert_eq!(swimmer.stance, Stance::Swimming);
+    // Back to the shore: it grounds in the shallows and is stepped out of.
+    let r = run(&g, &mut m, &go((-1.0, 0.0), Gait::Walk), &boat, 20.0);
+    let last = r.last().expect("steps");
+    assert!(m.pos.x < 0.0 && m.on_ground, "ashore: {m:?}");
+    assert_ne!(last.motion, Motion::Paddling);
+}
+
+#[test]
 fn crawling_goes_where_standing_cannot() {
     let mut g = Grid::floor(20);
     // A tunnel one block high from x = 3 to x = 8.

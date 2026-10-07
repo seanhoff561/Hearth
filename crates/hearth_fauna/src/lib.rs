@@ -5,6 +5,7 @@ pub mod anim;
 pub mod danger;
 pub mod ecology;
 pub mod habitat;
+pub mod herd;
 pub mod live;
 pub mod mind;
 pub mod nav;

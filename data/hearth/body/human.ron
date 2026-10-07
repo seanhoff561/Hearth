@@ -20,6 +20,7 @@
         "jogging": 7.0,
         "swimming": 7.0,
         "treading_water": 3.5,
+        "paddling": 4.5,
         "climbing": 8.0,
         "sprinting": 12.0,
         "shivering_max": 4.5,

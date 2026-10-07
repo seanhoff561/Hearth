@@ -31,6 +31,30 @@
     "emission_when": {"property": "fire", "values": {"embers": 6, "low": 11, "high": 14}},
     "sound": "stone", "map_color": "#94563a"
   },
+  "saddle_quern": {
+    "hardness": 2.0, "resistance": 4.0,
+    "shape": {"boxes": [[1, 0, 3, 15, 4, 13]]},
+    "opaque": false, "render": "model", "layer": "cutout",
+    "sound": "stone", "map_color": "#8a8478"
+  },
+  "warp_weighted_loom": {
+    "hardness": 0.5, "resistance": 0.5,
+    "shape": {"boxes": [[0, 0, 6, 16, 16, 10]]},
+    "opaque": false, "render": "model", "layer": "cutout",
+    "sound": "wood", "map_color": "#8a7454"
+  },
+  "potters_wheel": {
+    "hardness": 1.5, "resistance": 2.0,
+    "shape": {"boxes": [[2, 0, 2, 14, 7, 14]]},
+    "opaque": false, "render": "model", "layer": "cutout",
+    "sound": "stone", "map_color": "#8a7a64"
+  },
+  "storage_pit": {
+    "hardness": 0.6, "resistance": 0.6,
+    "shape": {"boxes": [[1, 0, 1, 15, 2, 15]]}, "collision": false,
+    "opaque": false, "render": "model", "layer": "cutout",
+    "sound": "soil", "map_color": "#7d5a3e"
+  },
   "drying_rack": {
     "hardness": 0.5, "resistance": 0.5,
     "shape": {"boxes": [[1, 0, 7, 3, 15, 9], [13, 0, 7, 15, 15, 9], [0, 13, 7, 16, 15, 9]]},

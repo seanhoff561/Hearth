@@ -600,15 +600,17 @@ impl Client {
                 best = Some((t, Aim::Item(wi.id)));
             }
         }
-        // An animal within reach of what is in the right hand (a spear's length and the arm).
+        // An animal within reach of what is in the right hand (a spear's length and the arm),
+        // or of the hands, to take hold of it.
         if let (Some(cat), Some(bodies)) = (&self.fauna, &self.bodies) {
-            let reach = 0.7
+            let reach = (0.7
                 + self
                     .carry
                     .right
                     .as_ref()
                     .and_then(|s| s.property(items, "reach_m"))
-                    .unwrap_or(0.5) as f64;
+                    .unwrap_or(0.5) as f64)
+                .max(2.2);
             let year_frac = self.calendar.at(self.ticks).year_frac as f32;
             for (id, s) in &self.animals {
                 if (s.pos - eye).length() > reach + 4.0 {
@@ -706,8 +708,46 @@ impl Client {
         match self.aim {
             Some(Aim::Item(id)) => AimAt::Thing(id),
             Some(Aim::Block { pos, top, .. }) => AimAt::Block { pos, top },
-            Some(Aim::Animal(_)) | None => AimAt::Nothing,
+            Some(Aim::Animal(id)) => AimAt::Animal(id),
+            None => AimAt::Nothing,
         }
+    }
+
+    /// Whether the work chosen is done to the animal looked at (a catch, a milking) rather
+    /// than a blow at it (V2-12).
+    fn animal_work_chosen(&self) -> bool {
+        let Some(c) = &self.crafting else {
+            return false;
+        };
+        let Some(Do::Process(id)) = c.chosen().and_then(|o| o.act.clone()) else {
+            return false;
+        };
+        c.crafts.index_of(&id).is_some_and(|r| {
+            matches!(
+                c.crafts.recipes[r].def.target,
+                Some(hearth_content::schema::process::Target::Animal(_))
+            )
+        })
+    }
+
+    /// The animal looked at, as a process sees it.
+    fn animal_aimed(&self) -> Option<hearth_craft::Aimed> {
+        let Some(Aim::Animal(id)) = self.aim else {
+            return None;
+        };
+        let a = self.animals.get(&id)?;
+        let sp = self
+            .fauna
+            .as_ref()?
+            .species
+            .get(a.target.species as usize)?;
+        Some(hearth_craft::Aimed::Animal {
+            species: sp.id.clone(),
+            kept: a.target.kept,
+            young: a.target.stage != hearth_fauna::live::Stage::Adult,
+            female: a.target.female,
+            domesticable: sp.domestication.is_some(),
+        })
     }
 
     /// Where a piece put up now would go: beside the face looked at.
@@ -781,12 +821,13 @@ impl Client {
         let aim = self.aim_at();
         let day_s = self.calendar.ticks_per_day() / 20.0;
         let year_s = day_s * 4.0 * self.calendar.days_per_season as f64;
-        let (Some(w), Some(items), Some(c)) = (&self.world, &self.items, &mut self.crafting) else {
-            return;
-        };
         let face = match self.aim {
             Some(Aim::Block { face, .. }) => Some(face),
             _ => None,
+        };
+        let animal = self.animal_aimed();
+        let (Some(w), Some(items), Some(c)) = (&self.world, &self.items, &mut self.crafting) else {
+            return;
         };
         let seen = Seen {
             reg: &w.reg,
@@ -800,6 +841,7 @@ impl Client {
             around,
             day_s,
             year_s,
+            animal,
         };
         c.refresh(&seen);
     }
@@ -924,7 +966,9 @@ impl Client {
         if input.was_pressed(builtin::ATTACK) && self.radial.is_none() {
             if working {
                 self.server.send(ToServer::StopWork);
-            } else if let Some(Aim::Animal(_)) = self.aim {
+            } else if let Some(Aim::Animal(_)) = self.aim
+                && !self.animal_work_chosen()
+            {
                 // A thrust or a blow at the animal.
                 self.server.send(ToServer::Thrust {
                     dir: self.camera.forward().as_dvec3(),
@@ -1256,6 +1300,7 @@ impl Client {
                 female,
                 s.target.stage,
                 hearth_fauna::skin::winter_coat(year_frac, southern),
+                s.target.fleece,
             );
             let place = Affine3A::from_rotation_translation(
                 Quat::from_rotation_y(s.yaw),
@@ -1476,6 +1521,7 @@ impl Client {
                 female,
                 stage,
                 hearth_fauna::skin::winter_coat(year_frac, southern),
+                0.0,
             );
             let place = Affine3A::from_rotation_translation(
                 Quat::from_rotation_y(yaw),

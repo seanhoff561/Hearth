@@ -185,6 +185,8 @@ pub struct Species {
     pub danger: Danger,
     /// The season of its rut, where it has one.
     pub rut: Option<Season>,
+    /// What it can become kept by people, and what it gives them alive (V2-12).
+    pub domestication: Option<hearth_content::schema::fauna::Domestication>,
 }
 
 /// How an animal spends its time when nothing troubles it: weights about 1.
@@ -733,6 +735,7 @@ fn species_of(
             SeasonalBehavior::Rut { season } => Some(*season),
             _ => None,
         }),
+        domestication: a.domestication.clone(),
     }
 }
 

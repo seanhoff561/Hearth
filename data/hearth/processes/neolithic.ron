@@ -2,6 +2,340 @@
 (
     schema: 1,
     entries: [
+        // ---- Fields (v2 Era 3; V2-12): wild grain stripped, soil tilled, seed sown, tended and
+        // reaped, threshed, the best seed kept; the plot's ways are the server's (`fields`) ----
+        (
+            id: "strip_wild_einkorn", status: Implemented, name: "Strip wild einkorn", action: "strip the ripe ears into your hand",
+            verb: "strip", target: Block(Id("wild_einkorn")), harvests: Some(1), conditions: [Season([Summer])],
+            inputs: [], duration: (hours: 0.4), mets: 2.5,
+            outputs: [(item: Material("einkorn"), amount: (0.02, 0.05))],
+        ),
+        (
+            id: "strip_wild_emmer", status: Implemented, name: "Strip wild emmer", action: "strip the ripe ears into your hand",
+            verb: "strip", target: Block(Id("wild_emmer")), harvests: Some(1), conditions: [Season([Summer])],
+            inputs: [], duration: (hours: 0.4), mets: 2.5,
+            outputs: [(item: Material("emmer"), amount: (0.02, 0.05))],
+        ),
+        (
+            id: "strip_wild_barley", status: Implemented, name: "Strip wild barley", action: "strip the ripe ears into your hand",
+            verb: "strip", target: Block(Id("wild_barley")), harvests: Some(1), conditions: [Season([Spring, Summer])],
+            inputs: [], duration: (hours: 0.4), mets: 2.5,
+            outputs: [(item: Material("barley"), amount: (0.02, 0.06))],
+        ),
+        (
+            id: "pull_wild_flax", status: Implemented, name: "Pull wild flax", action: "pull up the flax, roots and all",
+            verb: "pull", target: Block(Id("wild_flax")), effect: Remove, conditions: [Season([Summer])],
+            inputs: [], duration: (hours: 0.2), mets: 2.5,
+            outputs: [(item: Material("linseed"), amount: (0.003, 0.008))],
+            byproducts: [(item: Material("flax_stems"), amount: (0.03, 0.06))],
+        ),
+        (
+            // Breaking the ground with a digging stick for a plot a metre square.
+            id: "till_soil", status: Implemented, name: "Till the soil", action: "break up the ground for sowing",
+            verb: "till", effect: Till,
+            target: Block(Any([Material((categories: [Soil, Sediment])), Id("grass_block"), Id("podzol")])),
+            inputs: [], tools: [(property: "digging", min: 0.2)], duration: (hours: 0.3), mets: 5.0, wear: 0.01,
+            knowledge: "sowing_and_tending", skill: "farming",
+            outputs: [],
+        ),
+        (
+            id: "sow_seed", status: Implemented, name: "Sow seed", action: "sow the seed in the tilled ground",
+            verb: "sow", effect: Sow, target: Block(Id("tilled_soil")),
+            inputs: [(item: Tag("sowable"), amount: 1)], duration: (hours: 0.05), mets: 2.5,
+            knowledge: "sowing_and_tending", skill: "farming",
+            outputs: [],
+        ),
+        (
+            id: "weed_plot", status: Implemented, name: "Weed", action: "pull the weeds from among the crop",
+            verb: "weed", effect: Weed, target: Block(Any([Suffix("_crop"), Id("tilled_soil")])),
+            inputs: [], duration: (hours: 0.15), mets: 3.0,
+            knowledge: "sowing_and_tending", skill: "farming",
+            outputs: [],
+        ),
+        (
+            // Dried pats picked up where herds have grazed: dung for the fields, or the fire.
+            id: "gather_dung", status: Implemented, name: "Gather dung", action: "pick up the dried dung of the grazing herds",
+            verb: "gather", target: Block(Any([Id("grass_block"), Id("steppe_fescue"), Id("tall_grass")])), harvests: Some(1),
+            inputs: [], duration: (hours: 0.2), mets: 2.5,
+            outputs: [(item: Material("dung"), amount: (0.2, 0.8))],
+        ),
+        (
+            id: "manure_plot", status: Implemented, name: "Spread dung", action: "spread dung over the plot",
+            verb: "manure", effect: Manure, target: Block(Any([Suffix("_crop"), Id("tilled_soil")])),
+            inputs: [(item: Material("dung"), amount: 2.0)], duration: (hours: 0.1), mets: 3.0,
+            knowledge: "sowing_and_tending", skill: "farming",
+            outputs: [],
+        ),
+        (
+            // Ears cut a handful at a time with a flint sickle: the ripe grain shaken least.
+            id: "reap_crop", status: Implemented, name: "Reap", action: "reap the ripe crop with the sickle",
+            verb: "reap", effect: Reap, target: Block(Suffix("_crop")),
+            inputs: [], tools: [(property: "reaping", min: 0.2)], duration: (hours: 0.03), mets: 4.0, wear: 0.004,
+            knowledge: "harvesting_sickle", skill: "farming",
+            outputs: [],
+        ),
+        (
+            // Pulled up by the roots: slower, and the earth with it.
+            id: "pull_crop", status: Implemented, name: "Pull up the crop", action: "pull up the ripe crop by the roots",
+            verb: "reap", effect: Reap, target: Block(Suffix("_crop")),
+            inputs: [], duration: (hours: 0.1), mets: 4.0,
+            knowledge: "sowing_and_tending", skill: "farming",
+            outputs: [],
+        ),
+        (
+            id: "thresh_sheaf", status: Implemented, name: "Thresh", action: "beat the sheaf and toss the grain clean",
+            verb: "thresh",
+            inputs: [(item: Tag("sheaf"), amount: 1)], duration: (hours: 0.01), mets: 4.0,
+            knowledge: "threshing_winnowing", skill: "farming",
+            outputs: [(item: Form(form: "grains"), amount: (2, 2))],
+            byproducts: [(item: Material("dry_grass"), amount: (0.03, 0.04))],
+        ),
+        (
+            id: "rub_out_grain", status: Implemented, name: "Rub out the grain", action: "rub the ears between your palms and blow off the chaff",
+            verb: "rub",
+            inputs: [(item: Tag("sheaf"), amount: 1)], duration: (hours: 0.05), mets: 2.0,
+            knowledge: "sowing_and_tending",
+            outputs: [(item: Form(form: "grains"), amount: (2, 2))],
+            byproducts: [(item: Material("dry_grass"), amount: (0.03, 0.04))],
+        ),
+        (
+            // The plumpest third kept for sowing: the rest is eaten.
+            id: "select_seed", status: Implemented, name: "Pick out seed", action: "pick out the plumpest grain for sowing",
+            verb: "select", effect: Select, target: Thing(Tag("sowable")),
+            inputs: [(item: Tag("sowable"), amount: 3)], duration: (hours: 0.15), mets: 1.5,
+            knowledge: "seed_selection", skill: "farming",
+            outputs: [(item: Form(form: "grains"), amount: (3, 3))],
+        ),
+        (
+            id: "make_sickle", status: Implemented, name: "Make a sickle", action: "set flint blades in a haft with pitch",
+            verb: "haft",
+            inputs: [(item: Form(form: "blade"), amount: 3), (item: Form(form: "stick"), amount: 1), (item: Tag("adhesive"), amount: 1)],
+            duration: (hours: 0.75), mets: 1.8, knowledge: "harvesting_sickle", skill: "knapping",
+            outputs: [(item: Form(form: "sickle"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.4, from_material: 0.3))],
+        ),
+        // ---- Herds (v2 §11.3): wild young raised by hand, tethered, milked, plucked ----
+        (
+            // A young one whose mother is gone stands and calls, and lets a person near.
+            id: "catch_animal", status: Implemented, name: "Catch", action: "take the young animal up to raise it by hand",
+            verb: "catch", effect: Catch, target: Animal((kept: Some(false), young: Some(true), domesticable: true)),
+            inputs: [], duration: (hours: 0.02), mets: 4.0,
+            knowledge: "animal_herding", skill: "herding",
+            outputs: [],
+        ),
+        (
+            id: "tether_animal", status: Implemented, name: "Tether", action: "drive a stake and tether the animal to it",
+            verb: "tether", effect: Tether, target: Animal((kept: Some(true))),
+            inputs: [(item: Tag("binding"), amount: 1), (item: Form(form: "stick"), amount: 1)], duration: (hours: 0.05), mets: 3.0,
+            knowledge: "animal_herding", skill: "herding",
+            outputs: [],
+        ),
+        (
+            id: "lead_animal", status: Implemented, name: "Lead", action: "lead the animal off on a halter",
+            verb: "lead", effect: Lead, target: Animal((kept: Some(true))),
+            inputs: [], duration: (hours: 0.02), mets: 2.0,
+            knowledge: "animal_herding", skill: "herding",
+            outputs: [],
+        ),
+        (
+            id: "milk_animal", status: Implemented, name: "Milk", action: "milk her into a vessel",
+            verb: "milk", effect: Milk, target: Animal((kept: Some(true), young: Some(false), female: Some(true))),
+            inputs: [(item: Tag("liquid"), amount: 1, consumed: false)], duration: (hours: 0.1), mets: 2.0,
+            knowledge: "milking", skill: "herding",
+            outputs: [(item: Material("milk"), amount: (0.25, 0.25))],
+        ),
+        (
+            // Wild sheep and the first kept ones shed their undercoat in spring: it is plucked
+            // by hand as it loosens (shears came with iron).
+            id: "pluck_wool", status: Implemented, name: "Pluck the fleece", action: "pluck the loosened wool from the animal",
+            verb: "pluck", effect: Pluck, target: Animal((kept: Some(true))),
+            inputs: [], duration: (hours: 0.3), mets: 2.5,
+            knowledge: "animal_herding", skill: "herding",
+            outputs: [(item: Material("wool"), amount: (0.25, 0.25))],
+        ),
+        (
+            id: "slaughter_animal", status: Implemented, name: "Slaughter", action: "kill the animal quickly for its meat",
+            verb: "slaughter", effect: Slaughter, target: Animal((kept: Some(true))),
+            inputs: [], tools: [(property: "sharp_edge", min: 0.3)], duration: (hours: 0.05), mets: 4.0,
+            knowledge: "animal_herding", skill: "herding",
+            outputs: [],
+        ),
+        (
+            // Warmed by the fire till it sours and sets, the curds drained in a pierced pot.
+            id: "make_cheese", status: Implemented, name: "Make cheese", action: "warm the milk till it curdles, and drain the curds",
+            verb: "curdle", station: "campfire", conditions: [HeatAtLeastC(60)],
+            inputs: [(item: Material("milk"), amount: 2.0), (item: Tag("cooking_pot"), amount: 1, consumed: false)],
+            duration: (hours: 1.0), mets: 1.5, knowledge: "cheese_making", skill: "cooking",
+            outputs: [(item: Material("cheese"), amount: (0.25, 0.3))],
+        ),
+        // ---- Spinning and weaving (v2 §11.4) ----
+        (
+            // Pulled flax laid in a pond to rot free its fibre: a week or two in warm water.
+            id: "ret_flax", status: Implemented, name: "Ret flax", action: "lay the flax in the water to ret",
+            verb: "ret", attended: false, target: Water,
+            inputs: [(item: Material("flax_stems"), amount: 1.0)], duration: (hours: 240.0), mets: 2.0,
+            knowledge: "linen", skill: "fibrework",
+            outputs: [(item: Material("retted_flax"), amount: (0.9, 0.95))],
+        ),
+        (
+            // Broken with a mallet, scutched with a wooden blade, combed: the long fibre kept.
+            id: "dress_flax", status: Implemented, name: "Break and scutch flax", action: "break, scutch and comb the retted flax",
+            verb: "scutch",
+            inputs: [(item: Material("retted_flax"), amount: 1.0)], tools: [(property: "hard_hammer", min: 0.2)],
+            duration: (hours: 2.0), mets: 3.5, knowledge: "linen", skill: "fibrework",
+            outputs: [(item: Material("flax_fibre"), amount: (0.15, 0.2))],
+            byproducts: [(item: Material("dry_grass"), amount: (0.3, 0.4))],
+        ),
+        (
+            id: "make_spindle", status: Implemented, name: "Make a spindle", action: "shave a shaft and press a clay whorl onto it",
+            verb: "shape",
+            inputs: [(item: Form(form: "stick"), amount: 1), (item: Form(form: "lump", materials: (categories: [Clay])), amount: 1)],
+            tools: [(property: "sharp_edge", min: 0.3)], duration: (hours: 0.5), mets: 1.5,
+            knowledge: "spindle_spinning", skill: "fibrework",
+            outputs: [(item: Form(form: "spindle"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.5, from_material: 0.2))],
+        ),
+        (
+            // A skein's spinning: hours of drawing out and twisting as the spindle turns.
+            id: "spin_flax", status: Implemented, name: "Spin flax", action: "spin flax fibre into yarn",
+            verb: "spin",
+            inputs: [(item: Material("flax_fibre"), amount: 0.15)], tools: [(property: "spinning", min: 0.3)],
+            duration: (hours: 4.0), mets: 1.5, knowledge: "spindle_spinning", skill: "fibrework", wear: 0.002,
+            outputs: [(item: Form(form: "yarn", materials: (ids: ["flax_fibre"])), amount: (1, 1), quality: (base: 0.3, from_skill: 0.6, from_material: 0.1))],
+        ),
+        (
+            id: "spin_wool", status: Implemented, name: "Spin wool", action: "spin wool into yarn",
+            verb: "spin",
+            inputs: [(item: Material("wool"), amount: 0.15)], tools: [(property: "spinning", min: 0.3)],
+            duration: (hours: 3.0), mets: 1.5, knowledge: "wool", skill: "fibrework", wear: 0.002,
+            outputs: [(item: Form(form: "yarn", materials: (ids: ["wool"])), amount: (1, 1), quality: (base: 0.3, from_skill: 0.6, from_material: 0.1))],
+        ),
+        (
+            // Warp threads hung and weighted, the weft passed and beaten up: a length a day.
+            id: "weave_linen", status: Implemented, name: "Weave linen", action: "weave a length of linen",
+            verb: "weave", station: "warp_weighted_loom",
+            inputs: [(item: Item("yarn/flax_fibre"), amount: 1)], duration: (hours: 8.0), mets: 1.8,
+            knowledge: "loom_weaving", skill: "fibrework",
+            outputs: [(item: Item("length/linen"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.6, from_material: 0.1))],
+        ),
+        (
+            id: "weave_wool", status: Implemented, name: "Weave woollen cloth", action: "weave a length of woollen cloth",
+            verb: "weave", station: "warp_weighted_loom",
+            inputs: [(item: Item("yarn/wool"), amount: 1)], duration: (hours: 6.0), mets: 1.8,
+            knowledge: "wool", skill: "fibrework",
+            outputs: [(item: Item("length/woollen_cloth"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.6, from_material: 0.1))],
+        ),
+        (
+            id: "sew_tunic", status: Implemented, name: "Sew a tunic", action: "cut and sew a tunic of cloth",
+            verb: "sew",
+            inputs: [(item: Form(form: "length"), amount: 2), (item: Tag("thread"), amount: 1)],
+            tools: [(property: "piercing", min: 0.3), (property: "sharp_edge", min: 0.3)],
+            duration: (hours: 5.0), knowledge: "loom_weaving", skill: "sewing", mets: 1.6, wear: 0.02,
+            outputs: [(item: Garment("tunic"), amount: (1, 1), quality: (base: 0.2, from_skill: 0.6, from_material: 0.2))],
+        ),
+        (
+            id: "sew_cloak", status: Implemented, name: "Sew a cloak", action: "cut and hem a cloak of cloth",
+            verb: "sew",
+            inputs: [(item: Form(form: "length"), amount: 3), (item: Tag("thread"), amount: 1)],
+            tools: [(property: "piercing", min: 0.3), (property: "sharp_edge", min: 0.3)],
+            duration: (hours: 3.0), knowledge: "loom_weaving", skill: "sewing", mets: 1.6, wear: 0.02,
+            outputs: [(item: Garment("cloak"), amount: (1, 1), quality: (base: 0.2, from_skill: 0.6, from_material: 0.2))],
+        ),
+        // ---- Timber (v2 §11.6): ground stone axes and adzes, split planks ----
+        (
+            // A tough stone pecked to shape with a hammerstone, then ground for days on wet
+            // sandstone and hafted through a hole in a club of wood.
+            id: "grind_axe", status: Implemented, name: "Grind an axe", action: "peck and grind a stone to an axe blade and haft it",
+            verb: "grind", conditions: [Water],
+            inputs: [(item: Form(form: "cobble"), amount: 1), (item: Form(form: "stick"), amount: 1), (item: Tag("binding"), amount: 1)],
+            tools: [(property: "hard_hammer", min: 0.3)], duration: (hours: 12.0), mets: 3.0,
+            knowledge: "ground_stone_axe", skill: "knapping",
+            outputs: [(item: Form(form: "ground_axe"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.4, from_material: 0.3))],
+        ),
+        (
+            id: "grind_adze", status: Implemented, name: "Grind an adze", action: "grind a stone blade and set it across a haft",
+            verb: "grind", conditions: [Water],
+            inputs: [(item: Form(form: "cobble"), amount: 1), (item: Form(form: "stick"), amount: 1), (item: Tag("binding"), amount: 1)],
+            tools: [(property: "hard_hammer", min: 0.3)], duration: (hours: 10.0), mets: 3.0,
+            knowledge: "adze", skill: "knapping",
+            outputs: [(item: Form(form: "adze"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.4, from_material: 0.3))],
+        ),
+        (
+            id: "make_wedge", status: Implemented, name: "Make a wedge", action: "shape a hardwood wedge",
+            verb: "shape",
+            inputs: [(item: Form(form: "stick"), amount: 1)], tools: [(property: "sharp_edge", min: 0.3)],
+            duration: (hours: 0.3), mets: 2.0, knowledge: "timber_frame", skill: "woodworking",
+            outputs: [(item: Form(form: "wedge"), amount: (1, 1))],
+        ),
+        (
+            // Wedges driven along the grain split a log into planks, as the first farmers' wells
+            // were lined with split oak.
+            id: "split_planks", status: Implemented, name: "Split planks", action: "drive wedges along the grain to split the log into planks",
+            verb: "split",
+            inputs: [(item: Form(form: "log_section"), amount: 1)],
+            tools: [(property: "splitting", min: 0.3), (property: "hard_hammer", min: 0.2)],
+            duration: (hours: 3.0), mets: 5.5, knowledge: "timber_frame", skill: "woodworking",
+            outputs: [(item: Form(form: "plank"), amount: (4, 6), quality: (base: 0.3, from_skill: 0.5, from_material: 0.2))],
+        ),
+        // ---- Moving loads (v2 §11.6): sledges, dugouts, the wheel ----
+        (
+            id: "make_sledge", status: Implemented, name: "Make a sledge", action: "lash a bed of poles across two runners",
+            verb: "lash",
+            inputs: [(item: Form(form: "pole"), amount: 4), (item: Form(form: "stick"), amount: 8), (item: Tag("binding"), amount: 8)],
+            tools: [(property: "chopping", min: 0.3)], duration: (hours: 4.0), mets: 3.0,
+            knowledge: "sledge", skill: "woodworking",
+            outputs: [(item: Form(form: "sledge"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.5, from_material: 0.2))],
+        ),
+        (
+            // Days of burning the log's heart with embers and scraping out the char with the
+            // adze, as the Pesse canoe was made.
+            id: "hollow_dugout", status: Implemented, name: "Hollow a dugout", action: "burn and adze a log hollow into a canoe",
+            verb: "hollow", station: "campfire",
+            inputs: [(item: Form(form: "log_section"), amount: 3)],
+            tools: [(property: "adzing", min: 0.4)], duration: (hours: 60.0), mets: 4.5, wear: 0.1,
+            knowledge: "dugout_canoe", skill: "woodworking",
+            outputs: [(item: Form(form: "dugout_canoe"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.5, from_material: 0.2))],
+        ),
+        (
+            // Wheels cut as discs from a log's rounds, an axle fixed under a plank bed.
+            id: "make_handcart", status: Implemented, name: "Make a handcart", action: "cut two disc wheels and set them on an axle under a plank bed",
+            verb: "build",
+            inputs: [(item: Form(form: "log_section"), amount: 1), (item: Form(form: "plank"), amount: 4), (item: Form(form: "pole"), amount: 3), (item: Tag("binding"), amount: 4)],
+            tools: [(property: "adzing", min: 0.4)], duration: (hours: 16.0), mets: 4.0,
+            knowledge: "wheel_and_axle", skill: "woodworking",
+            outputs: [(item: Form(form: "handcart"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.5, from_material: 0.2))],
+        ),
+        (
+            // Turned on the wheel the pot rises even-walled in a fraction of coiling's time.
+            id: "throw_pot", status: Implemented, name: "Throw a pot", action: "shape a pot on the turning wheel",
+            verb: "throw", station: "potters_wheel",
+            inputs: [(item: Form(form: "lump", materials: (categories: [Clay])), amount: 4)],
+            duration: (hours: 0.4), knowledge: "potters_wheel", skill: "pottery", mets: 2.0,
+            outputs: [(item: Form(form: "wet_pot"), amount: (1, 1), quality: (base: 0.45, from_skill: 0.4, from_material: 0.15))],
+            failures: [(chance: 0.3, min_chance: 0.02, outcome: "The pot wobbles off centre and collapses on the wheel.", loses_inputs: false)],
+        ),
+        // ---- Grain into food (v2 §11.5) ----
+        (
+            id: "grind_grain", status: Implemented, name: "Grind grain", action: "grind the grain on the quern",
+            verb: "grind", station: "saddle_quern",
+            inputs: [(item: Form(form: "grains"), amount: 20)], duration: (hours: 0.35), mets: 3.5,
+            knowledge: "quern", skill: "cooking",
+            outputs: [(item: Material("flour"), amount: (0.17, 0.19))],
+        ),
+        (
+            // Dough of flour and water patted thin and baked on the hot hearth stones.
+            id: "bake_bread", status: Implemented, name: "Bake flatbread", action: "bake flatbread on the hot stones",
+            verb: "bake", station: "campfire", conditions: [HeatAtLeastC(200), Water],
+            inputs: [(item: Material("flour"), amount: 0.2)], duration: (hours: 0.3), mets: 2.0,
+            knowledge: "bread", skill: "cooking",
+            outputs: [(item: Material("bread"), amount: (0.24, 0.27))],
+            failures: [(chance: 0.2, min_chance: 0.02, outcome: "The bread burns black on the stones.")],
+        ),
+        (
+            id: "cook_porridge", status: Implemented, name: "Boil porridge", action: "boil the grain in the pot",
+            verb: "boil", station: "campfire", conditions: [HeatAtLeastC(300), Water],
+            inputs: [(item: Form(form: "grains"), amount: 10), (item: Tag("cooking_pot"), amount: 1, consumed: false)],
+            duration: (hours: 0.75), mets: 1.5, knowledge: "pottery_handbuilt", skill: "cooking",
+            outputs: [(item: Material("porridge"), amount: (0.35, 0.4))],
+        ),
         // ---- Pottery (v2 §11.4): coiled of clay, dried, fired in the heat it needs ----
         (
             // Coils of clay rolled out and pinched up into a pot of some five litres.

@@ -40,6 +40,35 @@ pub enum Target {
     Fire,
     /// The open top of solid ground, to build or lay something on.
     Ground,
+    /// A live animal (V2-12): one to catch, tether, milk or pluck.
+    Animal(AnimalMatch),
+}
+
+/// Which live animals a target accepts (V2-12). Every condition given must hold.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AnimalMatch {
+    /// Kept by people (true), wild (false), either (unset).
+    #[serde(default)]
+    pub kept: Option<bool>,
+    /// Young (not yet grown: true), grown (false), either.
+    #[serde(default)]
+    pub young: Option<bool>,
+    /// Female (true), male (false), either.
+    #[serde(default)]
+    pub female: Option<bool>,
+    /// Of a kind people can keep (one with a domestic form).
+    #[serde(default)]
+    pub domesticable: bool,
+}
+
+impl AnimalMatch {
+    /// Whether an animal of this sort is accepted.
+    pub fn accepts(&self, kept: bool, young: bool, female: bool, domesticable: bool) -> bool {
+        self.kept.is_none_or(|k| k == kept)
+            && self.young.is_none_or(|y| y == young)
+            && self.female.is_none_or(|f| f == female)
+            && (!self.domesticable || domesticable)
+    }
 }
 
 /// Which blocks a target accepts.
@@ -89,6 +118,30 @@ pub enum Effect {
     /// A construction piece ([`Process::places`]) is put up over what is aimed at, facing as the
     /// person faces, of the material of what it uses.
     Place,
+    /// Soil is broken up for a field (V2-12): the block becomes tilled soil, a plot.
+    Till,
+    /// Seed (the input with a lot) is sown in the plot aimed at.
+    Sow,
+    /// A ripe crop is reaped: what the plot gives, its lot as the reaping leaves it.
+    Reap,
+    /// The weeds are pulled from the plot.
+    Weed,
+    /// Dung is spread on the plot: its soil the richer.
+    Manure,
+    /// The best of the seed is picked out to sow (its lot's grain the larger).
+    Select,
+    /// A wild young animal is caught to keep: raised by hand, it follows its keeper.
+    Catch,
+    /// A kept animal is tethered to a stake where it stands.
+    Tether,
+    /// A kept animal is led off on a halter: it follows its keeper.
+    Lead,
+    /// A kept mother in milk is milked: the milk is what is made.
+    Milk,
+    /// A kept animal's fleece is plucked as it moults: the wool is what is made.
+    Pluck,
+    /// A kept animal is killed for its meat: it lies dead, to be butchered.
+    Slaughter,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -1,0 +1,18 @@
+// What the first herds give their keepers alive (V2-12): milk, the cheese that keeps it, and
+// wool plucked from a sheep as it moults.
+(
+    schema: 1,
+    entries: [
+        (id: "milk", status: Implemented, name: "milk", category: AnimalTissue, tags: ["food", "drink", "dairy"], density_kg_m3: 1030,
+         kcal_per_kg: 700, nutrition: Some((protein_g: 45, fat_g: 60, carb_g: 48, water: 0.83)), keeps_days: Some(1.5),
+         appearance: (color: "#f2eee2", pattern: Plain, roughness: 0.2),
+         notes: "Sheep's and goats' milk, richer than a cow's; it sours in a day or two in the warmth, and most grown people of the first herding peoples could not digest it fresh — soured, or made into cheese, they could.", uncertain: true),
+        (id: "cheese", status: Implemented, name: "fresh cheese", category: AnimalTissue, tags: ["food", "dairy", "cheese"], density_kg_m3: 1100,
+         kcal_per_kg: 2600, nutrition: Some((protein_g: 180, fat_g: 200, carb_g: 20, water: 0.55)), keeps_days: Some(45.0),
+         appearance: (color: "#ece2c4", pattern: Clumpy, roughness: 0.6),
+         notes: "Curds set by warmth and souring (or rennet from a kid's stomach), drained in a pierced pot and salted: milk's nourishment kept for weeks.", uncertain: true),
+        (id: "wool", status: Implemented, name: "wool", category: AnimalFibre, tags: ["fleece", "insulation", "bedding", "spinnable"], density_kg_m3: 1310,
+         appearance: (color: "#ddd2ba", pattern: Fibrous, roughness: 0.9),
+         notes: "The soft undercoat a sheep sheds in spring, plucked by hand as it loosens; a wild sheep's is a few handfuls under the hair, a bred one's a fleece."),
+    ],
+)

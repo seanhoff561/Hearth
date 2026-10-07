@@ -116,7 +116,7 @@
             habitat: ["temperate_broadleaf_forest"],
             seasonal: [Rut(season: Summer), Birthing(season: Spring)],
             danger: (defensive: true, aggression: 0.3),
-            domestication: (domestic_form: "cattle", era: 3, difficulty: 0.6),
+            domestication: (domestic_form: "cattle", era: 3, difficulty: 0.6, milk_kg_day: (0.5, 8.0)),
             growth_rate: 0.15, density_per_km2: 1, realms: ["Palearctic"],
             life: (maturity_years: 3, lifespan_years: 20, litter: (1, 1), births_per_year: 0.8, birth_day: 130, adult_survival: 0.93, young_survival: 0.8, birth_mass_kg: 35),
             ranging: (home_range_km2: 20, dispersal_km: 15, dispersers: Males, cover: 0.25),

@@ -1,0 +1,10 @@
+# V2-12 the Neolithic (docs/design/neolithic.md): in the Mediterranean scrub of the Standard
+# planet of seed 11, early summer. The wild mouflon beside the sheep a herder's line became (a
+# bred fleece, cream); a field of einkorn on tilled plots, ripe and green, by a saddle quern, a
+# storage pit and the wild stand; the crafts' stations — a warp-weighted loom, a potter's wheel, an
+# updraft kiln — and a ewe tethered at her stake.
+# `hearth --screenshot-list tools/shots/v212_neolithic.shots`
+defaults: seed=11, planet=standard, res=256, w=960, h=540, hour=10, clouds=0.25, dry=true, biome=mediterranean_scrub, season=summer@0.2
+above=1.8, pitch=6, mow=7@6, animal=mouflon:adult:f:graze@6:-2.2:70, animal=mouflon:adult:m:alert@7.5:-3.6:110, animal=mouflon:young:f:walk@5.2:-1.2:80, animal=mouflon:adult:f:graze:fleece@6:2:110, animal=mouflon:adult:f:alert:fleece@7.5:3.6:70, animal=mouflon:young:f:graze:fleece@5.2:1.2:100, out=bench-out/v212/sheep.png
+above=2.6, pitch=16, mow=8@6, place=hearth:tilled_soil@5:-2:-1, place=hearth:tilled_soil@5:-1:-1, place=hearth:tilled_soil@5:0:-1, place=hearth:tilled_soil@6:-2:-1, place=hearth:tilled_soil@6:-1:-1, place=hearth:tilled_soil@6:0:-1, place=hearth:tilled_soil@7:-2:-1, place=hearth:tilled_soil@7:-1:-1, place=hearth:tilled_soil@7:0:-1, place=hearth:einkorn_crop[stage=4]@5:-2:0, place=hearth:einkorn_crop[stage=4]@5:-1:0, place=hearth:einkorn_crop[stage=3]@5:0:0, place=hearth:einkorn_crop[stage=4]@6:-2:0, place=hearth:einkorn_crop[stage=3]@6:-1:0, place=hearth:einkorn_crop[stage=2]@6:0:0, place=hearth:einkorn_crop[stage=1]@7:-2:0, place=hearth:einkorn_crop[stage=2]@7:-1:0, place=hearth:einkorn_crop[stage=0]@7:0:0, place=hearth:wild_einkorn@6:3:0, place=hearth:wild_einkorn@7:3:0, place=hearth:wild_einkorn@6:4:0, place=hearth:saddle_quern@4:2:0, place=hearth:storage_pit@4:3.5:0, out=bench-out/v212/field.png
+above=2.2, pitch=10, mow=8@6, place=hearth:warp_weighted_loom@5:-2.5:0, place=hearth:potters_wheel@4.5:0:0, place=hearth:updraft_kiln@6:2.5:0, place=hearth:tether_stake@5:5:0, animal=mouflon:adult:f:graze:fleece@6:5.5:40, out=bench-out/v212/crafts.png

@@ -191,6 +191,9 @@ pub fn process_triggers(p: &Process, c: &Content, usable: &Usable, out: &mut FxH
             Some(Target::Fire) => {
                 out.insert(format!("{verb}:fire"));
             }
+            Some(Target::Animal(_)) => {
+                out.insert(format!("{verb}:animal"));
+            }
             Some(Target::Ground) | None => {}
         }
     }

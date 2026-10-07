@@ -236,9 +236,15 @@ pub(crate) fn rest_on(lw: &LocalWorld, at: DVec3) -> DVec3 {
     at
 }
 
-/// How hard the ground underfoot drags at a load pulled over it (sliding friction): snow and
-/// ice let a load slide, sand and mud hold it.
-fn drag_friction(lw: &LocalWorld, feet: DVec3) -> f32 {
+/// How hard the ground underfoot drags at a load pulled over it: sliding friction (snow and ice
+/// let a load slide, sand and mud hold it), less on a sledge's runners, and rolling resistance
+/// on wheels (V2-12: little on hard ground, much in sand, mud and snow).
+fn drag_friction(
+    lw: &LocalWorld,
+    feet: DVec3,
+    dragged: Option<&hearth_items::Stack>,
+    items: &hearth_items::Items,
+) -> f32 {
     let below = BlockPos::containing(feet - DVec3::new(0.0, 0.05, 0.0));
     let at = BlockPos::containing(feet + DVec3::new(0.0, 0.05, 0.0));
     let group = |p: BlockPos| {
@@ -247,7 +253,35 @@ fn drag_friction(lw: &LocalWorld, feet: DVec3) -> f32 {
             .filter(|s| !s.is_air())
             .map(|s| lw.reg.block_of(s).def.sound.clone())
     };
-    match group(at).or_else(|| group(below)).as_deref() {
+    let ground = group(at).or_else(|| group(below));
+    let has = |name: &str| {
+        dragged
+            .and_then(|s| s.property(items, name))
+            .is_some_and(|v| v > 0.0)
+    };
+    if has("wheels") {
+        return match ground.as_deref() {
+            Some("snow") => 0.25,
+            Some("glass") => 0.03,
+            Some("sand") => 0.2,
+            Some("mud") => 0.3,
+            Some("stone") | Some("deepslate") => 0.03,
+            Some("none") => 0.03,
+            _ => 0.07,
+        };
+    }
+    if has("runners") {
+        return match ground.as_deref() {
+            Some("snow") => 0.05,
+            Some("glass") => 0.03,
+            Some("sand") => 0.45,
+            Some("mud") => 0.4,
+            Some("stone") | Some("deepslate") => 0.25,
+            Some("none") => 0.05,
+            _ => 0.3,
+        };
+    }
+    match ground.as_deref() {
         Some("snow") => 0.12,
         Some("glass") => 0.05,
         Some("sand") => 0.6,
@@ -427,9 +461,22 @@ fn body_view(
     held: Option<DVec3>,
 ) -> BodyView {
     let load = p.carry.load(items, cfg.mass_kg as f32);
+    let mut ability = p.ability_with(cfg, &load, mu);
+    // A boat dragged into the water is sat in and paddled (V2-12): as fast as the paddler is
+    // strong.
+    if p.carry
+        .dragging
+        .as_ref()
+        .and_then(|s| s.property(items, "boat"))
+        .is_some_and(|b| b > 0.0)
+    {
+        let params = &cfg.params;
+        ability.boat_m_s =
+            1.8 * (ability.swim_m_s / params.swim_m_s.max(0.1) as f64).clamp(0.3, 1.2);
+    }
     BodyView {
         status: p.body.status(cfg),
-        ability: p.ability_with(cfg, &load, mu),
+        ability,
         asleep: p.asleep,
         lying: p.lying,
         rate,
@@ -1018,12 +1065,14 @@ fn run(
                 moment: calendar.at(ticks),
                 ticks,
                 ticks_per_day: calendar.ticks_per_day(),
+                days_per_year: calendar.days_per_year(),
                 player: &mut player,
                 world_items: &mut world_items,
                 changed: &mut gathered,
                 out: &mut outbox,
                 items_changed: &mut items_changed,
                 facing: last_moved.as_ref().map_or(0.0, |m| m.yaw),
+                fauna: &mut fauna,
             }
         };
     }
@@ -1597,6 +1646,17 @@ fn run(
                 }
                 Ok(ToServer::Shout) => shouted = ticks,
                 Ok(ToServer::Die { species, at }) => fauna.die(&species, at),
+                Ok(ToServer::Bring {
+                    species,
+                    young,
+                    female,
+                    at,
+                }) => {
+                    let at = crate::server::rest_on(&lw, at);
+                    if fauna.bring(&species, young, female, at).is_none() {
+                        log::warn!("no animal {species} to bring");
+                    }
+                }
                 Ok(ToServer::Inspect(id)) => inspecting = id,
                 Ok(ToServer::Observe(eye)) => observing = eye,
                 Ok(ToServer::Follow(id)) => {
@@ -1984,6 +2044,41 @@ fn run(
                     presence.vulnerable = 0.0;
                 }
                 fauna.tick(&lw, &presence, &now, years_at(ticks), TICK_S as f32, ticks);
+                // The kept animals' doings near the player, told.
+                for t in std::mem::take(&mut fauna.tidings) {
+                    use hearth_fauna::herd::Tiding;
+                    let cat = &fauna.eco.catalog;
+                    let (at, words) = match t {
+                        Tiding::Born {
+                            species, young, at, ..
+                        } => (
+                            at,
+                            format!(
+                                "One of your {}s has given birth: {}.",
+                                cat.species[species as usize].name.to_lowercase(),
+                                match young {
+                                    1 => "a single young one".to_owned(),
+                                    2 => "twins".to_owned(),
+                                    n => format!("{n} young"),
+                                }
+                            ),
+                        ),
+                        Tiding::Died { species, at } => (
+                            at,
+                            format!(
+                                "One of your {}s has died of old age.",
+                                cat.species[species as usize].name.to_lowercase()
+                            ),
+                        ),
+                    };
+                    if (at - player.mover.pos).length() < 120.0 {
+                        outbox.push(ToClient::Acted(hearth_protocol::Acted {
+                            process: "herd".into(),
+                            done: true,
+                            words,
+                        }));
+                    }
+                }
                 // The people about the player live their tick, their calls heard with the
                 // animals'.
                 {
@@ -2316,7 +2411,12 @@ fn run(
             // Watching the world, a living player is put aside: its body still, unharmed.
             if player.body.dead.is_none() && observing.is_none() {
                 let load = player.carry.load(&items, cfg.mass_kg as f32);
-                let mu = drag_friction(&lw, player.mover.pos);
+                let mu = drag_friction(
+                    &lw,
+                    player.mover.pos,
+                    player.carry.dragging.as_ref(),
+                    &items,
+                );
                 let mut activity = player.activity_with(&cfg, &report, &load, mu);
                 if player.asleep || player.lying {
                     activity.posture = Posture::Lying;
@@ -2620,7 +2720,12 @@ fn run(
                         e,
                         20.0 + warp + sleep_warp + work_warp + childhood_warp,
                         &items,
-                        drag_friction(&lw, player.mover.pos),
+                        drag_friction(
+                            &lw,
+                            player.mover.pos,
+                            player.carry.dragging.as_ref(),
+                            &items,
+                        ),
                         held,
                     ))))
                     .is_err()

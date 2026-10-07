@@ -3,9 +3,9 @@
     schema: 1,
     entries: [
         // Plant materials.
-        (id: "nettle_fibre", name: "nettle fibre", category: PlantFibre, tags: ["fibre", "cordage", "thread"], density_kg_m3: 1500,
+        (id: "nettle_fibre", name: "nettle fibre", category: PlantFibre, tags: ["fibre", "cordage", "thread", "spinnable"], density_kg_m3: 1500,
          strength: (tensile_mpa: 650), appearance: (color: "#bfb89a", pattern: Fibrous, roughness: 0.7), uncertain: true),
-        (id: "flax_fibre", name: "flax fibre", category: PlantFibre, tags: ["fibre", "cordage", "textile", "thread"], density_kg_m3: 1500,
+        (id: "flax_fibre", name: "flax fibre", category: PlantFibre, tags: ["fibre", "cordage", "textile", "thread", "spinnable"], density_kg_m3: 1500,
          strength: (tensile_mpa: 800), appearance: (color: "#d8c9a0", pattern: Fibrous, roughness: 0.6)),
         (id: "dry_grass", name: "dry grass", category: PlantTissue, tags: ["tinder", "bedding", "thatch", "natural"], density_kg_m3: 150,
          thermal: (ignition_c: 250), fuel_mj_kg: 15.0, appearance: (color: "#c8b26b", pattern: Fibrous, roughness: 1.0)),

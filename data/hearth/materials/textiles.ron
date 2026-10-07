@@ -1,0 +1,16 @@
+// Spinning and weaving (V2-12): flax retted to free its fibre, linen and woollen cloth woven on
+// the warp-weighted loom.
+(
+    schema: 1,
+    entries: [
+        (id: "retted_flax", status: Implemented, name: "retted flax", category: PlantFibre, tags: ["retted"], density_kg_m3: 150,
+         appearance: (color: "#9c8a62", pattern: Fibrous, roughness: 0.8),
+         notes: "Flax stems left a week or two in a pond or on dewy grass till their pith rots and the fibre comes free of the woody core."),
+        (id: "linen", status: Implemented, name: "linen", category: PlantFibre, tags: ["cloth"], density_kg_m3: 1500,
+         strength: (tensile_mpa: 300), appearance: (color: "#d9ccaa", pattern: Fibrous, roughness: 0.5),
+         notes: "Flax yarn woven plain: cool, strong, and slow to dye; some two hundred grams a square metre."),
+        (id: "woollen_cloth", status: Implemented, name: "woollen cloth", category: AnimalFibre, tags: ["cloth"], density_kg_m3: 1310,
+         strength: (tensile_mpa: 120), appearance: (color: "#cdbf9e", pattern: Fibrous, roughness: 0.8),
+         notes: "Wool yarn woven: warm even wet, and it takes dye well."),
+    ],
+)

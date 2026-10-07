@@ -140,6 +140,14 @@ pub enum ToServer {
     /// Tests and bots: a grown animal of a species (content id) dies at a place, to lie there
     /// (a natural death a test may force).
     Die { species: String, at: DVec3 },
+    /// Tests and bots: a wild animal of a species (content id) stands at a place, of no group
+    /// (a young one alone, as if its mother were gone); gone when the player leaves.
+    Bring {
+        species: String,
+        young: bool,
+        female: bool,
+        at: DVec3,
+    },
     /// Tests and bots: the vegetation about a place is cleared or burned, from now on.
     Disturb {
         kind: hearth_worldgen::vegetation::DisturbanceKind,
@@ -178,6 +186,8 @@ pub enum AimAt {
         pos: hearth_math::BlockPos,
         face: hearth_math::Direction,
     },
+    /// A live animal (V2-12: one to catch, tether, milk).
+    Animal(u64),
 }
 
 impl AimAt {

@@ -1,0 +1,97 @@
+// The wild ancestors of the first crops (v2 Era 3; V2-12): the wild wheats and barley of the
+// Fertile Crescent's hills and the wild flax of the Mediterranean, each a stand one can strip of
+// its grain in early summer, and a crop one can sow, tend and reap. A wild stand's ears shatter
+// as they ripen and its seed lies dormant to sprout over several years; sown and reaped, and the
+// best of its seed kept, a lot changes over the generations (`crop`).
+(
+    schema: 1,
+    entries: [
+        (
+            id: "wild_einkorn", name: "Wild einkorn", scientific: "Triticum monococcum subsp. boeoticum", form: Grass, status: Implemented,
+            climate: (temp_c: (4, 20), precip_mm: (250, 900), koppen: ["Csa", "Csb", "BSk", "Dsa", "Dsb", "Cfa"]),
+            shade_tolerance: 0.05, lifecycle: Annual, phenology: (leaf_out: 0.0, flowering: (0.15, 0.22), fruiting: (0.24, 0.32)),
+            dispersal: Gravity, max_height_m: 0.8, lifespan_years: 1,
+            parts: [
+                (part: Seed, material: "einkorn", seasons: [Summer], edibility: Edible, yield_kg: (0.001, 0.003)),
+                (part: Leaf, material: "dry_grass", seasons: [Summer, Autumn], edibility: Inedible, uses: ["bedding", "thatch", "tinder"]),
+            ],
+            understory: (block: "wild_einkorn", abundance: 0.55, light: (0.6, 1.0), patch_m: 25),
+            flammability: 0.7, appearance: (foliage: "#7f9a52", flower: "#c9b074", autumn: "#d4b76a", sprite: Grain),
+            realms: ["Palearctic"],
+            crop: Some((
+                grain: "einkorn", block: "einkorn_crop", straw: Some("dry_grass"),
+                ripe_autumn_sown: 0.28, ripe_spring_sown: Some(0.40),
+                grain_mg: (12, 28), yield_kg_m2: (0.1, 0.25), water_mm: 300, draws: 0.25,
+                wild_tough: 0.003, wild_dormant: 0.5,
+            )),
+            realism_source: "Harlan (1967): a family stripping wild einkorn stands for three weeks gathers a year's grain; grain weights after Fuller (2007)",
+            uncertain: true,
+            notes: "Thick stands on the basalt and limestone hills of south-east Anatolia; its single grains fall as the ears ripen.",
+        ),
+        (
+            id: "wild_emmer", name: "Wild emmer", scientific: "Triticum turgidum subsp. dicoccoides", form: Grass, status: Implemented,
+            climate: (temp_c: (8, 22), precip_mm: (300, 1000), koppen: ["Csa", "Csb", "BSk", "BSh"]),
+            shade_tolerance: 0.05, lifecycle: Annual, phenology: (leaf_out: 0.0, flowering: (0.14, 0.2), fruiting: (0.22, 0.3)),
+            dispersal: Gravity, max_height_m: 1.0, lifespan_years: 1,
+            parts: [
+                (part: Seed, material: "emmer", seasons: [Summer], edibility: Edible, yield_kg: (0.001, 0.004)),
+                (part: Leaf, material: "dry_grass", seasons: [Summer, Autumn], edibility: Inedible, uses: ["bedding", "thatch", "tinder"]),
+            ],
+            understory: (block: "wild_emmer", abundance: 0.5, light: (0.6, 1.0), patch_m: 25),
+            flammability: 0.7, appearance: (foliage: "#7a9550", flower: "#c4a868", autumn: "#cfae62", sprite: Grain),
+            realms: ["Palearctic"],
+            crop: Some((
+                grain: "emmer", block: "emmer_crop", straw: Some("dry_grass"),
+                ripe_autumn_sown: 0.27, ripe_spring_sown: Some(0.40),
+                grain_mg: (20, 40), yield_kg_m2: (0.1, 0.28), water_mm: 350, draws: 0.28,
+                wild_tough: 0.002, wild_dormant: 0.55,
+            )),
+            realism_source: "Zohary, Hopf & Weiss, Domestication of Plants in the Old World (2012)",
+            uncertain: true,
+            notes: "The wild wheat of the Upper Jordan valley and the Taurus-Zagros arc; two grains to each spikelet.",
+        ),
+        (
+            id: "wild_barley", name: "Wild barley", scientific: "Hordeum vulgare subsp. spontaneum", form: Grass, status: Implemented,
+            climate: (temp_c: (5, 24), precip_mm: (150, 900), koppen: ["Csa", "Csb", "BSk", "BSh", "BWh", "Dsa"]),
+            shade_tolerance: 0.05, lifecycle: Annual, phenology: (leaf_out: 0.0, flowering: (0.12, 0.18), fruiting: (0.2, 0.27)),
+            dispersal: Gravity, max_height_m: 0.9, lifespan_years: 1,
+            parts: [
+                (part: Seed, material: "barley", seasons: [Spring, Summer], edibility: Edible, yield_kg: (0.001, 0.004)),
+                (part: Leaf, material: "dry_grass", seasons: [Summer, Autumn], edibility: Inedible, uses: ["bedding", "thatch", "tinder"]),
+            ],
+            understory: (block: "wild_barley", abundance: 0.6, light: (0.6, 1.0), patch_m: 30),
+            flammability: 0.7, appearance: (foliage: "#86a058", flower: "#d0b87a", autumn: "#dcc078", sprite: Grain),
+            realms: ["Palearctic"],
+            crop: Some((
+                grain: "barley", block: "barley_crop", straw: Some("dry_grass"),
+                ripe_autumn_sown: 0.24, ripe_spring_sown: Some(0.36),
+                grain_mg: (25, 45), yield_kg_m2: (0.11, 0.3), water_mm: 250, draws: 0.25,
+                wild_tough: 0.003, wild_dormant: 0.45,
+            )),
+            realism_source: "Zohary, Hopf & Weiss (2012); Hillman & Davies (1990) on the brittle rachis",
+            uncertain: true,
+            notes: "Wild barley ranges from the steppe's edge to the Mediterranean shore, the hardiest of the wild cereals.",
+        ),
+        (
+            id: "wild_flax", name: "Pale flax", scientific: "Linum bienne", form: Herb, status: Implemented,
+            climate: (temp_c: (8, 20), precip_mm: (400, 1200), koppen: ["Csa", "Csb", "Cfb", "Cfa"]),
+            shade_tolerance: 0.1, lifecycle: Annual, phenology: (leaf_out: 0.02, flowering: (0.15, 0.3), fruiting: (0.28, 0.38)),
+            dispersal: Explosive, max_height_m: 0.6, lifespan_years: 2,
+            parts: [
+                (part: Seed, material: "linseed", seasons: [Summer], edibility: Edible, yield_kg: (0.0003, 0.001)),
+            ],
+            understory: (block: "wild_flax", abundance: 0.35, light: (0.6, 1.0), patch_m: 12),
+            flammability: 0.5, appearance: (foliage: "#6f8f5a", flower: "#9fb6e0", autumn: "#b89a5c", sprite: Spike),
+            realms: ["Palearctic"],
+            crop: Some((
+                grain: "linseed", block: "flax_crop", fibre: Some("flax_stems"),
+                ripe_autumn_sown: 0.30, ripe_spring_sown: Some(0.38),
+                grain_mg: (2.5, 6), yield_kg_m2: (0.04, 0.12), water_mm: 400, draws: 0.2,
+                wild_tough: 0.01, wild_dormant: 0.3,
+            )),
+            realism_source: "Zohary, Hopf & Weiss (2012): domestic flax's capsules stay closed; wild flax's split and fling the seed",
+            uncertain: true,
+            notes: "Slender stems and pale blue flowers; its capsules split and scatter the seed, the domestic's stay shut.",
+        ),
+    ],
+)

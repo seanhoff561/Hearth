@@ -17,6 +17,7 @@ pub mod edits;
 pub mod environment;
 pub mod eras;
 pub mod fauna;
+pub mod fields;
 pub mod frame_limiter;
 pub mod gamepad;
 pub mod globe;

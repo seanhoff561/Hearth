@@ -243,6 +243,8 @@ pub struct Fauna {
     rng: hearth_math::hash::Rng,
     /// Regions being made on workers: their keys, and where each will come.
     making: Vec<((i64, i64), std::sync::mpsc::Receiver<Region>)>,
+    /// What befell the kept animals since this was last taken (V2-12).
+    pub tidings: Vec<hearth_fauna::herd::Tiding>,
 }
 
 /// What is saved of the populations.
@@ -251,6 +253,9 @@ struct Saved {
     years: f64,
     next_id: u64,
     regions: Vec<Region>,
+    /// The animals people keep (V2-12), apart from the populations' numbers.
+    #[serde(default)]
+    kept: Vec<hearth_fauna::live::KeptSaved>,
 }
 
 /// A catch-up this long (years: a week of the world a tick, the Observer's year a second and
@@ -291,22 +296,25 @@ impl Fauna {
         let mut eco = Ecology::new(catalog.clone(), seed, year_offset, &land);
         eco.peopling = peopling;
         let mut at = years;
+        let mut live = Live::new(seed);
         if let Some(saved) = dir.and_then(|d| load(&d.join(FILE))) {
             eco.next_id = saved.next_id;
             at = saved.years;
             for r in saved.regions {
                 eco.restore(&land, r);
             }
+            live.restore_kept(&catalog, saved.kept);
         }
         Self {
             eco,
-            live: Live::new(seed),
+            live,
             cells: cells_of(&lw.reg),
             yields,
             years: at,
             now: years.max(at),
             rng: hearth_math::hash::Rng::new(seed ^ 0x000c_a115),
             making: Vec::new(),
+            tidings: Vec::new(),
         }
     }
 
@@ -537,6 +545,12 @@ impl Fauna {
         if !fast {
             self.live.step(&self.eco, &ground, Some(presence), now, dt);
         }
+        // The kept animals through the calendar: born, grown, in young, dying of age.
+        if tick.is_multiple_of(40) || fast || self.live.years.is_none_or(|y| years - y > 0.01) {
+            let cat = self.eco.catalog.clone();
+            let tidings = self.live.tend(&cat, years, now.year_frac, now.southern);
+            self.tidings.extend(tidings);
+        }
     }
 
     /// The animals near the player, for the client.
@@ -690,6 +704,14 @@ impl Fauna {
         }
     }
 
+    /// A wild animal of a species stands at a place, of no group (tests and bots: a young one
+    /// alone, as if its mother were gone). Its id.
+    pub fn bring(&mut self, species: &str, young: bool, female: bool, at: DVec3) -> Option<u64> {
+        let si = self.eco.catalog.index(species)?;
+        let stage = if young { Stage::Young } else { Stage::Adult };
+        Some(self.live.place(si as u16, stage, female, at, 0.0))
+    }
+
     /// The groups of the loaded regions: species, where, how many.
     pub fn census(&self) -> Vec<(u16, glam::DVec2, u32)> {
         self.eco
@@ -721,6 +743,7 @@ impl Fauna {
             years: self.years,
             next_id: eco.next_id,
             regions,
+            kept: self.live.kept_saved(&self.eco.catalog),
         };
         let json = match serde_json::to_vec(&saved) {
             Ok(j) => j,

@@ -3,6 +3,39 @@
     schema: 1,
     entries: [
         (
+            // A saddle-shaped slab and the stone rubbed back and forth on it.
+            id: "saddle_quern", status: Implemented, name: "Saddle quern", action: "set up a grinding slab and its rubbing stone",
+            parts: [(item: Form(form: "slab"), amount: 1), (item: Form(form: "cobble"), amount: 1)],
+            provides: [Grinding],
+            knowledge: "quern", build: (hours: 2.0), block: "saddle_quern",
+            notes: "Grinding by hand on a saddle quern: some hours a day for a household's flour.",
+        ),
+        (
+            // A pit dug and lined with clay and straw, sealed over: grain kept dry, from mice.
+            id: "storage_pit", status: Implemented, name: "Storage pit", action: "dig and line a storage pit",
+            parts: [(item: Form(form: "lump", materials: (categories: [Clay])), amount: 6), (item: Material("dry_grass"), amount: 1.0)],
+            provides: [],
+            knowledge: "storage_pits", build: (hours: 4.0), block: "storage_pit",
+            notes: "Grain sealed in a lined pit keeps for a year and more.",
+        ),
+        (
+            // Two uprights and a beam leaning on a wall, the warp hung from the beam in front
+            // and kept taut by stone weights; the weft beaten upward.
+            id: "warp_weighted_loom", status: Implemented, name: "Warp-weighted loom", action: "set up a loom: uprights, a beam, the warp hung with weights",
+            parts: [(item: Form(form: "stick"), amount: 4), (item: Tag("binding"), amount: 4), (item: Form(form: "cobble"), amount: 8)],
+            provides: [],
+            knowledge: "loom_weaving", build: (hours: 3.0), block: "warp_weighted_loom",
+            notes: "Rows of loom weights where looms stood are found in Neolithic houses from Anatolia to the Danube.",
+        ),
+        (
+            // A turntable: a heavy disc turning on a pivot stone, spun by hand between pulls.
+            id: "potters_wheel", status: Implemented, name: "Potter's wheel", action: "set a turning disc on a pivot stone",
+            parts: [(item: Form(form: "slab"), amount: 1), (item: Form(form: "cobble"), amount: 1), (item: Form(form: "plank"), amount: 1)],
+            provides: [],
+            knowledge: "potters_wheel", build: (hours: 3.0), block: "potters_wheel",
+            notes: "The slow wheel (tournette) of Mesopotamia, before the fast wheel kicked round by the foot.",
+        ),
+        (
             // A shallow pit, its pots bedded in and the fuel heaped over them.
             id: "firing_pit", status: Implemented, name: "Firing pit", action: "dig a firing pit and heap fuel in it",
             parts: [(item: Tag("fuelwood"), amount: 8), (item: Tag("tinder"), amount: 2)],

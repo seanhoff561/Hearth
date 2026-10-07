@@ -68,6 +68,11 @@ impl EnvSampler {
         m.local_time(self.planet.solar_time_offset(x))
     }
 
+    /// The climate's normals at a place (its year's mean temperature and rain).
+    pub fn normals(&self, at: DVec3) -> hearth_env::Normals {
+        hearth_env::Normals::sample(&self.grid, at.x, at.z)
+    }
+
     /// The weather at a place (without the sky's light).
     pub fn weather_at(&self, m: &Moment, at: DVec3) -> WeatherState {
         let local = self.local_time(m, at.x);

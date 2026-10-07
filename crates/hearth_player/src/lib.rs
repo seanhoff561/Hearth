@@ -163,6 +163,7 @@ impl Player {
             climb: fx.two_hands && strength > 0.5 && self.body.stamina > 0.1,
             breath_s: 45.0 * strength.max(0.4),
             stamina: self.body.stamina,
+            boat_m_s: 0.0,
         }
     }
 
@@ -264,6 +265,7 @@ impl Player {
             Motion::Crawling | Motion::Climbing => "climbing",
             Motion::Swimming if r.speed > 0.2 => "swimming",
             Motion::Swimming => "treading_water",
+            Motion::Paddling => "paddling",
             Motion::Falling | Motion::Still => match self.mover.stance {
                 Stance::Crawling => "resting",
                 _ => "standing",
@@ -276,6 +278,7 @@ impl Player {
         }
         a.speed_m_s = r.speed as f32;
         a.posture = match self.mover.stance {
+            _ if r.motion == Motion::Paddling => Posture::Sitting,
             Stance::Crawling | Stance::Swimming => Posture::Lying,
             Stance::Crouching => Posture::Sitting,
             _ => Posture::Standing,

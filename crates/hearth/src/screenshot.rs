@@ -276,6 +276,8 @@ pub struct ShotAnimal {
     pub up: f64,
     /// On the ground, swimming, on the wing, up a tree (from what it does).
     pub medium: hearth_fauna::live::Medium,
+    /// How woolly its coat (V2-12: a bred line's fleece).
+    pub fleece: f32,
 }
 
 /// How fast an animal placed in a shot goes.
@@ -519,6 +521,8 @@ impl ShotSpec {
                     };
                     let female = w.next().unwrap_or("f") != "m";
                     let (act, pace, medium) = act_of(w.next().unwrap_or("graze"))?;
+                    // `…:graze:fleece`: a bred line's fleece (V2-12).
+                    let fleece = if w.next() == Some("fleece") { 1.0 } else { 0.0 };
                     let mut n = at.split(':');
                     let ahead = n.next().unwrap_or("15").parse()?;
                     let right = n.next().unwrap_or("0").parse()?;
@@ -535,6 +539,7 @@ impl ShotSpec {
                         yaw,
                         up,
                         medium,
+                        fleece,
                     });
                 }
                 // `hominin=f:adult:feed@6:-1:150` (sex, age, what it does @ metres ahead : to the
@@ -648,6 +653,7 @@ impl ShotSpec {
                             yaw: (v2 * 360.0) as f32,
                             up: 0.0,
                             medium: hearth_fauna::live::Medium::Ground,
+                            fleece: 0.0,
                         });
                     }
                 }
@@ -2103,6 +2109,8 @@ struct Drawn {
     speed: f32,
     phase: f32,
     medium: hearth_fauna::live::Medium,
+    /// How woolly its coat (V2-12).
+    fleece: f32,
 }
 
 /// The boxes of animals in a shot, posed on the ground under their feet in their coats,
@@ -2163,6 +2171,7 @@ fn animal_instances(
             a.female,
             a.stage,
             hearth_fauna::skin::winter_coat(year_frac, southern),
+            a.fleece,
         );
         let place = glam::Affine3A::from_rotation_translation(
             glam::Quat::from_rotation_y(a.yaw),
@@ -2192,6 +2201,7 @@ fn drawn_views(views: &[hearth_fauna::live::AnimalView]) -> Vec<Drawn> {
             speed: v.speed,
             phase: v.stride.rem_euclid(1.0),
             medium: v.medium,
+            fleece: v.fleece,
         })
         .collect()
 }
@@ -2278,6 +2288,7 @@ fn placed_animals(
             speed,
             phase: ((a.ahead * 0.37 + a.right * 0.21).rem_euclid(1.0)) as f32,
             medium: a.medium,
+            fleece: a.fleece,
         });
     }
     Ok(out)

@@ -534,6 +534,10 @@ fn cross_texture(name: &str, s: BlockStateId, reg: &BlockRegistry) -> String {
     if let Some(half) = prop(reg, s, "half") {
         return format!("{name}_{}", if half == "upper" { "top" } else { "bottom" });
     }
+    // A crop as it grows (V2-12): its texture by its stage.
+    if let Some(stage) = prop(reg, s, "stage") {
+        return format!("{name}_{stage}");
+    }
     name.to_owned()
 }
 
@@ -650,6 +654,10 @@ fn cube_model(
             ctx.tex("podzol_top")
         };
         f[down] = ctx.tex("loam");
+        f
+    } else if name == "tilled_soil" {
+        let mut f = all(ctx.tex("tilled_soil"));
+        f[up] = ctx.tex("tilled_soil_top");
         f
     } else if name == "burnt_ground" {
         let mut f = all(ctx.tex("burnt_ground_side"));
@@ -1167,6 +1175,141 @@ fn bake_model(
                     Vec3::new(px(10.0), px(18.0), px(10.0)),
                 ));
             }
+            layer = RenderLayer::Cutout;
+        }
+        "saddle_quern" => {
+            // A long slab hollowed like a saddle, its rubbing stone lying in the hollow.
+            let px = |v: f32| v / 16.0;
+            let slab = ctx.tex("campfire_stones");
+            for [x0, x1, h] in [[1.0, 4.0, 4.0], [4.0, 12.0, 2.5], [12.0, 15.0, 4.0]] {
+                box_quads(
+                    Vec3::new(px(x0), 0.0, px(3.0)),
+                    Vec3::new(px(x1), px(h), px(13.0)),
+                    |_| slab,
+                    true,
+                    &mut quads,
+                );
+            }
+            box_quads(
+                Vec3::new(px(6.0), px(2.5), px(5.0)),
+                Vec3::new(px(9.5), px(5.0), px(11.0)),
+                |_| slab,
+                true,
+                &mut quads,
+            );
+            layer = RenderLayer::Cutout;
+        }
+        "warp_weighted_loom" => {
+            // Two uprights and the beam across their tops, the warp hanging from it in front,
+            // a row of stone weights at its foot.
+            let px = |v: f32| v / 16.0;
+            let wood = ctx.tex("drying_rack");
+            let warp = ctx.tex("warp_weighted_loom");
+            let stone = ctx.tex("campfire_stones");
+            for [x0, x1] in [[0.5, 2.0], [14.0, 15.5]] {
+                box_quads(
+                    Vec3::new(px(x0), 0.0, px(8.5)),
+                    Vec3::new(px(x1), px(16.0), px(10.0)),
+                    |_| wood,
+                    true,
+                    &mut quads,
+                );
+            }
+            box_quads(
+                Vec3::new(px(0.0), px(14.0), px(7.5)),
+                Vec3::new(px(16.0), px(15.5), px(9.0)),
+                |_| wood,
+                true,
+                &mut quads,
+            );
+            // The warp: a sheet of threads, and the cloth woven at its top.
+            box_quads(
+                Vec3::new(px(2.0), px(3.0), px(7.9)),
+                Vec3::new(px(14.0), px(14.0), px(8.1)),
+                |_| warp,
+                false,
+                &mut quads,
+            );
+            for k in 0..6 {
+                let x = 2.5 + k as f32 * 2.0;
+                box_quads(
+                    Vec3::new(px(x), px(1.0), px(7.0)),
+                    Vec3::new(px(x + 1.5), px(3.0), px(9.0)),
+                    |_| stone,
+                    true,
+                    &mut quads,
+                );
+            }
+            layer = RenderLayer::Cutout;
+        }
+        "potters_wheel" => {
+            // A pivot stone, the wooden disc on it, a lump of clay centred on top.
+            let px = |v: f32| v / 16.0;
+            let stone = ctx.tex("campfire_stones");
+            let wood = ctx.tex("drying_rack");
+            let clay = ctx.tex("potters_wheel");
+            box_quads(
+                Vec3::new(px(5.0), 0.0, px(5.0)),
+                Vec3::new(px(11.0), px(4.0), px(11.0)),
+                |_| stone,
+                true,
+                &mut quads,
+            );
+            box_quads(
+                Vec3::new(px(2.0), px(4.0), px(2.0)),
+                Vec3::new(px(14.0), px(5.5), px(14.0)),
+                |_| wood,
+                true,
+                &mut quads,
+            );
+            box_quads(
+                Vec3::new(px(6.0), px(5.5), px(6.0)),
+                Vec3::new(px(10.0), px(7.0), px(10.0)),
+                |_| clay,
+                true,
+                &mut quads,
+            );
+            layer = RenderLayer::Cutout;
+        }
+        "tether_stake" => {
+            // A stake driven into the ground, the tether's loop round its foot.
+            let px = |v: f32| v / 16.0;
+            let wood = ctx.tex("drying_rack");
+            let rope = ctx.tex("tether_stake");
+            box_quads(
+                Vec3::new(px(7.0), 0.0, px(7.0)),
+                Vec3::new(px(9.0), px(10.0), px(9.0)),
+                |_| wood,
+                true,
+                &mut quads,
+            );
+            box_quads(
+                Vec3::new(px(6.5), px(1.0), px(6.5)),
+                Vec3::new(px(9.5), px(2.0), px(9.5)),
+                |_| rope,
+                true,
+                &mut quads,
+            );
+            layer = RenderLayer::Cutout;
+        }
+        "storage_pit" => {
+            // A pit's sealed mouth: a low dome of clay daubed over straw.
+            let px = |v: f32| v / 16.0;
+            let clay = ctx.tex("kiln_clay");
+            box_quads(
+                Vec3::new(px(1.0), 0.0, px(1.0)),
+                Vec3::new(px(15.0), px(1.0), px(15.0)),
+                |_| clay,
+                true,
+                &mut quads,
+            );
+            box_quads(
+                Vec3::new(px(4.0), px(1.0), px(4.0)),
+                Vec3::new(px(12.0), px(2.0), px(12.0)),
+                |_| clay,
+                true,
+                &mut quads,
+            );
             layer = RenderLayer::Cutout;
         }
         "fat_lamp" => {

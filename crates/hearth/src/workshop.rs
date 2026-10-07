@@ -20,10 +20,10 @@ use std::sync::Arc;
 use glam::DVec3;
 use hearth_body::BodyConfig;
 use hearth_content::Content;
-use hearth_content::schema::process::Effect;
+use hearth_content::schema::process::{Effect, Process};
 use hearth_content::schema::station::Capability;
 use hearth_content::time::TimeScales;
-use hearth_content::triggers::{self, block_keys, item_keys, with_verb};
+use hearth_content::triggers::{self, block_keys, item_keys, key, with_verb};
 use hearth_craft::engine::{finish_batch, perform_by, plan};
 use hearth_craft::food::{bite_of, decay_per_hour, keeps_days};
 use hearth_craft::{
@@ -77,6 +77,9 @@ pub struct WorkshopSave {
     harvests: Vec<Harvest>,
     #[serde(default)]
     depleted: Vec<(BlockPos, f32)>,
+    /// The fields' plots (V2-12).
+    #[serde(default)]
+    plots: Vec<crate::fields::Plot>,
 }
 
 /// Work in hand.
@@ -103,6 +106,8 @@ pub struct Here<'a> {
     pub moment: Moment,
     pub ticks: u64,
     pub ticks_per_day: f64,
+    /// Game days in a year.
+    pub days_per_year: f64,
     pub player: &'a mut Player,
     pub world_items: &'a mut WorldItems,
     /// Blocks changed, for meshing and lighting.
@@ -112,6 +117,8 @@ pub struct Here<'a> {
     pub items_changed: &'a mut bool,
     /// Which way the person faces (radians: 0 toward +z, turning toward +x).
     pub facing: f32,
+    /// The animals (V2-12: the kept ones are worked with).
+    pub fauna: &'a mut crate::fauna::Fauna,
 }
 
 /// The firing range of what a stack is made of (°C), if it fires (clay).
@@ -129,6 +136,9 @@ pub struct Workshop {
     pub wildfires: Vec<Station>,
     harvests: FxHashMap<(BlockPos, String), (i64, u8)>,
     depleted: FxHashMap<BlockPos, f32>,
+    /// The crops there are, and the fields' plots by their tilled block (V2-12).
+    pub crops: Arc<crate::fields::Crops>,
+    pub plots: FxHashMap<BlockPos, crate::fields::Plot>,
     pub work: Option<Work>,
     rng: Rng,
     /// Triggers of sight lately heard, and when (they are not heard again for a while).
@@ -296,6 +306,8 @@ impl Workshop {
                 .map(|h| ((h.pos, h.process), (h.year, h.count)))
                 .collect(),
             depleted: save.depleted.into_iter().collect(),
+            crops: Arc::new(crate::fields::Crops::from_content(content)),
+            plots: save.plots.into_iter().map(|p| (p.pos, p)).collect(),
             work: None,
             rng: Rng::new(seed ^ 0xc4af7),
             heard_at: FxHashMap::default(),
@@ -325,11 +337,14 @@ impl Workshop {
         let mut depleted: Vec<(BlockPos, f32)> =
             self.depleted.iter().map(|(p, kg)| (*p, *kg)).collect();
         depleted.sort_by_key(|(p, _)| *p);
+        let mut plots: Vec<crate::fields::Plot> = self.plots.values().cloned().collect();
+        plots.sort_by_key(|p| p.pos);
         WorkshopSave {
             stations: self.stations.clone(),
             wildfires: self.wildfires.clone(),
             harvests,
             depleted,
+            plots,
         }
     }
 
@@ -362,6 +377,22 @@ impl Workshop {
                     material: block.def.material.clone(),
                     ground: false,
                     room: room(),
+                })
+            }
+            AimAt::Animal(id) => {
+                let a = h
+                    .fauna
+                    .live
+                    .animals
+                    .iter()
+                    .find(|a| a.id == id && !a.dead)?;
+                let sp = &h.fauna.eco.catalog.species[a.species as usize];
+                Some(Aimed::Animal {
+                    species: sp.id.clone(),
+                    kept: a.kept.is_some(),
+                    young: a.stage != hearth_fauna::live::Stage::Adult,
+                    female: a.female,
+                    domesticable: sp.domestication.is_some(),
                 })
             }
             AimAt::Block { pos, top } => {
@@ -404,6 +435,13 @@ impl Workshop {
                 .world_items
                 .get(id)
                 .map_or(h.player.mover.pos, |w| DVec3::from_array(w.pos)),
+            AimAt::Animal(id) => h
+                .fauna
+                .live
+                .animals
+                .iter()
+                .find(|a| a.id == id)
+                .map_or(h.player.mover.pos, |a| a.pos),
             AimAt::Nothing => h.player.mover.pos,
         }
     }
@@ -538,6 +576,20 @@ impl Workshop {
             h.out.push(acted(process, false, "Out of reach."));
             return;
         }
+        if let AimAt::Animal(id) = aim {
+            let eye = h.player.mover.pos + DVec3::new(0.0, 1.6, 0.0);
+            let near = h
+                .fauna
+                .live
+                .animals
+                .iter()
+                .find(|a| a.id == id && !a.dead)
+                .is_some_and(|a| (a.pos + DVec3::new(0.0, 0.5, 0.0) - eye).length() <= 4.0);
+            if !near {
+                h.out.push(acted(process, false, "Out of reach."));
+                return;
+            }
+        }
         let p = match self.plan_now(h, r, aim) {
             Ok(p) => p,
             Err(l) => {
@@ -545,6 +597,14 @@ impl Workshop {
                 return;
             }
         };
+        // What it would come to with the animal, weighed before the work begins.
+        if let AimAt::Animal(id) = aim {
+            let effect = self.crafts.recipes[r].def.effect;
+            if let Err(why) = self.on_animal(h, process, effect, id, false) {
+                h.out.push(acted(process, false, why));
+                return;
+            }
+        }
         if let Some(why) = self.piece_lacks(h, r, aim) {
             h.out.push(acted(process, false, why));
             return;
@@ -943,7 +1003,8 @@ impl Workshop {
                     .push(acted(&def.id, false, "There is no wound to treat.")),
             }
         }
-        // What it does to its target.
+        // What it does to its target (the milk or wool an animal gives, kg).
+        let mut animal_kg: Option<f32> = None;
         match (o.effect, aim) {
             (Effect::Remove, AimAt::Block { pos, .. }) => {
                 self.set_block(h, pos, BlockStateId::AIR);
@@ -1009,6 +1070,46 @@ impl Workshop {
             }
             (Effect::Lop, AimAt::Block { pos, .. }) => self.lop(h, pos),
             (Effect::Buck, AimAt::Block { pos, .. }) => self.set_block(h, pos, BlockStateId::AIR),
+            (Effect::Till, AimAt::Block { pos, .. }) => self.till(h, pos),
+            (Effect::Sow, AimAt::Block { pos, .. }) => self.sow(h, &def.id, pos, &taken),
+            (Effect::Weed, AimAt::Block { pos, .. }) => {
+                let at = self.plot_at(h, pos);
+                match at.and_then(|p| self.plots.get_mut(&p)) {
+                    Some(plot) => {
+                        plot.weeds = plot.weeds.min(0.05);
+                        h.out.push(acted(&def.id, true, "Weeded."));
+                    }
+                    None => h.out.push(acted(&def.id, false, "There is no field here.")),
+                }
+            }
+            (Effect::Manure, AimAt::Block { pos, .. }) => {
+                let at = self.plot_at(h, pos);
+                match at.and_then(|p| self.plots.get_mut(&p)) {
+                    Some(plot) => {
+                        plot.n = (plot.n + crate::fields::DUNG_N).min(1.5);
+                        h.out
+                            .push(acted(&def.id, true, "The dung is spread and dug in."));
+                    }
+                    None => h.out.push(acted(&def.id, false, "There is no field here.")),
+                }
+            }
+            (Effect::Reap, AimAt::Block { pos, .. }) => self.reap(h, &def.id, pos),
+            (
+                Effect::Catch
+                | Effect::Tether
+                | Effect::Lead
+                | Effect::Milk
+                | Effect::Pluck
+                | Effect::Slaughter,
+                AimAt::Animal(id),
+            ) => match self.on_animal(h, &def.id, o.effect, id, true) {
+                Ok(Some(kg)) => animal_kg = Some(kg),
+                Ok(None) => {}
+                Err(why) => {
+                    h.out.push(acted(&def.id, false, why));
+                    return;
+                }
+            },
             (Effect::Mend, _) => {
                 if let Some(s) = p.keeps.first()
                     && let Some(stack) = Self::stack_mut(h, s)
@@ -1036,8 +1137,13 @@ impl Workshop {
         if let (Some(station), AimAt::Block { pos, .. }) = (builds, aim) {
             self.build(h, &station, pos.up(), &taken);
         }
+        // Seed keeps its lot through what is made of it (V2-12); an animal gives what it has.
+        let made = match animal_kg {
+            Some(kg) => self.from_animal(h, &def, kg),
+            None => self.lots(h, &def, &taken, o.made.clone()),
+        };
         // Firsts go in the journal.
-        for s in &o.made {
+        for s in &made {
             if let Some(k) = h.items.get(&s.id)
                 && (k.form.is_some() || k.wear.is_some())
                 && !k.has_tag("bulk")
@@ -1048,9 +1154,416 @@ impl Workshop {
                 self.knowledge_changed = true;
             }
         }
-        let words = made_words(h.items, &o.made, &def.name);
-        Self::give(h, o.made);
-        h.out.push(acted(&def.id, true, words));
+        let words = made_words(h.items, &made, &def.name);
+        Self::give(h, made);
+        // The fields' and the herds' doings tell what came of them themselves.
+        if !matches!(
+            o.effect,
+            Effect::Till
+                | Effect::Sow
+                | Effect::Reap
+                | Effect::Weed
+                | Effect::Manure
+                | Effect::Catch
+                | Effect::Tether
+                | Effect::Lead
+                | Effect::Milk
+                | Effect::Pluck
+                | Effect::Slaughter
+        ) {
+            h.out.push(acted(&def.id, true, words));
+        }
+    }
+
+    /// The plot a block aimed at belongs to: the tilled block itself, or the one under a crop.
+    fn plot_at(&self, h: &Here, pos: BlockPos) -> Option<BlockPos> {
+        if self.plots.contains_key(&pos) {
+            return Some(pos);
+        }
+        let below = pos.down();
+        let name =
+            h.lw.map
+                .block(pos)
+                .map(|s| h.lw.reg.block_of(s).name.path().to_owned())?;
+        (self.crops.by_block(&name).is_some() && self.plots.contains_key(&below)).then_some(below)
+    }
+
+    /// Breaks up a block of soil for a field (V2-12): it becomes a plot.
+    fn till(&mut self, h: &mut Here, pos: BlockPos) {
+        let Ok(tilled) = h.lw.reg.parse_state("hearth:tilled_soil") else {
+            return;
+        };
+        let material =
+            h.lw.map
+                .block(pos)
+                .and_then(|s| h.lw.reg.block_of(s).def.material.clone());
+        let n = crate::fields::soil_n(&h.lw.content, material.as_deref());
+        // What grew on it is cleared.
+        if h.lw
+            .map
+            .block(pos.up())
+            .is_some_and(|s| h.lw.reg.block_of(s).def.replaceable)
+        {
+            self.set_block(h, pos.up(), BlockStateId::AIR);
+        }
+        self.set_block(h, pos, tilled);
+        let day = h.moment.days;
+        let plot = self
+            .plots
+            .entry(pos)
+            .or_insert_with(|| crate::fields::Plot::tilled(pos, n, day));
+        plot.weeds = 0.0;
+        plot.since = day;
+        h.out.push(acted(
+            "hearth:till_soil",
+            true,
+            "The ground is broken for sowing.",
+        ));
+    }
+
+    /// Sows the seed taken in the plot aimed at, if it is the time of year for it; else the seed
+    /// is kept.
+    fn sow(&mut self, h: &mut Here, process: &str, pos: BlockPos, taken: &[Stack]) {
+        let Some(seed) = taken.first().cloned() else {
+            return;
+        };
+        let refuse = |h: &mut Here, words: &str| {
+            Self::give(h, vec![seed.clone()]);
+            h.out.push(acted(process, false, words));
+        };
+        let Some(at) = self.plot_at(h, pos) else {
+            refuse(h, "Sow in tilled ground.");
+            return;
+        };
+        let material = h.items.get(&seed.id).and_then(|k| k.material.clone());
+        let Some(crop) = material
+            .as_deref()
+            .and_then(|m| self.crops.by_grain(m))
+            .cloned()
+        else {
+            refuse(h, "That is no seed to sow.");
+            return;
+        };
+        if self.plots.get(&at).is_some_and(|p| p.growing.is_some()) {
+            refuse(h, "Something is sown here already.");
+            return;
+        }
+        let feet = DVec3::new(at.x as f64 + 0.5, at.y as f64, at.z as f64 + 0.5);
+        let southern = h.lw.map.planet().latitude_deg(feet.z) < 0.0;
+        let local = crate::fields::local_year(&h.moment, southern);
+        let days_per_year = h.days_per_year;
+        let (ripe_in, spring) = match crate::fields::sowing(&crop, local, days_per_year) {
+            Ok(x) => x,
+            Err(why) => {
+                refuse(h, why);
+                return;
+            }
+        };
+        let normals = h.env.normals(feet);
+        let coldest = normals.t_mean - normals.t_range / 2.0;
+        let lot = seed.lot.unwrap_or(crop.wild);
+        let day = h.moment.days;
+        let Some(plot) = self.plots.get_mut(&at) else {
+            return;
+        };
+        plot.sow(
+            &crop,
+            lot,
+            day,
+            ripe_in,
+            spring,
+            coldest < -8.0,
+            &mut self.rng,
+        );
+        if let Ok(state) = h.lw.reg.parse_state(&format!("{}[stage=0]", crop.block)) {
+            self.set_block(h, at.up(), state);
+        }
+        let when = if spring { "this summer" } else { "next summer" };
+        h.out.push(acted(
+            process,
+            true,
+            format!(
+                "Sown with {}: it should ripen {when}.",
+                crop.name.to_lowercase()
+            ),
+        ));
+    }
+
+    /// Reaps the crop aimed at: sheaves as the plot bore and the reaping kept, its lot the
+    /// reaping's; a crop still green gives nothing.
+    fn reap(&mut self, h: &mut Here, process: &str, pos: BlockPos) {
+        let Some(at) = self.plot_at(h, pos) else {
+            h.out.push(acted(process, false, "There is no crop here."));
+            return;
+        };
+        let Some(g) = self.plots.get(&at).and_then(|p| p.growing.clone()) else {
+            h.out.push(acted(process, false, "Nothing grows here."));
+            return;
+        };
+        let Some(crop) = self.crops.get(&g.crop).cloned() else {
+            return;
+        };
+        let day = h.moment.days;
+        let after = day - g.ripe;
+        if after < -0.25 * (g.ripe - g.sown) {
+            h.out.push(acted(
+                process,
+                false,
+                "The ears are still green: there is nothing in them yet.",
+            ));
+            return;
+        }
+        let feet = DVec3::new(at.x as f64 + 0.5, at.y as f64, at.z as f64 + 0.5);
+        let normals = h.env.normals(feet);
+        let irrigated = self.irrigated(h, at);
+        let fit = crate::fields::climate_fit(&crop, &normals);
+        let water = crate::fields::watered(&crop, &normals, irrigated);
+        let Some(plot) = self.plots.get(&at).cloned() else {
+            return;
+        };
+        let bore = crate::fields::bears(&crop, &g, &plot, fit, water);
+        let (kg, lot) = crate::fields::reaped(&crop, &g, bore, after);
+        // Whole sheaves, rounded at random so the grain comes out right on average.
+        let units = kg / crate::fields::SHEAF_GRAIN_KG;
+        let mut n = units.floor() as u16;
+        if self.rng.next_f32() < units.fract() {
+            n += 1;
+        }
+        let mut made = Vec::new();
+        let grain_key = crop
+            .grain
+            .rsplit(':')
+            .next()
+            .unwrap_or(&crop.grain)
+            .to_owned();
+        let sheaf = hearth_content::generate::generated_id(
+            "hearth:sheaf_of",
+            &format!("hearth:{grain_key}"),
+        );
+        if n > 0 && h.items.get(&sheaf).is_some() {
+            let mut st = Stack::of(&sheaf, n);
+            st.lot = Some(lot);
+            made.push(st);
+        }
+        if let Some(f) = &crop.fibre
+            && let Some(k) = self.crafts.bulk_item(h.items, f)
+        {
+            let units = (0.3 / k.mass_kg.max(1e-3)).round().max(1.0) as u16;
+            made.push(Stack::of(&k.id, units));
+        }
+        if let Some(p) = self.plots.get_mut(&at) {
+            p.reap_done(&crop, bore, day);
+        }
+        self.set_block(h, at.up(), BlockStateId::AIR);
+        let state = if after < 0.0 {
+            "green"
+        } else if after < 1.0 {
+            "ripe"
+        } else {
+            "late"
+        };
+        h.out.push(acted(
+            process,
+            n > 0,
+            format!(
+                "Reaped {state}: {n} sheaf{} ({kg:.2} kg of grain); {:.0} % of the ears held their grain.",
+                if n == 1 { "" } else { "s" },
+                crate::fields::held(&g.lot, after) * 100.0
+            ),
+        ));
+        Self::give(h, made);
+    }
+
+    /// What a process's effect on a live animal comes to (V2-12), done only if `commit`: the
+    /// milk or wool it gives (kg), or why it cannot be done; said when done.
+    fn on_animal(
+        &mut self,
+        h: &mut Here,
+        process: &str,
+        effect: Effect,
+        id: u64,
+        commit: bool,
+    ) -> Result<Option<f32>, String> {
+        let cat = h.fauna.eco.catalog.clone();
+        let years = h.fauna.now;
+        let name = h
+            .fauna
+            .live
+            .animals
+            .iter()
+            .find(|a| a.id == id)
+            .map_or("animal".to_owned(), |a| {
+                cat.species[a.species as usize].name.to_lowercase()
+            });
+        let live = &mut h.fauna.live;
+        let (kg, words) = match effect {
+            Effect::Catch => (None, live.catch(&cat, id, years, commit)?),
+            Effect::Tether => {
+                live.is_kept(id)?;
+                if commit {
+                    let at = live.tether(id, hearth_fauna::herd::TETHER_M)?;
+                    self.drive_stake(h, at);
+                }
+                (None, format!("The {name} is tethered to a stake."))
+            }
+            Effect::Lead => {
+                let stake = live.lead(id, commit)?;
+                if commit && let Some(at) = stake {
+                    self.pull_stake(h, at);
+                }
+                (None, format!("You lead the {name} on a halter."))
+            }
+            Effect::Milk => {
+                let kg = live.milk(&cat, id, years, 1.0 / h.days_per_year.max(1.0), commit)?;
+                (Some(kg), format!("Milked: {kg:.2} kg of milk."))
+            }
+            Effect::Pluck => {
+                let kg = live.pluck(&cat, id, years, commit)?;
+                (Some(kg), format!("Plucked: {kg:.2} kg of wool."))
+            }
+            Effect::Slaughter => {
+                live.is_kept(id)?;
+                if commit {
+                    live.slaughter(id)?;
+                }
+                (None, format!("The {name} is killed, quickly."))
+            }
+            _ => return Ok(None),
+        };
+        if commit {
+            h.out.push(acted(process, true, words));
+        }
+        Ok(kg)
+    }
+
+    /// What an animal gives (`kg` of the process's first output's material), in its bulk form.
+    fn from_animal(&self, h: &Here, def: &Process, kg: f32) -> Vec<Stack> {
+        let Some(m) = def.outputs.first().and_then(|o| match &o.item {
+            hearth_content::schema::process::Match::Material(m) => Some(m.as_str().to_owned()),
+            _ => None,
+        }) else {
+            return Vec::new();
+        };
+        let Some(k) = self.crafts.bulk_item(h.items, &m) else {
+            return Vec::new();
+        };
+        let n = self.crafts.units_for(h.items, &m, kg);
+        vec![Stack::of(&k.id, n)]
+    }
+
+    /// A stake driven in where a tethered animal stands (into open ground or low plants).
+    fn drive_stake(&mut self, h: &mut Here, at: DVec3) {
+        let pos = BlockPos::containing(at + DVec3::new(0.0, 0.1, 0.0));
+        let open =
+            h.lw.map
+                .block(pos)
+                .is_some_and(|s| s.is_air() || h.lw.reg.block_of(s).def.replaceable);
+        if open && let Ok(stake) = h.lw.reg.parse_state("hearth:tether_stake") {
+            self.set_block(h, pos, stake);
+        }
+    }
+
+    /// The stake pulled up when its animal is led away.
+    fn pull_stake(&mut self, h: &mut Here, at: DVec3) {
+        let pos = BlockPos::containing(at + DVec3::new(0.0, 0.1, 0.0));
+        if h.lw
+            .map
+            .block(pos)
+            .is_some_and(|s| h.lw.reg.block_of(s).name.path() == "tether_stake")
+        {
+            self.set_block(h, pos, BlockStateId::AIR);
+        }
+    }
+
+    /// Whether a plot has water to hand for irrigation: open water within four metres, at its
+    /// level or a little above.
+    fn irrigated(&self, h: &Here, at: BlockPos) -> bool {
+        for dx in -4..=4 {
+            for dz in -4..=4 {
+                for dy in -1..=1 {
+                    let p = BlockPos::new(at.x + dx, at.y + dy, at.z + dz);
+                    if h.lw
+                        .map
+                        .block(p)
+                        .is_some_and(|s| h.lw.reg.block_of(s).def.fluid.is_some())
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Seed keeps its lot through what is made of it (V2-12): grain stripped from a wild stand
+    /// is the wild's; threshed, it is its sheaf's; picked over, the plumpest third is the better
+    /// and the rest the worse.
+    fn lots(
+        &mut self,
+        h: &Here,
+        def: &Process,
+        taken: &[Stack],
+        mut made: Vec<Stack>,
+    ) -> Vec<Stack> {
+        let crop_of = |s: &Stack| {
+            h.items
+                .get(&s.id)
+                .and_then(|k| k.material.as_deref())
+                .and_then(|m| self.crops.by_grain(m))
+                .cloned()
+        };
+        // The lot of what went in: the taken seed's, mixed by count.
+        let mut from: Option<(hearth_items::Lot, f32)> = None;
+        for s in taken.iter().filter(|s| s.lot.is_some()) {
+            let lot = s.lot.expect("a lot");
+            from = Some(match from {
+                Some((l, n)) => (l.mixed(&lot, n, s.count as f32), n + s.count as f32),
+                None => (lot, s.count as f32),
+            });
+        }
+        // Seed with no lot of its own is the wild's.
+        if from.is_none() {
+            from = taken
+                .iter()
+                .find_map(|s| crop_of(s).map(|c| (c.wild, s.count as f32)));
+        }
+        // Seed is seed: no better or worse made (its lot is what it is), so lots alike pour
+        // together.
+        for s in made.iter_mut() {
+            if crop_of(s).is_some() {
+                s.quality = 0.5;
+            }
+        }
+        if def.effect == Effect::Select {
+            let mut out = Vec::new();
+            for s in made {
+                if let (Some(crop), Some((lot, _))) = (crop_of(&s), from)
+                    && s.count >= 2
+                {
+                    let (up, down) = crate::fields::selected(&crop, &lot);
+                    let mut best = s.clone();
+                    best.count = s.count / 3 + u16::from(s.count % 3 != 0);
+                    best.lot = Some(up);
+                    let mut rest = s.clone();
+                    rest.count = s.count - best.count;
+                    rest.lot = Some(down);
+                    out.push(best);
+                    out.push(rest);
+                } else {
+                    out.push(s);
+                }
+            }
+            return out;
+        }
+        for s in made.iter_mut() {
+            if s.lot.is_some() {
+                continue;
+            }
+            if let Some(crop) = crop_of(s) {
+                s.lot = Some(from.map_or(crop.wild, |(l, _)| l));
+            }
+        }
+        made
     }
 
     /// Sets up unattended work: its inputs go where it is done and wait.
@@ -1843,6 +2356,13 @@ impl Workshop {
                     None => return,
                 }
             }
+            AimAt::Animal(id) => {
+                let Some(a) = h.fauna.live.animals.iter().find(|a| a.id == id) else {
+                    return;
+                };
+                let sp = &h.fauna.eco.catalog.species[a.species as usize];
+                vec!["animal".to_owned(), key(&sp.id).to_owned()]
+            }
             AimAt::Nothing => return,
         };
         let hour = (h.ticks_per_day / 24.0) as u64;
@@ -2140,6 +2660,7 @@ impl Workshop {
         }
         self.batches(h, dt_h, air_c);
         self.slake(h, dt_h);
+        self.grow_fields(h);
         self.go_off(h, dt_h, air_c);
         if self.fire_burning() {
             self.fire_minute(h);
@@ -2287,6 +2808,50 @@ impl Workshop {
         }
     }
 
+    /// The fields grow (V2-12): each plot brought up to now, its crop drawn at its stage, a crop
+    /// left standing too long lost, a plot long left unsown gone back to grass.
+    fn grow_fields(&mut self, h: &mut Here) {
+        if self.plots.is_empty() {
+            return;
+        }
+        let day = h.moment.days;
+        let dpy = h.days_per_year;
+        let mut draw: Vec<(BlockPos, Option<String>)> = Vec::new();
+        let mut gone = Vec::new();
+        for plot in self.plots.values_mut() {
+            let before = plot
+                .growing
+                .as_ref()
+                .map(|g| crate::fields::stage(g, plot.day));
+            let lost = plot.advance(day, dpy);
+            let now = plot.growing.as_ref().map(|g| crate::fields::stage(g, day));
+            if lost {
+                draw.push((plot.pos.up(), None));
+            } else if now != before
+                && let (Some(st), Some(g)) = (now, plot.growing.as_ref())
+                && let Some(crop) = self.crops.get(&g.crop)
+            {
+                draw.push((plot.pos.up(), Some(format!("{}[stage={st}]", crop.block))));
+            }
+            if plot.growing.is_none() && day - plot.since > crate::fields::ABANDONED_YEARS * dpy {
+                gone.push(plot.pos);
+            }
+        }
+        for (pos, state) in draw {
+            let id = match state {
+                Some(s) => h.lw.reg.parse_state(&s).unwrap_or(BlockStateId::AIR),
+                None => BlockStateId::AIR,
+            };
+            self.set_block(h, pos, id);
+        }
+        for pos in gone {
+            self.plots.remove(&pos);
+            if let Ok(grass) = h.lw.reg.parse_state("hearth:grass_block") {
+                self.set_block(h, pos, grass);
+            }
+        }
+    }
+
     /// Unfired clay left out in the rain soaks through and slumps back to clay (V2-12): a pot
     /// is pottery only once it has been fired.
     fn slake(&mut self, h: &mut Here, dt_h: f32) {
@@ -2326,7 +2891,7 @@ impl Workshop {
             let Some(m) = h.items.get(&wi.stack.id).and_then(|k| k.material.clone()) else {
                 continue;
             };
-            let lump = hearth_content::generate::generated_id("lump", &m);
+            let lump = hearth_content::generate::generated_id("hearth:lump", &m);
             if let Some(k) = h.items.get(&lump) {
                 let kg = wi.stack.mass(h.items);
                 let n = (kg / k.mass_kg.max(0.01)).round().max(1.0) as u16;
@@ -2373,7 +2938,17 @@ impl Workshop {
                     .is_some_and(|k| k.property("glow_h").is_some()))
         });
         let before = h.world_items.items.len();
+        // Storage pits (V2-12): what lies sealed in one keeps, from damp and from mice.
+        let pits: Vec<BlockPos> = self
+            .stations
+            .iter()
+            .filter(|s| s.id.ends_with("storage_pit"))
+            .map(|s| s.pos)
+            .collect();
+        let mut gnawed = Vec::new();
         for wi in h.world_items.items.iter_mut() {
+            let at = BlockPos::containing(DVec3::from_array(wi.pos));
+            let stored = pits.iter().any(|p| *p == at || p.up() == at);
             let pace = match &wi.work {
                 Some(work) => {
                     let done = self.crafts.index_of(&work.process).map_or(0.0, |r| {
@@ -2381,9 +2956,35 @@ impl Workshop {
                     });
                     0.25 * (1.0 - done.clamp(0.0, 1.0))
                 }
+                None if stored => 0.1,
                 None => 1.0,
             };
             age(&mut wi.stack, air_c, pace);
+            // Grain left lying in the open: the mice and birds find it, a hundredth of it a day.
+            let grain = items
+                .get(&wi.stack.id)
+                .is_some_and(|k| k.has_tag("sowable") || k.has_tag("sheaf"));
+            if grain && !stored && wi.work.is_none() {
+                let days = dt_h / 24.0;
+                let lost = wi.stack.count as f32 * 0.01 * days;
+                let mut n = lost.floor() as u16;
+                if self.rng.next_f32() < lost.fract() {
+                    n += 1;
+                }
+                if n > 0 {
+                    gnawed.push((wi.id, n));
+                }
+            }
+        }
+        for (id, n) in gnawed {
+            if let Some(w) = h.world_items.get_mut(id) {
+                if w.stack.count > n {
+                    w.stack.count -= n;
+                } else {
+                    h.world_items.take(id);
+                }
+                *h.items_changed = true;
+            }
         }
         h.world_items.items.retain(|wi| {
             let cold = wi.stack.glow_h < 0.0

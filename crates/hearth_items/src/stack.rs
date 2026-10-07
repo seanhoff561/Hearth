@@ -61,6 +61,40 @@ pub struct Stack {
     /// Hours an ember has left to glow.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub glow_h: f32,
+    /// Seed of a crop: the heritable makeup of the lot (V2-12).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lot: Option<Lot>,
+}
+
+/// The heritable makeup of a lot of seed (V2-12): what plants grown from it will be like. The
+/// cereals self-pollinate, so a lot is a mixture of true-breeding lines, and each share below is
+/// the share of its lines that are so.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Lot {
+    /// Share of lines with a tough rachis: ears that hold their grain when ripe (the wild's
+    /// shatter and sow themselves).
+    pub tough: f32,
+    /// Mean grain weight (mg).
+    pub grain_mg: f32,
+    /// Share of seed lying dormant through its first year (the wild's spread their sprouting).
+    pub dormant: f32,
+    /// Harvests it has been sown and reaped through since it was gathered wild.
+    #[serde(default)]
+    pub generations: u16,
+}
+
+impl Lot {
+    /// Two lots poured together, `a` and `b` of each.
+    pub fn mixed(&self, other: &Lot, a: f32, b: f32) -> Lot {
+        let w = (a + b).max(1e-6);
+        let mix = |x: f32, y: f32| (x * a + y * b) / w;
+        Lot {
+            tough: mix(self.tough, other.tough),
+            grain_mg: mix(self.grain_mg, other.grain_mg),
+            dormant: mix(self.dormant, other.dormant),
+            generations: self.generations.max(other.generations),
+        }
+    }
 }
 
 impl Stack {
@@ -79,6 +113,7 @@ impl Stack {
             condition: 1.0,
             decay: 0.0,
             glow_h: 0.0,
+            lot: None,
         }
     }
 
@@ -134,6 +169,16 @@ impl Stack {
             && (self.decay - other.decay).abs() < 0.1
             && self.glow_h == 0.0
             && other.glow_h == 0.0
+            && match (&self.lot, &other.lot) {
+                (None, None) => true,
+                // Seed of one making: seed picked over, and the rest, are kept apart.
+                (Some(a), Some(b)) => {
+                    (a.grain_mg - b.grain_mg).abs() <= 0.02 * a.grain_mg.max(b.grain_mg)
+                        && (a.tough - b.tough).abs() <= 0.02
+                        && (a.dormant - b.dormant).abs() <= 0.02
+                }
+                _ => false,
+            }
     }
 
     /// Takes `other` (which [`Stack::joins`] this) into this stack: counts add, wetness and
@@ -143,6 +188,10 @@ impl Stack {
         let mix = |x: f32, y: f32| (x * a + y * b) / (a + b).max(1.0);
         self.wet = mix(self.wet, other.wet);
         self.decay = mix(self.decay, other.decay);
+        // Seed poured together mixes.
+        if let (Some(x), Some(y)) = (self.lot, other.lot) {
+            self.lot = Some(x.mixed(&y, a, b));
+        }
         self.count = self.count.saturating_add(other.count);
     }
 }

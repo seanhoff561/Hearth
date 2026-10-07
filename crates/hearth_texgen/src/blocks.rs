@@ -612,6 +612,25 @@ pub fn textures() -> Vec<TexEntry> {
         }
         t
     });
+    // Tilled soil (V2-12): dark broken earth in furrows, a clod here and there.
+    add("tilled_soil_top", {
+        let seed = h("tilled_soil");
+        paint(S, S, |x, y| {
+            let furrow = (y % 4) < 2;
+            let n = fbm(seed, x, y, S, 0.5);
+            let base = if furrow {
+                lerp([58, 40, 26], [74, 52, 34], n)
+            } else {
+                lerp([86, 62, 40], [104, 76, 50], n)
+            };
+            if rand01(seed ^ 5, x, y) > 0.93 {
+                scale(base, 1.25)
+            } else {
+                base
+            }
+        })
+    });
+    add("tilled_soil", dirt.clone());
     // Burned land: black ground flecked with ash, and charred trunks.
     add("burnt_ground_top", {
         let seed = h("burnt_ground");

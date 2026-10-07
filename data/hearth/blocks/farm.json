@@ -1,0 +1,12 @@
+{
+  "tether_stake": {"hardness": 0.3, "resistance": 0.3, "shape": {"boxes": [[7, 0, 7, 9, 10, 9]]}, "collision": false, "opaque": false, "render": "model", "layer": "cutout", "sound": "wood", "map_color": "#7a5a3a"},
+  "tilled_soil": {"template": "soil", "material": "hearth:loam", "hardness": 0.5, "resistance": 0.5, "sound": "soil", "map_color": "#5e432c"},
+  "einkorn_crop": {"template": "plant", "properties": ["stage:0,1,2,3,4"], "material": "hearth:dry_grass", "replaceable": false, "map_color": "#9aa05a", "drag": 0.15},
+  "emmer_crop": {"template": "plant", "properties": ["stage:0,1,2,3,4"], "material": "hearth:dry_grass", "replaceable": false, "map_color": "#95995a", "drag": 0.15},
+  "barley_crop": {"template": "plant", "properties": ["stage:0,1,2,3,4"], "material": "hearth:dry_grass", "replaceable": false, "map_color": "#a2a462", "drag": 0.15},
+  "flax_crop": {"template": "plant", "properties": ["stage:0,1,2,3,4"], "material": "hearth:flax_stems", "replaceable": false, "map_color": "#7f9a6a", "drag": 0.1},
+  "wild_einkorn": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#7f9a52", "drag": 0.1},
+  "wild_emmer": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#7a9550", "drag": 0.1},
+  "wild_barley": {"template": "plant", "material": "hearth:dry_grass", "replaceable": true, "map_color": "#86a058", "drag": 0.1},
+  "wild_flax": {"template": "plant", "material": "hearth:flax_stems", "replaceable": true, "map_color": "#6f8f5a", "drag": 0.1}
+}

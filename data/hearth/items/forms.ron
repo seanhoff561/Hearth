@@ -58,6 +58,33 @@
             tags: ["tool", "edged"], hangs_on: ["belt_loop"],
         ),
         (
+            // Pecked to shape and ground on wet sandstone, hafted through a wooden handle: an edge
+            // that does not chip as flint does (V2-12).
+            id: "ground_axe", status: Implemented, name: "{material} axe", materials: (categories: [Rock]),
+            size_m: (0.6, 0.15, 0.05), fill: 0.3, footprint: (1, 3),
+            properties: [
+                (name: "chopping", value: FromMaterial(field: "hardness_mohs", scale: 0.15)),
+                (name: "sharp_edge", value: Const(0.4)),
+            ],
+            tags: ["tool", "edged"], hangs_on: ["belt_loop"],
+        ),
+        (
+            // The ground blade set across the haft: it hews timber square and hollows it.
+            id: "adze", status: Implemented, name: "{material} adze", materials: (categories: [Rock]),
+            size_m: (0.5, 0.15, 0.05), fill: 0.3, footprint: (1, 3),
+            properties: [
+                (name: "adzing", value: FromMaterial(field: "hardness_mohs", scale: 0.15)),
+                (name: "chopping", value: FromMaterial(field: "hardness_mohs", scale: 0.08)),
+            ],
+            tags: ["tool", "edged"], hangs_on: ["belt_loop"],
+        ),
+        (
+            id: "wedge", status: Implemented, name: "{material} wedge", materials: (categories: [Wood, Bone]),
+            size_m: (0.2, 0.06, 0.04), fill: 0.5, footprint: (1, 1), stacking: Count(4),
+            properties: [(name: "splitting", value: Const(0.6))],
+            tags: ["tool"],
+        ),
+        (
             id: "scraper", status: Implemented, name: "{material} scraper", materials: (tags: ["knappable"]),
             size_m: (0.05, 0.04, 0.012), fill: 0.5, footprint: (1, 1),
             properties: [(name: "scraping", value: FromMaterial(field: "knapping", scale: 0.9))],
@@ -196,7 +223,7 @@
         // Bulk (v2 §11.2): materials carried by the handful, the cut, the lump; processes count
         // them by the kilogram in these units.
         (
-            id: "cut", status: Implemented, name: "{material}", materials: (tags: ["meat", "fat", "fish"]),
+            id: "cut", status: Implemented, name: "{material}", materials: (tags: ["meat", "fat", "fish", "cheese"]),
             size_m: (0.1, 0.08, 0.03), fill: 1.0, footprint: (1, 1), stacking: Count(2),
             tags: ["bulk"],
         ),
@@ -204,6 +231,41 @@
             id: "handful", status: Implemented, name: "{material}", materials: (tags: ["nut", "fruit", "greens", "grain", "meal", "tinder", "insect", "fletching"], exclude_tags: ["adhesive", "meat", "fat"]),
             size_m: (0.1, 0.08, 0.06), fill: 0.7, footprint: (1, 1), stacking: Count(4),
             tags: ["bulk"],
+        ),
+        (
+            // Woven cloth by the length: a metre by half a metre, some hundred grams (V2-12).
+            id: "length", status: Implemented, name: "{material}", materials: (tags: ["cloth"]),
+            size_m: (1.0, 0.5, 0.0005), fill: 0.3, footprint: (2, 2), stacking: Count(4),
+            tags: ["bulk"],
+        ),
+        (
+            // Milk carried in its vessel, by the cupful (V2-12).
+            id: "cupful", status: Implemented, name: "{material}", materials: (ids: ["hearth:milk"]),
+            size_m: (0.07, 0.07, 0.05), fill: 1.0, footprint: (1, 1), stacking: Count(8),
+            tags: ["bulk"],
+        ),
+        (
+            // Wool plucked from a moulting sheep, by the tuft (V2-12).
+            id: "tuft", status: Implemented, name: "{material}", materials: (tags: ["fleece"]),
+            size_m: (0.2, 0.08, 0.2), fill: 0.08, footprint: (1, 1), stacking: Count(8),
+            tags: ["bulk"],
+        ),
+        (
+            id: "dung_cake", status: Implemented, name: "{material}", materials: (tags: ["manure"]),
+            size_m: (0.15, 0.12, 0.05), fill: 0.6, footprint: (1, 1), stacking: Count(4),
+            tags: ["bulk"],
+        ),
+        (
+            // Grain by the scoop of some ten grams: a square metre's sowing.
+            id: "grains", status: Implemented, name: "{material}", materials: (tags: ["cereal"]),
+            size_m: (0.03, 0.025, 0.02), fill: 0.85, footprint: (1, 1), stacking: Count(50),
+            tags: ["bulk", "sowable"],
+        ),
+        (
+            // A reaper's handful of ears on their straw, bound: twenty grams of grain each.
+            id: "sheaf_of", status: Implemented, name: "sheaf of {material}", materials: (tags: ["cereal"]),
+            size_m: (0.7, 0.06, 0.06), fill: 0.05, footprint: (1, 3), stacking: Count(40),
+            tags: ["sheaf"],
         ),
         (
             id: "hank", status: Implemented, name: "{material}", materials: (tags: ["fibre"]),
@@ -243,6 +305,19 @@
             tags: ["bulk"],
         ),
         (
+            // Spun on a spindle: a skein of yarn, some hundred and fifty grams (V2-12).
+            id: "yarn", status: Implemented, name: "{material} yarn", materials: (tags: ["spinnable"]),
+            size_m: (0.12, 0.06, 0.06), fill: 0.25, footprint: (1, 1), stacking: Count(4),
+            tags: ["thread", "yarn"],
+        ),
+        (
+            // A shaft through a whorl that keeps it turning as the fibre is drawn out and twisted.
+            id: "spindle", status: Implemented, name: "{material} spindle", materials: (categories: [Wood]),
+            size_m: (0.3, 0.05, 0.05), fill: 0.25, footprint: (1, 2),
+            properties: [(name: "spinning", value: Const(0.6))],
+            tags: ["tool"],
+        ),
+        (
             id: "cord", status: Implemented, name: "{material} cord", materials: (categories: [PlantFibre, AnimalFibre]),
             size_m: (1.0, 0.003, 0.003), fill: 0.8, footprint: (1, 1), stacking: Count(10),
             properties: [(name: "binding", value: FromMaterial(field: "tensile_mpa", scale: 0.001))],
@@ -261,10 +336,50 @@
             tags: ["building"],
         ),
         (
+            // Two runners and a bed of poles lashed across: dragged, a load slides over snow
+            // and grass that would hold it on the ground (V2-12).
+            id: "sledge", status: Implemented, name: "{material} sledge", materials: (categories: [Wood]),
+            size_m: (1.6, 0.25, 0.6), fill: 0.1, footprint: (3, 6),
+            container: Some((grid: (4, 6), max_kg: 150.0)),
+            properties: [(name: "runners", value: Const(1.0))],
+            tags: ["two_handed", "vehicle"],
+        ),
+        (
+            // A log hollowed with fire and the adze: dragged into the water, it is sat in and
+            // paddled (V2-12).
+            id: "dugout_canoe", status: Implemented, name: "{material} dugout canoe", materials: (categories: [Wood]),
+            size_m: (3.5, 0.45, 0.6), fill: 0.22, footprint: (3, 8),
+            container: Some((grid: (4, 8), max_kg: 200.0)),
+            properties: [(name: "boat", value: Const(1.0))],
+            tags: ["two_handed", "vehicle"],
+        ),
+        (
+            // Two solid wheels cut from a log's rounds on a fixed axle under a plank bed: pulled
+            // by hand, it rolls a load over firm ground (V2-12).
+            id: "handcart", status: Implemented, name: "{material} handcart", materials: (categories: [Wood]),
+            size_m: (1.6, 0.6, 0.9), fill: 0.08, footprint: (4, 6),
+            container: Some((grid: (5, 6), max_kg: 200.0)),
+            properties: [(name: "wheels", value: Const(1.0))],
+            tags: ["two_handed", "vehicle"],
+        ),
+        (
+            // Split from a log along its grain with wedges: a plank a metre long (V2-12).
+            id: "plank", status: Implemented, name: "{material} plank", materials: (categories: [Wood]),
+            size_m: (1.0, 0.25, 0.04), fill: 1.0, footprint: (1, 4), stacking: Count(4),
+        ),
+        (
             // A length of trunk: a metre of a 40 cm log, rolled or dragged, too heavy to carry.
             id: "log_section", status: Implemented, name: "{material} log section", materials: (categories: [Wood]),
             size_m: (1.0, 0.4, 0.4), fill: 0.785, footprint: (2, 5),
             tags: ["two_handed", "rollable", "wood", "fuelwood"],
+        ),
+        (
+            // Flint blades set in a line along a wooden haft with pitch: the first harvesters'
+            // tool, its edge glossy from the silica of the straw.
+            id: "sickle", status: Implemented, name: "{material} sickle", materials: (tags: ["knappable"]),
+            size_m: (0.4, 0.05, 0.03), fill: 0.3, footprint: (1, 2),
+            properties: [(name: "reaping", value: FromMaterial(field: "knapping", scale: 0.9)), (name: "sharp_edge", value: FromMaterial(field: "knapping", scale: 0.6))],
+            tags: ["tool"],
         ),
         // Pottery (V2-12): a pot coiled of wet clay; dried, it is greenware, to be fired; rain
         // or water turns unfired clay back to mud.

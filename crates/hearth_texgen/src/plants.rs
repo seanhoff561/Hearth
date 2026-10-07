@@ -353,6 +353,69 @@ fn tuft(p: Palette, seed: u64) -> Tex {
     t
 }
 
+/// A stand of a wild cereal: thin stalks leaning a little, each with its ear, bristling with
+/// awns.
+fn grain(p: Palette, seed: u64) -> Tex {
+    let ear = p.flower.or(p.fruit).unwrap_or([196, 176, 112]);
+    crop_drawn(p.leaf, ear, seed, 12, true, 0.25)
+}
+
+/// A cereal as it grows in a field, by stage (V2-12): 0 the sown earth's few green points; 1
+/// shoots; 2 leafy; 3 tall and eared, green; 4 ripe, the ears gold and nodding.
+pub fn crop_stage(leaf: Rgb, ripe: Rgb, seed: u64, stage: u8) -> Tex {
+    match stage {
+        0 => {
+            let mut t = Tex::new(S, S);
+            for k in 0..6 {
+                let x = 1 + (rand01(seed, k, 0) * 14.0) as i32;
+                t.set(x, 15, shade(leaf, seed, x, 15));
+            }
+            t
+        }
+        1 => crop_drawn(leaf, leaf, seed, 4, false, 0.0),
+        2 => crop_drawn(leaf, leaf, seed, 8, false, 0.0),
+        3 => crop_drawn(leaf, scale(leaf, 1.15), seed, 12, true, 0.1),
+        _ => crop_drawn(lerp_rgb(leaf, ripe, 0.8), ripe, seed, 12, true, 0.45),
+    }
+}
+
+fn lerp_rgb(a: Rgb, b: Rgb, t: f32) -> Rgb {
+    [
+        (a[0] as f32 + (b[0] as f32 - a[0] as f32) * t) as u8,
+        (a[1] as f32 + (b[1] as f32 - a[1] as f32) * t) as u8,
+        (a[2] as f32 + (b[2] as f32 - a[2] as f32) * t) as u8,
+    ]
+}
+
+/// Stalks `tall` pixels high (and their leaves), eared if `eared`, the ears nodding by `nod`.
+fn crop_drawn(stalk: Rgb, ear: Rgb, seed: u64, tall: i32, eared: bool, nod: f32) -> Tex {
+    let mut t = Tex::new(S, S);
+    for k in 0..7 {
+        let x0 = 1 + k * 2 + (rand01(seed, k, 0) * 2.0) as i32;
+        let h = tall - (rand01(seed, k, 1) * 3.0) as i32;
+        let lean = (rand01(seed, k, 2) * 3.0) as i32 - 1;
+        let top = 15 - h;
+        line(&mut t, x0, 15, x0 + lean, top, shade(stalk, seed, k, 3));
+        // A leaf off the stalk.
+        let ly = 15 - h / 2;
+        t.set(x0 - 1, ly, scale(stalk, 0.9));
+        t.set(x0 + 1, ly + 1, scale(stalk, 0.9));
+        if eared {
+            let dx = if nod > 0.3 { 1 } else { 0 };
+            for j in 0..4 {
+                let c = shade(ear, seed ^ 9, k, j);
+                t.set(x0 + lean + dx * (j / 2), top - 3 + j, c);
+                if j % 2 == 0 {
+                    t.set(x0 + lean + dx * (j / 2) + 1, top - 3 + j, scale(c, 0.85));
+                }
+            }
+            // The awns.
+            t.set(x0 + lean, top - 4, scale(ear, 0.8));
+        }
+    }
+    t
+}
+
 /// Paddles of a prickly pear, one set on the edge of another, dotted with spines, the fruit on
 /// their rims.
 fn cactus(p: Palette, seed: u64) -> Tex {
@@ -454,6 +517,27 @@ fn squash(t: &Tex, height_m: f32) -> Tex {
 /// over a metre tall `_bottom` and `_top` as well (for blocks two high).
 pub fn textures(c: &Content) -> Vec<TexEntry> {
     let mut out = Vec::new();
+    // Crops in a field, by stage (V2-12).
+    for p in c.plants.iter() {
+        let Some(crop) = &p.crop else {
+            continue;
+        };
+        let name = crop
+            .block
+            .as_str()
+            .rsplit(':')
+            .next()
+            .unwrap_or("")
+            .to_owned();
+        let leaf = p.appearance.foliage.map_or([96, 128, 60], |c| c.0);
+        let ripe = p.appearance.autumn.map_or([206, 178, 104], |c| c.0);
+        for stage in 0..=4u8 {
+            out.push(TexEntry::still(
+                &format!("block/{name}_{stage}"),
+                crop_stage(leaf, ripe, seed(&name), stage),
+            ));
+        }
+    }
     for p in c.plants.iter() {
         let (Some(u), Some(sprite)) = (&p.understory, p.appearance.sprite) else {
             continue;
@@ -485,6 +569,7 @@ pub fn textures(c: &Content) -> Vec<TexEntry> {
                 Sprite::Clump => clump(pal, sd),
                 Sprite::Creeper => creeper(pal, sd),
                 Sprite::Tuft => tuft(pal, sd),
+                Sprite::Grain => grain(pal, sd),
                 Sprite::Carpet => carpet(pal, p.form, sd),
                 Sprite::Cactus => cactus(pal, sd),
                 Sprite::Pad => pad(pal, sd),

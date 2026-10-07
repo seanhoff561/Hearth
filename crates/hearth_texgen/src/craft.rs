@@ -248,6 +248,33 @@ fn drying_rack(seed: u64) -> Tex {
     })
 }
 
+/// Twisted cord: pale fibre in diagonal plies.
+fn cord(seed: u64) -> Tex {
+    paint(S, S, |x, y| {
+        let ply = ((x + y) % 4) as f32 / 3.0;
+        let n = rand01(seed, x, y);
+        scale([176, 150, 104], 0.75 + ply * 0.3 + n * 0.1)
+    })
+}
+
+/// A loom's warp: pale threads hanging close, the woven cloth across their top, gaps between
+/// the threads below.
+fn warp(seed: u64) -> Tex {
+    let mut t = Tex::new(S, S);
+    for y in 0..S as i32 {
+        for x in 0..S as i32 {
+            let n = rand01(seed, x, y);
+            if y < 5 {
+                let ridge = if (x + y) % 2 == 0 { 0.05 } else { 0.0 };
+                t.set(x, y, scale([214, 200, 166], 0.85 + n * 0.2 + ridge));
+            } else if x % 2 == 0 {
+                t.set(x, y, scale([206, 192, 158], 0.85 + n * 0.2));
+            }
+        }
+    }
+    t
+}
+
 /// A lamp: a hollowed stone holding pale fat around a wick.
 fn fat_lamp(seed: u64) -> Tex {
     paint(S, S, |x, y| {
@@ -348,6 +375,11 @@ pub fn textures() -> Vec<TexEntry> {
     add("earthenware", earthenware(h("earthenware")));
     add("firing_pit", firing_pit_earth(h("firingpit")));
     add("updraft_kiln", kiln_clay(h("kiln")));
+    add("saddle_quern", campfire_stones(h("quern")));
+    add("storage_pit", kiln_clay(h("pitlid")));
+    add("tether_stake", cord(h("tether")));
+    add("warp_weighted_loom", warp(h("warp")));
+    add("potters_wheel", kiln_clay(h("wheelclay")));
     add("fat_lamp", fat_lamp(h("lamp")));
     add("grass_bed", grass_bed(h("grassbed")));
     add("fur_bed", fur_bed(h("furbed")));

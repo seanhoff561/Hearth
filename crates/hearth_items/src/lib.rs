@@ -12,7 +12,7 @@ pub use carry::{Carry, Hand, Load, Path, Refusal, Root, Target, Worn};
 pub use container::{Container, Misfit, Placed};
 pub use hearth_content::schema::item::{ContainerSpec, Stacking};
 pub use registry::{ItemKind, Items, Wear};
-pub use stack::Stack;
+pub use stack::{Lot, Stack};
 
 /// A thing lying in the world: where it rests (the middle of its base), which way it lies, and
 /// what it is.

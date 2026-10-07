@@ -900,6 +900,12 @@ pub fn reachability_in(c: &Content, blocks: Option<&[(String, Option<String>)]>)
             &crate::triggers::block_keys(name, material),
         ));
     }
+    // Sight of the world's animals (V2-12: a herd's wild forms are first watched).
+    for a in c.animals.iter() {
+        reach
+            .triggers
+            .insert(format!("see:{}", crate::triggers::key(a.id())));
+    }
     for it in c.items.iter() {
         let gatherable_form = it
             .form
@@ -1010,6 +1016,37 @@ pub fn reachability_in(c: &Content, blocks: Option<&[(String, Option<String>)]>)
                 let mut new = Vec::new();
                 for out in p.outputs.iter().chain(&p.byproducts) {
                     produce(out, p, &mut reach, c, &mut new);
+                }
+                // Reaping a field gives sheaves of each crop's grain and its fibre (the server
+                // makes them as the plot bore, V2-12).
+                if p.effect == crate::schema::process::Effect::Reap {
+                    for crop in c.plants.iter().filter_map(|pl| pl.crop.as_ref()) {
+                        let mut gives = vec![Output {
+                            item: Match::Form {
+                                form: IdRef::qualify("sheaf_of"),
+                                materials: Some(crate::schema::material::MaterialFilter {
+                                    ids: vec![crop.grain.clone()],
+                                    ..Default::default()
+                                }),
+                            },
+                            amount: (1.0, 1.0),
+                            chance: 1.0,
+                            quality: Default::default(),
+                            seasons: Vec::new(),
+                        }];
+                        if let Some(f) = &crop.fibre {
+                            gives.push(Output {
+                                item: Match::Material(f.clone()),
+                                amount: (0.3, 0.3),
+                                chance: 1.0,
+                                quality: Default::default(),
+                                seasons: Vec::new(),
+                            });
+                        }
+                        for out in &gives {
+                            produce(out, p, &mut reach, c, &mut new);
+                        }
+                    }
                 }
                 changed = true;
             }

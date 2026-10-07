@@ -68,6 +68,8 @@ pub struct Seen<'a> {
     /// Seconds of play in a game day and a game year.
     pub day_s: f64,
     pub year_s: f64,
+    /// The animal looked at, as a process sees it (V2-12).
+    pub animal: Option<Aimed>,
 }
 
 /// The client's making and knowing.
@@ -159,6 +161,7 @@ impl Crafting {
         };
         match s.aim {
             AimAt::Nothing => None,
+            AimAt::Animal(_) => s.animal.clone(),
             AimAt::Thing(id) => Some(Aimed::Thing(id)),
             AimAt::Beside { pos, .. } => {
                 let block = s.reg.block_of(s.mirror.block(pos)?);
@@ -239,7 +242,7 @@ impl Crafting {
                 .iter()
                 .find(|w| w.id == id)
                 .map_or(s.feet, |w| DVec3::from_array(w.pos)),
-            AimAt::Nothing => s.feet,
+            AimAt::Animal(_) | AimAt::Nothing => s.feet,
         };
         let lying = s.world_items.iter().filter(|w| {
             let p = DVec3::from_array(w.pos);

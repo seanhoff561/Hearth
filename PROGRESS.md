@@ -1277,6 +1277,31 @@ D213–D216), in parts:
   and every line phrased in the other, ending byte for byte the same (`hearth_ai/tests/
   conversations.rs`); through the server a greeting phrased, a leaking phrasing never sent, typed
   words answered or offered (`tests/conversation.rs`).
+V2-12 — Neolithic (PLAN.md, v2 Era 3; `docs/design/neolithic.md`; D217–D221), in parts:
+- [x] (a) Pottery and kilns (D217): a pot coiled, dried to greenware (rain slumps it back to
+  clay), fired in a campfire, a firing pit or an updraft kiln; fired in its clay's range by the
+  heat its batch got (`hearth_craft::firing`): under-fired stays clay and is told so, over-fired
+  slumps; a fired pot holds water (`tests/pottery.rs`).
+- [x] (b) Fields and grain domestication (D218): tilled plots, sowing by the season, weeds,
+  pests, irrigation, nitrogen drawn down and restored by fallow and dung, reaping with a sickle,
+  threshing, a saddle quern, bread and porridge, storage pits; seed carrying its lot (tough
+  rachis, grain weight, dormancy) through every step, changed only by the harvest's selection.
+- [x] (c) Herds (D219): the mouflon and the bezoar goat of the Fertile Crescent's hills; kept
+  animals with a heritable makeup and a learned tameness, tethered, led, bred in their rut,
+  milked, plucked, slaughtered; milk curdled to cheese; kept animals saved apart from the
+  populations; a bred fleece's coat (`hearth_fauna/tests/herds.rs`).
+- [x] (d) Spinning and weaving (D221): flax retted and scutched, spindles, yarn, a warp-weighted
+  loom weaving linen and woollen cloth by the length, tunics and cloaks sewn of it.
+- [x] (e) Timber and houses: ground stone axes and adzes, wedges splitting planks, hewn posts
+  and beams and plank walls and floors for the farmers' longhouses.
+- [x] (f) Moving loads (D220): sledges on runners, the handcart on wheels, the dugout canoe
+  paddled (the mover's boat mode), the potter's wheel (`tests/neolithic_crafts.rs`,
+  `hearth_physics/tests/movement.rs`).
+- [x] (g) The acceptance: a bot domesticates einkorn over twelve harvests and its yields rise
+  (`tests/acceptance_v2_12.rs`, `--ignored`: tough ears 0.3 % → 99 %, grain 12 → 22 mg, dormancy
+  50 % → 2 %, 0.03 → 0.105 kg a square metre); a herder's mouflon line becomes docile and woolly
+  (`tests/acceptance_v2_12_herd.rs`); under-fired pottery fails (`tests/pottery.rs`); the
+  screenshots (`tools/shots/v212_neolithic.shots`).
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in

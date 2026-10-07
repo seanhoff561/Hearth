@@ -13,6 +13,10 @@ pub const STEP_FREE: f64 = 0.6;
 pub const STEP_SCRAMBLE: f64 = 1.05;
 /// Highest ledge a person can pull up onto, from the feet (m).
 pub const REACH: f64 = 1.9;
+/// A boat floats once the water is this deep where it is (m), and the paddler sits this far under
+/// the surface.
+const BOAT_FLOATS_M: f64 = 0.35;
+const BOAT_SEAT_M: f64 = 0.1;
 /// Speeds of crouching and crawling (m/s).
 const CROUCH_M_S: f64 = 0.8;
 const CRAWL_M_S: f64 = 0.4;
@@ -97,6 +101,8 @@ pub struct Ability {
     pub breath_s: f64,
     /// 0–1: an exhausted swimmer slips under.
     pub stamina: f64,
+    /// Paddling speed afloat in a boat (V2-12: a dugout dragged into the water); 0 without one.
+    pub boat_m_s: f64,
 }
 
 impl Ability {
@@ -112,6 +118,7 @@ impl Ability {
             climb: true,
             breath_s: 45.0,
             stamina: 1.0,
+            boat_m_s: 0.0,
         }
     }
 }
@@ -128,6 +135,8 @@ pub enum Motion {
     Crawling,
     Wading,
     Swimming,
+    /// Afloat in a boat, paddling (V2-12).
+    Paddling,
     Climbing,
     Falling,
 }
@@ -362,9 +371,14 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
         Ground::default()
     };
 
+    // Afloat in a boat (V2-12): sitting in it once the water is deep enough to float it (knee
+    // deep), until it grounds in the shallows.
+    let boating = a.boat_m_s > 0.0 && level.is_some() && !(m.on_ground && depth < BOAT_FLOATS_M);
     // Stance: swim when the water is over the chest and the feet find no bottom (and keep
     // swimming until they stand in shallower water); otherwise as asked, if there is room.
-    let swimming = if m.stance == Stance::Swimming {
+    let swimming = if boating {
+        false
+    } else if m.stance == Stance::Swimming {
         level.is_some() && !(m.on_ground && submerged < 0.6)
     } else {
         (submerged > 0.72 && !m.on_ground) || submerged > 0.85
@@ -407,6 +421,7 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
         i.wish
     };
     let mut speed = match m.stance {
+        _ if boating => a.boat_m_s,
         Stance::Swimming => a.swim_m_s,
         Stance::Crawling => CRAWL_M_S,
         Stance::Crouching => CROUCH_M_S.min(a.walk_m_s),
@@ -443,7 +458,10 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
         rep.straining = true;
     }
     let target = wish * speed;
-    let rate = if m.stance == Stance::Swimming {
+    let rate = if boating {
+        // A hull glides on and answers the paddle slowly.
+        1.5
+    } else if m.stance == Stance::Swimming {
         3.0
     } else if m.on_ground {
         12.0 * ((1.0 - ground.friction) / 0.4).clamp(0.05, 1.0)
@@ -464,7 +482,12 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
             (lo.z..=hi.z).any(|z| (lo.x..=hi.x).any(|x| t.climbable(BlockPos::new(x, y, z))))
         })
     };
-    if m.stance == Stance::Swimming {
+    if boating {
+        // Seated in the hull, a hand's breadth under the surface.
+        let float_y = level.unwrap_or(m.pos.y) - BOAT_SEAT_M;
+        let vy = ((float_y - m.pos.y) * 3.0).clamp(-1.0, 1.0);
+        m.vel.y += (vy - m.vel.y) * (1.0 - (-4.0 * dt).exp());
+    } else if m.stance == Stance::Swimming {
         // Afloat with the eyes just out of the water.
         let float_y = level.unwrap_or(m.pos.y) - Stance::Swimming.eye() * m.scale + 0.1;
         let mut vy = ((float_y - m.pos.y) * 2.0).clamp(-1.2, 1.2);
@@ -567,7 +590,8 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
     let mut moved = sweep(t, &start, d, &mut s);
     // A step up: blocked in stride on the ground, try lifting the box over the obstacle.
     let blocked = (moved.x - d.x).abs() > 1e-6 || (moved.z - d.z).abs() > 1e-6;
-    if blocked && was_on_ground && m.stance != Stance::Swimming {
+    // Afloat, the bank is stepped up onto from the hull.
+    if blocked && (was_on_ground || boating) && m.stance != Stance::Swimming {
         let max_step = match m.stance {
             Stance::Crawling => 0.3,
             _ if i.gait == Gait::Sprint && a.sprint => STEP_FREE,
@@ -630,7 +654,7 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
     if m.on_ground || m.stance == Stance::Swimming || ladder {
         m.fall_speed = 0.0;
     }
-    m.wet = in_water;
+    m.wet = in_water && !boating;
 
     // Breath.
     let eyes_under = level.is_some_and(|l| l > m.pos.y + m.eye_height());
@@ -647,12 +671,18 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
 
     let hspeed = (moved.x * moved.x + moved.z * moved.z).sqrt() / dt;
     let depth = level.map_or(0.0, |l| l - m.pos.y);
-    rep.immersion = (depth / m.height()).clamp(0.0, 1.0);
+    rep.immersion = if boating {
+        0.0
+    } else {
+        (depth / m.height()).clamp(0.0, 1.0)
+    };
     rep.eyes_under = eyes_under;
     rep.airless_s = m.airless_s;
     rep.speed = hspeed;
     if rep.motion == Motion::Still {
         rep.motion = match m.stance {
+            _ if boating && hspeed > 0.1 => Motion::Paddling,
+            _ if boating => Motion::Still,
             Stance::Swimming => Motion::Swimming,
             Stance::Climbing => Motion::Climbing,
             _ if !m.on_ground && m.fall_speed > 2.0 => Motion::Falling,

@@ -2666,3 +2666,44 @@ player is offered the model's readings and those the words' cue words point to, 
 done until it chooses. Free text never reaches the people, and their decisions never wait on the
 backend: two worlds of one seed, the player speaking on the wheel in one and typing in the other
 with every line phrased, end the same byte for byte.
+
+## D217 — Firing is judged by the heat a batch got, not by the process
+A pot is pottery only if the fire it sat in reached its clay's firing range and held near its
+peak long enough, and not so far past it that it slumped (`hearth_craft::firing::fired`). The
+heat is the station's own fire as the fire model runs it, tracked on the batch: the process says
+how long it must hold, the fire says how hot it was. So an open campfire fires earthenware and
+never kaolin, a kiln does, and an under-fired pot comes out still clay and is told so — the
+failure is the physics, not a roll.
+
+## D218 — Seed carries its lot; selection is the only way a crop changes
+A stack of seed carries its heritable makeup (`Lot`: tough-rachis lines, grain weight, dormancy)
+and keeps it through reaping, threshing and picking over; lots alike pour together, lots apart
+stay apart. Nothing changes a crop but what the selection of its harvest does: reaping keeps
+the ears that held their grain (Hillman & Davies' sickle-harvest selection), dormant seed is
+never reaped, and keeping the plumpest third raises grain weight by the breeder's equation.
+Domestication is what a farmer's ordinary practice does over the generations, and a player who
+strips wild stands and never sows keeps wild grain.
+
+## D219 — Kept animals: a makeup bred, a tameness learned, breeding abstracted
+A kept animal carries a heritable makeup (docile, woolly, milky: 0 wild … 1 bred) and a
+tameness it learns: handled young, any animal is tame; grown, it settles to what its makeup
+allows, so hand-raised wild stock turns wary and only breeding from the calmest makes a docile
+line. Its flight from people is its kind's times the square of what it is not tame. Its young's
+makeup lies between its parents' with a spread either way. Breeding is a chance in the rut beside
+a kept male and a due date in its kind's birth season (V2.1 ground rules: abstracted). Kept
+animals belong to no population group and are saved apart; a herd with its keeper beside it is
+not hunted. The keeper sees how tame each one is and what its fleece weighs, and chooses.
+
+## D220 — Loads are dragged on runners and wheels; a boat is a dragged thing that floats you
+Sledges, handcarts and dugouts are containers that are dragged, not new kinds of thing: what is
+dragged is held back by the ground's friction as before, and runners and wheels change only that
+friction (sliding less on runners, very little on snow; rolling on wheels, little on hard ground
+and much in sand, mud and snow). A dragged boat in water deep enough to float it is sat in and
+paddled: the mover's boat mode keeps the paddler dry at the surface at a strong paddler's speed,
+and the bank is stepped up onto from the hull. Ox-drawn carts wait for draft animals (V2-14).
+
+## D221 — Cloth by the length; garments sewn of it
+Spun yarn is an item of its fibre; a skein woven on the loom is one length of cloth, a metre by
+half a metre, of the cloth's own material (linen, woollen cloth), carried as bulk. Garments of
+cloth are sewn from lengths as hide garments are from hides, and take their warmth from the
+garment, not the cloth.

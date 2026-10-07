@@ -22,9 +22,11 @@ pub enum Variant {
     Winter = 1,
     Male = 2,
     Young = 3,
+    /// A bred fleece (V2-12: a woolly line's coat).
+    Fleece = 4,
 }
 
-const VARIANTS: usize = 4;
+const VARIANTS: usize = 5;
 
 /// Where a species' coats lie in the atlas: each box's unwrap within a coat's block and its
 /// size in pixels, and where each coat's block is.
@@ -149,9 +151,20 @@ impl Bodies {
     /// Where an animal's coat lies in the atlas: a grown male's own where his colour differs,
     /// the winter coat in winter, the young's pattern on the young of the year (in its first
     /// summer), otherwise the female's.
-    pub fn coat_of(&self, species: usize, female: bool, stage: Stage, winter: bool) -> [u32; 2] {
+    pub fn coat_of(
+        &self,
+        species: usize,
+        female: bool,
+        stage: Stage,
+        winter: bool,
+        fleece: f32,
+    ) -> [u32; 2] {
         let s = &self.skins[species];
-        let mut order = Vec::with_capacity(3);
+        let mut order = Vec::with_capacity(4);
+        // A woolly line's fleece, grown (V2-12).
+        if fleece > 0.5 {
+            order.push(Variant::Fleece);
+        }
         if stage == Stage::Adult && !female {
             order.push(Variant::Male);
         }
@@ -214,7 +227,17 @@ fn variants_of(sp: &Species) -> Vec<Variant> {
             v.push(Variant::Young);
         }
     }
+    if fleece_coat(sp).is_some() {
+        v.push(Variant::Fleece);
+    }
     v
+}
+
+/// A bred fleece's colour, for a kind whose bred form grows one.
+fn fleece_coat(sp: &Species) -> Option<[u8; 3]> {
+    let d = sp.domestication.as_ref()?;
+    d.fleece_kg?;
+    d.bred_coat.map(|c| c.0)
 }
 
 fn pattern_of(p: CoatPattern) -> Pattern {
@@ -249,11 +272,31 @@ fn recipe(sp: &Species, rig: &Rig, v: Variant) -> CoatRecipe {
         young: None,
     };
     let c = sp.coat.unwrap_or(grey);
+    let fleece = fleece_coat(sp).filter(|_| v == Variant::Fleece);
     let back = match v {
         Variant::Winter => c.winter.unwrap_or(c.base).0,
         Variant::Male => c.male.unwrap_or(c.base).0,
+        Variant::Fleece => fleece.unwrap_or(c.base.0),
         _ => c.base.0,
     };
+    // A fleece covers the body's markings: one colour over back and belly, the face and legs
+    // their own.
+    if let Some(f) = fleece {
+        return CoatRecipe {
+            kind: rig.kind,
+            back: f,
+            belly: f,
+            points: f,
+            rump: None,
+            marking: None,
+            face: c.face.map(|p| p.0),
+            legs: c.legs.map(|p| p.0),
+            tail_tip: None,
+            pattern: Pattern::Plain,
+            hooves: sp.plan == BodyPlan::Ungulate,
+            seed: hash2(hash2(0xc0a7, sp.index as u64), v as u64),
+        };
+    }
     let pattern = match (v, c.young) {
         (Variant::Young, Some(p)) => p,
         _ => c.pattern,
