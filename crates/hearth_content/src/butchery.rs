@@ -445,6 +445,7 @@ fn work(
         harvests: None,
         treats: None,
         places: None,
+        firing: None,
         status: a.status,
         notes: (!proper)
             .then(|| "Without knowing how, half the meat and the hide are wasted.".into()),

@@ -5,6 +5,7 @@
 //! * [`engine`]: the process engine — what can be done with what is at hand and what is looked
 //!   at, for how long, and what comes of it.
 //! * [`fire`]: a thermal model of fires: fuel, flames, coals, heat, rain.
+//! * [`firing`]: what a fire's heat makes of clay.
 //! * [`food`]: what food gives the body, and spoiling.
 //!
 //! Everything here is pure: the server applies what it decides, the client lists what is
@@ -12,6 +13,7 @@
 
 pub mod engine;
 pub mod fire;
+pub mod firing;
 pub mod food;
 pub mod knap;
 pub mod knowledge;

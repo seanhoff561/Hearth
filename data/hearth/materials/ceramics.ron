@@ -1,0 +1,17 @@
+// Fired clay (v2 §11.4; V2-12): what earthenware clay becomes when it is held in its firing
+// range — porous red-brown earthenware from a bonfire, a pit or an updraft kiln (600–1100 °C).
+(
+    schema: 1,
+    entries: [
+        (
+            id: "earthenware", status: Implemented, name: "earthenware", category: Ceramic, tags: ["ceramic", "fired"],
+            density_kg_m3: 1900, hardness_mohs: 4.5, fracture: Uneven, porosity: 0.2,
+            strength: (compressive_mpa: 60, tensile_mpa: 4, bending_mpa: 12),
+            thermal: (conductivity_w_mk: 0.9, specific_heat_j_kgk: 850, melting_c: 1250),
+            workability: 0.1, durability: 0.6,
+            appearance: (color: "#a0583a", color2: "#6b3a26", pattern: Plain, roughness: 0.55),
+            realism_source: "low-fired earthenware: 15–25 % porosity, crushing strength tens of MPa (ceramics handbooks; Rice, Pottery Analysis)",
+            uncertain: true,
+        ),
+    ],
+)

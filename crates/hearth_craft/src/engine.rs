@@ -98,6 +98,7 @@ impl Crafts {
                     harvests: None,
                     treats: None,
                     places: None,
+                    firing: None,
                     status: Status::Implemented,
                     notes: None,
                     realism_source: None,
@@ -1015,12 +1016,14 @@ fn gone_off(made: &mut [Stack], gone: f32, c: &Content, items: &Items) {
 
 /// Finishes unattended work on `stack` (meat on the rack, acorns in the stream): the outputs,
 /// made of the stack's material, or nothing if it failed. Its failures grow with the share of
-/// the time it spent wet.
+/// the time it spent wet. A firing's outputs take the quality its heat gave (`quality`).
+#[allow(clippy::too_many_arguments)]
 pub fn finish_batch(
     crafts: &Crafts,
     recipe: usize,
     stack: &Stack,
     wet_share: f32,
+    quality: Option<f32>,
     c: &Content,
     items: &Items,
     rng: &mut Rng,
@@ -1053,7 +1056,8 @@ pub fn finish_batch(
             .chain(&def.byproducts)
             .filter(|o| in_season(o, None))
         {
-            if let Some(s) = produce(crafts, o, material.as_deref(), 0.5, 1.0, c, items, rng) {
+            let q = quality.unwrap_or(0.5);
+            if let Some(s) = produce(crafts, o, material.as_deref(), q, 1.0, c, items, rng) {
                 out.push(s);
             }
         }

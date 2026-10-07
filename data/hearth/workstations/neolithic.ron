@@ -1,0 +1,22 @@
+// Workstations of the Neolithic (v2 Era 3; V2-12).
+(
+    schema: 1,
+    entries: [
+        (
+            // A shallow pit, its pots bedded in and the fuel heaped over them.
+            id: "firing_pit", status: Implemented, name: "Firing pit", action: "dig a firing pit and heap fuel in it",
+            parts: [(item: Tag("fuelwood"), amount: 8), (item: Tag("tinder"), amount: 2)],
+            provides: [MaxTempC(900), Smoke],
+            knowledge: "pit_firing", build: (hours: 1.0), block: "firing_pit",
+            notes: "Pit firing reaches 700–900 °C, more evenly than an open fire.",
+        ),
+        (
+            // A clay-walled chamber over the fire, a perforated floor between: up to 1,050 °C.
+            id: "updraft_kiln", status: Implemented, name: "Updraft kiln", action: "build an updraft kiln of mudbrick and clay",
+            parts: [(item: Form(form: "brick"), amount: 24), (item: Form(form: "lump", materials: (categories: [Clay])), amount: 10), (item: Tag("fuelwood"), amount: 6), (item: Tag("tinder"), amount: 2)],
+            provides: [MaxTempC(1050), Enclosure, Smoke],
+            knowledge: "kiln_updraft", build: (hours: 10.0), block: "updraft_kiln",
+            notes: "Early Near Eastern kilns (c. 6000 BCE) fired at 800–1,050 °C.",
+        ),
+    ],
+)

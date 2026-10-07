@@ -241,7 +241,19 @@ entry! {
         /// The construction piece it puts up (with the `Place` effect).
         #[serde(default)]
         pub places: Option<IdRef>,
+        /// Firing (v2 §11.4): unattended work at a station's fire whose outcome is the heat it
+        /// got — the hottest it was, and how long it was held at or above the firing range of
+        /// what is fired (its material's `firing_c`).
+        #[serde(default)]
+        pub firing: Option<Firing>,
     }
+}
+
+/// How a firing is judged (v2 §11.4): hours at or above the bottom of the material's firing
+/// range needed for it to be fired through.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Firing {
+    pub hold_h: f32,
 }
 
 fn light_work() -> f32 {

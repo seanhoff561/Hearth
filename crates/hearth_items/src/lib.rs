@@ -41,6 +41,12 @@ pub struct Batch {
     pub hours: f32,
     #[serde(default)]
     pub wet_hours: f32,
+    /// A firing's heat (v2 §11.4): the hottest its fire was (°C), and the hours at or above
+    /// the bottom of what is fired's firing range.
+    #[serde(default)]
+    pub peak_c: f32,
+    #[serde(default)]
+    pub hot_h: f32,
 }
 
 /// The things lying in a world.

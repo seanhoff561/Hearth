@@ -1,0 +1,96 @@
+// Processes of the Neolithic (v2 Era 3; V2-12).
+(
+    schema: 1,
+    entries: [
+        // ---- Pottery (v2 §11.4): coiled of clay, dried, fired in the heat it needs ----
+        (
+            // Coils of clay rolled out and pinched up into a pot of some five litres.
+            id: "shape_pot", status: Implemented, name: "Shape a pot", action: "coil a pot of the clay",
+            verb: "mould",
+            inputs: [(item: Form(form: "lump", materials: (categories: [Clay])), amount: 5)],
+            duration: (hours: 1.5), knowledge: "pottery_handbuilt", skill: "pottery", mets: 1.8,
+            outputs: [(item: Form(form: "wet_pot"), amount: (1, 1), quality: (base: 0.3, from_skill: 0.5, from_material: 0.2))],
+            failures: [(chance: 0.4, min_chance: 0.04, outcome: "The coils sag and the pot slumps into a heap of clay.", loses_inputs: false)],
+        ),
+        (
+            // Left in the shade and the air until it is bone dry: a pot fired wet bursts.
+            id: "dry_pot", status: Implemented, name: "Dry the pot", action: "set the pot to dry",
+            verb: "dry", attended: false, conditions: [Dry],
+            inputs: [(item: Form(form: "wet_pot"), amount: 1)],
+            duration: (hours: 48.0), knowledge: "pottery_handbuilt", mets: 1.5,
+            outputs: [(item: Form(form: "greenware_pot"), amount: (1, 1))],
+            failures: [(chance: 0.15, min_chance: 0.05, outcome: "The pot cracks as it dries.")],
+        ),
+        (
+            // Pots set in an open fire and built over with wood: an hour at 600 °C and more
+            // makes soft earthenware; many crack in the uneven heat.
+            id: "fire_pot_open", status: Implemented, name: "Fire a pot in the fire", action: "set the pot in the fire to fire it",
+            verb: "fire", attended: false,
+            inputs: [(item: Form(form: "greenware_pot"), amount: 1)],
+            station: "campfire", duration: (hours: 2.5), knowledge: "pottery_handbuilt", skill: "pottery", mets: 1.5,
+            firing: Some((hold_h: 1.0)),
+            outputs: [(item: Form(form: "pot", materials: (ids: ["hearth:earthenware"])), amount: (1, 1))],
+            failures: [(chance: 0.25, min_chance: 0.08, outcome: "A pot cracks in the uneven heat.")],
+        ),
+        (
+            // Pots buried in fuel in a shallow pit: hotter and more even, 700–900 °C.
+            id: "fire_pot_pit", status: Implemented, name: "Fire a pot in the pit", action: "bury the pot in the firing pit's fuel",
+            verb: "fire", attended: false,
+            inputs: [(item: Form(form: "greenware_pot"), amount: 1)],
+            station: "firing_pit", duration: (hours: 4.0), knowledge: "pit_firing", skill: "pottery", mets: 1.5,
+            firing: Some((hold_h: 1.5)),
+            outputs: [(item: Form(form: "pot", materials: (ids: ["hearth:earthenware"])), amount: (1, 1))],
+            failures: [(chance: 0.15, min_chance: 0.04, outcome: "A pot spalls in the heat.")],
+        ),
+        (
+            // Set on the perforated floor over the fire chamber: the hottest, most even firing.
+            id: "fire_pot_kiln", status: Implemented, name: "Fire a pot in the kiln", action: "stack the pot in the kiln",
+            verb: "fire", attended: false,
+            inputs: [(item: Form(form: "greenware_pot"), amount: 1)],
+            station: "updraft_kiln", duration: (hours: 8.0), knowledge: "kiln_updraft", skill: "pottery", mets: 1.5,
+            firing: Some((hold_h: 2.0)),
+            outputs: [(item: Form(form: "pot", materials: (ids: ["hearth:earthenware"])), amount: (1, 1))],
+            failures: [(chance: 0.08, min_chance: 0.02, outcome: "A pot cracks in the kiln.")],
+        ),
+        (
+            id: "light_firing_pit", status: Implemented, name: "Light the firing pit", action: "light the fuel heaped in the pit",
+            verb: "light", effect: Ignite,
+            inputs: [(item: Tag("fire_source"), amount: 1)],
+            station: "firing_pit", duration: (hours: 0.05), knowledge: "pit_firing", skill: "firemaking",
+            outputs: [],
+            failures: [(chance: 0.3, min_chance: 0.05, outcome: "The ember dies before the fuel catches.")],
+        ),
+        (
+            id: "feed_firing_pit", status: Implemented, name: "Heap on more fuel", action: "heap more wood over the pots",
+            verb: "burn", effect: Feed,
+            inputs: [(item: Tag("fuelwood"), amount: 1)],
+            station: "firing_pit", duration: (hours: 0.005), knowledge: "pit_firing",
+            outputs: [],
+        ),
+        (
+            id: "light_kiln", status: Implemented, name: "Light the kiln", action: "light the fire in the kiln's chamber",
+            verb: "light", effect: Ignite,
+            inputs: [(item: Tag("fire_source"), amount: 1)],
+            station: "updraft_kiln", duration: (hours: 0.05), knowledge: "kiln_updraft", skill: "firemaking",
+            outputs: [],
+            failures: [(chance: 0.3, min_chance: 0.05, outcome: "The ember dies before the fuel catches.")],
+        ),
+        (
+            id: "feed_kiln", status: Implemented, name: "Stoke the kiln", action: "stoke the kiln's fire",
+            verb: "burn", effect: Feed,
+            inputs: [(item: Tag("fuelwood"), amount: 1)],
+            station: "updraft_kiln", duration: (hours: 0.005), knowledge: "kiln_updraft",
+            outputs: [],
+        ),
+        (
+            // A pot of water on the fire: meat stewed without hot stones.
+            id: "boil_in_pot", status: Implemented, name: "Stew meat in a pot", action: "stew the meat in the pot on the fire",
+            verb: "boil",
+            inputs: [(item: Material("meat"), amount: 0.5), (item: Tag("cooking_pot"), amount: 1, consumed: false)],
+            station: "campfire", conditions: [HeatAtLeastC(300), Water],
+            duration: (hours: 1.0), knowledge: "pottery_handbuilt", skill: "cooking", mets: 1.5,
+            outputs: [(item: Material("cooked_meat"), amount: (0.45, 0.5))],
+            failures: [(chance: 0.08, min_chance: 0.01, outcome: "The pot boils over and scalds your hand.", loses_inputs: false, injury: "burn")],
+        ),
+    ],
+)

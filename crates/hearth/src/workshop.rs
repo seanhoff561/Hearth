@@ -114,6 +114,12 @@ pub struct Here<'a> {
     pub facing: f32,
 }
 
+/// The firing range of what a stack is made of (°C), if it fires (clay).
+fn firing_range(content: &Content, items: &Items, stack: &Stack) -> Option<(f32, f32)> {
+    let m = items.get(&stack.id)?.material.as_deref()?;
+    content.materials.get(m)?.thermal.firing_c
+}
+
 /// Making things in the world.
 pub struct Workshop {
     pub crafts: Arc<Crafts>,
@@ -1078,6 +1084,8 @@ impl Workshop {
                     process: def.id.clone(),
                     hours: 0.0,
                     wet_hours: 0.0,
+                    peak_c: 0.0,
+                    hot_h: 0.0,
                 });
             }
             *h.items_changed = true;
@@ -2131,6 +2139,7 @@ impl Workshop {
             }
         }
         self.batches(h, dt_h, air_c);
+        self.slake(h, dt_h);
         self.go_off(h, dt_h, air_c);
         if self.fire_burning() {
             self.fire_minute(h);
@@ -2161,19 +2170,37 @@ impl Workshop {
                 h.lw.map
                     .block(block)
                     .is_some_and(|s| h.lw.reg.block_of(s).def.fluid.is_some());
-            let at_station = def.station.as_ref().is_none_or(|s| {
+            let station = def.station.as_ref().and_then(|s| {
                 self.stations
                     .iter()
-                    .any(|st| st.id == s.as_str() && st.pos == block)
+                    .find(|st| st.id == s.as_str() && st.pos == block)
             });
+            let at_station = def.station.is_none() || station.is_some();
+            // The station's fire: how hot, and whether it burns.
+            let fire = station.and_then(|st| st.fire.as_ref());
+            let fire_c = fire.map_or(air_c, |f| f.temp_c);
             use hearth_content::schema::process::Condition;
-            let ok = at_station
+            let mut ok = at_station
                 && def.conditions.iter().all(|c| match c {
                     Condition::Dry => !raining,
                     Condition::Water => in_water,
                     Condition::ColdBelowC(t) => air_c < *t,
+                    Condition::HeatAtLeastC(t) => fire_c >= *t,
                     _ => true,
                 });
+            // A firing goes on while its fire burns, its heat kept: the hottest it got, and the
+            // hours at or above the bottom of what is fired's range.
+            if def.firing.is_some() {
+                ok = ok && fire.is_some_and(Fire::lit);
+                if ok {
+                    work.peak_c = work.peak_c.max(fire_c);
+                    let lo =
+                        firing_range(&h.lw.content, h.items, &wi.stack).map_or(f32::MAX, |r| r.0);
+                    if fire_c >= lo {
+                        work.hot_h += dt_h;
+                    }
+                }
+            }
             if ok {
                 work.hours += dt_h;
             }
@@ -2193,11 +2220,53 @@ impl Workshop {
                 continue;
             };
             let wet = work.wet_hours / (work.hours + work.wet_hours).max(0.01);
+            // A firing comes out as its heat made it (v2 §11.4).
+            let def = &self.crafts.recipes[r].def;
+            let mut quality = None;
+            if let Some(firing) = def.firing {
+                let name = def.name.clone();
+                let range = firing_range(&h.lw.content, h.items, &wi.stack);
+                let result = range.map_or(hearth_craft::firing::Fired::Under, |range| {
+                    hearth_craft::firing::fired(range, work.peak_c, work.hot_h, firing.hold_h)
+                });
+                match result {
+                    hearth_craft::firing::Fired::Fired(q) => quality = Some(q),
+                    hearth_craft::firing::Fired::Under => {
+                        // Still clay: back where it lay, to be fired again.
+                        h.world_items.add(wi.stack.clone(), wi.pos, wi.yaw);
+                        *h.items_changed = true;
+                        h.out.push(acted(
+                            &work.process,
+                            false,
+                            format!(
+                                "{name}: it never got hot enough to fire through (at most {:.0} °C, \
+                                 {:.1} h hot enough): still clay, that rain or water would turn \
+                                 back to mud. Fire it again, hotter and longer.",
+                                work.peak_c, work.hot_h
+                            ),
+                        ));
+                        continue;
+                    }
+                    hearth_craft::firing::Fired::Over => {
+                        *h.items_changed = true;
+                        h.out.push(acted(
+                            &work.process,
+                            false,
+                            format!(
+                                "{name}: far too hot ({:.0} °C): the clay slumped and bloated.",
+                                work.peak_c
+                            ),
+                        ));
+                        continue;
+                    }
+                }
+            }
             match finish_batch(
                 &self.crafts,
                 r,
                 &wi.stack,
                 wet,
+                quality,
                 &h.lw.content,
                 h.items,
                 &mut self.rng,
@@ -2213,6 +2282,67 @@ impl Workshop {
                     h.out
                         .push(acted(&work.process, false, format!("{name}: {why}")));
                 }
+            }
+            *h.items_changed = true;
+        }
+    }
+
+    /// Unfired clay left out in the rain soaks through and slumps back to clay (V2-12): a pot
+    /// is pottery only once it has been fired.
+    fn slake(&mut self, h: &mut Here, dt_h: f32) {
+        let mut slumped = Vec::new();
+        for wi in h.world_items.items.iter_mut() {
+            let Some(kind) = h.items.get(&wi.stack.id) else {
+                continue;
+            };
+            if !kind.has_tag("slakes") {
+                continue;
+            }
+            let pos = DVec3::from_array(wi.pos);
+            let block = BlockPos::containing(pos);
+            let covered =
+                h.lw.map
+                    .sky_top(block.x, block.z)
+                    .is_some_and(|top| top > block.y + 1);
+            let rain = if covered {
+                0.0
+            } else {
+                h.env.weather_at(&h.moment, pos).precip_mm_h as f32
+            };
+            if rain > 0.1 {
+                // Half an hour of steady rain (2 mm an hour) soaks a pot through.
+                wi.stack.wet = (wi.stack.wet + rain * dt_h).min(1.0);
+                if wi.stack.wet >= 1.0 {
+                    slumped.push(wi.id);
+                }
+            } else {
+                wi.stack.wet = (wi.stack.wet - 0.5 * dt_h).max(0.0);
+            }
+        }
+        for id in slumped {
+            let Some(wi) = h.world_items.take(id) else {
+                continue;
+            };
+            let Some(m) = h.items.get(&wi.stack.id).and_then(|k| k.material.clone()) else {
+                continue;
+            };
+            let lump = hearth_content::generate::generated_id("lump", &m);
+            if let Some(k) = h.items.get(&lump) {
+                let kg = wi.stack.mass(h.items);
+                let n = (kg / k.mass_kg.max(0.01)).round().max(1.0) as u16;
+                h.world_items
+                    .add(Stack::of(&lump, n.min(64)), wi.pos, wi.yaw);
+            }
+            if (DVec3::from_array(wi.pos) - h.player.mover.pos).length() < 32.0 {
+                let name = h
+                    .items
+                    .get(&wi.stack.id)
+                    .map_or("the clay", |k| k.name.as_str());
+                h.out.push(acted(
+                    "",
+                    false,
+                    format!("The rain soaks {name} through: it slumps back to clay."),
+                ));
             }
             *h.items_changed = true;
         }

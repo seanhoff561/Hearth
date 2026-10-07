@@ -203,6 +203,43 @@ fn flames(seed: u64, f: i32, n: i32) -> Tex {
     t
 }
 
+/// A kiln's walls: clay baked red-brown, smoke-blackened in patches, with fine cracks.
+fn kiln_clay(seed: u64) -> Tex {
+    paint(S, S, |x, y| {
+        let n = fbm(seed, x, y, S, 0.45);
+        let soot = fbm(seed ^ 5, x, y, S, 0.5) > 0.66;
+        let crack = rand01(seed ^ 11, x, y / 3) < 0.04;
+        let c = lerp([138, 74, 46], [176, 104, 66], n);
+        if crack {
+            scale(c, 0.5)
+        } else if soot {
+            scale(c, 0.45)
+        } else {
+            c
+        }
+    })
+}
+
+/// The earth thrown up about a firing pit: dug soil, scorched toward the fire.
+fn firing_pit_earth(seed: u64) -> Tex {
+    paint(S, S, |x, y| {
+        let n = fbm(seed, x, y, S, 0.35);
+        let r = rand01(seed ^ 3, x, y);
+        let c = lerp([82, 60, 42], [120, 92, 64], n);
+        if r < 0.12 { scale(c, 0.6) } else { c }
+    })
+}
+
+/// Fired pottery: red-brown earthenware with fire clouds.
+fn earthenware(seed: u64) -> Tex {
+    paint(S, S, |x, y| {
+        let n = fbm(seed, x, y, S, 0.4);
+        let cloud = fbm(seed ^ 7, x, y, S, 0.6) > 0.6;
+        let c = lerp([150, 82, 52], [184, 108, 70], n);
+        if cloud { scale(c, 0.55) } else { c }
+    })
+}
+
 /// Poles of a rack: weathered wood.
 fn drying_rack(seed: u64) -> Tex {
     paint(S, S, |x, y| {
@@ -306,6 +343,11 @@ pub fn textures() -> Vec<TexEntry> {
     add("campfire_logs", campfire_logs(h("hearthlogs")));
     add("campfire_ash", campfire_ash(h("ash")));
     add("drying_rack", drying_rack(h("rack")));
+    add("kiln_clay", kiln_clay(h("kiln")));
+    add("firing_pit_earth", firing_pit_earth(h("firingpit")));
+    add("earthenware", earthenware(h("earthenware")));
+    add("firing_pit", firing_pit_earth(h("firingpit")));
+    add("updraft_kiln", kiln_clay(h("kiln")));
     add("fat_lamp", fat_lamp(h("lamp")));
     add("grass_bed", grass_bed(h("grassbed")));
     add("fur_bed", fur_bed(h("furbed")));

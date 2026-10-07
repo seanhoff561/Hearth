@@ -1057,6 +1057,118 @@ fn bake_model(
             }
             layer = RenderLayer::Cutout;
         }
+        "firing_pit" => {
+            // A shallow pit ringed with dug earth: pots bedded in fuel, or ash and coals once it
+            // has burned; flames by how it burns.
+            let px = |v: f32| v / 16.0;
+            let earth = ctx.tex("firing_pit_earth");
+            for [x0, z0, x1, z1, h] in [
+                [0.0, 0.0, 16.0, 3.0, 4.0],
+                [0.0, 13.0, 16.0, 16.0, 4.0],
+                [0.0, 3.0, 3.0, 13.0, 3.5],
+                [13.0, 3.0, 16.0, 13.0, 3.5],
+            ] {
+                box_quads(
+                    Vec3::new(px(x0), 0.0, px(z0)),
+                    Vec3::new(px(x1), px(h), px(z1)),
+                    |_| earth,
+                    true,
+                    &mut quads,
+                );
+            }
+            let fire = prop(reg, s, "fire").unwrap_or("out");
+            let pot = ctx.tex("earthenware");
+            for [x0, z0] in [[4.0, 4.5], [8.5, 7.5]] {
+                box_quads(
+                    Vec3::new(px(x0), 0.0, px(z0)),
+                    Vec3::new(px(x0 + 3.5), px(3.0), px(z0 + 3.5)),
+                    |_| pot,
+                    true,
+                    &mut quads,
+                );
+            }
+            if matches!(fire, "out" | "low" | "high") {
+                let logs = ctx.tex("campfire_logs");
+                for (a, b) in [
+                    (
+                        Vec3::new(px(3.0), px(2.5), px(5.0)),
+                        Vec3::new(px(13.0), px(4.0), px(6.5)),
+                    ),
+                    (
+                        Vec3::new(px(3.0), px(2.5), px(10.0)),
+                        Vec3::new(px(13.0), px(4.0), px(11.5)),
+                    ),
+                ] {
+                    box_quads(a, b, |_| logs, true, &mut quads);
+                }
+            } else {
+                let ash = ctx.tex("campfire_ash");
+                let top = if fire == "embers" {
+                    ctx.tex("embers")
+                } else {
+                    ash
+                };
+                box_quads(
+                    Vec3::new(px(3.0), 0.0, px(3.0)),
+                    Vec3::new(px(13.0), px(2.0), px(13.0)),
+                    move |d| if d == Direction::Up { top } else { ash },
+                    true,
+                    &mut quads,
+                );
+            }
+            let flame_h = match fire {
+                "low" => 0.5,
+                "high" => 0.9,
+                _ => 0.0,
+            };
+            if flame_h > 0.0 {
+                quads.extend(cross_box(
+                    ctx.tex("flames"),
+                    Vec3::new(0.15, px(2.0), 0.15),
+                    Vec3::new(0.85, px(2.0) + flame_h, 0.85),
+                ));
+            }
+            layer = RenderLayer::Cutout;
+        }
+        "updraft_kiln" => {
+            // A squat clay chamber narrowing to its flue, the firing mouth at its foot glowing
+            // when it burns.
+            let px = |v: f32| v / 16.0;
+            let wall = ctx.tex("kiln_clay");
+            for [x0, y0, z0, x1, y1, z1] in [
+                [2.0, 0.0, 2.0, 14.0, 9.0, 14.0],
+                [3.0, 9.0, 3.0, 13.0, 12.0, 13.0],
+                [5.0, 12.0, 5.0, 11.0, 14.0, 11.0],
+            ] {
+                box_quads(
+                    Vec3::new(px(x0), px(y0), px(z0)),
+                    Vec3::new(px(x1), px(y1), px(z1)),
+                    |_| wall,
+                    true,
+                    &mut quads,
+                );
+            }
+            let fire = prop(reg, s, "fire").unwrap_or("out");
+            let mouth = match fire {
+                "low" | "high" | "embers" => ctx.tex("embers"),
+                _ => ctx.tex("campfire_ash"),
+            };
+            box_quads(
+                Vec3::new(px(6.0), px(0.5), px(1.6)),
+                Vec3::new(px(10.0), px(4.0), px(2.0)),
+                move |_| mouth,
+                false,
+                &mut quads,
+            );
+            if fire == "high" {
+                quads.extend(cross_box(
+                    ctx.tex("flames"),
+                    Vec3::new(px(6.0), px(14.0), px(6.0)),
+                    Vec3::new(px(10.0), px(18.0), px(10.0)),
+                ));
+            }
+            layer = RenderLayer::Cutout;
+        }
         "fat_lamp" => {
             let px = |v: f32| v / 16.0;
             let stone = ctx.tex("fat_lamp");

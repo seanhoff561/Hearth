@@ -15,6 +15,22 @@
     "opaque": false, "render": "cross", "layer": "cutout", "emission": 15,
     "sound": "none", "map_color": "#ff8a20"
   },
+  "firing_pit": {
+    "properties": ["fire:out,banked,embers,low,high"],
+    "hardness": 0.5, "resistance": 0.5,
+    "shape": {"boxes": [[0, 0, 0, 16, 4, 16]]}, "collision": false,
+    "opaque": false, "render": "model", "layer": "cutout",
+    "emission_when": {"property": "fire", "values": {"embers": 6, "low": 13, "high": 15}},
+    "sound": "gravel", "map_color": "#5e4834"
+  },
+  "updraft_kiln": {
+    "properties": ["fire:out,banked,embers,low,high"],
+    "hardness": 2.0, "resistance": 4.0,
+    "shape": {"boxes": [[2, 0, 2, 14, 14, 14]]},
+    "opaque": false, "render": "model", "layer": "cutout",
+    "emission_when": {"property": "fire", "values": {"embers": 6, "low": 11, "high": 14}},
+    "sound": "stone", "map_color": "#94563a"
+  },
   "drying_rack": {
     "hardness": 0.5, "resistance": 0.5,
     "shape": {"boxes": [[1, 0, 7, 3, 15, 9], [13, 0, 7, 15, 15, 9], [0, 13, 7, 16, 15, 9]]},

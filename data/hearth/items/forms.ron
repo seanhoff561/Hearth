@@ -266,7 +266,26 @@
             size_m: (1.0, 0.4, 0.4), fill: 0.785, footprint: (2, 5),
             tags: ["two_handed", "rollable", "wood", "fuelwood"],
         ),
+        // Pottery (V2-12): a pot coiled of wet clay; dried, it is greenware, to be fired; rain
+        // or water turns unfired clay back to mud.
+        (
+            id: "wet_pot", status: Implemented, name: "wet {material} pot", materials: (categories: [Clay]),
+            size_m: (0.25, 0.25, 0.25), fill: 0.12, footprint: (2, 2),
+            tags: ["unfired", "slakes", "pottery"],
+        ),
+        (
+            id: "greenware_pot", status: Implemented, name: "unfired {material} pot", materials: (categories: [Clay]),
+            size_m: (0.25, 0.25, 0.25), fill: 0.1, footprint: (2, 2),
+            tags: ["unfired", "slakes", "pottery"],
+        ),
         // Containers (v2 §10.2): each has its own grid and the most it holds.
+        (
+            // A coiled pot of some five litres, fired: it holds water and goes on the fire.
+            id: "pot", status: Implemented, name: "{material} pot", materials: (ids: ["hearth:earthenware"]),
+            size_m: (0.25, 0.25, 0.25), fill: 0.1, footprint: (2, 2),
+            container: Some((grid: (2, 2), max_kg: 8.0, liquid_l: 5.0)),
+            tags: ["container", "liquid", "pottery", "cooking_pot"],
+        ),
         (
             id: "bundle", status: Implemented, name: "{material} bundle", materials: (tags: ["hide"]),
             size_m: (0.45, 0.35, 0.25), fill: 0.028, footprint: (3, 2),
