@@ -4,29 +4,8 @@
 // dermis) and two specular lobes for its oily, finely rough surface; lips redder and a little
 // glossier; nails pale and smooth.
 
-struct Body {
-    view_proj: mat4x4<f32>,
-    eye: vec4<f32>,
-    light_dir: vec4<f32>,
-    light: vec4<f32>,
-    sky: vec4<f32>,
-    ground: vec4<f32>,
-    exposure: vec4<f32>,
-    skin: vec4<f32>,
-    lips: vec4<f32>,
-    nail: vec4<f32>,
-    hair: vec4<f32>,
-    palette: array<mat4x4<f32>, 17>,
-    // The skin's state: x wet, y tan, z sunburn, w pallor; then flush, goosebumps.
-    state: vec4<f32>,
-    state2: vec4<f32>,
-    // Per joint: dirt, blood, scar, and how covered (no sun there).
-    marks: array<vec4<f32>, 17>,
-    // The garment's colour (linear); w: 0 hide, 1 plant fibre.
-    cloth: vec4<f32>,
-};
 
-@group(0) @binding(0) var<uniform> u: Body;
+
 
 struct VsIn {
     @location(0) pos: vec3<f32>,
@@ -57,7 +36,7 @@ fn vs_main(v: VsIn) -> VsOut {
     }
     let world = (m * vec4<f32>(v.pos, 1.0)).xyz;
     var out: VsOut;
-    out.pos = u.view_proj * vec4<f32>(world, 1.0);
+    out.pos = clip(world);
     out.normal = normalize((m * vec4<f32>(v.normal, 0.0)).xyz);
     out.world = world;
     out.tissue = v.tissue;
@@ -83,9 +62,6 @@ fn noise(p: vec3<f32>) -> f32 {
     return mix(a, b, w.z);
 }
 
-fn tonemap(x: vec3<f32>) -> vec3<f32> {
-    return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), vec3<f32>(0.0), vec3<f32>(1.0));
-}
 
 // GGX's normal distribution with Schlick's Fresnel and Smith's visibility, approximated.
 fn ggx(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, rough: f32, f0: f32) -> f32 {
@@ -116,22 +92,18 @@ fn garment(in: VsOut, n: vec3<f32>, v: vec3<f32>, l: vec3<f32>) -> vec4<f32> {
         albedo *= 0.65 + 0.4 * abs(sin(twist));
         rough = 0.9;
     }
-    let hemi = mix(u.ground.rgb, u.sky.rgb, 0.5 + 0.5 * n.y);
+    let hemi = ambient(n);
     let diffuse = max((dot(n, l) + 0.1) / 1.1, 0.0);
-    var lit = albedo * (u.light.rgb * diffuse + hemi) / 3.14159265;
-    lit += u.light.rgb * ggx(n, v, l, rough, 0.03);
-    var shown = tonemap(lit * u.exposure.x);
-    if u.exposure.y > 0.5 {
-        shown = pow(shown, vec3<f32>(1.0 / 2.2));
-    }
-    return vec4<f32>(shown, 1.0);
+    var lit = albedo * (sun_rgb() * diffuse + hemi) / 3.14159265;
+    lit += sun_rgb() * ggx(n, v, l, rough, 0.03);
+    return finish(lit, in.world);
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(in.normal);
-    let v = normalize(u.eye.xyz - in.world);
-    let l = u.light_dir.xyz;
+    let v = normalize(eye_pos() - in.world);
+    let l = sun_dir();
     if in.tissue.w > 0.5 {
         return garment(in, n, v, l);
     }
@@ -181,21 +153,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let nl = dot(n, l);
     let wrap = vec3<f32>(0.42, 0.22, 0.16);
     let diffuse = max((vec3<f32>(nl) + wrap) / (1.0 + wrap), vec3<f32>(0.0));
-    let hemi = mix(u.ground.rgb, u.sky.rgb, 0.5 + 0.5 * n.y);
+    let hemi = ambient(n);
     // The ambient also scatters: a little more red in the shade.
-    let ambient = hemi * vec3<f32>(1.05, 0.98, 0.96);
-    var lit = albedo * (u.light.rgb * diffuse + ambient) / 3.14159265;
+    let amb = hemi * vec3<f32>(1.05, 0.98, 0.96);
+    var lit = albedo * (sun_rgb() * diffuse + amb) / 3.14159265;
     // Hair over the skin scatters the sheen away.
     // Goosebumps roughen the surface's light a touch.
     let bumps = 1.0 - u.state2.y * 0.25 * noise(in.bind * 600.0);
     let spec = (0.85 * ggx(n, v, l, rough.x, f0) + 0.15 * ggx(n, v, l, rough.y, f0)) * (1.0 - 0.8 * hairs) * (1.0 + wet) * bumps;
-    lit += u.light.rgb * spec;
+    lit += sun_rgb() * spec;
     // The sky's sheen at grazing angles.
     let fres = f0 + (1.0 - f0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);
     lit += hemi * fres * 0.08 / 3.14159265;
-    var shown = tonemap(lit * u.exposure.x);
-    if u.exposure.y > 0.5 {
-        shown = pow(shown, vec3<f32>(1.0 / 2.2));
-    }
-    return vec4<f32>(shown, 1.0);
+    return finish(lit, in.world);
 }

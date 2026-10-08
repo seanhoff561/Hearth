@@ -10,6 +10,7 @@ pub mod eyes;
 pub mod garment;
 pub mod hair;
 pub mod instances;
+pub mod person;
 pub mod rig;
 
 pub use animate::{Activity, Animator, Doing, Drive, Gesture, Holding, Pose};

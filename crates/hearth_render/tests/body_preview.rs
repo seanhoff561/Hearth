@@ -3,18 +3,14 @@
 //! `hair_styles.png` (every style, with brows and beards).
 
 use glam::{Affine3A, Quat, Vec3};
-use hearth_character::anatomy::anatomy;
-use hearth_character::eyes::{EyeMotion, eyes, transforms};
-use hearth_character::hair::{HairSim, hair};
+use hearth_character::person::{Detail, meshes};
 use hearth_character::rig::Joint;
 use hearth_character::{
     Activity, Appearance, BodyType, Drive, Eyebrows, FacialHair, Figure, HAIR_COLORS, HairStyle,
     Pose,
 };
 use hearth_render::GpuContext;
-use hearth_render::body::{
-    BodyPreview, EyeLook, GpuBody, GpuEyes, GpuHair, HairLook, Person, SkinLook, SkinState,
-};
+use hearth_render::body::{BodyPreview, PersonMeshes, PersonMotion, SkinLook, SkinState};
 use hearth_render::figure::PreviewLight;
 use hearth_render::offscreen::{OFFSCREEN_FORMAT, OffscreenTarget, write_png};
 
@@ -55,16 +51,12 @@ fn differs(c: &[u8], backdrop: &[u8]) -> bool {
         > 24
 }
 
-/// A person ready to draw: skin and hair uploaded, the hair's guides settled in a pose.
+/// A person ready to draw: meshes uploaded, their motion running.
 struct Model {
     a: Appearance,
     figure: Figure,
-    body: GpuBody,
-    hair: GpuHair,
-    sim: HairSim,
-    eye_mesh: hearth_character::eyes::EyeMesh,
-    eyes: GpuEyes,
-    motion: EyeMotion,
+    meshes: PersonMeshes,
+    motion: PersonMotion,
     /// How closed the lids are (overriding the blinks), for the close-ups.
     blink: Option<f32>,
     state: SkinState,
@@ -72,18 +64,19 @@ struct Model {
 
 impl Model {
     fn new(ctx: &GpuContext, a: &Appearance, cell: f32) -> Self {
-        let mut body = anatomy(a, cell);
-        body.merge(&hearth_character::garment::loincloth(a));
-        let mesh = hair(a);
+        let detail = if cell < 0.01 {
+            Detail::Close
+        } else {
+            Detail::Near
+        };
+        let figure = Figure::starting(a.clone());
+        let worn: Vec<&str> = figure.garbs.iter().map(|g| g.garment.as_str()).collect();
+        let m = meshes(a, &worn, detail);
         Self {
             a: a.clone(),
-            figure: Figure::starting(a.clone()),
-            body: GpuBody::new(ctx, &body),
-            hair: GpuHair::new(ctx, &mesh),
-            sim: HairSim::new(&mesh, a),
-            eyes: GpuEyes::new(ctx, &eyes(a)),
-            eye_mesh: eyes(a),
-            motion: EyeMotion::new(3),
+            meshes: PersonMeshes::upload(ctx, &m),
+            motion: PersonMotion::new(a, &m, 3),
+            figure,
             blink: None,
             state: SkinState::default(),
         }
@@ -103,39 +96,25 @@ impl Model {
         view: (Vec3, Vec3, f32),
         wind: Vec3,
     ) {
-        let palette = self.body.palette(&self.figure.rig, pose, place);
-        let head = glam::Mat4::from_cols_array_2d(&palette[Joint::Head.index()]);
-        let head = Affine3A::from_mat4(head);
-        for _ in 0..60 {
-            self.sim.step(head, 1.0 / 60.0, wind, 0.0);
-            self.motion.step(1.0 / 60.0, glam::Vec2::ZERO);
-        }
-        let blink = self.blink.unwrap_or(self.motion.blink());
-        let parts = transforms(&self.eye_mesh, head, self.motion.gaze(), blink);
-        let person = Person {
-            body: &self.body,
-            palette,
-            look: SkinLook {
-                state: self.state,
-                ..SkinLook::of(&self.a)
-            },
-            hair: Some((
-                &self.hair,
-                HairLook {
-                    color: self.a.hair_linear(),
-                    wet: 0.0,
-                    guides: self.sim.offsets(head),
-                },
-            )),
-            eyes: Some((
-                &self.eyes,
-                EyeLook {
-                    parts,
-                    iris: hearth_character::appearance::srgb_to_linear(self.a.eyes.srgb()),
-                    pupil: 0.4,
-                },
-            )),
+        let palette = self.meshes.body.palette(&self.figure.rig, pose, place);
+        let look = SkinLook {
+            state: self.state,
+            ..SkinLook::of(&self.a)
         };
+        let mut frame = None;
+        for _ in 0..60 {
+            frame = Some(self.motion.frame(
+                &self.a,
+                palette,
+                look,
+                1.0 / 60.0,
+                wind,
+                glam::Vec2::ZERO,
+                self.blink,
+                [1.0, 0.0],
+            ));
+        }
+        let frame = frame.expect("a frame");
         let mut enc = ctx
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -145,7 +124,8 @@ impl Model {
             &target.color_view,
             size,
             rect,
-            &person,
+            &self.meshes,
+            &frame,
             view,
             PreviewLight::Daylight,
         );

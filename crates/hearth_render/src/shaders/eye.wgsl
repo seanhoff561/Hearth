@@ -5,29 +5,10 @@
 // highlight and the sky's reflection. Lids are skin, their inner edges wet; lashes are fine
 // dark strands.
 
-struct Body {
-    view_proj: mat4x4<f32>,
-    eye: vec4<f32>,
-    light_dir: vec4<f32>,
-    light: vec4<f32>,
-    sky: vec4<f32>,
-    ground: vec4<f32>,
-    exposure: vec4<f32>,
-    skin: vec4<f32>,
-    lips: vec4<f32>,
-    nail: vec4<f32>,
-    hair: vec4<f32>,
-    palette: array<mat4x4<f32>, 17>,
-};
 
-struct Eyes {
-    parts: array<mat4x4<f32>, 6>,
-    // The iris's colour; w: the pupil's size (0–1).
-    iris: vec4<f32>,
-};
 
-@group(0) @binding(0) var<uniform> u: Body;
-@group(0) @binding(2) var<uniform> eyes: Eyes;
+
+
 
 struct VsIn {
     @location(0) pos: vec3<f32>,
@@ -54,11 +35,11 @@ fn vs_main(v: VsIn) -> VsOut {
     let world = (m * vec4<f32>(v.pos, 1.0)).xyz;
     let m3 = mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
     var out: VsOut;
-    out.pos = u.view_proj * vec4<f32>(world, 1.0);
+    out.pos = clip(world);
     out.world = world;
     out.normal = normalize(m3 * v.normal);
     out.local = v.local;
-    out.view_local = transpose(m3) * normalize(u.eye.xyz - world);
+    out.view_local = transpose(m3) * normalize(eye_pos() - world);
     out.uv = v.uv;
     out.surface = v.part.y;
     return out;
@@ -68,9 +49,6 @@ fn hash(x: f32) -> f32 {
     return fract(sin(x * 127.1 + 311.7) * 43758.5453);
 }
 
-fn tonemap(x: vec3<f32>) -> vec3<f32> {
-    return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), vec3<f32>(0.0), vec3<f32>(1.0));
-}
 
 fn ggx(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, rough: f32, f0: f32) -> f32 {
     let h = normalize(v + l);
@@ -87,13 +65,6 @@ fn ggx(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, rough: f32, f0: f32) -> f32 {
     return ndf * f * vis * 0.25 * nl;
 }
 
-fn shown(lit: vec3<f32>) -> vec4<f32> {
-    var c = tonemap(lit * u.exposure.x);
-    if u.exposure.y > 0.5 {
-        c = pow(c, vec3<f32>(1.0 / 2.2));
-    }
-    return vec4<f32>(c, 1.0);
-}
 
 @fragment
 fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
@@ -101,9 +72,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     if !front {
         n = -n;
     }
-    let v = normalize(u.eye.xyz - in.world);
-    let l = u.light_dir.xyz;
-    let hemi = mix(u.ground.rgb, u.sky.rgb, 0.5 + 0.5 * n.y);
+    let v = normalize(eye_pos() - in.world);
+    let l = sun_dir();
+    let hemi = ambient(n);
     if in.surface == 3u {
         // Lashes: fine dark strands, thinning to their tips.
         let x = in.uv.x * 60.0;
@@ -114,8 +85,8 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
             discard;
         }
         let albedo = u.hair.rgb * 0.35;
-        let lit = albedo * (u.light.rgb * 0.5 + hemi) / 3.14159265;
-        return shown(lit);
+        let lit = albedo * (sun_rgb() * 0.5 + hemi) / 3.14159265;
+        return finish(lit, in.world);
     }
     if in.surface != 0u {
         // Lid skin; its inner edge wet and pinker.
@@ -125,7 +96,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         let wrap = vec3<f32>(0.42, 0.22, 0.16);
         let diffuse = max((vec3<f32>(nl) + wrap) / (1.0 + wrap), vec3<f32>(0.0));
         let spec = ggx(n, v, l, mix(0.45, 0.15, margin), 0.028);
-        return shown(albedo * (u.light.rgb * diffuse + hemi) / 3.14159265 + u.light.rgb * spec);
+        return finish(albedo * (sun_rgb() * diffuse + hemi) / 3.14159265 + sun_rgb() * spec, in.world);
     }
     // The ball.
     let d = normalize(in.local);
@@ -154,11 +125,11 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     let nl = max(dot(n, l), 0.0);
     // Light under the sclera's surface softens its terminator.
     let soft = clamp(dot(n, l) * 0.7 + 0.3, 0.0, 1.0);
-    let ambient = vec3<f32>(dot(hemi, vec3<f32>(0.3, 0.4, 0.3)));
-    var lit = albedo * (u.light.rgb * mix(nl, soft, 0.5) + ambient) / 3.14159265 * shade;
+    let amb = vec3<f32>(dot(hemi, vec3<f32>(0.3, 0.4, 0.3)));
+    var lit = albedo * (sun_rgb() * mix(nl, soft, 0.5) + amb) / 3.14159265 * shade;
     // The wet cornea: a sharp highlight and the sky in it.
     let fres = 0.025 + 0.975 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
-    lit += u.light.rgb * ggx(n, v, l, 0.05, 0.025) * shade;
-    lit += u.sky.rgb * fres * 0.25 * shade / 3.14159265;
-    return shown(lit);
+    lit += sun_rgb() * ggx(n, v, l, 0.05, 0.025) * shade;
+    lit += ambient(vec3<f32>(0.0, 1.0, 0.0)) * fres * 0.25 * shade / 3.14159265;
+    return finish(lit, in.world);
 }

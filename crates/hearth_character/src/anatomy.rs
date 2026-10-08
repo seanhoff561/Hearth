@@ -927,6 +927,14 @@ impl Skin {
         }
     }
 
+    /// Only the trunk's skin (no limbs or head): what a garment round the trunk wraps.
+    pub(crate) fn trunk(a: &Appearance) -> Self {
+        let mut s = Self::new(a);
+        s.forms
+            .retain(|f| matches!(f.joint, Joint::Root | Joint::Waist | Joint::Chest));
+        s
+    }
+
     /// The distance from the skin (negative inside).
     pub(crate) fn distance(&self, p: Vec3) -> f32 {
         field_at(&self.forms, p).0

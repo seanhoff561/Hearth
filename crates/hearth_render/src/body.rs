@@ -6,8 +6,8 @@
 use bytemuck::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Vec3};
 use hearth_character::anatomy::Anatomy;
-use hearth_character::eyes::{EYE_PARTS, EyeMesh};
-use hearth_character::hair::{GUIDE_POINTS, GUIDES, HairMesh};
+use hearth_character::eyes::{EYE_PARTS, EyeMesh, EyeMotion, transforms};
+use hearth_character::hair::{GUIDE_POINTS, GUIDES, HairMesh, HairSim};
 use hearth_character::rig::JOINTS;
 use hearth_character::{Appearance, Pose, Rig};
 
@@ -237,15 +237,6 @@ struct EyeUniform {
     iris: [f32; 4],
 }
 
-/// A person to draw: the skin, its pose's palette and colours, the hair and the eyes.
-pub struct Person<'a> {
-    pub body: &'a GpuBody,
-    pub palette: [[[f32; 4]; 4]; JOINTS],
-    pub look: SkinLook,
-    pub hair: Option<(&'a GpuHair, HairLook)>,
-    pub eyes: Option<(&'a GpuEyes, EyeLook)>,
-}
-
 /// How a person's skin is coloured (linear albedos).
 #[derive(Debug, Clone, Copy)]
 pub struct SkinLook {
@@ -297,17 +288,96 @@ impl SkinLook {
     }
 }
 
+/// A person's meshes on the GPU: the skin (with its fitted garments), the hair, the eyes.
+pub struct PersonMeshes {
+    pub body: GpuBody,
+    pub hair: Option<GpuHair>,
+    pub eyes: Option<GpuEyes>,
+}
+
+impl PersonMeshes {
+    /// Uploads a person's meshes (`hearth_character::person::meshes`).
+    pub fn upload(ctx: &GpuContext, m: &hearth_character::person::Meshes) -> Self {
+        Self {
+            body: GpuBody::new(ctx, &m.body),
+            hair: (!m.hair.indices.is_empty()).then(|| GpuHair::new(ctx, &m.hair)),
+            eyes: m.eyes.as_ref().map(|e| GpuEyes::new(ctx, e)),
+        }
+    }
+}
+
+/// What moves on a person from frame to frame besides the pose: the hair's guides and the
+/// eyes (gaze, saccades, blinks).
+pub struct PersonMotion {
+    hair: HairSim,
+    eyes: Option<(EyeMesh, EyeMotion)>,
+}
+
+impl PersonMotion {
+    pub fn new(a: &Appearance, m: &hearth_character::person::Meshes, seed: u64) -> Self {
+        Self {
+            hair: HairSim::new(&m.hair, a),
+            eyes: m.eyes.clone().map(|e| (e, EyeMotion::new(seed))),
+        }
+    }
+
+    /// The frame's data: the hair swung `dt` seconds by the head's motion and `wind` (m/s), the
+    /// eyes moved toward `look` (yaw, pitch down; radians from the head), `blink` overriding
+    /// the lids when set.
+    #[allow(clippy::too_many_arguments)]
+    pub fn frame(
+        &mut self,
+        a: &Appearance,
+        palette: [[[f32; 4]; 4]; JOINTS],
+        look: SkinLook,
+        dt: f32,
+        wind: Vec3,
+        gaze: glam::Vec2,
+        blink: Option<f32>,
+        light: [f32; 2],
+    ) -> PersonFrame {
+        let head = Affine3A::from_mat4(Mat4::from_cols_array_2d(
+            &palette[hearth_character::rig::Joint::Head.index()],
+        ));
+        self.hair.step(head, dt, wind, look.state.wet);
+        let eyes = self.eyes.as_mut().map(|(mesh, motion)| {
+            motion.step(dt, gaze);
+            let shut = blink.unwrap_or(motion.blink());
+            EyeLook {
+                parts: transforms(mesh, head, motion.gaze(), shut),
+                iris: hearth_character::appearance::srgb_to_linear(a.eyes.srgb()),
+                pupil: 0.4,
+            }
+        });
+        PersonFrame {
+            palette,
+            look,
+            hair: Some(HairLook {
+                color: a.hair_linear(),
+                wet: look.state.wet,
+                guides: self.hair.offsets(head),
+            }),
+            eyes,
+            light,
+        }
+    }
+}
+
+/// A person's pose and looks for a frame.
+#[derive(Debug, Clone, Copy)]
+pub struct PersonFrame {
+    pub palette: [[[f32; 4]; 4]; JOINTS],
+    pub look: SkinLook,
+    pub hair: Option<HairLook>,
+    pub eyes: Option<EyeLook>,
+    /// The sky's light and the firelight where the person is (0–1 each), for the world's
+    /// lighting.
+    pub light: [f32; 2],
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct BodyUniform {
-    view_proj: [[f32; 4]; 4],
-    eye: [f32; 4],
-    light_dir: [f32; 4],
-    light: [f32; 4],
-    sky: [f32; 4],
-    ground: [f32; 4],
-    /// x: exposure; y: 1 to encode the display's gamma.
-    exposure: [f32; 4],
+struct PersonUniform {
     skin: [f32; 4],
     lips: [f32; 4],
     nail: [f32; 4],
@@ -317,19 +387,95 @@ struct BodyUniform {
     state2: [f32; 4],
     marks: [[f32; 4]; JOINTS],
     cloth: [f32; 4],
+    light: [f32; 4],
 }
 
-/// Bodies on their own (the creator's preview and the review), under a preview light.
-pub struct BodyPreview {
-    skin: wgpu::RenderPipeline,
-    hair: wgpu::RenderPipeline,
-    eye: wgpu::RenderPipeline,
-    uniform: wgpu::Buffer,
-    hair_uniform: wgpu::Buffer,
-    eye_uniform: wgpu::Buffer,
+impl PersonUniform {
+    fn of(f: &PersonFrame) -> Self {
+        let l = &f.look;
+        let v = |c: [f32; 3]| [c[0], c[1], c[2], 0.0];
+        Self {
+            skin: v(l.skin),
+            lips: v(l.lips),
+            nail: v(l.nail),
+            hair: v(l.hair),
+            palette: f.palette,
+            state: [l.state.wet, l.state.tan, l.state.sunburn, l.state.pallor],
+            state2: [l.state.flush, l.state.goosebumps, 0.0, 0.0],
+            marks: l.state.marks,
+            cloth: l.cloth,
+            light: [f.light[0], f.light[1], 0.0, 0.0],
+        }
+    }
+}
+
+/// One person's uniforms and their bind group (group 1 of the people's shaders).
+struct PersonSlot {
+    person: wgpu::Buffer,
+    hair: wgpu::Buffer,
+    eyes: wgpu::Buffer,
     bind: wgpu::BindGroup,
-    depth: Option<crate::offscreen::DepthTarget>,
-    srgb: bool,
+}
+
+impl PersonSlot {
+    fn new(ctx: &GpuContext, layout: &wgpu::BindGroupLayout) -> Self {
+        let buffer = |label: &str, size: usize| {
+            ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: size as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        let person = buffer("person", std::mem::size_of::<PersonUniform>());
+        let hair = buffer("person hair", std::mem::size_of::<HairUniform>());
+        let eyes = buffer("person eyes", std::mem::size_of::<EyeUniform>());
+        let bind = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("person"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: person.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: hair.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: eyes.as_entire_binding(),
+                },
+            ],
+        });
+        Self {
+            person,
+            hair,
+            eyes,
+            bind,
+        }
+    }
+
+    fn write(&self, ctx: &GpuContext, f: &PersonFrame) {
+        ctx.queue
+            .write_buffer(&self.person, 0, bytemuck::bytes_of(&PersonUniform::of(f)));
+        if let Some(hl) = &f.hair {
+            let hu = HairUniform {
+                color: [hl.color[0], hl.color[1], hl.color[2], hl.wet],
+                guides: hl.guides,
+            };
+            ctx.queue
+                .write_buffer(&self.hair, 0, bytemuck::bytes_of(&hu));
+        }
+        if let Some(el) = &f.eyes {
+            let eu = EyeUniform {
+                parts: el.parts.map(|m| Mat4::from(m).to_cols_array_2d()),
+                iris: [el.iris[0], el.iris[1], el.iris[2], el.pupil],
+            };
+            ctx.queue
+                .write_buffer(&self.eyes, 0, bytemuck::bytes_of(&eu));
+        }
+    }
 }
 
 fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
@@ -345,170 +491,212 @@ fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn person_pipeline(
-    ctx: &GpuContext,
-    label: &str,
-    source: &str,
-    layout: &wgpu::PipelineLayout,
-    stride: usize,
-    attrs: &[wgpu::VertexAttribute],
-    cull: Option<wgpu::Face>,
-    format: wgpu::TextureFormat,
-) -> wgpu::RenderPipeline {
-    let module = ctx
-        .device
-        .create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(label),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
-    ctx.device
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some(label),
-            layout: Some(layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: stride as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: attrs,
-                })],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: cull,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        })
+/// The people's three pipelines (skin, hair, eyes) for a view: its shader prefix and its
+/// group 0 layout.
+struct Pipelines {
+    person_layout: wgpu::BindGroupLayout,
+    skin: wgpu::RenderPipeline,
+    hair: wgpu::RenderPipeline,
+    eye: wgpu::RenderPipeline,
 }
 
-impl BodyPreview {
-    pub fn new(ctx: &GpuContext, format: wgpu::TextureFormat) -> Self {
-        let layout = ctx
+impl Pipelines {
+    fn new(
+        ctx: &GpuContext,
+        view: &wgpu::BindGroupLayout,
+        prefix: &str,
+        format: wgpu::TextureFormat,
+    ) -> Self {
+        let person_layout = ctx
             .device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("person"),
                 entries: &[uniform_entry(0), uniform_entry(1), uniform_entry(2)],
             });
-        let uniform = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("body"),
-            size: std::mem::size_of::<BodyUniform>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let hair_uniform = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("hair"),
-            size: std::mem::size_of::<HairUniform>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let eye_uniform = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("eyes"),
-            size: std::mem::size_of::<EyeUniform>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let bind = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("person"),
-            layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: hair_uniform.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: eye_uniform.as_entire_binding(),
-                },
-            ],
-        });
-        let pipeline_layout = ctx
+        let layout = ctx
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("person"),
-                bind_group_layouts: &[Some(&layout)],
+                bind_group_layouts: &[Some(view), Some(&person_layout)],
                 immediate_size: 0,
             });
+        let make = |label: &str,
+                    body: &str,
+                    stride: usize,
+                    attrs: &[wgpu::VertexAttribute],
+                    cull: Option<wgpu::Face>| {
+            let source = format!("{prefix}\n{}\n{body}", include_str!("shaders/person.wgsl"));
+            let module = ctx
+                .device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some(label),
+                    source: wgpu::ShaderSource::Wgsl(source.into()),
+                });
+            ctx.device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&layout),
+                    vertex: wgpu::VertexState {
+                        module: &module,
+                        entry_point: Some("vs_main"),
+                        compilation_options: Default::default(),
+                        buffers: &[Some(wgpu::VertexBufferLayout {
+                            array_stride: stride as u64,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: attrs,
+                        })],
+                    },
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: cull,
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: DEPTH_FORMAT,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    multisample: Default::default(),
+                    fragment: Some(wgpu::FragmentState {
+                        module: &module,
+                        entry_point: Some("fs_main"),
+                        compilation_options: Default::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    multiview_mask: None,
+                    cache: None,
+                })
+        };
         let skin_attrs = wgpu::vertex_attr_array![
             0 => Float32x3, 1 => Float32x3, 2 => Uint32, 3 => Unorm8x4, 4 => Unorm8x4
         ];
         let hair_attrs = wgpu::vertex_attr_array![
             0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x2, 4 => Uint8x4
         ];
-        let skin = person_pipeline(
-            ctx,
-            "body.wgsl",
-            include_str!("shaders/body.wgsl"),
-            &pipeline_layout,
-            std::mem::size_of::<BodyVertex>(),
-            &skin_attrs,
-            Some(wgpu::Face::Back),
-            format,
-        );
-        let hair = person_pipeline(
-            ctx,
-            "hair.wgsl",
-            include_str!("shaders/hair.wgsl"),
-            &pipeline_layout,
-            std::mem::size_of::<HairVertex>(),
-            &hair_attrs,
-            None,
-            format,
-        );
         let eye_attrs = wgpu::vertex_attr_array![
             0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x2, 4 => Uint8x4
         ];
-        let eye = person_pipeline(
-            ctx,
+        let skin = make(
+            "body.wgsl",
+            include_str!("shaders/body.wgsl"),
+            std::mem::size_of::<BodyVertex>(),
+            &skin_attrs,
+            Some(wgpu::Face::Back),
+        );
+        let hair = make(
+            "hair.wgsl",
+            include_str!("shaders/hair.wgsl"),
+            std::mem::size_of::<HairVertex>(),
+            &hair_attrs,
+            None,
+        );
+        let eye = make(
             "eye.wgsl",
             include_str!("shaders/eye.wgsl"),
-            &pipeline_layout,
             std::mem::size_of::<EyeVertex>(),
             &eye_attrs,
             None,
-            format,
         );
         Self {
+            person_layout,
             skin,
             hair,
             eye,
-            uniform,
-            hair_uniform,
-            eye_uniform,
-            bind,
+        }
+    }
+
+    /// Draws a person whose slot is bound at group 1.
+    fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, m: &'a PersonMeshes, f: &PersonFrame) {
+        pass.set_pipeline(&self.skin);
+        pass.set_vertex_buffer(0, m.body.vertices.slice(..));
+        pass.set_index_buffer(m.body.indices.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..m.body.count, 0, 0..1);
+        if let (Some(hair), Some(_)) = (&m.hair, &f.hair)
+            && hair.count > 0
+        {
+            pass.set_pipeline(&self.hair);
+            pass.set_vertex_buffer(0, hair.vertices.slice(..));
+            pass.set_index_buffer(hair.indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..hair.count, 0, 0..1);
+        }
+        if let (Some(eyes), Some(_)) = (&m.eyes, &f.eyes) {
+            pass.set_pipeline(&self.eye);
+            pass.set_vertex_buffer(0, eyes.vertices.slice(..));
+            pass.set_index_buffer(eyes.indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..eyes.count, 0, 0..1);
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct SceneUniform {
+    view_proj: [[f32; 4]; 4],
+    eye: [f32; 4],
+    light_dir: [f32; 4],
+    light: [f32; 4],
+    sky: [f32; 4],
+    ground: [f32; 4],
+    exposure: [f32; 4],
+}
+
+/// People on their own (the creator's preview and the review), under a preview light.
+pub struct BodyPreview {
+    pipelines: Pipelines,
+    scene: wgpu::Buffer,
+    scene_bind: wgpu::BindGroup,
+    slot: PersonSlot,
+    depth: Option<crate::offscreen::DepthTarget>,
+    srgb: bool,
+}
+
+impl BodyPreview {
+    pub fn new(ctx: &GpuContext, format: wgpu::TextureFormat) -> Self {
+        let scene_layout = ctx
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("person preview"),
+                entries: &[uniform_entry(0)],
+            });
+        let scene = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("person preview"),
+            size: std::mem::size_of::<SceneUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let scene_bind = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("person preview"),
+            layout: &scene_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: scene.as_entire_binding(),
+            }],
+        });
+        let pipelines = Pipelines::new(
+            ctx,
+            &scene_layout,
+            include_str!("shaders/person_preview.wgsl"),
+            format,
+        );
+        let slot = PersonSlot::new(ctx, &pipelines.person_layout);
+        Self {
+            pipelines,
+            scene,
+            scene_bind,
+            slot,
             depth: None,
             srgb: format.is_srgb(),
         }
     }
 
-    /// Draws `person` into `rect` of `target`, seen from `eye` looking at `at` (the figure's
+    /// Draws a person into `rect` of `target`, seen from `eye` looking at `at` (the figure's
     /// frame), lit by `light`. One preview per submission.
     #[allow(clippy::too_many_arguments)]
     pub fn render(
@@ -518,7 +706,8 @@ impl BodyPreview {
         target: &wgpu::TextureView,
         size: (u32, u32),
         rect: [u32; 4],
-        person: &Person,
+        meshes: &PersonMeshes,
+        frame: &PersonFrame,
         view: (Vec3, Vec3, f32),
         light: PreviewLight,
     ) {
@@ -543,8 +732,7 @@ impl BodyPreview {
         );
         let (dir, sun, sky, ground) = light.lighting();
         let level = (sun.y + sky.y).max(0.6);
-        let look = person.look;
-        let u = BodyUniform {
+        let su = SceneUniform {
             view_proj: (proj * view_m).to_cols_array_2d(),
             eye: eye.extend(0.0).to_array(),
             light_dir: dir.extend(0.0).to_array(),
@@ -557,42 +745,13 @@ impl BodyPreview {
                 0.0,
                 0.0,
             ],
-            skin: [look.skin[0], look.skin[1], look.skin[2], 0.0],
-            lips: [look.lips[0], look.lips[1], look.lips[2], 0.0],
-            nail: [look.nail[0], look.nail[1], look.nail[2], 0.0],
-            hair: [look.hair[0], look.hair[1], look.hair[2], 0.0],
-            palette: person.palette,
-            state: [
-                look.state.wet,
-                look.state.tan,
-                look.state.sunburn,
-                look.state.pallor,
-            ],
-            state2: [look.state.flush, look.state.goosebumps, 0.0, 0.0],
-            marks: look.state.marks,
-            cloth: look.cloth,
         };
         ctx.queue
-            .write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));
-        if let Some((_, hl)) = &person.hair {
-            let hu = HairUniform {
-                color: [hl.color[0], hl.color[1], hl.color[2], hl.wet],
-                guides: hl.guides,
-            };
-            ctx.queue
-                .write_buffer(&self.hair_uniform, 0, bytemuck::bytes_of(&hu));
-        }
-        if let Some((_, el)) = &person.eyes {
-            let eu = EyeUniform {
-                parts: el.parts.map(|m| Mat4::from(m).to_cols_array_2d()),
-                iris: [el.iris[0], el.iris[1], el.iris[2], el.pupil],
-            };
-            ctx.queue
-                .write_buffer(&self.eye_uniform, 0, bytemuck::bytes_of(&eu));
-        }
+            .write_buffer(&self.scene, 0, bytemuck::bytes_of(&su));
+        self.slot.write(ctx, frame);
         let depth = &self.depth.as_ref().expect("depth").view;
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("body preview"),
+            label: Some("person preview"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target,
                 depth_slice: None,
@@ -616,25 +775,59 @@ impl BodyPreview {
         });
         pass.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
         pass.set_scissor_rect(x, y, w, h);
-        pass.set_bind_group(0, &self.bind, &[]);
-        pass.set_pipeline(&self.skin);
-        let body = person.body;
-        pass.set_vertex_buffer(0, body.vertices.slice(..));
-        pass.set_index_buffer(body.indices.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..body.count, 0, 0..1);
-        if let Some((hair, _)) = &person.hair
-            && hair.count > 0
-        {
-            pass.set_pipeline(&self.hair);
-            pass.set_vertex_buffer(0, hair.vertices.slice(..));
-            pass.set_index_buffer(hair.indices.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..hair.count, 0, 0..1);
+        pass.set_bind_group(0, &self.scene_bind, &[]);
+        pass.set_bind_group(1, &self.slot.bind, &[]);
+        self.pipelines.draw(&mut pass, meshes, frame);
+    }
+}
+
+/// People in the world: drawn into the scene's HDR target after the terrain, lit by its
+/// globals (group 0) as the figures are.
+pub struct PeopleRenderer {
+    pipelines: Pipelines,
+    slots: Vec<PersonSlot>,
+    people: Vec<(std::sync::Arc<PersonMeshes>, PersonFrame)>,
+}
+
+impl PeopleRenderer {
+    /// `globals` is the terrain's bind group 0 layout.
+    pub fn new(ctx: &GpuContext, globals: &wgpu::BindGroupLayout) -> Self {
+        let prefix = concat!(
+            include_str!("shaders/common.wgsl"),
+            include_str!("shaders/person_world.wgsl")
+        );
+        Self {
+            pipelines: Pipelines::new(ctx, globals, prefix, crate::post::HDR_FORMAT),
+            slots: Vec::new(),
+            people: Vec::new(),
         }
-        if let Some((eyes, _)) = &person.eyes {
-            pass.set_pipeline(&self.eye);
-            pass.set_vertex_buffer(0, eyes.vertices.slice(..));
-            pass.set_index_buffer(eyes.indices.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..eyes.count, 0, 0..1);
+    }
+
+    /// This frame's people (camera-relative palettes).
+    pub fn set(
+        &mut self,
+        ctx: &GpuContext,
+        people: Vec<(std::sync::Arc<PersonMeshes>, PersonFrame)>,
+    ) {
+        while self.slots.len() < people.len() {
+            self.slots
+                .push(PersonSlot::new(ctx, &self.pipelines.person_layout));
+        }
+        for (slot, (_, frame)) in self.slots.iter().zip(&people) {
+            slot.write(ctx, frame);
+        }
+        self.people = people;
+    }
+
+    pub fn count(&self) -> usize {
+        self.people.len()
+    }
+
+    pub fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, globals: &'a wgpu::BindGroup) {
+        pass.set_bind_group(0, globals, &[]);
+        for (slot, (meshes, frame)) in self.slots.iter().zip(&self.people) {
+            pass.set_bind_group(1, &slot.bind, &[]);
+            self.pipelines.draw(pass, meshes, frame);
         }
     }
 }

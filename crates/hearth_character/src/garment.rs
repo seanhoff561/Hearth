@@ -167,6 +167,66 @@ pub fn loincloth(a: &Appearance) -> Anatomy {
     b.out
 }
 
+/// A chest band: a strip of hide wrapped round the chest over the breasts, on the skin.
+pub fn chest_band(a: &Appearance) -> Anatomy {
+    let a = a.clone().sanitized();
+    let dims = Proportions::of(&a);
+    let skin = Skin::trunk(&a);
+    let h = dims.stature;
+    let chest = rest_positions(&dims)[Joint::Chest.index()];
+    let mut b = Builder {
+        out: Anatomy {
+            bind: bind_pose(&dims),
+            ..Anatomy::default()
+        },
+    };
+    let (ring, rows) = (72u32, 6u32);
+    // From under the breasts to over them, wrapped close (its tension bridges the hollow
+    // between them: the band is pushed out to the line joining the two fronts).
+    let (lo, hi) = (chest.y - 0.045 * h, chest.y + 0.035 * h);
+    let mut grid: Vec<(Vec3, Vec3)> = Vec::new();
+    for i in 0..=rows {
+        let y = lo + (hi - lo) * i as f32 / rows as f32;
+        for k in 0..=ring {
+            let t = k as f32 / ring as f32 * std::f32::consts::TAU;
+            let out = Vec3::new(t.sin(), 0.0, t.cos());
+            let (p, n) = skin.project(Vec3::new(chest.x, y, chest.z) + out * 0.3);
+            let mut q = p + n * 0.003;
+            // Spanning the cleavage: no deeper than the fronts either side.
+            if out.z > 0.6 && t.sin().abs() < 0.35 {
+                let side = |s: f32| {
+                    let o = Vec3::new(0.35 * s, 0.0, 0.94).normalize();
+                    skin.project(Vec3::new(chest.x, y, chest.z) + o * 0.3).0.z
+                };
+                q.z = q.z.max(side(1.0).min(side(-1.0)) + 0.003);
+            }
+            grid.push((q, n));
+        }
+    }
+    let base = b.out.positions.len() as u32;
+    for &(p, n) in &grid {
+        b.vertex(p, n, &[(Joint::Chest, 1.0)]);
+    }
+    b.grid(base, rows, ring, false);
+    b.out
+}
+
+/// The garments fitted as meshes (the rest are drawn as the rig's boxes).
+pub const FITTED: [&str; 2] = ["hearth:loincloth", "hearth:chest_band"];
+
+/// The fitted garments of these worn ones, as one mesh.
+pub fn fitted(a: &Appearance, worn: &[&str]) -> Anatomy {
+    let mut out = Anatomy::default();
+    for g in worn {
+        match *g {
+            "hearth:loincloth" => out.merge(&loincloth(a)),
+            "hearth:chest_band" => out.merge(&chest_band(a)),
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The loincloth's look: its colour (linear) and what it is (0 hide, 1 plant fibre).
 pub fn loincloth_look(a: &Appearance) -> Vec4 {
     let c = crate::appearance::srgb_to_linear(a.loincloth.srgb());
@@ -203,5 +263,31 @@ mod tests {
         for w in &m.weights {
             assert!((w.iter().sum::<f32>() - 1.0).abs() < 1e-3);
         }
+    }
+
+    #[test]
+    fn a_chest_band_wraps_the_chest() {
+        let a = Appearance::female();
+        let m = chest_band(&a);
+        let skin = Skin::new(&a);
+        // Round the chest, not out on the arms.
+        let dims = Proportions::of(&a);
+        for p in &m.positions {
+            assert!(p.x.abs() < dims.chest_w * 0.75, "{p}");
+        }
+        let inside = m
+            .positions
+            .iter()
+            .filter(|p| skin.distance(**p) < -0.002)
+            .count();
+        assert!(inside * 20 < m.positions.len(), "{inside} under the skin");
+        let worn = fitted(
+            &a,
+            &["hearth:loincloth", "hearth:chest_band", "hearth:fur_cape"],
+        );
+        assert_eq!(
+            worn.positions.len(),
+            m.positions.len() + loincloth(&a).positions.len()
+        );
     }
 }

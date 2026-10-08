@@ -4,30 +4,10 @@
 // shifted along it (the white reflection toward the root, the coloured one through the fibre
 // toward the tip), light through the hair from behind, and darker deeper in.
 
-struct Body {
-    view_proj: mat4x4<f32>,
-    eye: vec4<f32>,
-    light_dir: vec4<f32>,
-    light: vec4<f32>,
-    sky: vec4<f32>,
-    ground: vec4<f32>,
-    exposure: vec4<f32>,
-    skin: vec4<f32>,
-    lips: vec4<f32>,
-    nail: vec4<f32>,
-    hair: vec4<f32>,
-    palette: array<mat4x4<f32>, 17>,
-};
 
-struct Hair {
-    // Linear albedo; w: how wet (0–1).
-    color: vec4<f32>,
-    // Each guide's points' offsets from the style (32 guides of 5).
-    guides: array<vec4<f32>, 160>,
-};
 
-@group(0) @binding(0) var<uniform> u: Body;
-@group(0) @binding(1) var<uniform> hair: Hair;
+
+
 
 const HEAD: u32 = 4u;
 const GUIDE_POINTS: u32 = 5u;
@@ -63,7 +43,7 @@ fn vs_main(v: VsIn) -> VsOut {
         world += mix(hair.guides[base].xyz, hair.guides[base + 1u].xyz, f);
     }
     var out: VsOut;
-    out.pos = u.view_proj * vec4<f32>(world, 1.0);
+    out.pos = clip(world);
     out.world = world;
     out.tangent = normalize((m * vec4<f32>(v.tangent, 0.0)).xyz);
     out.normal = normalize((m * vec4<f32>(v.normal, 0.0)).xyz);
@@ -77,9 +57,6 @@ fn hash(x: f32) -> f32 {
     return fract(sin(x * 127.1 + 311.7) * 43758.5453);
 }
 
-fn tonemap(x: vec3<f32>) -> vec3<f32> {
-    return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), vec3<f32>(0.0), vec3<f32>(1.0));
-}
 
 // A highlight along a fibre of direction `t`: strongest where the half vector is across it.
 fn fibre(t: vec3<f32>, h: vec3<f32>, power: f32) -> f32 {
@@ -159,8 +136,8 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         n = -n;
     }
     let t = normalize(in.tangent);
-    let v = normalize(u.eye.xyz - in.world);
-    let l = u.light_dir.xyz;
+    let v = normalize(eye_pos() - in.world);
+    let l = sun_dir();
     let h = normalize(l + v);
     let wet = hair.color.w;
     var albedo = hair.color.rgb * cov.y * mix(1.0, 0.55, wet);
@@ -180,11 +157,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     let spec = vec3<f32>(r) + albedo * trt * 2.0;
     // Light through the hair from behind.
     let through = albedo * pow(clamp(dot(-v, l), 0.0, 1.0), 4.0) * 0.6;
-    let hemi = mix(u.ground.rgb, u.sky.rgb, 0.5 + 0.5 * n.y);
-    var lit = (albedo * (u.light.rgb * diffuse + hemi) / 3.14159265 + u.light.rgb * (spec + through * 0.3)) * shade;
-    var shown = tonemap(lit * u.exposure.x);
-    if u.exposure.y > 0.5 {
-        shown = pow(shown, vec3<f32>(1.0 / 2.2));
-    }
-    return vec4<f32>(shown, 1.0);
+    let hemi = ambient(n);
+    var lit = (albedo * (sun_rgb() * diffuse + hemi) / 3.14159265 + sun_rgb() * (spec + through * 0.3)) * shade;
+    return finish(lit, in.world);
 }
