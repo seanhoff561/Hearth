@@ -212,12 +212,12 @@ fn things_are_carried_put_down_picked_up_and_dragged() {
             .map(|k| k.id.clone())
             .expect("kind")
     };
-    // A new person wears a loincloth with a tie.
+    // A new person wears a loincloth with a tie, and a woman a band across the chest.
     let carry = wait(&server, 10.0, |m| match m {
         ToClient::Carried(c) => Some(c),
         _ => None,
     });
-    assert_eq!(carry.worn.len(), 1, "dressed");
+    assert_eq!(carry.worn.len(), 2, "dressed");
     // Flakes go on the tie; put down in front, they lie there; picked up, back on the tie.
     server.send(ToServer::Give(hearth_items::Stack::of(
         &find("flake/flint"),

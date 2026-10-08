@@ -28,6 +28,7 @@ fn reference(ecosystem: &str, realm: Realm) -> Ecology {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_north_atlantic_shelf() {
     let (mut eco, _) = about_the_heart_in(Biome::ColdSea, Realm::Palearctic);
     let (present, failures) = fifty_years_in(&mut eco, Biome::ColdSea, Realm::Palearctic);
@@ -46,6 +47,7 @@ fn fifty_years_of_north_atlantic_shelf() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_north_pacific_shelf() {
     let mut eco = reference("cold_shelf_sea", Realm::Nearctic);
     let (present, failures) = fifty_years(&mut eco, Biome::ColdSea);
@@ -63,6 +65,7 @@ fn fifty_years_of_north_pacific_shelf() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_temperate_shelf() {
     let (mut eco, _) = about_the_heart_in(Biome::TemperateSea, Realm::Afrotropical);
     let (present, failures) = fifty_years_in(&mut eco, Biome::TemperateSea, Realm::Afrotropical);
@@ -80,6 +83,7 @@ fn fifty_years_of_temperate_shelf() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_california_current() {
     let mut eco = reference("temperate_shelf_sea", Realm::Nearctic);
     let (present, failures) = fifty_years(&mut eco, Biome::TemperateSea);
@@ -97,6 +101,7 @@ fn fifty_years_of_california_current() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_indo_pacific_reef() {
     let (mut eco, _) = about_the_heart_in(Biome::WarmShallows, Realm::Indomalayan);
     let (present, failures) = fifty_years_in(&mut eco, Biome::WarmShallows, Realm::Indomalayan);
@@ -114,6 +119,7 @@ fn fifty_years_of_indo_pacific_reef() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_caribbean_reef() {
     let mut eco = reference("coral_reef", Realm::Neotropical);
     let (present, failures) = fifty_years(&mut eco, Biome::WarmShallows);
@@ -131,6 +137,7 @@ fn fifty_years_of_caribbean_reef() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_open_ocean() {
     let (mut eco, _) = about_the_heart_in(Biome::DeepOcean, Realm::Palearctic);
     let (present, failures) = fifty_years_in(&mut eco, Biome::DeepOcean, Realm::Palearctic);
@@ -147,6 +154,7 @@ fn fifty_years_of_open_ocean() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_arctic_sea() {
     let (mut eco, _) = about_the_heart_in(Biome::PolarSea, Realm::Palearctic);
     let (present, failures) = fifty_years_in(&mut eco, Biome::PolarSea, Realm::Palearctic);
@@ -164,6 +172,7 @@ fn fifty_years_of_arctic_sea() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_antarctic_sea() {
     let (mut eco, _) = about_the_heart_in(Biome::PolarSea, Realm::Antarctic);
     let (present, failures) = fifty_years_in(&mut eco, Biome::PolarSea, Realm::Antarctic);
@@ -181,6 +190,7 @@ fn fifty_years_of_antarctic_sea() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_asian_mangroves() {
     let mut eco = reference("mangrove_forest", Realm::Indomalayan);
     let (present, failures) = fifty_years(&mut eco, Biome::Mangrove);
@@ -197,6 +207,7 @@ fn fifty_years_of_asian_mangroves() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_american_mangroves() {
     let mut eco = reference("mangrove_forest", Realm::Neotropical);
     let (present, failures) = fifty_years(&mut eco, Biome::Mangrove);

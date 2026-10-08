@@ -153,6 +153,7 @@ fn a_dead_deer_lies_until_found_and_is_butchered_by_its_kind() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn a_carcass_found_hours_after_the_death_has_gone_off_by_those_hours() {
     use hearth_protocol::ToServer;
     let dir = common::temp("carcass-hours");

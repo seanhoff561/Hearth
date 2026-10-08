@@ -83,6 +83,7 @@ fn minutes(w: &mut World, m: f64) {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn a_dry_season_wildfire_runs_downwind_and_burns_out() {
     let dir = temp("wildfire");
     let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);

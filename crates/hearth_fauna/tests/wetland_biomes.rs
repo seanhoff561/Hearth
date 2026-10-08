@@ -27,6 +27,7 @@ fn reference(ecosystem: &str, realm: Realm) -> Ecology {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_old_world_wetland() {
     let (mut eco, _) = about_the_heart_in(Biome::Wetland, Realm::Palearctic);
     let (present, failures) = fifty_years_in(&mut eco, Biome::Wetland, Realm::Palearctic);
@@ -46,6 +47,7 @@ fn fifty_years_of_old_world_wetland() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_north_american_marsh() {
     let mut eco = reference("temperate_freshwater", Realm::Nearctic);
     let (present, failures) = fifty_years(&mut eco, Biome::Wetland);
@@ -65,6 +67,7 @@ fn fifty_years_of_north_american_marsh() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_african_swamp() {
     let mut eco = reference("tropical_freshwater", Realm::Afrotropical);
     let (present, failures) = fifty_years(&mut eco, Biome::Wetland);
@@ -83,6 +86,7 @@ fn fifty_years_of_african_swamp() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_south_american_floodplain() {
     let mut eco = reference("tropical_freshwater", Realm::Neotropical);
     let (present, failures) = fifty_years(&mut eco, Biome::Wetland);
@@ -101,6 +105,7 @@ fn fifty_years_of_south_american_floodplain() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_asian_floodplain() {
     let mut eco = reference("tropical_freshwater", Realm::Indomalayan);
     let (present, failures) = fifty_years(&mut eco, Biome::Wetland);

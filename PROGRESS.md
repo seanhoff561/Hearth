@@ -12,7 +12,8 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 ## Resume
 1. Read this file, `PLAN.md` and the `DECISIONS.md` index; `git log --oneline -20`. Open
    `docs/decisions/`, `docs/history/` or a design doc only when a task needs it.
-2. Run `scripts/check.sh` and `scripts/lean-check.sh` (fast).
+2. Run `scripts/check.sh` (it runs `scripts/lean-check.sh`); the long runs are
+   `scripts/soak.sh`, at audits (D235).
 3. Work in `PLAN.md`'s order; each milestone ends with its five-test checklist (Q §8.1) below.
 4. Builds: `cargo test --profile dev-opt` (no LTO, D233); `--release` is fat LTO, for the game
    and the perf gate. The cloud machine renders only on a software device: frame rates, the

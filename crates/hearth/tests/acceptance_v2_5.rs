@@ -19,6 +19,7 @@ mod common;
 use common::temp;
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn from_nothing_to_fire_spear_clothing_and_dried_meat_by_discovery() {
     let dir = temp("acceptance-v2-5");
     let mut bot = bot::start(&dir, 7);

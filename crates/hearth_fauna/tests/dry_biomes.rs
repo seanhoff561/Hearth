@@ -12,6 +12,7 @@ use hearth_worldgen::realms::Realm;
 use hearth_worldgen::region::biome::Biome;
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_steppe() {
     let (mut eco, _) = about_the_heart(Biome::Steppe, |_| true);
     let (present, failures) = fifty_years(&mut eco, Biome::Steppe);
@@ -29,6 +30,7 @@ fn fifty_years_of_steppe() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_cold_desert() {
     let (mut eco, heart) = about_the_heart(Biome::ColdDesert, |_| true);
     // The desert's shrubs are browse.
@@ -50,6 +52,7 @@ fn fifty_years_of_cold_desert() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_hot_desert() {
     let (mut eco, _) = about_the_heart(Biome::HotDesert, |_| true);
     let (present, failures) = fifty_years(&mut eco, Biome::HotDesert);
@@ -65,6 +68,7 @@ fn fifty_years_of_hot_desert() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_dune_sea() {
     let (mut eco, _) = about_the_heart(Biome::DuneSea, |_| true);
     let (present, failures) = fifty_years(&mut eco, Biome::DuneSea);
@@ -77,6 +81,7 @@ fn fifty_years_of_dune_sea() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_a_nearctic_prairie() {
     let h = open_land(
         &world().catalog,
@@ -106,6 +111,7 @@ fn fifty_years_of_a_nearctic_prairie() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_a_nearctic_hot_desert() {
     let h = open_land(
         &world().catalog,

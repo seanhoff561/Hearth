@@ -52,6 +52,7 @@ fn spawn_region() -> (Ecology, (i64, i64), [f64; 2]) {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_about_the_spawn_stay_within_plausible_bounds() {
     let (mut eco, _, _) = spawn_region();
     let cat = eco.catalog.clone();
@@ -146,6 +147,7 @@ fn fifty_years_about_the_spawn_stay_within_plausible_bounds() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn heavy_hunting_about_the_spawn_thins_the_deer_and_they_come_back() {
     let (mut eco, _, spawn) = spawn_region();
     // A hunting ground 16 km across about the spawn, and the deer most of there.

@@ -48,6 +48,7 @@ fn yearly(eco: &mut Ecology, species: &[usize], years: usize) -> Vec<Vec<f64>> {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn a_temperate_wood_holds_its_animals_for_decades() {
     let mut eco = wood(2);
     let cat = eco.catalog.clone();
@@ -93,6 +94,7 @@ fn a_temperate_wood_holds_its_animals_for_decades() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn heavy_hunting_thins_the_deer_and_they_come_back() {
     let mut eco = wood(2);
     let deer = eco.catalog.index("red_deer").expect("red deer");

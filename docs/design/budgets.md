@@ -43,7 +43,8 @@ only on a software device, so frame and GPU numbers come from the PC.
 | World creation (Huge planet, the opening) | ≤ 60 s | — (E4 recalibrates at Earth's size) | this table |
 | Loading a saved world | ≤ 15 s | — | this table |
 | Clean release build of `hearth` | ≤ 10 min on the cloud machine | see AUDIT-0 | Q §9 |
-| Default test suite (release) | ≤ 30 min on the cloud machine | see AUDIT-0 | Q §5.5 |
+| Default test suite (dev-opt) | ≤ 20 min on the cloud machine | about 15 min of tests after the soak runs left it (Audit 0) | Q §5.5 |
+| Soak suite (`scripts/soak.sh`) | ≤ 90 min, at audits | over an hour (54 long runs) | D235 |
 
 ## Restart files (Q §5.4)
 | File | Budget |

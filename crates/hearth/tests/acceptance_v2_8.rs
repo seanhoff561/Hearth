@@ -111,6 +111,7 @@ fn put_up(w: &mut World, process: &str, gives: &[(&str, u16)], aim: AimAt) {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn a_slab_spans_a_doorway_and_two_slabs_end_to_end_do_not() {
     let dir = common::temp("acceptance-v2-8-stone");
     let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);

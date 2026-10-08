@@ -44,6 +44,7 @@ fn lattice(step: i32) -> Vec<(i32, i32, hearth_worldgen::ColumnSample)> {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn reefs_grow_in_warm_clear_shallow_sea() {
     let cols = lattice(41);
     let reefs: Vec<_> = cols
@@ -75,6 +76,7 @@ fn reefs_grow_in_warm_clear_shallow_sea() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn coastal_salt_pans_lie_on_hot_dry_coasts() {
     let cols = lattice(23);
     let pans: Vec<_> = cols
@@ -108,6 +110,7 @@ fn coastal_salt_pans_lie_on_hot_dry_coasts() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn low_sheltered_coasts_are_marsh_or_mangrove() {
     let cols = lattice(23);
     let mangrove: Vec<_> = cols
@@ -161,6 +164,7 @@ fn low_sheltered_coasts_are_marsh_or_mangrove() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn kelp_and_seaweed_keep_to_cool_water() {
     let wg = generator();
     let cols = lattice(211);

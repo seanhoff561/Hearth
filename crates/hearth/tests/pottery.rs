@@ -57,6 +57,7 @@ fn lying_near(w: &World, at: BlockPos) -> Vec<String> {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn pots_fire_in_their_range_and_under_fired_clay_stays_clay() {
     let dir = temp("pottery");
     let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 11);

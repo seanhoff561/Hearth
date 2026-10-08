@@ -27,6 +27,7 @@ fn reference(ecosystem: &str, realm: Realm) -> Ecology {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_montane_forest() {
     let (mut eco, _) = about_the_heart_in(Biome::MontaneForest, Realm::Palearctic);
     let (present, failures) = fifty_years_in(&mut eco, Biome::MontaneForest, Realm::Palearctic);
@@ -43,6 +44,7 @@ fn fifty_years_of_montane_forest() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_old_world_alpine() {
     let mut eco = reference("alpine_ecosystem", Realm::Palearctic);
     let (present, failures) = fifty_years(&mut eco, Biome::AlpineMeadow);
@@ -63,6 +65,7 @@ fn fifty_years_of_old_world_alpine() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_rocky_mountain_alpine() {
     let mut eco = reference("alpine_ecosystem", Realm::Nearctic);
     let (present, failures) = fifty_years(&mut eco, Biome::AlpineMeadow);
@@ -81,6 +84,7 @@ fn fifty_years_of_rocky_mountain_alpine() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_rocky_mountain_forest() {
     let mut eco = reference("montane_forest_ecosystem", Realm::Nearctic);
     let (present, failures) = fifty_years(&mut eco, Biome::MontaneForest);
@@ -98,6 +102,7 @@ fn fifty_years_of_rocky_mountain_forest() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_andean_puna() {
     let mut eco = reference("alpine_ecosystem", Realm::Neotropical);
     let (present, failures) = fifty_years(&mut eco, Biome::AlpineMeadow);
@@ -115,6 +120,7 @@ fn fifty_years_of_andean_puna() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_andean_forest() {
     let mut eco = reference("montane_forest_ecosystem", Realm::Neotropical);
     let (present, failures) = fifty_years(&mut eco, Biome::MontaneForest);
@@ -132,6 +138,7 @@ fn fifty_years_of_andean_forest() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_ethiopian_highlands() {
     // The tropics' alpine moors are cold all year round rather than in a winter: about 6 °C,
     // the warmest month hardly warmer, frost most nights.

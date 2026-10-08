@@ -11,6 +11,7 @@ use hearth_worldgen::realms::Realm;
 use hearth_worldgen::region::biome::Biome;
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_boreal_forest() {
     let (mut eco, heart) = about_the_heart(Biome::BorealForest, |_| true);
     // The conifers' cone crops are mast for the seed-eaters.
@@ -33,6 +34,7 @@ fn fifty_years_of_boreal_forest() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_snowy_taiga() {
     let (mut eco, _) = about_the_heart(Biome::SnowyTaiga, |_| true);
     let (present, failures) = fifty_years(&mut eco, Biome::SnowyTaiga);
@@ -45,6 +47,7 @@ fn fifty_years_of_snowy_taiga() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_tundra() {
     let (mut eco, heart) = about_the_heart(Biome::Tundra, |s| s.temperature > -12.0);
     // The dwarf shrubs are browse.
@@ -71,6 +74,7 @@ fn fifty_years_of_tundra() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_polar_desert() {
     // The high arctic of seed 7's vast planet lies under its polar ice, and the cold high
     // plateaus that were its coldest tundra are the mountains' alpine (D134): the tundra's land

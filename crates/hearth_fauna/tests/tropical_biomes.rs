@@ -32,6 +32,7 @@ fn reference(ecosystem: &str, realm: Realm) -> Ecology {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_african_savanna() {
     let mut eco = heart(Biome::Savanna, Realm::Afrotropical);
     let (present, failures) = fifty_years_in(&mut eco, Biome::Savanna, Realm::Afrotropical);
@@ -56,6 +57,7 @@ fn fifty_years_of_african_savanna() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_indian_savanna() {
     let mut eco = heart(Biome::Savanna, Realm::Indomalayan);
     let (present, failures) = fifty_years_in(&mut eco, Biome::Savanna, Realm::Indomalayan);
@@ -78,6 +80,7 @@ fn fifty_years_of_indian_savanna() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_american_savanna() {
     let mut eco = heart(Biome::Savanna, Realm::Neotropical);
     let (present, failures) = fifty_years_in(&mut eco, Biome::Savanna, Realm::Neotropical);
@@ -97,6 +100,7 @@ fn fifty_years_of_american_savanna() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_african_rainforest() {
     let mut eco = heart(Biome::TropicalRainforest, Realm::Afrotropical);
     let (present, failures) =
@@ -122,6 +126,7 @@ fn fifty_years_of_african_rainforest() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_asian_rainforest() {
     let mut eco = reference("tropical_rainforest", Realm::Indomalayan);
     let (present, failures) = fifty_years(&mut eco, Biome::TropicalRainforest);
@@ -144,6 +149,7 @@ fn fifty_years_of_asian_rainforest() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_american_rainforest() {
     let mut eco = heart(Biome::TropicalRainforest, Realm::Neotropical);
     let (present, failures) =
@@ -169,6 +175,7 @@ fn fifty_years_of_american_rainforest() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_mediterranean_scrub() {
     let mut eco = heart(Biome::MediterraneanScrub, Realm::Palearctic);
     let (present, failures) =
@@ -191,6 +198,7 @@ fn fifty_years_of_mediterranean_scrub() {
 }
 
 #[test]
+#[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn fifty_years_of_a_chaparral() {
     let mut eco = reference("mediterranean_scrub", Realm::Nearctic);
     let (present, failures) = fifty_years(&mut eco, Biome::MediterraneanScrub);
