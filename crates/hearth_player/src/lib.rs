@@ -2,6 +2,8 @@
 //! What the body allows becomes how it can move; what it does becomes what it burns; landings
 //! injure it, the water it is in cools it, and the air it lacks drowns it.
 
+pub mod strike;
+
 use glam::DVec3;
 use hearth_body::{Activity, Body, BodyConfig, Death, Exposure, Posture, Wake, Worn};
 use hearth_physics::{Ability, Intent, Motion, Mover, Report, Stance, Terrain};
@@ -79,6 +81,12 @@ pub struct Player {
     /// What the player knows: discoveries, insight, skills, the journal.
     #[serde(default)]
     pub knowledge: hearth_craft::KnowledgeState,
+    /// A blow under way (E §3.2).
+    #[serde(skip)]
+    pub striking: Option<strike::Striking>,
+    /// A burning brand held up high.
+    #[serde(skip)]
+    pub held_up: bool,
 }
 
 impl Player {
@@ -92,6 +100,8 @@ impl Player {
             life: Life::begin(feet, 0),
             carry: hearth_items::Carry::default(),
             knowledge: hearth_craft::KnowledgeState::default(),
+            striking: None,
+            held_up: false,
         }
     }
 

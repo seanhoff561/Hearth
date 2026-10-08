@@ -122,9 +122,10 @@ pub mod builtin {
         THROW = 35; JOURNAL = 36; SHOUT = 37; BUILDER_VIEW = 38;
         WATCH_FASTER = 39; WATCH_SLOWER = 40;
         CLEAR_VIEW = 41; SPECTATE = 42; CREATIVE_REMOVE = 43; NO_CLIP = 44;
+        KICK = 45;
     }
     /// Number of built-in actions.
-    pub const COUNT: usize = 45;
+    pub const COUNT: usize = 46;
 
     /// The quick slots' actions in slot order.
     pub const HOTBAR: [ActionId; 6] = [HOTBAR_1, HOTBAR_2, HOTBAR_3, HOTBAR_4, HOTBAR_5, HOTBAR_6];
@@ -239,6 +240,9 @@ impl ActionRegistry {
         add("key.creative.spectate", C::Creative, g, k(Key::F6), Tap);
         add("key.creative.remove", C::Creative, g, k(Key::Delete), Tap);
         add("key.creative.no_clip", C::Creative, g, k(Key::F7), Tap);
+        // A kick (E §3.2): T lies by the movement keys and holds nothing else in play (F3 + T
+        // is a debug chord, apart).
+        add("key.kick", C::Gameplay, g, k(Key::T), H);
         // The controller (v1 M11, V2-3): the sticks walk and look; every button can be rebound.
         use PadButton as P;
         for (id, b) in [
@@ -257,6 +261,7 @@ impl ActionRegistry {
             (builtin::JOURNAL, P::DPadUp),
             (builtin::DROP, P::DPadDown),
             (builtin::SLEEP, P::DPadLeft),
+            (builtin::KICK, P::RightStick),
         ] {
             r.defs[id.0 as usize].pad = Some(b);
         }

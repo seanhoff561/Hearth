@@ -229,35 +229,71 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
     }
     let mut v = quarry.expect("an animal to hunt");
     let sp = &catalog.species[v.species as usize];
-    // Up beside it, and a thrust behind its shoulder where it stands now: it may walk on as the
-    // hunter comes up (down into a hollow, along a bank), and is followed.
-    let mut chest = v.pos;
-    for _ in 0..4 {
-        if let Some(x) = w.animals.iter().find(|x| x.id == v.id) {
-            v = *x;
+    // A wound that kills soon: the heart and lungs or the neck reached (one in the belly
+    // kills within the hour, and is followed up).
+    let mortal = |s: &str| {
+        s.contains("falls dead")
+            || (s.contains("deep")
+                && ["behind the shoulder", "in the neck"]
+                    .iter()
+                    .any(|p| s.contains(p)))
+    };
+    let mut said = Vec::new();
+    // Up beside it, and a thrust behind its shoulder: it may walk on as the hunter comes up
+    // (down into a hollow, along a bank), or start away as the spear is drawn back, and is
+    // followed and struck again.
+    for attempt in 0..6 {
+        let mut chest = v.pos;
+        for _ in 0..4 {
+            if let Some(x) = w.animals.iter().find(|x| x.id == v.id) {
+                v = *x;
+            }
+            let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
+            let side = DVec3::new(ahead.z, 0.0, -ahead.x);
+            // Beside where it will be by the time the thrust lands: a quarter of a second on, a
+            // fleeing one gathering speed.
+            let lead = |v: &hearth_fauna::live::AnimalView| {
+                let gathering = if v.act == hearth_fauna::live::Act::Flee && v.speed < 8.0 {
+                    0.5 * 6.0 * 0.25 * 0.25
+                } else {
+                    0.0
+                };
+                v.speed as f64 * 0.25 + gathering
+            };
+            w.go_exact(v.pos + ahead * lead(&v) + side * 1.2);
+            if let Some(x) = w.animals.iter().find(|x| x.id == v.id) {
+                v = *x;
+            }
+            let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
+            // The heart and lungs: the front of the torso, three tenths of its length ahead of
+            // its feet, where it will be when the thrust lands (led, if it moves on).
+            chest = v.pos
+                + ahead * (sp.length_m as f64 * 0.3 + lead(&v))
+                + DVec3::Y * (sp.shoulder_m as f64 * 0.65);
+            if (chest - (w.mover.pos + DVec3::new(0.0, 1.5, 0.0))).length() < 2.0 {
+                break;
+            }
         }
-        let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
-        let side = DVec3::new(ahead.z, 0.0, -ahead.x);
-        w.go_exact(v.pos + side * 1.2);
-        if let Some(x) = w.animals.iter().find(|x| x.id == v.id) {
-            v = *x;
+        let n = w.acted.len();
+        // From where the hunter stands (the bank or a reed bed may have stopped it short): the
+        // thrust lands at the end of its wind-up, a fifth of a second on (E §3.2).
+        w.server.send(ToServer::Blow {
+            dir: chest - (w.mover.pos + DVec3::new(0.0, 1.5, 0.0)),
+            kick: false,
+        });
+        w.run(1);
+        if attempt == 0 {
+            assert_eq!(w.acted.len(), n, "nothing before the wind-up is done");
         }
-        let ahead = DVec3::new(v.yaw.sin() as f64, 0.0, v.yaw.cos() as f64);
-        // The heart and lungs: the front of the torso, a fifth of its length ahead of its feet.
-        chest =
-            v.pos + ahead * (sp.length_m as f64 * 0.21) + DVec3::Y * (sp.shoulder_m as f64 * 0.65);
-        if (chest - (w.mover.pos + DVec3::new(0.0, 1.5, 0.0))).length() < 2.0 {
+        w.run(12);
+        let now: Vec<String> = w.acted[n..].iter().map(|(_, _, s)| s.clone()).collect();
+        println!("{}: {now:?}", sp.name);
+        let done = now.iter().any(|s| mortal(s));
+        said.extend(now);
+        if done || !w.animals.iter().any(|x| x.id == v.id) {
             break;
         }
     }
-    let n = w.acted.len();
-    // From where the hunter stands (the bank or a reed bed may have stopped it short).
-    w.server.send(ToServer::Thrust {
-        dir: chest - (w.mover.pos + DVec3::new(0.0, 1.5, 0.0)),
-    });
-    w.run(2);
-    let said: Vec<String> = w.acted[n..].iter().map(|(_, _, s)| s.clone()).collect();
-    println!("{}: {said:?}", sp.name);
     assert!(said.iter().any(|s| s.contains("strikes")), "{said:?}");
     // It runs and falls; followed to where it lies.
     let mut last = v.pos;

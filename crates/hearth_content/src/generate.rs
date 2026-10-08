@@ -4,7 +4,7 @@
 use crate::content::{Origin, Table};
 use crate::diag::Report;
 use crate::schema::body::Garment;
-use crate::schema::item::{ContainerSpec, Item, ItemForm, PropertyValue, Stacking};
+use crate::schema::item::{ContainerSpec, Item, ItemForm, PropertyValue, Stacking, Use};
 use crate::schema::material::Material;
 use crate::schema::{Entry, Status};
 
@@ -29,6 +29,8 @@ pub struct ItemDef {
     pub hangs_on: Vec<String>,
     /// The garment it is, when worn.
     pub garment: Option<String>,
+    /// What it does in the hand with nothing aimed at (E §3.2).
+    pub primary: Option<Use>,
 }
 
 impl ItemDef {
@@ -120,6 +122,7 @@ pub fn generate_items(
                 container: item.container,
                 hangs_on: item.hangs_on.clone(),
                 garment: None,
+                primary: item.primary,
             },
             origin.clone(),
         );
@@ -152,6 +155,7 @@ pub fn generate_items(
                     container: None,
                     hangs_on: Vec::new(),
                     garment: Some(g.id().to_owned()),
+                    primary: None,
                 },
                 Origin {
                     file: origin.file.clone(),
@@ -216,6 +220,7 @@ pub fn generate_items(
                     container: form.container,
                     hangs_on: form.hangs_on.clone(),
                     garment: None,
+                    primary: form.primary,
                 },
                 Origin {
                     file: origin.file.clone(),

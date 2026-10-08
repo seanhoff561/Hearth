@@ -1198,6 +1198,36 @@ fn tree_blocks(c: &Content, blocks: &[(String, Option<String>)], report: &mut Re
     }
 }
 
+/// Things in the hand with nothing aimed at (E §3.2): one with a point, an edge or a long reach
+/// and no use of its own would only be struck with in the fist; a bow needs its draw weight.
+fn primary_report(c: &Content, report: &mut Report) {
+    use crate::schema::item::Use;
+    for d in c.items.iter() {
+        let pointed = d.property("piercing").is_some_and(|p| p >= 0.3)
+            || d.property("sharp_edge").is_some()
+            || d.property("reach_m").is_some();
+        if pointed && d.primary.is_none() && d.container.is_none() {
+            report.warning(
+                "primary-use",
+                None,
+                None,
+                format!(
+                    "item `{}` has a point, an edge or a reach but no primary use: it is struck with in the fist",
+                    d.id
+                ),
+            );
+        }
+        if d.primary == Some(Use::Draw) && d.property("draw_kg").is_none() {
+            report.error(
+                "primary-use",
+                None,
+                None,
+                format!("item `{}` is drawn but has no `draw_kg`", d.id),
+            );
+        }
+    }
+}
+
 /// Materials held to their family's measured ranges (`materials/reference.ron`, Amendment Q
 /// §2.1): albedo outside the range is an error, roughness (a perceptual estimate) a warning.
 fn reference_report(c: &Content, report: &mut Report) {
@@ -1321,6 +1351,7 @@ pub fn lint(c: &Content, ctx: &LintContext) -> Report {
     reachability_report(c, &reach, &mut report);
     food_webs(c, &mut report);
     reference_report(c, &mut report);
+    primary_report(c, &mut report);
     effort_report(&effort(c, &reach), &mut report);
     let uncertain = c.uncertain_entries();
     report.info(

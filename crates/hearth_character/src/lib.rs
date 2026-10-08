@@ -8,7 +8,7 @@ pub mod appearance;
 pub mod instances;
 pub mod rig;
 
-pub use animate::{Activity, Animator, Drive, Holding, Pose};
+pub use animate::{Activity, Animator, Doing, Drive, Gesture, Holding, Pose};
 pub use appearance::{
     Appearance, BodyType, EyeColor, FacialHair, HAIR_COLORS, HairStyle, Loincloth,
 };

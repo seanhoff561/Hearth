@@ -9,6 +9,7 @@
             size_m: (0.12, 0.09, 0.07), fill: 0.55, footprint: (1, 1),
             properties: [(name: "hard_hammer", value: FromMaterial(field: "hardness_mohs", scale: 0.1))],
             tags: ["gatherable", "stone", "throwable"],
+            primary: Some(Strike),
         ),
         (
             // A building stone one can carry in both arms: some 25 kg.
@@ -30,12 +31,14 @@
                 (name: "hard_hammer", value: FromMaterial(field: "hardness_mohs", scale: 0.08)),
             ],
             tags: ["stone"],
+            primary: Some(Strike),
         ),
         (
             id: "flake", status: Implemented, name: "{material} flake", materials: (tags: ["knappable"]),
             size_m: (0.06, 0.04, 0.008), fill: 0.45, footprint: (1, 1), stacking: Count(8),
             properties: [(name: "sharp_edge", value: FromMaterial(field: "knapping", scale: 1.0))],
             tags: ["cutting", "edged"],
+            primary: Some(Slash),
         ),
         (
             id: "chopper", status: Implemented, name: "{material} chopper", materials: (tags: ["knappable"]),
@@ -46,6 +49,7 @@
                 (name: "hard_hammer", value: FromMaterial(field: "hardness_mohs", scale: 0.08)),
             ],
             tags: ["tool", "edged"],
+            primary: Some(Strike),
         ),
         (
             id: "hand_axe", status: Implemented, name: "{material} hand axe", materials: (tags: ["knappable"]),
@@ -56,6 +60,7 @@
                 (name: "scraping", value: FromMaterial(field: "knapping", scale: 0.6)),
             ],
             tags: ["tool", "edged"], hangs_on: ["belt_loop"],
+            primary: Some(Strike),
         ),
         (
             // Pecked to shape and ground on wet sandstone, hafted through a wooden handle: an edge
@@ -67,6 +72,7 @@
                 (name: "sharp_edge", value: Const(0.4)),
             ],
             tags: ["tool", "edged"], hangs_on: ["belt_loop"],
+            primary: Some(Swing),
         ),
         (
             // The ground blade set across the haft: it hews timber square and hollows it.
@@ -77,6 +83,7 @@
                 (name: "chopping", value: FromMaterial(field: "hardness_mohs", scale: 0.08)),
             ],
             tags: ["tool", "edged"], hangs_on: ["belt_loop"],
+            primary: Some(Swing),
         ),
         (
             id: "wedge", status: Implemented, name: "{material} wedge", materials: (categories: [Wood, Bone]),
@@ -89,29 +96,34 @@
             size_m: (0.05, 0.04, 0.012), fill: 0.5, footprint: (1, 1),
             properties: [(name: "scraping", value: FromMaterial(field: "knapping", scale: 0.9))],
             tags: ["tool", "edged"],
+            primary: Some(Slash),
         ),
         (
             id: "point", status: Implemented, name: "{material} point", materials: (tags: ["knappable"]),
             size_m: (0.07, 0.035, 0.008), fill: 0.45, footprint: (1, 1),
             properties: [(name: "piercing", value: FromMaterial(field: "knapping", scale: 0.9))],
             tags: ["projectile_tip", "edged"],
+            primary: Some(Stab),
         ),
         (
             id: "anvil_stone", status: Implemented, name: "{material} anvil stone", materials: (categories: [Rock], exclude_tags: ["soft_stone", "brittle"]),
             size_m: (0.35, 0.25, 0.12), fill: 0.7, footprint: (2, 2),
             properties: [(name: "anvil", value: Const(1.0))],
             tags: ["gatherable", "stone", "heavy"],
+            primary: Some(Strike),
         ),
         (
             id: "stick", status: Implemented, name: "{material} stick", materials: (categories: [Wood]),
             size_m: (1.0, 0.025, 0.025), fill: 0.78, footprint: (1, 3),
             properties: [(name: "digging", value: Const(0.25))],
             tags: ["gatherable", "wood", "fuelwood"],
+            primary: Some(Swing),
         ),
         (
             id: "pole", status: Implemented, name: "{material} pole", materials: (categories: [Wood]),
             size_m: (2.2, 0.04, 0.04), fill: 0.78, footprint: (1, 4),
             tags: ["gatherable", "wood", "fuelwood"],
+            primary: Some(Thrust),
             notes: "Deadfall or storm-broken saplings; cutting live ones needs a chopping tool.",
         ),
         (
@@ -119,30 +131,35 @@
             size_m: (0.3, 0.006, 0.006), fill: 0.78, footprint: (1, 1), stacking: Count(10),
             properties: [(name: "probe", value: Const(1.0))],
             tags: ["gatherable", "wood", "fuelwood"],
+            primary: Some(Swing),
         ),
         (
             id: "digging_stick", status: Implemented, name: "{material} digging stick", materials: (categories: [Wood]),
             size_m: (1.1, 0.03, 0.03), fill: 0.75, footprint: (1, 3),
             properties: [(name: "digging", value: FromMaterial(field: "density_kg_m3", scale: 0.0008))],
             tags: ["tool", "wooden_point"],
+            primary: Some(Thrust),
         ),
         (
             id: "wooden_spear", status: Implemented, name: "{material} spear", materials: (categories: [Wood]),
             size_m: (2.2, 0.035, 0.035), fill: 0.72, footprint: (1, 4),
             properties: [(name: "piercing", value: Const(0.4)), (name: "reach_m", value: Const(2.2))],
             tags: ["weapon", "wooden_point", "throwable"],
+            primary: Some(Thrust),
         ),
         (
             id: "fire_hardened_spear", status: Implemented, name: "fire-hardened {material} spear", materials: (categories: [Wood]),
             size_m: (2.2, 0.035, 0.035), fill: 0.72, footprint: (1, 4),
             properties: [(name: "piercing", value: Const(0.55)), (name: "reach_m", value: Const(2.2))],
             tags: ["weapon", "wooden_point", "throwable"],
+            primary: Some(Thrust),
         ),
         (
             id: "stone_tipped_spear", status: Implemented, name: "stone-tipped {material} spear", materials: (categories: [Wood]),
             size_m: (2.3, 0.04, 0.04), fill: 0.7, footprint: (1, 4),
             properties: [(name: "piercing", value: Const(0.85)), (name: "reach_m", value: Const(2.3))],
             tags: ["weapon", "hafted", "throwable"],
+            primary: Some(Thrust),
             notes: "Named for its shaft; the stone of the point does not change its kind.",
         ),
         (
@@ -150,24 +167,28 @@
             size_m: (0.6, 0.05, 0.02), fill: 0.7, footprint: (1, 2),
             properties: [(name: "throw_lever", value: Const(1.6))],
             tags: ["tool"],
+            primary: Some(Swing),
         ),
         (
             id: "dart", status: Implemented, name: "{material} dart", materials: (categories: [Wood]),
             size_m: (1.8, 0.016, 0.016), fill: 0.75, footprint: (1, 4), stacking: Count(3),
             properties: [(name: "piercing", value: Const(0.8))],
             tags: ["weapon", "hafted", "throwable"],
+            primary: Some(Thrust),
         ),
         (
             id: "bow", status: Implemented, name: "{material} bow", materials: (tags: ["bow_wood"]),
             size_m: (1.6, 0.04, 0.025), fill: 0.55, footprint: (1, 5),
             properties: [(name: "draw_kg", value: FromMaterial(field: "elastic_modulus_gpa", scale: 2.5))],
             tags: ["weapon"],
+            primary: Some(Draw),
         ),
         (
             id: "arrow", status: Implemented, name: "{material} arrow", materials: (categories: [Wood]),
             size_m: (0.8, 0.009, 0.009), fill: 0.8, footprint: (1, 3), stacking: Count(10),
             properties: [(name: "piercing", value: Const(0.7))],
             tags: ["projectile", "hafted"],
+            primary: Some(Stab),
         ),
         // Stone tools of the Upper Paleolithic.
         (
@@ -175,6 +196,7 @@
             size_m: (0.09, 0.025, 0.006), fill: 0.5, footprint: (1, 1), stacking: Count(4),
             properties: [(name: "sharp_edge", value: FromMaterial(field: "knapping", scale: 1.05))],
             tags: ["cutting", "edged"],
+            primary: Some(Slash),
         ),
         (
             id: "burin", status: Implemented, name: "{material} burin", materials: (tags: ["knappable"]),
@@ -184,6 +206,7 @@
                 (name: "sharp_edge", value: FromMaterial(field: "knapping", scale: 0.5)),
             ],
             tags: ["tool", "edged"],
+            primary: Some(Stab),
         ),
         // Bone tools.
         (
@@ -191,18 +214,21 @@
             size_m: (0.12, 0.012, 0.01), fill: 0.7, footprint: (1, 1),
             properties: [(name: "piercing", value: FromMaterial(field: "hardness_mohs", scale: 0.2))],
             tags: ["tool"], hangs_on: ["tie"],
+            primary: Some(Stab),
         ),
         (
             id: "needle", status: Implemented, name: "{material} needle", materials: (categories: [Bone]),
             size_m: (0.07, 0.004, 0.003), fill: 0.8, footprint: (1, 1), stacking: Count(6),
             properties: [(name: "sewing", value: Const(0.8)), (name: "piercing", value: Const(0.5))],
             tags: ["tool"],
+            primary: Some(Stab),
         ),
         (
             id: "harpoon_head", status: Implemented, name: "barbed {material} point", materials: (categories: [Bone]),
             size_m: (0.15, 0.02, 0.01), fill: 0.7, footprint: (1, 1),
             properties: [(name: "piercing", value: Const(0.6))],
             tags: ["projectile_tip"],
+            primary: Some(Stab),
         ),
         (
             id: "gorge", status: Implemented, name: "{material} fish gorge", materials: (categories: [Bone]),
@@ -298,6 +324,7 @@
             size_m: (0.15, 0.03, 0.02), fill: 0.8, footprint: (1, 1), stacking: Count(4),
             properties: [(name: "piercing", value: Const(0.3))],
             tags: ["bulk"],
+            primary: Some(Stab),
         ),
         (
             id: "sheaf", status: Implemented, name: "{material}", materials: (tags: ["basketry"]),
@@ -328,6 +355,7 @@
             id: "brick", status: Implemented, name: "{material} mudbrick", materials: (categories: [Clay]),
             size_m: (0.3, 0.08, 0.15), fill: 1.0, footprint: (2, 1),
             tags: ["building"],
+            primary: Some(Strike),
         ),
         (
             // Packed snow cut with a blade, for walls: light, and it melts.
@@ -366,6 +394,7 @@
             // Split from a log along its grain with wedges: a plank a metre long (V2-12).
             id: "plank", status: Implemented, name: "{material} plank", materials: (categories: [Wood]),
             size_m: (1.0, 0.25, 0.04), fill: 1.0, footprint: (1, 4), stacking: Count(4),
+            primary: Some(Swing),
         ),
         (
             // A length of trunk: a metre of a 40 cm log, rolled or dragged, too heavy to carry.
@@ -380,6 +409,7 @@
             size_m: (0.4, 0.05, 0.03), fill: 0.3, footprint: (1, 2),
             properties: [(name: "reaping", value: FromMaterial(field: "knapping", scale: 0.9)), (name: "sharp_edge", value: FromMaterial(field: "knapping", scale: 0.6))],
             tags: ["tool"],
+            primary: Some(Slash),
         ),
         // Pottery (V2-12): a pot coiled of wet clay; dried, it is greenware, to be fired; rain
         // or water turns unfired clay back to mud.

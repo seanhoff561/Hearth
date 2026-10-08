@@ -94,6 +94,7 @@ fn a_deer_put_to_flight_barks_and_a_wounded_hare_screams() {
         &Blow {
             energy_j: 4.0,
             piercing: 0.3,
+            ..Default::default()
         },
         "stick",
         path[0],

@@ -160,8 +160,13 @@ pub struct ShotSpec {
     pub lod_timeout: f64,
     /// Draw the planet as the globe (at this zoom) centred on the camera's place instead.
     pub globe: Option<f32>,
-    /// A person standing on the ground this far (m) in front of the camera, facing it.
+    /// A person standing on the ground this far (m) in front of the camera, facing it (or
+    /// turned this many degrees to their left: `person=2.5:90` shows their right side).
     pub person: Option<f64>,
+    pub person_turn: f32,
+    /// What the person does: a blow, a drawn bow or a brand held up, at a phase
+    /// (`doing=swing@1.2`; E §3.2).
+    pub doing: Option<(hearth_character::Gesture, f32)>,
     /// Blocks set on the ground in front of the camera: (block state, metres ahead, metres to
     /// the right, blocks up).
     pub place: Vec<(String, f64, f64, i32)>,
@@ -285,6 +290,8 @@ impl Default for ShotSpec {
             lod_timeout: 180.0,
             globe: None,
             person: None,
+            person_turn: 0.0,
+            doing: None,
             place: Vec::new(),
             put: Vec::new(),
             mow: None,
@@ -374,7 +381,28 @@ impl ShotSpec {
                 "fog" => spec.fog = v.parse()?,
                 "lod_timeout" => spec.lod_timeout = v.parse()?,
                 "globe" => spec.globe = Some(v.parse()?),
-                "person" => spec.person = Some(v.parse()?),
+                "person" => {
+                    let (d, turn) = v.split_once(':').unwrap_or((v, "0"));
+                    spec.person = Some(d.parse()?);
+                    spec.person_turn = turn.parse()?;
+                }
+                "doing" => {
+                    use hearth_character::Gesture as G;
+                    let (g, phase) = v.split_once('@').unwrap_or((v, "1.5"));
+                    let g = match g {
+                        "punch" => G::Punch,
+                        "kick" => G::Kick,
+                        "thrust" => G::Thrust,
+                        "swing" => G::Swing,
+                        "slash" => G::Slash,
+                        "stab" => G::Stab,
+                        "strike" => G::Strike,
+                        "draw" => G::Draw,
+                        "hold_up" => G::HoldUp,
+                        _ => anyhow::bail!("unknown gesture {g}"),
+                    };
+                    spec.doing = Some((g, phase.parse()?));
+                }
                 // `place=campfire[fire=high]@3` or `@3:1` or `@3:1:1` (ahead:right:up),
                 // repeatable.
                 // `mow=8@10`: the plants cut within 8 m of the ground 10 m ahead.
@@ -1298,14 +1326,33 @@ pub fn render_shot(
         let (px, pz) = (camera.pos.x + flat.x * d, camera.pos.z + flat.z * d);
         let feet = DVec3::new(px, lw.surface_y(px, pz), pz);
         let figure = hearth_character::Figure::starting(hearth_character::Appearance::default());
+        let doing = spec.doing.map(|(gesture, phase)| hearth_character::Doing {
+            gesture,
+            right: true,
+            phase,
+        });
+        // Something in the right hand for what isn't done with a bare fist or foot.
+        let armed = spec.doing.is_some_and(|(g, _)| {
+            !matches!(
+                g,
+                hearth_character::Gesture::Punch | hearth_character::Gesture::Kick
+            )
+        });
         let pose = figure.animator.pose(
             &figure.rig,
             hearth_character::Activity::Stand,
-            &hearth_character::Drive::default(),
+            &hearth_character::Drive {
+                doing,
+                holding: hearth_character::Holding {
+                    right: armed,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         );
         let chest = hearth_math::BlockPos::containing(feet + DVec3::Y * 1.2);
         let place = glam::Affine3A::from_rotation_translation(
-            glam::Quat::from_rotation_y(-(spec.yaw + 180.0).to_radians()),
+            glam::Quat::from_rotation_y(-(spec.yaw + 180.0 + spec.person_turn).to_radians()),
             (feet - camera.pos).as_vec3(),
         );
         let mut boxes = Vec::new();

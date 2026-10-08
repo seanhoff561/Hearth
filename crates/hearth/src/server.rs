@@ -1001,78 +1001,53 @@ fn run(
                     if let Some(f) = workshop.throw(&mut here!(), dir, speed) {
                         // What it strikes on its way, and where it falls.
                         let year_frac = calendar.at(ticks).year_frac as f32;
-                        let mut end = f.path.last().copied().unwrap_or(player.mover.pos);
-                        let kind = items.get(&f.stack.id);
-                        if let Some(hit) =
-                            fauna
-                                .live
-                                .hit_along(&fauna.eco.catalog.clone(), &f.path, year_frac)
-                        {
-                            let v = f.speed_at(hit.segment);
-                            let blow = hearth_fauna::wound::Blow {
-                                energy_j: (0.5 * f.mass * v * v) as f32,
-                                piercing: kind.and_then(|k| k.property("piercing")).unwrap_or(0.0),
-                            };
-                            let what = kind.map_or("thing".to_owned(), |k| k.name.clone());
-                            if let Some(s) = fauna.live.strike(
-                                &fauna.eco.catalog.clone(),
-                                &hit,
-                                &blow,
-                                &what,
-                                player.mover.pos,
-                                year_frac,
-                            ) {
-                                let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
-                                    process: String::new(),
-                                    done: false,
-                                    words: s.words,
-                                }));
-                            }
-                            end = hit.at;
+                        let cat = fauna.eco.catalog.clone();
+                        let (words, end) = crate::strikes::fly(
+                            &f,
+                            &items,
+                            &mut fauna.live,
+                            &cat,
+                            player.mover.pos,
+                            year_frac,
+                        );
+                        if let Some(words) = words {
+                            let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                                process: String::new(),
+                                done: false,
+                                words,
+                            }));
                         }
                         world_items.add(f.stack, rest_on(&lw, end).to_array(), 0.0);
                         items_changed = true;
                     }
                 }
-                Ok(ToServer::Thrust { dir }) => {
-                    // A thrust or a blow with what is in the right hand, at what is in reach.
-                    if player.can_act(&cfg)
-                        && let Some(held) = player.carry.right.as_ref()
-                        && let Some(kind) = items.get(&held.id)
-                    {
-                        let reach = kind.property("reach_m").unwrap_or(0.5) as f64;
-                        let eye = player.mover.pos + DVec3::new(0.0, 1.5, 0.0);
-                        let path = [eye, eye + dir.normalize_or_zero() * (0.7 + reach)];
+                Ok(ToServer::Loose { dir, drawn_s }) => {
+                    if let Some(f) = workshop.shoot(&mut here!(), dir, drawn_s) {
                         let year_frac = calendar.at(ticks).year_frac as f32;
                         let cat = fauna.eco.catalog.clone();
-                        if let Some(hit) = fauna.live.hit_along(&cat, &path, year_frac) {
-                            // A spear thrust with the body behind it, against a blow of the arm.
-                            let blow = hearth_fauna::wound::Blow {
-                                energy_j: if reach >= 1.5 {
-                                    150.0
-                                } else {
-                                    40.0 + 60.0 * kind.mass_kg.min(1.5)
-                                },
-                                piercing: kind.property("piercing").unwrap_or(0.0),
-                            };
-                            let what = kind.name.clone();
-                            if let Some(s) = fauna.live.strike(
-                                &cat,
-                                &hit,
-                                &blow,
-                                &what,
-                                player.mover.pos,
-                                year_frac,
-                            ) {
-                                let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
-                                    process: String::new(),
-                                    done: false,
-                                    words: s.words,
-                                }));
-                            }
+                        let (words, end) = crate::strikes::fly(
+                            &f,
+                            &items,
+                            &mut fauna.live,
+                            &cat,
+                            player.mover.pos,
+                            year_frac,
+                        );
+                        if let Some(words) = words {
+                            let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                                process: String::new(),
+                                done: false,
+                                words,
+                            }));
                         }
+                        world_items.add(f.stack, rest_on(&lw, end).to_array(), 0.0);
+                        items_changed = true;
                     }
                 }
+                Ok(ToServer::Blow { dir, kick }) => {
+                    crate::strikes::begin(&mut player, &items, &cfg, dir, kick);
+                }
+                Ok(ToServer::HoldUp(up)) => player.held_up = up,
                 Ok(ToServer::Give(stack)) => {
                     let body_kg = cfg.mass_kg as f32;
                     if items.get(&stack.id).is_some() {
@@ -1262,6 +1237,8 @@ fn run(
                     &lw.map,
                     &lw.reg,
                 );
+                // A burning brand held up keeps hungry animals off as a fire does.
+                presence.by_fire |= crate::strikes::brand_up(&player, &items);
                 if observing.is_some() {
                     // An Observer is perceived by nothing.
                     presence.pos = at;
@@ -1272,6 +1249,31 @@ fn run(
                     presence.vulnerable = 0.0;
                 }
                 fauna.tick(&lw, &presence, &now, years_at(ticks), TICK_S as f32, ticks);
+                // A blow under way strikes at the end of its wind-up.
+                if let Some(striking) = player.striking.as_mut() {
+                    let now_strikes = striking.advance(TICK_S);
+                    let done = striking.done();
+                    if now_strikes {
+                        let cat = fauna.eco.catalog.clone();
+                        if let Some(words) = crate::strikes::land(
+                            &player,
+                            &items,
+                            &cfg,
+                            &mut fauna.live,
+                            &cat,
+                            now.year_frac,
+                        ) {
+                            let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
+                                process: String::new(),
+                                done: false,
+                                words,
+                            }));
+                        }
+                    }
+                    if done {
+                        player.striking = None;
+                    }
+                }
                 // The kept animals' doings near the player, told.
                 for t in std::mem::take(&mut fauna.tidings) {
                     use hearth_fauna::herd::Tiding;

@@ -246,6 +246,11 @@ pub struct Client {
     pub aim: Option<Aim>,
     dragged_at: Option<DVec3>,
     drag_was: bool,
+    /// A blow under way, as the body shows it (E §3.2); how long a bow has been drawn; a brand
+    /// held up.
+    striking: Option<hearth_player::strike::Striking>,
+    bow_drawn: Option<f64>,
+    held_up: bool,
     /// The piece being put up and where, and its ghost's colour (it shows while the work goes
     /// on).
     raising: Option<(hearth_math::BlockPos, hearth_world::BlockStateId, [u8; 3])>,
@@ -433,6 +438,9 @@ impl Client {
             aim: None,
             dragged_at: None,
             drag_was: false,
+            striking: None,
+            bow_drawn: None,
+            held_up: false,
             raising: None,
             builder_view: false,
             stress: Vec::new(),
@@ -881,6 +889,55 @@ impl Client {
         }
     }
 
+    /// What the thing in hand is for, with nothing aimed at (E §3.2): food eaten, a water skin
+    /// drunk from, a wound treated with it, a brand held up (or lowered), a bow drawn; anything
+    /// else is a blow (the fist, if nothing is held or what is held has no blow of its own).
+    fn use_in_hand(&mut self) {
+        use crate::strikes::InHand;
+        let (Some(items), Some(c)) = (self.items.clone(), &self.crafting) else {
+            return;
+        };
+        match crate::strikes::use_of(&self.carry, &items, &c.content, &|k| c.treating_with(k)) {
+            InHand::Eat(path) => self.act(Do::Eat(path)),
+            InHand::Drink(path) => self.act(Do::Drink(hearth_protocol::DrinkFrom::Skin(path))),
+            InHand::Treat(id) => self.act(Do::Process(id)),
+            InHand::HoldUp => {
+                self.held_up = !self.held_up;
+                self.server.send(ToServer::HoldUp(self.held_up));
+            }
+            InHand::Draw => {
+                if self
+                    .carry
+                    .find(&|s| crate::strikes::is_arrow(&items, s))
+                    .is_some()
+                {
+                    self.bow_drawn = Some(0.0);
+                } else if let Some(c) = &mut self.crafting {
+                    c.tell("There is no arrow to nock.".into(), News::Failed);
+                }
+            }
+            InHand::Blow => self.blow(false),
+        }
+    }
+
+    /// A blow along the look (`kick`, or with what is in hand): the body shows it at once, and
+    /// the world says what it met.
+    fn blow(&mut self, kick: bool) {
+        let Some(items) = self.items.clone() else {
+            return;
+        };
+        if self.striking.is_some() {
+            return;
+        }
+        let dir = self.camera.forward().as_dvec3();
+        let (attack, weapon, right) = crate::strikes::chosen(&self.carry, &items, kick);
+        let stamina = self.body.as_ref().map_or(1.0, |b| b.status.stamina as f64);
+        self.striking = Some(hearth_player::strike::Striking::new(
+            attack, weapon, right, dir, stamina,
+        ));
+        self.server.send(ToServer::Blow { dir, kick });
+    }
+
     /// The things the hands do this frame: pick up, gather, put down, drag and let go.
     fn handle_things(&mut self, input: &mut InputState, dt: f64) {
         self.aim = self.find_aim();
@@ -903,20 +960,36 @@ impl Client {
                 c.choose(steps);
             }
         }
-        // The primary action does what is chosen, or stops the work under way.
+        // The primary action does what is chosen, or stops the work under way; at an animal it
+        // is a blow; at nothing, what the thing in hand is for (E §3.2).
         if input.was_pressed(builtin::ATTACK) && self.radial.is_none() {
             if working {
                 self.server.send(ToServer::StopWork);
             } else if let Some(Aim::Animal(_)) = self.aim
                 && !self.animal_work_chosen()
             {
-                // A thrust or a blow at the animal.
-                self.server.send(ToServer::Thrust {
-                    dir: self.camera.forward().as_dvec3(),
-                });
+                self.blow(false);
+            } else if self.aim.is_none() {
+                self.use_in_hand();
             } else {
                 self.act_chosen();
             }
+        }
+        // A bow drawn while the button is held, loosed as it is let go.
+        if let Some(t) = &mut self.bow_drawn {
+            if input.is_down(builtin::ATTACK) {
+                *t += dt;
+            } else {
+                let drawn_s = *t as f32;
+                self.bow_drawn = None;
+                self.server.send(ToServer::Loose {
+                    dir: self.camera.forward().as_dvec3(),
+                    drawn_s,
+                });
+            }
+        }
+        if input.was_pressed(builtin::KICK) && self.radial.is_none() && !working {
+            self.blow(true);
         }
         if input.was_pressed(builtin::INTERACT) {
             match self.aim {
@@ -926,7 +999,9 @@ impl Client {
                         self.act(d);
                     }
                 }
-                Some(Aim::Animal(_)) | None => {}
+                // At nothing: what is chosen of what the hands can make or do.
+                None => self.act_chosen(),
+                Some(Aim::Animal(_)) => {}
             }
         }
         // A throw: wound up while the key is held, let fly when it is let go.
@@ -1904,9 +1979,63 @@ impl Client {
                 both: self.carry.both,
                 dragging: self.carry.dragging.is_some(),
             },
+            doing: self.doing(),
         };
         if let Some(fig) = &mut self.figure {
             self.pose = Some(fig.animator.update(&fig.rig, &drive, dt as f32));
+        }
+    }
+
+    /// What the arms (or a leg) are doing beyond holding: a blow, a bow drawn, a brand held up.
+    fn doing(&self) -> Option<hearth_character::Doing> {
+        use hearth_character::{Doing, Gesture};
+        use hearth_player::strike::Attack;
+        if let Some(s) = &self.striking {
+            let gesture = match s.attack {
+                Attack::Punch => Gesture::Punch,
+                Attack::Kick => Gesture::Kick,
+                Attack::Thrust => Gesture::Thrust,
+                Attack::Swing => Gesture::Swing,
+                Attack::Slash => Gesture::Slash,
+                Attack::Stab => Gesture::Stab,
+                Attack::Strike => Gesture::Strike,
+            };
+            return Some(Doing {
+                gesture,
+                right: s.right,
+                phase: s.phase(),
+            });
+        }
+        if let Some(t) = self.bow_drawn {
+            return Some(Doing {
+                gesture: Gesture::Draw,
+                right: self.carry.right.is_some(),
+                phase: t as f32,
+            });
+        }
+        let right = self.brand_hand().filter(|_| self.held_up)?;
+        Some(Doing {
+            gesture: Gesture::HoldUp,
+            right,
+            phase: 0.0,
+        })
+    }
+
+    /// The hand a thing to hold up (a burning brand) is in: whether it is the right.
+    fn brand_hand(&self) -> Option<bool> {
+        use hearth_content::schema::item::Use;
+        let items = self.items.as_ref()?;
+        let up = |s: &Option<hearth_items::Stack>| {
+            s.as_ref()
+                .and_then(|s| items.get(&s.id))
+                .is_some_and(|k| k.primary == Some(Use::HoldUp))
+        };
+        if up(&self.carry.right) {
+            Some(true)
+        } else if up(&self.carry.left) {
+            Some(false)
+        } else {
+            None
         }
     }
 
@@ -2310,6 +2439,17 @@ impl Client {
         pad_sensitivity: f32,
     ) {
         self.clock_s += dt;
+        if let Some(s) = &mut self.striking {
+            s.advance(dt);
+            if s.done() {
+                self.striking = None;
+            }
+        }
+        // Nothing held up once the brand is out of the hands.
+        if self.held_up && self.brand_hand().is_none() {
+            self.held_up = false;
+            self.server.send(ToServer::HoldUp(false));
+        }
         let choosing =
             self.mode == CameraMode::Body && input.is_active(builtin::RADIAL) && !self.dead();
         // The controller's right stick turns at up to 120–360 degrees a second (choosing a

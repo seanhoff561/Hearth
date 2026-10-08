@@ -364,6 +364,7 @@ fn every_attack_on_a_person_comes_with_a_realistic_cause() {
                         &Blow {
                             energy_j: 30.0,
                             piercing: 0.4,
+                            ..Default::default()
                         },
                         "spear",
                         e.person.pos,

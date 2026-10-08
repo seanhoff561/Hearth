@@ -506,6 +506,29 @@ impl Carry {
         }
     }
 
+    /// Where the first carried thing that `wanted` (in a container too, the hands first, then
+    /// the back, what is worn and what hangs from it) is.
+    pub fn find(&self, wanted: &dyn Fn(&Stack) -> bool) -> Option<Path> {
+        fn walk(s: &Stack, at: Path, wanted: &dyn Fn(&Stack) -> bool) -> Option<Path> {
+            if wanted(s) {
+                return Some(at);
+            }
+            let c = s.contents()?;
+            c.items
+                .iter()
+                .enumerate()
+                .find_map(|(i, p)| walk(&p.stack, at.inner(i), wanted))
+        }
+        let mut roots = vec![Root::Hand(Hand::Right), Root::Hand(Hand::Left), Root::Back];
+        for (i, w) in self.worn.iter().enumerate() {
+            roots.push(Root::Worn(i));
+            roots.extend((0..w.hung.len()).map(|p| Root::Hung(i, p)));
+        }
+        roots
+            .into_iter()
+            .find_map(|r| walk(self.root(r)?, Path::at(r), wanted))
+    }
+
     /// Drops every carried thing (in containers too) for which `keep` is false: an ember gone
     /// cold, a rotted carcass.
     pub fn retain(&mut self, keep: &mut dyn FnMut(&Stack) -> bool) {

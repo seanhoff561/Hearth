@@ -268,6 +268,7 @@ fn carcass_item(a: &Animal, which: Carcass, id: &str, kg: f32, body: Body) -> It
         container: None,
         hangs_on: Vec::new(),
         garment: None,
+        primary: None,
     }
 }
 

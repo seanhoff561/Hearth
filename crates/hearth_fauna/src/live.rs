@@ -216,6 +216,8 @@ pub struct Animal {
     pub eaten: f32,
     /// Its wounds.
     pub hurt: Hurt,
+    /// A blow's shove (m/s over the ground), dying away in a fraction of a second.
+    pub knock: DVec2,
     /// The stride it last left a print at, and the way it has gone since it last let fall a
     /// drop of blood (m).
     pub printed: f32,
@@ -354,6 +356,7 @@ impl Animal {
             killed_by: None,
             eaten: 0.0,
             hurt: Hurt::default(),
+            knock: DVec2::ZERO,
             printed: 0.0,
             drip: 0.0,
             was: Act::Graze,
@@ -1665,6 +1668,9 @@ impl Live {
         let mass = rig.mass * scale * scale * scale;
         let w = wound(&rig, scale, mass, hit.part, blow, roll);
         w.add_to(&mut a.hurt);
+        // Shoved as the blow's momentum says: a hare sent tumbling, a deer barely moved.
+        let shove = DVec2::new(blow.push.x, blow.push.z) / mass.max(0.05) as f64;
+        a.knock += shove.clamp_length_max(6.0);
         a.wary.alarm(from);
         a.fear = (a.fear + 0.5).min(1.0);
         let name = sp.name.to_lowercase();
@@ -1686,6 +1692,8 @@ impl Live {
                 "The {what} strikes the {name} {}: it falls dead.",
                 hit.part.words()
             )
+        } else if w.deep && blow.cutting > blow.piercing {
+            format!("The {what} cuts the {name} {}, deep.", hit.part.words())
         } else if w.deep {
             format!("The {what} strikes the {name} {}, deep.", hit.part.words())
         } else if w.stunned > 0.0 {
@@ -2532,6 +2540,21 @@ fn go(
     searches: &mut usize,
     rng: &mut Rng,
 ) -> f32 {
+    // A blow's shove: it gives ground where the ground takes it.
+    if a.knock != DVec2::ZERO {
+        let step = a.knock * dt as f64;
+        match ground
+            .footing(a.pos.x + step.x, a.pos.z + step.y, a.pos.y)
+            .filter(|f| walker.step(a.pos.y, f).is_some())
+        {
+            Some(f) => a.pos = DVec3::new(a.pos.x + step.x, f.y, a.pos.z + step.y),
+            None => a.knock = DVec2::ZERO,
+        }
+        a.knock *= (-dt as f64 / 0.15).exp();
+        if a.knock.length() < 0.05 {
+            a.knock = DVec2::ZERO;
+        }
+    }
     let swimming = a.medium == Medium::Water;
     let target = match (a.act, mover) {
         (Act::Walk, Mover::Fish) => sp.swim_m_s.unwrap_or(0.5) * 0.4,

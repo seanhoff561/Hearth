@@ -2433,10 +2433,55 @@ impl Workshop {
         let mass = stack.mass(h.items).max(0.05) as f64;
         // A strong overarm throw: about 20 m/s for a stone, slower for heavy things.
         let v0 = speed.clamp(0.0, 25.0) * (0.6 / mass).sqrt().clamp(0.3, 1.0);
-        // As true as the thrower's practice: a novice's throw strays three degrees or so, a
-        // practised one's half a degree.
-        let skill = h.player.knowledge.skill(THROWING);
-        let spread = (3.0 - 2.4 * skill.clamp(0.0, 1.0) as f64).to_radians();
+        let keys =
+            h.lw.content
+                .items
+                .get(&stack.id)
+                .map(|d| item_keys(d, &h.lw.content))
+                .unwrap_or_default();
+        let t: Vec<String> = with_verb("throw", &keys).collect();
+        self.hear(h, &t);
+        Some(self.launch(h, stack, mass, dir, v0, THROWING))
+    }
+
+    /// A bow in hand drawn `drawn_s` seconds and loosed along `dir` (E §3.2): an arrow carried
+    /// (in the other hand, a container, anywhere about the body) flies at the speed the bow's
+    /// draw gives it.
+    pub fn shoot(&mut self, h: &mut Here, dir: DVec3, drawn_s: f32) -> Option<Flight> {
+        if !h.player.can_act(h.cfg) {
+            return None;
+        }
+        let items = h.items;
+        let bow = [&h.player.carry.right, &h.player.carry.left]
+            .into_iter()
+            .flatten()
+            .filter_map(|s| items.get(&s.id))
+            .find(|k| k.primary == Some(hearth_content::schema::item::Use::Draw))?;
+        let draw_kg = bow.property("draw_kg").unwrap_or(15.0);
+        let Some(at) = h.player.carry.find(&|s| crate::strikes::is_arrow(items, s)) else {
+            h.out.push(acted("", false, "There is no arrow to nock."));
+            return None;
+        };
+        let stack = h.player.carry.take(items, &at, Some(1))?;
+        let mass = stack.mass(items).max(0.005) as f64;
+        let v0 = crate::strikes::bow_speed(draw_kg, drawn_s, mass);
+        Some(self.launch(h, stack, mass, dir, v0, ARCHERY))
+    }
+
+    /// A thing sent flying from the eye along `dir` at `v0` (m/s), as true as the `skill`'s
+    /// practice: its path until it strikes the ground or leaves the world loaded.
+    fn launch(
+        &mut self,
+        h: &mut Here,
+        stack: Stack,
+        mass: f64,
+        dir: DVec3,
+        v0: f64,
+        skill: &str,
+    ) -> Flight {
+        // A novice's throw or shot strays three degrees or so, a practised one's half a degree.
+        let practice = h.player.knowledge.skill(skill);
+        let spread = (3.0 - 2.4 * practice.clamp(0.0, 1.0) as f64).to_radians();
         let dir = dir.normalize_or_zero();
         let side = dir.cross(DVec3::Y).normalize_or(DVec3::X);
         let up = side.cross(dir).normalize_or(DVec3::Y);
@@ -2445,7 +2490,7 @@ impl Workshop {
             self.rng.normal() * spread,
         );
         let dir = (dir + (side * a.cos() + up * a.sin()) * r.tan()).normalize_or_zero();
-        h.player.knowledge.practice(THROWING, 0.05, h.ticks);
+        h.player.knowledge.practice(skill, 0.05, h.ticks);
         let mut v = dir * v0;
         let mut p = h.player.mover.pos + DVec3::new(0.0, 1.5, 0.0);
         let dt = 0.02;
@@ -2468,20 +2513,12 @@ impl Workshop {
                 break;
             }
         }
-        let keys =
-            h.lw.content
-                .items
-                .get(&stack.id)
-                .map(|d| item_keys(d, &h.lw.content))
-                .unwrap_or_default();
-        let t: Vec<String> = with_verb("throw", &keys).collect();
-        self.hear(h, &t);
-        Some(Flight {
+        Flight {
             stack,
             path,
             dt,
             mass,
-        })
+        }
     }
 
     /// Reaching for a thing with full hands and nowhere to put it.
@@ -3035,6 +3072,8 @@ impl Workshop {
 
 /// The skill of throwing true.
 pub const THROWING: &str = "throwing";
+/// The skill a bow's shots grow.
+pub const ARCHERY: &str = "archery";
 
 /// A thing thrown: what, its flight (points from the hand, `dt` seconds apart, to where it
 /// fell or struck), its mass (kg). It lies where the flight ends, or where it struck.

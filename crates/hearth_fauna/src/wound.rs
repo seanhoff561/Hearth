@@ -16,8 +16,11 @@
 //! - the head: pierced, killed; a heavy blow stuns.
 //!
 //! A blunt blow (a stone, a club) kills a small animal struck hard on the head or body and only
-//! bruises a large one. Flesh wounds bleed less as they clot. An animal that has lost two
-//! fifths of its blood falls dead; before that it goes the slower the more it has lost.
+//! bruises a large one. An edge drawn through (a flake, an axe; E §3.2) goes in less deep than
+//! a point but is long, and what it opens bleeds freely: a throat cut, or the great vessels of a
+//! leg, bleed out within a minute or so, and a leg's tendons cut lame it. Flesh wounds bleed
+//! less as they clot. An animal that has lost two fifths of its blood falls dead; before that it
+//! goes the slower the more it has lost.
 
 use glam::{DVec3, Vec3};
 
@@ -53,11 +56,14 @@ impl Part {
     }
 }
 
-/// A blow: the energy it lands with (J) and how sharp it is (0 blunt … 1).
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// A blow: the energy it lands with (J), how sharp its point is (`piercing`, 0 blunt … 1) and
+/// its edge (`cutting`), and the momentum it carries into the body (kg m/s), which shoves it.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Blow {
     pub energy_j: f32,
     pub piercing: f32,
+    pub cutting: f32,
+    pub push: DVec3,
 }
 
 /// What a body suffers of its wounds: how fast it bleeds (a share of its blood a second) where
@@ -264,6 +270,9 @@ pub fn wound(rig: &Rig, scale: f32, mass: f32, part: Part, blow: &Blow, roll: f3
     };
     let e = blow.energy_j.max(0.0);
     let small = mass < 8.0;
+    if blow.cutting >= 0.15 && blow.cutting > blow.piercing {
+        return cut(rig, scale, part, blow, roll, small, w);
+    }
     if blow.piercing < 0.15 {
         // Blunt: a small animal struck hard is killed or stunned; a large one bruised, a leg
         // perhaps lamed.
@@ -311,6 +320,53 @@ pub fn wound(rig: &Rig, scale: f32, mass: f32, part: Part, blow: &Blow, roll: f3
     }
     // A small body has little to stop a point at all.
     if small && w.deep && matches!(part, Part::Chest | Part::Neck | Part::Belly) {
+        w.killed = true;
+    }
+    w
+}
+
+/// An edge drawn through: shallower than a point driven in, but what it reaches lies nearer
+/// the skin at the throat and the legs than the heart does.
+fn cut(
+    rig: &Rig,
+    scale: f32,
+    part: Part,
+    blow: &Blow,
+    roll: f32,
+    small: bool,
+    mut w: Wound,
+) -> Wound {
+    let depth = 0.12 * blow.cutting * (blow.energy_j.max(0.0) / 100.0).sqrt();
+    let over = (rig.torso.x * scale * 0.3).max(0.01);
+    w.deep = depth >= over * 0.6;
+    match (part, w.deep) {
+        // The throat: it falls within the half minute.
+        (Part::Neck, true) => w.bleeding = 0.025,
+        // A leg's tendons, and now and then its great vessel.
+        (Part::Leg, true) => {
+            w.lame = 0.6;
+            w.clotting = 0.003;
+            if roll < 0.4 {
+                w.bleeding = 0.008;
+            }
+        }
+        (Part::Leg, false) => {
+            w.lame = 0.25;
+            w.clotting = 0.002;
+        }
+        (Part::Haunch, true) => {
+            w.lame = 0.3;
+            w.clotting = 0.003;
+        }
+        (Part::Belly, true) => {
+            w.bleeding = 0.0003;
+            w.clotting = 0.002;
+        }
+        (Part::Head, _) if small => w.stunned = 4.0,
+        // A flesh wound, the longer the deeper.
+        _ => w.clotting = 0.0015 + 0.002 * (depth / over).min(1.0),
+    }
+    if small && w.deep && matches!(part, Part::Neck | Part::Chest) {
         w.killed = true;
     }
     w

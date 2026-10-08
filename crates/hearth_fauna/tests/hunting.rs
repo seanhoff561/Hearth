@@ -125,6 +125,7 @@ fn a_spear_behind_the_shoulder_drops_a_deer_within_a_minute() {
             Blow {
                 energy_j: 190.0,
                 piercing: 0.85,
+                ..Default::default()
             },
         );
         assert_eq!(s.part, Part::Chest, "{}", s.words);
@@ -151,6 +152,7 @@ fn a_deer_struck_in_the_belly_lies_up_and_dies_within_the_hour() {
         Blow {
             energy_j: 190.0,
             piercing: 0.85,
+            ..Default::default()
         },
     );
     assert_eq!(s.part, Part::Belly, "{}", s.words);
@@ -172,6 +174,7 @@ fn a_light_wound_heals_and_the_deer_lives() {
         Blow {
             energy_j: 30.0,
             piercing: 0.4,
+            ..Default::default()
         },
     );
     assert_eq!(s.part, Part::Haunch, "{}", s.words);
@@ -198,6 +201,7 @@ fn a_wooden_point_does_not_reach_an_aurochs_vitals_where_stone_does() {
         &Blow {
             energy_j: 190.0,
             piercing: 0.4,
+            ..Default::default()
         },
         0.5,
     );
@@ -209,6 +213,7 @@ fn a_wooden_point_does_not_reach_an_aurochs_vitals_where_stone_does() {
         &Blow {
             energy_j: 190.0,
             piercing: 0.85,
+            ..Default::default()
         },
         0.5,
     );
@@ -224,7 +229,8 @@ fn a_wooden_point_does_not_reach_an_aurochs_vitals_where_stone_does() {
             Part::Chest,
             &Blow {
                 energy_j: 190.0,
-                piercing: 0.4
+                piercing: 0.4,
+                ..Default::default()
             },
             0.5
         )
@@ -238,6 +244,7 @@ fn a_stone_kills_a_hare_and_only_bruises_a_deer() {
     let stone = Blow {
         energy_j: 140.0,
         piercing: 0.0,
+        ..Default::default()
     };
     let hare = &eco.catalog.species[species(&eco, "brown_hare") as usize];
     let r = Rig::of(hare, false);
@@ -262,6 +269,7 @@ fn a_wounded_boar_close_by_turns_on_the_person() {
             Blow {
                 energy_j: 30.0,
                 piercing: 0.4,
+                ..Default::default()
             },
         );
         // The person comes up on it, five metres off.

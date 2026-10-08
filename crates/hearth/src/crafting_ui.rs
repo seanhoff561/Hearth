@@ -370,6 +370,23 @@ impl Crafting {
         self.offers.get(self.chosen).filter(|o| o.act.is_some())
     }
 
+    /// The treatment of a wound offered now that lays this kind of thing on it (by its
+    /// material): what using it with nothing aimed at does (E §3.2).
+    pub fn treating_with(&self, kind: &hearth_items::ItemKind) -> Option<String> {
+        let m = kind.material.as_deref()?;
+        self.offers.iter().find_map(|o| {
+            let Some(Do::Process(id)) = &o.act else {
+                return None;
+            };
+            let def = &self.crafts.recipes[self.crafts.index_of(id)?].def;
+            let with_it = def.inputs.iter().any(|i| {
+                matches!(&i.item, hearth_content::schema::process::Match::Material(x)
+                    if hearth_content::IdRef::qualify(x.as_str()).as_str() == m)
+            });
+            (def.treats.is_some() && with_it).then(|| id.clone())
+        })
+    }
+
     /// The first offer that can be done.
     pub fn first_act(&self) -> Option<Do> {
         self.offers.iter().find_map(|o| o.act.clone())

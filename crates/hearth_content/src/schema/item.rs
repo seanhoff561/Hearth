@@ -46,6 +46,28 @@ pub struct ContainerSpec {
     pub back: bool,
 }
 
+/// What a thing in hand does when it is used with nothing aimed at (E §3.2). Food is eaten, a
+/// water skin with water in it drunk from, and a thing a wound is treated with (a process's
+/// `treats`) laid on the wound, whatever this says; a thing with none is struck with in the
+/// fist that holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Use {
+    /// Held up high to see by and to keep animals off (a burning brand).
+    HoldUp,
+    /// Driven point first along the look (a spear, a pole, a digging stick).
+    Thrust,
+    /// Swung in an arc across the body (a stick, a hafted axe, an adze).
+    Swing,
+    /// Drawn across edge first in a short arc (a flake, a blade, a sickle).
+    Slash,
+    /// Stabbed point first, a short way (an awl, a point, an arrow in the hand).
+    Stab,
+    /// Brought down hard in the fist (a cobble, a hand axe).
+    Strike,
+    /// Drawn while held and loosed when let go (a bow, with an arrow carried).
+    Draw,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Property {
     /// e.g. `sharp_edge`, `hard_hammer`, `fuel`, `bow_stave`.
@@ -78,6 +100,9 @@ entry! {
         /// Attachment points it can hang from (`tie`, `belt_loop`, `strap`).
         #[serde(default)]
         pub hangs_on: Vec<String>,
+        /// What it does in the hand with nothing aimed at.
+        #[serde(default)]
+        pub primary: Option<Use>,
     }
 }
 
@@ -108,5 +133,8 @@ entry! {
         pub container: Option<ContainerSpec>,
         #[serde(default)]
         pub hangs_on: Vec<String>,
+        /// What it does in the hand with nothing aimed at.
+        #[serde(default)]
+        pub primary: Option<Use>,
     }
 }

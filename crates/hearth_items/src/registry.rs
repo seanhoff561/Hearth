@@ -28,6 +28,8 @@ pub struct ItemKind {
     pub hangs_on: Vec<String>,
     /// How it is worn, if it is a garment.
     pub wear: Option<Wear>,
+    /// What it does in the hand with nothing aimed at (E §3.2).
+    pub primary: Option<hearth_content::schema::item::Use>,
 }
 
 /// A garment's place on the body.
@@ -127,6 +129,7 @@ impl Items {
                 properties: d.properties.clone(),
                 container: d.container,
                 hangs_on: d.hangs_on.clone(),
+                primary: d.primary,
                 wear: d
                     .garment
                     .as_deref()

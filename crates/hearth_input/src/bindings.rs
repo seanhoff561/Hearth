@@ -379,6 +379,9 @@ mod tests {
         assert_eq!(b.get(builtin::WORLD_MAP), Some(Binding::key(Key::M)));
         assert_eq!(b.get(builtin::FULLSCREEN), Some(Binding::key(Key::F11)));
         assert_eq!(b.get(builtin::HOTBAR_6), Some(Binding::key(Key::Digit6)));
+        // E §3.2: the kick on T, apart from the F3 + T chord.
+        assert_eq!(b.get(builtin::KICK), Some(Binding::key(Key::T)));
+        assert!(!b.is_conflicting(builtin::KICK));
     }
 
     #[test]

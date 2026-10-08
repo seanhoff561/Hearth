@@ -25,7 +25,7 @@ use hearth_worldgen::{PlanetGrid, WorldGenerator};
 
 /// The version of the messages between the client and the server, raised with every change to
 /// them (D166); the network handshake checks it (Amendment R, R1).
-pub const PROTOCOL: u32 = 3;
+pub const PROTOCOL: u32 = 4;
 
 /// From the client.
 #[derive(Debug, Clone)]
@@ -81,9 +81,16 @@ pub enum ToServer {
     },
     /// Throw what is held in the right hand along a direction at a speed (m/s).
     Throw { dir: DVec3, speed: f64 },
-    /// Thrust or strike with what is held in the right hand along a direction (at an animal in
-    /// reach).
-    Thrust { dir: DVec3 },
+    /// A blow along a direction (E §3.2): with what is in the hand (the right's, else the
+    /// left's) as its use says (a thrust, a swing, a slash, a stab, a strike), with the fist
+    /// that holds a thing with no blow of its own or an empty one, or (`kick`) with the foot.
+    /// It lands after its wind-up, on whatever is along its path then.
+    Blow { dir: DVec3, kick: bool },
+    /// A bow drawn for `drawn_s` seconds, loosed along a direction: an arrow carried flies.
+    Loose { dir: DVec3, drawn_s: f32 },
+    /// A burning brand in hand held up high (or lowered): it lights the way and keeps hungry
+    /// animals off as a fire does.
+    HoldUp(bool),
     /// Creative (Amendment P §3.1): a thing of the inventory taken, placed or summoned at what
     /// is looked at (or before the player). Refused outside Creative.
     Creative { act: CreativeAct, aim: AimAt },

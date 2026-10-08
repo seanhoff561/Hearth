@@ -87,6 +87,33 @@ pub struct Drive {
     pub breaths_per_min: f32,
     /// What the hands are doing with things.
     pub holding: Holding,
+    /// A blow being struck, a bow drawn, a brand held up (E §3.2).
+    pub doing: Option<Doing>,
+}
+
+/// What the arms (or a leg) do beyond holding (E §3.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gesture {
+    Punch,
+    Kick,
+    Thrust,
+    Swing,
+    Slash,
+    Stab,
+    Strike,
+    /// A bow drawn.
+    Draw,
+    /// A brand held up high, waved a little.
+    HoldUp,
+}
+
+/// A gesture under way: the side (the right hand or foot, or the left) and where in it: for a
+/// blow 0–1 drawn back, 1–2 striking, 2–3 recovering; for a bow the share drawn (0–1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Doing {
+    pub gesture: Gesture,
+    pub right: bool,
+    pub phase: f32,
 }
 
 /// What the hands hold: a thing in either hand, a load in both arms, or a drag behind.
@@ -574,9 +601,13 @@ impl Animator {
                     }
                 }
             }
+            if let Some(doing) = d.doing {
+                let twist_deg = gesture(&doing, &mut arms, &mut legs, &mut trunk, self.t);
+                root *= twist(twist_deg);
+            }
         }
         // Cold: arms wrapped around the body, and a tremor.
-        let empty = d.holding == Holding::default();
+        let empty = d.holding == Holding::default() && d.doing.is_none();
         let hug = ((d.shiver - 0.35) / 0.4).clamp(0.0, 1.0)
             * if matches!(activity, Activity::Stand | Activity::Walk) && empty {
                 1.0
@@ -635,6 +666,107 @@ impl Animator {
             None => pose.root_y,
         };
         pose
+    }
+}
+
+/// The arms (or a leg) through a gesture, from the pose they had: drawn back, struck, and
+/// back. Returns the trunk's turn into it (degrees, left positive).
+fn gesture(d: &Doing, arms: &mut [Arm; 2], legs: &mut [Leg; 2], trunk: &mut f32, t: f32) -> f32 {
+    let (me, other) = if d.right { (1, 0) } else { (0, 1) };
+    // Toward the body's other side is a turn left for the right hand.
+    let s = if d.right { 1.0 } else { -1.0 };
+    let p = d.phase.clamp(0.0, 3.0);
+    // From `rest` to the drawn-back key and the struck one, and back.
+    let through = |rest: f32, back: f32, struck: f32| {
+        if p < 1.0 {
+            rest + (back - rest) * smooth(0.0, 1.0, p)
+        } else if p < 2.0 {
+            back + (struck - back) * smooth(0.0, 1.0, p - 1.0)
+        } else {
+            struck + (rest - struck) * smooth(0.0, 1.0, p - 2.0)
+        }
+    };
+    let arm = |a: &mut Arm, back: Arm, struck: Arm| {
+        a.flex = through(a.flex, back.flex, struck.flex);
+        a.abduct = through(a.abduct, back.abduct, struck.abduct);
+        a.elbow = through(a.elbow, back.elbow, struck.elbow);
+    };
+    let key = |flex: f32, abduct: f32, elbow: f32| Arm {
+        flex,
+        abduct,
+        elbow,
+    };
+    match d.gesture {
+        Gesture::Punch => {
+            arm(&mut arms[me], key(35.0, 15.0, 120.0), key(88.0, -8.0, 5.0));
+            s * through(0.0, -8.0, 12.0)
+        }
+        Gesture::Stab => {
+            arm(&mut arms[me], key(30.0, 12.0, 110.0), key(70.0, -5.0, 25.0));
+            s * through(0.0, -6.0, 6.0)
+        }
+        Gesture::Thrust => {
+            arm(&mut arms[me], key(15.0, 10.0, 95.0), key(80.0, -5.0, 10.0));
+            arm(
+                &mut arms[other],
+                key(40.0, -10.0, 70.0),
+                key(70.0, -15.0, 30.0),
+            );
+            *trunk += through(0.0, -3.0, 10.0);
+            s * through(0.0, -10.0, 8.0)
+        }
+        Gesture::Swing => {
+            arm(
+                &mut arms[me],
+                key(120.0, 60.0, 70.0),
+                key(55.0, -35.0, 15.0),
+            );
+            s * through(0.0, -20.0, 25.0)
+        }
+        Gesture::Slash => {
+            arm(&mut arms[me], key(75.0, 50.0, 55.0), key(70.0, -35.0, 20.0));
+            s * through(0.0, -10.0, 15.0)
+        }
+        Gesture::Strike => {
+            arm(&mut arms[me], key(165.0, 10.0, 70.0), key(35.0, 0.0, 15.0));
+            *trunk += through(0.0, -4.0, 12.0);
+            0.0
+        }
+        Gesture::Kick => {
+            // A front kick about the waist: the knee drawn up, then the foot driven out.
+            let l = &mut legs[me];
+            l.hip = through(l.hip, 70.0, 62.0);
+            l.knee = through(l.knee, 100.0, 8.0);
+            l.ankle = through(l.ankle, 10.0, -15.0);
+            let stand = &mut legs[other];
+            stand.knee = through(stand.knee, 12.0, 15.0);
+            *trunk += through(0.0, 0.0, -10.0);
+            // The arms out for balance.
+            for a in arms.iter_mut() {
+                a.abduct = through(a.abduct, 20.0, 28.0);
+            }
+            0.0
+        }
+        Gesture::Draw => {
+            let drawn = d.phase.clamp(0.0, 1.0);
+            // The bow held out before the eyes, the string drawn back to the cheek.
+            let bow = &mut arms[me];
+            bow.flex = 88.0;
+            bow.abduct = 5.0;
+            bow.elbow = 5.0;
+            let string = &mut arms[other];
+            string.flex = 88.0;
+            string.abduct = -15.0;
+            string.elbow = 20.0 + 125.0 * drawn;
+            0.0
+        }
+        Gesture::HoldUp => {
+            let a = &mut arms[me];
+            a.flex = 155.0;
+            a.abduct = 15.0 + 8.0 * (TAU * t * 0.7).sin();
+            a.elbow = 25.0;
+            0.0
+        }
     }
 }
 
