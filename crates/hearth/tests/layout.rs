@@ -149,6 +149,7 @@ fn lay_out(screen: &dyn Fn() -> Screen, size: (f32, f32)) -> Vec<Placed> {
             death: Some(hearth::menus::DeathInfo {
                 words: "You froze to death.".into(),
                 after_death: hearth_save::AfterDeath::TheirsOnly,
+                places: None,
             }),
             inventory: None,
             journal: None,

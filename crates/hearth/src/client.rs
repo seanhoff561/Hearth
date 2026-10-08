@@ -128,6 +128,8 @@ pub struct Client {
     pub globe: GlobePicker,
     /// A new life about a place picked on the globe (Amendment E §6.6), as they will look.
     new_life_place: Option<hearth_character::Appearance>,
+    /// Places suggested for a new life, found on their own thread once the player has died.
+    places: Option<Arc<std::sync::Mutex<Option<Vec<crate::places::Place>>>>>,
     pub camera: Camera,
     pub mode: CameraMode,
     /// The player's body as the server last told it, and the player's movement here.
@@ -369,6 +371,7 @@ impl Client {
             world: None,
             globe: GlobePicker::default(),
             new_life_place: None,
+            places: None,
             camera: Camera {
                 fov_y: options.video.fov,
                 ..Camera::default()
@@ -1754,7 +1757,46 @@ impl Client {
         Some(crate::menus::DeathInfo {
             words: death_words(l, death),
             after_death: self.after_death,
+            places: self
+                .places
+                .as_ref()
+                .and_then(|p| p.lock().ok().and_then(|p| p.clone())),
         })
+    }
+
+    /// Dead, the places suggested for a new life (Amendment E §6.6) are sought on their own
+    /// thread, for the season it is now; alive, they are forgotten.
+    fn find_places(&mut self) {
+        if !self.dead() {
+            self.places = None;
+            return;
+        }
+        if self.places.is_some() {
+            return;
+        }
+        let (Some(w), Some(c)) = (&self.world, &self.crafting) else {
+            return;
+        };
+        let found = Arc::new(std::sync::Mutex::new(None));
+        self.places = Some(found.clone());
+        let (terrain, reg, content) = (w.terrain.clone(), w.reg.clone(), c.content.clone());
+        let when = crate::places::When::YearFrac(self.calendar.at(self.ticks).year_frac);
+        let seed = self.ticks;
+        let spawned = std::thread::Builder::new()
+            .name("places".into())
+            .spawn(move || {
+                let places = hearth_worldgen::WorldGenerator::new(terrain, &reg, &content)
+                    .map(|wg| {
+                        crate::places::Finder::new(Arc::new(wg), content, reg).suggest(when, seed)
+                    })
+                    .unwrap_or_default();
+                if let Ok(mut f) = found.lock() {
+                    *f = Some(places);
+                }
+            });
+        if let Err(e) = spawned {
+            log::warn!("could not look for places: {e}");
+        }
     }
 
     /// Opens or closes the Body panel.
@@ -2479,6 +2521,7 @@ impl Client {
         pad_sensitivity: f32,
     ) {
         self.clock_s += dt;
+        self.find_places();
         if let Some(s) = &mut self.striking {
             s.advance(dt);
             if s.done() {

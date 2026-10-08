@@ -363,6 +363,8 @@ pub struct GlobeContext<'a> {
 pub struct DeathInfo {
     pub words: String,
     pub after_death: hearth_save::AfterDeath,
+    /// Places suggested for a new life (none while they are sought).
+    pub places: Option<Vec<crate::places::Place>>,
 }
 
 /// The open screens, the top one shown.
@@ -1942,6 +1944,28 @@ fn death_screen(
         use crate::client::NewLifeAt;
         if ui.button(c.row(ROW), &ui.t("menu.death.new_life")) {
             out.push(MenuAction::NewLife(NewLifeAt::Home));
+        }
+        // At one of the places suggested for the season now.
+        match &d.places {
+            None => {
+                ui.label(c.x, c.y, &ui.t("menu.death.finding"), theme::DIM);
+                c.space(hearth_ui::font::LINE as f32);
+            }
+            Some(places) => {
+                for p in places {
+                    let words = ui.lang.format(
+                        "menu.death.new_life_at",
+                        &[
+                            ("difficulty", &ui.t(p.difficulty.key())),
+                            ("place", &crate::places::words(ui.lang, &p.name)),
+                        ],
+                    );
+                    if ui.button(c.row(ROW), &words) {
+                        let at = glam::DVec3::new(p.x as f64 + 0.5, 0.0, p.z as f64 + 0.5);
+                        out.push(MenuAction::NewLife(NewLifeAt::Place(at)));
+                    }
+                }
+            }
         }
         if ui.button(c.row(ROW), &ui.t("menu.death.new_life_elsewhere")) {
             out.push(MenuAction::NewLife(NewLifeAt::Globe));
