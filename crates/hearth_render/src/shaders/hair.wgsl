@@ -173,9 +173,10 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     // (coloured, toward the tip); wet hair's sharper and brighter.
     let t1 = normalize(t + n * 0.08);
     let t2 = normalize(t - n * 0.12);
-    let sheen = select(1.0, 0.35, in.kind == 5u || in.kind == 6u);
+    // Short and coiled hair scatters its sheen.
+    let sheen = select(1.0, 0.3, in.kind == 2u || in.kind == 5u || in.kind == 6u);
     let r = fibre(t1, h, mix(90.0, 180.0, wet)) * mix(0.08, 0.2, wet) * sheen;
-    let trt = fibre(t2, h, 24.0) * 0.18;
+    let trt = fibre(t2, h, 24.0) * 0.18 * sheen;
     let spec = vec3<f32>(r) + albedo * trt * 2.0;
     // Light through the hair from behind.
     let through = albedo * pow(clamp(dot(-v, l), 0.0, 1.0), 4.0) * 0.6;

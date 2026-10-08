@@ -17,6 +17,11 @@ struct Body {
     nail: vec4<f32>,
     hair: vec4<f32>,
     palette: array<mat4x4<f32>, 17>,
+    // The skin's state: x wet, y tan, z sunburn, w pallor; then flush, goosebumps.
+    state: vec4<f32>,
+    state2: vec4<f32>,
+    // Per joint: dirt, blood, scar, and how covered (no sun there).
+    marks: array<vec4<f32>, 17>,
 };
 
 @group(0) @binding(0) var<uniform> u: Body;
@@ -35,14 +40,18 @@ struct VsOut {
     @location(1) world: vec3<f32>,
     @location(2) tissue: vec3<f32>,
     @location(3) bind: vec3<f32>,
+    @location(4) marks: vec4<f32>,
+    @location(5) @interpolate(flat) head: f32,
 };
 
 @vertex
 fn vs_main(v: VsIn) -> VsOut {
     var m = mat4x4<f32>(vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0));
+    var marks = vec4<f32>(0.0);
     for (var k = 0u; k < 4u; k++) {
         let j = (v.joints >> (8u * k)) & 255u;
         m += u.palette[j] * v.weights[k];
+        marks += u.marks[j] * v.weights[k];
     }
     let world = (m * vec4<f32>(v.pos, 1.0)).xyz;
     var out: VsOut;
@@ -51,7 +60,25 @@ fn vs_main(v: VsIn) -> VsOut {
     out.world = world;
     out.tissue = v.tissue.xyz;
     out.bind = v.pos;
+    out.marks = marks;
+    out.head = select(0.0, 1.0, (v.joints & 255u) == 4u);
     return out;
+}
+
+fn hash3(p: vec3<f32>) -> f32 {
+    return fract(sin(dot(p, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
+}
+
+// Smooth value noise in the bind pose's frame (moves with the skin).
+fn noise(p: vec3<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let w = f * f * (3.0 - 2.0 * f);
+    let a = mix(mix(hash3(i), hash3(i + vec3<f32>(1.0, 0.0, 0.0)), w.x),
+                mix(hash3(i + vec3<f32>(0.0, 1.0, 0.0)), hash3(i + vec3<f32>(1.0, 1.0, 0.0)), w.x), w.y);
+    let b = mix(mix(hash3(i + vec3<f32>(0.0, 0.0, 1.0)), hash3(i + vec3<f32>(1.0, 0.0, 1.0)), w.x),
+                mix(hash3(i + vec3<f32>(0.0, 1.0, 1.0)), hash3(i + vec3<f32>(1.0, 1.0, 1.0)), w.x), w.y);
+    return mix(a, b, w.z);
 }
 
 fn tonemap(x: vec3<f32>) -> vec3<f32> {
@@ -90,8 +117,37 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let grain = fract(sin(dot(cell, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
     let hairs = in.tissue.z * smoothstep(0.15, 0.6, grain + in.tissue.z * 0.35);
     albedo = mix(albedo, u.hair.rgb * 0.8, clamp(hairs, 0.0, 1.0));
-    let rough = mix(mix(vec2<f32>(0.48, 0.25), vec2<f32>(0.38, 0.18), lips), vec2<f32>(0.25, 0.12), nail);
+    var rough = mix(mix(vec2<f32>(0.48, 0.25), vec2<f32>(0.38, 0.18), lips), vec2<f32>(0.25, 0.12), nail);
     let f0 = mix(0.028, 0.04, nail);
+    // The skin's state (E7 (e)). The sun: tanned and burnt where it reaches.
+    let bare = 1.0 - clamp(in.marks.w, 0.0, 1.0);
+    let skin_only = 1.0 - max(nail, hairs);
+    albedo *= mix(vec3<f32>(1.0), vec3<f32>(0.74, 0.66, 0.58), u.state.y * bare * skin_only);
+    albedo = mix(albedo, albedo * vec3<f32>(1.3, 0.62, 0.55), u.state.z * bare * skin_only);
+    // Pallor (cold, blood lost): paler and greyer, the lips bluish; flush (heat, effort): the
+    // face and chest redden.
+    let grey = dot(albedo, vec3<f32>(0.3, 0.55, 0.15));
+    albedo = mix(albedo, vec3<f32>(grey) * vec3<f32>(1.05, 1.03, 1.08), u.state.w * 0.45);
+    albedo = mix(albedo, albedo * vec3<f32>(0.75, 0.8, 1.15), u.state.w * lips);
+    albedo = mix(albedo, albedo * vec3<f32>(1.18, 0.82, 0.8), u.state2.x * (0.4 + 0.6 * in.head) * skin_only);
+    // Scars: pale, a little shiny lines in a patch of the region.
+    let scar_n = noise(in.bind * 18.0);
+    let line = 1.0 - smoothstep(0.0, 0.06, abs(fract(dot(in.bind, vec3<f32>(31.0, 47.0, 13.0))) - 0.5) - 0.42);
+    let scar = in.marks.z * smoothstep(0.55, 0.7, scar_n) * line;
+    albedo = mix(albedo, albedo * vec3<f32>(1.15, 0.95, 0.95) + vec3<f32>(0.03, 0.02, 0.02), scar);
+    // Dirt: patchy, thicker in its patches.
+    let dabs = noise(in.bind * 22.0) * 0.6 + noise(in.bind * 70.0) * 0.4;
+    let dirt = smoothstep(1.0 - in.marks.x, 1.1 - in.marks.x, dabs) * in.marks.x;
+    albedo = mix(albedo, vec3<f32>(0.11, 0.075, 0.045), clamp(dirt, 0.0, 0.9));
+    rough = mix(rough, vec2<f32>(0.75, 0.6), dirt);
+    // Blood: streaks running down from where it came.
+    let streak = noise(in.bind * vec3<f32>(60.0, 9.0, 60.0));
+    let blood = smoothstep(1.0 - in.marks.y, 1.05 - in.marks.y, streak) * in.marks.y;
+    albedo = mix(albedo, vec3<f32>(0.16, 0.01, 0.008), clamp(blood, 0.0, 0.95));
+    // Wet: darker, and the water's film glossy over it all.
+    let wet = clamp(u.state.x, 0.0, 1.0);
+    albedo *= 1.0 - 0.15 * wet;
+    rough = mix(rough, vec2<f32>(0.16, 0.08), wet);
     // Light under the skin: the terminator wrapped by how far each colour scatters.
     let nl = dot(n, l);
     let wrap = vec3<f32>(0.42, 0.22, 0.16);
@@ -101,7 +157,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ambient = hemi * vec3<f32>(1.05, 0.98, 0.96);
     var lit = albedo * (u.light.rgb * diffuse + ambient) / 3.14159265;
     // Hair over the skin scatters the sheen away.
-    let spec = (0.85 * ggx(n, v, l, rough.x, f0) + 0.15 * ggx(n, v, l, rough.y, f0)) * (1.0 - 0.8 * hairs);
+    // Goosebumps roughen the surface's light a touch.
+    let bumps = 1.0 - u.state2.y * 0.25 * noise(in.bind * 600.0);
+    let spec = (0.85 * ggx(n, v, l, rough.x, f0) + 0.15 * ggx(n, v, l, rough.y, f0)) * (1.0 - 0.8 * hairs) * (1.0 + wet) * bumps;
     lit += u.light.rgb * spec;
     // The sky's sheen at grazing angles.
     let fres = f0 + (1.0 - f0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);

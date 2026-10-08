@@ -254,6 +254,24 @@ pub struct SkinLook {
     pub nail: [f32; 3],
     /// The hair's colour, for the short hair on the skin.
     pub hair: [f32; 3],
+    /// What the body's life has done to the skin.
+    pub state: SkinState,
+}
+
+/// The skin's state as drawn (from the body simulation's `hearth_body::skin`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct SkinState {
+    /// Wet with water, 0–1.
+    pub wet: f32,
+    pub tan: f32,
+    pub sunburn: f32,
+    /// Pale from cold or blood lost, 0–1.
+    pub pallor: f32,
+    /// Flushed from heat or effort, 0–1.
+    pub flush: f32,
+    pub goosebumps: f32,
+    /// Per joint: dirt, blood and scar (0–1 each) and whether clothing covers it from the sun.
+    pub marks: [[f32; 4]; JOINTS],
 }
 
 impl SkinLook {
@@ -271,6 +289,7 @@ impl SkinLook {
             lips,
             nail,
             hair: a.hair_linear(),
+            state: SkinState::default(),
         }
     }
 }
@@ -291,6 +310,9 @@ struct BodyUniform {
     nail: [f32; 4],
     hair: [f32; 4],
     palette: [[[f32; 4]; 4]; JOINTS],
+    state: [f32; 4],
+    state2: [f32; 4],
+    marks: [[f32; 4]; JOINTS],
 }
 
 /// Bodies on their own (the creator's preview and the review), under a preview light.
@@ -536,6 +558,14 @@ impl BodyPreview {
             nail: [look.nail[0], look.nail[1], look.nail[2], 0.0],
             hair: [look.hair[0], look.hair[1], look.hair[2], 0.0],
             palette: person.palette,
+            state: [
+                look.state.wet,
+                look.state.tan,
+                look.state.sunburn,
+                look.state.pallor,
+            ],
+            state2: [look.state.flush, look.state.goosebumps, 0.0, 0.0],
+            marks: look.state.marks,
         };
         ctx.queue
             .write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));

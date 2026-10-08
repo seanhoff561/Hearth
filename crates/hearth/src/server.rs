@@ -490,6 +490,41 @@ fn exposure(
         disturbance: 0.0,
         // Blocks are metres up and down on Earth; a test planet's are taller.
         altitude_m: (pos.y / lw.generator.terrain.vertical_scale() as f64) as f32,
+        uv_index: if covered {
+            0.0
+        } else {
+            uv_index(light.sun_dir.y as f64, w.cloud_cover, pos.y / 1000.0) as f32
+        },
+        ground_dirt: ground_dirt(lw, pos),
+        hands_dirt: 0.0,
+    }
+}
+
+/// The UV index under a sun this high (sine of its elevation), this cloud cover (0–1) and this
+/// many kilometres up: some 12 under a clear overhead sun at sea level, falling with the
+/// elevation's sine to the power 2.4, cut by cloud (about 70 % under full overcast) and rising
+/// some 6 % a kilometre of height.
+pub(crate) fn uv_index(sun_sin: f64, cloud: f64, km: f64) -> f64 {
+    if sun_sin <= 0.0 {
+        return 0.0;
+    }
+    12.5 * sun_sin.powf(2.42) * (1.0 - 0.7 * cloud.clamp(0.0, 1.0)) * (1.0 + 0.06 * km.max(0.0))
+}
+
+/// How dirty the ground underfoot is for bare skin: mud most, soil and sand some, rock, snow,
+/// ice and water not.
+fn ground_dirt(lw: &LocalWorld, feet: DVec3) -> f32 {
+    let below = BlockPos::containing(feet - DVec3::new(0.0, 0.2, 0.0));
+    let Some(s) = lw.map.block(below).filter(|s| !s.is_air()) else {
+        return 0.0;
+    };
+    match lw.reg.block_of(s).def.sound.as_str() {
+        "mud" => 1.0,
+        "soil" => 0.45,
+        "wet_grass" => 0.35,
+        "sand" => 0.25,
+        "grass" | "moss" | "gravel" => 0.15,
+        _ => 0.0,
     }
 }
 

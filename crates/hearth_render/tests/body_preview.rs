@@ -13,7 +13,7 @@ use hearth_character::{
 };
 use hearth_render::GpuContext;
 use hearth_render::body::{
-    BodyPreview, EyeLook, GpuBody, GpuEyes, GpuHair, HairLook, Person, SkinLook,
+    BodyPreview, EyeLook, GpuBody, GpuEyes, GpuHair, HairLook, Person, SkinLook, SkinState,
 };
 use hearth_render::figure::PreviewLight;
 use hearth_render::offscreen::{OFFSCREEN_FORMAT, OffscreenTarget, write_png};
@@ -46,6 +46,15 @@ fn clear(ctx: &GpuContext, view: &wgpu::TextureView) {
     ctx.queue.submit(Some(enc.finish()));
 }
 
+/// Whether a pixel differs from the backdrop's.
+fn differs(c: &[u8], backdrop: &[u8]) -> bool {
+    c.iter()
+        .zip(backdrop)
+        .map(|(a, b)| (*a as i32 - *b as i32).abs())
+        .sum::<i32>()
+        > 24
+}
+
 /// A person ready to draw: skin and hair uploaded, the hair's guides settled in a pose.
 struct Model {
     a: Appearance,
@@ -58,6 +67,7 @@ struct Model {
     motion: EyeMotion,
     /// How closed the lids are (overriding the blinks), for the close-ups.
     blink: Option<f32>,
+    state: SkinState,
 }
 
 impl Model {
@@ -74,6 +84,7 @@ impl Model {
             eye_mesh: eyes(a),
             motion: EyeMotion::new(3),
             blink: None,
+            state: SkinState::default(),
         }
     }
 
@@ -103,7 +114,10 @@ impl Model {
         let person = Person {
             body: &self.body,
             palette,
-            look: SkinLook::of(&self.a),
+            look: SkinLook {
+                state: self.state,
+                ..SkinLook::of(&self.a)
+            },
             hair: Some((
                 &self.hair,
                 HairLook {
@@ -216,7 +230,7 @@ fn sculpted_bodies_stand_and_walk() {
             for y in (row * 720 + 150..row * 720 + 600).step_by(10) {
                 for x in (k * 320 + 100..k * 320 + 220).step_by(10) {
                     let i = ((y * w + x) * 4) as usize;
-                    if px[i] as u32 + px[i + 1] as u32 + px[i + 2] as u32 > 60 {
+                    if differs(&px[i..i + 3], &px[0..3]) {
                         lit += 1;
                     }
                 }
@@ -410,4 +424,105 @@ fn one_head() {
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
     std::fs::create_dir_all(&out).ok();
     write_png(&out.join("hair_one.png"), w, h, &px).expect("png");
+}
+
+#[test]
+fn skin_states() {
+    let Ok(ctx) = GpuContext::headless(false) else {
+        eprintln!("skipped: no GPU adapter");
+        return;
+    };
+    let a = Appearance {
+        skin_tone: 0.15,
+        hair: HairStyle::ShoulderLength,
+        hair_color: HAIR_COLORS[4].1,
+        ..Appearance::default()
+    };
+    let mut model = Model::new(&ctx, &a, 0.006);
+    let joint = |j: Joint| j.index();
+    let mut states = Vec::new();
+    // Plain; wet; muddy legs and hands; sunburnt (but under the loincloth); a long tan;
+    // pale, bleeding from the left forearm, a scar on the right thigh.
+    states.push(SkinState::default());
+    states.push(SkinState {
+        wet: 1.0,
+        ..SkinState::default()
+    });
+    let mut muddy = SkinState::default();
+    for (j, d) in [
+        (Joint::AnkleL, 1.0),
+        (Joint::AnkleR, 1.0),
+        (Joint::KneeL, 0.75),
+        (Joint::KneeR, 0.75),
+        (Joint::WristL, 0.8),
+        (Joint::WristR, 0.8),
+    ] {
+        muddy.marks[joint(j)][0] = d;
+    }
+    states.push(muddy);
+    let mut burnt = SkinState {
+        sunburn: 0.9,
+        ..SkinState::default()
+    };
+    burnt.marks[joint(Joint::Root)][3] = 1.0;
+    states.push(burnt);
+    let mut tanned = SkinState {
+        tan: 0.8,
+        ..SkinState::default()
+    };
+    tanned.marks[joint(Joint::Root)][3] = 1.0;
+    states.push(tanned);
+    let mut hurt = SkinState {
+        pallor: 0.8,
+        goosebumps: 1.0,
+        ..SkinState::default()
+    };
+    hurt.marks[joint(Joint::ElbowL)][1] = 0.9;
+    hurt.marks[joint(Joint::HipR)][2] = 1.0;
+    states.push(hurt);
+    let (w, h) = (1536, 720);
+    let target = OffscreenTarget::new(&ctx, w, h);
+    let mut preview = BodyPreview::new(&ctx, OFFSCREEN_FORMAT);
+    clear(&ctx, &target.color_view);
+    let f = &model.figure;
+    let pose = f.animator.pose(&f.rig, Activity::Stand, &Drive::default());
+    let place = Affine3A::from_rotation_y(0.3);
+    for (k, state) in states.into_iter().enumerate() {
+        model.state = state;
+        let tall = a.height_m;
+        model.draw(
+            &ctx,
+            &mut preview,
+            &target,
+            (w, h),
+            [k as u32 * 256, 0, 256, 720],
+            &pose,
+            place,
+            (
+                Vec3::new(0.0, tall * 0.55, 3.0),
+                Vec3::new(0.0, tall * 0.5, 0.0),
+                36.0,
+            ),
+            Vec3::ZERO,
+        );
+    }
+    let px = target.read_rgba(&ctx);
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
+    std::fs::create_dir_all(&out).ok();
+    let lit = px.chunks(4).filter(|c| differs(&c[..3], &px[0..3])).count();
+    assert!(lit > 50_000, "barely drawn: {lit}");
+    write_png(&out.join("skin_states.png"), w, h, &px).expect("png");
+}
+
+/// The people's shaders compile and their pipelines build (a broken shader otherwise draws
+/// nothing, silently).
+#[test]
+fn shaders_compile() {
+    let Ok(ctx) = GpuContext::headless(false) else {
+        return;
+    };
+    let scope = ctx.device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let _p = BodyPreview::new(&ctx, OFFSCREEN_FORMAT);
+    let err = pollster::block_on(scope.pop());
+    assert!(err.is_none(), "{err:?}");
 }

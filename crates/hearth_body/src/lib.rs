@@ -14,6 +14,7 @@ pub mod altitude;
 pub mod clothing;
 pub mod energy;
 pub mod harm;
+pub mod skin;
 pub mod sleep;
 pub mod thermal;
 pub mod water;
@@ -67,6 +68,12 @@ pub struct Exposure {
     pub disturbance: f32,
     /// Height above the sea (m): the air thins with it.
     pub altitude_m: f32,
+    /// The UV index on bare skin (0 in shade and at night).
+    pub uv_index: f32,
+    /// How dirty the ground underfoot is (0 rock, snow or water – 1 mud).
+    pub ground_dirt: f32,
+    /// How dirty what the hands handle is (0–1; digging soil 1).
+    pub hands_dirt: f32,
 }
 
 impl Exposure {
@@ -85,6 +92,9 @@ impl Exposure {
             local_hour: 12.0,
             disturbance: 0.0,
             altitude_m: 0.0,
+            uv_index: 0.0,
+            ground_dirt: 0.0,
+            hands_dirt: 0.0,
         }
     }
 }
@@ -424,6 +434,9 @@ pub struct Body {
     /// Medicines working: (kind, strength 0–1, real seconds left).
     #[serde(default)]
     pub medicines: Vec<(String, f32, f64)>,
+    /// What the sun, the ground, wounds and healing have done to the skin.
+    #[serde(default)]
+    pub skin: skin::Skin,
     seed: u64,
     draws: u64,
     /// The last step's heat flows (not saved).
@@ -462,6 +475,7 @@ impl Body {
             age_s: 0.0,
             freezing_s: [0.0; 3],
             altitude: altitude::Altitude::default(),
+            skin: skin::Skin::default(),
             seed,
             draws: 0,
             last: Flows::default(),
@@ -561,6 +575,27 @@ impl Body {
             activity.exertion as f64,
             r.fatigue,
             dt,
+        );
+
+        // The skin: sun, dirt, blood, scars.
+        let covered: f64 = clothing::REGIONS
+            .iter()
+            .filter(|&&r| worn.regions[clothing::region_index(r)].clo > 0.05)
+            .map(|&r| clothing::region_area(r))
+            .sum();
+        self.skin.step(
+            dt,
+            &skin::SkinExposure {
+                uv_index: exposure.uv_index,
+                covered: covered as f32,
+                ground_dirt: exposure.ground_dirt,
+                speed_m_s: activity.speed_m_s,
+                hands_dirt: exposure.hands_dirt,
+                crawling: activity.posture == Posture::Lying && !activity.asleep,
+                immersion: exposure.immersion,
+                rain_mm_h: exposure.rain_mm_h,
+            },
+            &self.injuries,
         );
 
         // Height: the thin air, acclimatisation, mountain sickness.
