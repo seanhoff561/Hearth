@@ -273,6 +273,10 @@ pub struct BenchOptions {
     /// Where worlds are cached: `None` the game's cache, `Some(None)` nowhere.
     pub cache: Option<Option<PathBuf>>,
     pub software: bool,
+    /// Measure the near terrain on the CPU only (no rendering).
+    pub terrain_only: bool,
+    /// The graphics preset (default: the game's default, Fancy).
+    pub preset: Option<hearth_core::options::GraphicsPreset>,
     /// Vertical LOD error allowed on screen (pixels; 0: the distance rule alone).
     pub lod_error: f64,
     /// Rendered size relative to the output (FSR 1 upscaling below 1).
@@ -300,6 +304,8 @@ impl Default for BenchOptions {
             gate: 5.0,
             cache: None,
             software: false,
+            terrain_only: false,
+            preset: None,
             lod_error: VideoOptions::default().lod_error_px(),
             render_scale: VideoOptions::default().render_scale,
             water: None,
@@ -339,7 +345,14 @@ OPTIONS:
     --render-scale S             Render at S times the size (0.5-2, default 1): upscaled
                                  with FSR 1 below 1, filtered down above
     --water low|medium|high      Water shading quality (default: the preset's, medium)
-    --software                   Use the software adapter";
+    --software                   Use the software adapter
+    --preset fast|fancy|fabulous The graphics preset (default fancy; low and high name fast
+                                 and fabulous, Amendment S's Low and High)
+    --terrain-only               No rendering: load and mesh each scene's near terrain and
+                                 report what needs no GPU (meshing speed on all threads and on
+                                 one, triangles, mesh and cube memory per surface cube, cube
+                                 payload size, the size of an edit); Amendment S's Baseline-S
+                                 on a machine without a graphics card";
 
 impl BenchOptions {
     pub fn parse(args: &[String]) -> anyhow::Result<Self> {
@@ -387,6 +400,16 @@ impl BenchOptions {
                 "--cache" => o.cache = Some(path(val()?)),
                 "--gate" => o.gate = val()?.parse()?,
                 "--software" => o.software = true,
+                "--terrain-only" => o.terrain_only = true,
+                "--preset" => {
+                    use hearth_core::options::GraphicsPreset;
+                    o.preset = Some(match val()?.as_str() {
+                        "fast" | "low" => GraphicsPreset::Fast,
+                        "fancy" | "medium" => GraphicsPreset::Fancy,
+                        "fabulous" | "high" => GraphicsPreset::Fabulous,
+                        other => anyhow::bail!("--preset fast|fancy|fabulous, not {other:?}"),
+                    });
+                }
                 "--lod-error" => o.lod_error = val()?.parse::<f64>()?.max(0.0),
                 "--render-scale" => o.render_scale = val()?.parse::<f32>()?.clamp(0.5, 2.0),
                 "--water" => {
@@ -415,6 +438,11 @@ pub struct SceneResult {
     /// Average frame rate of the slowest 1 % of frames.
     pub low1_fps: f64,
     pub p99_ms: f64,
+    /// The median frame and the slowest (ms).
+    #[serde(default)]
+    pub p50_ms: f64,
+    #[serde(default)]
+    pub worst_ms: f64,
     pub frame_ms: f64,
     /// GPU time per pass (ms), in frame order, and in total.
     pub gpu_passes: Vec<(String, f64)>,
@@ -482,7 +510,11 @@ pub fn run(args: &[String], cache_dir: Option<&Path>) -> i32 {
             Some(c) => c.as_deref(),
             None => cache_dir,
         };
-        run_with(&opts, cache)
+        if opts.terrain_only {
+            terrain_only(&opts, cache)
+        } else {
+            run_with(&opts, cache)
+        }
     };
     match result {
         Ok(true) => 0,
@@ -497,7 +529,7 @@ pub fn run(args: &[String], cache_dir: Option<&Path>) -> i32 {
 /// Runs the scenes; `Ok(false)` when the regression gate failed.
 pub fn run_with(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result<bool> {
     let ctx = GpuContext::headless(opts.software)?;
-    let video = VideoOptions::default();
+    let video = video_options(opts);
     log::info!(
         "benchmark on {} ({:?}), {}x{}, preset {:?}: render distance {}, LOD {}",
         ctx.info.name,
@@ -579,6 +611,200 @@ pub fn run_with(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result
         std::slice::from_ref(&run),
         opts.gate,
     ))
+}
+
+/// The near terrain of one scene, measured on the CPU.
+struct TerrainResult {
+    name: &'static str,
+    cubes: usize,
+    surface: usize,
+    /// All cubes meshed per second on all threads (best of three), and surface cubes.
+    cubes_per_s: f64,
+    surface_per_s: f64,
+    /// One surface cube re-meshed on one thread (what an edit waits for), milliseconds.
+    one_ms: f64,
+    triangles: usize,
+    mesh_bytes: f64,
+    /// Cube memory (blocks and light), per surface cube and per cube.
+    cube_bytes: f64,
+    cube_bytes_all: f64,
+    /// A surface cube serialized (what the server sends after an edit and a region file
+    /// keeps), raw and zstd-compressed.
+    payload_raw: f64,
+    payload_zstd: f64,
+}
+
+/// Amendment S's Baseline-S where there is no GPU: each scene's near terrain loaded and meshed as
+/// the game does it, measured.
+fn terrain_only(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result<bool> {
+    use hearth_render::mesh::{MeshInput, Mesher};
+    let video = video_options(opts);
+    let rd = video.render_distance as i32;
+    let mut worlds: FxHashMap<u64, LocalWorld> = FxHashMap::default();
+    let mut assets: Option<BlockModels> = None;
+    let mut rows = Vec::new();
+    for name in &opts.scenes {
+        let def = SCENES
+            .iter()
+            .find(|d| d.name == name)
+            .ok_or_else(|| anyhow::anyhow!("unknown scene {name}"))?;
+        let lw = match worlds.entry(def.seed) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(e) => e.insert(LocalWorld::create(
+                def.seed,
+                PlanetSize::Standard,
+                0,
+                cache_dir,
+            )?),
+        };
+        let models = assets.get_or_insert_with(|| {
+            let entries = hearth_texgen::textures_for(Some(&lw.content));
+            BlockModels::build(&lw.reg, &TextureArray::from_entries(&entries))
+        });
+        lw.map = hearth_world::CubeMap::new(*lw.map.planet());
+        let positions = match def.path {
+            CameraPath::Keys(keys) => {
+                let path = resolve_keys(lw, keys);
+                load_along(lw, &path, rd, def.year_frac)
+            }
+            CameraPath::Cave { x, z } => {
+                let (cx, cz) = dry_ground(lw, (x.floor() as i32, z.floor() as i32));
+                let top = lw.surface_y(cx as f64, cz as f64);
+                let centre = DVec3::new(cx as f64, top - CAVE_DEPTH as f64, cz as f64);
+                lw.load_area(centre, rd + 4, 2, Some(def.year_frac))
+            }
+        };
+        let mut best = f64::INFINITY;
+        let mut meshes = Vec::new();
+        for _ in 0..3 {
+            let t = Instant::now();
+            meshes = lw.mesh(models, &positions, MeshOptions::default());
+            best = best.min(t.elapsed().as_secs_f64());
+        }
+        let surface: Vec<(hearth_math::CubePos, &hearth_render::mesh::CubeMesh)> = positions
+            .iter()
+            .copied()
+            .zip(&meshes)
+            .filter(|(_, m)| !m.is_empty())
+            .collect();
+        let n = surface.len().max(1) as f64;
+        let mesher = Mesher {
+            reg: &lw.reg,
+            models,
+            opts: MeshOptions::default(),
+        };
+        let sample: Vec<hearth_math::CubePos> = surface.iter().take(400).map(|s| s.0).collect();
+        let t = Instant::now();
+        for p in &sample {
+            std::hint::black_box(mesher.mesh(&MeshInput::gather(
+                &lw.map,
+                *p,
+                lw.tints(p.column()),
+            )));
+        }
+        let one_ms = t.elapsed().as_secs_f64() * 1e3 / sample.len().max(1) as f64;
+        let cube_size = std::mem::size_of::<hearth_world::Cube>();
+        let cube_bytes =
+            |p: &hearth_math::CubePos| lw.map.cube(*p).map_or(0, |c| c.heap_bytes() + cube_size);
+        let (mut raw, mut packed) = (0usize, 0usize);
+        for (p, _) in &surface {
+            if let Some(c) = lw.map.cube(*p) {
+                let mut bytes = Vec::new();
+                c.write_bytes(&mut bytes);
+                raw += bytes.len();
+                packed += zstd::bulk::compress(&bytes, 3).map_or(bytes.len(), |z| z.len());
+            }
+        }
+        let row = TerrainResult {
+            name: def.name,
+            cubes: positions.len(),
+            surface: surface.len(),
+            cubes_per_s: positions.len() as f64 / best.max(1e-9),
+            surface_per_s: surface.len() as f64 / best.max(1e-9),
+            one_ms,
+            triangles: meshes
+                .iter()
+                .map(|m| 2 * (m.quads.len() + m.models.len() + m.translucent.len()))
+                .sum(),
+            mesh_bytes: surface.iter().map(|s| s.1.gpu_bytes()).sum::<usize>() as f64 / n,
+            cube_bytes: surface.iter().map(|s| cube_bytes(&s.0)).sum::<usize>() as f64 / n,
+            cube_bytes_all: positions.iter().map(cube_bytes).sum::<usize>() as f64
+                / positions.len().max(1) as f64,
+            payload_raw: raw as f64 / n,
+            payload_zstd: packed as f64 / n,
+        };
+        log::info!(
+            "{}: {} cubes ({} with a surface) meshed at {:.0}/s on {} threads, {:.2} ms a surface cube on one",
+            row.name,
+            row.cubes,
+            row.surface,
+            row.cubes_per_s,
+            rayon::current_num_threads(),
+            row.one_ms
+        );
+        rows.push(row);
+    }
+    // An edit as saved today: one dug block in `blocks.json`.
+    let edit = crate::edits::EditsSave {
+        blocks: vec![(BlockPos::new(11_660, 87, -9_460), "hearth:air".into())],
+    };
+    let edit_json = serde_json::to_string(&edit)?.len()
+        - serde_json::to_string(&crate::edits::EditsSave::default())?.len();
+    let mut text = String::new();
+    let _ = writeln!(
+        text,
+        "\n## {} — near terrain on the CPU (`hearth bench --terrain-only`), commit {}, {} threads, preset {:?}\n",
+        if opts.label.is_empty() {
+            "Baseline-S"
+        } else {
+            opts.label.as_str()
+        },
+        git_commit(),
+        rayon::current_num_threads(),
+        video.graphics
+    );
+    let _ = writeln!(
+        text,
+        "| Scene | Cubes loaded | With a surface | Cubes meshed/s | Surface cubes/s | One surface cube, 1 thread (ms) | Triangles | Mesh bytes per surface cube | Cube memory per surface cube | per cube | Surface cube serialized (raw / zstd) |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+    );
+    for r in &rows {
+        let _ = writeln!(
+            text,
+            "| {} | {} | {} | {:.0} | {:.0} | {:.2} | {} | {:.0} | {:.0} | {:.0} | {:.0} / {:.0} |",
+            r.name,
+            r.cubes,
+            r.surface,
+            r.cubes_per_s,
+            r.surface_per_s,
+            r.one_ms,
+            r.triangles,
+            r.mesh_bytes,
+            r.cube_bytes,
+            r.cube_bytes_all,
+            r.payload_raw,
+            r.payload_zstd
+        );
+    }
+    let _ = writeln!(
+        text,
+        "\nAn edit today: the dug block adds {edit_json} bytes to `blocks.json` (generated terrain \
+         is never saved: an explored, unedited area costs nothing), and the server sends the whole \
+         changed cube to the client (the serialized size above)."
+    );
+    println!("{text}");
+    if let Some(path) = &opts.report {
+        append_report(path, &text)?;
+    }
+    Ok(true)
+}
+
+/// The game's default video options with the chosen preset.
+fn video_options(opts: &BenchOptions) -> VideoOptions {
+    let mut video = VideoOptions::default();
+    if let Some(p) = opts.preset {
+        video.apply_preset(p);
+    }
+    video
 }
 
 fn git_commit() -> String {
@@ -1341,6 +1567,8 @@ impl Sums {
                 0.0
             },
             p99_ms: p99,
+            p50_ms: median,
+            worst_ms: frame_ms.last().copied().unwrap_or(0.0),
             spikes,
             frame_ms: total / count as f64,
             gpu_passes: self
@@ -1673,9 +1901,12 @@ fn report(run: &BenchRun) -> String {
     let _ = writeln!(s);
     let _ = writeln!(
         s,
-        "| Scene | Avg FPS | 1% low FPS | p99 ms | GPU ms | CPU ms | Draws | Triangles | VRAM MiB | Upload KiB/frame (max) | Allocs/frame (max) |"
+        "| Scene | Avg FPS | 1% low FPS | p50 ms | p99 ms | Worst ms | GPU ms | CPU ms | Draws | Triangles | VRAM MiB | Upload KiB/frame (max) | Allocs/frame (max) |"
     );
-    let _ = writeln!(s, "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+    let _ = writeln!(
+        s,
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+    );
     for r in &run.scenes {
         let cpu: f64 = r
             .cpu
@@ -1685,11 +1916,13 @@ fn report(run: &BenchRun) -> String {
             .sum();
         let _ = writeln!(
             s,
-            "| {} | {:.1} | {:.1} | {:.2} | {:.2} | {:.2} | {:.0} | {:.2} M | {} | {:.1} ({:.0}) | {:.1} ({}) |",
+            "| {} | {:.1} | {:.1} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.0} | {:.2} M | {} | {:.1} ({:.0}) | {:.1} ({}) |",
             r.name,
             r.avg_fps,
             r.low1_fps,
+            r.p50_ms,
             r.p99_ms,
+            r.worst_ms,
             r.gpu_ms,
             cpu,
             r.draws,

@@ -35,6 +35,7 @@ hearth_people = { path = "crates/hearth_people" }
 hearth_ai = { path = "crates/hearth_ai" }
 hearth_render = { path = "crates/hearth_render" }
 hearth_lod = { path = "crates/hearth_lod" }
+hearth_smooth = { path = "crates/hearth_smooth" }
 
 # --- external crates (versions checked with `cargo search` on 2026-09-30) ---
 anyhow = "1.0.104"

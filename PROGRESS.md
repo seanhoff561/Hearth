@@ -663,6 +663,15 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H9 — Observer mode and the player in society (2026-10-06)
 - [x] H10 — Optional conversation backend (2026-10-07)
 - [ ] V2-12 — Neolithic
+- [x] S0 — Baseline and prototype (2026-10-07; D222)
+- [ ] S1 — Fill data and editing core
+- [ ] S2 — Smooth terrain rendering
+- [ ] S3 — Movement, collision and navigation
+- [ ] S4 — Distant terrain
+- [ ] S5 — Trees and foliage
+- [ ] S6 — Bodies and objects
+- [ ] S7 — Water, snow, ice, caves and built-piece polish
+- [ ] S8 — Performance and cohesion pass
 - [ ] H11 — Neolithic society
 - [ ] V2-13 — Metallurgy & mining
 - [ ] H12 — Bronze Age society
@@ -670,6 +679,21 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [ ] H13 — Iron Age / Classical society
 - [ ] V2-15 — World creation & menus
 - [ ] V2-16 — Long-run balance, performance & cohesion QA
+
+## Smooth World Status
+Amendment S (`docs/spec/amendment-s-smooth-world.md`): each S milestone and its targets (S §12.2)
+met or not. Kept with `MIGRATION_SMOOTH.md`, Baseline-S and the latest numbers in
+`BENCHMARKS.md`, and `docs/review/smooth-world.md`.
+
+| Milestone | State | Targets (S §12.2) |
+|---|---|---|
+| S0 — Baseline and prototype | done 2026-10-07 (D222: Surface Nets with sharp features; biplanar shading with height blending) | Baseline-S's CPU half recorded; its GPU half (High and Low at 1440p, `scripts/baseline-s.sh`) needs the owner's PC. The prototype mesher: 3,553 surface cubes a second on one thread (S asks 2,000 on eight cores) |
+| S1 — Fill data and editing core | planned | memory and saves ≤ 1.5 × Baseline-S |
+| S2 — Smooth terrain rendering | planned | frame time (p50 +10 %, p99 +15 % at High; Low at or better), meshing, VRAM |
+| S3 — Movement, collision and navigation | planned | 300 animals and 150 people within budget |
+| S4 — Distant terrain | planned | v1 §8.4's LOD targets |
+| S5–S7 | planned | the forest and vista scenes' frame times |
+| S8 — Performance and cohesion pass | planned | every target met or recorded for the owner |
 
 ## Humans Status
 What of V2.1's people is implemented (used by the simulation) and what is planned (data or
@@ -1302,6 +1326,41 @@ V2-12 — Neolithic (PLAN.md, v2 Era 3; `docs/design/neolithic.md`; D217–D221)
   50 % → 2 %, 0.03 → 0.105 kg a square metre); a herder's mouflon line becomes docile and woolly
   (`tests/acceptance_v2_12_herd.rs`); under-fired pottery fails (`tests/pottery.rs`); the
   screenshots (`tools/shots/v212_neolithic.shots`).
+
+S0 — Baseline and prototype (Amendment S, `docs/spec/amendment-s-smooth-world.md`; PLAN.md;
+`docs/design/smooth-terrain.md`; D222), done 2026-10-07:
+- [x] `MIGRATION_SMOOTH.md`: every subsystem the smooth world touches, Keep / Modify / Replace,
+  with the S milestone that changes it; `docs/design/art-direction.md`: stylized realism, its
+  references by description, palette, material families with their sharpness, scale and
+  detail by distance, the checks a screenshot must pass.
+- [x] `hearth_smooth`: the fill (a voxel's signed distance to the surface, ±1.5 voxels in a
+  byte, 1.2 cm steps) and three dual meshers — Surface Nets, Surface Nets with sharp features,
+  Dual Contouring — with the feature solve (`qef`) and crease-keeping gradients. Meshed in
+  cubes with a two-sample apron, every vertex computed in its own cell's coordinates, they meet
+  bit for bit: `tests/meshing.rs` meshes a rough field and four random ones whole and in 27
+  cubes and finds the same triangles and vertices for all three; a sphere closed and true, a
+  tilted plane flat, determinism, weights summing to one heaviest first, rock keeping its crest
+  and sand rounding it.
+- [x] `bench smooth`: the eight test scenes as fill fields (rolling hills, sea cliffs, a cave, a
+  dune field, a riverbank, a talus slope, a dug pit and its spoil, a mountain ridge), meshed,
+  measured and rendered on the CPU against the blocky grid (`docs/review/s0/`), and the shading
+  prototype on turf and limestone.
+- [x] The decision (D222): Surface Nets with sharp features — sand, soil and snow soft,
+  limestone and granite crisp, features narrower than the grid soft grooves instead of teeth;
+  3,553 surface cubes a second on one thread (S §12.2 asks 2,000 on eight cores), 1.45 cm mean
+  error, 2.4° normal error, 61 folded triangles across the scenes (Dual Contouring 542, Surface
+  Nets 2.50 cm and melted rock). Shading: biplanar mapping with height blending (triplanar's
+  third sample changed the image by 0.56 of 255).
+- [x] Baseline-S (`BENCHMARKS.md`): today's near terrain on the CPU (`hearth bench
+  --terrain-only`: 0.28–0.77 ms to mesh a surface cube on one thread; 8.5–43 KB of mesh and
+  2–5.6 KB of memory a surface cube; an edit 43 bytes saved and a whole cube re-sent), the
+  prototypes' numbers, and today's look (`tools/shots/s0_baseline.shots`,
+  `docs/review/s0/baseline-*.jpg`, `docs/review/smooth-world.md`). `hearth bench` takes
+  `--preset` and reports the median and worst frames, for the GPU half.
+  Known from S0: the GPU half of Baseline-S (High and Low at 1440p) waits for the owner's PC
+  (`scripts/baseline-s.sh`); cut soil's edges round under soil's sharpness (an edit's faces may
+  get a sharpness that weathers, S1); on a huge planet a high view can overflow the distant
+  terrain's quad arena (the alpine baseline shot, 10.6 M quads against 8.4 M; S4).
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in

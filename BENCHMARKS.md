@@ -608,3 +608,75 @@ the forest the near terrain pass went from 0.48 to 0.60 ms and the distant terra
 a limb's faces toward foliage; a limb's end inside another), recovering about 6 %. The gate
 failed and the cost is accepted as the content's (D79); the cave's lows are one run's 43 ms
 stall in submit with the GPU time unchanged. The baseline moves to the end of V2-6.
+
+## Baseline-S (Amendment S §12.1) — commit 024fcef plus S0's tools, the cloud machine (4-core Xeon at 2.1 GHz, no GPU)
+
+Before the smooth world: what the terrain costs today, measured where it can be. This machine
+renders only on a software device (llvmpipe), whose frame times say nothing (D190), so the GPU
+half of Baseline-S (High and Low presets at 1440p: frame time p50, p99 and worst, GPU time per
+pass, triangles and draws, VRAM) is taken on the owner's PC with `scripts/baseline-s.sh` at the
+same commit and appended here; until then the last GPU numbers on record (the end of V2-6 above,
+RTX 4060 Laptop GPU, 1080p, Fancy) stand. Two of the four cores were busy with long tests, so
+the threaded figures are on two threads. Today's look is kept as screenshots of
+`tools/shots/s0_baseline.shots`.
+
+**The near terrain today** (`hearth bench --terrain-only`): every scene's cubes loaded and meshed
+as the game does (greedy quads, models, light and AO), best of three; one surface cube re-meshed
+on one thread is what an edit waits for. Memory is a cube's blocks and light; the payload is a
+surface cube serialized (what the server sends after an edit and a region file keeps).
+
+| Scene | Cubes loaded | With a surface | Cubes meshed/s | Surface cubes/s | One surface cube, 1 thread (ms) | Triangles | Mesh bytes per surface cube | Cube memory per surface cube | per cube | Surface cube serialized (raw / zstd) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| lowland_forest | 21294 | 2740 | 12752 | 1641 | 0.52 | 5582684 | 43186 | 5563 | 805 | 5483 / 551 |
+| peak_lod512 | 14375 | 1633 | 12507 | 1421 | 0.38 | 2751210 | 33804 | 5332 | 689 | 5252 / 526 |
+| peak_lod1024 | 14375 | 1633 | 13374 | 1519 | 0.42 | 2751210 | 33804 | 5332 | 689 | 5252 / 526 |
+| coast_sunset | 64925 | 4314 | 11991 | 797 | 0.29 | 2378744 | 8867 | 2015 | 280 | 1935 / 164 |
+| underwater | 57717 | 3895 | 11657 | 787 | 0.28 | 2144840 | 8540 | 2009 | 289 | 1929 / 164 |
+| cave_torches | 17298 | 1616 | 13986 | 1307 | 0.28 | 1488062 | 20305 | 4449 | 496 | 4369 / 344 |
+| thunderstorm | 21294 | 2740 | 13970 | 1798 | 0.43 | 5582684 | 43186 | 5563 | 805 | 5483 / 551 |
+| flythrough | 183618 | 21495 | 11233 | 1315 | 0.77 | 45908062 | 43434 | 5551 | 734 | 5471 / 572 |
+
+An edit today adds 43 bytes to `blocks.json` (generated terrain is never saved: an explored,
+unedited area costs nothing) and the server re-sends the whole changed cube (the payload above).
+
+**S0's smooth-mesher prototypes** (`bench smooth`; D222, `docs/design/smooth-terrain.md`, sheets in
+`docs/review/s0/`), eight analytic scenes of 96 × 80 × 96 m, meshed whole on one thread and in
+16³ cubes with a 2-voxel apron on two threads and on one; bytes at S2's compact layout (24 B a
+vertex, 2 B an index):
+
+| Method | Triangles (all scenes) | Surface cubes/s (2 threads) | per thread | Distance error mean cm | Face normal error mean ° | Non-manifold | Folded | Holes | Bytes per surface cube |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Surface Nets | 216752 | 10747 | 5764 | 2.50 | 3.0 | 21 | 28 | 0 | 9136 |
+| Surface Nets, sharp features | 216752 | 6200 | 3553 | 1.45 | 2.4 | 21 | 61 | 0 | 9136 |
+| Dual Contouring | 216752 | 6698 | 3136 | 1.41 | 3.0 | 21 | 542 | 0 | 9136 |
+
+| Scene | Method | Vertices | Triangles | Whole scene ms (1 thread) | Surface cubes/s (2 threads) | per thread | Distance error mean / p99 cm | Face normal error mean / p95 ° | Vertex normal error mean ° | Non-manifold edges | Folded | Holes | Bytes per surface cube |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| rolling_hills | Surface Nets | 13876 | 27298 | 28.3 | 9611 | 5965 | 5.64 / 37.74 | 6.5 / 23.8 | 5.7 | 10 | 14 | 0 | 8624 |
+| rolling_hills | Surface Nets, sharp features | 13876 | 27298 | 25.5 | 6772 | 3546 | 2.77 / 24.57 | 4.9 / 19.5 | 5.5 | 10 | 22 | 0 | 8624 |
+| rolling_hills | Dual Contouring | 13876 | 27298 | 26.9 | 5817 | 3584 | 3.02 / 33.43 | 7.2 / 32.3 | 5.3 | 10 | 232 | 0 | 8624 |
+| sea_cliffs | Surface Nets | 15595 | 30692 | 14.2 | 9253 | 5333 | 4.99 / 102.54 | 6.1 / 41.1 | 5.5 | 1 | 2 | 0 | 10362 |
+| sea_cliffs | Surface Nets, sharp features | 15595 | 30692 | 20.2 | 4004 | 2734 | 3.37 / 74.75 | 5.5 / 37.0 | 5.3 | 1 | 19 | 0 | 10362 |
+| sea_cliffs | Dual Contouring | 15595 | 30692 | 18.1 | 5796 | 2069 | 2.63 / 50.90 | 6.1 / 42.6 | 5.3 | 1 | 212 | 0 | 10362 |
+| cave | Surface Nets | 15026 | 29644 | 16.2 | 10057 | 5404 | 1.85 / 12.35 | 1.5 / 5.2 | 1.1 | 4 | 4 | 0 | 10722 |
+| cave | Surface Nets, sharp features | 15026 | 29644 | 26.3 | 5838 | 3434 | 0.80 / 6.75 | 1.3 / 4.8 | 1.1 | 4 | 7 | 0 | 10722 |
+| cave | Dual Contouring | 15026 | 29644 | 22.3 | 5518 | 3652 | 0.91 / 9.08 | 1.7 / 6.4 | 1.1 | 4 | 17 | 0 | 10722 |
+| dune_field | Surface Nets | 12976 | 25494 | 11.8 | 14329 | 7500 | 1.04 / 15.93 | 1.2 / 7.4 | 1.2 | 1 | 2 | 0 | 7256 |
+| dune_field | Surface Nets, sharp features | 12976 | 25494 | 15.7 | 8521 | 4570 | 0.58 / 11.26 | 0.9 / 5.9 | 1.2 | 1 | 2 | 0 | 7256 |
+| dune_field | Dual Contouring | 12976 | 25494 | 15.9 | 10007 | 4846 | 0.47 / 4.31 | 1.1 / 3.9 | 1.0 | 1 | 14 | 0 | 7256 |
+| riverbank | Surface Nets | 10927 | 21448 | 10.9 | 11933 | 6163 | 1.19 / 17.61 | 1.2 / 5.4 | 1.1 | 0 | 0 | 0 | 8315 |
+| riverbank | Surface Nets, sharp features | 10927 | 21448 | 14.4 | 8118 | 4100 | 0.65 / 10.49 | 1.0 / 4.4 | 1.1 | 0 | 0 | 0 | 8315 |
+| riverbank | Dual Contouring | 10927 | 21448 | 14.2 | 7630 | 2837 | 0.73 / 10.12 | 1.4 / 5.6 | 1.2 | 0 | 15 | 0 | 8315 |
+| talus_slope | Surface Nets | 14594 | 28728 | 14.4 | 11006 | 5412 | 2.28 / 26.81 | 3.3 / 11.8 | 2.9 | 2 | 2 | 0 | 9110 |
+| talus_slope | Surface Nets, sharp features | 14594 | 28728 | 18.7 | 6363 | 3772 | 1.61 / 10.21 | 2.4 / 8.2 | 2.8 | 2 | 6 | 0 | 9110 |
+| talus_slope | Dual Contouring | 14594 | 28728 | 18.2 | 6734 | 2498 | 1.64 / 8.36 | 2.6 / 8.2 | 2.7 | 2 | 24 | 0 | 9110 |
+| dug_pit | Surface Nets | 9489 | 18592 | 14.4 | 9452 | 4747 | 0.39 / 7.58 | 0.4 / 0.2 | 0.4 | 0 | 0 | 0 | 9573 |
+| dug_pit | Surface Nets, sharp features | 9489 | 18592 | 18.3 | 5256 | 3436 | 0.25 / 4.05 | 0.3 / 0.2 | 0.4 | 0 | 0 | 0 | 9573 |
+| dug_pit | Dual Contouring | 9489 | 18592 | 13.3 | 6350 | 3563 | 0.22 / 2.14 | 0.3 / 0.3 | 0.4 | 0 | 5 | 0 | 9573 |
+| mountain_ridge | Surface Nets | 17690 | 34856 | 19.6 | 11011 | 5672 | 2.67 / 15.17 | 3.4 / 9.8 | 3.1 | 3 | 4 | 0 | 9613 |
+| mountain_ridge | Surface Nets, sharp features | 17690 | 34856 | 23.0 | 6565 | 3306 | 1.56 / 9.65 | 2.8 / 8.2 | 3.0 | 3 | 5 | 0 | 9613 |
+| mountain_ridge | Dual Contouring | 17690 | 34856 | 35.3 | 6939 | 3445 | 1.64 / 9.44 | 3.1 / 8.6 | 2.9 | 3 | 23 | 0 | 9613 |
+
+Shading prototype (turf and limestone on the rolling hills, height blending): biplanar mapping
+takes 3.05 texture samples a pixel, triplanar 4.57; their images differ by 0.56 levels of 255 on
+average, 2 % of pixels by more than 4.

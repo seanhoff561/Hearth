@@ -2,7 +2,9 @@
 
 The game follows `docs/spec/v2-direction-change.md` (v2), which overrides the original build
 spec `docs/spec/v1-build-prompt.md` (v1) where they conflict. `MIGRATION.md` maps every v1
-milestone and subsystem to its fate. Since 2026-10-03 the amendment
+milestone and subsystem to its fate. Since 2026-10-07 Amendment S
+(`docs/spec/amendment-s-smooth-world.md`) makes natural terrain, trees, bodies and items smooth on
+the same voxel grid, as milestones S0–S8 after V2-12 (`MIGRATION_SMOOTH.md`). Since 2026-10-03 the amendment
 `docs/spec/v2.1-realistic-humans.md` (V2.1, with its Addenda: A, the player is born; B, births
 in multiplayer and life after death) replaces
 v2 §8.4 and §17 and milestone V2-11 with milestones H0–H13 (simulated people, from genes to
@@ -277,6 +279,78 @@ content lint, the performance gate, `PROGRESS.md` with its **Humans Status** tab
 - *Accept:* a bot domesticates a grain and sees yields rise; a sheep lineage becomes docile and
   woolly; under-fired pottery fails.
 
+## Amendment S — Smooth voxel world (S0–S8)
+Amendment S (`docs/spec/amendment-s-smooth-world.md`, 2026-10-07) makes natural terrain smooth
+on the same 1 m voxel grid (a fill value per voxel), leaves real foliage, trees real trunks, and
+bodies and items smooth forms; every simulation system stays on the grid. It is engine work
+inserted here, after V2-12 and before the remaining H milestones (S §0.2); Amendment R stays last.
+`MIGRATION_SMOOTH.md` maps each subsystem to Keep / Modify / Replace; Baseline-S and the latest
+numbers live in `BENCHMARKS.md`; `docs/review/smooth-world.md` is the visual review. Each S
+milestone: implement, design docs and data, tests, `scripts/check.sh`, `hearth content lint`,
+the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
+
+## S0 — Baseline and prototype
+- `MIGRATION_SMOOTH.md`; Baseline-S benchmarks and screenshots (S §12.1); the mesher prototypes
+  (Surface Nets, Surface Nets with sharp features, Dual Contouring) on the test scenes (rolling
+  hills, sea cliffs, a cave, a dune field, a riverbank, a talus slope, a dug pit with its spoil,
+  a mountain ridge; S §3.1); a material-blending and biplanar-shading prototype on two
+  materials; `docs/design/art-direction.md` (S §1.1).
+- *Accept:* `DECISIONS.md` has the algorithm choice with screenshots and numbers; Baseline-S
+  recorded.
+
+## S1 — Fill data and editing core
+- Fill values in cubes and generation (S §2), material properties (sharpness, angle of repose,
+  friction, slump, walk sound, surface recipe), saves and migration, network delta format,
+  raycast with sub-voxel hits, mass-conserving dig and place brushes, settling (S §8.3–8.4).
+- *Accept:* S §13 data and editing tests pass; a dug pit and spoil pile settle realistically in
+  a headless test.
+
+## S2 — Smooth terrain rendering
+- The production mesher (S §3.2), compact vertices, mid-range simplification, material blending,
+  procedural PBR materials and compression (S §4.2), biplanar shading with height blending and
+  anti-tiling, shader overlays (wetness, snow, moss, litter, scorch), sub-metre stratigraphy,
+  voxel AO and trilinear light, material packs.
+- *Accept:* S §13 meshing tests; the screenshot suite shows smooth terrain everywhere; frame
+  targets met for terrain-only scenes.
+
+## S3 — Movement, collision and navigation
+- Field-based capsule collision on server and client, slope walking, sliding and footing,
+  footsteps and footprints on smooth ground, the nav grid rebuilt for animals and humans,
+  built-piece skirts and Level ground (S §6, §8).
+- *Accept:* S §13 collision and movement tests; animals and humans path well over hills, scree
+  and riverbanks; budgets met.
+
+## S4 — Distant terrain
+- Fixed-point LOD heights, smooth LOD meshing, matched shading and overlays, canopy shapes in
+  LOD (S §5).
+- *Accept:* no visible seam or color jump at the near/far transition in the screenshot suite;
+  v1 §8.4 targets still pass.
+
+## S5 — Trees and foliage
+- Smooth trunks and branches, felling rigid bodies and log meshes, leaf clusters with
+  translucency and wind, foliage occupancy and dappled light, seasons, the foliage LOD chain
+  with impostors, ground cover seated and bendable (S §7).
+- *Accept:* each species' silhouette screenshot set at three ages and four seasons; forest
+  benchmark targets met.
+
+## S6 — Bodies and objects
+- Smooth procedural skinned bodies for every body plan, genetics-driven shape, expressive faces,
+  coats, hair and fur, fitted clothing, body LODs and impostors; smooth item meshes from form ×
+  material (S §10).
+- *Accept:* a three-generation family screenshot set shows resemblance; herds and crowds stay
+  within budgets; every item form renders for every material.
+
+## S7 — Water, snow, ice, caves and built-piece polish
+- S §9 in full and S §6 visual polish.
+- *Accept:* shoreline, waterfall, snowdrift, frozen lake, glacier and cavern screenshots
+  reviewed; no gaps where buildings meet the ground.
+
+## S8 — Performance and cohesion pass
+- Optimize to the S §12.2 targets at every preset; complete `docs/review/smooth-world.md`
+  (S §12.4); update docs, journal art and the Amendment R guide plan (S §11).
+- *Accept:* all S §12 targets met or honestly documented for owner decision; the review shows
+  one coherent world.
+
 ## H11 — Neolithic society
 - Villages, farming and herding households, lineages, storage, feasting, early inequality, crowd
   diseases; the Neolithic era profile.
@@ -318,7 +392,7 @@ content lint, the performance gate, `PROGRESS.md` with its **Humans Status** tab
 
 ## Phase R (after the game is complete)
 Amendment R (`dev/AMENDMENT_R.md`, 2026-10-03): open-source release, multiplayer, AI and voice,
-the guide and the trailer. None of it starts until every H and V2 milestone above, through V2-16,
+the guide and the trailer (since Amendment S, describing and showing the smooth world). None of it starts until every H and V2 milestone above, through V2-16,
 is complete and accepted (R §0.1). Until then only its **multiplayer-ready rule** applies (R §0.3,
 D166): gameplay state on the server's side, new messages serializable and versioned through the
 channel, no simulation assuming a single player. When V2-16 is done: re-read the amendment, write

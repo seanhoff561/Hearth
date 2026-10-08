@@ -4,6 +4,7 @@ mod deposits;
 mod r#gen;
 mod image;
 mod region;
+mod smooth;
 mod textures;
 mod worldmap;
 
@@ -14,7 +15,10 @@ fn usage() {
       Top-down block-resolution render of the surface around a point (default: spawn).
   deposits [--seed N] [--model ID] [--near X,Z] [--max-depth N] [--limit 10] [--coverage] [--springs] [--find BIOME|coral]
       List a world's deposit bodies (and springs) nearest a point, and the resource coverage of its
-      continents."
+      continents.
+  smooth [--out DIR] [--scenes a,b,...|shading] [--view 560x350] [--supersample 2] [--no-images]
+      S0's smooth-terrain prototypes: the eight test scenes meshed by Surface Nets, Surface Nets
+      with sharp features and Dual Contouring, measured and rendered; the shading prototype."
     );
 }
 
@@ -31,6 +35,7 @@ fn main() -> anyhow::Result<()> {
         "gen" => r#gen::run(&args[1..]),
         "deposits" => deposits::run(&args[1..]),
         "textures" => textures::run(&args[1..]),
+        "smooth" => smooth::run(&args[1..]),
         "-h" | "--help" | "help" => {
             usage();
             Ok(())

@@ -2707,3 +2707,26 @@ Spun yarn is an item of its fibre; a skein woven on the loom is one length of cl
 half a metre, of the cloth's own material (linen, woollen cloth), carried as bulk. Garments of
 cloth are sewn from lengths as hide garments are from hides, and take their warmth from the
 garment, not the cloth.
+
+## D222 — Smooth ground is meshed by Surface Nets with sharp features
+S0 (Amendment S §3.1) prototyped three dual meshers in `hearth_smooth` on the eight test scenes
+(rolling hills, sea cliffs, a cave, a dune field, a riverbank, a talus slope, a dug pit with its
+spoil, a mountain ridge; `bench smooth`, sheets in `docs/review/s0/`, numbers in
+`docs/design/smooth-terrain.md` and `BENCHMARKS.md`). Across the scenes: Surface Nets (with one
+relaxation step) 5,764 surface cubes a second a thread, 2.50 cm mean distance from the true
+surface, 3.0° mean face-normal error, 28 folded triangles; Surface Nets with sharp features
+3,553, 1.45 cm, 2.4°, 61; Dual Contouring 3,136, 1.41 cm, 3.0°, 542. All three are watertight
+and meet across cubes bit for bit. Surface Nets melts rock (scarps and cliff ledges become soft
+grooves); Dual Contouring keeps every crease, soft ones too, and where a feature is narrower than
+the grid throws vertices into spikes, sawteeth and folds. Chosen: **Surface Nets with sharp
+features**, a vertex between its cell's crossings' mean and their feature solve by its
+material's sharpness times the solve's trust (how well the crossings' planes meet), so sand,
+soil and snow stay soft, limestone and granite crisp, and features too narrow for the grid
+become soft grooves rather than teeth. Its rules carry into S2's production mesher: the fill a
+clamped signed distance in a byte (±1.5 voxels, 1.2 cm steps), a two-sample apron, every
+vertex computed in its own cell's coordinates (cubes meet exactly), quads cut along the diagonal
+nearer the surface, crease-keeping gradients for the solve, smooth normals blended toward the
+faces by sharpness in the shader. Shading maps materials **biplanar** with **height blending**:
+triplanar's third sample changed the image by 0.56 levels of 255 on average. Open for S1–S2:
+cut soil's edges round under soil's sharpness (an edit's faces may get a sharpness that
+weathers away); the GPU frame times of Baseline-S need the owner's PC (`scripts/baseline-s.sh`).

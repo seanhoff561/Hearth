@@ -215,11 +215,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
+ "glam",
  "hearth_content",
  "hearth_core",
  "hearth_env",
  "hearth_math",
+ "hearth_smooth",
  "hearth_texgen",
+ "hearth_ui",
  "hearth_world",
  "hearth_worldgen",
  "log",
@@ -1249,6 +1252,13 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "zstd",
+]
+
+[[package]]
+name = "hearth_smooth"
+version = "0.1.0"
+dependencies = [
+ "glam",
 ]
 
 [[package]]
