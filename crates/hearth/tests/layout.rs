@@ -51,6 +51,9 @@ fn screens() -> Vec<(&'static str, Box<dyn Fn() -> Screen>)> {
                     mode: "hearth:realistic".into(),
                 },
                 chosen: None,
+                shown: 0,
+                anywhere: false,
+                card: None,
             }),
         ),
         (

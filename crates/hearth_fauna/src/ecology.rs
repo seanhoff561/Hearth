@@ -696,19 +696,27 @@ impl Ecology {
 
     /// Whether a species can live in a cell's habitat (its ecosystems, its fauna's realm).
     pub fn suits(&self, sp: &Species, h: &Habitat) -> bool {
-        if sp.habitats & h.ecosystems == 0 || !native(sp.realms, h.fauna()) {
-            return false;
-        }
-        if sp.cold_limit.is_some_and(|m| h.coldest_c() < m) {
-            return false;
-        }
-        if sp.waterside && !sp.aquatic && !sp.marine {
-            h.fresh > 0.0 && h.land > 0.0
-        } else {
-            Self::lives_in(sp, h)
-        }
+        lives_here(sp, h)
     }
+}
 
+/// Whether a species can live in a cell's habitat (its ecosystems, its fauna's realm, its
+/// cold limit, the water or land it lives in): the ecology's test, without an ecology.
+pub fn lives_here(sp: &Species, h: &Habitat) -> bool {
+    if sp.habitats & h.ecosystems == 0 || !native(sp.realms, h.fauna()) {
+        return false;
+    }
+    if sp.cold_limit.is_some_and(|m| h.coldest_c() < m) {
+        return false;
+    }
+    if sp.waterside && !sp.aquatic && !sp.marine {
+        h.fresh > 0.0 && h.land > 0.0
+    } else {
+        Ecology::lives_in(sp, h)
+    }
+}
+
+impl Ecology {
     /// Whether a cell has the medium a species lives in: sea for a marine one, fresh water for a
     /// fish of the rivers and lakes, land for the rest.
     fn lives_in(sp: &Species, h: &Habitat) -> bool {

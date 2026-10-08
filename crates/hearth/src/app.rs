@@ -117,13 +117,23 @@ impl Default for NewShape {
 struct Making {
     choice: crate::menus::NewWorldChoice,
     progress: Arc<std::sync::Mutex<(f32, String)>>,
-    handle: std::thread::JoinHandle<anyhow::Result<Arc<hearth_worldgen::region::Terrain>>>,
+    handle: std::thread::JoinHandle<anyhow::Result<Made>>,
+}
+
+/// A new world's planet, made: its land, and the places suggested to begin in (with what reads
+/// the world for them).
+struct Made {
+    terrain: Arc<hearth_worldgen::region::Terrain>,
+    finder: Option<Arc<crate::places::Finder>>,
+    places: Vec<crate::places::Place>,
 }
 
 /// A new world's globe, its birthplace being chosen.
 struct Choosing {
     terrain: Arc<hearth_worldgen::region::Terrain>,
     picker: crate::globe::GlobePicker,
+    finder: Option<Arc<crate::places::Finder>>,
+    places: Vec<crate::places::Place>,
 }
 
 impl App {
@@ -666,6 +676,17 @@ impl App {
             .cache()
             .join(crate::scene::planet_cache_name(&settings));
         let told = progress.clone();
+        let content = self.content.content.clone();
+        let when = match choice.shape.start {
+            Some(hearth_save::Start::Now) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0.0, |d| d.as_secs_f64());
+                crate::places::When::YearFrac(hearth_env::Calendar::from_unix(now).at(0).year_frac)
+            }
+            _ => crate::places::When::Spring,
+        };
+        let seed = choice.seed;
         let handle = std::thread::Builder::new()
             .name("new planet".into())
             .spawn(move || {
@@ -688,9 +709,37 @@ impl App {
                         g
                     }
                 };
-                Ok(Arc::new(hearth_worldgen::region::Terrain::new(Arc::new(
-                    grid,
-                ))))
+                let terrain = Arc::new(hearth_worldgen::region::Terrain::new(Arc::new(grid)));
+                // The places to suggest (Amendment E §6.3), each verified in the world made.
+                tell(1.0, "Finding places to begin");
+                let finder = content.and_then(|content| {
+                    let defs =
+                        hearth_world::datapack::load_block_defs(&[crate::scene::data_pack_dir()])
+                            .ok()?;
+                    let reg = Arc::new(hearth_world::BlockRegistry::build(defs).ok()?);
+                    let wg = hearth_worldgen::WorldGenerator::new(terrain.clone(), &reg, &content)
+                        .ok()?;
+                    Some(Arc::new(crate::places::Finder::new(
+                        Arc::new(wg),
+                        content,
+                        reg,
+                    )))
+                });
+                let t0 = std::time::Instant::now();
+                let places = finder
+                    .as_ref()
+                    .map(|f| f.suggest(when, seed))
+                    .unwrap_or_default();
+                log::info!(
+                    "{} places to begin found in {:.1} s",
+                    places.len(),
+                    t0.elapsed().as_secs_f64()
+                );
+                Ok(Made {
+                    terrain,
+                    finder,
+                    places,
+                })
             });
         match handle {
             Ok(handle) => {
@@ -734,8 +783,15 @@ impl App {
             return;
         };
         match m.handle.join() {
-            Ok(Ok(terrain)) => {
-                let (x, z) = terrain.find_spawn(false);
+            Ok(Ok(Made {
+                terrain,
+                finder,
+                places,
+            })) => {
+                // The globe opens on the first place suggested (or the place the world finds).
+                let (x, z) = places
+                    .first()
+                    .map_or_else(|| terrain.find_spawn(false), |p| (p.x, p.z));
                 let (lat, lon) = crate::globe::lat_lon(
                     terrain.planet(),
                     glam::DVec3::new(x as f64, 0.0, z as f64),
@@ -747,8 +803,16 @@ impl App {
                     run.menus.open(Screen::Birthplace {
                         choice: m.choice,
                         chosen: None,
+                        shown: 0,
+                        anywhere: places.is_empty(),
+                        card: None,
                     });
-                    self.choosing = Some(Choosing { terrain, picker });
+                    self.choosing = Some(Choosing {
+                        terrain,
+                        picker,
+                        finder,
+                        places,
+                    });
                 }
             }
             Ok(Err(e)) => log::error!("the planet could not be made: {e}"),
@@ -1159,6 +1223,8 @@ impl App {
                         globe: choosing.as_mut().map(|ch| crate::menus::GlobeContext {
                             picker: &mut ch.picker,
                             terrain: ch.terrain.clone(),
+                            finder: ch.finder.clone(),
+                            places: &ch.places,
                         }),
                     };
                     actions = menus.ui(ui, &mut cx);
