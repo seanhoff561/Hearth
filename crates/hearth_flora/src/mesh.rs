@@ -596,7 +596,7 @@ pub fn mesh(sk: &Skeleton, opts: Options, seed: u64) -> TreeMesh {
         },
         sk,
         opts,
-        rng: Rng::new(mix64(seed ^ 0x7ee5_e5)),
+        rng: Rng::new(mix64(seed ^ 0x007e_e5e5)),
     };
     b.wood();
     b.out.wood = b.out.indices.len() as u32;
