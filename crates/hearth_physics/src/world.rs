@@ -27,6 +27,16 @@ impl Default for Ground {
     }
 }
 
+/// Plants or foliage in a block, as a body moving through them feels them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Plant {
+    /// 0–1: how dense and stiff the stems and leaves are; a body they cover is slowed by this
+    /// share of its pace.
+    pub drag: f64,
+    /// How high above the block's floor they reach (m, 0..=1).
+    pub top: f64,
+}
+
 /// The world as movement sees it.
 pub trait Terrain {
     /// Pushes the collision boxes of the blocks overlapping `area` (world coordinates, in the
@@ -38,9 +48,9 @@ pub trait Terrain {
     fn ground(&self, pos: BlockPos) -> Ground;
     /// Whether a block can be climbed like a ladder (vines, rope ladders).
     fn climbable(&self, pos: BlockPos) -> bool;
-    /// 0–1: how much moving through a block slows a body (foliage, brush).
-    fn drag(&self, _pos: BlockPos) -> f64 {
-        0.0
+    /// The plant or foliage in a block that a body pushes through, if any.
+    fn plant(&self, _pos: BlockPos) -> Option<Plant> {
+        None
     }
     /// The canonical X of a position (the world wraps east–west).
     fn wrap_x(&self, x: f64) -> f64 {
@@ -121,10 +131,13 @@ impl Terrain for BlockWorld<'_> {
             .is_some_and(|s| self.reg.has(s, StateFlags::CLIMBABLE))
     }
 
-    fn drag(&self, pos: BlockPos) -> f64 {
-        self.map
-            .block(pos)
-            .map_or(0.0, |s| self.reg.block_of(s).def.drag as f64)
+    fn plant(&self, pos: BlockPos) -> Option<Plant> {
+        let s = self.map.block(pos)?;
+        let drag = self.reg.block_of(s).def.drag as f64;
+        (drag > 0.0).then(|| Plant {
+            drag,
+            top: self.reg.plant_top(s) as f64,
+        })
     }
 
     fn wrap_x(&self, x: f64) -> f64 {

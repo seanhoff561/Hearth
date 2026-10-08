@@ -393,3 +393,76 @@ fn foliage_is_passed_through_slowly() {
         "full pace beyond"
     );
 }
+
+/// Steady sprinting speed through a field of plants, the cells at the feet and above them.
+fn sprint_speed(low: Option<Cell>, high: Option<Cell>) -> f64 {
+    let mut g = Grid::floor(80);
+    if let Some(c) = low {
+        g.fill((2, 0, -3), (70, 0, 3), c);
+    }
+    if let Some(c) = high {
+        g.fill((2, 1, -3), (70, 1, 3), c);
+    }
+    let mut m = settled(&g, 0.5, 0.5);
+    let r = run(
+        &g,
+        &mut m,
+        &go((1.0, 0.0), Gait::Sprint),
+        &Ability::human(),
+        8.0,
+    );
+    let tail: Vec<f64> = r.iter().rev().take(r.len() / 4).map(|x| x.speed).collect();
+    tail.iter().sum::<f64>() / tail.len() as f64
+}
+
+/// Plants slow a body by how much of it they reach (Amendment P §10.1): grass at the ankles
+/// costs a sprint almost nothing, waist-high grass a few percent, a shrub belt a quarter.
+#[test]
+fn plants_slow_a_sprint_by_how_much_of_the_body_they_reach() {
+    let bare = sprint_speed(None, None);
+    // Ankle-high grass as dense as steppe fescue (0.4 m, 0.1), and heather (0.5 m, 0.15).
+    let fescue = sprint_speed(Some(Cell::Plant(0.1, 0.4)), None);
+    let heather = sprint_speed(Some(Cell::Plant(0.15, 0.5)), None);
+    assert!(
+        fescue > bare * 0.98 && heather > bare * 0.98,
+        "short grass: {bare:.2} → {fescue:.2}, {heather:.2} m/s"
+    );
+    // Waist-high grass (1 m, 0.2).
+    let tall = sprint_speed(Some(Cell::Plant(0.2, 1.0)), None);
+    assert!(
+        tall < bare * 0.98 && tall > bare * 0.9,
+        "waist-high grass: {bare:.2} → {tall:.2} m/s"
+    );
+    // A shrub belt 1.4 m tall (0.4).
+    let shrubs = sprint_speed(Some(Cell::Plant(0.4, 1.0)), Some(Cell::Plant(0.4, 0.4)));
+    assert!(
+        shrubs < bare * 0.8 && shrubs > bare * 0.5,
+        "shrubs: {bare:.2} → {shrubs:.2} m/s"
+    );
+}
+
+/// A body brushing the edge of a thicket is slowed by the share of it in the leaves, not as
+/// though it were inside.
+#[test]
+fn brushing_a_thicket_slows_less_than_pushing_through_it() {
+    let edge = |z0: i32, z1: i32| {
+        let mut g = Grid::floor(60);
+        g.fill((2, 0, z0), (50, 1, z1), Cell::Foliage(0.5));
+        let mut m = settled(&g, 0.5, 0.5);
+        let r = run(
+            &g,
+            &mut m,
+            &go((1.0, 0.0), Gait::Walk),
+            &Ability::human(),
+            8.0,
+        );
+        r.iter().rev().take(60).map(|x| x.speed).sum::<f64>() / 60.0
+    };
+    // The body's box spans z 0.25..0.75: foliage over z 0..1 covers all of it; over z 0.6..
+    // (from the next block up, the box's edge only) next to none of it, as its own column is
+    // clear.
+    let inside = edge(-3, 3);
+    let beside = edge(1, 3);
+    assert!((inside - 0.7).abs() < 0.08, "inside: {inside}");
+    assert!(beside > 1.35, "beside it: {beside}");
+}

@@ -32,6 +32,16 @@ is not compressed by the day scale), in substeps of at most 1/60 s.
   eyes just out of the water, swims up and dives on command, and an exhausted or unconscious one
   sinks. The breath lasts 45 s (less for a weak body) and comes back three times as fast;
   without air a body faints after 25 s and drowns after 60 (`hearth_player`).
+- **Plants.** Pushing through plants and foliage slows a body by how much of it they reach
+  (Amendment P §10.1): each column of plants the box overlaps slows it by the plants' density
+  (`drag` in the block data: stems and leaves, how stiff and close) times the square of how
+  high up the body they stand, as a share of its height, weighted by the share of the box's
+  footprint the column takes. Grass, herbs and seedlings below the knee cost a sprint at most
+  2 %; knee- to waist-high grass a few percent; a shrub belt the body pushes through 20–50 %; a
+  thicket over the head its full density. A plant stands as tall as its species grows
+  (`max_height_m` in the flora data, by the understory block it is drawn as), else as its
+  block's outline. A crouching body, shorter, is slowed more by the same grass. Plants bent and
+  flattened by passing bodies, and grass as a living sward, come with P7 and P7G.
 - **Ladders.** Climbable blocks are climbed at 0.6 m/s by moving into them.
 - **Landings.** The speed of every landing is reported, softened by the ground's cushion (snow,
   leaves) or by water, which passes on about a third of the speed of entering it.

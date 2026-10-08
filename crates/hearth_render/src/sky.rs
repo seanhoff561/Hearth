@@ -26,7 +26,10 @@ pub struct SkyParams {
     pub altitude: f32,
     /// Multiplier on aerosol (Mie) density: 1 clear, higher in haze.
     pub haze: f32,
+    /// The stars' scintillation clock (real seconds, wrapped short for precision).
     pub seconds: f32,
+    /// How turbulent the air is (0 calm … 1 a gale): the stars shiver more.
+    pub turbulence: f32,
     /// Celestial → world rotation (stars).
     pub star_rotation: Mat3,
     pub star_visibility: f32,
@@ -388,7 +391,7 @@ impl SkyRenderer {
                 p.cloud_offset.y,
             ],
             misc: [p.star_visibility, p.exposure, p.night, p.moon_disc],
-            direct: [p.direct.x, p.direct.y, p.direct.z, 0.0],
+            direct: [p.direct.x, p.direct.y, p.direct.z, p.turbulence],
             ambient: [p.ambient.x, p.ambient.y, p.ambient.z, 0.0],
             overcast: p.overcast.to_array(),
         };

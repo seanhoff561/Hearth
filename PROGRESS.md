@@ -664,7 +664,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H10 — Optional conversation backend (2026-10-07)
 - [ ] V2-12 — Neolithic
 - [x] S0 — Baseline and prototype (2026-10-07; D222)
-- [ ] P0 — Triage and quick fixes
+- [x] P0 — Triage and quick fixes (2026-10-08; D224, D225)
 - [ ] P1 — Menus and world management
 - [ ] P2 — Game modes and Creative
 - [ ] P3 — Looking, highlighting and the hands
@@ -711,7 +711,7 @@ with `dev/PLAYTEST.md` (every reported issue, its cause and its state).
 
 | Milestone | State | Open issues in `dev/PLAYTEST.md` |
 |---|---|---|
-| P0 — Triage and quick fixes | planned | — |
+| P0 — Triage and quick fixes | done 2026-10-08 (plant drag by reach; clouds, waves, rain and stars at real speeds) | #6–#9 and #18 fixed; #1–#5 and #10–#17 open for P1–P7G |
 | P1 — Menus and world management | planned | — |
 | P2 — Game modes and Creative | planned | — |
 | P3 — Looking, highlighting and the hands | planned | — |
@@ -1387,6 +1387,29 @@ S0 — Baseline and prototype (Amendment S, `docs/spec/amendment-s-smooth-world.
   (`scripts/baseline-s.sh`); cut soil's edges round under soil's sharpness (an edit's faces may
   get a sharpness that weathers, S1); on a huge planet a high view can overflow the distant
   terrain's quad arena (the alpine baseline shot, 10.6 M quads against 8.4 M; S4).
+
+P0 — Triage and quick fixes (Amendment P, `docs/spec/amendment-p-playability.md`; PLAN.md;
+`dev/PLAYTEST.md`; `docs/design/motion-timing.md`; D223), done 2026-10-08:
+- [x] `dev/PLAYTEST.md`: the owner's reports and the amendment's findings as eighteen numbered
+  issues, each with how to reproduce it, its cause and its status; the causes of the six fixed
+  here reproduced (two of the amendment's guesses were not the cause: the clouds and the waves
+  raced because a changing wind was multiplied by the world's whole age, and the stars flashed
+  because they were cut at their grid cells' edges, not from their twinkle).
+- [x] Plants slow a body by how high they reach on it (P §10.1): each column of plants the box
+  overlaps slows it by its density × (its reach ÷ the body's height)² × its share of the box's
+  footprint, a plant as tall as its species grows; every grass and herb below the knee costs a
+  sprint at most 2 % (steppe fescue 0.5 %, heather 1.2 %), knee- to waist-high grasses 2–5 %,
+  shrubs 10–40 % (`hearth_physics/tests/movement.rs`).
+- [x] Motion at real speeds (P §8): the clouds summed frame by frame at the wind at their height;
+  the waves at the deep-water phase speed of each scale (swell 3.5 m/s, chop 1.8 m/s); rain and
+  snow drifting by the summed wind on a seamless clock; the stars summed over their neighbouring
+  cells at their own crisp width, their light steady to 2–4 % where it swung 27–33 %, with a
+  scintillation of a few hertz, stronger low and in wind (`docs/review/p0/`,
+  `tools/shots/p0_motion.shots`); `docs/design/motion-timing.md` lists what moves, by which
+  clock and how fast (completed in P5).
+  Known from P0: the motion-timing check that renders sequences is P5's; cloud shapes do not yet
+  evolve; the stars' width at render scales below about 1000 pixels of height is wider than at
+  full size.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in

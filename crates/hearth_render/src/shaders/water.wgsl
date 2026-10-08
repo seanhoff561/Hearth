@@ -8,6 +8,9 @@ struct WaterParams {
     wind: vec4<f32>,
     // xy: 1 / render size, z: camera near plane.
     screen: vec4<f32>,
+    // x: how far the swell has travelled within its 40 m tile (m), y: the chop within its 11 m
+    // tile — each at its own phase speed (`water::phase_speeds`).
+    phase: vec4<f32>,
 };
 
 @group(2) @binding(0) var<uniform> water: WaterParams;
@@ -36,15 +39,15 @@ fn wave_steepness() -> f32 {
 // control flow) and choose the mip level, so distant water flattens.
 fn wave_slope(p: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>) -> vec2<f32> {
     let d = water.wind.xy;
-    let drift = (0.5 + 0.2 * water.wind.z) * g.params.x;
-    // In the wind's frame (x along the wind): long swell and a shorter chop at an angle.
+    // In the wind's frame (x along the wind): long swell and a shorter chop at an angle, each
+    // travelling at its own speed.
     let q = rotate(p, d);
     let s1 = 1.0 / 40.0;
-    let a = textureSampleGrad(wave_tex, wave_samp, (q + vec2<f32>(drift, 0.0)) * s1,
+    let a = textureSampleGrad(wave_tex, wave_samp, (q + vec2<f32>(water.phase.x, 0.0)) * s1,
         rotate(gx, d) * s1, rotate(gy, d) * s1).xy * 2.0 - 1.0;
     let c = vec2<f32>(0.8, 0.6);
     let s2 = 1.0 / 11.0;
-    let q2 = rotate(q, c) + vec2<f32>(drift * 1.4, 0.0);
+    let q2 = rotate(q, c) + vec2<f32>(water.phase.y, 0.0);
     let b = textureSampleGrad(wave_tex, wave_samp, q2 * s2, rotate(rotate(gx, d), c) * s2,
         rotate(rotate(gy, d), c) * s2).xy * 2.0 - 1.0;
     return unrotate(a * 0.6 + unrotate(b, c) * 0.4, d) * wave_steepness();
@@ -53,10 +56,9 @@ fn wave_slope(p: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>) -> vec2<f32> {
 // Wave slopes of distant water: the long swell alone (the chop is under a pixel there).
 fn wave_slope_far(p: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>) -> vec2<f32> {
     let d = water.wind.xy;
-    let drift = (0.5 + 0.2 * water.wind.z) * g.params.x;
     let q = rotate(p, d);
     let s1 = 1.0 / 40.0;
-    let a = textureSampleGrad(wave_tex, wave_samp, (q + vec2<f32>(drift, 0.0)) * s1,
+    let a = textureSampleGrad(wave_tex, wave_samp, (q + vec2<f32>(water.phase.x, 0.0)) * s1,
         rotate(gx, d) * s1, rotate(gy, d) * s1).xy * 2.0 - 1.0;
     return unrotate(a * 0.6, d) * wave_steepness();
 }

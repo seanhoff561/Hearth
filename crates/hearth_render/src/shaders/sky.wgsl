@@ -92,30 +92,60 @@ fn fbm2(p: vec2<f32>) -> f32 {
     return s;
 }
 
-// Stars: a fixed celestial pattern, visible when the sky is dark.
-fn stars(dir: vec3<f32>) -> vec3<f32> {
+// Stars: a fixed celestial pattern, visible when the sky is dark, one star at most in a cell of
+// a grid on the celestial sphere. Each star is summed over the cells about the pixel, so no
+// cell's edge cuts it and it does not flicker as the turning sky carries it across the pixels
+// (Amendment P §8). `px` is the size of a pixel (radians): where a pixel is wider than a star
+// (below about 1000 pixels of height) the star is drawn wider, its light spread to keep its
+// brightness.
+fn stars(dir: vec3<f32>, px: f32) -> vec3<f32> {
     if P.misc.x <= 0.001 || dir.y < -0.05 {
         return vec3<f32>(0.0);
     }
     // World → celestial (the rotation's transpose).
     let cel = vec3<f32>(dot(dir, P.stars0.xyz), dot(dir, P.stars1.xyz), dot(dir, P.stars2.xyz));
     let scale = 420.0;
-    let cell = floor(cel * scale);
-    let h = hash3(cell);
-    if h > 0.012 {
-        return vec3<f32>(0.0);
+    let base = floor(cel * scale);
+    // The star's width (cells): its own, or near half a pixel where the pixels are coarse, up to
+    // what the neighbours hold.
+    let sigma = 0.2236;
+    let wide = clamp(0.45 * px * scale, sigma, 0.45);
+    let spread = (sigma * sigma) / (wide * wide);
+    // Scintillation (Amendment P §8): the air's turbulence makes a star's light shiver a few
+    // times a second, barely overhead, more toward the horizon and on a windy night.
+    let low = pow(1.0 - clamp(dir.y, 0.0, 1.0), 4.0);
+    let amp = (0.015 + 0.2 * low) * (0.5 + 0.5 * P.direct.w);
+    let t = P.camera.w;
+    var sum = vec3<f32>(0.0);
+    for (var i = 0; i < 27; i++) {
+        let cell = base + vec3<f32>(f32(i % 3), f32((i / 3) % 3), f32(i / 9)) - 1.0;
+        let h = hash3(cell);
+        if h > 0.014 {
+            continue;
+        }
+        // The star's place in its cell, on the sphere (a star whose place falls outside its
+        // cell is not there); brightness by a steep magnitude distribution.
+        let offs = vec3<f32>(hash3(cell + 1.7), hash3(cell + 3.1), hash3(cell + 5.3));
+        let star_dir = normalize((cell + offs) / scale);
+        if any(floor(star_dir * scale) != cell) {
+            continue;
+        }
+        let d = length(cel - star_dir) * scale;
+        if d > 3.0 * wide {
+            continue;
+        }
+        let core = exp(-d * d / (2.0 * wide * wide)) * spread;
+        let mag = pow(h / 0.014, 3.0);
+        let tint = mix(vec3<f32>(0.75, 0.85, 1.0), vec3<f32>(1.0, 0.85, 0.7), hash3(cell + 9.9));
+        let f1 = 6.2831853 * (1.5 + 2.5 * hash3(cell + 2.3));
+        let f2 = 6.2831853 * (1.0 + 1.5 * hash3(cell + 4.7));
+        let ph = 6.2831853 * hash3(cell + 6.1);
+        let twinkle = 1.0 + amp * (0.6 * sin(t * f1 + ph) + 0.4 * sin(t * f2 + 2.0 * ph));
+        sum += tint * core * (0.02 + mag * 0.6) * twinkle;
     }
-    // Position of the star inside its cell; brightness by a steep magnitude distribution.
-    let offs = vec3<f32>(hash3(cell + 1.7), hash3(cell + 3.1), hash3(cell + 5.3));
-    let star_dir = normalize((cell + offs) / scale);
-    let d = length(cel - star_dir) * scale;
-    let core = exp(-d * d * 10.0);
-    let mag = pow(h / 0.012, 3.0);
-    let tint = mix(vec3<f32>(0.75, 0.85, 1.0), vec3<f32>(1.0, 0.85, 0.7), hash3(cell + 9.9));
-    let twinkle = 0.8 + 0.2 * sin(P.camera.w * (3.0 + h * 400.0) + h * 1000.0);
     // Extinction toward the horizon.
     let ext = smoothstep(-0.02, 0.25, dir.y);
-    return tint * core * (0.02 + mag * 0.6) * twinkle * ext * P.misc.x;
+    return sum * ext * P.misc.x;
 }
 
 fn clouds(dir: vec3<f32>, sky: vec3<f32>) -> vec4<f32> {
@@ -149,6 +179,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // infinite projection is at infinity (w = 0). The camera sits at the origin.
     let clip = P.inv_view_proj * vec4<f32>(in.ndc, 1.0, 1.0);
     let dir = normalize(clip.xyz / clip.w);
+    // A pixel's angular size (`fwidth` sums the steps across and down), for the stars' width.
+    let px = length(fwidth(dir)) * 0.7071;
     var col = textureSampleLevel(skyview, lut_sampler, skyview_uv(dir), 0.0).rgb;
     // Below the horizon lies land and sea beyond the loaded area: it dissolves into the same
     // horizon haze as the terrain's edge fog (until distant terrain is drawn).
@@ -158,7 +190,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Under a thick cloud deck, in rain or snow, the whole sky down to the horizon is grey.
     let overcast = P.overcast.w;
     col = mix(col, P.overcast.rgb, overcast);
-    col += stars(dir) * (1.0 - overcast);
+    col += stars(dir, px) * (1.0 - overcast);
     // The sun and moon set behind the planet's horizon (a little below the horizontal plane
     // when the camera is high up).
     let r = 6360000.0 + max(P.camera.x, 1.0);

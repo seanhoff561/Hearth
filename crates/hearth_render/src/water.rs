@@ -84,6 +84,8 @@ struct Params {
     wind: [f32; 4],
     /// xy: 1 / render size, z: camera near plane, w: unused.
     screen: [f32; 4],
+    /// x: how far the swell has travelled within its tile (m), y: the chop within its tile.
+    phase: [f32; 4],
 }
 
 /// The scene's colour copied before the translucent pass, at the render size.
@@ -355,7 +357,8 @@ impl WaterRenderer {
     }
 
     /// Sets the frame's parameters: the render size, the wind (direction it blows toward and
-    /// speed) and the camera's near plane; keeps a scene copy of that size when needed.
+    /// speed), the camera's near plane and the time (real seconds, for the waves' travel);
+    /// keeps a scene copy of that size when needed.
     pub fn prepare(
         &mut self,
         ctx: &GpuContext,
@@ -363,6 +366,7 @@ impl WaterRenderer {
         wind_dir: Vec2,
         wind_speed_m_s: f32,
         near: f32,
+        seconds: f64,
     ) {
         if self.reads_scene() {
             if self.copy.as_ref().is_none_or(|c| c.size != size) {
@@ -405,6 +409,10 @@ impl WaterRenderer {
                 near,
                 0.0,
             ],
+            phase: {
+                let [a, b] = wave_phases(seconds);
+                [a, b, 0.0, 0.0]
+            },
         };
         ctx.write_buffer(&self.params, 0, bytemuck::bytes_of(&p));
     }
@@ -494,13 +502,21 @@ impl WaterRenderer {
     }
 }
 
-/// Slopes of a tiling field of waves (x and z), from a spectrum of wind-driven waves: wavelengths
-/// from the whole tile to a few texels, travelling within ±70° of +x, longer ones taller (height
-/// ∝ wavelength^1.3), with whole numbers of crests across the tile so it repeats seamlessly. The
-/// slopes are scaled so the steepest is about 1.
-pub fn wave_slopes(size: u32) -> Vec<[f32; 2]> {
-    let n = size as usize;
-    let mut slopes = vec![[0.0f32; 2]; n * n];
+/// The long swell's tile (m) and the shorter chop's, as `water.wgsl` lays the wave field.
+pub const SWELL_TILE_M: f64 = 40.0;
+pub const CHOP_TILE_M: f64 = 11.0;
+
+/// One wave of the tiling spectrum: its crests across the tile (x, z), height and phase.
+struct Wave {
+    k: [i32; 2],
+    amp: f64,
+    phase: f64,
+}
+
+/// The tiling spectrum of wind-driven waves: wavelengths from the whole tile to a few texels,
+/// travelling within ±70° of +x, longer ones taller (height ∝ wavelength^1.3), with whole
+/// numbers of crests across the tile so it repeats seamlessly.
+fn spectrum() -> Vec<Wave> {
     let mut seed = 0x2545_f491_4f6c_dd1du64;
     let mut rand = || {
         seed ^= seed << 13;
@@ -508,7 +524,7 @@ pub fn wave_slopes(size: u32) -> Vec<[f32; 2]> {
         seed ^= seed << 17;
         (seed >> 11) as f64 / (1u64 << 53) as f64
     };
-    let tau = std::f64::consts::TAU;
+    let mut out = Vec::new();
     for _ in 0..48 {
         // Crests across the tile: 1 to 40, log-uniform.
         let k = (40f64.ln() * rand()).exp();
@@ -522,7 +538,57 @@ pub fn wave_slopes(size: u32) -> Vec<[f32; 2]> {
         }
         let len = ((kx * kx + kz * kz) as f64).sqrt();
         let amp = len.powf(-1.3) * (0.6 + 0.8 * rand());
-        let phase = rand() * tau;
+        let phase = rand() * std::f64::consts::TAU;
+        out.push(Wave {
+            k: [kx, kz],
+            amp,
+            phase,
+        });
+    }
+    out
+}
+
+/// How fast the swell's and the chop's crests travel (m/s; Amendment P §8): each scale at the
+/// phase speed of deep-water waves of the crests the eye follows in it, c = √(gλ/2π), so the
+/// long swell outruns the short chop as on real water, whatever the wind (the wind sets how
+/// steep they are, not how fast they go). Each scale's field slides whole, so one speed serves
+/// all its waves: that of its slope-weighted mean wavenumber (the shading shows slopes), about
+/// 3.5 m/s for the swell's crests some 8 m apart and 1.8 m/s for the chop's 2 m.
+pub fn phase_speeds() -> [f64; 2] {
+    static SPEEDS: std::sync::OnceLock<[f64; 2]> = std::sync::OnceLock::new();
+    *SPEEDS.get_or_init(|| {
+        // The mean crests across the tile, weighted by each wave's slope (amp × k).
+        let (mut sum, mut weight) = (0.0, 0.0);
+        for w in spectrum() {
+            let k = ((w.k[0] * w.k[0] + w.k[1] * w.k[1]) as f64).sqrt();
+            let slope = w.amp * k;
+            sum += slope * k;
+            weight += slope;
+        }
+        let crests = sum / weight.max(1e-9);
+        let c = |tile: f64| (9.81 * tile / crests / std::f64::consts::TAU).sqrt();
+        [c(SWELL_TILE_M), c(CHOP_TILE_M)]
+    })
+}
+
+/// How far each scale's crests have travelled at `seconds` of real time (m), within its tile:
+/// the offsets the shader slides the two scales by, exact however long the world has run.
+pub fn wave_phases(seconds: f64) -> [f32; 2] {
+    let [c1, c2] = phase_speeds();
+    [
+        (c1 * seconds).rem_euclid(SWELL_TILE_M) as f32,
+        (c2 * seconds).rem_euclid(CHOP_TILE_M) as f32,
+    ]
+}
+
+/// Slopes of a tiling field of waves (x and z) from the spectrum, scaled so the steepest is
+/// about 1.
+pub fn wave_slopes(size: u32) -> Vec<[f32; 2]> {
+    let n = size as usize;
+    let mut slopes = vec![[0.0f32; 2]; n * n];
+    let tau = std::f64::consts::TAU;
+    for w in spectrum() {
+        let ([kx, kz], amp, phase) = (w.k, w.amp, w.phase);
         for z in 0..n {
             for x in 0..n {
                 let arg = tau * (kx as f64 * x as f64 + kz as f64 * z as f64) / n as f64 + phase;
@@ -762,5 +828,28 @@ mod tests {
         assert_eq!(half(1.0), 0x3c00);
         assert_eq!(half(0.5), 0x3800);
         assert_eq!(half(-2.0), 0xc000);
+    }
+
+    /// Each scale travels at the deep-water phase speed of its crests (Amendment P §8): the long
+    /// swell faster than the short chop, a few metres a second, and smoothly however long the
+    /// world has run.
+    #[test]
+    fn waves_travel_at_their_phase_speeds() {
+        let [swell, chop] = phase_speeds();
+        let ratio = (SWELL_TILE_M / CHOP_TILE_M).sqrt();
+        assert!(
+            (swell / chop - ratio).abs() < 1e-9,
+            "swell {swell} chop {chop}"
+        );
+        assert!(
+            (2.0..6.0).contains(&swell) && (1.0..3.0).contains(&chop),
+            "swell {swell} chop {chop}"
+        );
+        // A frame's step a month into the world: the speed's worth, wrapping by whole tiles.
+        let at = 30.0 * 86_400.0;
+        let (a, b) = (wave_phases(at), wave_phases(at + 1.0 / 60.0));
+        let step = |x: f32, y: f32, tile: f64| ((y - x) as f64).rem_euclid(tile);
+        assert!((step(a[0], b[0], SWELL_TILE_M) - swell / 60.0).abs() < 1e-3);
+        assert!((step(a[1], b[1], CHOP_TILE_M) - chop / 60.0).abs() < 1e-3);
     }
 }

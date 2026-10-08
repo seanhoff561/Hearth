@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use glam::{DVec3, Mat3, Vec2, Vec3};
+use glam::{DVec2, DVec3, Mat3, Vec2, Vec3};
 use hearth_env::climate::Normals;
 use hearth_env::sky::{SkyLight, SkyLightCache};
 use hearth_env::weather::Precip;
@@ -23,6 +23,36 @@ pub struct EnvSampler {
     pub hold: Option<hearth_env::weather::WeatherHold>,
     /// The sky's irradiance, integrated at nodes and interpolated from frame to frame.
     sky: std::cell::RefCell<SkyLightCache>,
+    /// What moves in the sky at real speeds, carried from frame to frame.
+    motion: std::cell::RefCell<Motion>,
+}
+
+/// How far one sample may carry the sky's motion (real seconds): beyond, time has jumped (a
+/// skip, a sleep, a load), and the clouds and the wind's turn take only this step rather than
+/// sweeping across the sky in a frame.
+const MOTION_STEP_S: f64 = 2.0;
+
+/// How quickly the wind's direction, as the clouds and waves show it, follows the weather's
+/// (seconds): a turn of the wind turns them over minutes, not at a stroke.
+const WIND_TURN_S: f64 = 120.0;
+
+/// What moves in the sky at real speeds, carried from frame to frame (Amendment P §8).
+#[derive(Debug, Clone, Copy, Default)]
+struct Motion {
+    /// The real seconds of the last sample.
+    at: Option<f64>,
+    /// How far the clouds have drifted (m).
+    clouds: DVec2,
+    /// How far the air near the ground has carried falling rain and snow (m).
+    air: DVec2,
+    /// The way the wind blows, as the clouds and waves follow it (radians, eased).
+    wind_dir: Option<f64>,
+}
+
+/// The wind at the cloud base from the wind at ten metres: the wind's power law (exponent 1/7
+/// over open ground), about twice as strong at 1.5 km.
+pub fn wind_aloft(surface_m_s: f64, base_m: f64) -> f64 {
+    surface_m_s * (base_m.max(10.0) / 10.0).powf(1.0 / 7.0)
 }
 
 /// Optional overrides for tests and screenshots.
@@ -47,6 +77,7 @@ pub fn precipitation(w: &WeatherState) -> Precipitation {
         intensity: (w.precip_mm_h / full_rate).clamp(0.0, 1.0) as f32,
         rain,
         wind: Vec3::new(s as f32, 0.0, -c as f32) * w.wind_speed_m_s as f32,
+        drift: DVec2::ZERO,
     }
 }
 
@@ -60,6 +91,7 @@ impl EnvSampler {
             calendar,
             hold: None,
             sky: Default::default(),
+            motion: Default::default(),
         }
     }
 
@@ -166,9 +198,33 @@ impl EnvSampler {
             rot.y_axis.as_vec3(),
             rot.z_axis.as_vec3(),
         );
-        // Clouds drift with the wind (time-lapsed like the rest of the day scale).
-        let drift = (m.days * 86_400.0 * 0.02) as f32 * w.wind_speed_m_s as f32;
-        let cloud_offset = Vec2::new((w.wind_dir.sin()) as f32, -(w.wind_dir.cos()) as f32) * drift;
+        // Clouds drift with the wind at their height in real seconds (Amendment P §8): the day is
+        // time-lapsed, the weather overhead is not. The drift is carried from frame to frame,
+        // so a change in the wind changes how fast they go, never where they are.
+        let real_s = m.days * self.calendar.day_length_s;
+        let cloud_base = 600.0 + 700.0 * (1.0 - w.humidity);
+        let (cloud_offset, air, wind_dir) = {
+            let mut mo = self.motion.borrow_mut();
+            let dt = mo
+                .at
+                .map_or(0.0, |t| (real_s - t).clamp(0.0, MOTION_STEP_S));
+            mo.at = Some(real_s);
+            let dir = match mo.wind_dir {
+                Some(d) => {
+                    let turn = (w.wind_dir - d + std::f64::consts::PI)
+                        .rem_euclid(std::f64::consts::TAU)
+                        - std::f64::consts::PI;
+                    d + turn * (1.0 - (-dt / WIND_TURN_S).exp())
+                }
+                None => w.wind_dir,
+            };
+            mo.wind_dir = Some(dir);
+            let toward = DVec2::new(dir.sin(), -dir.cos());
+            mo.clouds += toward * wind_aloft(w.wind_speed_m_s, cloud_base) * dt;
+            mo.air += toward * w.wind_speed_m_s * dt;
+            (mo.clouds.as_vec2(), mo.air, dir)
+        };
+        let toward = Vec2::new(wind_dir.sin() as f32, -(wind_dir.cos()) as f32);
         let env = Environment {
             sun_dir: sun.dir.as_vec3(),
             moon_dir: moon.dir.as_vec3(),
@@ -178,19 +234,76 @@ impl EnvSampler {
             sky_lux: v3(light.sky),
             year_frac: m.year_frac as f32,
             seconds: (m.days * self.calendar.day_length_s) as f32 % 100_000.0,
+            real_seconds: real_s,
             wind: (w.wind_speed_m_s / 6.0).clamp(0.3, 3.0) as f32,
-            wind_dir: Vec2::new(w.wind_dir.sin() as f32, -(w.wind_dir.cos()) as f32),
+            wind_dir: toward,
             wind_speed_m_s: w.wind_speed_m_s as f32,
             star_rotation,
             cloud_cover: w.cloud_cover as f32,
-            cloud_base: (600.0 + 700.0 * (1.0 - w.humidity)) as f32,
+            cloud_base: cloud_base as f32,
             cloud_offset,
             haze: haze as f32,
             block_light_at_camera,
             aerial_perspective: true,
             exposure_bias: 1.0,
-            precipitation: precipitation(&w),
+            precipitation: Precipitation {
+                wind: Vec3::new(toward.x, 0.0, toward.y) * w.wind_speed_m_s as f32,
+                drift: air,
+                ..precipitation(&w)
+            },
         };
         (env, w)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hearth_worldgen::WorldGenSettings;
+
+    /// One real minute of a long-lived world, a tick at a time: the clouds drift smoothly at the
+    /// wind's speed at their height (Amendment P §8). They raced when the drift was the world's
+    /// whole age times the wind of the moment, every change of wind sweeping them across the sky.
+    #[test]
+    fn clouds_drift_at_the_wind_aloft_in_real_seconds() {
+        let settings = WorldGenSettings {
+            seed: 5,
+            grid_resolution: 64,
+            ..WorldGenSettings::default()
+        }
+        .sanitized();
+        let grid = Arc::new(PlanetGrid::build(&settings, &|_, _| {}));
+        let calendar = Calendar::new(48, 8, 23.44);
+        let env = EnvSampler::new(grid, calendar);
+        let at = DVec3::new(300.0, 80.0, -2000.0);
+        let start = (400.0 * calendar.ticks_per_day()) as u64;
+        let per_s = hearth_env::calendar::TICKS_PER_SECOND;
+        let mut last: Option<Vec2> = None;
+        let (mut path, mut aloft, mut worst) = (0.0f64, 0.0f64, 0.0f32);
+        let seconds = 60;
+        for tick in 0..seconds * per_s {
+            let m = calendar.at(start + tick);
+            let (e, w) = env.sample(&m, at, 0.0, EnvOverrides::default());
+            if let Some(prev) = last {
+                let step = (e.cloud_offset - prev).length();
+                worst = worst.max(step);
+                path += step as f64;
+                aloft += wind_aloft(w.wind_speed_m_s, e.cloud_base as f64) / per_s as f64;
+            }
+            last = Some(e.cloud_offset);
+        }
+        let speed = path / seconds as f64;
+        let expected = aloft / seconds as f64;
+        assert!(
+            (speed - expected).abs() < 0.05 * expected.max(1.0),
+            "the clouds go {speed:.2} m/s with the wind aloft at {expected:.2}"
+        );
+        assert!(
+            speed > 1.0 && speed < 60.0,
+            "a real wind's speed: {speed:.2} m/s"
+        );
+        // Smooth: no step much beyond a tick's worth of the strongest wind.
+        let tick_s = 1.0 / per_s as f32;
+        assert!(worst < 60.0 * tick_s, "a jump of {worst:.1} m in a tick");
     }
 }

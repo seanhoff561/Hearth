@@ -92,12 +92,35 @@ fn json_files(dir: &Path) -> Vec<PathBuf> {
 /// Block objects for the natural blocks the packs' content defines (one per rock type, see
 /// `hearth_content::generate::natural_blocks`), in the same form as a pack's JSON so templates
 /// apply and a pack can override any of them by name.
-fn generated_blocks(packs: &[PathBuf]) -> Vec<(ResourceLocation, Map<String, Value>)> {
+/// What the content says of blocks: the natural blocks it generates from its materials, and
+/// how tall the plants drawn as understory blocks stand (their species' heights, for the
+/// movement through them, Amendment P §10.1).
+fn from_content(
+    packs: &[PathBuf],
+) -> (
+    Vec<(ResourceLocation, Map<String, Value>)>,
+    Vec<(ResourceLocation, f32)>,
+) {
     let (Some(content), _) = hearth_content::Content::load(packs) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
+    let heights = content
+        .plants
+        .iter()
+        .filter_map(|p| {
+            let u = p.understory.as_ref()?;
+            let id = ResourceLocation::parse(u.block.as_str()).ok()?;
+            (p.max_height_m > 0.0).then_some((id, p.max_height_m))
+        })
+        .collect();
+    (generated_blocks(&content), heights)
+}
+
+fn generated_blocks(
+    content: &hearth_content::Content,
+) -> Vec<(ResourceLocation, Map<String, Value>)> {
     let mut out = Vec::new();
-    for b in hearth_content::generate::natural_blocks(&content) {
+    for b in hearth_content::generate::natural_blocks(content) {
         let Ok(id) = ResourceLocation::parse(&b.id) else {
             continue;
         };
@@ -212,7 +235,8 @@ pub fn load_block_defs(packs: &[PathBuf]) -> Result<Vec<(ResourceLocation, Block
     // Templates are global across packs: "ns:name" → object.
     let mut templates: BTreeMap<String, Map<String, Value>> = BTreeMap::new();
     let mut raw: BTreeMap<ResourceLocation, (PathBuf, Map<String, Value>)> = BTreeMap::new();
-    for (id, obj) in generated_blocks(packs) {
+    let (generated, heights) = from_content(packs);
+    for (id, obj) in generated {
         raw.insert(id, (PathBuf::from("<generated from content>"), obj));
     }
     for pack in packs {
@@ -257,6 +281,14 @@ pub fn load_block_defs(packs: &[PathBuf]) -> Result<Vec<(ResourceLocation, Block
                 message: e.to_string(),
             })?;
         out.push((id, def));
+    }
+    // A plant block stands as tall as its species grows, unless its data says otherwise.
+    for (id, h) in heights {
+        if let Some((_, def)) = out.iter_mut().find(|(b, _)| *b == id)
+            && def.plant_height <= 0.0
+        {
+            def.plant_height = h;
+        }
     }
     Ok(out)
 }

@@ -27,6 +27,7 @@ fn gpu_irradiance(ctx: &GpuContext, sky: &mut SkyRenderer, sun: DVec3, alt: f32)
         altitude: alt,
         haze: 1.0,
         seconds: 0.0,
+        turbulence: 0.0,
         star_rotation: Mat3::IDENTITY,
         star_visibility: 0.0,
         cloud_cover: 0.0,

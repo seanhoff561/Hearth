@@ -7,7 +7,7 @@
 struct Params {
     // Camera-relative view-projection.
     view_proj: mat4x4<f32>,
-    // xyz: camera position modulo the box; w: seconds.
+    // xyz: camera position modulo the box; w: the clock (real seconds, wrapped at drift.w).
     cam_mod: vec4<f32>,
     // x, z: camera position relative to the height map origin; y: camera height; w: map size.
     cam: vec4<f32>,
@@ -25,6 +25,9 @@ struct Params {
     right: vec4<f32>,
     // xyz: camera up vector.
     up: vec4<f32>,
+    // x, z: how far the air has carried the particles, within the box (m); w: the clock's
+    // period (s), in which every fall is a whole number of boxes and every wobble of turns.
+    drift: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -48,6 +51,19 @@ fn rand(i: u32, k: u32) -> f32 {
     return f32(hash_u(i * 4u + k)) / 4294967296.0;
 }
 
+// The nearest speed that covers a whole number of `size` in the clock's period, so the motion
+// is the same when the clock wraps.
+fn whole_speed(v: f32, size: f32) -> f32 {
+    let period = P.drift.w;
+    return round(v * period / size) * size / period;
+}
+
+// The nearest angular speed that turns a whole number of times in the clock's period.
+fn whole_turns(w: f32) -> f32 {
+    let period = P.drift.w;
+    return round(w * period / 6.2831853) * 6.2831853 / period;
+}
+
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     var out: VsOut;
@@ -63,18 +79,21 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     let r = rand(i, 3u);
     let is_rain = r < P.rain.w;
     let t = P.cam_mod.w;
-    var motion: vec3<f32>;
+    // The air carries every particle alike (summed on the CPU in real seconds, so a change of
+    // wind never throws them across the box); each falls at its own speed.
+    var motion = vec3<f32>(P.drift.x, 0.0, P.drift.z);
     if is_rain {
-        motion = P.rain.xyz * (0.85 + 0.3 * fract(r * 7.13)) * t;
+        let fall = whole_speed(-P.rain.y * (0.85 + 0.3 * fract(r * 7.13)), box_size.y);
+        motion.y = -fall * t;
         out.kind = 0u;
     } else {
-        // Snow drifts with the wind and wobbles as it falls at about a metre a second.
+        // Snow wobbles as it falls at about a metre a second.
         let phase = r * 40.0;
-        let fall = 0.8 + 0.5 * fract(r * 3.7);
-        motion = vec3<f32>(
-            P.wind.x * t + 0.4 * sin(t * 1.3 + phase),
+        let fall = whole_speed(0.8 + 0.5 * fract(r * 3.7), box_size.y);
+        motion += vec3<f32>(
+            0.4 * sin(t * whole_turns(1.3) + phase),
             -fall * t,
-            P.wind.z * t + 0.4 * cos(t * 1.1 + phase * 1.7),
+            0.4 * cos(t * whole_turns(1.1) + phase * 1.7),
         );
         out.kind = 1u;
     }

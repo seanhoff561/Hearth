@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use glam::DVec3;
 use hearth_math::{Aabb, BlockPos};
 
-use crate::{Ground, Terrain};
+use crate::{Ground, Plant, Terrain};
 
 /// What fills a cell of the grid.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -18,8 +18,10 @@ pub enum Cell {
     Ice,
     Snow,
     Ladder,
-    /// Passable foliage that slows a body by this much (0–1).
+    /// Passable foliage filling the block that slows a body it covers by this much (0–1).
     Foliage(f64),
+    /// A plant of this density (0–1) standing this high (m, 0–1) from the block's floor.
+    Plant(f64, f64),
 }
 
 /// A small world of cells.
@@ -97,10 +99,11 @@ impl Terrain for Grid {
         self.at(p) == Some(Cell::Ladder)
     }
 
-    fn drag(&self, p: BlockPos) -> f64 {
+    fn plant(&self, p: BlockPos) -> Option<Plant> {
         match self.at(p) {
-            Some(Cell::Foliage(d)) => d,
-            _ => 0.0,
+            Some(Cell::Foliage(drag)) => Some(Plant { drag, top: 1.0 }),
+            Some(Cell::Plant(drag, top)) => Some(Plant { drag, top }),
+            _ => None,
         }
     }
 }

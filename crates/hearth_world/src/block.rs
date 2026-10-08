@@ -148,8 +148,13 @@ pub struct BlockDef {
     pub jump_factor: f32,
     /// 0–1: how much a fall onto the block is softened (deep snow, leaves).
     pub cushion: f32,
-    /// 0–1: how much moving through the block slows a body (dense foliage about a half).
+    /// 0–1: how much moving through the block slows a body (dense foliage about a half): the
+    /// density and stiffness of its stems and leaves, felt in full by a body it covers.
     pub drag: f32,
+    /// How tall the plant drawn as this block stands (m), when it has `drag`: from its
+    /// species' height (set as the content is loaded); 0 for the block's outline. A
+    /// two-block plant's halves share it.
+    pub plant_height: f32,
     pub random_ticks: bool,
     /// Can be replaced by placing another block into it (air, grass, water, snow layer 1).
     pub replaceable: bool,
@@ -198,6 +203,7 @@ impl Default for BlockDef {
             jump_factor: 1.0,
             cushion: 0.0,
             drag: 0.0,
+            plant_height: 0.0,
             random_ticks: false,
             replaceable: false,
             waterloggable: false,
@@ -393,6 +399,8 @@ pub struct BlockRegistry {
     state_outline: Vec<ShapeId>,
     /// Fluid amount 0..=8 (8 = source / full block of water).
     state_fluid: Vec<u8>,
+    /// How high above the block's floor its plant reaches (m, 0..=1; 0 for no plant).
+    state_plant_top: Vec<f32>,
     shapes: Vec<Shape>,
     shape_ids: FxHashMap<ShapeKey, ShapeId>,
     unknown: BlockStateId,
@@ -459,6 +467,7 @@ impl BlockRegistry {
             state_collision: Vec::new(),
             state_outline: Vec::new(),
             state_fluid: Vec::new(),
+            state_plant_top: Vec::new(),
             shapes: Vec::new(),
             shape_ids: FxHashMap::default(),
             unknown: BlockStateId(0),
@@ -626,6 +635,18 @@ impl BlockRegistry {
             }
             flags.set(StateFlags::EMITS_LIGHT, emission > 0);
             flags.set(StateFlags::BLOCKS_SKY, opacity > 0);
+            // A plant's top within the block: its species' height (the upper half of a two-block
+            // plant the rest of it), else its outline's top.
+            let plant_top = if def.drag > 0.0 {
+                let tall = def.plant_height;
+                match (tall > 0.0, props.value("half")) {
+                    (true, Some("upper")) => (tall - 1.0).clamp(0.0, 1.0),
+                    (true, _) => tall.min(1.0),
+                    (false, _) => (outline.top() as f32).clamp(0.0, 1.0),
+                }
+            } else {
+                0.0
+            };
             let collision_id = self.intern_shape(collision);
             let outline_id = self.intern_shape(outline);
             self.state_block.push(id);
@@ -634,6 +655,7 @@ impl BlockRegistry {
             self.state_collision.push(collision_id);
             self.state_outline.push(outline_id);
             self.state_fluid.push(fluid_amount);
+            self.state_plant_top.push(plant_top);
         }
         self.blocks.register(name, block)?;
         Ok(())
@@ -732,6 +754,16 @@ impl BlockRegistry {
     #[inline]
     pub fn fluid_amount(&self, s: BlockStateId) -> u8 {
         self.state_fluid[s.0 as usize]
+    }
+
+    /// How high above the block's floor the plant of a state reaches (m, 0..=1; 0 where the
+    /// state is no plant slowing a body).
+    #[inline]
+    pub fn plant_top(&self, s: BlockStateId) -> f32 {
+        self.state_plant_top
+            .get(s.0 as usize)
+            .copied()
+            .unwrap_or(0.0)
     }
 
     #[inline]

@@ -2743,3 +2743,30 @@ S asked); Amendment R last. P1 brings V2-15's
 world-creation flow (birthplace on the globe, the mode instead of the world-rule settings)
 forward. Two consequences recorded in `dev/AMENDMENT_R.md` for R: the mode is the server's, with
 Creative's powers granted per player, and no one player fast-forwards a shared world.
+
+## D224 — Plants slow a body by how much of it they reach
+A body pushing through plants was slowed by the largest `drag` of any block its box overlapped,
+so ankle-high fescue cost a sprint 10 % and heather 15 %, as a shrub's edge would (P §10.1,
+`dev/PLAYTEST.md` #6). Now each column of plants the box overlaps slows it by the plants' density
+(`drag`: stems and leaves, how stiff and close) × (how high they reach up the body ÷ its height)²
+× the column's share of the box's footprint, summed and capped at 0.9; a plant stands as tall as
+its species grows (`max_height_m`, by the understory block it is drawn as), else as its block's
+outline. The square keeps what touches only the feet nearly free and what reaches the chest
+nearly whole. Across the 94 understory plants every grass and herb below the knee costs at most
+2 %, knee- to waist-high grasses 2–5 %, shrubs and tall reeds 10–40 %. P7G moves grasses' drag to
+the sward and P7 shrubs' to their real shapes; trampled paths come with them.
+
+## D225 — What moves at a changing rate is summed, and the stars are never cut
+Everything but the sun, moon and stars' turning moves at real speeds in real seconds
+(P §8, `docs/design/motion-timing.md`). Motion whose speed changes with the weather (the
+clouds, the waves' direction, rain and snow) is summed from frame to frame, a step of at most two
+seconds, never computed as speed × the world's age: that product moved them by the age times
+every change of the wind, so a world 400 days old threw its clouds 50–390 m a tick. The clouds
+go at the wind at their height (the ten-metre wind × (height / 10 m)^(1/7)); each wave scale at
+the deep-water phase speed of its crests, c = √(gλ/2π), from an exact clock wrapped by whole
+tiles; rain and snow on a 1,000-second clock in which every fall and wobble is whole. The stars'
+flashing was their drawing, not their twinkle: a star cut at the edge of its cell of the star
+grid lost and regained its light as the compressed day turned the sky across the pixels. Each
+star is now summed over the 27 cells about the pixel at its own crisp width (widened only where a
+pixel is coarser than a star: a wider star looked blurred to the owner), and scintillates a few
+times a second, barely overhead, more low and in wind.

@@ -13,7 +13,7 @@ pub mod testing;
 mod world;
 
 pub use mover::{Ability, Gait, Intent, Motion, Mover, Report, Stance, step};
-pub use world::{BlockWorld, Ground, Terrain};
+pub use world::{BlockWorld, Ground, Plant, Terrain};
 
 /// Gravity (m/s²).
 pub const GRAVITY: f64 = 9.81;

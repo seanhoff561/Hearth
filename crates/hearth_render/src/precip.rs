@@ -2,7 +2,7 @@
 //! camera, hidden under cover by a map of the highest sky-blocking block per column.
 
 use bytemuck::{Pod, Zeroable};
-use glam::Vec3;
+use glam::{DVec2, Vec3};
 
 use crate::camera::Camera;
 use crate::gpu::GpuContext;
@@ -12,6 +12,10 @@ use crate::post::HDR_FORMAT;
 pub const HEIGHTS_SIZE: u32 = 128;
 /// The box of falling particles around the camera (m).
 const BOX: Vec3 = Vec3::new(48.0, 32.0, 48.0);
+/// The period of the particles' clock (s): every fall speed is a whole number of boxes in it and
+/// every wobble a whole number of turns, so the clock wraps unseen and stays precise however long
+/// the world has run.
+const PERIOD_S: f64 = 1000.0;
 /// Particles at full intensity.
 const MAX_PARTICLES: u32 = 40_000;
 /// Stands for "nothing blocks the sky here".
@@ -50,6 +54,10 @@ pub struct Precipitation {
     pub rain: f32,
     /// Wind (m/s, world axes).
     pub wind: Vec3,
+    /// How far the air has carried the falling particles (m, world x and z), summed in real
+    /// seconds (Amendment P §8): a change of wind changes how fast they drift, never where they
+    /// are.
+    pub drift: DVec2,
 }
 
 impl Default for Precipitation {
@@ -58,6 +66,7 @@ impl Default for Precipitation {
             intensity: 0.0,
             rain: 1.0,
             wind: Vec3::ZERO,
+            drift: DVec2::ZERO,
         }
     }
 }
@@ -75,6 +84,7 @@ struct Uniforms {
     direct: [f32; 4],
     right: [f32; 4],
     up: [f32; 4],
+    drift: [f32; 4],
 }
 
 pub struct PrecipRenderer {
@@ -232,14 +242,15 @@ impl PrecipRenderer {
         self.upload_heights(ctx, &h.heights);
     }
 
-    /// Uploads the frame's parameters. `ambient` and `direct` are pre-exposed.
+    /// Uploads the frame's parameters: `seconds` is the world's clock in real seconds (the
+    /// particles fall by it); `ambient` and `direct` are pre-exposed.
     pub fn prepare(
         &mut self,
         ctx: &GpuContext,
         camera: &Camera,
         aspect: f32,
         p: &Precipitation,
-        seconds: f32,
+        seconds: f64,
         ambient: Vec3,
         direct: Vec3,
     ) {
@@ -261,7 +272,7 @@ impl PrecipRenderer {
                 modulo(pos.x, BOX.x),
                 modulo(pos.y, BOX.y),
                 modulo(pos.z, BOX.z),
-                seconds,
+                seconds.rem_euclid(PERIOD_S) as f32,
             ],
             cam: [
                 (pos.x - self.origin.0 as f64) as f32,
@@ -276,6 +287,12 @@ impl PrecipRenderer {
             direct: [direct.x, direct.y, direct.z, 0.0],
             right: [right.x, right.y, right.z, 0.0],
             up: [up.x, up.y, up.z, 0.0],
+            drift: [
+                modulo(p.drift.x, BOX.x),
+                0.0,
+                modulo(p.drift.y, BOX.z),
+                PERIOD_S as f32,
+            ],
         };
         ctx.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
     }

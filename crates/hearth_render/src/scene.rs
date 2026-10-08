@@ -40,6 +40,9 @@ pub struct Environment {
     pub sky_lux: Vec3,
     pub year_frac: f32,
     pub seconds: f32,
+    /// Real seconds since the world began at the normal pace of time, exact (the waves travel
+    /// by it, Amendment P §8).
+    pub real_seconds: f64,
     pub wind: f32,
     /// The direction the wind blows toward (world x, z) and its speed (m/s), for the waves.
     pub wind_dir: Vec2,
@@ -72,6 +75,7 @@ impl Default for Environment {
             sky_lux: Vec3::new(12_000.0, 16_000.0, 24_000.0),
             year_frac: 0.3,
             seconds: 0.0,
+            real_seconds: 0.0,
             wind: 1.0,
             wind_dir: Vec2::X,
             wind_speed_m_s: 4.0,
@@ -330,9 +334,14 @@ impl SceneRenderer {
         };
         let t0 = std::time::Instant::now();
         self.terrain.prepare(ctx, camera, size, &params);
-        self.terrain
-            .water
-            .prepare(ctx, size, env.wind_dir, env.wind_speed_m_s, camera.near);
+        self.terrain.water.prepare(
+            ctx,
+            size,
+            env.wind_dir,
+            env.wind_speed_m_s,
+            camera.near,
+            env.real_seconds,
+        );
         let t1 = std::time::Instant::now();
         let aspect = size.0.max(1) as f32 / size.1.max(1) as f32;
         self.inv_view_proj = camera.view_proj(aspect).inverse();
@@ -363,7 +372,8 @@ impl SceneRenderer {
             moon_phase: env.moon_phase,
             altitude: camera.pos.y.max(0.0) as f32,
             haze: env.haze,
-            seconds: env.seconds,
+            seconds: env.real_seconds.rem_euclid(600.0) as f32,
+            turbulence: (env.wind_speed_m_s / 12.0).clamp(0.0, 1.0),
             star_rotation: env.star_rotation,
             star_visibility,
             cloud_cover: env.cloud_cover,
@@ -383,7 +393,7 @@ impl SceneRenderer {
             camera,
             aspect,
             &env.precipitation,
-            env.seconds,
+            env.real_seconds,
             env.sky_lux * e,
             env.sun_lux * env.sun_dir.y.max(0.0) * e + env.moon_lux * env.moon_dir.y.max(0.0) * e,
         );

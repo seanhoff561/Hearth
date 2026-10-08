@@ -437,19 +437,41 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
             speed *= 1.0 - 0.75 * submerged.min(0.8);
         }
     }
-    // Pushing through foliage and brush: the densest the body is in slows it.
+    // Pushing through plants and foliage (Amendment P §10.1): each column of them the body's
+    // box overlaps slows it by their density times the square of how high up the body they
+    // reach, as a share of its height — grass at the ankles hardly at all, a waist-high stand
+    // a little, a shrub the body pushes through with its whole height much — weighted by the
+    // share of the box's footprint the column takes.
     let thicket = {
         let b = m.bounds();
         let (lo, hi) = b.block_range();
-        let mut most = 0.0f64;
-        for y in lo.y..=hi.y {
-            for z in lo.z..=hi.z {
-                for x in lo.x..=hi.x {
-                    most = most.max(t.drag(BlockPos::new(x, y, z)));
+        let height = (b.max.y - b.min.y).max(0.1);
+        let foot = ((b.max.x - b.min.x) * (b.max.z - b.min.z)).max(1e-9);
+        let mut slow = 0.0f64;
+        for z in lo.z..=hi.z {
+            for x in lo.x..=hi.x {
+                let wide = (b.max.x.min(x as f64 + 1.0) - b.min.x.max(x as f64)).max(0.0);
+                let deep = (b.max.z.min(z as f64 + 1.0) - b.min.z.max(z as f64)).max(0.0);
+                let share = wide * deep / foot;
+                if share <= 0.0 {
+                    continue;
+                }
+                let (mut reach, mut dense) = (0.0, 0.0);
+                for y in lo.y..=hi.y {
+                    if let Some(p) = t.plant(BlockPos::new(x, y, z)) {
+                        let floor = y as f64;
+                        let len = ((floor + p.top).min(b.max.y) - floor.max(b.min.y)).max(0.0);
+                        reach += len;
+                        dense += len * p.drag;
+                    }
+                }
+                if reach > 0.0 {
+                    let r = (reach / height).min(1.0);
+                    slow += share * (dense / reach) * r * r;
                 }
             }
         }
-        most.clamp(0.0, 0.9)
+        slow.clamp(0.0, 0.9)
     };
     speed *= 1.0 - thicket;
     if m.scramble_s > 0.0 {
