@@ -468,9 +468,10 @@ fn balance(planet: &Planet, out: &mut Vec<TileKey>, keep: impl Fn(TileKey) -> bo
     out.extend(leaves);
 }
 
-/// One quad of a tile mesh in 16 bytes; the vertex shader makes its four corners. Packed:
-/// * `a`: minimum corner X (13 bits) and Z (13) in blocks relative to the tile, face (3),
-///   water flag (1), tint kind (low 2 bits);
+/// One quad of a tile mesh (a crown's or trunk's face) in 16 bytes; the vertex shader makes
+/// its four corners. Packed:
+/// * `a`: minimum corner X (13 bits) and Z (13) in blocks relative to the tile, face (3), unused
+///   (1), tint kind (low 2 bits);
 /// * `b`: absolute Y of the minimum corner (i16) and height (u16) in the face's plane;
 /// * `c`: width (13 bits) in the face's plane, tint kind (high 2 bits), climate (low 17);
 /// * `d`: sRGB colour of the block's texture (24), climate (high 7).
@@ -488,14 +489,12 @@ pub struct LodQuad {
 
 impl LodQuad {
     /// A quad from its minimum corner and extents (see the type).
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         face: u32,
         (x, y, z): (i32, i32, i32),
         (w, h): (i32, i32),
         rgb: u32,
         kind: u8,
-        water: bool,
         climate: u32,
     ) -> Self {
         debug_assert!((0..8192).contains(&x) && (0..8192).contains(&z), "{x} {z}");
@@ -506,7 +505,6 @@ impl LodQuad {
             a: (x as u32 & 0x1fff)
                 | (z as u32 & 0x1fff) << 13
                 | (face & 7) << 26
-                | u32::from(water) << 29
                 | (kind & 3) << 30,
             b: (y as i16 as u16 as u32) | (h as u32 & 0xffff) << 16,
             c: (w as u32 & 0x1fff) | (kind >> 2) << 13 | (climate & 0x1ffff) << 15,
@@ -515,14 +513,7 @@ impl LodQuad {
     }
 
     /// The quad through four corners of an axis-aligned rectangle facing `face`.
-    fn from_corners(
-        face: u32,
-        p: [(i32, i32, i32); 4],
-        rgb: u32,
-        kind: u8,
-        water: bool,
-        climate: u32,
-    ) -> Self {
+    fn from_corners(face: u32, p: [(i32, i32, i32); 4], rgb: u32, kind: u8, climate: u32) -> Self {
         let lo = |f: fn(&(i32, i32, i32)) -> i32| p.iter().map(f).min().unwrap_or(0);
         let hi = |f: fn(&(i32, i32, i32)) -> i32| p.iter().map(f).max().unwrap_or(0);
         let (x0, y0, z0) = (lo(|q| q.0), lo(|q| q.1), lo(|q| q.2));
@@ -532,7 +523,7 @@ impl LodQuad {
             NORTH | SOUTH => (x1 - x0, y1 - y0),
             _ => (z1 - z0, y1 - y0),
         };
-        Self::new(face, (x0, y0, z0), size, rgb, kind, water, climate)
+        Self::new(face, (x0, y0, z0), size, rgb, kind, climate)
     }
 
     pub fn face(&self) -> u32 {
@@ -561,10 +552,6 @@ impl LodQuad {
         (((self.a >> 30) & 3) | ((self.c >> 13) & 3) << 2) as u8
     }
 
-    pub fn water(&self) -> bool {
-        (self.a >> 29) & 1 == 1
-    }
-
     pub fn climate(&self) -> u32 {
         (self.c >> 15) | (self.d >> 24) << 17
     }
@@ -586,7 +573,7 @@ pub struct TileMesh {
     /// column before the tile's corner), the share of crown cover in `GroundVertex::water`;
     /// empty where no crown stands.
     pub canopy: Vec<GroundVertex>,
-    /// Trunks, grouped by the way they face, in the order of `GROUP_FACES`.
+    /// Crown boxes (on the fine levels) and trunks, grouped by the way they face, in the order of `GROUP_FACES`.
     pub quads: Vec<LodQuad>,
     /// How many quads each group holds.
     pub groups: [u32; 6],
@@ -1386,28 +1373,22 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
                     p: [(i32, i32, i32); 4],
                     rgb: u32,
                     kind: u8,
-                    water: bool,
                     climate: u32,
                     face: u32| {
         for (_, y, _) in p {
             min_y = min_y.min(y);
             max_y = max_y.max(y);
         }
-        v.push(LodQuad::from_corners(face, p, rgb, kind, water, climate));
+        v.push(LodQuad::from_corners(face, p, rgb, kind, climate));
     };
     if key.level <= CANOPY_BOXES_MAX_LEVEL {
-        crown_boxes(
-            cs,
-            cols,
-            &mut |g, p, rgb, kind, climate, face| quad(g, p, rgb, kind, false, climate, face),
-            &mut v,
-        );
+        crown_boxes(cs, cols, &mut quad, &mut v);
     }
     // Trunks: the four sides of a one-block box.
     for t in trunks {
         for face in [NORTH, SOUTH, WEST, EAST] {
             let p = side(face, t.x, t.x + 1, t.z, t.z + 1, t.y0, t.y1);
-            quad(&mut v[group(face)], p, t.rgb, TINT_RGB, false, 0, face);
+            quad(&mut v[group(face)], p, t.rgb, TINT_RGB, 0, face);
         }
     }
     let (mx, mz) = key.min_block();
@@ -1557,7 +1538,6 @@ mod tests {
             (4096, 60_000),
             0x12_3456,
             TINT_DECIDUOUS | VARIANT_BIRCH,
-            true,
             0xab_cdef,
         );
         assert_eq!(q.face(), WEST);
@@ -1565,10 +1545,9 @@ mod tests {
         assert_eq!(q.size(), (4096, 60_000));
         assert_eq!(q.rgb(), 0x12_3456);
         assert_eq!(q.kind(), TINT_DECIDUOUS | VARIANT_BIRCH);
-        assert!(q.water());
         assert_eq!(q.climate(), 0xab_cdef);
         // Corners of a side face give its minimum corner and extents.
-        let s = LodQuad::from_corners(NORTH, side(NORTH, 2, 6, 3, 9, 10, 15), 1, 0, false, 0);
+        let s = LodQuad::from_corners(NORTH, side(NORTH, 2, 6, 3, 9, 10, 15), 1, 0, 0);
         assert_eq!((s.corner(), s.size()), ((2, 10, 3), (4, 5)));
     }
 

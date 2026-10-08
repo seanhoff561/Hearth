@@ -92,8 +92,7 @@ pub fn raycast(
 ) -> Option<GroundHit> {
     let step = 0.1;
     let mut t0 = 0.0;
-    let mut f0 = field(map, reg, from);
-    if f0 > 0.0 {
+    if field(map, reg, from) > 0.0 {
         return None;
     }
     let mut t = step;
@@ -132,10 +131,8 @@ pub fn raycast(
             break;
         }
         t0 = t1;
-        f0 = f1;
         t += step;
     }
-    let _ = f0;
     None
 }
 
@@ -295,8 +292,8 @@ pub fn dig(
     taken
 }
 
-/// Piles `volume` m³ of ground of state `s` about `at`: into the lowest open voxels within
-/// `radius` m, filling each from below, reaching further (up to four metres more) where
+/// Piles `volume` m³ of ground of state `s` about `at`: onto the lowest of the surfaces within
+/// `radius` m (never into a cave beneath them), filling each voxel from below, reaching further (up to four metres more) where
 /// something stands in the way. Returns the volume that found room.
 pub fn pile(
     map: &mut CubeMap,
@@ -345,7 +342,8 @@ fn pile_within(
                 if d > r {
                     continue;
                 }
-                for y in y0..=y1 {
+                // Down from the top: the column's surface, not a cave's floor under it.
+                for y in (y0..=y1).rev() {
                     let p = BlockPos::new(x, y, z);
                     let Some(here) = map.block(p) else { continue };
                     let occ = occupancy_at(map, reg, p);

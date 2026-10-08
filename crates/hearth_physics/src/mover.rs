@@ -919,16 +919,18 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
             }
         }
     }
+    // The highest rise stepped up without climbing: a crawl's, a sprint's free step, a
+    // scramble's.
+    let max_step = match m.stance {
+        Stance::Crawling => 0.3,
+        _ if i.gait == Gait::Sprint && a.sprint => STEP_FREE,
+        _ => STEP_SCRAMBLE,
+    };
     let mut moved = sweep(t, &start, d, &mut s);
     // A step up: blocked in stride on the ground, try lifting the box over the obstacle.
     let blocked = (moved.x - d.x).abs() > 1e-6 || (moved.z - d.z).abs() > 1e-6;
     // Afloat, the bank is stepped up onto from the hull.
     if blocked && (was_on_ground || boating) && m.stance != Stance::Swimming {
-        let max_step = match m.stance {
-            Stance::Crawling => 0.3,
-            _ if i.gait == Gait::Sprint && a.sprint => STEP_FREE,
-            _ => STEP_SCRAMBLE,
-        };
         let up = sweep(t, &start, DVec3::Y * max_step, &mut s).y;
         let lifted = start.offset(DVec3::Y * up);
         let across = sweep(t, &lifted, DVec3::new(d.x, 0.0, d.z), &mut s);
@@ -947,13 +949,8 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
     // The natural ground (S §8.1): the feet set on the field's surface, the body kept out of
     // ground too steep to step onto.
     let contact = if t.depth(m.pos).is_some() && m.stance != Stance::Swimming && !boating {
-        let max_rise = match m.stance {
-            Stance::Crawling => 0.3,
-            _ if i.gait == Gait::Sprint && a.sprint => STEP_FREE,
-            _ => STEP_SCRAMBLE,
-        };
         let stick = was_on_ground && d.y <= 0.0;
-        let c = field_move(t, m, &mut moved, d, stick, max_rise, &ground);
+        let c = field_move(t, m, &mut moved, d, stick, max_step, &ground);
         if c.rise > STEP_FREE && m.scramble_s <= 0.0 {
             m.scramble_s = 0.45;
         }
@@ -992,11 +989,12 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
     // Ground too steep (or slippery) to stand on: sliding down it, the faster the steeper,
     // the grip of the soles against it.
     if contact.on_ground {
-        let tan_max = max_slope_tan(&ground_under(t, m.pos));
+        let under = ground_under(t, m.pos);
         let n = contact.normal;
-        let cos = n.y.clamp(0.0, 1.0);
-        let sin = (1.0 - cos * cos).sqrt();
-        if sin > tan_max * cos {
+        if too_steep(n, &under) {
+            let tan_max = max_slope_tan(&under);
+            let cos = n.y.clamp(0.0, 1.0);
+            let sin = (1.0 - cos * cos).sqrt();
             let down = DVec3::new(n.x, 0.0, n.z).normalize_or_zero();
             let a = GRAVITY * (sin - 0.7 * tan_max * cos);
             m.vel += down * a * dt;

@@ -705,7 +705,7 @@ impl LodRenderer {
                 continue;
             }
             drawn += 1;
-            let cs = (t.size / 32) as f32;
+            let cs = t.size as f32 / (GROUND_SIDE - 1) as f32;
             if t.ground != u32::MAX {
                 self.grounds.push(GroundTile {
                     origin: [ox, -(cam.y as f32), oz, cs],

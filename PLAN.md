@@ -33,8 +33,8 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 5. **E1 → E2 → E3 → E4 → E5.**
 6. **P3** → **P4 with E6** → **P5**. (P6, Learn to Play, is removed: D258.)
 7. **Audit 1** (done).
-8. **S1 → S2 → E7 → S3 → S4** (S4 as amended by E §9.2).
-9. **Audit 2.**
+8. **S1 → S2 → E7 → S3 → S4** (S4 as amended by E §9.2) (done).
+9. **Audit 2** (done).
 10. **S5 with P7 → P7G → S6** (animals and items) **→ S7 → S8 → P8.**
 11. **Audit 3.**
 12. **V2-13 → V2-14** (technology only).
@@ -189,8 +189,11 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 - Overhangs as smooth shelves (S §5); the crown boxes' snow by the seasons; impostors between
   boxes and canopy (S5).
 
-## Audit 2
-After S4, covering S1, S2, E7, S3, S4.
+## From Audit 2 (`docs/review/audits/AUDIT-2.md`)
+- Step heights scaled by body size; `Ground::friction` (a slipperiness) replaced by a real
+  friction coefficient with a source for the slope fit.
+- Duplicates: LOD normal packing, the seasonal range, two field gradients, the beard's lip
+  zone; a `cover()` accessor for the canopy; `level`'s reach documented.
 
 ## S5 — Trees and foliage (with P7)
 - Smooth trunks and branches, felling rigid bodies and log meshes, leaf clusters with

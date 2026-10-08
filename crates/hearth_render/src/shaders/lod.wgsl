@@ -25,8 +25,6 @@ struct LodOut {
     @location(0) world: vec3<f32>,
     @location(1) @interpolate(flat) albedo: vec3<f32>,
     @location(2) @interpolate(flat) normal: vec3<f32>,
-    // Share of open water (not frozen) on a water surface; 0 elsewhere.
-    @location(3) @interpolate(flat) water: f32,
 };
 
 // Face codes as the terrain's: down, up, north, south, west, east.
@@ -56,7 +54,6 @@ fn vs_lod(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
     let x0 = f32(q.a & 0x1fffu);
     let z0 = f32((q.a >> 13u) & 0x1fffu);
     let face = (q.a >> 26u) & 7u;
-    let water = ((q.a >> 29u) & 1u) == 1u;
     let kind = ((q.a >> 30u) & 3u) | (((q.c >> 13u) & 3u) << 2u);
     let y0 = f32((i32(q.b) << 16u) >> 16u);
     let h = f32(q.b >> 16u);
@@ -77,16 +74,12 @@ fn vs_lod(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
     }
     // Deciduous canopies stand bare in winter and in the dry season.
     albedo = mix(BARE, albedo, tint_leaf(kind, climate));
-    // Snow lies on tops through the cold months, and the sea freezes in hard winters.
-    let c = decode_climate(climate);
-    let t = season_temp(c, g.camera.w);
+    // Snow lies on crowns' tops through the cold months.
     if face == 1u {
-        if water {
-            albedo = mix(albedo, SEA_ICE, 1.0 - smoothstep(-6.0, -3.0, t));
-        } else {
-            let snow = (1.0 - smoothstep(-3.0, 0.0, t)) * smoothstep(100.0, 400.0, c.precip);
-            albedo = mix(albedo, SNOW, snow * select(1.0, 0.6, (kind & 3u) >= 2u));
-        }
+        let c = decode_climate(climate);
+        let t = season_temp(c, g.camera.w);
+        let snow = (1.0 - smoothstep(-3.0, 0.0, t)) * smoothstep(100.0, 400.0, c.precip);
+        albedo = mix(albedo, SNOW, snow * 0.6);
     }
     var out: LodOut;
     out.pos = g.view_proj * vec4<f32>(world, 1.0);
@@ -95,10 +88,6 @@ fn vs_lod(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
     out.world = world;
     out.albedo = albedo;
     out.normal = lod_normal(face);
-    out.water = 0.0;
-    if face == 1u && water {
-        out.water = smoothstep(-6.0, -3.0, t);
-    }
     return out;
 }
 
@@ -134,7 +123,7 @@ fn fs_lod(in: LodOut) -> @location(0) vec4<f32> {
     if near_weight(in.world.xz) >= 0.999 {
         discard;
     }
-    return vec4<f32>(aerial(lod_light(in.albedo, in.normal, in.world, in.water, gx, gy), in.world), 1.0);
+    return vec4<f32>(aerial(lod_light(in.albedo, in.normal, in.world, 0.0, gx, gy), in.world), 1.0);
 }
 
 // ---------------------------------------------------------------- the ground (S §5)

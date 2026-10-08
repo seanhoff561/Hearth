@@ -43,8 +43,9 @@ superseded.
 | E7 — realistic people | done 2026-10-08 (D266–D270) |
 | S3 — moving on the smooth ground | done 2026-10-08 (D271–D273) |
 | S4 — the distant terrain smooth | done 2026-10-08 (D274–D278) |
-| Audit 2 | next |
-| S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
+| Audit 2 | done 2026-10-08 |
+| S5 with P7 | next |
+| P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
 
@@ -53,9 +54,18 @@ superseded.
 | Smooth world (S) | S4 done: the distant ground smooth height fields in fixed point, shaded with the near ground's materials and seasons, canopies over far stands, out to the real horizon. S3 done: movement on the field. S2 done: natural ground meshed smooth on the server and drawn with blended procedural materials, wet and snow overlays (0.28–0.87 ms a surface cube, as the blocks); frame targets need the PC. S1 done: fill in every surface cube, generated and saved; ground families; dig, pile and settle conserving volume (sand to 34.3°). S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E7 done 2026-10-08 |
-| Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); next: Audit 2 |
+| Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); Audit 2 done 2026-10-08 (`AUDIT-2.md`); next: Audit 3 after P8 |
 
-## Latest: S4 — the distant terrain smooth (2026-10-08, D274–D278)
+## Audit 2 (2026-10-08, `docs/review/audits/AUDIT-2.md`)
+- Metrics: 131k lines in `src/` (+8k: people, smooth ground, LOD fields); files over 2,000
+  lines 8 (`hearth_lod` split); PROGRESS trimmed to 14 KB.
+- Fixed: earth piled over a cave fell into it; hair moved by frame rate; the LOD quads' dead
+  water path; duplicates in the mover, hair, ground ray cast and renderer.
+- Hotspots: LOD tiles growing real trees (35–118 ms), far-field tiles (29–66 ms), meshing a
+  person (0.7 s); the GPU gate needs the PC.
+- Open (PLAN): crown-box snow, step heights by size, a real friction coefficient, duplicates.
+
+## S4 — the distant terrain smooth (2026-10-08, D274–D278)
 - **Heights:** LOD columns keep the fill's surface in sixteenths of a block.
 - **Ground:** each tile is a smooth height field of 33 × 33 corners (each the mean of the four
   columns about it), with the field's normals and skirts sized to the crack against a coarser

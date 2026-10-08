@@ -319,11 +319,12 @@ pub fn hair(a: &Appearance) -> HairMesh {
     let seed = a.name.bytes().fold(0x5EED_u64 ^ a.hair as u64, |s, b| {
         s.wrapping_mul(31).wrapping_add(b as u64)
     });
+    let (center, radii) = cranium(&dims);
     let mut b = Builder {
         skin: &skin,
         head,
-        center: cranium(&dims).0,
-        radii: cranium(&dims).1,
+        center,
+        radii,
         h,
         rng: Rng(seed),
         cards: Vec::new(),
@@ -790,7 +791,6 @@ pub struct HairSim {
 impl HairSim {
     pub fn new(mesh: &HairMesh, a: &Appearance) -> Self {
         let dims = Proportions::of(a);
-        let head = rest_positions(&dims)[Joint::Head.index()];
         Self {
             rest: mesh.guides.clone(),
             stiffness: mesh.stiffness.clone(),
@@ -801,7 +801,7 @@ impl HairSim {
                 .iter()
                 .map(|g| path_length(g) / (GUIDE_POINTS - 1) as f32)
                 .collect(),
-            head_center: head + Vec3::new(0.0, 0.058, -0.008) * dims.stature,
+            head_center: cranium(&dims).0,
             head_radius: dims.head_d * 0.5,
             started: false,
         }
@@ -820,6 +820,10 @@ impl HairSim {
             self.started = true;
         }
         let gravity = Vec3::new(0.0, -9.81, 0.0);
+        // Damping and the pull to the style are set per 60th of a second and scaled to the
+        // step, so the hair moves alike at any frame rate.
+        let frames = dt * 60.0;
+        let keep = 0.96f32.powf(frames);
         for g in 0..self.rest.len() {
             let stiff = self.stiffness[g] * (1.0 - 0.3 * wet.clamp(0.0, 1.0));
             // Air drag toward the wind's speed: strong on light dry hair.
@@ -831,7 +835,7 @@ impl HairSim {
                 let x = self.pos[g][k];
                 let v = (x - self.prev[g][k]) / dt.max(1e-4);
                 let accel = gravity + (wind - v) * drag;
-                let next = x + (x - self.prev[g][k]) * 0.96 + accel * dt * dt;
+                let next = x + (x - self.prev[g][k]) * keep + accel * dt * dt;
                 self.prev[g][k] = x;
                 self.pos[g][k] = next;
             }
@@ -839,7 +843,7 @@ impl HairSim {
                 for k in 1..GUIDE_POINTS {
                     // Toward the style's shape, as stiff as the hair is.
                     let styled = head.transform_point3(self.rest[g][k]);
-                    let pull = stiff * stiff * 0.5;
+                    let pull = 1.0 - (1.0 - stiff * stiff * 0.5).powf(frames);
                     self.pos[g][k] = self.pos[g][k].lerp(styled, pull);
                     // Its length from the point before.
                     let a = self.pos[g][k - 1];

@@ -258,3 +258,24 @@ fn levelling_cuts_the_high_ground_into_the_hollows() {
         }
     }
 }
+
+#[test]
+fn earth_piled_over_a_cave_lies_on_the_surface() {
+    let (mut map, reg, loam) = field("hearth:loam", 0.5);
+    // A cave three metres down under the place: open voxels on a floor of ground.
+    for x in -3..4 {
+        for z in -3..4 {
+            for y in -4..=-3 {
+                map.set_block(BlockPos::new(x, y, z), BlockStateId::AIR, &reg);
+            }
+        }
+    }
+    let put = ground::pile(&mut map, &reg, DVec3::new(0.5, 0.5, 0.5), 1.0, loam, 1.0);
+    assert!((put - 1.0).abs() < 1e-3, "{put}");
+    let cave_floor = (-3..4)
+        .flat_map(|x| (-3..4).map(move |z| (x, z)))
+        .flat_map(|(x, z)| (-4..=-3).map(move |y| BlockPos::new(x, y, z)))
+        .filter(|p| map.block(*p).is_some_and(|b| !b.is_air()))
+        .count();
+    assert_eq!(cave_floor, 0, "earth piled into the cave");
+}
