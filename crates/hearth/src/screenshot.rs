@@ -184,6 +184,9 @@ pub struct ShotSpec {
     pub far_smoke: Vec<f64>,
     /// Temporal anti-aliasing (the shot is the last of a run of jittered frames).
     pub taa: bool,
+    /// Draw a sample of the interface over the shot at this interface scale (`ui=3`): its
+    /// panels, widgets and both typefaces (`interface::specimen`).
+    pub ui: Option<u32>,
     /// See through the eyes of a person standing on the ground below the camera (their body
     /// drawn as in first person).
     pub body: bool,
@@ -290,6 +293,7 @@ impl Default for ShotSpec {
             fire: None,
             far_smoke: Vec::new(),
             taa: false,
+            ui: None,
             body: false,
             senses: None,
             animals: Vec::new(),
@@ -431,6 +435,7 @@ impl ShotSpec {
                 // `farsmoke=4000`: a far fire's smoke 4 km ahead, repeatable.
                 "farsmoke" => spec.far_smoke.push(v.parse()?),
                 "taa" => spec.taa = v.parse()?,
+                "ui" => spec.ui = Some(v.parse()?),
                 "body" => spec.body = v.parse()?,
                 "senses" => spec.senses = Some(v.to_owned()),
                 // `fauna=true`: the animals the populations put about the camera;
@@ -1541,7 +1546,26 @@ pub fn render_shot(
     for _ in 0..if spec.taa { 18 } else { 2 } {
         frame(&mut scene);
     }
-    let pixels = frame(&mut scene);
+    let mut pixels = frame(&mut scene);
+    if let Some(scale) = spec.ui {
+        let mut interface = crate::interface::Interface::new("en_us");
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("shot interface"),
+            });
+        interface.frame(
+            ctx,
+            &mut enc,
+            &target.color_view,
+            OFFSCREEN_FORMAT,
+            size,
+            scale,
+            crate::interface::specimen,
+        );
+        ctx.queue.submit(Some(enc.finish()));
+        pixels = target.read_rgba(ctx);
+    }
     if spec.verify_cull && scene.terrain.uses_gpu_culling() {
         let counts = scene.terrain.read_gpu_draw_counts(ctx).unwrap_or_default();
         scene.terrain.gpu_culling = false;

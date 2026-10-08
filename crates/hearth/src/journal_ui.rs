@@ -1,10 +1,20 @@
 //! The journal (J, v2 §12.3): what the person has learned, in their own words with the real
 //! history behind it; hunches not yet understood; skills and how practised they are; and
-//! everything noted, day by day.
+//! everything noted, day by day. Its pages are a field notebook's (Amendment Q §6): ruled
+//! paper and the serif face in inks.
 
 use hearth_craft::{Graph, KnowledgeState, Mode, NoteKind, Skill};
 use hearth_ui::widgets::{Column, Rect, theme};
-use hearth_ui::{Rgba, Ui};
+use hearth_ui::{Face, Rgba, Ui};
+
+/// The notebook's paper, its rules, and its inks: for headings and what is known, for the
+/// history and legends, for discoveries and for hunches.
+const PAPER: Rgba = Rgba([226, 214, 188, 248]);
+const RULE: Rgba = Rgba([150, 160, 170, 70]);
+const INK: Rgba = Rgba([46, 40, 34, 255]);
+const FADED: Rgba = Rgba([104, 92, 78, 255]);
+const FOUND: Rgba = Rgba([116, 70, 30, 255]);
+const GUESS: Rgba = Rgba([52, 70, 110, 255]);
 
 /// What the journal shows.
 pub struct JournalView<'a> {
@@ -60,15 +70,17 @@ pub fn journal_screen(ui: &mut Ui<'_>, view: &JournalView, tab: &mut u8, scroll:
     let max_scroll = (lines.len() as i32 - rows).max(0);
     let wheel = ui.input.scroll.round() as i32;
     *scroll = (*scroll - wheel * 3).clamp(0, max_scroll);
-    ui.draw.rect(
-        x,
-        top - 2.0,
-        pw,
-        rows as f32 * lh + 4.0,
-        theme::PANEL.with_alpha(200),
-    );
+    // The page: paper, ruled under each line.
+    ui.draw
+        .rect(x, top - 2.0, pw, rows as f32 * lh + 4.0, PAPER);
+    for k in 0..rows {
+        let y = top + (k + 1) as f32 * lh - 2.0;
+        ui.draw.rect(x + 2.0, y, pw - 4.0, 0.5, RULE);
+    }
     if lines.is_empty() {
-        ui.label(x + 4.0, top, &ui.t("journal.empty"), theme::DIM);
+        let empty = ui.t("journal.empty");
+        ui.draw
+            .text_in(ui.font, Face::Serif, &empty, x + 6.0, top, FADED);
     }
     for (k, (text, color)) in lines
         .iter()
@@ -76,7 +88,9 @@ pub fn journal_screen(ui: &mut Ui<'_>, view: &JournalView, tab: &mut u8, scroll:
         .take(rows as usize)
         .enumerate()
     {
-        ui.label(x + 4.0, top + k as f32 * lh, text, *color);
+        let y = top + k as f32 * lh;
+        ui.draw
+            .text_in(ui.font, Face::Serif, text, x + 6.0, y, *color);
     }
     let mut c = Column::new(x + pw / 4.0, h - 28.0, pw / 2.0);
     ui.button(c.row(20.0), &ui.t("menu.done"))
@@ -90,8 +104,8 @@ fn lines_of(ui: &Ui<'_>, view: &JournalView, tab: u8, width: f32) -> Vec<(String
     let push = |text: &str, color: Rgba, out: &mut Vec<(String, Rgba)>| {
         let body = text.trim_start();
         let indent = &text[..text.len() - body.len()];
-        let room = (width - ui.font.width(indent) as f32).max(40.0) as u32;
-        for l in ui.font.wrap(body, room) {
+        let room = (width - ui.font.width_in(Face::Serif, indent)).max(40.0);
+        for l in ui.font.wrap_in(Face::Serif, body, room) {
             out.push((format!("{indent}{l}"), color));
         }
     };
@@ -108,7 +122,7 @@ fn lines_of(ui: &Ui<'_>, view: &JournalView, tab: u8, width: f32) -> Vec<(String
                 if era != Some(n.era) {
                     era = Some(n.era);
                     let key = format!("journal.era.{}", n.era);
-                    push(&ui.t(&key), theme::TEXT, &mut out);
+                    push(&ui.t(&key), INK, &mut out);
                 }
                 let when = k
                     .known
@@ -118,22 +132,14 @@ fn lines_of(ui: &Ui<'_>, view: &JournalView, tab: u8, width: f32) -> Vec<(String
                             .format("journal.day", &[("day", &day(l.tick).to_string())])
                     })
                     .unwrap_or_default();
-                push(
-                    &format!("  {} — {when}", n.name),
-                    Rgba([240, 220, 150, 255]),
-                    &mut out,
-                );
-                push(
-                    &format!("    {} ({})", n.summary, n.date),
-                    theme::DIM,
-                    &mut out,
-                );
+                push(&format!("  {} — {when}", n.name), FOUND, &mut out);
+                push(&format!("    {} ({})", n.summary, n.date), FADED, &mut out);
             }
             if !k.legends.is_empty() {
-                push(&ui.t("journal.legend"), theme::TEXT, &mut out);
+                push(&ui.t("journal.legend"), INK, &mut out);
                 for id in &k.legends {
                     let name = view.graph.node(id).map_or(id.as_str(), |n| n.name.as_str());
-                    push(&format!("  {name}"), theme::DIM, &mut out);
+                    push(&format!("  {name}"), FADED, &mut out);
                 }
             }
         }
@@ -141,11 +147,7 @@ fn lines_of(ui: &Ui<'_>, view: &JournalView, tab: u8, width: f32) -> Vec<(String
             for n in k.journal.iter().rev().filter(|n| n.kind == NoteKind::Hunch) {
                 let pending = n.node.as_ref().is_some_and(|id| !k.knows(id));
                 if pending {
-                    push(
-                        &format!("— {}", n.text),
-                        Rgba([200, 210, 240, 255]),
-                        &mut out,
-                    );
+                    push(&format!("— {}", n.text), GUESS, &mut out);
                 }
             }
         }
@@ -159,7 +161,7 @@ fn lines_of(ui: &Ui<'_>, view: &JournalView, tab: u8, width: f32) -> Vec<(String
                         ("hours", &format!("{:.1}", s.hours)),
                     ],
                 );
-                push(&line, theme::TEXT, &mut out);
+                push(&line, INK, &mut out);
             }
         }
         _ => {
@@ -170,15 +172,15 @@ fn lines_of(ui: &Ui<'_>, view: &JournalView, tab: u8, width: f32) -> Vec<(String
                     last_day = Some(d);
                     push(
                         &ui.lang.format("journal.day", &[("day", &d.to_string())]),
-                        theme::TEXT,
+                        INK,
                         &mut out,
                     );
                 }
                 let color = match n.kind {
-                    NoteKind::Discovery => Rgba([240, 220, 150, 255]),
-                    NoteKind::Hunch => Rgba([200, 210, 240, 255]),
-                    NoteKind::Legend | NoteKind::PastLife => theme::DIM,
-                    NoteKind::Made => Rgba([220, 225, 215, 255]),
+                    NoteKind::Discovery => FOUND,
+                    NoteKind::Hunch => GUESS,
+                    NoteKind::Legend | NoteKind::PastLife => FADED,
+                    NoteKind::Made => INK,
                 };
                 push(&format!("  {}", n.text), color, &mut out);
             }

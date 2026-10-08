@@ -244,3 +244,4 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D233 (2026-10-08) Tests build in the dev-opt profile
 - D234 (2026-10-08) Animals move only within their medium
 - D235 (2026-10-08) Long runs live in a soak suite
+- D236 (2026-10-08) Item icons wait for the items' meshes (S6)

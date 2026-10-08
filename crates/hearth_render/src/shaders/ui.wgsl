@@ -45,7 +45,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // rectangles: coverage is the field's step, softened over one screen pixel.
     let d = textureSample(atlas, samp, in.uv).r;
     let w = max(fwidth(d) * 0.7, 1e-4);
-    let ink = smoothstep(0.5 - w, 0.5 + w, d);
+    // Stems darkened by about a third of a screen pixel, which small text needs and large text
+    // does not notice.
+    let edge = 0.5 - 0.45 * w;
+    let ink = smoothstep(edge - w, edge + w, d);
     var rgb = in.color.rgb;
     if screen.size.z > 0.5 {
         rgb = srgb_to_linear(rgb);

@@ -21,12 +21,12 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
 | Audit 0, then its high-priority fixes | done 2026-10-08 (D231–D234) |
-| Q1 — interface design | planned |
+| Q1 — interface design | done 2026-10-08 (D236) |
 | E1 → E5 — humanity plan; controls; Earth time; Earth size; Wild Earth start | planned |
 | P3 → P4 with E6 → P5 → P6, Audit 1 | planned |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
@@ -41,7 +41,20 @@ P0, P1, P2, E0, Audit 0. V2-11 superseded.
 | Earth-True (E) | E0 done 2026-10-08 (D230); E1–E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
 
-## Latest: Audit 0 — the baseline (2026-10-08, D231–D234)
+## Latest: Q1 — the interface's look (2026-10-08, D236)
+- Source Sans 3 for the interface and Source Serif 4 for the journal (SIL OFL,
+  `ASSETS_LICENSES.md`) drawn from signed distance fields in one atlas, sharp at every
+  interface scale; umber panels and warm off-white words; the journal as ruled notebook paper in
+  inks; scrolled areas keep their bar's room; `ui=` draws a specimen in screenshots
+  (`docs/review/q1/`). Item icons from meshes wait for S6's item meshes (D236).
+- Real? Real typefaces at sizes matching the old capitals; the journal reads as a field
+  notebook. Lean? The 560-line pixel font and its glyph table gone; one atlas and one shader
+  path; no icon pipeline for boxes. Fast? The atlas is built once at start (1 MiB on the GPU); no
+  per-frame cost added. Whole? Every screen passes the layout test at every resolution and
+  scale; words on panels about 15:1, dim words 7:1, the journal's inks at least 4.5:1; checked in
+  the specimen at scales 1 and 3. Organic? Nothing generated.
+
+## Audit 0 — the baseline (2026-10-08, D231–D234)
 - Metrics: 117,300 lines of non-test Rust in 24 crates; 56 direct dependencies; restart files
   41 KB (were 393); 8 files over 2,000 lines; no frame or tick numbers here (the PC's gate).
 - Lean: 13 dependencies, 51 public items, ~30 options, 18 key actions, 89 language keys and E0's

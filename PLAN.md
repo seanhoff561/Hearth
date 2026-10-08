@@ -54,6 +54,7 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 - **E0** — the human systems removed and archived (D230): Amendment E keeps the game to a lone
   player on a true Earth until Phase F plans people anew.
 - **Audit 0** — the baseline (`docs/review/audits/AUDIT-0.md`, D231–D234).
+- **Q1** — the interface's typefaces, panels and journal (`docs/design/interface.md`, D236).
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -69,11 +70,6 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
 - One `smoothstep`; debug tools (F3+T, the counting allocator) behind Developer mode; material
   statuses derived from use; planned knowledge cut to id, name and a line; Q §3's repetition
   checks in the screenshot suite (with S2).
-
-## Q1 — Interface design (Q §6)
-- An OFL typeface rendered as SDF/MSDF text; quiet panels in natural low-saturation colours;
-  item icons rendered from the items' meshes; a lightly diegetic journal; accessibility and the
-  layout test kept. Only `hearth_ui` and the screens.
 
 ## E1 — The future humanity plan (documents only, E §10)
 - `docs/design/future/humanity/` (README, roadmap and one document per E §10 section), research
@@ -226,9 +222,9 @@ After S4, covering S1, S2, E7, S3, S4.
 - Smooth procedural skinned bodies for every body plan, genetics-driven shape, expressive faces,
   coats, hair and fur, fitted clothing, body LODs and impostors; smooth item meshes from form ×
   material (S §10).
-- *Accept:* a three-generation family screenshot set shows resemblance; herds and crowds stay
-  within budgets; every item form renders for every material.
-- *Amended by E §9.2:* animals and items; the human body is E7's.
+- *Accept:* herds stay within budgets; every item form renders for every material.
+- *Amended by E §9.2:* animals and items; the human body is E7's. With the item meshes, the
+  inventory's icons rendered from them under neutral light and cached (Q §6, D236).
 
 ## S7 — Water, snow, ice, caves and built-piece polish
 - S §9 in full and S §6 visual polish.
