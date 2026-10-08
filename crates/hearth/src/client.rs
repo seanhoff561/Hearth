@@ -2157,7 +2157,7 @@ impl Client {
         WorldSpec {
             name: name.to_owned(),
             seed,
-            planet: hearth_math::PlanetSize::Standard,
+            planet: hearth_math::PlanetSize::Earth,
             cache_dir,
             saves_dir,
             appearance,

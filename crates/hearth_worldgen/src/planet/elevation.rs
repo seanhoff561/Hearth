@@ -5,7 +5,6 @@
 use glam::DVec3;
 
 use crate::noise::SphereFbm;
-use crate::settings::FeatureRarity;
 
 /// Per-planet scale constants for converting real relief into footprints.
 #[derive(Debug, Clone, Copy)]
@@ -137,16 +136,13 @@ pub struct CellElevation {
 #[derive(Debug, Clone, Copy)]
 pub struct ElevationParams {
     pub scale: Scale,
-    pub rarity: FeatureRarity,
 }
 
 impl ElevationParams {
+    /// How strong a collision must be to raise a great range or plateau: rare, as on Earth
+    /// (the Himalaya and Tibet, the Andes).
     fn great_threshold(&self) -> f64 {
-        match self.rarity {
-            FeatureRarity::Rare => 0.78,
-            FeatureRarity::Standard => 0.62,
-            FeatureRarity::Common => 0.45,
-        }
+        0.78
     }
 }
 
@@ -354,10 +350,7 @@ mod tests {
     #[test]
     fn ocean_profile_is_monotone_offshore() {
         let scale = std_scale();
-        let params = ElevationParams {
-            scale,
-            rarity: FeatureRarity::Rare,
-        };
+        let params = ElevationParams { scale };
         let nz = ElevationNoise::new(1, &scale);
         let mut last = 1.0e9;
         for k in 0..200 {

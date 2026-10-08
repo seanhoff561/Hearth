@@ -11,10 +11,10 @@ use hearth_math::Planet;
 use super::grid::{Field, GridGeom};
 use super::tectonics::TectonicLayout;
 use super::{PlanetGrid, RiverCell, Volcano};
-use crate::settings::WorldGenSettings;
+use crate::settings::{LAND_FRACTION, WorldGenSettings};
 
 const MAGIC: &[u8; 4] = b"HPLN";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 /// Errors reading or writing a planet file.
 #[derive(Debug, thiserror::Error)]
@@ -215,7 +215,7 @@ impl PlanetGrid {
             });
         }
         let seed = r.u32()? as u64 | ((r.u32()? as u64) << 32);
-        let layout = TectonicLayout::generate(seed, (settings.land_fraction * 1.6).min(0.8));
+        let layout = TectonicLayout::generate(seed, (LAND_FRACTION * 1.6).min(0.8));
         let mut h = halves.into_iter();
         let mut next = || h.next().expect("nine fields read above");
         Ok(PlanetGrid {

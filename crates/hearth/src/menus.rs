@@ -186,16 +186,16 @@ pub struct NewWorldChoice {
     pub mode: String,
 }
 
-/// The planet sizes Create World offers, the standard first among them by its place.
-const SIZES: [(hearth_math::PlanetSize, &str); 5] = [
-    (hearth_math::PlanetSize::Small, "menu.new_world.size.small"),
+/// The planets Create World makes: Earth; in Developer mode also the small test planets
+/// (E §5.1), for tests, bots and benchmarks.
+const SIZES: [(hearth_math::PlanetSize, &str); 4] = [
+    (hearth_math::PlanetSize::Earth, "menu.new_world.size.earth"),
     (
         hearth_math::PlanetSize::Standard,
         "menu.new_world.size.standard",
     ),
-    (hearth_math::PlanetSize::Large, "menu.new_world.size.large"),
-    (hearth_math::PlanetSize::Huge, "menu.new_world.size.huge"),
-    (hearth_math::PlanetSize::Vast, "menu.new_world.size.vast"),
+    (hearth_math::PlanetSize::Small, "menu.new_world.size.small"),
+    (hearth_math::PlanetSize::Tiny, "menu.new_world.size.tiny"),
 ];
 
 impl Screen {
@@ -211,7 +211,7 @@ impl Screen {
             seed: String::new(),
             era: 0,
             more: false,
-            size: 1,
+            size: 0,
             shape: Default::default(),
             mode: usize::MAX,
         }
@@ -951,26 +951,13 @@ impl Menus {
                             *more = !*more;
                         }
                         if *more {
-                            let names: Vec<String> = SIZES.iter().map(|(_, k)| ui.t(k)).collect();
-                            ui.cycle(c.row(ROW), &ui.t("menu.new_world.size"), &names, size_i);
-                            let scales = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
-                            let snames: Vec<String> = scales
-                                .iter()
-                                .map(|v| format!("{:.0}%", v * 100.0))
-                                .collect();
-                            let mut si = scales
-                                .iter()
-                                .position(|v| {
-                                    (v - shape.vertical_scale.unwrap_or(1.0)).abs() < 1e-6
-                                })
-                                .unwrap_or(2);
-                            if ui.cycle(
-                                c.row(ROW),
-                                &ui.t("menu.new_world.vertical"),
-                                &snames,
-                                &mut si,
-                            ) {
-                                shape.vertical_scale = Some(scales[si]);
+                            // The planet is Earth; Developer mode offers the test planets.
+                            if cx.options.developer_mode {
+                                let names: Vec<String> =
+                                    SIZES.iter().map(|(_, k)| ui.t(k)).collect();
+                                ui.cycle(c.row(ROW), &ui.t("menu.new_world.size"), &names, size_i);
+                            } else {
+                                *size_i = 0;
                             }
                             // When the world's clock begins (E §4.1): a spring morning where
                             // the first life is, or the real date and time.

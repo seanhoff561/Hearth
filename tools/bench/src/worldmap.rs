@@ -7,9 +7,9 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use hearth_math::PlanetSize;
+use hearth_worldgen::WorldGenSettings;
 use hearth_worldgen::planet::climate::ClimateClass;
 use hearth_worldgen::planet::{PlanetGrid, flags};
-use hearth_worldgen::{FeatureRarity, WorldGenSettings};
 
 use crate::image::{Image, ramp, shade};
 
@@ -23,7 +23,6 @@ pub struct Args {
     /// Block-scale geology of an area: (x, z, size in blocks) — a top-down map of the rock at
     /// the surface and an east–west cross-section through its middle.
     pub geo_areas: Vec<(i32, i32, i32)>,
-    pub rarity: FeatureRarity,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -35,13 +34,12 @@ pub enum Slice {
 pub fn parse(args: &[String]) -> anyhow::Result<Args> {
     let mut a = Args {
         seed: 1,
-        planet: PlanetSize::Standard,
+        planet: PlanetSize::Earth,
         res: 1024,
         out: PathBuf::from("bench-out/worldmap"),
         width: 2048,
         slices: Vec::new(),
         geo_areas: Vec::new(),
-        rarity: FeatureRarity::Rare,
     };
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -60,14 +58,6 @@ pub fn parse(args: &[String]) -> anyhow::Result<Args> {
             "--res" => a.res = val()?.parse()?,
             "--out" => a.out = PathBuf::from(val()?),
             "--width" => a.width = val()?.parse()?,
-            "--rarity" => {
-                a.rarity = match val()?.as_str() {
-                    "rare" => FeatureRarity::Rare,
-                    "standard" => FeatureRarity::Standard,
-                    "common" => FeatureRarity::Common,
-                    other => anyhow::bail!("unknown rarity {other}"),
-                }
-            }
             "--slice" => {
                 let v = val()?;
                 let (k, num) = v
@@ -314,8 +304,6 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         seed: a.seed,
         planet_size: a.planet,
         grid_resolution: a.res,
-        rarity: a.rarity,
-        ..WorldGenSettings::default()
     };
     let t0 = Instant::now();
     let last = std::sync::Mutex::new(String::new());

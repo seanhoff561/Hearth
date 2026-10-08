@@ -18,7 +18,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::noise::SphereFbm;
-use crate::settings::WorldGenSettings;
+use crate::settings::{LAND_FRACTION, WorldGenSettings};
 use climate::ClimateClass;
 use elevation::{BoundaryKind, CellInput, ElevationNoise, ElevationParams, Scale};
 use fields::{NONE, class_edges, distance_to, nearest_seed, weighted_quantile};
@@ -139,7 +139,7 @@ impl PlanetGrid {
         progress(0.0, "Arranging tectonic plates");
         // Continental plates lose their margins to the sea, so they must cover more than the
         // target land fraction; the threshold below trims them to the exact target.
-        let layout = TectonicLayout::generate(seed, (settings.land_fraction * 1.6).min(0.8));
+        let layout = TectonicLayout::generate(seed, (LAND_FRACTION * 1.6).min(0.8));
         let len = geom.len();
 
         // ------------------------------------------------------------ plates
@@ -254,10 +254,7 @@ impl PlanetGrid {
         progress(0.34, "Tracing hotspot chains");
         let chain = hotspot_chain(&layout, &scale, seed);
 
-        let params = ElevationParams {
-            scale,
-            rarity: settings.rarity,
-        };
+        let params = ElevationParams { scale };
         let noise = ElevationNoise::new(seed, &scale);
         // Everything from the land threshold to the composed elevation, as a function of the
         // target land fraction. Coastal ranges and island arcs add some land beyond the
@@ -411,15 +408,15 @@ impl PlanetGrid {
             }
         };
         progress(0.40, "Raising mountains");
-        let first = stage(settings.land_fraction);
+        let first = stage(LAND_FRACTION);
         let measured = area_fraction(&geom, &first.elev, |e| e > 0.0);
-        let corrected = (2.0 * settings.land_fraction - measured).clamp(0.05, 0.9);
+        let corrected = (2.0 * LAND_FRACTION - measured).clamp(0.05, 0.9);
         let ContinentStage {
             land,
             coast,
             composed,
             mut elev,
-        } = if (measured - settings.land_fraction).abs() > 0.01 {
+        } = if (measured - LAND_FRACTION).abs() > 0.01 {
             stage(corrected)
         } else {
             first

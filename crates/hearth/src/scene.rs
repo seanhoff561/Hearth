@@ -304,17 +304,10 @@ pub fn data_pack_dir() -> std::path::PathBuf {
     hearth_world::datapack::builtin_pack_dir()
 }
 
-/// The planet cache's file for world-generation settings: its seed, size, resolution and (when
-/// not the standard) vertical scale.
+/// The planet cache's file for world-generation settings: its seed, size and resolution.
 pub fn planet_cache_name(settings: &WorldGenSettings) -> String {
-    let scale = settings.vertical_scale_factor;
-    let scale = if (scale - 1.0).abs() < 1e-9 {
-        String::new()
-    } else {
-        format!("_v{:.0}", scale * 100.0)
-    };
     format!(
-        "planet_{}_{}_{}{scale}.bin.zst",
+        "planet_{}_{}_{}.bin.zst",
         settings.seed,
         settings.planet_size.name(),
         settings.grid_resolution

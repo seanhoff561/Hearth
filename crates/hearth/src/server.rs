@@ -82,19 +82,17 @@ pub struct WorldSpec {
 /// the game's default.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct WorldShape {
-    /// How tall the land is drawn, against the standard (0.25–2).
-    pub vertical_scale: Option<f64>,
     /// When the world's clock begins (E §4.1).
     pub start: Option<hearth_save::Start>,
 }
 
 impl WorldShape {
-    /// The world-generation settings of a new world of `seed` and `size`.
+    /// The world-generation settings of a new world of `seed` and `size` (Earth, or a test
+    /// planet: E §5.1).
     pub fn planet(&self, seed: u64, size: PlanetSize) -> hearth_worldgen::WorldGenSettings {
         hearth_worldgen::WorldGenSettings {
             seed,
             planet_size: size,
-            vertical_scale_factor: self.vertical_scale.unwrap_or(1.0),
             ..Default::default()
         }
         .sanitized()

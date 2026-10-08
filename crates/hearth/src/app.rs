@@ -101,7 +101,7 @@ struct NewShape {
 impl Default for NewShape {
     fn default() -> Self {
         Self {
-            size: hearth_math::PlanetSize::Standard,
+            size: hearth_math::PlanetSize::Earth,
             shape: Default::default(),
             birthplace: None,
             mode: None,

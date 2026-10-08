@@ -23,4 +23,4 @@ pub mod vegetation;
 pub use cubegen::{CubeClass, WorldGenerator};
 pub use planet::PlanetGrid;
 pub use region::{ColumnSample, Surface, Terrain};
-pub use settings::{FeatureRarity, SpawnClimate, WorldGenSettings};
+pub use settings::{LAND_FRACTION, WorldGenSettings};
