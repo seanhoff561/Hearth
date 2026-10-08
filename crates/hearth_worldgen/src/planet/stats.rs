@@ -224,3 +224,50 @@ fn hypsometry_matches_the_vertical_profile() {
     let trenches = deepest.iter().filter(|d| **d < -2000.0).count();
     assert!(trenches >= ps.len() / 2, "trenches present: {deepest:?}");
 }
+
+/// Earth's hypsometry at Earth's size (E §5.1): its land share (29 %), the land's mean height
+/// (797–840 m), the ocean's mean depth (3,682 m), and great heights and depths present but rare.
+#[test]
+fn an_earth_sized_planet_has_earths_hypsometry() {
+    for seed in 1..=3u64 {
+        let s = WorldGenSettings {
+            seed,
+            planet_size: PlanetSize::Earth,
+            grid_resolution: 512,
+        };
+        let g = PlanetGrid::build(&s, &|_, _| {});
+        let n = g.n();
+        let (mut land, mut total, mut height, mut depth) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+        let (mut top, mut deepest) = (f32::MIN, f32::MAX);
+        for j in 0..n {
+            let w = g.geom.phys_cell(j).powi(2);
+            for i in 0..n {
+                let e = g.elevation.data[j * n + i];
+                total += w;
+                if e > 0.0 {
+                    land += w;
+                    height += w * e as f64;
+                } else {
+                    depth -= w * e as f64;
+                }
+                top = top.max(e);
+                deepest = deepest.min(e);
+            }
+        }
+        let (share, mean_land, mean_sea) = (land / total, height / land, depth / (total - land));
+        assert!(
+            (0.27..=0.31).contains(&share),
+            "seed {seed}: land {share:.3}"
+        );
+        assert!(
+            (550.0..=1050.0).contains(&mean_land),
+            "seed {seed}: mean land height {mean_land:.0} m"
+        );
+        assert!(
+            (3300.0..=4000.0).contains(&mean_sea),
+            "seed {seed}: mean ocean depth {mean_sea:.0} m"
+        );
+        assert!(top > 5000.0, "seed {seed}: highest cell {top} m");
+        assert!(deepest < -8000.0, "seed {seed}: deepest cell {deepest} m");
+    }
+}

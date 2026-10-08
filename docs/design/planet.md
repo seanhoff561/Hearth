@@ -24,6 +24,26 @@ wrapping east–west on a Mercator grid with poles.
 - **Cube generation**: pure and order-independent (priority lattice, 27-neighbour seeding):
   rock by depth, caves, rock-variety veins, trees and plants.
 
+## At Earth's size (E4)
+The elevation model's heights are Earth's real ones on an Earth-sized planet and blend back to
+the small planets' tuning as the planet shrinks (`Scale::earth`, so the test planets keep their
+shape): interiors some 500 m up, the greatest ranges some 6.5 km over their 20 km cells with a
+4.6 km plateau behind, ordinary and Andean ranges 3–5 km, old ranges 1.6–2.1 km, trenches 7–11 km.
+`bench hypso` measures a grid against Earth:
+
+| | Earth | seeds 7, 8, 9 (2048²) |
+|---|---|---|
+| Land | 29.2 % (Kossinna 1931) | 29.0, 29.1, 29.2 % |
+| Mean land height | 797–840 m (Eakins and Sharman 2012; Kossinna) | 791, 599, 637 m |
+| Mean ocean depth | 3,682 m (NOAA) | 3,640, 3,562, 3,544 m |
+| Highest 20 km cell | ~6 km (the Himalaya, Tibet) | 6.4, 6.0, 5.8 km |
+| Deepest cell | ~10.9 km (the Mariana) | 8.2, 7.7, 7.2 km |
+| Surface above 2 km | some 3–4 % | 1.6, 0.4, 0.8 % |
+
+Short of Earth: the middle heights (1–3 km), as ranges are few and narrow at the grid's scale
+and its erosion flattens them, and the deepest trenches at 2048² (512² reaches 10.4 km). Test:
+`planet::stats::an_earth_sized_planet_has_earths_hypsometry` (three seeds at 512²).
+
 ## Interactions
 Feeds geology provinces (V2-2 derives them from the tectonic history), soils (climate ×
 parent rock), ecosystems (biomes → ecological cells), seasons (V2-1 adds seasonal amplitude).

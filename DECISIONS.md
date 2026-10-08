@@ -255,3 +255,4 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D244 (2026-10-08) New worlds are Earth; the test planets stay for Developer mode
 - D245 (2026-10-08) Terrain refinement: nested levels, made a tile at a time, the same whichever tile
 - D246 (2026-10-08) The blocks read a level once per area; far tiles read coarse levels
+- D247 (2026-10-08) Earth's heights on an Earth-sized planet; the test planets keep theirs

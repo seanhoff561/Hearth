@@ -14,7 +14,7 @@ part of the world is made first.
 
 ## Levels
 - Each **level** is eight times finer than its parent: 2,446 m, 306 m and 38 m cells on Earth
-  (as many as stay coarser than 24 m). A small test planet, whose grid is already fine, has none
+  (as many as stay coarser than 24 m), on a grid of kilometre cells. A small test planet, whose grid is already fine, has none
   and keeps the grid's own sampler.
 - A level is made a **tile** at a time: 64 × 64 cells and a margin of 16 all round, kept in an LRU
   cache per level (512 tiles). A cell's value is its tiles' blend: the tile whose core holds it,
@@ -92,8 +92,8 @@ it is sampled (alone, in a batch, across the seam); the blocks' rivers run down 
 coarse cells.
 
 ## Known simplifications
-- The grid itself is still the Standard planet's tuned up (E4's recalibration comes next): its
-  highest land is 4.4 km, and its relief field drives the levels.
+- The grid's heights are Earth's on the whole (`planet.md`), short in the middle heights; its
+  relief field (uplift) drives how rough the levels are.
 - Small streams of a level's own drainage may shift a little at a tile's edge (the tiles agree on
   the surface and on every river kept from above).
 - A lake kept from the parent stands at the parent's surface even where the finer ground would

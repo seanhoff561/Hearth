@@ -18,6 +18,13 @@ pub struct Scale {
 }
 
 impl Scale {
+    /// How far the planet is Earth's (0 a small test planet, 1 Earth): Earth's interiors stand
+    /// higher and its great ranges, plateaus and trenches reach their real heights (E §5.1),
+    /// which the small planets, tuned to their narrow continents, keep out of.
+    pub fn earth(&self) -> f64 {
+        smoothstep(0.1, 1.0, self.horizontal)
+    }
+
     /// Angular half-width (radians) of a landform with real nominal half-width `nominal_km`
     /// and relief `relief_m`, such that its average flank slope in blocks never exceeds
     /// `max_slope`.
@@ -161,14 +168,17 @@ pub fn compose(c: &CellInput, params: &ElevationParams, nz: &ElevationNoise) -> 
     // ---------------------------------------------------------------- base surface
     let regional = nz.regional.sample(p);
     let shieldness = smoothstep(0.1, 0.5, nz.shield.sample(p));
+    let earth = s.earth();
     out.base = if land {
         let interior_w = s.footprint(400.0, 300.0, 0.02);
         let interior = smoothstep(0.0, interior_w, c.coast);
         // Low coastal plains rising gently inland; shields are flatter and a little higher.
-        let base = 8.0 + 220.0 * interior;
-        let relief = 180.0 * (1.0 - 0.6 * shieldness);
+        // On Earth the interiors stand some 500 m up, the continents' mean some 800 m with
+        // their ranges (Asia's 960 m, Africa's 650, Europe's 340).
+        let base = 8.0 + (220.0 + 330.0 * earth) * interior;
+        let relief = (180.0 + 220.0 * earth) * (1.0 - 0.6 * shieldness);
         base + regional * relief * smoothstep(0.0, interior_w * 0.3, c.coast)
-            + 120.0 * shieldness * interior
+            + (120.0 + 150.0 * earth) * shieldness * interior
     } else {
         let d = -c.coast;
         // Shelf widths: ~500 blocks on passive margins, ~100 on active ones (Standard).
@@ -206,11 +216,14 @@ pub fn compose(c: &CellInput, params: &ElevationParams, nz: &ElevationNoise) -> 
             if c.own_continental && c.other_continental {
                 // Continental collision: a range centred on the suture, with a high plateau
                 // behind it on the overriding side for the strongest collisions.
-                let peak = lerp(2600.0, 4800.0, great) * strength.clamp(0.45, 1.0);
+                // On Earth the greatest stand some 6 km high over 20 km (the Himalaya), with a
+                // plateau of 4.5 km behind (Tibet).
+                let peak = lerp(2600.0 + 1200.0 * earth, 4800.0 + 1700.0 * earth, great)
+                    * strength.clamp(0.45, 1.0);
                 let hw = s.footprint(150.0, peak, RANGE_SLOPE);
                 uplift += peak * bump(c.boundary_dist / hw);
                 if c.overriding && great > 0.05 {
-                    let plateau_h = 2600.0 * great;
+                    let plateau_h = (2600.0 + 2000.0 * earth) * great;
                     let flat = hw * 0.6 + s.footprint(450.0, 0.0, 1.0);
                     let edge = s.footprint(150.0, plateau_h, PLATEAU_EDGE_SLOPE);
                     let t = 1.0 - smoothstep(flat, flat + edge, c.boundary_dist);
@@ -219,7 +232,8 @@ pub fn compose(c: &CellInput, params: &ElevationParams, nz: &ElevationNoise) -> 
                 }
             } else if c.own_continental && !c.other_continental {
                 // Andean margin: coastal range inland of the trench.
-                let peak = lerp(2300.0, 4400.0, great) * strength.clamp(0.4, 1.0);
+                let peak = lerp(2300.0 + 1000.0 * earth, 4400.0 + 1300.0 * earth, great)
+                    * strength.clamp(0.4, 1.0);
                 let hw = s.footprint(110.0, peak, RANGE_SLOPE);
                 let crest = hw * 0.9;
                 // Only on the continent: a range never rises out of the open sea.
@@ -227,7 +241,9 @@ pub fn compose(c: &CellInput, params: &ElevationParams, nz: &ElevationNoise) -> 
                 uplift += peak * bump((c.boundary_dist - crest) / hw) * onshore;
             } else if !c.own_continental && c.other_continental {
                 // Subducting oceanic plate: trench at the boundary.
-                let depth = lerp(4500.0, 7800.0, great) * strength.clamp(0.4, 1.0);
+                // Trenches some 7 to 11 km deep on Earth (the Mariana's 10.9).
+                let depth = lerp(4500.0 + 1500.0 * earth, 7800.0 + 3000.0 * earth, great)
+                    * strength.clamp(0.4, 1.0);
                 let tw = s.footprint(60.0, depth, 1.5);
                 tectonic -= depth * bump(c.boundary_dist / tw);
             } else if c.overriding {
@@ -239,7 +255,8 @@ pub fn compose(c: &CellInput, params: &ElevationParams, nz: &ElevationNoise) -> 
                 let cones = smoothstep(0.25, 0.75, nz.arc_cones.sample(p)).powf(1.5);
                 tectonic += arc_h * bump((c.boundary_dist - crest) / hw) * (0.55 + 0.6 * cones);
             } else {
-                let depth = lerp(4800.0, 8200.0, great) * strength.clamp(0.4, 1.0);
+                let depth = lerp(4800.0 + 1500.0 * earth, 8200.0 + 2800.0 * earth, great)
+                    * strength.clamp(0.4, 1.0);
                 let tw = s.footprint(60.0, depth, 1.5);
                 tectonic -= depth * bump(c.boundary_dist / tw);
             }
@@ -270,7 +287,7 @@ pub fn compose(c: &CellInput, params: &ElevationParams, nz: &ElevationNoise) -> 
     // ---------------------------------------------------------------- old interiors
     if land {
         // Ancient sutures: rounded, eroded ranges (Appalachian-like).
-        let old_h = 900.0 + 500.0 * strength_noise;
+        let old_h = 900.0 + 700.0 * earth + 500.0 * strength_noise;
         let ow = s.footprint(90.0, old_h, 0.35);
         let old = old_h * bump(c.suture_dist / ow) * smoothstep(0.0, ow, c.coast);
         uplift = uplift.max(old);

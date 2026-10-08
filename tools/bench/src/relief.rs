@@ -458,3 +458,76 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+/// `bench hypso`: an Earth grid's hypsometry against Earth's (E §5.1): the land's share, its mean
+/// height and the ocean's mean depth, how much stands high, the highest and the deepest.
+pub fn hypso(args: &[String]) -> anyhow::Result<()> {
+    let a = parse(args)?;
+    let g = cached_grid(a.seed, PlanetSize::Earth, a.res)?;
+    let n = g.n();
+    let (mut land, mut total, mut land_h, mut sea_d) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    let (mut above2, mut above4, mut below6) = (0.0f64, 0.0f64, 0.0f64);
+    let (mut top, mut deep) = (f32::MIN, f32::MAX);
+    let mut lands: Vec<(f32, f64)> = Vec::new();
+    for j in 0..n {
+        // A cell's real area: its real side squared.
+        let w = g.geom.phys_cell(j).powi(2);
+        for i in 0..n {
+            let e = g.elevation.data[j * n + i];
+            total += w;
+            if e > 0.0 {
+                land += w;
+                land_h += w * e as f64;
+                lands.push((e, w));
+            } else {
+                sea_d -= w * e as f64;
+            }
+            if e > 2000.0 {
+                above2 += w;
+            }
+            if e > 4000.0 {
+                above4 += w;
+            }
+            if e < -6000.0 {
+                below6 += w;
+            }
+            top = top.max(e);
+            deep = deep.min(e);
+        }
+    }
+    lands.sort_by(|x, y| x.0.total_cmp(&y.0));
+    let pct = |p: f64| {
+        let mut acc = 0.0;
+        for (e, w) in &lands {
+            acc += w;
+            if acc >= p * land {
+                return *e;
+            }
+        }
+        f32::NAN
+    };
+    println!("seed {} at {}²", a.seed, a.res);
+    println!("land {:.1} % (Earth 29.2)", 100.0 * land / total);
+    println!(
+        "mean land height {:.0} m (Earth 797-840); land 10/50/90/99 %: {:.0} / {:.0} / {:.0} / {:.0} m",
+        land_h / land,
+        pct(0.1),
+        pct(0.5),
+        pct(0.9),
+        pct(0.99)
+    );
+    println!(
+        "mean ocean depth {:.0} m (Earth 3,682)",
+        sea_d / (total - land)
+    );
+    println!(
+        "surface above 2 km {:.2} % (Earth ~3.5), above 4 km {:.2} % (Earth ~0.8), below 6 km {:.2} % (Earth ~1)",
+        100.0 * above2 / total,
+        100.0 * above4 / total,
+        100.0 * below6 / total
+    );
+    println!(
+        "highest cell {top:.0} m (peaks 8.8 km, 20 km cells ~6 km), deepest {deep:.0} m (trenches ~11 km)"
+    );
+    Ok(())
+}

@@ -30,7 +30,7 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3. V2-11 superseded.
 | E1 — the humanity plan | done 2026-10-08 (documents only) |
 | E2 — controls | done 2026-10-08 (D237–D239) |
 | E3 — Earth's clock | done 2026-10-08 (D240–D243) |
-| E4 → E5 — Earth size; Wild Earth start | E4 in progress: (a) Earth-only creation done (D244); (c) the terrain's refinement levels in the game (D245–D246, `docs/design/terrain.md`); next (b) the grid at Earth's scale, (d) life at real heights, (e) the far field and performance |
+| E4 → E5 — Earth size; Wild Earth start | E4 in progress: (a) Earth-only creation (D244); (c) the terrain's refinement levels in the game (D245–D246, `docs/design/terrain.md`); (b) Earth's heights on the grid (D247, `planet.md`); next (d) life at real heights, (e) the far field and performance |
 | P3 → P4 with E6 → P5 → P6, Audit 1 | planned |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |

@@ -42,6 +42,8 @@ pub const MARGIN: i64 = 16;
 const SPAN: i64 = TILE + 2 * MARGIN;
 /// The finest level's cells are no smaller than this (blocks).
 pub const MIN_CELL: f64 = 24.0;
+/// A grid whose cells are smaller than this (blocks) has no refinement levels.
+pub const MIN_GRID_CELL: f64 = 1000.0;
 /// Tiles kept per level.
 const TILES_KEPT: usize = 512;
 /// Seconds in a year.
@@ -276,7 +278,8 @@ impl Relief {
         let mut levels = Vec::new();
         let mut cell = grid.geom.cell;
         let mut count = n;
-        while cell / RATIO as f64 >= MIN_CELL {
+        // Only a grid of kilometre cells is refined: a small test planet's is fine enough.
+        while grid.geom.cell >= MIN_GRID_CELL && cell / RATIO as f64 >= MIN_CELL {
             cell /= RATIO as f64;
             count *= RATIO;
             levels.push(Level { cell, count });
@@ -926,6 +929,26 @@ impl Relief {
                 }
             }
             if !cut {
+                break;
+            }
+        }
+        // Where a floor held a bed up, the beds above it rise to it: each lies at or above the
+        // next down its course.
+        for _ in 0..4 * SPAN {
+            let mut raised = false;
+            for k in 0..len {
+                if !channel[k] {
+                    continue;
+                }
+                if let Some(r) = target(k, recv[k], n)
+                    && channel[r]
+                    && h[k] < h[r]
+                {
+                    h[k] = h[r];
+                    raised = true;
+                }
+            }
+            if !raised {
                 break;
             }
         }

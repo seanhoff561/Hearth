@@ -12,6 +12,8 @@ mod worldmap;
 fn usage() {
     println!(
         "bench <command> [options]\n\ncommands:\n  worldmap [--seed N] [--planet earth] [--res 1024] [--width 2048] [--out DIR] [--slice lat=45] [--slice lon=-30]\n      Build the planet model and write Mercator/equirectangular PNG maps and slices.
+  hypso [--seed N] [--res 2048]
+      An Earth grid's hypsometry against Earth's.
   region [--seed N] [--res 1024] [--at X,Z] [--size 1024] [--scale 1] [--out FILE]
       Top-down block-resolution render of the surface around a point (default: spawn).
   deposits [--seed N] [--model ID] [--near X,Z] [--max-depth N] [--limit 10] [--coverage] [--springs] [--find BIOME|coral]
@@ -35,6 +37,7 @@ fn main() -> anyhow::Result<()> {
     };
     match cmd.as_str() {
         "relief" => relief::run(&args[1..]),
+        "hypso" => relief::hypso(&args[1..]),
         "worldmap" => worldmap::run(&args[1..]),
         "region" => region::run(&args[1..]),
         "gen" => r#gen::run(&args[1..]),
