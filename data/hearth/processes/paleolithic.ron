@@ -1,8 +1,8 @@
 // Era 0–2 processes. Durations are real-world times of skilled people (a novice takes twice as
-// long); the day scale compresses them (a 15-minute task ≈ 30 s of play at the default day
-// length). Processes without `knowledge` are open to anyone: gathering, and the experiments by
-// which knowledge is found (their verbs emit the discovery triggers the knowledge graph listens
-// for). Bulk materials are counted by the kilogram in the units their bulk forms hold.
+// long), and take that long in play (E §4.2). Processes without `knowledge` are open to anyone:
+// gathering, and the experiments by which knowledge is found (their verbs emit the discovery
+// triggers the knowledge graph listens for). Bulk materials are counted by the kilogram in the
+// units their bulk forms hold.
 (
     schema: 1,
     entries: [

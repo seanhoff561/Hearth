@@ -65,9 +65,6 @@ pub struct Seen<'a> {
     pub face: Option<hearth_math::Direction>,
     pub feet: DVec3,
     pub around: Surroundings,
-    /// Seconds of play in a game day and a game year.
-    pub day_s: f64,
-    pub year_s: f64,
     /// The animal looked at, as a process sees it (V2-12).
     pub animal: Option<Aimed>,
 }
@@ -327,14 +324,7 @@ impl Crafting {
             let def = &self.crafts.recipes[i].def;
             match p {
                 Ok(plan) => {
-                    let play_s = match plan.scale {
-                        hearth_content::schema::TimeScale::Day => {
-                            plan.hours as f64 / 24.0 * s.day_s
-                        }
-                        hearth_content::schema::TimeScale::Year => {
-                            plan.hours as f64 / (365.25 * 24.0) * s.year_s
-                        }
-                    };
+                    let play_s = plan.hours as f64 * 3600.0;
                     out.push(Offer {
                         words: def.action.clone(),
                         act: Some(Do::Process(def.id.clone())),

@@ -315,6 +315,7 @@ mod tests {
             modes: Vec::new(),
             globe: None,
             time_words: None,
+            waiting: None,
             may_watch: true,
             creative: false,
             catalog: &[],

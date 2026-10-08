@@ -8,7 +8,7 @@ use std::sync::Arc;
 use glam::{Affine3A, DVec2, DVec3, Quat};
 use hearth_character::{Activity, Drive, Figure, FigureInstance, Pose, Show};
 use hearth_core::options::Options;
-use hearth_env::Calendar;
+use hearth_env::{Calendar, Moment};
 use hearth_input::{InputState, builtin};
 use hearth_math::Planet;
 use hearth_physics::{Ability, BlockWorld, Gait, Intent, Motion, Mover, Stance};
@@ -210,7 +210,7 @@ pub struct Client {
     pub watching: Option<crate::observer_ui::Watching>,
     /// The signs animals left about the player: the world's seconds they are timed by, how long
     /// a day is (s), and the signs.
-    signs: (f64, f32, Vec<hearth_fauna::live::Sign>),
+    signs: (f64, Vec<hearth_fauna::live::Sign>),
     /// How many crickets sing about (0–1), and the air's warmth (°C).
     insects: (f32, f32),
     fauna: Option<Arc<hearth_fauna::species::Catalog>>,
@@ -223,8 +223,8 @@ pub struct Client {
     hidden_looks: Vec<(String, Vec<String>)>,
     /// The eyelids (0 open, 1 shut): shut asleep or unconscious, slow to open on waking.
     eyes_shut: f32,
-    /// Why the player last woke, and how long ago (s).
-    woke: Option<(hearth_body::Wake, f64)>,
+    /// How the player's last rest ended, and how long ago (s).
+    rested: Option<(hearth_protocol::Rested, f64)>,
     /// Where the heart and the breath are in their cycles (for the pulse at the edges of
     /// sight and the breath's fog).
     heart_phase: f64,
@@ -345,10 +345,8 @@ impl Client {
         let radius = options.video.render_distance as i32;
         let vertical = options.video.vertical_render_distance as i32;
         let server = Server::start(world, atlas.clone(), View { radius, vertical });
-        let calendar = match content.map(|c| &c.time) {
-            Some(cfg) => Calendar::from_config(cfg),
-            None => Calendar::new(48, 8, 23.44),
-        };
+        // Until the world's own arrives.
+        let calendar = Calendar::default();
         Self {
             server,
             scene: None,
@@ -416,14 +414,14 @@ impl Client {
             tumbling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
             watching: None,
-            signs: (0.0, 1200.0, Vec::new()),
+            signs: (0.0, Vec::new()),
             insects: (0.0, 15.0),
             fauna: None,
             bodies: None,
             base_items: None,
             hidden_looks: Vec::new(),
             eyes_shut: 0.0,
-            woke: None,
+            rested: None,
             heart_phase: 0.0,
             breath_phase: 0.0,
             reduce_motion: options.accessibility.reduce_motion,
@@ -768,8 +766,6 @@ impl Client {
         }
         let around = self.surroundings();
         let aim = self.aim_at();
-        let day_s = self.calendar.ticks_per_day() / 20.0;
-        let year_s = day_s * 4.0 * self.calendar.days_per_season as f64;
         let face = match self.aim {
             Some(Aim::Block { face, .. }) => Some(face),
             _ => None,
@@ -788,8 +784,6 @@ impl Client {
             face,
             feet: self.mover.pos,
             around,
-            day_s,
-            year_s,
             animal,
         };
         c.refresh(&seen);
@@ -1308,17 +1302,16 @@ impl Client {
             let b = hearth_math::BlockPos::containing(p + DVec3::Y * 0.3);
             (w.mirror.sky_light(b), w.mirror.block_light(b))
         };
-        let (now, day_s, signs) = &self.signs;
-        self.figure_boxes.extend(crate::signs::instances(
-            signs, *now, *day_s, cat, view, &light,
-        ));
+        let (now, signs) = &self.signs;
+        self.figure_boxes
+            .extend(crate::signs::instances(signs, *now, cat, view, &light));
     }
 
     /// What a sign near where the eyes rest says: to one who knows tracking, whose it is, how
     /// old and (a print) which way it went; otherwise only what it is.
     fn sign_words(&self, at: DVec3, l: &Lang) -> Option<String> {
         use hearth_fauna::live::SignKind;
-        let (now, day_s, signs) = &self.signs;
+        let (now, signs) = &self.signs;
         let s = signs
             .iter()
             .filter(|s| (s.pos - at).length() < 0.35)
@@ -1336,7 +1329,7 @@ impl Client {
             return Some(l.get(&format!("sign.{kind}")).to_owned());
         }
         let sp = self.fauna.as_ref()?.species.get(s.species as usize)?;
-        let hours = (now - s.t) / (*day_s).max(1.0) as f64 * 24.0;
+        let hours = (now - s.t) / 3600.0;
         let age = l.get(match hours {
             h if h < 2.0 => "sign.age.fresh",
             h if h < 12.0 => "sign.age.hours",
@@ -1838,12 +1831,28 @@ impl Client {
         }
     }
 
-    /// Lies down to rest (sleep comes when the body is sleepy), or gets up.
-    pub fn toggle_rest(&mut self) {
-        let lying = self.body.as_ref().is_some_and(|b| b.lying);
+    /// Lies down to sleep or rest until something (sleep comes when the body is sleepy), or
+    /// gets up (`None`).
+    pub fn rest(&mut self, rest: Option<hearth_protocol::Rest>) {
         if !self.dead() {
-            self.server.send(ToServer::Sleep(!lying));
+            self.server.send(ToServer::Rest(rest));
         }
+    }
+
+    /// The work left to itself nearest the player within a rest's reach, to wait on: its name.
+    pub fn waiting_work(&self) -> Option<String> {
+        let crafts = &self.crafting.as_ref()?.crafts;
+        let at = self.mover.pos;
+        self.world_items
+            .iter()
+            .filter_map(|w| {
+                let work = w.work.as_ref()?;
+                let d = DVec3::from_array(w.pos).distance(at);
+                (d <= crate::rest::WAITING_M).then_some((d, &work.process))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .and_then(|(_, p)| crafts.index_of(p))
+            .map(|i| crafts.recipes[i].def.name.clone())
     }
 
     /// Lying down, awake or asleep.
@@ -2472,7 +2481,7 @@ impl Client {
         let rate = if shut { 0.7 } else { 0.4 };
         let target = if shut { 1.0 } else { 0.0 };
         self.eyes_shut += (target - self.eyes_shut) * (1.0 - (-dt * rate).exp()) as f32;
-        if let Some((_, t)) = &mut self.woke {
+        if let Some((_, t)) = &mut self.rested {
             *t += dt;
         }
         let r = self.hearing.rhythms;
@@ -2822,7 +2831,7 @@ impl Client {
                 }
                 // A census is for tools and tests.
                 ToClient::Census(_) => {}
-                ToClient::Signs { now, day_s, signs } => self.signs = (now, day_s, signs),
+                ToClient::Signs { now, signs } => self.signs = (now, signs),
                 ToClient::Calls(calls) => {
                     if let Some(cat) = &self.fauna {
                         let facing = -self.camera.yaw.to_radians();
@@ -2865,7 +2874,7 @@ impl Client {
                     self.tick_frac = 0.0;
                 }
                 ToClient::Body(b) => self.body = Some(*b),
-                ToClient::Woke(why) => self.woke = Some((why, 0.0)),
+                ToClient::Rested(r) => self.rested = Some((r, 0.0)),
                 ToClient::Carried(c) => {
                     self.carry = c;
                     self.redress();
@@ -3268,12 +3277,12 @@ impl Client {
                 ui.label((w - lw) / 2.0, h * 0.82, &line, Rgba([220, 220, 230, 200]));
             }
         }
-        if let Some((why, t)) = self.woke
-            && t < 5.0
+        if let Some((r, t)) = &self.rested
+            && *t < 6.0
+            && let Some(line) = rest_words(ui.lang, r)
         {
-            let line = ui.t(why.key());
             let lw = ui.font.width(&line) as f32;
-            let a = ((1.0 - ((t - 3.5).max(0.0) / 1.5)) * 230.0) as u8;
+            let a = ((1.0 - ((t - 4.5).max(0.0) / 1.5)) * 230.0) as u8;
             ui.label((w - lw) / 2.0, h * 0.4, &line, Rgba([235, 230, 220, a]));
         }
         if self.captions {
@@ -3504,35 +3513,25 @@ impl Client {
             _ => "night",
         };
         let southern = w.planet.latitude(p.z) < 0.0;
-        let day = (m.season_progress() * self.calendar.days_per_season as f64) as u32 + 1;
-        let season = format!("{:?}", m.season(southern)).to_lowercase();
-        let nth = match day {
-            1..=10 => l.get(&format!("time.nth.{day}")).to_owned(),
-            n => n.to_string(),
-        };
         let words = l.format(
             "time.words",
             &[
                 ("part", l.get(&format!("time.part.{part}"))),
-                ("nth", &nth),
-                ("season", &l.get(&format!("season.{season}")).to_lowercase()),
+                ("when", &season_words(l, &m, southern)),
             ],
         );
-        // Creative's exact clock beside the words (Amendment P §2).
+        // Creative's exact clock beside the words (Amendment P §2): local mean time, as a clock
+        // keeps it (the sun's noon drifts from it through the year), and the date.
         let exact = self
             .rules
             .as_ref()
             .is_some_and(|r| r.clock == crate::modes::Clock::Exact);
         Some(if exact {
-            let year = (self.now_ticks() as f64
-                / self.calendar.ticks_per_day()
-                / self.calendar.days_per_year()) as u64
-                + 1;
+            let offset = w.planet.solar_time_offset(p.x);
             format!(
-                "{words} · {:02}:{:02} · {}",
-                hour as u32,
-                (hour.fract() * 60.0) as u32,
-                l.format("time.year", &[("n", &year.to_string())])
+                "{words} · {} · {}",
+                hhmm(m.local_mean_time(offset)),
+                date_words(l, m.date(offset))
             )
         } else {
             words
@@ -3596,10 +3595,8 @@ impl Client {
         }
         let p = self.camera.pos;
         let m = self.calendar.at(self.now_ticks());
-        let local = m.local_time(w.planet.solar_time_offset(p.x)) * 24.0;
+        let offset = w.planet.solar_time_offset(p.x);
         let southern = w.planet.latitude(p.z) < 0.0;
-        let day = (m.season_progress() * self.calendar.days_per_season as f64) as u32 + 1;
-        let season = format!("{:?}", m.season(southern)).to_lowercase();
         out.push(l.format(
             "debug.position",
             &[
@@ -3613,12 +3610,10 @@ impl Client {
         out.push(l.format(
             "debug.time",
             &[
-                ("season", l.get(&format!("season.{season}"))),
-                ("day", &day.to_string()),
-                (
-                    "time",
-                    &format!("{:02}:{:02}", local as u32, (local.fract() * 60.0) as u32),
-                ),
+                ("date", &date_words(l, m.date(offset))),
+                ("season", &season_words(l, &m, southern)),
+                ("time", &hhmm(m.local_time(offset))),
+                ("mean", &hhmm(m.local_mean_time(offset))),
             ],
         ));
         if let Some(b) = &self.body {
@@ -3756,16 +3751,12 @@ impl Client {
         }
         let p = self.camera.pos;
         let m = self.calendar.at(self.now_ticks());
-        let local = m.local_time(w.planet.solar_time_offset(p.x)) * 24.0;
-        let southern = w.planet.latitude(p.z) < 0.0;
-        let day_of_season = (m.season_progress() * self.calendar.days_per_season as f64) as u32 + 1;
+        let offset = w.planet.solar_time_offset(p.x);
+        let (y, mo, d) = m.date(offset);
         let place = format!(
-            "{fps:.0} fps | lat {:.1}° | {:?} day {} {:02}:{:02}",
+            "{fps:.0} fps | lat {:.1}° | {y}-{mo:02}-{d:02} {} by the sun",
             w.planet.latitude_deg(p.z),
-            m.season(southern),
-            day_of_season,
-            local as u32,
-            (local.fract() * 60.0) as u32,
+            hhmm(m.local_time(offset)),
         );
         match (&self.body, self.mode) {
             (_, CameraMode::Free) => format!(
@@ -3853,4 +3844,88 @@ fn death_words(l: &Lang, d: &hearth_body::Death) -> String {
 /// An angle in degrees brought into −180..180.
 fn wrap180(a: f32) -> f32 {
     (a + 180.0).rem_euclid(360.0) - 180.0
+}
+
+/// The season in words by its thirds: "early autumn", "mid-autumn", "late autumn".
+fn season_words(l: &Lang, m: &Moment, southern: bool) -> String {
+    let season = format!("{:?}", m.season(southern)).to_lowercase();
+    let stage = match (m.season_progress() * 3.0) as u32 {
+        0 => "early",
+        1 => "mid",
+        _ => "late",
+    };
+    l.format(
+        &format!("time.stage.{stage}"),
+        &[("season", &l.get(&format!("season.{season}")).to_lowercase())],
+    )
+}
+
+/// A date in words: "8 October 2026".
+fn date_words(l: &Lang, (year, month, day): (i64, u32, u32)) -> String {
+    l.format(
+        "time.date",
+        &[
+            ("day", &day.to_string()),
+            ("month", l.get(&format!("month.{month}"))),
+            ("year", &year.to_string()),
+        ],
+    )
+}
+
+/// How a rest went, in a line (Amendment P §7.2): what ended it and how long it was ("The cold
+/// wakes you. You slept about three hours."); none for getting straight up again.
+pub fn rest_words(l: &Lang, r: &hearth_protocol::Rested) -> Option<String> {
+    use hearth_protocol::{Rest, RestEnd};
+    let lead = match &r.end {
+        RestEnd::NothingWaiting => return Some(l.get("rest.nothing_waiting").to_owned()),
+        RestEnd::Came => match r.rest {
+            Rest::SleepUntilMorning => Some(l.get("rest.came.morning").to_owned()),
+            Rest::UntilDusk => Some(l.get("rest.came.dusk").to_owned()),
+            Rest::UntilDone => Some(l.get("rest.came.done").to_owned()),
+            Rest::SleepUntilRested | Rest::Hours(_) => None,
+        },
+        RestEnd::Woke(why) => Some(l.get(why.key()).to_owned()),
+        RestEnd::Needs(why) => Some(
+            l.get(&why.key().replace("body.wake.", "rest.need."))
+                .to_owned(),
+        ),
+        RestEnd::Animal(name) => Some(l.format("rest.animal", &[("animal", name)])),
+        RestEnd::Hurt => Some(l.get("rest.hurt").to_owned()),
+        RestEnd::GotUp => None,
+    };
+    let span = (r.hours >= 0.05).then(|| {
+        let key = if r.slept_h >= 0.25 {
+            "rest.slept"
+        } else if r.rest == Rest::UntilDone {
+            "rest.waited"
+        } else {
+            "rest.rested"
+        };
+        let h = if r.slept_h >= 0.25 {
+            r.slept_h
+        } else {
+            r.hours
+        };
+        l.format(key, &[("span", &span_words(l, h as f64))])
+    });
+    match (lead, span) {
+        (Some(a), Some(b)) => Some(format!("{a} {b}")),
+        (a, b) => a.or(b),
+    }
+}
+
+/// A span of hours in words: "a few minutes", "about half an hour", "about seven hours".
+fn span_words(l: &Lang, hours: f64) -> String {
+    match hours {
+        h if h < 0.25 => l.get("time.span.minutes").to_owned(),
+        h if h < 0.75 => l.get("time.span.half_hour").to_owned(),
+        h if h < 1.5 => l.get("time.span.hour").to_owned(),
+        h => l.format("time.span.hours", &[("n", &format!("{:.0}", h))]),
+    }
+}
+
+/// A time of day (0 midnight … 1) as a clock shows it: "07:05".
+fn hhmm(t: f64) -> String {
+    let minutes = (t.rem_euclid(1.0) * 1440.0) as u32;
+    format!("{:02}:{:02}", minutes / 60, minutes % 60)
 }

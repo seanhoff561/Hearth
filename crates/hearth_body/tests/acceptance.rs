@@ -1,12 +1,11 @@
 //! V2-3's acceptance tests of the body (v2 milestone list): a naked body in 5 °C rain becomes
-//! hypothermic in realistic game time, one in furs by a fire does not; without water a body dies
-//! after about three game days; a sprain and a fracture heal on their own time scales.
+//! hypothermic within hours, one in furs by a fire does not; without water a body dies after
+//! about three days; a sprain heals in days and a fracture in weeks.
 
 mod common;
 
 use common::*;
 use hearth_body::{Body, Death, Exposure, Side, Warmth};
-use hearth_content::schema::TimeScale;
 use hearth_content::schema::body::BodyRegion;
 
 fn cold_rain() -> Exposure {
@@ -33,9 +32,8 @@ fn naked_in_cold_rain_becomes_hypothermic_within_hours() {
         |_, _| (cold_rain(), worn, standing),
         |b| b.thermal.core_c < 35.0,
     );
-    let game_min = hours * play_per_hour(&cfg) / 60.0;
     println!(
-        "core below 35 °C after {hours:.2} h of body time ({game_min:.1} min of play), skin {:.1} °C",
+        "core below 35 °C after {hours:.2} h, skin {:.1} °C",
         body.thermal.skin_c
     );
     assert!(
@@ -167,7 +165,7 @@ fn without_water_a_body_dies_after_about_three_days() {
 }
 
 #[test]
-fn a_sprain_and_a_fracture_heal_on_their_time_scales() {
+fn a_sprain_heals_in_days_and_a_fracture_in_weeks() {
     let cfg = config();
     let worn = wearing(&["loincloth"]);
     let mut body = Body::new(&cfg, 5);
@@ -188,7 +186,7 @@ fn a_sprain_and_a_fracture_heal_on_their_time_scales() {
     let end = run(
         &mut body,
         &cfg,
-        8.0 * 24.0,
+        60.0 * 24.0,
         |b, t| {
             if t - last_meal >= 6.0 {
                 last_meal = t;
@@ -215,28 +213,17 @@ fn a_sprain_and_a_fracture_heal_on_their_time_scales() {
     // The run stops as the last one heals.
     let sprain_h = healed_at[0].unwrap_or(end);
     let fracture_h = healed_at[1].unwrap_or(end);
-    let day_s = cfg.scales.day_length_s;
-    let ppp = play_per_hour(&cfg);
-    let sprain_days = sprain_h * ppp / day_s;
-    let fracture_days = fracture_h * ppp / day_s;
-    // Real durations: the sprain on the day scale, the fracture on the year scale.
-    let sprain_real_h = sprain_h;
-    let fracture_real_h = fracture_h * ppp / cfg.play_seconds(1.0, TimeScale::Year);
     println!(
-        "sprain healed after {sprain_days:.2} game days ({sprain_real_h:.0} real h), fracture after \
-         {fracture_days:.2} game days ({:.0} real days)",
-        fracture_real_h / 24.0
+        "sprain healed after {sprain_h:.0} h, fracture after {:.1} days",
+        fracture_h / 24.0
     );
     assert!(body.injuries.is_empty(), "both healed: {:?}", body.injuries);
     // A moderate sprain: about four days; a splinted fracture: about six weeks.
+    assert!((70.0..=110.0).contains(&sprain_h), "{sprain_h:.0} h");
     assert!(
-        (70.0..=110.0).contains(&sprain_real_h),
-        "{sprain_real_h:.0} h"
-    );
-    assert!(
-        (30.0..=48.0).contains(&(fracture_real_h / 24.0)),
+        (30.0..=48.0).contains(&(fracture_h / 24.0)),
         "{:.1} days",
-        fracture_real_h / 24.0
+        fracture_h / 24.0
     );
     let fx = body.effects(&cfg);
     assert!(fx.jump && fx.sprint && fx.walk > 0.95, "{fx:?}");

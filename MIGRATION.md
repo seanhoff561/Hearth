@@ -39,7 +39,7 @@ work now lives in the v2 plan (`PLAN.md`).
 | Light engine (sky + block light) | Keep & modify | Foliage becomes partial shade instead of opaque to sky light (V2-6). |
 | Options model, presets, key bindings, display modes, F11, frame limiter | Keep | New actions and defaults per §10.6 when the interactions exist. |
 | Input action registry | Modify | Hotbar 1–9 → quick slots 1–6 + radial; drop → G; crouch C, prone Z, carry F, body B, journal J (V2-3/V2-4). |
-| Time: 20-minute day, 8 moon phases, fixed latitude sun | Modify | Configurable day length (48 min default), calendar and seasons, axial tilt (V2-1). |
+| Time: 20-minute day, 8 moon phases, fixed latitude sun | Modify | Configurable day length (48 min default), calendar and seasons, axial tilt (V2-1); since E3, Earth's clock and sky (`docs/design/time.md`). |
 | Block set (MC-style stones, ores, woods, building blocks) | Replace | Rocks, minerals and soils from geology; woods from real species; construction pieces from data. Dropped outright in V2-0: ore blocks (coal/iron/copper/gold/diamond/redstone/lapis/emerald), crafting table, furnace, chest-as-workbench, bed, wool colours, bricks, glass, crops-as-blocks from MC. |
 | Ore generation (MC Y-bands) | Replace | Deposit models placed by geology (V2-2); removed in V2-0. |
 | Procedural trees (11 hand-made shapes) | Replace | Species growth models with real sizes (V2-6). The current generator stays until then; its three species (English oak, silver birch, Norway spruce) are real Appendix A species. |

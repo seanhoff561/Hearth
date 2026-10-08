@@ -197,7 +197,7 @@ fn a_felled_tree_stays_felled_and_a_young_tree_takes_its_place() {
     w.go_exact(home);
     assert!(w.until(30.0, felled), "still felled in the saved world");
     // Years later a young tree stands where it stood.
-    let days_per_year = w.content.time.days_per_season.default as f64 * 4.0;
+    let days_per_year = w.calendar.days_per_year();
     let hours = 12.0 * days_per_year * 24.0;
     let want = w.ticks + (hours / 24.0 * w.ticks_per_day) as u64;
     w.server.send(hearth_protocol::ToServer::SkipHours(hours));

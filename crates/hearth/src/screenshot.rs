@@ -8,9 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-use glam::DVec3;
+use glam::{DVec2, DVec3};
 use hearth_content::schema::Season;
-use hearth_content::schema::config::TimeConfig;
 use hearth_env::{Calendar, Precip};
 use hearth_math::PlanetSize;
 use hearth_render::GpuContext;
@@ -667,10 +666,9 @@ pub fn run(specs: &[ShotSpec], cache_dir: Option<&Path>, default_dir: &Path) -> 
                 hearth_lod::LodGen::new(&lw.reg, &entries),
             )
         });
-        let time = lw.content.time.clone();
         // Each shot starts from a clean map so dates don't mix (snow from an earlier shot).
         lw.map = hearth_world::CubeMap::new(*lw.map.planet());
-        shoot(&ctx, atlas, lod, lw, spec, &out, Some(&time))?;
+        shoot(&ctx, atlas, lod, lw, spec, &out)?;
     }
     log::info!(
         "{} screenshot(s) in {:.2}s",
@@ -706,7 +704,17 @@ fn load_saved(
         Ok(Some(p)) => p.player.mover.pos,
         _ => anyhow::bail!("save={}: no player", d.root.display()),
     };
-    let (calendar, _) = crate::server::calendar_for(lw, meta.settings.life.starting_season);
+    let created = Some(meta.created_unix);
+    let spawn = crate::server::first_spawn(
+        lw,
+        Some(&|at| {
+            meta.settings
+                .birthplace
+                .map_or(at, |[x, z]| DVec2::new(x, z))
+        }),
+    );
+    let calendar =
+        crate::server::calendar_of(lw.map.planet(), meta.settings.life.start, created, spawn);
     let m = calendar.at(meta.clock.ticks);
     let planet = *lw.map.planet();
     spec.year_frac = Some(m.year_frac);
@@ -816,7 +824,6 @@ pub fn render_shot(
     lw: &mut LocalWorld,
     spec: &ShotSpec,
     out: &Path,
-    time: Option<&TimeConfig>,
 ) -> anyhow::Result<Shot> {
     let (mut sx, mut sz) = place_of(lw, spec, 0.5)?;
     let mut yaw_override = None;
@@ -955,9 +962,12 @@ pub fn render_shot(
         near: 0.05,
         jitter: glam::Vec2::ZERO,
     };
-    let mut calendar = time.map_or_else(|| Calendar::new(48, 8, 23.44), Calendar::from_config);
-    calendar.year_offset = year_frac;
-    calendar.day_offset = (spec.hour / 24.0 - planet.solar_time_offset(sx)).rem_euclid(1.0);
+    let calendar = Calendar::when(
+        hearth_env::calendar::UNDATED_YEAR,
+        year_frac,
+        spec.hour / 24.0,
+        planet.solar_time_offset(sx),
+    );
     let moment = calendar.at(0);
     log::info!(
         "shot {} at {:.1}, {:.1}, {:.1} (lat {:.1}°, year {:.3}, {:.1} h)",
@@ -1487,7 +1497,7 @@ pub fn render_shot(
             (lw.map.sky_light(b), lw.map.block_light(b))
         };
         boxes.extend(crate::signs::instances(
-            &signs, 0.0, 1200.0, catalog, camera.pos, &light,
+            &signs, 0.0, catalog, camera.pos, &light,
         ));
     }
     if spec.stress {
@@ -2117,12 +2127,11 @@ fn shoot(
     lw: &mut LocalWorld,
     spec: &ShotSpec,
     out: &Path,
-    time: Option<&TimeConfig>,
 ) -> anyhow::Result<()> {
     if let Some(zoom) = spec.globe {
         return shoot_globe(ctx, lw, spec, out, zoom);
     }
-    let shot = render_shot(ctx, atlas, lod, lw, spec, out, time)?;
+    let shot = render_shot(ctx, atlas, lod, lw, spec, out)?;
     write_png(out, spec.width, spec.height, &shot.pixels)?;
     let s = shot.terrain;
     log::info!(

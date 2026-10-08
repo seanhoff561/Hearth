@@ -1,6 +1,6 @@
-# Amendment P P0: the night sky over 0.8 s at 1080p, a frame every 0.1 s of play (3 s of game
-# time at the 48-minute day), for the stars' steadiness (dev/PLAYTEST.md #8), and rain in a
-# wind (#18). Measured frames: docs/review/p0/.
+# Amendment P P0: the night sky over 0.8 s at 1080p, a frame every 0.1 s (then 3 s of the
+# compressed day's sky; since E3 the sky turns at its real speed), for the stars' steadiness
+# (dev/PLAYTEST.md #8), and rain in a wind (#18). Measured frames: docs/review/p0/.
 # `hearth --screenshot-list tools/shots/p0_motion.shots`
 defaults: seed=7, w=1920, h=1080, clouds=0, dry=true, x=144, z=-4520, y=40, dist=4, yaw=90, pitch=-55, season=summer
 hour=23.5000000, out=bench-out/p0/stars_0.png

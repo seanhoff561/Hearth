@@ -120,7 +120,7 @@ pub struct Medicine {
     pub kind: String,
     /// 0–1 how much.
     pub strength: f32,
-    /// For how long (hours of the day scale).
+    /// For how long (hours).
     pub hours: f32,
 }
 

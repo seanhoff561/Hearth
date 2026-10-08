@@ -52,7 +52,8 @@ fn render(
                 eras: Vec::new(),
                 modes: Vec::new(),
                 globe: None,
-                time_words: Some("Late afternoon, the third day of autumn".into()),
+                time_words: Some("Late afternoon, early autumn".into()),
+                waiting: Some("Dry meat".into()),
                 may_watch: true,
                 creative: true,
                 catalog: &[],
@@ -99,6 +100,7 @@ fn the_screens_draw_and_answer() {
         ("sound", Screen::Sound),
         ("controls", Screen::controls()),
         ("pause", Screen::Pause),
+        ("rest", Screen::Rest),
         ("death", Screen::Death),
     ];
     for (name, screen) in screens {

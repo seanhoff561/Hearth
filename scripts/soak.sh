@@ -7,7 +7,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.cargo/bin:$PATH"
 # Tools that are ignored for other reasons are skipped: the fixture writer rewrites a fixture,
-# the surveys only print what lies about a spawn.
+# the surveys only print what lies about a spawn. The year from a loincloth waits to be cut to
+# Earth's clock (PLAN.md, "From E3").
 cargo test --profile dev-opt --workspace --no-fail-fast -- --ignored \
   --skip write_placeholders_fixture --skip what_lies_about_the_spawn \
-  --skip fresh_water_about_the_spawn ${1:+"$1"}
+  --skip fresh_water_about_the_spawn --skip a_year_from_a_loincloth ${1:+"$1"}

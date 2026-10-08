@@ -1,4 +1,4 @@
-//! Shared set-up of the body tests: the base content's body at the default time scales.
+//! Shared set-up of the body tests: the base content's body, at real rates.
 
 #![allow(dead_code)]
 
@@ -6,8 +6,6 @@ use std::sync::OnceLock;
 
 use hearth_body::{Activity, Body, BodyConfig, Exposure, Food, Rates, Worn};
 use hearth_content::Content;
-use hearth_content::schema::TimeScale;
-use hearth_content::time::TimeScales;
 
 pub fn content() -> &'static Content {
     static C: OnceLock<Content> = OnceLock::new();
@@ -16,13 +14,11 @@ pub fn content() -> &'static Content {
 
 pub fn config() -> BodyConfig {
     let c = content();
-    BodyConfig::with_rates(c, Rates::authentic(), TimeScales::defaults(&c.time))
+    BodyConfig::with_rates(c, Rates::authentic())
 }
 
-/// Seconds of play per real hour of body time (the day scale).
-pub fn play_per_hour(cfg: &BodyConfig) -> f64 {
-    cfg.play_seconds(1.0, TimeScale::Day)
-}
+/// The body tests' step (s).
+pub const STEP_S: f64 = 30.0;
 
 /// What a set of garments (content ids without the namespace) covers.
 pub fn wearing(ids: &[&str]) -> Worn {
@@ -34,8 +30,8 @@ pub fn wearing(ids: &[&str]) -> Worn {
     }))
 }
 
-/// Runs the body for `hours` of body time in steps of one second of play, calling `each` with
-/// the body time (hours since the start) before every step; stops early when `stop` holds.
+/// Runs the body for `hours` in steps of [`STEP_S`], calling `each` with the time (hours since
+/// the start) before every step; stops early when `stop` holds.
 pub fn run(
     body: &mut Body,
     cfg: &BodyConfig,
@@ -43,8 +39,8 @@ pub fn run(
     mut each: impl FnMut(&mut Body, f64) -> (Exposure, Worn, Activity),
     stop: impl Fn(&Body) -> bool,
 ) -> f64 {
-    let dt = 1.0;
-    let step_h = dt / play_per_hour(cfg);
+    let dt = STEP_S;
+    let step_h = dt / 3600.0;
     let mut t = 0.0;
     while t < hours {
         let (e, w, a) = each(body, t);

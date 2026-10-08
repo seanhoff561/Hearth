@@ -25,7 +25,53 @@ use hearth_worldgen::{PlanetGrid, WorldGenerator};
 
 /// The version of the messages between the client and the server, raised with every change to
 /// them (D166); the network handshake checks it (Amendment R, R1).
-pub const PROTOCOL: u32 = 4;
+pub const PROTOCOL: u32 = 5;
+
+/// What a rest is for (E §4.3, Amendment P §7.1). The body lies down; sleep comes when it is
+/// sleepy; the world goes faster meanwhile, up to the world's sleep speed, and anything that
+/// needs the player ends it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Rest {
+    /// Asleep until the sun is up.
+    SleepUntilMorning,
+    /// Asleep until the body wakes rested.
+    SleepUntilRested,
+    /// Resting for some hours.
+    Hours(f32),
+    /// Resting until the sun is down.
+    UntilDusk,
+    /// Waiting until the work left to itself nearby is done (the meat dry, the pot fired).
+    UntilDone,
+}
+
+/// How a rest ended: how long it lasted and how much of it asleep (hours), what it was for,
+/// and what ended it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rested {
+    pub hours: f32,
+    pub slept_h: f32,
+    pub rest: Rest,
+    pub end: RestEnd,
+}
+
+/// What ended a rest.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RestEnd {
+    /// What it was for came: the morning, the hours, dusk, the work done.
+    Came,
+    /// The body woke for a reason.
+    Woke(hearth_body::Wake),
+    /// Awake, the body's needs would not let it rest (the cold, hunger…).
+    Needs(hearth_body::Wake),
+    /// An animal came near (its name).
+    Animal(String),
+    /// The body was hurt.
+    Hurt,
+    /// The player got up.
+    GotUp,
+    /// Nothing nearby was left to its work.
+    NothingWaiting,
+}
 
 /// From the client.
 #[derive(Debug, Clone)]
@@ -35,8 +81,8 @@ pub enum ToServer {
     /// Watching the world (Creative's spectating, Amendment P §3.3): from where the eye is, or
     /// none to stop. The player's body is put aside meanwhile — still, unharmed, unseen.
     Observe(Option<DVec3>),
-    /// Lie down to sleep (true) or get up.
-    Sleep(bool),
+    /// Lie down to sleep or rest until something (E §4.3), or get up (`None`).
+    Rest(Option<Rest>),
     /// Put the player at a place (the globe's choice, a debug move): the server finds solid
     /// ground there.
     Place(DVec3),
@@ -330,10 +376,9 @@ pub enum ToClient {
     /// Calls the animals made (those in the world and those about it).
     Calls(Vec<hearth_fauna::voices::Called>),
     /// The signs animals left near the player (tracks, blood, droppings), with the world's
-    /// seconds they are timed by and how long a day is (s).
+    /// seconds they are timed by.
     Signs {
         now: f64,
-        day_s: f32,
         signs: Vec<hearth_fauna::live::Sign>,
     },
     /// The groups of animals in the regions about the player: species, where, how many.
@@ -351,8 +396,8 @@ pub enum ToClient {
     /// The world was saved.
     Saved,
     Failed(String),
-    /// The player woke, and why.
-    Woke(hearth_body::Wake),
+    /// A rest ended: how long it was, and why it ended.
+    Rested(Rested),
     /// What the player carries, when it changed.
     Carried(hearth_items::Carry),
     /// The things lying near the player, when they changed.

@@ -261,6 +261,12 @@ struct Saved {
 /// A catch-up this long (years: a week of the world a tick, the Observer's year a second and
 /// faster) is lived at the animals' demographic tier (D210).
 const FAST_YEARS: f64 = 1.0 / 48.0;
+/// The longest step the animals about the player live at a time (s): the world going faster
+/// than lived (a rest, the time speed) is lived by them in steps no longer.
+const LIVE_STEP_S: f32 = 0.5;
+/// The most steps they live in a tick: up to a hundred times as fast as lived (faster, they lag
+/// the world's clock until a catch-up passes to the populations' tier).
+const LIVE_STEPS: f32 = 10.0;
 
 impl Fauna {
     /// The world's animals: as saved in `dir`, or new.
@@ -528,7 +534,12 @@ impl Fauna {
             cells: &self.cells,
         };
         if !fast {
-            self.live.step(&self.eco, &ground, Some(presence), now, dt);
+            let lived = dt.min(LIVE_STEP_S * LIVE_STEPS);
+            let n = (lived / LIVE_STEP_S).ceil().max(1.0);
+            for _ in 0..n as usize {
+                self.live
+                    .step(&self.eco, &ground, Some(presence), now, lived / n);
+            }
         }
         // The kept animals through the calendar: born, grown, in young, dying of age.
         if tick.is_multiple_of(40) || fast || self.live.years.is_none_or(|y| years - y > 0.01) {
@@ -613,8 +624,8 @@ impl Fauna {
     /// The remains of the populations' dead lying within `radius` of the player, taken into the
     /// world as carcasses: with what is left of them and how far they have gone off at
     /// `air_c`, where (on the ground of the column), which way they lie. The rotted are gone.
-    /// Going off runs on the day scale: the time since a death, in the populations' years, is
-    /// reckoned in the calendar's days (`days_per_year` of them to the year).
+    /// The time since a death, in the populations' years, is reckoned in days (`days_per_year`
+    /// of them to the year).
     #[allow(clippy::too_many_arguments)]
     pub fn found(
         &mut self,

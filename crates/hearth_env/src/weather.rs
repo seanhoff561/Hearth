@@ -230,7 +230,7 @@ impl WeatherModel {
         DVec3::new(p.x * c + p.z * s, p.y, -p.x * s + p.z * c)
     }
 
-    /// Weather at world position (x, z) at `days` (game days since the calendar origin).
+    /// Weather at world position (x, z) at `days` (days since J2000.0).
     pub fn sample(
         &self,
         n: &Normals,

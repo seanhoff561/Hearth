@@ -138,6 +138,7 @@ fn the_inventory_moves_things_where_they_are_put() {
                     modes: Vec::new(),
                     globe: None,
                     time_words: None,
+                    waiting: None,
                     may_watch: true,
                     creative: true,
                     catalog: &[],

@@ -1,18 +1,8 @@
-// Calendar defaults and the constants behind the two time scales (v2 §4). The conversion code
-// is `hearth_content::time`: day-scale durations compress by day_length / 24 h, year-scale
-// durations by game year / real year.
+// How sleep and rest speed time up (E §4.3). The clock is Earth's: a game second is a real
+// second, the day 86,400 s, the tropical year 365.2422 days, the synodic month 29.530589 days,
+// the sun, the moon and the stars where they really stand (`hearth_env::astro`).
 (
     schema: 1,
-    // Real minutes per game day.
-    day_length_min: (default: 48, min: 20, max: 120),
-    // Four seasons per year; 91 gives a real-length year.
-    days_per_season: (default: 8, min: 3, max: 91),
-    axial_tilt_deg: (default: 23.44, min: 0.0, max: 45.0),
-    starting_season: Spring,
-    real_day_s: 86400.0,
-    // Tropical year.
-    real_year_days: 365.2422,
-    synodic_month_days: 29.530589,
-    // Sleeping speeds time up smoothly instead of skipping the night (v2 §9.5).
+    // Sleeping or resting speeds time up smoothly instead of skipping it (v2 §9.5).
     sleep: (max_factor: 100.0, ramp_s: 3.0),
 )

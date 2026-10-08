@@ -22,6 +22,9 @@ use crate::environment::EnvSampler;
 
 /// The near fire steps this often (ticks).
 pub const STEP_TICKS: u64 = 10;
+/// The game seconds a neighbour's chance of catching ([`Fuel::catches`], the conditions
+/// applied) and the rain's of putting a flame out are reckoned over; a step takes its share.
+const CATCH_S: f32 = 15.0;
 /// At most this many blocks burn at once.
 const MAX_BURNING: usize = 6000;
 /// At most this many ecological cells burn at once far away.
@@ -279,7 +282,8 @@ pub struct Wildfire {
     squares: FxHashMap<(i32, i32), (u32, bool)>,
     /// Squares the fire has left, not yet kept.
     left: Vec<(i32, i32)>,
-    next_step: u64,
+    /// The tick of the last step (the time since it is this step's share of the chances).
+    last_step: Option<u64>,
     rng: Rng,
 }
 
@@ -316,7 +320,7 @@ impl Wildfire {
             burning: FxHashMap::default(),
             squares: FxHashMap::default(),
             left: Vec::new(),
-            next_step: 0,
+            last_step: None,
             rng: Rng::new(seed ^ 0xf17e),
         }
     }
@@ -396,12 +400,21 @@ impl Wildfire {
         tick_s: f32,
         beyond: &mut Vec<BlockPos>,
     ) {
-        if self.burning.is_empty() || ticks < self.next_step {
+        if self.burning.is_empty() {
+            self.last_step = None;
             return;
         }
-        self.next_step = ticks + STEP_TICKS;
+        let since = ticks.saturating_sub(self.last_step.unwrap_or(ticks - STEP_TICKS.min(ticks)));
+        if since < STEP_TICKS {
+            return;
+        }
+        self.last_step = Some(ticks);
+        // A chance over `CATCH_S` as this step's share of it (more of it when the world goes
+        // faster than lived: a step a tick, each tick many).
+        let share = (since as f32 * tick_s / CATCH_S).min(1.0);
+        let per_step = |chance: f32| 1.0 - (1.0 - chance.clamp(0.0, 0.999)).powf(share);
         // Rain puts fires out.
-        let doused = (danger.rain_mm_h * 0.15).min(1.0) as f64;
+        let doused = per_step(danger.rain_mm_h * 0.15) as f64;
         let mut out: Vec<BlockPos> = Vec::new();
         let mut keys: Vec<BlockPos> = self.burning.keys().copied().collect();
         keys.sort_unstable();
@@ -475,7 +488,7 @@ impl Wildfire {
                     _ => 1.0,
                 };
                 let chance = f.catches() * src.heat() * dry * wind_f * climb * closeness;
-                if self.rng.chance(chance.min(1.0) as f64) {
+                if self.rng.chance(per_step(chance) as f64) {
                     self.ignite(world, table, q, ticks, tick_s);
                 }
             }

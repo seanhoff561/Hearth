@@ -19,7 +19,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use glam::DVec3;
-use hearth_content::schema::config::TimeConfig;
 use hearth_core::options::VideoOptions;
 use hearth_env::{Calendar, Precip};
 use hearth_math::{BlockPos, PlanetSize};
@@ -578,9 +577,8 @@ pub fn run_with(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result
                 models,
             )
         });
-        let time = lw.content.time.clone();
         lw.map = hearth_world::CubeMap::new(*lw.map.planet());
-        let result = run_scene(&ctx, atlas, lod, models, lw, def, opts, &video, &time)?;
+        let result = run_scene(&ctx, atlas, lod, models, lw, def, opts, &video)?;
         log::info!(
             "{}: {:.1} FPS avg, {:.1} FPS 1% low, p99 {:.2} ms, GPU {:.2} ms, {} frames over              twice the median",
             result.name,
@@ -869,7 +867,6 @@ fn run_scene(
     def: &SceneDef,
     opts: &BenchOptions,
     video: &VideoOptions,
-    time: &TimeConfig,
 ) -> anyhow::Result<SceneResult> {
     let t_setup = Instant::now();
     let planet = *lw.map.planet();
@@ -879,9 +876,12 @@ fn run_scene(
         CameraPath::Keys(k) => (k[0].x, k[0].z),
         CameraPath::Cave { x, z } => (x, z),
     };
-    let mut calendar = Calendar::from_config(time);
-    calendar.year_offset = def.year_frac;
-    calendar.day_offset = (def.hour / 24.0 - planet.solar_time_offset(sx)).rem_euclid(1.0);
+    let calendar = Calendar::when(
+        hearth_env::calendar::UNDATED_YEAR,
+        def.year_frac,
+        def.hour / 24.0,
+        planet.solar_time_offset(sx),
+    );
     // Terrain along the path, then the path itself.
     let (path, positions) = match def.path {
         CameraPath::Keys(keys) => {

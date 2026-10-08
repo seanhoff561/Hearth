@@ -24,4 +24,3 @@ pub use content::{Content, Origin, Table};
 pub use diag::{Diagnostic, Report, Severity};
 pub use id::IdRef;
 pub use lint::{LintContext, lint};
-pub use time::TimeScales;

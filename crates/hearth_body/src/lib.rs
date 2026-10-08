@@ -1,8 +1,6 @@
-//! The human body (v2 §9). Needs, heat and short illnesses run on the day scale of v2 §4.2 — a
-//! game day stands for a real day, so a body needs a day's food and water each game day and
-//! cools in cold rain over the real hour or two — and each injury and illness heals or runs on
-//! the scale its data declares. Short-term stamina is the one thing measured in seconds of play,
-//! because movement is not compressed.
+//! The human body (v2 §9), on Earth's one clock (E §4.1): a body needs a day's food and water
+//! each day, cools in cold rain over the real hour or two, recovers its breath in seconds, and
+//! heals a cut in days and a fracture in weeks, as the data's real hours say.
 //!
 //! The parts: the heat balance ([`thermal`]), food energy ([`energy`]), body water ([`water`]),
 //! sleep ([`sleep`]), injuries and illness ([`harm`]) and what covers the body ([`clothing`]).
@@ -21,9 +19,7 @@ pub mod water;
 
 use hearth_content::Content;
 use hearth_content::balance::Balance;
-use hearth_content::schema::TimeScale;
 use hearth_content::schema::body::{BodyParams, BodyRegion, Illness, Injury};
-use hearth_content::time::TimeScales;
 use hearth_math::hash::{hash2, unit_f64};
 use serde::{Deserialize, Serialize};
 
@@ -145,14 +141,12 @@ impl Rates {
     }
 }
 
-/// The body's parameters in one world: the content's physiology, the world's balance and its
-/// time scales.
+/// The body's parameters in one world: the content's physiology and the world's balance.
 #[derive(Debug, Clone)]
 pub struct BodyConfig {
     pub params: BodyParams,
     pub injuries: Vec<Injury>,
     pub illnesses: Vec<Illness>,
-    pub scales: TimeScales,
     pub rates: Rates,
     /// Whether weeks without fresh food bring on scurvy (the Authentic preset's slow danger).
     pub fresh_food_deficiency: bool,
@@ -165,14 +159,14 @@ pub struct BodyConfig {
 }
 
 impl BodyConfig {
-    /// The body of a world with balance `preset` (and its resolved `balance`) and `scales`.
-    pub fn new(content: &Content, balance: &Balance, preset: &str, scales: TimeScales) -> Self {
-        let mut c = Self::with_rates(content, Rates::of(balance), scales);
+    /// The body of a world with balance `preset` (and its resolved `balance`).
+    pub fn new(content: &Content, balance: &Balance, preset: &str) -> Self {
+        let mut c = Self::with_rates(content, Rates::of(balance));
         c.fresh_food_deficiency = preset.ends_with("authentic");
         c
     }
 
-    pub fn with_rates(content: &Content, rates: Rates, scales: TimeScales) -> Self {
+    pub fn with_rates(content: &Content, rates: Rates) -> Self {
         let p = content.body.clone();
         let mass = (p.mass_kg.0 + p.mass_kg.1) as f64 / 2.0;
         let height = (p.height_m.0 + p.height_m.1) as f64 / 2.0;
@@ -182,7 +176,6 @@ impl BodyConfig {
             injuries: content.injuries.iter().cloned().collect(),
             illnesses: content.illnesses.iter().cloned().collect(),
             params: p,
-            scales,
             rates,
             fresh_food_deficiency: true,
             mass_kg: mass,
@@ -232,11 +225,6 @@ impl BodyConfig {
 
     pub fn illness(&self, id: &str) -> Option<&Illness> {
         self.illnesses.iter().find(|i| same_id(&i.id, id))
-    }
-
-    /// Seconds of play a real duration takes on a scale.
-    pub fn play_seconds(&self, real_hours: f64, scale: TimeScale) -> f64 {
-        self.scales.play_seconds(real_hours, scale)
     }
 }
 
@@ -475,17 +463,17 @@ impl Body {
         unit_f64(hash2(self.seed, self.draws))
     }
 
-    /// Advances the body by `play_dt` seconds of play in `exposure`, wearing `worn`, doing
-    /// `activity`.
+    /// Advances the body by `dt` seconds (real time, E §4.1) in `exposure`, wearing `worn`,
+    /// doing `activity`.
     pub fn step(
         &mut self,
         cfg: &BodyConfig,
-        play_dt: f64,
+        dt: f64,
         exposure: &Exposure,
         worn: &Worn,
         activity: &Activity,
     ) {
-        if self.dead.is_some() || play_dt <= 0.0 {
+        if self.dead.is_some() || dt <= 0.0 {
             return;
         }
         // Grown (or shrunk) since the last step: the blood with the body.
@@ -500,7 +488,6 @@ impl Body {
             self.energy.glycogen_kcal *= k;
         }
         self.sized_kg = cfg.mass_kg;
-        let dt = play_dt / cfg.scales.factor(TimeScale::Day);
         let mass = cfg.mass_kg;
         self.age_s += dt;
         let fx = self.effects(cfg);
@@ -566,13 +553,14 @@ impl Body {
             dt,
         );
 
-        // Stamina, in seconds of play: effort beyond what the body sustains aerobically (half
-        // of all-out) spends it; less than that lets it come back.
+        // Stamina, in seconds: effort beyond what the body sustains aerobically (half
+        // of all-out) spends it; less than that lets it come back, quickly at first and then
+        // slowly, as the muscles' phosphocreatine does.
         let sp = cfg.params.stamina;
         let effort = activity.exertion as f64;
         if effort > AEROBIC {
             self.stamina -=
-                (effort - AEROBIC) / (1.0 - AEROBIC) / sp.all_out_s.max(1.0) as f64 * play_dt;
+                (effort - AEROBIC) / (1.0 - AEROBIC) / sp.all_out_s.max(1.0) as f64 * dt;
         } else {
             let tired = (self.sleep.pressure - 0.6).max(0.0) / 0.4;
             let condition = (1.0 - 0.5 * tired)
@@ -582,13 +570,13 @@ impl Body {
                 } else {
                     1.0
                 };
-            self.stamina +=
-                (1.0 - effort / AEROBIC) * condition / sp.recover_s.max(1.0) as f64 * play_dt;
+            let rate = (1.0 - effort / AEROBIC) * condition / sp.recover_s.max(1.0) as f64;
+            self.stamina += (1.0 - self.stamina) * (1.0 - (-rate * dt).exp());
         }
         self.stamina = self.stamina.clamp(0.0, 1.0);
 
         self.step_frostbite(cfg, dt);
-        self.step_harm(cfg, play_dt, dt);
+        self.step_harm(cfg, dt);
         self.check_death(cfg);
     }
 
@@ -656,7 +644,7 @@ impl Body {
         warm * dry * soft * (1.0 - 0.6 * fx.pain as f64) * (1.0 - 0.8 * e.disturbance as f64)
     }
 
-    fn step_harm(&mut self, cfg: &BodyConfig, play_dt: f64, dt: f64) {
+    fn step_harm(&mut self, cfg: &BodyConfig, dt: f64) {
         let mass = cfg.mass_kg;
         // How well the body heals now.
         let mut condition = 1.0;
@@ -711,9 +699,9 @@ impl Body {
                     rolls.push((index, chance));
                 }
             }
-            // Healing over the injury's time on its scale.
+            // Healing over the injury's real time.
             let hours = kind.heal.hours as f64 * (0.5 + inj.severity as f64);
-            let total = cfg.play_seconds(hours, kind.heal.scale).max(1.0);
+            let total = (hours * 3600.0).max(1.0);
             let mut speed = cfg.rates.healing * condition;
             if inj.infected {
                 speed *= 0.4;
@@ -722,7 +710,7 @@ impl Body {
             {
                 speed *= 0.5;
             }
-            inj.healed += play_dt / total * speed;
+            inj.healed += dt / total * speed;
         }
         // Roll the infections (after the loop: rolling needs the body).
         let mut caught = false;
@@ -750,7 +738,7 @@ impl Body {
         let mut died = None;
         for ill in &mut self.illnesses {
             if ill.onset_s > 0.0 {
-                ill.onset_s -= play_dt;
+                ill.onset_s -= dt;
                 continue;
             }
             let Some(kind) = cfg.illness(&ill.id) else {
@@ -758,7 +746,7 @@ impl Body {
                 continue;
             };
             let rest = if self.sleep.asleep_s > 0.0 { 1.3 } else { 1.0 };
-            ill.left_s -= play_dt * cfg.rates.healing * rest;
+            ill.left_s -= dt * cfg.rates.healing * rest;
             if ill.left_s <= 0.0 && ill.fatal && !ill.treated(kind) {
                 died = Some(Death::Illness(kind.id.clone()));
             }
@@ -852,8 +840,8 @@ impl Body {
         let fatal = self.roll() < kind.lethality as f64;
         self.illnesses.push(IllnessState {
             id: kind.id.clone(),
-            onset_s: cfg.play_seconds(kind.onset.hours as f64, kind.onset.scale),
-            left_s: cfg.play_seconds(kind.lasts.hours as f64, kind.lasts.scale),
+            onset_s: kind.onset.hours as f64 * 3600.0,
+            left_s: kind.lasts.hours as f64 * 3600.0,
             fatal,
             treatments: Vec::new(),
         });

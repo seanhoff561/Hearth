@@ -5,7 +5,6 @@ use hearth::interface::Interface;
 use hearth_body::{Body, BodyConfig, Rates, Side};
 use hearth_content::Content;
 use hearth_content::schema::body::BodyRegion;
-use hearth_content::time::TimeScales;
 use hearth_physics::Ability;
 use hearth_protocol::BodyView;
 use hearth_render::GpuContext;
@@ -18,11 +17,7 @@ fn the_body_panel_names_and_draws_the_injuries() {
         return;
     };
     let content = Content::load_base();
-    let cfg = BodyConfig::with_rates(
-        &content,
-        Rates::authentic(),
-        TimeScales::defaults(&content.time),
-    );
+    let cfg = BodyConfig::with_rates(&content, Rates::authentic());
     let mut body = Body::new(&cfg, 3);
     let leg = body
         .injure(&cfg, "fracture", BodyRegion::LowerLeg, Side::Left, 0.7)

@@ -250,7 +250,7 @@ fn a_year_from_a_loincloth() {
     let mut bot = bot::start(&dir, 7);
     bot.strict = false;
     let begun = bot.w.ticks;
-    let year = (bot.w.calendar.days_per_season * 4) as f64 * bot.w.ticks_per_day;
+    let year = bot.w.calendar.days_per_year() * bot.w.ticks_per_day;
     log.line(
         &bot,
         &format!("a loincloth in spring; camp at {:?}", bot.camp),

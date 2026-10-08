@@ -866,10 +866,13 @@ impl Bot {
                 self.w.body.as_ref().map_or(0.0, |b| b.exposure.air_c),
                 self.w.body.as_ref().map_or(0.0, |b| b.status.core_c)
             ));
-            self.w.server.send(ToServer::Sleep(true));
+            self.w.server.send(ToServer::Rest(Some(
+                hearth_protocol::Rest::SleepUntilRested,
+            )));
             let mut fetched = false;
-            for k in 0..120 {
-                self.w.run(400);
+            // The night in steps of ten minutes, fourteen hours at the most.
+            for k in 0..84 {
+                self.w.run((self.w.ticks_per_day / 144.0) as u64);
                 if k % 5 == 4 {
                     self.night_note();
                 }
@@ -886,38 +889,44 @@ impl Bot {
                 if !fetched && self.fuel() < 6 {
                     fetched = true;
                     let lay = self.w.mover.pos;
-                    self.w.server.send(ToServer::Sleep(false));
+                    self.w.server.send(ToServer::Rest(None));
                     self.w.run(2);
                     self.firewood();
                     self.w.go_exact(lay);
-                    self.w.server.send(ToServer::Sleep(true));
+                    self.w.server.send(ToServer::Rest(Some(
+                        hearth_protocol::Rest::SleepUntilRested,
+                    )));
                     self.w.run(2);
                 }
                 // Woken by the cold: up to stoke the fire and warm through before lying down.
                 if self.core() < 35.0 {
                     let lay = self.w.mover.pos;
-                    self.w.server.send(ToServer::Sleep(false));
+                    self.w.server.send(ToServer::Rest(None));
                     self.w.run(2);
                     self.warm_up();
                     self.w.go_exact(lay);
-                    self.w.server.send(ToServer::Sleep(true));
+                    self.w.server.send(ToServer::Rest(Some(
+                        hearth_protocol::Rest::SleepUntilRested,
+                    )));
                     self.w.run(2);
                     continue;
                 }
                 if wants {
                     let lay = self.w.mover.pos;
-                    self.w.server.send(ToServer::Sleep(false));
+                    self.w.server.send(ToServer::Rest(None));
                     self.w.run(2);
                     self.tend_fire();
                     self.w.go_exact(lay);
-                    self.w.server.send(ToServer::Sleep(true));
+                    self.w.server.send(ToServer::Rest(Some(
+                        hearth_protocol::Rest::SleepUntilRested,
+                    )));
                     self.w.run(2);
                 }
                 if woke && (6.0..19.5).contains(&self.hour()) {
                     break;
                 }
             }
-            self.w.server.send(ToServer::Sleep(false));
+            self.w.server.send(ToServer::Rest(None));
             self.w.run(2);
             self.say(&format!(
                 "wakes ({:.0} h, core {:.1} °C)",

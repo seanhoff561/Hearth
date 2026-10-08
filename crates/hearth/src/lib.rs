@@ -33,6 +33,7 @@ pub mod modes;
 pub mod observer;
 pub mod observer_ui;
 pub mod profiles;
+pub mod rest;
 pub mod scene;
 pub mod screenshot;
 pub mod season_cover;

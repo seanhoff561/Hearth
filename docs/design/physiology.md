@@ -6,20 +6,16 @@ in `data/hearth/body/` (human, injuries, illnesses) and `data/hearth/clothing/`.
 
 ## Purpose
 The player's body as v2 §9 describes it: needs, heat and cold, sleep, stamina, injuries and
-illness with real causes and real time scales, so survival is about food, water, shelter,
+illness with real causes and real courses, so survival is about food, water, shelter,
 clothing and care rather than a health bar.
 
 ## Time
-Needs, heat and short illnesses run on the **day scale** (v2 §4.2): a game day stands for a
-real day, so a body needs a day's food and water each game day, a naked body in cold rain
-becomes hypothermic in the real hour or two (2–3 minutes of play at the default 48-minute day)
-and a night's sleep takes eight real hours (16 minutes of play). Each injury and illness heals
-or runs on the scale its data declares (a sprain on the day scale, a fracture on the year
-scale). Short-term **stamina** is measured in seconds of play, because movement is not
-compressed. All conversion goes through `TimeScales`.
+Everything runs on Earth's clock (E3, `time.md`): a body needs a day's food and water each day,
+a naked body in cold rain becomes hypothermic in an hour or two, a night's sleep takes some eight
+hours (the world going faster while it sleeps), a sprain heals in days and a fracture in weeks.
 
 ## Model
-`Body::step(config, play_seconds, exposure, worn, activity)` advances everything together.
+`Body::step(config, seconds, exposure, worn, activity)` advances everything together.
 
 - **Reference body.** One adult whatever the character looks like (height and build are
   cosmetic, v2 §9.1): the middle of `human.ron`'s ranges — 70 kg, 1.73 m, 1.83 m² of skin, a
@@ -62,18 +58,20 @@ compressed. All conversion goes through `TimeScales`.
   they fell. What the new person knows is the mode's (`AfterDeath`): in Realistic only their
   own, the old journal readable as notes from a past life; in Easy what earlier lives
   discovered, at a beginner's skill. Creative cannot die.
-- **Sleeping** (`hearth_player::Player::rest`, the server): the player lies down (Z); a body
-  sleepy enough (0.3) and at ease drops off after 5 s of play; asleep, the world eases up to
-  90× as fast (v2 §9.5: accelerated, not skipped: the weather, water and body go on), and
-  slows back on waking. What wakes the player is said as they open their eyes; the eyes
-  close slowly into sleep and open slowly out of it.
-- **Stamina**: drains with effort above a third (an all-out sprint empties it in 15 s of play),
-  recovers in 30 s at rest, slower when tired, weak or out of glycogen.
+- **Sleeping** (`hearth_player::Player::rest`, `rest.rs`, the server): the player lies down to
+  sleep or rest until something (the Rest screen, `time.md`); a body sleepy enough (0.3) and at
+  ease drops off after a quarter of an hour; resting, the world eases up to 100× as fast (v2
+  §9.5: accelerated, not skipped: the weather, water and body go on) and slows back when the
+  rest ends. What ended it is said, with how long it was; the eyes close slowly into sleep and
+  open slowly out of it.
+- **Stamina**: drains with effort above a third (an all-out sprint empties it in 15 s), comes
+  back at rest with a time constant of 100 s (half in about a minute, nearly all in five, as the
+  muscles' phosphocreatine), slower when tired, weak or out of glycogen.
 - **Injuries** (`harm.rs`): on a region and side with a severity; bleeding from the data's
   range by severity, clotting over minutes for small wounds and barely for deep ones, a tenth
   under pressure or a bandage; pain; infection rolled six hours after the wound unless it was
   cleaned (clean or boiled water, honey, resin); healing over the data's time × (0.5 +
-  severity) on its scale, slower when starving, dry, cold, without fresh food, infected or
+  severity), slower when starving, dry, cold, without fresh food, infected or
   unsplinted, faster asleep. Frostbite comes from skin frozen (below −0.5 °C) for ten minutes
   on the hands, feet or face.
 - **Illness**: caught from causes (`bad_water` when drinking, `raw_meat`, `wound_infection`…)
@@ -104,13 +102,12 @@ world loop); death → respawn rules (V2-3).
 
 ## Acceptance (V2-3)
 `crates/hearth_body/tests/acceptance.rs`:
-- Naked in 5 °C rain with a breeze: mild hypothermia (core below 35 °C) after 1.0 h of body time
-  — 2.0 minutes of play; in furs (parka, leggings, mittens, moccasins) by a fire in the same
+- Naked in 5 °C rain with a breeze: mild hypothermia (core below 35 °C) after about an hour; in
+  furs (parka, leggings, mittens, moccasins) by a fire in the same
   rain the core holds at 36.4 °C.
 - Without water: dead after 3.3 days of hot, active days (32 °C, walking in the sun), and
   after about 11 days resting in mild shade — as with people, heat and work decide.
-- A moderate sprain heals in about 4 real days (3.7 game days, day scale); a splinted fracture
-  in about 6 weeks (3.4 game days, year scale).
+- A moderate sprain heals in about 4 days; a splinted fracture in about 6 weeks.
 
 `tests/realism.rs` checks the rest against human data: a naked body at rest holds its core in
 29 °C still air without shivering or sweating; ordinary clothes are comfortable indoors; 5 °C

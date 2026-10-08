@@ -14,7 +14,6 @@ use std::time::{Duration, Instant};
 use glam::{DVec2, DVec3};
 use hearth_body::{BodyConfig, Exposure, Posture, Worn};
 use hearth_content::balance::Balance;
-use hearth_content::time::TimeScales;
 use hearth_env::{Calendar, Moment};
 use hearth_math::{BlockPos, CubePos, Planet, PlanetSize};
 use hearth_physics::{Mover, Report};
@@ -37,6 +36,9 @@ use crate::workshop::{Here, Workshop, WorkshopSave};
 
 /// Cubes generated per batch (bounded so nearby terrain appears quickly while moving).
 const BATCH: usize = 192;
+/// The body's longest step (s): the world going faster than lived is lived by it in steps no
+/// longer.
+const BODY_STEP_S: f64 = 30.0;
 /// Seconds of play per tick.
 pub const TICK_S: f64 = 1.0 / hearth_core::TICKS_PER_SECOND as f64;
 /// Ticks between autosaves (five minutes).
@@ -82,10 +84,8 @@ pub struct WorldSpec {
 pub struct WorldShape {
     /// How tall the land is drawn, against the standard (0.25–2).
     pub vertical_scale: Option<f64>,
-    /// Minutes of play in a day.
-    pub day_length_min: Option<u32>,
-    pub days_per_season: Option<u32>,
-    pub starting_season: Option<hearth_content::schema::Season>,
+    /// When the world's clock begins (E §4.1).
+    pub start: Option<hearth_save::Start>,
 }
 
 impl WorldShape {
@@ -102,14 +102,8 @@ impl WorldShape {
 
     /// Sets a new world's life and time settings to this shape.
     pub fn apply(&self, life: &mut hearth_save::LifeSettings) {
-        if let Some(d) = self.day_length_min {
-            life.day_length_min = d;
-        }
-        if let Some(d) = self.days_per_season {
-            life.days_per_season = d;
-        }
-        if let Some(s) = self.starting_season {
-            life.starting_season = s;
+        if let Some(s) = self.start {
+            life.start = s;
         }
     }
 }
@@ -120,9 +114,6 @@ pub struct View {
     pub radius: i32,
     pub vertical: i32,
 }
-
-/// How much faster the world goes while the player sleeps (v2 §9.5: smoothly, up to 60–120×).
-const SLEEP_SPEED: f64 = 90.0;
 
 /// What `player.json` holds.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -190,11 +181,13 @@ struct Save {
     meta: WorldMeta,
 }
 
-/// A new world's life settings: its time's, its shape's, and its mode's rules (or, with none,
-/// the knowledge given).
+/// A new world's life settings: its shape's, and its mode's rules (or, with none, the knowledge
+/// given).
 fn new_life(spec: &WorldSpec, content: &hearth_content::Content) -> hearth_save::LifeSettings {
-    let mut life = hearth_save::LifeSettings::from_content(&content.time);
-    life.knowledge_mode = spec.knowledge;
+    let mut life = hearth_save::LifeSettings {
+        knowledge_mode: spec.knowledge,
+        ..Default::default()
+    };
     if let Some(r) = mode_rules(content, spec.mode.as_deref()) {
         crate::modes::apply(&r, &mut life);
     }
@@ -346,36 +339,42 @@ fn drag_friction(
     }
 }
 
-/// The world's calendar: it starts in the morning of the starting season at the world's first
-/// spawn (where it is spring or autumn by the hemisphere); and that spawn.
-pub fn calendar_for(
-    lw: &LocalWorld,
-    starting: hearth_content::schema::Season,
-) -> (Calendar, DVec3) {
-    calendar_in(lw, Calendar::from_config(&lw.content.time), starting, None)
+/// A new world's calendar and first spawn, the world made in no year (tools: as a world made
+/// with `start` would be).
+pub fn calendar_for(lw: &LocalWorld, start: hearth_save::Start) -> (Calendar, DVec3) {
+    let spawn = first_spawn(lw, None);
+    (calendar_of(lw.map.planet(), start, None, spawn), spawn)
 }
 
-/// A world's calendar by its life and time settings: the day's length and the season's as the
-/// world was made with, the rest as the game's.
+/// A world's calendar (E §4.1): Earth's, set when the world was made (`created_unix`): a
+/// spring morning where its first life begins (`first_spawn`), in the year it was made, or the
+/// real moment it was made. A world made in no year (not saved) takes an undated year's spring
+/// (`Start::Now`: the moment it starts).
 pub fn calendar_of(
-    content: &hearth_content::Content,
-    life: &hearth_save::LifeSettings,
+    planet: &Planet,
+    start: hearth_save::Start,
+    created_unix: Option<u64>,
+    first_spawn: DVec3,
 ) -> Calendar {
-    let mut c = Calendar::from_config(&content.time);
-    c.day_length_s = life.day_length_min.max(1) as f64 * 60.0;
-    c.days_per_season = life.days_per_season.max(1);
-    c
+    let made = created_unix.map(|t| Calendar::from_unix(t as f64));
+    match start {
+        hearth_save::Start::Now => made.unwrap_or_else(|| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0.0, |d| d.as_secs_f64());
+            Calendar::from_unix(now)
+        }),
+        hearth_save::Start::SpringMorning => Calendar::spring_morning(
+            made.map_or(hearth_env::calendar::UNDATED_YEAR, |c| c.at(0).year),
+            planet.latitude(first_spawn.z) < 0.0,
+            planet.solar_time_offset(first_spawn.x),
+        ),
+    }
 }
 
-/// As [`calendar_for`], from a calendar `base`, the first spawn moved by `place` (from the place
+/// The world's first spawn: where the world finds a place, moved by `place` (from the place
 /// found): the birthplace chosen on the globe.
-pub fn calendar_in(
-    lw: &LocalWorld,
-    base: Calendar,
-    starting: hearth_content::schema::Season,
-    place: Option<&dyn Fn(DVec2) -> DVec2>,
-) -> (Calendar, DVec3) {
-    let planet = *lw.map.planet();
+pub fn first_spawn(lw: &LocalWorld, place: Option<&dyn Fn(DVec2) -> DVec2>) -> DVec3 {
     let (mut sx, mut sz) = lw.terrain().find_spawn(false);
     if let Some(place) = place {
         let at = place(DVec2::new(sx as f64, sz as f64));
@@ -383,14 +382,7 @@ pub fn calendar_in(
             .terrain()
             .spawn_near(at.x.floor() as i32, at.y.floor() as i32);
     }
-    let first_spawn = ground_at(lw, sx, sz);
-    let calendar = base.start_at(
-        starting,
-        planet.latitude(first_spawn.z) < 0.0,
-        0.33,
-        planet.solar_time_offset(first_spawn.x),
-    );
-    (calendar, first_spawn)
+    ground_at(lw, sx, sz)
 }
 
 /// Feet on the ground at a column: on the surface or the water, a little above.
@@ -625,7 +617,7 @@ fn run(
     let planet = *lw.map.planet();
     let mut save_state = open_save(&spec, &lw)?;
 
-    // The body's world: the world's time scales and realism.
+    // The body's world: the world's realism.
     let content = lw.content.clone();
     let (life, mut ticks) = match &save_state {
         Some(s) => (s.meta.settings.life.clone(), s.meta.clock.ticks),
@@ -644,23 +636,19 @@ fn run(
     let creative = rules.as_ref().is_some_and(|r| r.creative);
     // Creative's instant actions (on by default, Amendment P §3.1).
     let mut instant = true;
-    let scales = TimeScales::new(life.day_length_min, life.days_per_season, &content.time);
     let balance = Balance::resolve(&content, &life.realism.preset, &life.realism.overrides);
-    let cfg = Arc::new(BodyConfig::new(
-        &content,
-        &balance,
-        &life.realism.preset,
-        scales,
-    ));
+    let cfg = Arc::new(BodyConfig::new(&content, &balance, &life.realism.preset));
 
-    // The calendar starts in the morning of the starting season at the world's first spawn: where
-    // the player chose on the globe, else where the world finds a place.
+    // The calendar starts when the world was made, set to a spring morning at the world's first
+    // spawn (where the player chose on the globe, else where the world finds a place) or to the
+    // moment it was made.
     let birthplace = save_state.as_ref().map_or(spec.birthplace, |s| {
         s.meta.settings.birthplace.map(|[x, z]| DVec2::new(x, z))
     });
     let place = |at: DVec2| birthplace.unwrap_or(at);
-    let base = calendar_of(&content, &life);
-    let (calendar, first_spawn) = calendar_in(&lw, base, life.starting_season, Some(&place));
+    let first_spawn = first_spawn(&lw, Some(&place));
+    let created = save_state.as_ref().map(|s| s.meta.created_unix);
+    let calendar = calendar_of(&planet, life.start, created, first_spawn);
     let mut env = EnvSampler::new(lw.grid(), calendar);
 
     let saved =
@@ -762,11 +750,11 @@ fn run(
     );
     let mut workshop = Workshop::new(&content, &items, mode, workshop_save, seed, ticks);
     // The animals: the populations about the player, saved with the world.
-    let years_at = |t: u64| calendar.days(t) / calendar.days_per_year();
+    let years_at = |t: u64| calendar.years(t);
     let mut fauna = crate::fauna::Fauna::new(
         &lw,
         seed,
-        calendar.year_offset,
+        calendar.year_offset(),
         years_at(ticks),
         save_state.as_ref().map(|s| s.dir.root.as_path()),
     );
@@ -795,7 +783,10 @@ fn run(
     let mut edits_told: Option<u64> = None;
     // Game ticks the last server tick moved the clock by.
     let mut advanced = 1.0f64;
-    let mut work_warp = 0.0f64;
+    // A rest under way (E §4.3), and how much faster it has the world go.
+    let mut resting: Option<crate::rest::Resting> = None;
+    let mut rest_speed = 0.0f64;
+    let sleep = content.time.sleep;
 
     let lod = Arc::new(hearth_lod::LodGen::new(
         &lw.reg,
@@ -840,7 +831,6 @@ fn run(
     let mut stress_told = false;
     let mut last_moved: Option<Moved> = None;
     let mut warp = 0.0f64;
-    let mut sleep_warp = 0.0f64;
     let mut warp_carry = 0.0f64;
     let mut paused = false;
     // Tests and bots: ticks run only when asked for (lockstep), as fast as they go.
@@ -855,7 +845,6 @@ fn run(
                 items: &items,
                 cfg: &cfg,
                 env: &env,
-                scales: &scales,
                 moment: calendar.at(ticks),
                 ticks,
                 ticks_per_day: calendar.ticks_per_day(),
@@ -892,13 +881,51 @@ fn run(
                     }
                     last_moved = Some(m);
                 }
-                Ok(ToServer::Sleep(lie)) => {
-                    // Lying down to rest (sleep comes if the body is sleepy); getting up wakes.
-                    player.lying = lie && player.body.dead.is_none();
-                    if !player.lying {
-                        player.asleep = false;
-                    }
+                Ok(ToServer::Rest(rest)) => {
+                    // Lying down to sleep or rest until something (sleep comes if the body is
+                    // sleepy); getting up ends it.
                     player.drowsy_s = 0.0;
+                    let seen = crate::rest::Seen {
+                        ticks,
+                        ticks_per_hour: calendar.ticks_per_day() / 24.0,
+                        ..Default::default()
+                    };
+                    let mut ended = None;
+                    match rest {
+                        Some(r) if player.body.dead.is_none() && observing.is_none() => {
+                            let sun_up = env.sun_up(&calendar.at(ticks), player.mover.pos);
+                            match crate::rest::Resting::begin(
+                                r,
+                                ticks,
+                                &player,
+                                sun_up,
+                                &world_items,
+                            ) {
+                                Ok(begun) => {
+                                    player.lying = true;
+                                    resting = Some(begun);
+                                }
+                                Err(end) => {
+                                    ended = Some(hearth_protocol::Rested {
+                                        hours: 0.0,
+                                        slept_h: 0.0,
+                                        rest: r,
+                                        end,
+                                    })
+                                }
+                            }
+                        }
+                        _ => {
+                            ended = resting
+                                .take()
+                                .map(|r| r.rested(&seen, hearth_protocol::RestEnd::GotUp));
+                            player.lying = false;
+                            player.asleep = false;
+                        }
+                    }
+                    if let Some(ended) = ended {
+                        let _ = tx.send(ToClient::Rested(ended));
+                    }
                 }
                 Ok(ToServer::Place(_)) if !free => {}
                 Ok(ToServer::Place(p)) => {
@@ -1217,7 +1244,6 @@ fn run(
                 let at = observing.unwrap_or(player.mover.pos);
                 let now = hearth_fauna::live::Now {
                     hour: env.local_time(&moment, at.x) as f32,
-                    day_s: (calendar.ticks_per_day() * TICK_S) as f32,
                     air: env.air_at(&moment, at),
                     year_frac: moment.year_frac as f32,
                     southern: lw.map.planet().latitude(at.z) < 0.0,
@@ -1248,7 +1274,9 @@ fn run(
                     presence.running = false;
                     presence.vulnerable = 0.0;
                 }
-                fauna.tick(&lw, &presence, &now, years_at(ticks), TICK_S as f32, ticks);
+                // The animals live the world's seconds of this tick (more of them resting).
+                let lived_s = (TICK_S * advanced) as f32;
+                fauna.tick(&lw, &presence, &now, years_at(ticks), lived_s, ticks);
                 // A blow under way strikes at the end of its wind-up.
                 if let Some(striking) = player.striking.as_mut() {
                     let now_strikes = striking.advance(TICK_S);
@@ -1384,13 +1412,12 @@ fn run(
                     let fresh_print = near.iter().any(|s| {
                         s.kind == hearth_fauna::live::SignKind::Print
                             && (s.pos - feet).length() < 2.5
-                            && clock - s.t < now.day_s as f64
+                            && clock - s.t < hearth_content::time::DAY_S
                     });
                     if !near.is_empty() || signs_shown {
                         signs_shown = !near.is_empty();
                         let _ = tx.send(ToClient::Signs {
                             now: clock,
-                            day_s: now.day_s,
                             signs: near,
                         });
                     }
@@ -1472,32 +1499,56 @@ fn run(
                 if let Some(mets) = workshop.work_mets() {
                     activity.met = activity.met.max(mets);
                 }
-                // Warped time passes for the body too.
-                player.body.step(
-                    &cfg,
-                    TICK_S * (1.0 + (warp + sleep_warp + work_warp) / 20.0),
-                    &e,
-                    &worn,
-                    &activity,
-                );
+                // Time going faster passes for the body too.
+                let step_s = TICK_S * (1.0 + (warp + rest_speed) / 20.0);
+                let steps = (step_s / BODY_STEP_S).ceil().max(1.0);
+                for _ in 0..steps as usize {
+                    player.body.step(&cfg, step_s / steps, &e, &worn, &activity);
+                }
                 let hour = env.local_time(&moment, player.mover.pos.x) * 24.0;
-                if let Some(why) = player.rest(&cfg, &e, hour, TICK_S) {
-                    let _ = tx.send(ToClient::Woke(why));
+                let woke = player.rest(&cfg, &e, hour, step_s);
+                if let Some(r) = &mut resting {
+                    let seen = crate::rest::Seen {
+                        ticks,
+                        ticks_per_hour: calendar.ticks_per_day() / 24.0,
+                        sun_up: env.sun_up(&moment, player.mover.pos),
+                        woke,
+                        needs: if player.asleep {
+                            None
+                        } else {
+                            player.body.wakes(&cfg, &e)
+                        },
+                        animal: crate::rest::animal_near(
+                            &fauna.live,
+                            &fauna.eco.catalog,
+                            player.mover.pos,
+                        ),
+                    };
+                    let step_ticks = (step_s / TICK_S).round() as u64;
+                    match r.tick(&player, &world_items, step_ticks, &seen) {
+                        Some(end) => {
+                            let _ = tx.send(ToClient::Rested(r.rested(&seen, end)));
+                            resting = None;
+                            player.lying = false;
+                            player.asleep = false;
+                        }
+                        // Up rested in the night, a sleep until morning lies on.
+                        None => player.lying = true,
+                    }
                 }
             } else {
                 player.asleep = false;
                 player.lying = false;
+                resting = None;
             }
-            // Asleep, the world speeds up smoothly; awake, it slows back.
-            let target = if player.asleep {
-                20.0 * (SLEEP_SPEED - 1.0)
-            } else {
-                0.0
-            };
-            sleep_warp += (target - sleep_warp) * (1.0 - (-TICK_S / 2.5).exp());
-            if sleep_warp < 1.0 && target == 0.0 {
-                sleep_warp = 0.0;
-            }
+            // Resting, the world speeds up smoothly; up, it slows back.
+            rest_speed = crate::rest::ease(
+                rest_speed,
+                resting.is_some(),
+                sleep.max_factor,
+                sleep.ramp_s,
+                TICK_S,
+            );
             // A death, once: what this life knew joins what the player's lives have known (a new
             // life keeps it in Easy, Amendment E §6.6), and where it ended.
             if !death_told && player.body.dead.is_some() {
@@ -1505,14 +1556,7 @@ fn run(
                 past_lives.extend(player.knowledge.known.keys().cloned());
                 died_at = Some(player.mover.pos);
             }
-            // Long work speeds the world up as sleep does (no more than a minute or so of
-            // waiting for any task).
-            let work_target = 20.0 * workshop.work_warp();
-            work_warp += (work_target - work_warp) * (1.0 - (-TICK_S / 1.0).exp());
-            if work_warp < 1.0 && work_target == 0.0 {
-                work_warp = 0.0;
-            }
-            warp_carry += (warp + sleep_warp + work_warp) * TICK_S;
+            warp_carry += (warp + rest_speed) * TICK_S;
             let extra = warp_carry.floor();
             warp_carry -= extra;
             ticks += 1 + extra as u64;
@@ -1542,8 +1586,9 @@ fn run(
             if ticks.is_multiple_of(2) {
                 changed.extend_from_slice(water.tick(&mut lw.map, &lw.reg, &world_water));
             }
+            // (Crossed, not landed on: the clock moves many ticks at a time resting.)
             let weather_every = (calendar.ticks_per_day() / 288.0).max(1.0) as u64;
-            if ticks.is_multiple_of(weather_every) {
+            if ticks / weather_every != (ticks - 1 - extra as u64) / weather_every {
                 let days = weather_every as f64 / calendar.ticks_per_day();
                 water.weather(&mut lw.map, &lw.reg, &world_water, days as f32);
                 changed.extend_from_slice(water.changed());
@@ -1557,7 +1602,7 @@ fn run(
                     &lw.reg,
                     lw.edits.places().into_iter(),
                     e.air_c,
-                    calendar.days_per_season as f32 * 4.0,
+                    calendar.days_per_year() as f32,
                     day,
                 );
                 let reg = lw.reg.clone();
@@ -1703,7 +1748,7 @@ fn run(
                         &cfg,
                         &player,
                         e,
-                        20.0 + warp + sleep_warp + work_warp,
+                        20.0 + warp + rest_speed,
                         &items,
                         drag_friction(
                             &lw,

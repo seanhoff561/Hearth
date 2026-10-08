@@ -16,7 +16,6 @@ use crate::schema::knowledge::{Knowledge, Need};
 use crate::schema::material::MaterialCategory;
 use crate::schema::process::{BlockMatch, Input, Match, Output, Process, Target};
 use crate::schema::{Entry, Status};
-use crate::time::TimeScales;
 
 /// Things the lint needs from outside the content (e.g. the world generator's biome names).
 #[derive(Debug, Clone, Default)]
@@ -54,10 +53,8 @@ pub struct Effort {
     pub era: u8,
     /// Distinct processes in the chain.
     pub steps: usize,
-    /// Real-world hours of work across the chain (before time-scale compression).
+    /// Hours of work across the chain (played as long as they really take).
     pub real_hours: f64,
-    /// Minutes of play at the default calendar.
-    pub play_minutes: f64,
     /// Natural materials gathered (kg, items counted by their mass).
     pub gathered_kg: f64,
     /// The node is implemented (planned eras are still partly authored).
@@ -970,7 +967,6 @@ fn food_webs(c: &Content, report: &mut Report) {
 /// Cost of every reachable knowledge node from scratch, using the first producer found for
 /// each non-natural input.
 pub fn effort(c: &Content, reach: &Reach) -> Vec<Effort> {
-    let scales = TimeScales::defaults(&c.time);
     let mut memo: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
     fn process_closure(
         c: &Content,
@@ -1060,12 +1056,10 @@ pub fn effort(c: &Content, reach: &Reach) -> Vec<Effort> {
             }
         }
         let mut real_hours = 0.0;
-        let mut play_s = 0.0;
         let mut gathered = 0.0;
         for pid in &set {
             if let Some(p) = c.processes.get(pid) {
                 real_hours += p.duration.hours as f64;
-                play_s += scales.play_seconds(p.duration.hours as f64, p.duration.scale);
                 for i in &p.inputs {
                     if !i.consumed || producer_of(&i.item, reach, c).is_some() {
                         continue;
@@ -1090,7 +1084,6 @@ pub fn effort(c: &Content, reach: &Reach) -> Vec<Effort> {
             era: k.era,
             steps: set.len(),
             real_hours,
-            play_minutes: play_s / 60.0,
             gathered_kg: gathered,
             implemented: k.status == Status::Implemented,
         });
@@ -1112,13 +1105,12 @@ fn effort_report(efforts: &[Effort], report: &mut Report) {
         let n = list.len() as f64;
         let steps = list.iter().map(|e| e.steps as f64).sum::<f64>() / n;
         let hours = list.iter().map(|e| e.real_hours).sum::<f64>() / n;
-        let play = list.iter().map(|e| e.play_minutes).sum::<f64>() / n;
         let kg = list.iter().map(|e| e.gathered_kg).sum::<f64>() / n;
         report.info(
             "effort",
             format!(
-                "era {era}{}: {} reachable nodes, mean {steps:.1} steps, {hours:.1} h of real work \
-                 ({play:.1} min of play), {kg:.1} kg gathered from scratch",
+                "era {era}{}: {} reachable nodes, mean {steps:.1} steps, {hours:.1} h of work, \
+                 {kg:.1} kg gathered from scratch",
                 if planned { " (planned)" } else { "" },
                 list.len()
             ),

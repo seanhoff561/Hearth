@@ -53,16 +53,8 @@ fn lod_terrain_reaches_the_horizon() {
             ..ShotSpec::default()
         };
         lw.map = hearth_world::CubeMap::new(*lw.map.planet());
-        let shot = render_shot(
-            &ctx,
-            &atlas,
-            &lod,
-            &mut lw,
-            &spec,
-            Path::new("unused.png"),
-            None,
-        )
-        .expect("shot");
+        let shot =
+            render_shot(&ctx, &atlas, &lod, &mut lw, &spec, Path::new("unused.png")).expect("shot");
         assert!(
             shot.lod_tiles > 50,
             "only {} LOD tiles drawn",

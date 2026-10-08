@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Season, entry};
+use super::entry;
 
 /// A unit a quantity can be displayed in: `display = si * factor + offset`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -30,21 +30,6 @@ pub struct Units {
     pub quantities: Vec<Quantity>,
 }
 
-/// An integer world setting with its default and allowed range.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct IntSetting {
-    pub default: u32,
-    pub min: u32,
-    pub max: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct FloatSetting {
-    pub default: f64,
-    pub min: f64,
-    pub max: f64,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SleepAcceleration {
     /// Maximum time acceleration while sleeping.
@@ -53,19 +38,11 @@ pub struct SleepAcceleration {
     pub ramp_s: f64,
 }
 
-/// `time.ron`: calendar defaults and the constants of the two time scales (v2 §4).
+/// `time.ron`: how sleep and rest speed time up (E §4.3). The clock itself is Earth's
+/// (`hearth_env::calendar`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimeConfig {
     pub schema: u32,
-    /// Real minutes per game day.
-    pub day_length_min: IntSetting,
-    pub days_per_season: IntSetting,
-    pub axial_tilt_deg: FloatSetting,
-    pub starting_season: Season,
-    /// Seconds in a real day and days in a real (tropical) year.
-    pub real_day_s: f64,
-    pub real_year_days: f64,
-    pub synodic_month_days: f64,
     pub sleep: SleepAcceleration,
 }
 

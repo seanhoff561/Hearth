@@ -41,8 +41,10 @@
     jog_m_s: 3.0,
     sprint_m_s: 6.5,
     swim_m_s: 0.8,
-    // Seconds of play: an all-out sprint lasts about 15 s, a full recovery takes about 30 s.
-    // Movement is not compressed by the day scale, so these are playability values.
-    stamina: (all_out_s: 15.0, recover_s: 30.0),
+    // An all-out sprint lasts about 15 s. Stamina comes back as the muscles' phosphocreatine
+    // does: half in a few tens of seconds, two thirds after a minute and a half, some 85 % after
+    // six minutes (Harris et al. 1976, Pflügers Arch 367: 137–142; Bogdanis et al. 1995, J
+    // Physiol 482: 467–480), a time constant of about 100 s.
+    stamina: (all_out_s: 15.0, recover_s: 100.0),
     realism_source: "rounded general physiology references (BMR, MET compendium, load carriage studies); review",
 )

@@ -248,3 +248,7 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D237 (2026-10-08) Any key alone: holds start on the press, taps wait for the release
 - D238 (2026-10-08) The controller gets a column of its own; its toggles toggle
 - D239 (2026-10-08) A click at nothing uses the thing in hand, or strikes; blows are the body's
+- D240 (2026-10-08) One clock, Earth's: real dates, the sun, moon and stars where they stand
+- D241 (2026-10-08) Every rate is real; what assumed a short day is reckoned in time, not ticks
+- D242 (2026-10-08) Time goes faster only at rest, and never skips
+- D243 (2026-10-08) Save format 7 and protocol 5

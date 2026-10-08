@@ -9,6 +9,7 @@
 
 use glam::{DVec2, DVec3};
 use hearth_content::schema::fauna::{Activity, CallWhen};
+use hearth_content::time::DAY_S;
 use hearth_math::hash::{Rng, derive_seed, hash2};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -365,12 +366,10 @@ impl Animal {
     }
 }
 
-/// When and in what weather the animals live a step: the local hour (0–1), how long a day is
-/// (real seconds), the air.
+/// When and in what weather the animals live a step: the local hour (0–1), the air.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Now {
     pub hour: f32,
-    pub day_s: f32,
     pub air: Air,
     /// The year's fraction (0 at the March equinox) and whether it is the south.
     pub year_frac: f32,
@@ -378,11 +377,10 @@ pub struct Now {
 }
 
 impl Now {
-    /// A still, light hour of a day of 48 minutes in early summer.
+    /// A still, light hour of a day in early summer.
     pub fn day(hour: f32) -> Self {
         Self {
             hour,
-            day_s: 2880.0,
             air: Air::calm_day(),
             year_frac: 0.3,
             southern: false,
@@ -1056,7 +1054,7 @@ impl Live {
                 }
             }
             a.repath = (a.repath - dt).max(0.0);
-            a.thirst = (a.thirst + dt / now.day_s.max(1.0)).min(2.0);
+            a.thirst = (a.thirst + dt / DAY_S as f32).min(2.0);
             a.fear = (a.fear - dt / 600.0).max(0.0);
             // What it senses of the person, and of the hunters that hunt its kind.
             let mut sensed: Option<(f32, Sense, DVec3)> = presence.and_then(|p| {
@@ -1375,7 +1373,7 @@ impl Live {
                 }
             }
         }
-        self.leave_signs(&cat, ground, presence, now, dt);
+        self.leave_signs(&cat, ground, presence, dt);
         self.make_calls(&cat, now, dt);
         // Warned: the herd runs with the first of it to run.
         for (g, threat, from) in alarms {
@@ -1489,10 +1487,9 @@ impl Live {
         cat: &Catalog,
         ground: &dyn Ground,
         presence: Option<&Presence>,
-        now: &Now,
         dt: f32,
     ) {
-        let day_s = now.day_s.max(1.0) as f64;
+        let day_s = DAY_S;
         let clock = self.clock;
         let mut left: Vec<Sign> = Vec::new();
         let rng = &mut self.rng;

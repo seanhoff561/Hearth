@@ -320,7 +320,7 @@ mod tests {
             "name": name, "created_unix": 100, "last_played_unix": played,
             "clock": {"ticks": 20 * 3600 * 2},
             "settings": {"era": "hearth:upper_paleolithic",
-                         "life": {"day_length_min": 48.0, "days_per_season": 8}},
+                         "life": {"start": "spring_morning"}},
         });
         std::fs::write(dir.join("level.json"), serde_json::to_vec(&level).unwrap()).unwrap();
         std::fs::write(dir.join("region").join("r.0.0.0.hrg"), b"cubes").unwrap();

@@ -506,7 +506,7 @@ impl App {
                 } else if action == builtin::DEBUG_TIME_BACK && p.may_watch() {
                     p.skip_hours(-1.0);
                 } else if action == builtin::DEBUG_SEASON_FORWARD && p.may_watch() {
-                    p.skip_hours(24.0 * p.calendar.days_per_season as f64);
+                    p.skip_hours(24.0 * p.calendar.days_per_year() / 4.0);
                 } else if action == builtin::DEBUG_TIME_WARP && p.may_watch() {
                     // Off → one game hour per real second → off.
                     let warp = if p.time_warp > 0.0 {
@@ -524,7 +524,13 @@ impl App {
                 } else if action == builtin::TOGGLE_PERSPECTIVE {
                     p.toggle_perspective();
                 } else if action == builtin::SLEEP {
-                    p.toggle_rest();
+                    // Up from a rest; or what to rest for.
+                    if p.lying() {
+                        p.rest(None);
+                    } else if !p.dead() {
+                        run.menus.open(Screen::Rest);
+                        release_mouse = true;
+                    }
                 } else if action == builtin::SHOUT {
                     p.shout();
                 } else if action == builtin::BODY_PANEL {
@@ -861,6 +867,15 @@ impl App {
                         c.eat(from);
                     }
                 }
+                MenuAction::Rest(rest) => {
+                    if let Some(run) = &mut self.running {
+                        run.menus.close_all();
+                        if let Some(c) = &mut run.client {
+                            c.rest(Some(rest));
+                        }
+                    }
+                    self.set_captured(true);
+                }
                 MenuAction::Restart => {
                     // The world begun again from its seed and settings, the old one archived.
                     let spec = self
@@ -1120,6 +1135,7 @@ impl App {
                         eras: eras.clone(),
                         modes: modes.clone(),
                         time_words: client.as_ref().and_then(|c| c.time_words(ui.lang)),
+                        waiting: client.as_ref().and_then(|c| c.waiting_work()),
                         may_watch: client.as_ref().is_none_or(|c| c.may_watch()),
                         creative: client.as_ref().is_some_and(|c| c.creative()),
                         catalog: client.as_ref().map_or(&[][..], |c| &c.catalog[..]),

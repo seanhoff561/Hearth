@@ -137,23 +137,11 @@ pub enum Season {
     Winter,
 }
 
-/// Which time scale a duration runs on (v2 §4.2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum TimeScale {
-    /// Body & action time: one game day stands for one real day.
-    #[default]
-    Day,
-    /// Life-cycle & calendar time: one game year stands for one real year.
-    Year,
-}
-
-/// A real-world duration and the scale it is compressed on.
+/// A real-world duration (played as long as it really takes, E §4.1).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Duration {
     /// Real-world duration in hours.
     pub hours: f32,
-    #[serde(default)]
-    pub scale: TimeScale,
 }
 
 #[cfg(test)]

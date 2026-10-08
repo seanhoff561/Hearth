@@ -6,7 +6,7 @@
         (
             id: "authentic",
             name: "Authentic",
-            description: "Real-world proportioned needs, injuries, dangers and work, within the game's time scales.",
+            description: "Real-world needs, injuries, dangers and work, at their real rates.",
             values: {},
         ),
         (

@@ -4,10 +4,11 @@
 use std::sync::Arc;
 
 use glam::{DVec2, DVec3, Mat3, Vec2, Vec3};
+use hearth_env::calendar::DAY_S;
 use hearth_env::climate::Normals;
 use hearth_env::sky::{SkyLight, SkyLightCache};
 use hearth_env::weather::Precip;
-use hearth_env::{Calendar, Moment, WeatherModel, WeatherState, astro};
+use hearth_env::{Calendar, Moment, WeatherModel, WeatherState};
 use hearth_math::Planet;
 use hearth_render::precip::Precipitation;
 use hearth_render::scene::Environment;
@@ -121,9 +122,7 @@ impl EnvSampler {
     /// How light it is at a place to see by (0 a dark night … 1 day): the sun's height through
     /// dusk and dawn, a little light of the moon and stars at night.
     pub fn daylight(&self, m: &Moment, at: DVec3) -> f32 {
-        let lat = self.planet.latitude_deg(at.z);
-        let local = self.local_time(m, at.x);
-        let sun = astro::sun(lat, m.year_frac, local, self.calendar.axial_tilt_deg);
+        let sun = self.sun_seen(m, at);
         let s = ((sun.dir.y + 0.1) / 0.2).clamp(0.0, 1.0);
         (s * s * (3.0 - 2.0 * s)).max(0.04) as f32
     }
@@ -141,14 +140,17 @@ impl EnvSampler {
         }
     }
 
+    /// The sun as seen from a place.
+    pub fn sun_seen(&self, m: &Moment, at: DVec3) -> hearth_env::astro::SunPosition {
+        m.sun_seen(
+            self.planet.latitude_deg(at.z),
+            self.planet.solar_time_offset(at.x),
+        )
+    }
+
     /// Whether the sun is up at a place.
     pub fn sun_up(&self, m: &Moment, at: DVec3) -> bool {
-        let lat = self.planet.latitude_deg(at.z);
-        let local = self.local_time(m, at.x);
-        astro::sun(lat, m.year_frac, local, self.calendar.axial_tilt_deg)
-            .dir
-            .y
-            > 0.0
+        self.sun_seen(m, at).dir.y > 0.0
     }
 
     pub fn sample(
@@ -159,10 +161,10 @@ impl EnvSampler {
         o: EnvOverrides,
     ) -> (Environment, WeatherState) {
         let lat = self.planet.latitude_deg(cam.z);
-        let local = self.local_time(m, cam.x);
-        let tilt = self.calendar.axial_tilt_deg;
-        let sun = astro::sun(lat, m.year_frac, local, tilt);
-        let moon = astro::moon(lat, m.year_frac, local, m.moon_phase, tilt);
+        let offset = self.planet.solar_time_offset(cam.x);
+        let local = m.local_time(offset);
+        let sun = m.sun_seen(lat, offset);
+        let moon = m.moon_seen(lat, offset);
         let normals = Normals::sample(&self.grid, cam.x, cam.z);
         let mut w = self
             .weather
@@ -191,17 +193,16 @@ impl EnvSampler {
             w.cloud_cover,
             haze,
         );
-        let rot = astro::sky_rotation(lat, m.year_frac, local);
+        let rot = m.sky_rotation(lat, offset);
         let v3 = |a: [f64; 3]| Vec3::new(a[0] as f32, a[1] as f32, a[2] as f32);
         let star_rotation = Mat3::from_cols(
             rot.x_axis.as_vec3(),
             rot.y_axis.as_vec3(),
             rot.z_axis.as_vec3(),
         );
-        // Clouds drift with the wind at their height in real seconds (Amendment P §8): the day is
-        // time-lapsed, the weather overhead is not. The drift is carried from frame to frame,
-        // so a change in the wind changes how fast they go, never where they are.
-        let real_s = m.days * self.calendar.day_length_s;
+        // Clouds drift with the wind at their height (Amendment P §8), the drift carried from
+        // frame to frame, so a change in the wind changes how fast they go, never where they are.
+        let real_s = m.days * DAY_S;
         let cloud_base = 600.0 + 700.0 * (1.0 - w.humidity);
         let (cloud_offset, air, wind_dir) = {
             let mut mo = self.motion.borrow_mut();
@@ -233,7 +234,7 @@ impl EnvSampler {
             moon_lux: v3(light.moon),
             sky_lux: v3(light.sky),
             year_frac: m.year_frac as f32,
-            seconds: (m.days * self.calendar.day_length_s) as f32 % 100_000.0,
+            seconds: real_s.rem_euclid(100_000.0) as f32,
             real_seconds: real_s,
             wind: (w.wind_speed_m_s / 6.0).clamp(0.3, 3.0) as f32,
             wind_dir: toward,
@@ -273,7 +274,7 @@ mod tests {
         }
         .sanitized();
         let grid = Arc::new(PlanetGrid::build(&settings, &|_, _| {}));
-        let calendar = Calendar::new(48, 8, 23.44);
+        let calendar = Calendar::default();
         let env = EnvSampler::new(grid, calendar);
         let at = DVec3::new(300.0, 80.0, -2000.0);
         let start = (400.0 * calendar.ticks_per_day()) as u64;

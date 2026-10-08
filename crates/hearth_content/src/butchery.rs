@@ -17,7 +17,7 @@ use crate::schema::item::Stacking;
 use crate::schema::knowledge::Knowledge;
 use crate::schema::material::Material;
 use crate::schema::process::{Failure, Input, Match, Output, Process, Quality, Target, ToolReq};
-use crate::schema::{Duration, Entry, Season, TimeScale};
+use crate::schema::{Duration, Entry, Season};
 
 /// The smallest carcass worth working, kg (a red squirrel; songbirds, mice and frogs are eaten
 /// whole or not at all).
@@ -420,7 +420,6 @@ fn work(
         conditions: Vec::new(),
         duration: Duration {
             hours: hours_for(body, kg),
-            scale: TimeScale::Day,
         },
         knowledge: proper.then(|| IdRef::qualify("hearth:butchery")),
         skill: proper.then(|| "butchery".to_owned()),

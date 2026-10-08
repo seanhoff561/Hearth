@@ -10,7 +10,7 @@ live in `DECISIONS.md`; status lives in `PROGRESS.md`; per-system design notes (
 ```
 hearth_math ─┐
 hearth_core ─┼─> hearth_content (data packs → typed tables, generated items, carcasses and
-             │                   their butchering, lint, graphs, time scales, balance)
+             │                   their butchering, lint, graphs, balance)
              │
              ├─> hearth_world ─> hearth_worldgen ─> hearth_lod
              │        │                 │

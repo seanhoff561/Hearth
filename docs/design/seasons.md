@@ -13,27 +13,13 @@ build on.
 
 ## Model
 
-### Calendar (`calendar.rs`)
-- The world clock counts ticks (20 per second of play). A game day lasts `day_length_min`
-  (20–120 real minutes, default 48); a year is four seasons of `days_per_season` days
-  (3–91, default 8). Both come from `time.ron` (`Calendar::from_config`).
-- Year fraction 0 is the March equinox (start of northern spring); seasons are the
-  astronomical quarters and are opposite in the southern hemisphere. A world can start in any
-  season at any local time (`start_at`).
-- The global time of day is 0 at midnight at X = 0; local solar time adds the planet's solar
-  offset for the longitude (`Planet::solar_time_offset`), so it is noon on one side of the
-  planet while it is midnight on the other.
-- The moon's synodic month keeps its ratio to the year (12.37 months per year), so a short game
-  year still has a full cycle of phases every ~2.6 game days at the defaults (D31).
-
-### Sky positions (`astro.rs`)
-- Solar declination δ = asin(sin ε · sin 2π·yf) for a circular orbit (no equation of time);
-  sun direction from latitude, declination and hour angle (world +X east, −Z north, +Y up).
-- Day length with the standard −0.833° altitude (refraction and the solar disc); polar day
-  and night fall out of the same formula. Tests against known values: 12.1 h at the equator,
-  18.8 h and 5.9 h at 60° at the solstices, the celestial pole at the latitude's elevation.
-- Moon: position from its phase (opposite the sun when full) on the ecliptic; stars rotate
-  about the celestial pole with the sidereal day.
+### Calendar and sky (`calendar.rs`, `astro.rs`)
+Earth's (E3, `time.md`): the clock counts real seconds from a moment of real time; the year's
+share is the sun's ecliptic longitude (0 at the March equinox), so the seasons are the
+astronomical quarters, opposite in the south; local solar time adds the place's longitude and
+the equation of time, so it is noon on one side of the planet while it is midnight on the other.
+The sun, the moon and the stars stand where they really do on the date (world +X east, −Z north,
++Y up); day length and polar day and night come from the sun's altitude at −0.833°.
 
 ### Seasonal climate (`climate.rs`)
 - The planet model gives per place the annual mean temperature (at the place's elevation, via
@@ -55,15 +41,15 @@ landscape of warmer and colder slopes, less evaporation, drained slowly through 
 from which the rivers' seasonal regimes are built (`hearth_env::rivers`, geology.md, D55).
 
 ### Weather (`weather.rs`) — two layers (D30)
-- **Day scale, what the player sees:** a smooth field on the sphere (fBm) advected by the
+- **What the player sees:** a smooth field on the sphere (fBm) advected by the
   prevailing wind of the latitude band, plus convective cells in warm humid climates. The wet
   fraction is matched to the climate's precipitation rate for the date (an inverse normal CDF
   threshold), so wet seasons really are wetter. Out of it: cloud cover, precipitation rate and
   type (rain, sleet, snow by temperature), thunder chance, humidity, wind, the day's
   temperature with a synoptic anomaly.
-- **Year scale, what accumulates:** snowpack and ice come from the normals (above), not from the
-  weather the player happened to see, so they are right at any calendar speed and don't
-  depend on where the player was.
+- **What accumulates:** snowpack and ice come from the normals (above), not from the weather the
+  player happened to see, so they are right however fast time has gone and don't depend on
+  where the player was.
 
 ### Phenology plumbing (`phenology.rs`)
 Generic plant types until species calendars arrive (V2-6): deciduous broadleaf trees leaf out as
@@ -92,9 +78,8 @@ their mean level) and the date's is laid again; only changed blocks are relit an
 (D36).
 
 ## Parameters
-`time.ron`: day length, days per season, axial tilt, starting season, synodic month. Snow and
-ice constants are in `climate.rs` (melt factor, density, Stefan coefficient); weather tuning in
-`weather.rs`.
+The calendar and the sky are Earth's (`time.md`). Snow and ice constants are in `climate.rs`
+(melt factor, density, Stefan coefficient); weather tuning in `weather.rs`.
 
 ## Interactions
 Temperature and weather → physiology (V2-3: cold, heat, wet clothing), fire (V2-5); phenology
@@ -102,9 +87,8 @@ Temperature and weather → physiology (V2-3: cold, heat, wet clothing), fire (V
 V2-8); daylight → vision and the light level mobs and plants see.
 
 ## Known simplifications
-- Circular orbit: no equation of time or eccentricity; seasons are equal quarters.
-- The seasonal wave is a single cosine; sudden spring warmings and Indian summers come only
-  from the day-scale weather.
+- The seasonal climate wave is a single cosine by the year's share; sudden spring warmings and
+  Indian summers come only from the weather.
 - Snow and ice are block states laid per column, not a simulated pack: no drifts against
   obstacles, no avalanche, no snow on steep faces; snow on the leaves of evergreen species other
   than conifers follows the ground rules.

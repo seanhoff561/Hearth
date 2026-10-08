@@ -20,7 +20,7 @@ pub use meta::{Clock, FORMAT, WorldMeta};
 pub use migrate::MigrationReport;
 pub use region::RegionStore;
 pub use settings::{
-    AfterDeath, KnowledgeMode, LifeSettings, PredatorBehavior, Realism, WorldSettings,
+    AfterDeath, KnowledgeMode, LifeSettings, PredatorBehavior, Realism, Start, WorldSettings,
 };
 
 #[derive(Debug, thiserror::Error)]

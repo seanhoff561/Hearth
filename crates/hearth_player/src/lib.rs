@@ -13,8 +13,9 @@ use serde::{Deserialize, Serialize};
 pub const DROWN_S: f64 = 60.0;
 /// Seconds without air after which a body loses consciousness.
 pub const FAINT_S: f64 = 25.0;
-/// Seconds lying sleepy and at ease before sleep comes (play time).
-pub const DROP_OFF_S: f64 = 5.0;
+/// Seconds lying sleepy and at ease before sleep comes: a healthy adult's sleep latency, about a
+/// quarter of an hour (Ohayon et al. 2004, *Sleep* 27: 1255–1273).
+pub const DROP_OFF_S: f64 = 15.0 * 60.0;
 /// How sleepy (0–1) a body must be to drop off.
 pub const SLEEPY: f64 = 0.3;
 
@@ -177,9 +178,9 @@ impl Player {
         }
     }
 
-    /// Lying down: sleep comes to a sleepy body at ease after a few seconds and lasts until
-    /// something wakes it (`hour` is the local hour, `dt` seconds of play). Returns why it
-    /// woke, if it woke on this step.
+    /// Lying down: sleep comes to a sleepy body at ease after a quarter of an hour and lasts
+    /// until something wakes it (`hour` is the local hour, `dt` seconds). Returns why it woke,
+    /// if it woke on this step.
     pub fn rest(&mut self, cfg: &BodyConfig, e: &Exposure, hour: f64, dt: f64) -> Option<Wake> {
         if self.body.dead.is_some() {
             self.asleep = false;
@@ -215,7 +216,7 @@ impl Player {
             && self.mover.airless_s < FAINT_S
     }
 
-    /// Advances by `dt` seconds of play in `surroundings` (the weather and water where the
+    /// Advances by `dt` seconds in `surroundings` (the weather and water where the
     /// player stands; the immersion comes from the movement), wearing `worn`.
     pub fn tick(
         &mut self,

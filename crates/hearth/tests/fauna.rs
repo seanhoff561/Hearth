@@ -192,12 +192,7 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
     let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
     let catalog = Catalog::new(&w.content);
     let home = w.mover.pos;
-    let mut groups = w.census_about();
-    groups.sort_by(|a, b| {
-        let d = |p: glam::DVec2| (p.x - home.x).hypot(p.y - home.z);
-        d(a.1).total_cmp(&d(b.1))
-    });
-    // A spear in hand, and an animal of some size met about the spawn.
+    // A spear in hand.
     let spear = "hearth:stone_tipped_spear/oak_wood";
     w.give(spear, 1);
     w.put_down_all();
@@ -208,26 +203,21 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
         .map(|l| l.id)
         .expect("the spear");
     assert!(w.hold(id), "the spear in hand");
-    let mut quarry = None;
-    'walk: for (s, at, _) in groups.iter().take(8) {
-        if catalog.species[*s as usize].mass_kg < 10.0 {
-            continue;
-        }
-        w.go(at.x, at.y);
-        for _ in 0..4 {
-            w.run(40);
-            // A grown one: the thrust is aimed where a grown one's heart is.
-            if let Some(v) = w.animals.iter().find(|v| {
-                catalog.species[v.species as usize].mass_kg >= 10.0
-                    && v.medium == hearth_fauna::live::Medium::Ground
-                    && v.stage == hearth_fauna::live::Stage::Adult
-            }) {
-                quarry = Some(*v);
-                break 'walk;
-            }
-        }
-    }
-    let mut v = quarry.expect("an animal to hunt");
+    // A grown hind a few steps off, grazing (one met about the spawn may be off at the hunter's
+    // first step, as wild ones are).
+    w.server.send(ToServer::Bring {
+        species: "hearth:red_deer".into(),
+        young: false,
+        female: true,
+        at: home + DVec3::new(0.0, 1.0, 4.0),
+    });
+    w.run(2);
+    let deer = catalog.index("hearth:red_deer").expect("red deer") as u16;
+    let mut v = *w
+        .animals
+        .iter()
+        .find(|a| a.species == deer && (a.pos - home).length() < 8.0)
+        .expect("the hind brought");
     let sp = &catalog.species[v.species as usize];
     // A wound that kills soon: the heart and lungs or the neck reached (one in the belly
     // kills within the hour, and is followed up).

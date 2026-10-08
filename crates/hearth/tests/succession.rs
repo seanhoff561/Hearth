@@ -157,7 +157,7 @@ fn a_cleared_area_goes_through_succession_over_simulated_years() {
         before.wood > 20 && before.leaves() > 100,
         "a forest: {before:?}"
     );
-    let days_per_year = w.content.time.days_per_season.default as f64 * 4.0;
+    let days_per_year = w.calendar.days_per_year();
     let year = |w: &World| w.ticks as f64 / w.ticks_per_day / days_per_year;
     // Cleared: trees and shrubs gone, herbs and grass at once.
     w.server.send(ToServer::Disturb {

@@ -1,16 +1,17 @@
 //! Loading saves written by earlier formats (v2 §3.5, V2-0 acceptance).
 //!
-//! `fixtures/placeholders_world` is a world in the current format whose cubes use blocks since
-//! removed from the content (`hearth:coal_ore` in V2-0, the generic stone in V2-2): they must
-//! load as named placeholders and be written back unchanged. `fixtures/format1_world` is a v1
-//! world, which must be refused with a clear message (as is every world from before Amendment
-//! E, which had people in it).
+//! `fixtures/placeholders_world` is a format-6 world (Amendment E, before Earth's clock) whose
+//! cubes use blocks since removed from the content (`hearth:coal_ore` in V2-0, the generic stone
+//! in V2-2): it must be walked forward to the current format, its blocks loading as named
+//! placeholders and written back unchanged. `fixtures/format1_world` is a v1 world, which must be
+//! refused with a clear message (as is every world from before Amendment E, which had people in
+//! it).
 
 use std::path::{Path, PathBuf};
 
 use hearth_math::{CubePos, LocalPos};
 use hearth_save::states::registry_for_save;
-use hearth_save::{FORMAT, SaveError, WorldDir};
+use hearth_save::{FORMAT, SaveError, Start, WorldDir};
 use hearth_world::{BlockStateId, Cube};
 
 fn fixtures() -> PathBuf {
@@ -65,8 +66,13 @@ fn removed_content_loads_as_placeholders() {
     let root = scratch("placeholders");
     copy_dir(&fixtures().join("placeholders_world"), &root);
     let (dir, meta, report) = WorldDir::open(&root).expect("it opens");
-    assert!(!report.migrated());
+    assert_eq!((report.from, report.to), (6, FORMAT), "walked forward");
     assert_eq!(meta.format, FORMAT);
+    assert_eq!(
+        meta.settings.life.start,
+        Start::SpringMorning,
+        "the old clock's world wakes in spring"
+    );
     assert_eq!(meta.settings.planet.seed, 42);
     assert_eq!(meta.clock.ticks, 123_456);
     assert_eq!(meta.settings.era, "hearth:wild_earth");

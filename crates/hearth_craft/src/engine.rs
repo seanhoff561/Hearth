@@ -20,7 +20,7 @@
 use hearth_content::Content;
 use hearth_content::generate::generated_id;
 use hearth_content::schema::process::{Condition, Effect, Input, Match, Output, Process, Target};
-use hearth_content::schema::{Season, Status, TimeScale};
+use hearth_content::schema::{Season, Status};
 use hearth_content::triggers::{block_keys, item_keys, key, material_keys, with_verb};
 
 use crate::food::keeps_days;
@@ -373,9 +373,8 @@ pub struct Plan {
     pub tools: Vec<(Source, f32)>,
     /// What outputs are made of when they do not say.
     pub material: Option<String>,
-    /// Real hours of work, and the scale they pass on.
+    /// Hours of work (played as long as they really take).
     pub hours: f32,
-    pub scale: TimeScale,
 }
 
 fn input_words(i: &Input, c: &Content) -> String {
@@ -654,7 +653,6 @@ fn plan_ordered(
         tools,
         material,
         hours,
-        scale: def.duration.scale,
     })
 }
 

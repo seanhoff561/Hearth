@@ -58,6 +58,8 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 - **E1** — simulated humanity designed for Phase F (`docs/design/future/humanity/`).
 - **E2** — any key alone, the controller's own column, a click at nothing uses or strikes,
   blows by the body (`docs/design/controls.md`, D237–D239).
+- **E3** — one clock, Earth's: real dates, the sun, moon and stars where they stand, every rate
+  real, Rest the only way time goes faster (`docs/design/time.md`, D240–D243).
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -74,11 +76,11 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
   statuses derived from use; planned knowledge cut to id, name and a line; Q §3's repetition
   checks in the screenshot suite (with S2).
 
-## E3 — Real Earth time (E §4)
-- One clock: 86,400 s days, the 365.2422-day year, the 29.530589-day month, tilt 23.44°; the sky
-  by real astronomy with the equation of time; every motion and process at its real rate;
-  Sleep and Rest / Wait the only way time passes faster; start "Spring morning" or "Now".
-- *Accept:* E §11's time tests; no compressed clock left; Rest / Wait works.
+## From E3 (before Audit 1)
+- The year from a loincloth (`slice_year`) cannot run on Earth's clock as it stands: a real year
+  at rest's 100 times is some ninety hours of server ticks. Make it a season (spring to the first
+  frosts), or let it pass the quiet days at Creative's faster speeds with the animals on their
+  populations' tier; until then the soak suite skips it.
 
 ## E4 — Real Earth size (E §5)
 - `PlanetSize::Earth` only (test planets in Developer mode); the generator recalibrated with

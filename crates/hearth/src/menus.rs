@@ -154,6 +154,8 @@ pub enum Screen {
         turned: bool,
     },
     Pause,
+    /// Lying down to sleep, or to rest until something (E §4.3).
+    Rest,
     /// Creative's time and weather (Amendment P §3.1): each a choice among a few, set as it is
     /// chosen.
     TimeWeather(TimeWeather),
@@ -291,6 +293,8 @@ pub enum MenuAction {
     },
     /// Eat one of a carried thing.
     Eat(hearth_items::Path),
+    /// Lie down to sleep or rest until something.
+    Rest(hearth_protocol::Rest),
     Resume,
     QuitToTitle,
     QuitGame,
@@ -330,6 +334,8 @@ pub struct MenuContext<'a> {
     pub globe: Option<GlobeContext<'a>>,
     /// The time of day and the year in words, in a world.
     pub time_words: Option<String>,
+    /// The work left to itself near the player, to wait on (its name).
+    pub waiting: Option<String>,
     /// Whether watching the world is open (Creative, or a world of no mode), and whether the
     /// world is in Creative (Amendment P §2).
     pub may_watch: bool,
@@ -966,59 +972,21 @@ impl Menus {
                             ) {
                                 shape.vertical_scale = Some(scales[si]);
                             }
-                            let days = [24u32, 36, 48, 72, 96, 120];
-                            let dnames: Vec<String> = days
+                            // When the world's clock begins (E §4.1): a spring morning where
+                            // the first life is, or the real date and time.
+                            use hearth_save::Start;
+                            let starts = [Start::SpringMorning, Start::Now];
+                            let names: Vec<String> = ["spring_morning", "now"]
                                 .iter()
-                                .map(|d| {
-                                    ui.lang
-                                        .format("menu.new_world.minutes", &[("n", &d.to_string())])
-                                })
+                                .map(|k| ui.t(&format!("menu.new_world.start.{k}")))
                                 .collect();
-                            let mut di = days
+                            let mut wi = starts
                                 .iter()
-                                .position(|d| Some(*d) == shape.day_length_min)
-                                .unwrap_or(2);
-                            if ui.cycle(
-                                c.row(ROW),
-                                &ui.t("menu.new_world.day_length"),
-                                &dnames,
-                                &mut di,
-                            ) {
-                                shape.day_length_min = Some(days[di]);
-                            }
-                            let seasons = [4u32, 6, 8, 12, 16, 30];
-                            let pnames: Vec<String> =
-                                seasons.iter().map(|d| d.to_string()).collect();
-                            let mut pi = seasons
-                                .iter()
-                                .position(|d| Some(*d) == shape.days_per_season)
-                                .unwrap_or(2);
-                            if ui.cycle(
-                                c.row(ROW),
-                                &ui.t("menu.new_world.season_days"),
-                                &pnames,
-                                &mut pi,
-                            ) {
-                                shape.days_per_season = Some(seasons[pi]);
-                            }
-                            use hearth_content::schema::Season;
-                            let all = [
-                                Season::Spring,
-                                Season::Summer,
-                                Season::Autumn,
-                                Season::Winter,
-                            ];
-                            let names: Vec<String> = ["spring", "summer", "autumn", "winter"]
-                                .iter()
-                                .map(|k| ui.t(&format!("season.{k}")))
-                                .collect();
-                            let mut wi = all
-                                .iter()
-                                .position(|s| Some(*s) == shape.starting_season)
+                                .position(|s| Some(*s) == shape.start)
                                 .unwrap_or(0);
-                            if ui.cycle(c.row(ROW), &ui.t("menu.new_world.season"), &names, &mut wi)
+                            if ui.cycle(c.row(ROW), &ui.t("menu.new_world.start"), &names, &mut wi)
                             {
-                                shape.starting_season = Some(all[wi]);
+                                shape.start = Some(starts[wi]);
                             }
                         }
                     });
@@ -1559,6 +1527,38 @@ impl Menus {
             }
             Screen::Death => {
                 death_screen(ui, cx, &mut out);
+            }
+            Screen::Rest => {
+                let title = ui.t("rest.title");
+                let when = cx.time_words.clone();
+                let waiting = cx.waiting.clone();
+                let footer = page(ui, &title, "rest", W, PAGE_TOP, 4.0, |ui, c| {
+                    if let Some(w) = &when {
+                        ui.text_centred(&Rect::new(c.x, c.y, c.w, 10.0), w, theme::DIM);
+                        c.space(14.0);
+                    }
+                    use hearth_protocol::Rest;
+                    let mut choices = vec![
+                        (ui.t("rest.sleep_morning"), Rest::SleepUntilMorning),
+                        (ui.t("rest.sleep_rested"), Rest::SleepUntilRested),
+                        (ui.t("rest.hours.1"), Rest::Hours(1.0)),
+                        (ui.t("rest.hours.2"), Rest::Hours(2.0)),
+                        (ui.t("rest.hours.4"), Rest::Hours(4.0)),
+                        (ui.t("rest.dusk"), Rest::UntilDusk),
+                    ];
+                    if let Some(what) = &waiting {
+                        let words = ui.lang.format("rest.done", &[("what", what)]);
+                        choices.push((words, Rest::UntilDone));
+                    }
+                    for (words, rest) in choices {
+                        if ui.button(c.row(ROW), &words) {
+                            out.push(MenuAction::Rest(rest));
+                        }
+                    }
+                });
+                if ui.button(footer, &ui.t("menu.back")) {
+                    pop = true;
+                }
             }
             Screen::Journal { tab, scroll } => match &cx.journal {
                 Some(view) => {

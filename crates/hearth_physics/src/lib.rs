@@ -5,8 +5,6 @@
 //! climbed up to head height with both hands, crouching and crawling through low gaps, wading
 //! and swimming with breath held under water, and the speed of every landing for the body to
 //! judge (`hearth_body::Body::land`). Animals will move with the same code (V2-7).
-//!
-//! Movement is not compressed by the day scale: it runs in seconds of play.
 
 mod mover;
 pub mod testing;

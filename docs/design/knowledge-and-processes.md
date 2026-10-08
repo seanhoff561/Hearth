@@ -17,8 +17,8 @@ never granted: by trying things, watching, thinking it over, or reading what oth
   kilogram, a tag, a garment), tools by property (`hard_hammer ≥ 0.5`, `sharp_edge ≥ 0.3`),
   a workstation or a **target** (a block by id, material, name suffix or any of several; a thing
   lying in the world; water; a fire; open ground), conditions (heat at the fire, water, dry
-  weather, daylight, cold, shelter, a feature nearby, the season), a duration in real hours on a
-  time scale, the knowledge and skill involved, outputs with quality rules, by-products,
+  weather, daylight, cold, shelter, a feature nearby, the season), a duration in real hours, the
+  knowledge and skill involved, outputs with quality rules, by-products,
   failures (chance for a novice falling with skill, words, inputs lost, an injury), and:
   - a **verb** (`strike`, `cut`, `scrape`, `heat`, `dig`…) for the triggers it teaches;
   - an **effect** on its target (keep, remove, excavate, deplete, ignite, feed, bank, mend);
@@ -32,8 +32,8 @@ never granted: by trying things, watching, thinking it over, or reading what oth
   cut of meat, a handful, a hank of fibre, a lump of clay, a hide, a strip of bark, a blob of
   tar, a piece of bone, a sheaf of reeds.
 - **Time**: the data's duration is a skilled person's; a novice takes twice as long, a poor
-  tool longer and a fine one less (×(0.5/strength)^½, 0.6–2), on the day or year scale. Long
-  work speeds the world up (up to 20×) so that no task waits more than a minute or so of play.
+  tool longer and a fine one less (×(0.5/strength)^½, 0.6–2), and it takes that long in play:
+  work in hand is never hurried (E3, `time.md`); work left to itself is waited on with Rest.
 - **Outcome** (`engine::perform`): failures roll in order (coarse stone fails more in
   knapping, damp air in friction fire); outputs are made of the material in play (the first
   input's, else the target's) and get a quality from skill, material and the data's rule; tools
@@ -95,7 +95,6 @@ V2-7), fletching (feathers, V2-7) and painting (marks on surfaces, V2-8).
 ## Parameters
 - Durations, failure chances, quality rules, insights and hints: in the data.
 - `PRACTICE_H` 25 h (skill to two thirds), `SKILL_KEEPS_DAYS` 30; tool speed 0.6–2×; novice 2×.
-- Work warp: (ticks left / 600), up to 19× extra.
 
 ## Interactions
 - Body: the work's METs, injuries from failures, eating and drinking, fires' radiant heat.

@@ -85,9 +85,9 @@ impl InjuryState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IllnessState {
     pub id: String,
-    /// Seconds of play until the symptoms start (0 once they have).
+    /// Seconds until the symptoms start (0 once they have).
     pub onset_s: f64,
-    /// Seconds of play the illness still lasts after onset.
+    /// Seconds the illness still lasts after onset.
     pub left_s: f64,
     /// Rolled when caught: untreated, this course kills at its end.
     pub fatal: bool,

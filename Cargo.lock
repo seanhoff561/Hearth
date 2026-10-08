@@ -1027,7 +1027,6 @@ dependencies = [
  "hearth_math",
  "hearth_worldgen",
  "rayon",
- "ron",
  "rustc-hash 2.1.3",
  "serde",
 ]
@@ -1172,7 +1171,6 @@ dependencies = [
 name = "hearth_save"
 version = "0.1.0"
 dependencies = [
- "hearth_content",
  "hearth_core",
  "hearth_math",
  "hearth_world",

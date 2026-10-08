@@ -4,19 +4,19 @@
 everything else that moves and the automated check that renders it come with P5.*
 
 ## Purpose
-The day is compressed (48 minutes by default), so the sun, moon and stars cross the sky faster
-than in life; that is by design. Everything else that moves must move at real speeds in real
-seconds, unless the player is fast-forwarding (P §8): a cloud at the wind's speed, a wave at its
-own phase speed, rain at nine metres a second.
+Everything that moves moves at its real speed in real seconds, unless the world is going faster
+(a rest, Creative's time speed; P §8): a cloud at the wind's speed, a wave at its own phase
+speed, rain at nine metres a second, and since E3 the sun, the moon and the stars too, the clock
+being Earth's (`time.md`).
 
 ## The clocks
-- **The world's real seconds**: the world's ticks at 20 a second (`Environment::real_seconds`,
-  exact in `f64`; `seconds`, the same wrapped at 100 000 s in `f32`, for the terrain shader's
-  sway, caustics and animated textures). At the normal pace of time a second of play is a
-  second of the world. When time is fast-forwarded (sleep, a skipped action, Creative's time
-  speed, the Observer) the ticks run faster and these visuals time-lapse with them.
-- **Game time**: the day and the year (`Moment`): the sun and moon, the turning of the star field,
-  the seasons' colours.
+- **The world's seconds**: the world's ticks at 20 a second (`Environment::real_seconds`, exact
+  in `f64`; `seconds`, the same wrapped at 100 000 s in `f32`, for the terrain shader's sway,
+  caustics and animated textures). A second of play is a second of the world; when the world
+  goes faster (a rest, Creative's time speed, the Observer) the ticks run faster and these
+  visuals time-lapse with them.
+- **The date** (`Moment`, from the same seconds): the sun and moon, the turning of the star
+  field, the seasons' colours.
 - **Frame time**: the eye's adaptation, the interface.
 
 Motion that depends on a changing rate (the wind) is **summed** from frame to frame, never
@@ -31,8 +31,8 @@ fast-forward time-lapses them at most 120 times at 60 frames a second.
 
 | What | Clock | Speed | Where | Checked |
 |---|---|---|---|---|
-| Sun and moon | game | a turn a game day | `hearth_env::astro` | by design |
-| The star field's turning | game | a turn a sidereal game day | `environment.rs` (`star_rotation`) | by design |
+| Sun and moon | the date | where they really stand: the sun a turn a solar day (the equation of time with it), the moon some 50 minutes later each day | `hearth_env::astro` | E3 (`astro` tests) |
+| The star field's turning | the date | a turn a sidereal day (23 h 56 min) | `environment.rs` (`star_rotation`) | E3 |
 | Stars' scintillation | real (wrapped at 600 s) | two waves of 1–4 Hz; 1.5 % of a star's light overhead, 21.5 % at the horizon, halved in calm air (`turbulence` = wind / 12 m/s) | `sky.wgsl` (`stars`) | P0 |
 | Stars' size | — | each star summed over the 27 cells about the pixel, so no cell's edge cuts it: a star crossing pixels as the sky turns keeps its light (over 0.8 s at 1080p, 2–5 % against 27–33 % before); drawn at its own crisp width, widened only where a pixel is coarser than a star | `sky.wgsl` (`stars`, `px`) | P0 (`docs/review/p0/`) |
 | Clouds' drift | real, summed | the wind at the cloud base: the ten-metre wind × (base / 10 m)^(1/7), 1.8–2 × at 600–1,300 m | `environment.rs` (`Motion`, `wind_aloft`) | P0 (`clouds_drift_at_the_wind_aloft_in_real_seconds`) |
@@ -49,7 +49,7 @@ fast-forward time-lapses them at most 120 times at 60 frames a second.
 
 Not yet moving, for P5: cloud shapes do not evolve (they should, over minutes); fog does not
 drift; there is no lightning, splash or waterfall to time; rivers' surfaces do not flow at their
-current. When time is fast-forwarded, the sky's visuals time-lapse at the capped rate above
+current. When the world goes faster, the sky's visuals time-lapse at the capped rate above
 (P §8 asks smooth blends and a capped visible rate of change, which P5 checks).
 
 ## Parameters
@@ -61,8 +61,8 @@ a pixel at 1080p; at least 0.45 of a pixel where pixels are coarser, below about
 height; 0.45 of a cell at most).
 
 ## Interactions
-Weather (wind speed and direction, cloud base) — `seasons.md`; rendering — `rendering.md`; time
-and its fast-forward — `time-scales.md`.
+Weather (wind speed and direction, cloud base) — `seasons.md`; rendering — `rendering.md`; the
+clock and the world going faster — `time.md`.
 
 ## Known simplifications
 - Each wave scale slides as a whole at one speed: within a scale the shorter waves keep pace with

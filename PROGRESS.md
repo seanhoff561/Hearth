@@ -21,7 +21,7 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1, E2. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -29,7 +29,8 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2. V2-11 superseded.
 | Q1 — interface design | done 2026-10-08 (D236) |
 | E1 — the humanity plan | done 2026-10-08 (documents only) |
 | E2 — controls | done 2026-10-08 (D237–D239) |
-| E3 → E5 — Earth time; Earth size; Wild Earth start | planned |
+| E3 — Earth's clock | done 2026-10-08 (D240–D243) |
+| E4 → E5 — Earth size; Wild Earth start | planned |
 | P3 → P4 with E6 → P5 → P6, Audit 1 | planned |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
@@ -40,10 +41,43 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2. V2-11 superseded.
 |---|---|
 | Smooth world (S) | S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P2 done; open issues in `dev/PLAYTEST.md` |
-| Earth-True (E) | E0, E1, E2 done 2026-10-08; E3–E7 planned |
+| Earth-True (E) | E0–E3 done 2026-10-08; E4–E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
 
-## Latest: E2 — controls (2026-10-08, D237–D239)
+## Latest: E3 — Earth's clock (2026-10-08, D240–D243)
+- One clock, Earth's: tick 0 is a moment of real time, a day 86,400 s, the dates real, leap
+  years and all; the seasons are the sun's own (its ecliptic longitude). The sun by the USNO's
+  approximate coordinates with the equation of time, the moon by a low-precision series (its
+  phases on their days), the stars by sidereal time: sunrise and sunset within four minutes of
+  published tables in London, New York and Sydney, polar night and day at Tromsø. A world begins
+  on a spring morning where its first life is, or today, now (Create World); save format 7
+  (format-6 worlds walked forward), protocol 5.
+- Every rate real: the time scales and their settings are gone; processes, healing, illness,
+  spoiling, weathering and growth run their real hours, days and years. The audit found three
+  things tuned to the short day per tick: a vegetation fire's chances (now over game seconds; it
+  raced thirty times over), the animals' thirst and their signs' age (the real day), stamina
+  back in 30 s (now a 100-s time constant, as phosphocreatine); sleep comes after a quarter of
+  an hour lying sleepy.
+- Rest is the only way time goes faster: the sleep key opens Rest (sleep until morning or
+  rested; rest one, two or four hours or until dusk; wait until the work left nearby is done);
+  the world eases up to 100 times, living every tick (the animals in half-second steps, the body
+  in half-minutes), until what it was for comes or the body's needs, a hurt or an animal close
+  end it; a line says how it went. Work in hand is never hurried (the work warp is gone).
+  Creative's clock shows local mean time and the date. `docs/design/time.md`,
+  `docs/review/e3/rest.png`. Suite: 608 passed, 60 soak tests ignored, in 6 min 43 s.
+- The year from a loincloth (soak) cannot run a real year as it stands: set aside, to be cut
+  to a season before Audit 1 (`PLAN.md`, "From E3").
+- Real? The calendar and the sky are Earth's to minutes against published tables; every rate in
+  data is a real one; the three per-tick holdovers now run in real time. Lean? The time scales,
+  their settings and conversions, the work warp, the per-call day length and the sleep-speed
+  constant are gone; one clock, one ease for rests, one `Calendar::when` for the tools' dates.
+  Fast? The sky is a few dozen trigonometric terms a sample; resting at 100 times costs ten
+  animal steps a tick while no terrain streams; tests hurry their waits at 1,000 times. Whole?
+  Body, fire, food, plants, animals, weather and sky run on the same seconds, and a rest lives
+  every tick (the finite water's flow keeps its own pace: known). Organic? Light and seasons
+  follow the real sun at each place and date; no fixed day lengths or season starts remain.
+
+## E2 — controls (2026-10-08, D237–D239)
 - Any key alone: key releases reach the Controls screen's capture, so Left or Right Ctrl, Alt or
   Shift let go alone binds that key. A hold action on a lone modifier lasts through its
   combinations; a tap one comes on the release if nothing else was pressed (the debug key's rule,
@@ -144,8 +178,10 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2. V2-11 superseded.
   not kept (D159).
 - Wetlands: waterfowl stand on the bank rather than swim; a walking bird is drawn with its
   wings spread; reed beds hide much (D148).
-- Mountains: the planet's tropics have seasons, so tropical mountains have a winter (D136; E3
-  and E4 recalibrate); a realm's mountains are one community (D140).
+- Mountains: the planet's tropics have seasons, so tropical mountains have a winter (D136; E4
+  recalibrates); a realm's mountains are one community (D140).
+- Time going faster (E3): the finite water's flow keeps its own pace; beyond 100 times the
+  animals about the player lag the clock until the populations' tier takes over.
 - Animals: no lion's mane or peacock's train; thin limbs under dense crowns draw nearly black.
 - Distant terrain: the player's changes reach it as each column's top block; the tile
   selection runs on the frame thread (5–9 ms after a 16 m move); FXAA is not built.

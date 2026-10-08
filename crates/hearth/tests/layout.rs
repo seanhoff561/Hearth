@@ -71,6 +71,7 @@ fn screens() -> Vec<(&'static str, Box<dyn Fn() -> Screen>)> {
         ("controls", Box::new(Screen::controls)),
         ("accessibility", Box::new(|| Screen::Accessibility)),
         ("pause", Box::new(|| Screen::Pause)),
+        ("rest", Box::new(|| Screen::Rest)),
         (
             "time_weather",
             Box::new(|| Screen::TimeWeather(Default::default())),
@@ -155,7 +156,8 @@ fn lay_out(screen: &dyn Fn() -> Screen, size: (f32, f32)) -> Vec<Placed> {
                 ("hearth:realistic".into(), "Realistic".into(), "Life as it really is. Real needs, real dangers, real time. You only know what you learn, and when you die, a new life begins knowing nothing.".into()),
             ],
             globe: None,
-            time_words: Some("Late afternoon, the third day of autumn".into()),
+            time_words: Some("Late afternoon, early autumn".into()),
+            waiting: Some("Dry meat on a rack".into()),
                 may_watch: true,
                 creative: true,
                 catalog: &[],

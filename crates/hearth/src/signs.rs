@@ -13,12 +13,11 @@ use hearth_fauna::species::Catalog;
 /// Signs are drawn within this distance of the eye.
 pub const DRAWN_M: f64 = 40.0;
 
-/// The boxes of the signs within sight of `view`, at the world's seconds `now` (a day being
-/// `day_s` seconds), lit by `light` at a point.
+/// The boxes of the signs within sight of `view`, at the world's seconds `now`, lit by `light`
+/// at a point.
 pub fn instances(
     signs: &[Sign],
     now: f64,
-    day_s: f32,
     cat: &Catalog,
     view: DVec3,
     light: &dyn Fn(DVec3) -> (u8, u8),
@@ -125,7 +124,7 @@ pub fn instances(
                 }
             }
             SignKind::Blood => {
-                let hours = (now - s.t) / day_s.max(1.0) as f64 * 24.0;
+                let hours = (now - s.t) / 3600.0;
                 let color = if hours < 2.0 {
                     [128, 14, 12]
                 } else {

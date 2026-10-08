@@ -503,7 +503,6 @@ pub fn generate(
             conditions: Vec::new(),
             duration: Duration {
                 hours: p.build.hours * 0.4,
-                scale: p.build.scale,
             },
             knowledge: None,
             skill: None,

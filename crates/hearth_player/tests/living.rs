@@ -7,7 +7,6 @@ use glam::{DVec2, DVec3};
 use hearth_body::{BodyConfig, Death, Exposure, Rates, Side, Worn};
 use hearth_content::Content;
 use hearth_content::schema::body::BodyRegion;
-use hearth_content::time::TimeScales;
 use hearth_physics::testing::{Cell, Grid};
 use hearth_physics::{Gait, Intent, Motion};
 use hearth_player::Player;
@@ -15,7 +14,7 @@ use hearth_player::Player;
 fn config() -> BodyConfig {
     static C: OnceLock<Content> = OnceLock::new();
     let c = C.get_or_init(Content::load_base);
-    BodyConfig::with_rates(c, Rates::authentic(), TimeScales::defaults(&c.time))
+    BodyConfig::with_rates(c, Rates::authentic())
 }
 
 const DT: f64 = 0.05;
@@ -80,9 +79,17 @@ fn a_sprint_spends_stamina_and_drops_to_a_jog() {
     println!("sprinted {sprinting:.1} s, stamina {:.2}", p.body.stamina);
     assert!((10.0..=25.0).contains(&sprinting), "{sprinting:.1} s");
     assert_eq!(r.last().expect("steps").motion, Motion::Jogging);
-    // Rest brings it back.
+    // Rest brings it back: a third or so in forty seconds, nearly all in five minutes.
+    let low = p.body.stamina;
     live(&mut p, &cfg, &g, &Intent::default(), 40.0);
-    assert!(p.body.stamina > 0.9);
+    let back = (p.body.stamina - low) / (1.0 - low);
+    assert!((0.2..0.5).contains(&back), "{back:.2} back in 40 s");
+    live(&mut p, &cfg, &g, &Intent::default(), 260.0);
+    assert!(
+        p.body.stamina > 0.9,
+        "{:.2} after five minutes",
+        p.body.stamina
+    );
 }
 
 #[test]
@@ -136,8 +143,8 @@ fn swimming_in_cold_water_chills() {
         water_c: 8.0,
         ..Exposure::mild()
     };
-    // Ten minutes of play is five hours of the body's time: swimming in 8 °C water.
-    for _ in 0..(600.0 / DT) as usize {
+    // Three hours swimming in 8 °C water.
+    for _ in 0..(3.0 * 3600.0 / DT) as usize {
         p.tick(&cfg, &g, &Intent::default(), &sea, &Worn::naked(), DT);
         if p.body.dead.is_some() {
             break;
@@ -165,19 +172,22 @@ fn a_tired_body_sleeps_till_rested_and_the_cold_wakes_it() {
         let mut p = Player::new(&cfg, DVec3::ZERO, 1);
         p.body.sleep.pressure = 0.7;
         p.lying = true;
-        for _ in 0..(6.0 / DT) as usize {
+        for _ in 0..(20.0 * 60.0 / DT) as usize {
             assert!(p.rest(&cfg, &e, 23.0, DT).is_none());
         }
-        assert!(p.asleep, "a tired body at ease drops off within seconds");
-        // Asleep: a second of play is half a minute of the body's night.
+        assert!(
+            p.asleep,
+            "a tired body at ease drops off within a quarter of an hour"
+        );
+        // Asleep, the night in half minutes.
         for s in 0..2400 {
             let hour = (23.0 + s as f64 * 30.0 / 3600.0) % 24.0;
             let e = Exposure {
                 local_hour: hour as f32,
                 ..e
             };
-            p.body.step(&cfg, 1.0, &e, &Worn::naked(), &sleeping);
-            if let Some(why) = p.rest(&cfg, &e, hour, 1.0) {
+            p.body.step(&cfg, 30.0, &e, &Worn::naked(), &sleeping);
+            if let Some(why) = p.rest(&cfg, &e, hour, 30.0) {
                 return (why, s as f64 * 30.0 / 3600.0, p);
             }
         }

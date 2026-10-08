@@ -20,7 +20,6 @@ use hearth_body::BodyConfig;
 use hearth_content::Content;
 use hearth_content::schema::process::{Effect, Process};
 use hearth_content::schema::station::Capability;
-use hearth_content::time::TimeScales;
 use hearth_content::triggers::{self, block_keys, item_keys, key, with_verb};
 use hearth_craft::engine::{finish_batch, perform_by, plan};
 use hearth_craft::food::{bite_of, decay_per_hour, keeps_days};
@@ -100,7 +99,6 @@ pub struct Here<'a> {
     pub items: &'a Items,
     pub cfg: &'a BodyConfig,
     pub env: &'a EnvSampler,
-    pub scales: &'a TimeScales,
     pub moment: Moment,
     pub ticks: u64,
     pub ticks_per_day: f64,
@@ -642,9 +640,7 @@ impl Workshop {
             }
             _ => {}
         }
-        let needed = h.scales.play_seconds(p.hours as f64, p.scale)
-            * hearth_content::time::TICKS_PER_SECOND
-            * section;
+        let needed = p.hours as f64 * 3600.0 * hearth_content::time::TICKS_PER_SECOND * section;
         self.work = Some(Work {
             recipe: r,
             aim,
@@ -672,15 +668,6 @@ impl Workshop {
     pub fn stop(&mut self, h: &mut Here) {
         if self.work.take().is_some() {
             h.out.push(ToClient::Work(None));
-        }
-    }
-
-    /// How much faster the world goes while the player works at a long task: up to twenty
-    /// times, so that any work takes at most a minute or so of waiting.
-    pub fn work_warp(&self) -> f64 {
-        match &self.work {
-            Some(w) => ((w.needed - w.ticks) / 20.0 / 30.0).clamp(0.0, 19.0),
-            None => 0.0,
         }
     }
 

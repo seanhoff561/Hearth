@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use hearth_content::schema::Season;
 use hearth_worldgen::WorldGenSettings;
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +39,18 @@ pub enum AfterDeath {
     KeepEverything,
 }
 
+/// How a world's clock was set when it was made (E §4.1); the clock is Earth's either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Start {
+    /// The morning of a spring day where the first life begins (three weeks after the equinox
+    /// that begins spring in its hemisphere) in the year the world was made.
+    #[default]
+    SpringMorning,
+    /// The real date and time the world was made.
+    Now,
+}
+
 /// Realism preset (a `balance/presets` id) plus Custom overrides per balance key.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Realism {
@@ -58,13 +69,11 @@ impl Default for Realism {
 }
 
 /// Life & time settings (v2 §16.1 step 2).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct LifeSettings {
-    /// Real minutes per game day.
-    pub day_length_min: u32,
-    pub days_per_season: u32,
-    pub starting_season: Season,
-    pub axial_tilt_deg: f64,
+    /// How the clock was set when the world was made.
+    #[serde(default)]
+    pub start: Start,
     #[serde(default)]
     pub realism: Realism,
     #[serde(default)]
@@ -74,34 +83,6 @@ pub struct LifeSettings {
     /// What is kept of what was known when a new life begins.
     #[serde(default)]
     pub after_death: AfterDeath,
-}
-
-impl Default for LifeSettings {
-    fn default() -> Self {
-        Self {
-            day_length_min: 48,
-            days_per_season: 8,
-            starting_season: Season::Spring,
-            axial_tilt_deg: 23.44,
-            realism: Realism::default(),
-            predator_behavior: PredatorBehavior::default(),
-            knowledge_mode: KnowledgeMode::default(),
-            after_death: AfterDeath::default(),
-        }
-    }
-}
-
-impl LifeSettings {
-    /// Defaults taken from the content's `time.ron`.
-    pub fn from_content(time: &hearth_content::schema::config::TimeConfig) -> Self {
-        Self {
-            day_length_min: time.day_length_min.default,
-            days_per_season: time.days_per_season.default,
-            starting_season: time.starting_season,
-            axial_tilt_deg: time.axial_tilt_deg.default,
-            ..Self::default()
-        }
-    }
 }
 
 /// Everything decided on the Create World screens.

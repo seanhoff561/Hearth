@@ -53,6 +53,11 @@ pub struct World {
     pub saved: bool,
 }
 
+/// The world's pace while a test waits on work or for time to pass: a thousand times, by the
+/// time speed a world of no mode has open (Creative's, Amendment P §3.1; the animals about the
+/// player live a tenth of it). A world in a mode without it lives the waits at their own pace.
+pub const HURRY: f64 = 20.0 * 999.0;
+
 /// Copies a directory and all in it.
 pub fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
@@ -238,13 +243,15 @@ impl World {
         }
     }
 
-    /// Lets `hours` of the world's time pass.
+    /// Lets `hours` of the world's time pass, hurried.
     pub fn wait_hours(&mut self, hours: f64) {
         let t = self.ticks + (hours / 24.0 * self.ticks_per_day) as u64;
+        self.server.send(ToServer::TimeWarp(HURRY));
         while self.ticks < t {
-            let step = (t - self.ticks).min(2000);
+            let step = (t - self.ticks).min(20_000);
             self.run(step);
         }
+        self.server.send(ToServer::TimeWarp(0.0));
     }
 
     /// Does a process and waits for what came of it.
@@ -260,10 +267,12 @@ impl World {
             aim,
             hand: None,
         });
-        // The work goes on as the clock runs.
+        // The work goes on as the clock runs, hurried: up to a day of it.
         let mut ok = false;
-        for _ in 0..2000 {
-            self.run(20);
+        self.server.send(ToServer::TimeWarp(HURRY));
+        let end = self.ticks + self.ticks_per_day as u64;
+        while self.ticks < end {
+            self.run(2000);
             if self.acted[n..].iter().any(|(p, _, _)| *p == id) {
                 ok = true;
                 break;
@@ -273,6 +282,7 @@ impl World {
                 break;
             }
         }
+        self.server.send(ToServer::TimeWarp(0.0));
         assert!(
             ok,
             "{id}: nothing came of it ({:?}); working {}, lying {:?}, asleep {:?}, dead {:?}",

@@ -541,28 +541,6 @@ pub fn validate(content: &Content, report: &mut Report) {
         line: None,
         id: "time".into(),
     };
-    for (name, s) in [
-        ("day_length_min", t.day_length_min),
-        ("days_per_season", t.days_per_season),
-    ] {
-        c.range(
-            &format!("{name}.default"),
-            s.default as f32,
-            s.min as f32,
-            s.max as f32,
-        );
-    }
-    c.range(
-        "axial_tilt_deg.default",
-        t.axial_tilt_deg.default as f32,
-        t.axial_tilt_deg.min as f32,
-        t.axial_tilt_deg.max as f32,
-    );
-    c.range("real_year_days", t.real_year_days as f32, 300.0, 400.0);
-    c.range(
-        "synodic_month_days",
-        t.synodic_month_days as f32,
-        20.0,
-        40.0,
-    );
+    c.range("sleep.max_factor", t.sleep.max_factor as f32, 1.0, 1_000.0);
+    c.range("sleep.ramp_s", t.sleep.ramp_s as f32, 0.0, 60.0);
 }

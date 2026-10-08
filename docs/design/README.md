@@ -7,7 +7,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | System | Doc | Status |
 |---|---|---|
 | Content platform (data, lint, graphs, hot reload) | [content-platform.md](content-platform.md) | implemented (V2-0) |
-| Units and the two time scales | [time-scales.md](time-scales.md) | implemented (V2-0, calendar V2-1) |
+| Time: Earth's clock, resting while it runs | [time.md](time.md) | implemented (E3) |
 | Balance layer and realism presets | [balance.md](balance.md) | implemented (V2-0) |
 | Saves, versioning and migrations | [saves.md](saves.md) | implemented (V2-0) |
 | Planet generation (tectonics, erosion, climate) | [planet.md](planet.md) | implemented (v1 M2) |

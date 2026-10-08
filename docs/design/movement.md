@@ -9,8 +9,7 @@ instead of leaping, crawling into low spaces, wading and swimming with breath he
 that injure by their speed rather than by a damage formula. Animals will use the same code.
 
 ## Model
-`hearth_physics::step(world, mover, intent, ability, seconds)`, in seconds of play (movement
-is not compressed by the day scale), in substeps of at most 1/60 s.
+`hearth_physics::step(world, mover, intent, ability, seconds)`, in substeps of at most 1/60 s.
 
 - **The box.** 0.5 m wide; 1.75 m standing (eyes at 1.62), 1.3 crouching, 0.6 crawling or
   swimming. It is swept against the blocks' collision shapes one axis at a time (Y, X, Z), so it

@@ -1,6 +1,6 @@
 //! Food (v2 §9.3, §11.5): what eating a thing gives the body, and how things go off.
 //!
-//! Spoiling runs on the day scale: a material keeps `keeps_days` at 20 °C, two and a half
+//! Spoiling: a material keeps `keeps_days` at 20 °C, two and a half
 //! times faster for every ten degrees warmer and as much slower for every ten colder; frozen,
 //! almost not at all; wet things go off faster. Spoiled food risks food poisoning.
 
