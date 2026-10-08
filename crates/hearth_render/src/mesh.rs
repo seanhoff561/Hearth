@@ -82,6 +82,12 @@ pub struct MeshInput {
     /// `sky << 4 | block` per block.
     pub light: Box<[u8; PAD3]>,
     pub tints: ColumnTints,
+    /// The smooth ground's fill about the cube and its materials (Amendment S): when given,
+    /// natural ground is meshed smooth instead of as faces.
+    pub ground: Option<(
+        hearth_smooth::Field,
+        std::sync::Arc<crate::smooth::GroundMaterials>,
+    )>,
 }
 
 impl MeshInput {
@@ -122,7 +128,20 @@ impl MeshInput {
             blocks,
             light,
             tints,
+            ground: None,
         }
+    }
+
+    /// With the smooth ground's fill about the cube, so its natural ground is meshed smooth.
+    pub fn with_ground(
+        mut self,
+        map: &CubeMap,
+        reg: &BlockRegistry,
+        ground: &std::sync::Arc<crate::smooth::GroundMaterials>,
+    ) -> Self {
+        let field = crate::smooth::window(map, reg, ground, self.pos);
+        self.ground = Some((field, ground.clone()));
+        self
     }
 
     #[inline]
@@ -185,16 +204,23 @@ pub struct CubeMesh {
     /// Face connectivity: bit `a * 6 + b` set when faces a and b are connected through
     /// non-opaque blocks.
     pub visibility: u64,
+    /// The smooth natural ground (Amendment S).
+    pub smooth: crate::smooth::SmoothMesh,
 }
 
 impl CubeMesh {
     pub fn is_empty(&self) -> bool {
-        self.quads.is_empty() && self.models.is_empty() && self.translucent.is_empty()
+        self.quads.is_empty()
+            && self.models.is_empty()
+            && self.translucent.is_empty()
+            && self.smooth.is_empty()
     }
 
     /// Bytes of GPU memory the mesh needs.
     pub fn gpu_bytes(&self) -> usize {
-        self.quads.len() * 16 + (self.models.len() + self.translucent.len()) * 64
+        self.quads.len() * 16
+            + (self.models.len() + self.translucent.len()) * 64
+            + self.smooth.gpu_bytes()
     }
 }
 
@@ -421,6 +447,10 @@ impl Mesher<'_> {
                             continue;
                         }
                         all_air = false;
+                        // Natural ground is the smooth mesh's.
+                        if inp.ground.is_some() && self.reg.has(s, StateFlags::NATURAL) {
+                            continue;
+                        }
                         let StateModel::Cube(cube) = self.models.get(s) else {
                             continue;
                         };
@@ -607,6 +637,17 @@ impl Mesher<'_> {
         } else {
             self.visibility(inp)
         };
+        if let Some((field, ground)) = &inp.ground {
+            let light = |p: glam::IVec3| {
+                let s = inp.at(p.x, p.y, p.z);
+                (
+                    inp.light_at(p.x, p.y, p.z),
+                    !self.reg.has(s, StateFlags::NATURAL),
+                )
+            };
+            let climate = |x: usize, z: usize| inp.tints.climate[z * 16 + x];
+            out.smooth = crate::smooth::mesh_cube(field, ground, &light, &climate);
+        }
         out
     }
 

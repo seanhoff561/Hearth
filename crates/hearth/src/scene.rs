@@ -31,6 +31,8 @@ pub struct LocalWorld {
     /// The vegetation the terrain is grown with: the year the trees have grown to, and what
     /// has been felled, cleared and burned.
     pub vegetation: hearth_worldgen::vegetation::Vegetation,
+    /// The smooth ground's materials (Amendment S): natural ground is meshed through its fill.
+    pub ground: Arc<hearth_render::smooth::GroundMaterials>,
 }
 
 impl LocalWorld {
@@ -111,6 +113,7 @@ impl LocalWorld {
             terrain.planet().circumference(),
             0.0,
         );
+        let ground = Arc::new(ground_materials(&reg, &content).0);
         Ok(Self {
             map: CubeMap::new(*terrain.planet()),
             cover,
@@ -120,6 +123,7 @@ impl LocalWorld {
             light: LightEngine::new(),
             edits: crate::edits::Edits::default(),
             vegetation,
+            ground,
         })
     }
 
@@ -272,7 +276,15 @@ impl LocalWorld {
         };
         let meshes: Vec<CubeMesh> = positions
             .par_iter()
-            .map(|p| mesher.mesh(&MeshInput::gather(&self.map, *p, self.tints(p.column()))))
+            .map(|p| {
+                mesher.mesh(
+                    &MeshInput::gather(&self.map, *p, self.tints(p.column())).with_ground(
+                        &self.map,
+                        &self.reg,
+                        &self.ground,
+                    ),
+                )
+            })
             .collect();
         let quads: usize = meshes
             .iter()
@@ -291,6 +303,88 @@ impl LocalWorld {
         let s = self.terrain().sample(x.floor() as i32, z.floor() as i32);
         s.height.max(s.water) as f64
     }
+}
+
+/// The smooth ground's materials (Amendment S §4): the registry's natural blocks as slots, their
+/// sharpness from their ground families, and how the shader colours each: its material's two
+/// colours and grain (the block's map colour where it names no material), grass tinted by
+/// place and season.
+pub fn ground_materials(
+    reg: &BlockRegistry,
+    content: &hearth_content::Content,
+) -> (
+    hearth_render::smooth::GroundMaterials,
+    Vec<hearth_render::terrain::GroundMaterial>,
+) {
+    use hearth_content::schema::material::Pattern;
+    let soil = content.reference.ground.iter().find(|g| g.id == "soil");
+    let sharpness = |m: Option<&str>| {
+        m.and_then(|m| content.ground_of(m))
+            .or(soil)
+            .map_or(0.2, |g| g.sharpness)
+    };
+    let slots = hearth_render::smooth::GroundMaterials::new(reg, &sharpness);
+    let lin = |c: [u8; 3]| {
+        let f = |v: u8| {
+            let c = v as f32 / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        [f(c[0]), f(c[1]), f(c[2])]
+    };
+    let hex = |s: &str| -> [u8; 3] {
+        let v = u32::from_str_radix(s.trim_start_matches('#'), 16).unwrap_or(0x707070);
+        [(v >> 16) as u8, (v >> 8) as u8, v as u8]
+    };
+    let params = slots
+        .slots
+        .iter()
+        .map(|slot| {
+            let block = reg
+                .blocks()
+                .find(|b| b.name.to_string() == slot.block)
+                .map(|b| b.def.clone())
+                .unwrap_or_default();
+            let mat = slot
+                .material
+                .as_deref()
+                .and_then(|m| content.materials.get(m));
+            let (c1, c2, pattern, rough) = match mat {
+                Some(m) => (
+                    m.appearance.color.0,
+                    m.appearance.color2.map(|c| c.0),
+                    m.appearance.pattern,
+                    m.appearance.roughness.unwrap_or(0.9),
+                ),
+                None => (hex(&block.map_color), None, Pattern::Grainy, 0.9),
+            };
+            let a = lin(c1);
+            let b = c2.map(lin).unwrap_or([a[0] * 0.7, a[1] * 0.7, a[2] * 0.7]);
+            // The grain (m) and how far it stands up when materials meet.
+            let (grain, relief) = match pattern {
+                Pattern::Powder => (0.03, 0.1),
+                Pattern::Grainy | Pattern::Speckled => (0.06, 0.25),
+                Pattern::Clumpy => (0.25, 0.5),
+                Pattern::Layered | Pattern::Banded => (0.4, 0.4),
+                Pattern::Crystalline | Pattern::Veined => (0.15, 0.6),
+                Pattern::Porous => (0.12, 0.45),
+                Pattern::Fibrous => (0.08, 0.3),
+                _ => (0.3, 0.35),
+            };
+            let grass = slot.block.ends_with("grass_block");
+            hearth_render::terrain::GroundMaterial {
+                color: [a[0], a[1], a[2], rough],
+                color2: [b[0], b[1], b[2], grain],
+                tint: grass as u32,
+                relief,
+                _pad: [0.0; 2],
+            }
+        })
+        .collect();
+    (slots, params)
 }
 
 /// The repository's (or installed) base data pack directory.

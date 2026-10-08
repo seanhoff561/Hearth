@@ -3133,6 +3133,7 @@ impl Client {
                     self.bodies = Some(Arc::new(hearth_fauna::skin::Bodies::new(&catalog)));
                     self.fauna = Some(Arc::new(catalog));
                     self.animals.clear();
+                    let ground = crate::scene::ground_materials(&r.reg, &r.content).1;
                     self.crafting = Some(Crafting::new(
                         r.content,
                         r.crafts,
@@ -3160,6 +3161,7 @@ impl Client {
                     );
                     scene.terrain.render_distance = self.radius;
                     scene.terrain.vertical_distance = self.vertical;
+                    scene.terrain.set_ground_materials(ctx, &ground);
                     scene.render_scale = self.render_scale;
                     scene.terrain.water.quality = self.water_quality;
                     if let Some(b) = &self.bodies {

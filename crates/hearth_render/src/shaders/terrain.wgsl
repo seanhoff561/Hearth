@@ -13,10 +13,18 @@ struct GeneralQuad {
     layer: u32, tint: u32, overlay: u32, pad: u32,
 };
 struct Instance { origin: vec4<f32> };
+// The smooth ground's vertex (24 bytes, `smooth::SmoothVertex`): position (u16 × 3, (m + 1) ×
+// 2048 in the cube), octahedral normal (i8 × 2), four material slots and their weights (u8 ×
+// 4 each), light, AO, sharpness, and the column's climate code.
+struct SmoothV { a: u32, b: u32, c: u32, d: u32, e: u32, f: u32 };
+// A ground material (`terrain::GroundMaterial`).
+struct GroundMat { color: vec4<f32>, color2: vec4<f32>, tint: u32, relief: f32, pad0: f32, pad1: f32 };
 
 @group(1) @binding(0) var<storage, read> quads: array<PackedQuad>;
 @group(1) @binding(1) var<storage, read> gquads: array<GeneralQuad>;
 @group(1) @binding(2) var<storage, read> instances: array<Instance>;
+@group(1) @binding(3) var<storage, read> svert: array<SmoothV>;
+@group(1) @binding(4) var<storage, read> gmats: array<GroundMat>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -35,6 +43,12 @@ struct VsOut {
     // How far below the water surface the point lies (blocks; negative above water), from the
     // map of the surfaces around the camera.
     @location(9) water_depth: f32,
+    // The smooth ground: its four material slots (one byte each, the triangle's), their
+    // weights, the column's climate and how crisp the surface is.
+    @location(10) @interpolate(flat) mats: u32,
+    @location(11) weights: vec4<f32>,
+    @location(12) @interpolate(flat) climate: u32,
+    @location(13) sharp: f32,
 };
 
 fn face_normal(face: u32) -> vec3<f32> {
@@ -319,6 +333,130 @@ fn fs_cutout(in: VsOut) -> @location(0) vec4<f32> {
         }
     }
     return vec4<f32>(shade_color(albedo, in), 1.0);
+}
+
+// ---------------------------------------------------------------- the smooth ground (Amendment S)
+
+fn oct_decode(e: vec2<f32>) -> vec3<f32> {
+    var n = vec3<f32>(e.x, 1.0 - abs(e.x) - abs(e.y), e.y);
+    if n.y < 0.0 {
+        let x = (1.0 - abs(n.z)) * select(-1.0, 1.0, n.x >= 0.0);
+        let z = (1.0 - abs(n.x)) * select(-1.0, 1.0, n.z >= 0.0);
+        n = vec3<f32>(x, n.y, z);
+    }
+    return normalize(n);
+}
+
+fn s8(v: u32) -> f32 {
+    return f32(bitcast<i32>(v << 24u) >> 24u) / 127.0;
+}
+
+@vertex
+fn vs_smooth(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VsOut {
+    let v = svert[vi];
+    let local = vec3<f32>(f32(v.a & 0xffffu), f32(v.a >> 16u), f32(v.b & 0xffffu)) / 2048.0 - 1.0;
+    let origin = instances[ii].origin.xyz;
+    var world = origin + local;
+    let water_depth = depth_under_water(world);
+    world = curve(world);
+    var out: VsOut;
+    out.pos = g.view_proj * vec4<f32>(world, 1.0);
+    out.normal = oct_decode(vec2<f32>(s8(v.b >> 16u), s8(v.b >> 24u)));
+    out.mats = v.c;
+    out.weights = unpack4x8unorm(v.d);
+    let l = v.e & 255u;
+    out.light = vec2<f32>(f32(l >> 4u), f32(l & 15u)) / 15.0;
+    out.ao = f32((v.e >> 8u) & 255u) / 255.0;
+    out.sharp = f32((v.e >> 16u) & 255u) / 255.0;
+    out.climate = v.f;
+    out.world = world;
+    out.water_depth = water_depth;
+    out.layers = vec2<u32>(0u, 4095u);
+    out.leaf = 1.0;
+    return out;
+}
+
+fn hash31(p: vec3<f32>) -> f32 {
+    let q = vec3<u32>(bitcast<u32>(i32(p.x)), bitcast<u32>(i32(p.y)), bitcast<u32>(i32(p.z)));
+    var h = (q.x * 0x8da6b343u) ^ (q.y * 0xd8163841u) ^ (q.z * 0xcb1ab31fu);
+    h = (h ^ (h >> 16u)) * 0x7feb352du;
+    h = (h ^ (h >> 15u)) * 0x846ca68bu;
+    return f32(h ^ (h >> 16u)) / 4294967296.0;
+}
+
+// Value noise in 3D (0..1), smooth between lattice points.
+fn vnoise(p: vec3<f32>) -> f32 {
+    let i = floor(p);
+    let f = p - i;
+    let u = f * f * (3.0 - 2.0 * f);
+    let a = mix(hash31(i), hash31(i + vec3<f32>(1.0, 0.0, 0.0)), u.x);
+    let b = mix(hash31(i + vec3<f32>(0.0, 1.0, 0.0)), hash31(i + vec3<f32>(1.0, 1.0, 0.0)), u.x);
+    let c = mix(hash31(i + vec3<f32>(0.0, 0.0, 1.0)), hash31(i + vec3<f32>(1.0, 0.0, 1.0)), u.x);
+    let d = mix(hash31(i + vec3<f32>(0.0, 1.0, 1.0)), hash31(i + vec3<f32>(1.0, 1.0, 1.0)), u.x);
+    return mix(mix(a, b, u.y), mix(c, d, u.y), u.z);
+}
+
+// Three octaves, finer octaves fading out with the distance (they would only shimmer).
+fn fbm3(p: vec3<f32>, dist: f32, grain: f32) -> f32 {
+    var sum = 0.0;
+    var amp = 0.5;
+    var freq = 1.0 / max(grain, 0.02);
+    var norm = 0.0;
+    for (var o = 0; o < 3; o++) {
+        // An octave whose cells are smaller than a few pixels is left out.
+        let fade = 1.0 - smoothstep(0.5, 2.0, dist * freq * 0.004);
+        sum += amp * fade * vnoise(p * freq + vec3<f32>(f32(o) * 17.3));
+        norm += amp * fade;
+        amp *= 0.5;
+        freq *= 2.3;
+    }
+    return select(0.5, sum / norm, norm > 1e-3);
+}
+
+// A ground material at a point: its colour (linear) and its relief for height blending.
+fn ground_sample(slot: u32, p: vec3<f32>, dist: f32, climate: u32) -> vec4<f32> {
+    let m = gmats[slot];
+    let n = fbm3(p, dist, m.color2.w);
+    var col = mix(m.color.rgb, m.color2.rgb, smoothstep(0.25, 0.75, n));
+    if m.tint == 1u {
+        // Grass: its colour by place and season, varied a little.
+        col = resolve_tint(1u, climate) * mix(0.8, 1.15, n);
+    }
+    return vec4<f32>(col, n * m.relief);
+}
+
+@fragment
+fn fs_smooth(in: VsOut) -> @location(0) vec4<f32> {
+    handoff(in);
+    let p = in.world + g.camera.xyz;
+    let dist = length(in.world);
+    // Height blending (S §4.1): each material's weight raised by its relief there; the
+    // highest wins within a narrow band, so stones stand through sand and turf into joints.
+    var best = -1.0;
+    var h: array<f32, 4>;
+    var c: array<vec3<f32>, 4>;
+    for (var k = 0u; k < 4u; k++) {
+        let w = in.weights[k];
+        let slot = (in.mats >> (8u * k)) & 255u;
+        let s = ground_sample(slot, p, dist, in.climate);
+        c[k] = s.rgb;
+        h[k] = select(-1.0, w + s.a, w > 0.004);
+        best = max(best, h[k]);
+    }
+    var sum = vec3<f32>(0.0);
+    var total = 0.0;
+    for (var k = 0u; k < 4u; k++) {
+        let a = max(h[k] - (best - 0.2), 0.0);
+        sum += c[k] * a;
+        total += a;
+    }
+    let albedo = sum / max(total, 1e-4);
+    // Crisp materials shade with their faces, soft ones with the smooth normal.
+    var shaded = in;
+    let face = normalize(cross(dpdx(in.world), dpdy(in.world)));
+    let facing = select(-face, face, dot(face, in.normal) >= 0.0);
+    shaded.normal = normalize(mix(in.normal, facing, in.sharp * 0.6));
+    return vec4<f32>(shade_color(albedo, shaded), 1.0);
 }
 
 // ---------------------------------------------------------------- water (v1 §9.3, water.rs)

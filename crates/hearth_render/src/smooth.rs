@@ -1,7 +1,8 @@
 //! The smooth ground's meshes (Amendment S §3.2): each cube's natural ground meshed through its
 //! fill by Surface Nets with sharp features (D222, `hearth_smooth`), with two voxels of apron so
 //! neighbouring cubes meet without a crack, into compact vertices: position, normal, up to four
-//! blended materials, light and ambient occlusion in 20 bytes.
+//! blended materials, light, ambient occlusion and the place's climate (for grass's colour) in
+//! 24 bytes.
 
 use bytemuck::{Pod, Zeroable};
 use glam::{IVec3, Vec3};
@@ -77,7 +78,7 @@ impl GroundMaterials {
     }
 }
 
-/// A vertex of the smooth ground (20 bytes).
+/// A vertex of the smooth ground (24 bytes).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
 pub struct SmoothVertex {
@@ -96,6 +97,9 @@ pub struct SmoothVertex {
     /// How far shading follows the faces (crisp rock) rather than the smooth normal, unorm.
     pub sharpness: u8,
     pub _pad: u8,
+    /// The column's climate code (`mesh::ColumnTints::climate`): grass's colour by place and
+    /// season.
+    pub climate: u32,
 }
 
 /// A cube's smooth ground: vertices and counter-clockwise triangles.
@@ -151,11 +155,13 @@ pub fn window(map: &CubeMap, reg: &BlockRegistry, ground: &GroundMaterials, pos:
 }
 
 /// Meshes a cube's smooth ground from its window. `light(p)` gives `sky << 4 | block` at a
-/// voxel in the cube's coordinates (−1..=16) and whether it is open (not solid ground).
+/// voxel in the cube's coordinates (−1..=16) and whether it is open (not solid ground);
+/// `climate(x, z)` a column's climate code (0..16 each).
 pub fn mesh_cube(
     field: &Field,
     ground: &GroundMaterials,
     light: &dyn Fn(IVec3) -> (u8, bool),
+    climate: &dyn Fn(usize, usize) -> u32,
 ) -> SmoothMesh {
     let region = Region {
         lo: [APRON; 3],
@@ -184,11 +190,22 @@ pub fn mesh_cube(
             .clamp(IVec3::ZERO, IVec3::splat(65535));
         let local = q.as_vec3() / 2048.0 - Vec3::ONE;
         let n = mesh.normals[k];
-        let mut materials = [0u8; 4];
+        // Slivers under 8 % are dropped (they show as nothing) and the rest ordered by slot, so
+        // corners holding the same materials name them alike.
+        let mut blend: Vec<(u8, f32)> = (0..MAX_BLEND.min(4))
+            .filter(|&b| mesh.weights[k][b] >= 0.08)
+            .map(|b| (mesh.materials[k][b].min(254) as u8, mesh.weights[k][b]))
+            .collect();
+        if blend.is_empty() {
+            blend.push((mesh.materials[k][0].min(254) as u8, 1.0));
+        }
+        blend.sort_by_key(|b| b.0);
+        let sum: f32 = blend.iter().map(|b| b.1).sum();
+        let mut materials = [blend[0].0; 4];
         let mut weights = [0u8; 4];
-        for b in 0..MAX_BLEND.min(4) {
-            materials[b] = mesh.materials[k][b].min(254) as u8;
-            weights[b] = (mesh.weights[k][b] * 255.0).round() as u8;
+        for (b, (m, w)) in blend.iter().enumerate() {
+            materials[b] = *m;
+            weights[b] = (w / sum * 255.0).round() as u8;
         }
         out.vertices.push(SmoothVertex {
             pos: [q.x as u16, q.y as u16, q.z as u16],
@@ -199,10 +216,74 @@ pub fn mesh_cube(
             ao: (occlusion(field, *p, n) * 255.0).round() as u8,
             sharpness: (mesh.sharpness[k] * 255.0).round() as u8,
             _pad: 0,
+            climate: climate(
+                local.x.floor().clamp(0.0, 15.0) as usize,
+                local.z.floor().clamp(0.0, 15.0) as usize,
+            ),
         });
     }
     out.indices.extend(mesh.indices.iter().map(|&i| i as u16));
+    unify_materials(&mut out);
     out
+}
+
+/// A triangle's three corners must name the same materials in the same order, so the shader can
+/// take them from one corner and blend by the weights the three carry. Where they differ (at a
+/// change of material), the triangle gets corners of its own carrying the union of its corners'
+/// materials (the four heaviest), each corner weighting them as it did; elsewhere corners stay
+/// shared.
+fn unify_materials(m: &mut SmoothMesh) {
+    let n = m.indices.len() / 3;
+    for t in 0..n {
+        let c = [0, 1, 2].map(|k| m.indices[t * 3 + k] as usize);
+        let v = c.map(|i| m.vertices[i]);
+        let same = |a: &SmoothVertex, b: &SmoothVertex| {
+            (0..4).all(|k| {
+                a.materials[k] == b.materials[k] || (a.weights[k] == 0 && b.weights[k] == 0)
+            })
+        };
+        if same(&v[0], &v[1]) && same(&v[0], &v[2]) {
+            continue;
+        }
+        // The union, heaviest by the corners' summed weights.
+        let mut total: Vec<(u8, u32)> = Vec::new();
+        for x in &v {
+            for k in 0..4 {
+                if x.weights[k] == 0 {
+                    continue;
+                }
+                match total.iter_mut().find(|(m, _)| *m == x.materials[k]) {
+                    Some(e) => e.1 += x.weights[k] as u32,
+                    None => total.push((x.materials[k], x.weights[k] as u32)),
+                }
+            }
+        }
+        total.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        total.truncate(4);
+        total.sort_by_key(|t| t.0);
+        let mut list = [total[0].0; 4];
+        for (k, (mat, _)) in total.iter().enumerate() {
+            list[k] = *mat;
+        }
+        if m.vertices.len() + 3 > u16::MAX as usize {
+            return;
+        }
+        for (k, x) in v.iter().enumerate() {
+            let mut w = [0u32; 4];
+            for (slot, mat) in list.iter().enumerate().take(total.len()) {
+                w[slot] = (0..4)
+                    .filter(|&j| x.weights[j] > 0 && x.materials[j] == *mat)
+                    .map(|j| x.weights[j] as u32)
+                    .sum();
+            }
+            let sum: u32 = w.iter().sum::<u32>().max(1);
+            let mut nv = *x;
+            nv.materials = list;
+            nv.weights = w.map(|wk| ((wk * 255 + sum / 2) / sum) as u8);
+            m.indices[t * 3 + k] = m.vertices.len() as u16;
+            m.vertices.push(nv);
+        }
+    }
 }
 
 /// A unit normal octahedral-encoded into two snorm bytes.
@@ -305,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn a_vertex_is_twenty_bytes() {
-        assert_eq!(std::mem::size_of::<SmoothVertex>(), 20);
+    fn a_vertex_is_twenty_four_bytes() {
+        assert_eq!(std::mem::size_of::<SmoothVertex>(), 24);
     }
 }

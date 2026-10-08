@@ -100,6 +100,8 @@ pub(crate) struct Arena {
     pub(crate) alloc: RangeAllocator,
     stride: u64,
     label: &'static str,
+    /// Uses beyond storage (an index buffer's).
+    extra: wgpu::BufferUsages,
 }
 
 impl Arena {
@@ -109,21 +111,39 @@ impl Arena {
         stride: u64,
         capacity: u32,
     ) -> Self {
+        Self::with_usage(device, label, stride, capacity, wgpu::BufferUsages::empty())
+    }
+
+    pub(crate) fn with_usage(
+        device: &wgpu::Device,
+        label: &'static str,
+        stride: u64,
+        capacity: u32,
+        extra: wgpu::BufferUsages,
+    ) -> Self {
         Self {
-            buffer: Self::make(device, label, stride, capacity),
+            buffer: Self::make(device, label, stride, capacity, extra),
             alloc: RangeAllocator::new(capacity),
             stride,
             label,
+            extra,
         }
     }
 
-    fn make(device: &wgpu::Device, label: &str, stride: u64, capacity: u32) -> wgpu::Buffer {
+    fn make(
+        device: &wgpu::Device,
+        label: &str,
+        stride: u64,
+        capacity: u32,
+        extra: wgpu::BufferUsages,
+    ) -> wgpu::Buffer {
         device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
             size: stride * capacity as u64,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
+                | wgpu::BufferUsages::COPY_SRC
+                | extra,
             mapped_at_creation: false,
         })
     }
@@ -145,7 +165,7 @@ impl Arena {
             log::error!("{} arena is full ({} elements)", self.label, cap);
             return (u32::MAX, false);
         }
-        let new_buf = Self::make(&ctx.device, self.label, self.stride, cap);
+        let new_buf = Self::make(&ctx.device, self.label, self.stride, cap, self.extra);
         let mut enc = ctx
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -192,6 +212,12 @@ struct GpuMesh {
     /// The box the translucent quads span (blocks from the cube's origin): the part of the
     /// screen the water reads is copied from it.
     trans_box: [Vec3; 2],
+    /// The smooth ground: vertices, and indices in pairs (words of two `u16`s), and how many.
+    smooth_v_off: u32,
+    smooth_v_len: u32,
+    smooth_i_off: u32,
+    smooth_i_words: u32,
+    smooth_indices: u32,
 }
 
 /// The box (blocks from the cube's origin) a set of general quads spans.
@@ -219,6 +245,34 @@ struct DrawArgs {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Instance {
     origin: [f32; 4],
+}
+
+/// A ground material as the shader draws it (Amendment S §4): two linear colours mixed by
+/// noise at its grain, its roughness and how it is tinted.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
+pub struct GroundMaterial {
+    /// Linear albedo, and roughness.
+    pub color: [f32; 4],
+    /// The second colour, and the grain's size (m).
+    pub color2: [f32; 4],
+    /// 0: as coloured; 1: grass, tinted by place and season.
+    pub tint: u32,
+    /// How much its relief stands up in blending (0 flat … 1 coarse stones).
+    pub relief: f32,
+    pub _pad: [f32; 2],
+}
+
+impl Default for GroundMaterial {
+    fn default() -> Self {
+        Self {
+            color: [0.18, 0.16, 0.14, 0.9],
+            color2: [0.12, 0.10, 0.09, 0.5],
+            tint: 0,
+            relief: 0.3,
+            _pad: [0.0; 2],
+        }
+    }
 }
 
 /// Per-frame lighting, fog and time. Light values are pre-exposed illuminances (lux ×
@@ -364,12 +418,17 @@ pub struct TerrainRenderer {
     bind1: wgpu::BindGroup,
     packed: Arena,
     general: Arena,
+    /// The smooth ground's vertices and its indices (Amendment S).
+    smooth_v: Arena,
+    smooth_i: Arena,
+    /// The ground's materials' parameters (`GroundMaterial`, one per slot).
+    ground: wgpu::Buffer,
     instances: wgpu::Buffer,
     instance_capacity: usize,
     instance_data: Vec<Instance>,
     index_buffer: wgpu::Buffer,
     pipes: Pipelines,
-    passes: [Pass; 5],
+    passes: [Pass; 6],
     meshes: FxHashMap<CubePos, GpuMesh>,
     planet: Planet,
     pub stats: TerrainStats,
@@ -399,6 +458,7 @@ pub struct TerrainRenderer {
 }
 
 struct Pipelines {
+    smooth: wgpu::RenderPipeline,
     packed_opaque: wgpu::RenderPipeline,
     packed_cutout: wgpu::RenderPipeline,
     general_opaque: wgpu::RenderPipeline,
@@ -527,7 +587,16 @@ impl TerrainRenderer {
         };
         let layout1 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("terrain layout 1"),
-            entries: &[storage(0), storage(1), storage(2)],
+            entries: &[
+                storage(0),
+                storage(1),
+                storage(2),
+                storage(3),
+                wgpu::BindGroupLayoutEntry {
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ..storage(4)
+                },
+            ],
         });
         let bind0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("terrain bind 0"),
@@ -565,6 +634,25 @@ impl TerrainRenderer {
         });
         let packed = Arena::new(device, "packed quads", 16, 1 << 20);
         let general = Arena::new(device, "general quads", 64, 1 << 17);
+        let smooth_v = Arena::new(device, "smooth ground vertices", 24, 1 << 19);
+        let smooth_i = Arena::with_usage(
+            device,
+            "smooth ground indices",
+            4,
+            1 << 20,
+            wgpu::BufferUsages::INDEX,
+        );
+        let ground = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ground materials"),
+            size: (256 * std::mem::size_of::<GroundMaterial>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        ctx.write_buffer(
+            &ground,
+            0,
+            bytemuck::cast_slice(&[GroundMaterial::default(); 256]),
+        );
         let instance_capacity = 16_384;
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("terrain instances"),
@@ -575,9 +663,13 @@ impl TerrainRenderer {
         let bind1 = make_bind1(
             device,
             &layout1,
-            &packed.buffer,
-            &general.buffer,
-            &instances,
+            [
+                &packed.buffer,
+                &general.buffer,
+                &instances,
+                &smooth_v.buffer,
+                &ground,
+            ],
         );
         // Shared quad index buffer: 0,1,2, 2,3,0 per quad.
         let mut indices = Vec::with_capacity(MAX_QUADS_PER_DRAW as usize * 6);
@@ -599,6 +691,7 @@ impl TerrainRenderer {
             Pass::new(device, "draws general opaque"),
             Pass::new(device, "draws general cutout"),
             Pass::new(device, "draws translucent"),
+            Pass::new(device, "draws smooth ground"),
         ];
         Self {
             globals,
@@ -608,6 +701,9 @@ impl TerrainRenderer {
             bind1,
             packed,
             general,
+            smooth_v,
+            smooth_i,
+            ground,
             instances,
             instance_capacity,
             instance_data: Vec::with_capacity(instance_capacity),
@@ -675,7 +771,47 @@ impl TerrainRenderer {
             trans: mesh.translucent.clone(),
             sorted_for: None,
             trans_box: quad_box(&mesh.translucent),
+            smooth_v_off: 0,
+            smooth_v_len: 0,
+            smooth_i_off: 0,
+            smooth_i_words: 0,
+            smooth_indices: 0,
         };
+        if !mesh.smooth.is_empty() {
+            let sm = &mesh.smooth;
+            let words = sm.indices.len().div_ceil(2) as u32;
+            let (voff, grew_v) = self.smooth_v.alloc(ctx, sm.vertices.len() as u32);
+            let (ioff, grew_i) = if voff == u32::MAX {
+                (u32::MAX, false)
+            } else {
+                self.smooth_i.alloc(ctx, words)
+            };
+            if voff != u32::MAX && ioff == u32::MAX {
+                self.smooth_v.alloc.free(voff, sm.vertices.len() as u32);
+            }
+            if voff != u32::MAX && ioff != u32::MAX {
+                self.bind_dirty |= grew_v || grew_i;
+                g.smooth_v_off = voff;
+                g.smooth_v_len = sm.vertices.len() as u32;
+                g.smooth_i_off = ioff;
+                g.smooth_i_words = words;
+                g.smooth_indices = sm.indices.len() as u32;
+                ctx.write_buffer(
+                    &self.smooth_v.buffer,
+                    voff as u64 * 24,
+                    bytemuck::cast_slice(&sm.vertices),
+                );
+                let mut idx = sm.indices.clone();
+                if idx.len() % 2 == 1 {
+                    idx.push(0);
+                }
+                ctx.write_buffer(
+                    &self.smooth_i.buffer,
+                    ioff as u64 * 4,
+                    bytemuck::cast_slice(&idx),
+                );
+            }
+        }
         if g.packed_len > 0 {
             let (off, grew) = self.packed.alloc(ctx, g.packed_len);
             if off == u32::MAX {
@@ -744,6 +880,10 @@ impl TerrainRenderer {
             self.general
                 .alloc
                 .free(g.general_off, g.general_len + g.trans_len);
+            if g.smooth_indices > 0 {
+                self.smooth_v.alloc.free(g.smooth_v_off, g.smooth_v_len);
+                self.smooth_i.alloc.free(g.smooth_i_off, g.smooth_i_words);
+            }
             self.free_slots.push(g.slot);
         }
     }
@@ -866,6 +1006,15 @@ impl TerrainRenderer {
                 origin: [o.x, o.y, o.z, 0.0],
             });
             self.cand_slots.push(m.slot);
+            if m.smooth_indices > 0 {
+                self.passes[5].draws.push(DrawArgs {
+                    index_count: m.smooth_indices,
+                    instance_count: 1,
+                    first_index: m.smooth_i_off * 2,
+                    base_vertex: m.smooth_v_off as i32,
+                    first_instance: inst,
+                });
+            }
             if gpu {
                 quads_drawn += (m.packed_len + m.general_len) as u64;
                 continue;
@@ -946,9 +1095,13 @@ impl TerrainRenderer {
             self.bind1 = make_bind1(
                 &ctx.device,
                 &self.layout1,
-                &self.packed.buffer,
-                &self.general.buffer,
-                &self.instances,
+                [
+                    &self.packed.buffer,
+                    &self.general.buffer,
+                    &self.instances,
+                    &self.smooth_v.buffer,
+                    &self.ground,
+                ],
             );
             self.bind_dirty = false;
         }
@@ -968,6 +1121,7 @@ impl TerrainRenderer {
                     "general opaque",
                     "general cutout",
                     "translucent",
+                    "smooth ground",
                 ][i],
             );
         }
@@ -1183,6 +1337,11 @@ impl TerrainRenderer {
         };
         pass.set_bind_group(0, &self.bind0, &[]);
         pass.set_bind_group(1, &self.bind1, &[]);
+        // The smooth ground is not occlusion-culled yet: drawn whole first in the first phase,
+        // its depth hides what lies behind it from the second.
+        if phase == 0 {
+            self.draw_smooth(pass);
+        }
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         let order = [
             (&self.pipes.packed_opaque, 0u32),
@@ -1200,6 +1359,18 @@ impl TerrainRenderer {
                 culler.capacity,
             );
         }
+    }
+
+    /// Records the smooth ground's draws (CPU-listed, frustum and cave culled).
+    fn draw_smooth<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
+        pass.set_index_buffer(self.smooth_i.buffer.slice(..), wgpu::IndexFormat::Uint16);
+        self.draw_pass(pass, &self.pipes.smooth, 5);
+    }
+
+    /// The ground's materials (one per slot of `smooth::GroundMaterials`, at most 256).
+    pub fn set_ground_materials(&mut self, ctx: &GpuContext, materials: &[GroundMaterial]) {
+        let n = materials.len().min(256);
+        ctx.write_buffer(&self.ground, 0, bytemuck::cast_slice(&materials[..n]));
     }
 
     /// GPU-culled draw counts of the last rendered frame per (phase, pass); stalls the GPU.
@@ -1222,6 +1393,7 @@ impl TerrainRenderer {
         for (pipe, i) in order {
             self.draw_pass(pass, pipe, i);
         }
+        self.draw_smooth(pass);
     }
 
     /// Records the translucent pass (after opaque geometry and the sky), with the water's bind
@@ -1388,30 +1560,25 @@ fn push_draws(draws: &mut Vec<DrawArgs>, offset: u32, count: u32, instance: u32)
     }
 }
 
+/// Bind group 1: packed quads, general quads, instances, the smooth ground's vertices and its
+/// materials.
 fn make_bind1(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
-    packed: &wgpu::Buffer,
-    general: &wgpu::Buffer,
-    instances: &wgpu::Buffer,
+    buffers: [&wgpu::Buffer; 5],
 ) -> wgpu::BindGroup {
+    let entries: Vec<wgpu::BindGroupEntry> = buffers
+        .iter()
+        .enumerate()
+        .map(|(i, b)| wgpu::BindGroupEntry {
+            binding: i as u32,
+            resource: b.as_entire_binding(),
+        })
+        .collect();
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("terrain bind 1"),
         layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: packed.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: general.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: instances.as_entire_binding(),
-            },
-        ],
+        entries: &entries,
     })
 }
 
@@ -1493,6 +1660,14 @@ fn make_pipelines(
         })
     };
     Pipelines {
+        smooth: make(
+            "smooth ground",
+            "vs_smooth",
+            "fs_smooth",
+            Some(wgpu::Face::Back),
+            None,
+            true,
+        ),
         packed_opaque: make(
             "packed opaque",
             "vs_packed",
