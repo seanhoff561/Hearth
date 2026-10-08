@@ -46,7 +46,8 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5. V2-11 superseded.
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
 
 ## Latest: E5 — the Wild Earth start (2026-10-08, D249–D251)
-- The character creator is back (Create World → "Who you are"; the death screen):
+- The character creator is back (making a world: name and mode, the place, then who; and the
+  death screen):
   - saved profiles; body, height and build;
   - skin tone, undertone and freckles; six face presets and seven feature sliders;
   - eyes; eleven hair styles with length, natural colours and a fine picker; eyebrows; facial
@@ -78,7 +79,7 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5. V2-11 superseded.
   before load as they were.
 - **Fast?** 3 s on a test planet, 7.8 s on Earth's. A card on a click in some 0.3 s.
 - **Whole?** The creator, places, eras, waking and death fit together end to end:
-  Create World → who → places → dawn → death → a new life as chosen. The layout test lays out
+  Create World → places → who → dawn → death → a new life as chosen. The layout test lays out
   the creator at every window size.
 - **Organic?** Places come from the world's own rivers, springs, stones, plants and animals.
   None are authored.

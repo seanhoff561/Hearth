@@ -33,7 +33,8 @@ at dawn. There are no other people. Death leads to a new life or a new world.
   - few women bald, none bearded.
 - **Profiles** are kept in `characters.json` (the profiles of before load as they were; the
   `birth.json` of E0–E4 gives a first profile its name, body and loincloth once).
-- **The creator** (Create World → "Who you are", or the death screen) lists the profiles (New,
+- **The creator** is the last step of making a world (name and mode, the place, then who: E
+  §9.1; its Done reads Begin) and opens from the death screen. It lists the profiles (New,
   Delete, Randomize, Done) and puts their looks in a scrolling column. Between them the person
   turns (drag) under daylight, overcast, dusk, firelight or moonlight.
 

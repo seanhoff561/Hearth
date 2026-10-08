@@ -15,13 +15,15 @@ use hearth_ui::{Column, Rect, Ui};
 use crate::menus::ROW;
 use crate::profiles::Profiles;
 
-/// The creator's own state: which way the person faces (radians), the light, and a drag in
-/// progress (the pointer's last x).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+/// The creator's own state: which way the person faces (radians), the light, a drag in
+/// progress (the pointer's last x), and what follows it when it is the last step of making a
+/// world (Amendment E §9.1: name and mode, the place, then who).
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct CharacterScreen {
     pub yaw: f32,
     pub light: usize,
     pub drag: Option<f32>,
+    pub then: Option<Box<crate::menus::MenuAction>>,
 }
 
 /// The person on the creator, for the app to draw.
@@ -92,7 +94,12 @@ pub fn character_screen(
         *a = a.randomized(seed);
         changed = true;
     }
-    if ui.button(c.row(ROW), &ui.t("menu.done")) {
+    let done_words = if st.then.is_some() {
+        ui.t("menu.character.begin")
+    } else {
+        ui.t("menu.done")
+    };
+    if ui.button(c.row(ROW), &done_words) {
         done = true;
     }
     // What they look like, in a column that scrolls.

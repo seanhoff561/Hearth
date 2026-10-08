@@ -672,5 +672,6 @@
   "menu.birthplace.unverified": "No fresh water was found within a walk of here. You may still begin here.",
   "menu.birthplace.click": "Click the globe to choose a place.",
   "menu.death.finding": "Finding places to begin…",
-  "menu.death.new_life_at": "{difficulty}: {place}"
+  "menu.death.new_life_at": "{difficulty}: {place}",
+  "menu.character.begin": "Begin"
 }

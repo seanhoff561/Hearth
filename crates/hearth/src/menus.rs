@@ -913,8 +913,6 @@ impl Menus {
                         })
                         .unwrap_or(0);
                 }
-                let people = cx.profiles.clone();
-                let unnamed = ui.t("menu.character.unnamed");
                 let footer =
                     page_footed(ui, &title, "new_world", wide, PAGE_TOP, 4.0, 1, |ui, c| {
                         let x = c.x;
@@ -929,14 +927,6 @@ impl Menus {
                         ui.label(x, c.y, &ui.t("menu.new_world.seed"), theme::DIM);
                         c.space(line);
                         ui.text_field(c.row(ROW), &ui.t("menu.new_world.seed_hint"), seed, 20);
-                        // Who the player begins as, made in the character creator (E §6.2).
-                        let who = ui.lang.format(
-                            "menu.new_world.who",
-                            &[("name", &people.name(people.selected, &unnamed))],
-                        );
-                        if ui.button(c.row(ROW), &who) {
-                            push = Some(Screen::Character(Default::default()));
-                        }
                         // The era: Wild Earth, the others coming (Amendment E §6.4).
                         if !eras.is_empty() {
                             let soon = ui.t("menu.new_world.era.coming_soon");
@@ -1065,7 +1055,9 @@ impl Menus {
                     anywhere,
                     card,
                 };
-                crate::birthplace_ui::birthplace_screen(ui, cx, choice, &mut b, &mut out, &mut pop);
+                crate::birthplace_ui::birthplace_screen(
+                    ui, cx, choice, &mut b, &mut out, &mut push, &mut pop,
+                );
             }
             Screen::Pause => {
                 let title = ui.t("menu.pause.title");
@@ -1563,7 +1555,12 @@ impl Menus {
                 if o.changed {
                     out.push(MenuAction::ProfilesChanged);
                 }
-                pop |= o.done;
+                if o.done {
+                    if let Some(then) = st.then.take() {
+                        out.push(*then);
+                    }
+                    pop = true;
+                }
             }
             Screen::Rest => {
                 let title = ui.t("rest.title");

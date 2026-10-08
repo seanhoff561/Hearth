@@ -4,7 +4,7 @@
 use hearth_ui::widgets::theme;
 use hearth_ui::{Column, Rect, Ui};
 
-use crate::menus::{MenuAction, MenuContext, NewWorldChoice, ROW};
+use crate::menus::{MenuAction, MenuContext, NewWorldChoice, ROW, Screen};
 
 /// The Birthplace screen's state.
 pub struct Birth<'a> {
@@ -23,6 +23,7 @@ pub fn birthplace_screen(
     choice: &NewWorldChoice,
     b: &mut Birth<'_>,
     out: &mut Vec<MenuAction>,
+    push: &mut Option<Screen>,
     pop: &mut bool,
 ) {
     use crate::places;
@@ -216,16 +217,20 @@ pub fn birthplace_screen(
     if ui.button_enabled(here, &ui.t("menu.birthplace.born_here"), at.is_some())
         && let Some(at) = at
     {
-        out.push(MenuAction::Play {
-            folder: choice.folder.clone(),
-            seed: choice.seed,
-            knowledge: Default::default(),
-            era: choice.era.clone(),
-            size: choice.size,
-            shape: choice.shape,
-            birthplace: Some(at),
-            mode: Some(choice.mode.clone()),
-        });
+        // Then who begins there (Amendment E §9.1), and the world.
+        *push = Some(Screen::Character(crate::character_ui::CharacterScreen {
+            then: Some(Box::new(MenuAction::Play {
+                folder: choice.folder.clone(),
+                seed: choice.seed,
+                knowledge: Default::default(),
+                era: choice.era.clone(),
+                size: choice.size,
+                shape: choice.shape,
+                birthplace: Some(at),
+                mode: Some(choice.mode.clone()),
+            })),
+            ..Default::default()
+        }));
     }
     if ui.button(back, &ui.t("menu.back")) {
         out.push(MenuAction::CancelCreate);
