@@ -137,16 +137,19 @@ impl LodStream {
         self.since_budget = 0;
         let bytes = renderer.bytes();
         let before = self.detail;
-        if bytes > self.budget && self.detail > MIN_DETAIL {
+        // Within the budget, and within what the device's buffer can hold (from high up the
+        // far tiles would fill it before the budget: E4).
+        let budget = self.budget.min(renderer.max_bytes() / 100 * 85);
+        if bytes > budget && self.detail > MIN_DETAIL {
             self.detail = (self.detail * 0.8).max(MIN_DETAIL);
-        } else if (bytes as f64) < 0.6 * self.budget as f64 && self.detail < 1.0 {
+        } else if (bytes as f64) < 0.6 * budget as f64 && self.detail < 1.0 {
             self.detail = (self.detail / 0.85).min(1.0);
         }
         if self.detail != before {
             log::info!(
                 "distant terrain: {} MiB of tiles for a budget of {} MiB: detail {:.2}",
                 bytes >> 20,
-                self.budget >> 20,
+                budget >> 20,
                 self.detail
             );
             self.last = None;

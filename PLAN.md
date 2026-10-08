@@ -60,6 +60,8 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
   blows by the body (`docs/design/controls.md`, D237–D239).
 - **E3** — one clock, Earth's: real dates, the sun, moon and stars where they stand, every rate
   real, Rest the only way time goes faster (`docs/design/time.md`, D240–D243).
+- **E4** — the Earth-sized planet: Earth only, Earth's heights, refinement levels to 38 m,
+  life at real heights (`docs/design/terrain.md`, `planet.md`, `physiology.md`, D244–D248).
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -82,21 +84,17 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
   frosts), or let it pass the quiet days at Creative's faster speeds with the animals on their
   populations' tier; until then the soak suite skips it.
 
-## From E4 (before Audit 1): the full suite, deferred
-- The full suite was not run after E4 (a) and (c) (it takes too long here; the owner asked to
+## From E4 (before Audit 1)
+- The full suite was not run after E4 (a)–(d) (it takes too long here; the owner asked to
   defer it). Known: E4 (a)'s land share (0.3 → Earth's 0.29) redraws every test planet's coasts,
   so tests that rely on terrain about a spawn may need new places. Seen failing:
   `acceptance_v2_8::thatch_keeps_the_rain_off_and_a_flat_bark_covering_drips` ("no level
   ground" about a beach spawn on the Tiny planet). Run `cargo test --profile dev-opt
   --workspace --no-fail-fast` at the end of E4 or at Audit 1 and fix what the new coasts broke.
-  Verified so far: all of `hearth_worldgen` (incl. relief, region, succession), clippy, fmt.
-
-## E4 — Real Earth size (E §5)
-- `PlanetSize::Earth` only (test planets in Developer mode); the generator recalibrated with
-  nested refinement levels; real heights, lapse rate, tree and snow lines, altitude physiology;
-  lazy simulation planet-wide; a far-field planet layer to the real horizon.
-- *Accept:* E §11's Earth-scale tests; an Earth world made in ≤ ~45 s with a progress screen;
-  performance targets met or honestly recorded.
+  Verified so far: `hearth_worldgen`, `hearth_body`, `hearth_player`, `hearth_craft`,
+  `hearth_math`, clippy, fmt, content lint.
+- The grid's middle heights (1–3 km) are short of Earth's (`planet.md`): more and longer ranges.
+- The Body panel's words for breathlessness and mountain sickness (P6's HUD).
 
 ## E5 — Wild Earth start (E §6)
 - The character creator back; 3–5 suggested places with verified "what to look for" and "watch
@@ -191,6 +189,12 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   v1 §8.4 targets still pass.
 - *Amended by E §9.2:* blended into the far-field planet layer out to the real horizon; measured
   on the Earth-sized planet.
+- *From E4:* the far-field layer itself is built here (E4 left it): beyond the LOD's range, a smooth
+  curved mesh of the grid and the coarse refinement levels (`relief::Relief::patch` at level 0–1)
+  to the real horizon. Until then, from high up the LOD's reach (`draw_distance`) grows with the
+  horizon and its quads are held within the device's largest buffer by the budget
+  (`LodStream::keep_budget`); the screenshot tool, which builds all its tiles at once, can still
+  fill it (`lod=1024` from 600 m).
 
 ## Audit 2
 After S4, covering S1, S2, E7, S3, S4.

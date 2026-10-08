@@ -21,7 +21,7 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -30,7 +30,8 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3. V2-11 superseded.
 | E1 — the humanity plan | done 2026-10-08 (documents only) |
 | E2 — controls | done 2026-10-08 (D237–D239) |
 | E3 — Earth's clock | done 2026-10-08 (D240–D243) |
-| E4 → E5 — Earth size; Wild Earth start | E4 in progress: (a) Earth-only creation (D244); (c) the terrain's refinement levels in the game (D245–D246, `docs/design/terrain.md`); (b) Earth's heights on the grid (D247, `planet.md`); (d) life at real heights (D248, `physiology.md`); next (e) the far field and performance |
+| E4 — Earth's size | done 2026-10-08 (D244–D248) |
+| E5 — Wild Earth start | next |
 | P3 → P4 with E6 → P5 → P6, Audit 1 | planned |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
@@ -41,10 +42,39 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3. V2-11 superseded.
 |---|---|
 | Smooth world (S) | S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P2 done; open issues in `dev/PLAYTEST.md` |
-| Earth-True (E) | E0–E3 done 2026-10-08; E4–E7 planned |
+| Earth-True (E) | E0–E4 done 2026-10-08; E5–E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
 
-## Latest: E3 — Earth's clock (2026-10-08, D240–D243)
+## Latest: E4 — Earth's size (2026-10-08, D244–D248)
+- Every world is Earth's: 40,075 km round, a block a metre up and down; the size, height,
+  rarity, land-share and spawn-climate settings are gone (Developer mode keeps the test planets).
+- The grid takes Earth's heights at Earth's size (the test planets keep theirs): land 29 %, mean
+  land 600–800 m (Earth 797–840), mean ocean 3.54–3.64 km (Earth 3.68), ranges to 6–7 km over
+  20 km, trenches to 8–11 km; short in the middle heights (`bench hypso`, `planet.md`).
+- Refinement levels between the grid and the blocks (2.4 km, 306 m, 38 m), each made a tile at
+  a time from the one above: relief at its own wavelengths as rough as the place, its own
+  drainage cut by Priority-Flood with breaching and stream-power erosion, the parent's rivers
+  kept and falling all the way, the sea over the low ground joined to it, the parent's lakes in
+  their outline; seamless and the same whichever tile is made first (`terrain.md`,
+  `docs/review/e4/`). The blocks read the finest level once per area; far tiles read coarse
+  ones: the far view builds in 11 s (9 s before). Rivers take the hydraulic geometry.
+- Life at real heights: aerobic capacity with the air's oxygen, acclimatisation over days,
+  mountain sickness climbing too fast, the death zone; boiling slower up high; cloud bases
+  over the ground (`physiology.md`).
+- Creating an Earth world: the grid in some 15 s on four cores, with the progress screen; the
+  first view about 11 s more.
+- Deferred (`PLAN.md`): the far-field layer to the horizon goes to S4; the full suite to Audit 1
+  (E4 (a)'s new coasts move some tests' places); the middle heights; altitude in the HUD.
+- Real? Hypsometry against Earth's measured, rivers by hydraulic geometry, altitude by the
+  standard atmosphere and VO2max data, lakes 1–4 % about the sites against Earth's 3.7 %.
+  Lean? One refinement module, one neighbourhood read per area, shared atmosphere functions;
+  the size and height settings gone. Fast? A tile in some 23 ms, a column in under a microsecond,
+  the far view near its old time. Whole? Rivers, lakes, coasts and relief agree across levels and
+  tiles (tested: no river runs up, means kept, values the same whichever tile first); the body,
+  cooking and clouds know the height. Organic? Valleys and lakes come from drainage and wear,
+  not stamped shapes; the test planets keep their own model.
+
+## E3 — Earth's clock (2026-10-08, D240–D243)
 - One clock, Earth's: tick 0 is a moment of real time, a day 86,400 s, the dates real, leap
   years and all; the seasons are the sun's own (its ecliptic longitude). The sun by the USNO's
   approximate coordinates with the equation of time, the moon by a low-precision series (its

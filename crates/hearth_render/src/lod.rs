@@ -215,6 +215,8 @@ pub struct LodStats {
 
 /// The LOD renderer.
 pub struct LodRenderer {
+    /// The largest buffer the device binds (bytes): what the quads can grow to.
+    max_bytes: u64,
     pipeline: wgpu::RenderPipeline,
     layout1: wgpu::BindGroupLayout,
     bind1: wgpu::BindGroup,
@@ -360,6 +362,7 @@ impl LodRenderer {
             draws: Vec::new(),
             origins_scratch: Vec::new(),
             multi_draw: ctx.caps.indirect_first_instance,
+            max_bytes: device.limits().max_storage_buffer_binding_size,
             culler: (ctx.caps.multi_draw_indirect_count
                 && ctx.caps.indirect_first_instance
                 && ctx.info.backend == wgpu::Backend::Vulkan)
@@ -483,6 +486,11 @@ impl LodRenderer {
             }
             k
         });
+    }
+
+    /// The most the tiles' quads can take (bytes): the largest buffer the device binds.
+    pub fn max_bytes(&self) -> u64 {
+        self.max_bytes
     }
 
     /// Video memory the tiles' quads take (bytes).
