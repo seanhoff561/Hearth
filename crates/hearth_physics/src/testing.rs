@@ -24,10 +24,55 @@ pub enum Cell {
     Plant(f64, f64),
 }
 
+/// Smooth natural ground (Amendment S §8.1) as a height field: a plane of `base` height rising
+/// `grade` (rise over run along x and z), with bumps of `bump` metres every `wavelength`, and a
+/// cliff of `cliff.1` metres up wherever x passes `cliff.0`; its footing's `friction`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Surface {
+    pub base: f64,
+    pub grade: (f64, f64),
+    pub bump: f64,
+    pub wavelength: f64,
+    pub cliff: Option<(f64, f64)>,
+    pub friction: f64,
+}
+
+impl Default for Surface {
+    fn default() -> Self {
+        Self {
+            base: 0.0,
+            grade: (0.0, 0.0),
+            bump: 0.0,
+            wavelength: 8.0,
+            cliff: None,
+            friction: 0.6,
+        }
+    }
+}
+
+impl Surface {
+    /// The ground's height at a column.
+    pub fn height(&self, x: f64, z: f64) -> f64 {
+        let k = std::f64::consts::TAU / self.wavelength.max(0.1);
+        let mut h = self.base
+            + self.grade.0 * x
+            + self.grade.1 * z
+            + self.bump * (x * k).sin() * (z * k).sin();
+        if let Some((x0, up)) = self.cliff
+            && x > x0
+        {
+            h += up;
+        }
+        h
+    }
+}
+
 /// A small world of cells.
 #[derive(Debug, Clone, Default)]
 pub struct Grid {
     pub cells: HashMap<(i32, i32, i32), Cell>,
+    /// Smooth ground under the cells, if any.
+    pub surface: Option<Surface>,
 }
 
 impl Grid {
@@ -50,6 +95,14 @@ impl Grid {
 
     pub fn at(&self, p: BlockPos) -> Option<Cell> {
         self.cells.get(&(p.x, p.y, p.z)).copied()
+    }
+
+    /// Smooth ground alone.
+    pub fn smooth(surface: Surface) -> Self {
+        Self {
+            surface: Some(surface),
+            ..Self::default()
+        }
     }
 }
 
@@ -91,8 +144,31 @@ impl Terrain for Grid {
                 cushion: 0.5,
                 ..Ground::default()
             },
-            _ => Ground::default(),
+            _ => match &self.surface {
+                Some(s) => Ground {
+                    friction: s.friction,
+                    ..Ground::default()
+                },
+                None => Ground::default(),
+            },
         }
+    }
+
+    fn depth(&self, p: DVec3) -> Option<f64> {
+        let s = self.surface.as_ref()?;
+        let h = s.height(p.x, p.z);
+        // Across a plane's slope the depth is the distance to it; into a cliff, the distance
+        // from its face too.
+        let slope = (s.grade.0 * s.grade.0 + s.grade.1 * s.grade.1).sqrt();
+        let mut d = (h - p.y) / (1.0 + slope * slope).sqrt();
+        if let Some((x0, _)) = s.cliff
+            && d > 0.0
+            && p.x > x0
+            && p.y > h - s.cliff.map_or(0.0, |c| c.1)
+        {
+            d = d.min(p.x - x0);
+        }
+        Some(d)
     }
 
     fn climbable(&self, p: BlockPos) -> bool {

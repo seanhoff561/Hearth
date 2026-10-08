@@ -2542,7 +2542,7 @@ fn go(
         let step = a.knock * dt as f64;
         match ground
             .footing(a.pos.x + step.x, a.pos.z + step.y, a.pos.y)
-            .filter(|f| walker.step(a.pos.y, f).is_some())
+            .filter(|f| walker.step(a.pos.y, f, step.length()).is_some())
         {
             Some(f) => a.pos = DVec3::new(a.pos.x + step.x, f.y, a.pos.z + step.y),
             None => a.knock = DVec2::ZERO,
@@ -2633,7 +2633,7 @@ fn go(
     };
     let next = ground
         .footing(nx, nz, level)
-        .filter(|f| walker.step(level, f).is_some());
+        .filter(|f| walker.step(level, f, step.length()).is_some());
     match next {
         Some(f) => {
             let deep = f.water && (walker.fish || f.depth > walker.wade);
@@ -2757,7 +2757,7 @@ fn steer(
     let level = a.pos.y;
     let Some(f) = ground
         .footing(nx, nz, level)
-        .filter(|f| walker.step(level, f).is_some())
+        .filter(|f| walker.step(level, f, step.length()).is_some())
     else {
         a.speed *= 0.5;
         return 0.0;

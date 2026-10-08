@@ -453,6 +453,7 @@ impl World {
             immersion: 0.0,
             airless_s: 0.0,
             yaw: 0.0,
+            grade: 0.0,
         }));
         // Terrain streams in around the new place (a few seconds).
         let around = BlockPos::containing(feet);
@@ -492,6 +493,7 @@ impl World {
             immersion: 0.0,
             airless_s: 0.0,
             yaw,
+            grade: 0.0,
         }));
         self.run(1);
     }
@@ -511,6 +513,7 @@ impl World {
             immersion: 0.0,
             airless_s: 0.0,
             yaw: 0.0,
+            grade: 0.0,
         }));
         self.run(1);
     }

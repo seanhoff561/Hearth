@@ -311,6 +311,8 @@ pub struct Moved {
     pub airless_s: f64,
     /// Which way the player faces (radians; 0 toward +z, turning toward +x).
     pub yaw: f32,
+    /// The ground's rise over its run under the last steps (positive uphill), for the effort.
+    pub grade: f64,
 }
 
 /// What the client needs once the world is ready.

@@ -279,3 +279,6 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D268 (2026-10-08) Eyes turn about their centres under lid shells; saccades and blinks have their own clock
 - D269 (2026-10-08) The skin's state is the body's: the sun's dose, dirt, blood and scars are simulated and saved
 - D270 (2026-10-08) People's shaders share one data block and take their view from a prefix; fitted garments are meshes, the rest stay boxes
+- D271 (2026-10-08) Natural ground is collided as the fill's field; slopes by the soles' grip, Tobler's pace and the ACSM's effort
+- D272 (2026-10-08) Animals stand on the fill's surface by one lookup; their paths cost slopes and go round the steep
+- D273 (2026-10-08) Built pieces get a buried skirt; Level ground moves earth, conserved

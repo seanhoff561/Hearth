@@ -21,7 +21,7 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7, S3. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -39,7 +39,8 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7. V2-
 | S1 — fill data and editing | done 2026-10-08 (D260–D262) |
 | S2 — smooth terrain drawn | done 2026-10-08 (D263–D265) |
 | E7 — realistic people | done 2026-10-08 (D266–D270) |
-| S3 → S4, Audit 2 | next |
+| S3 — moving on the smooth ground | done 2026-10-08 (D271–D273) |
+| S4, Audit 2 | next |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
@@ -51,7 +52,37 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7. V2-
 | Earth-True (E) | E0–E7 done 2026-10-08 |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); next: Audit 2 after S4 |
 
-## Latest: E7 — realistic people (2026-10-08, D266–D270, `docs/design/people.md`)
+## Latest: S3 — moving on the smooth ground (2026-10-08, D271–D273)
+- **Collision:** natural ground is collided as the fill's field, not as block boxes; built
+  things stay boxes. Server and client run the same code on the same fill.
+  - The feet stand on the surface under the body's middle and four points half its radius out.
+  - Earth higher than a step pushes the body back along the surface.
+  - On the ground, the body is kept on a slope going down; ledges of earth are climbed.
+- **Slopes:**
+  - No steps on natural ground.
+  - The steepest slope walked up follows the footing's grip: about 42° dry, 34° on wet clay,
+    3° on ice. Steeper ground is slid down.
+  - Pace follows Tobler's function; effort follows the ACSM equations (a 10 % rise about
+    doubles a walk's cost).
+- **Animals** stand on the smooth surface (one fill lookup a column). Their paths cost slopes
+  and go round ground steeper than their kind takes, by the gentle way.
+- **Building:** pieces on natural ground have a buried half-metre skirt. **Level the ground**
+  (digging stick, two hours) flattens a 3 m square to its middle height, volume conserved.
+- Bodies are set down on the terrain's surface itself. Footsteps already read the voxel the
+  feet stand in.
+- **Tests:** seven on smooth ground in `hearth_physics`; levelling; going round steep ground;
+  the skirt; effort uphill. The creative resume test now checks the field. A habitat test's
+  coastal spawn (half land) was fixed.
+- **Five tests:**
+  - *Real?* Grip from friction, Tobler's pace, the ACSM's oxygen cost; no steps on slopes.
+  - *Lean?* No collision meshes: the fill the mesher reads is what the feet stand on. Animals
+    pay one lookup.
+  - *Fast?* A handful of field samples a substep. The budgets still need the PC.
+  - *Whole?* Players, animals, paths, building and effort all moved to the smooth ground.
+    Footprints, wet grip and footwear wait (PLAN, From S3).
+  - *Organic?* Herds take the gentle way round; a muddy slope sends a body sliding.
+
+## E7 — realistic people (2026-10-08, D266–D270, `docs/design/people.md`)
 - **The body** is a signed distance field of some 150 anatomical forms on the rig's joints
   (trunk, girdle and muscles, hands with fingers and nails, feet with toes, a face with sockets
   and lips), sized by the creator's proportions, build and face sliders.

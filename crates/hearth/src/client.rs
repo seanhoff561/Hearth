@@ -3081,6 +3081,7 @@ impl Client {
                 immersion: report.immersion,
                 airless_s: report.airless_s,
                 yaw: -self.camera.yaw.to_radians(),
+                grade: report.grade,
             }));
         }
         self.animate(dt);

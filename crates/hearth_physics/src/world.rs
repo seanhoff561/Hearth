@@ -1,5 +1,6 @@
 //! What movement asks of the world: collision boxes, water, the ground underfoot.
 
+use glam::DVec3;
 use hearth_math::{Aabb, BlockPos};
 use hearth_world::{BlockRegistry, CubeMap, StateFlags};
 
@@ -56,6 +57,12 @@ pub trait Terrain {
     fn wrap_x(&self, x: f64) -> f64 {
         x
     }
+    /// How deep inside natural ground a point lies (m; negative outside), where the ground is
+    /// drawn smooth (Amendment S §8.1): it is collided as this field, not as its blocks' boxes.
+    /// `None` for a world without one (every solid block a box).
+    fn depth(&self, _p: DVec3) -> Option<f64> {
+        None
+    }
 }
 
 /// A loaded block world: its cubes and its block types. Unloaded cubes are solid (nothing falls
@@ -76,7 +83,10 @@ impl Terrain for BlockWorld<'_> {
                         out.push(Aabb::block(p));
                         continue;
                     };
-                    if !self.reg.has(s, StateFlags::HAS_COLLISION) {
+                    // Natural ground is the field's (`depth`).
+                    if !self.reg.has(s, StateFlags::HAS_COLLISION)
+                        || self.reg.has(s, StateFlags::NATURAL)
+                    {
                         continue;
                     }
                     if self.reg.has(s, StateFlags::FULL_COLLISION) {
@@ -142,5 +152,10 @@ impl Terrain for BlockWorld<'_> {
 
     fn wrap_x(&self, x: f64) -> f64 {
         self.map.planet().wrap_xf(x)
+    }
+
+    fn depth(&self, p: DVec3) -> Option<f64> {
+        let unloaded = hearth_world::fill::RANGE;
+        Some(hearth_world::ground::field_or(self.map, self.reg, p, unloaded) as f64)
     }
 }

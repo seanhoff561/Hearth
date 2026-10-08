@@ -135,6 +135,37 @@ centres, unloaded ground outside.
   surface passes (+4 KiB); mesh bytes fall in the mountains (33.8 → 25.5 KiB a surface cube) and
   grow on coasts (8.9 → 21.6 KiB). The look on the software device: `docs/review/s2/`.
 
+## Moving on the smooth ground (S3, S §6, §8; D271–D273)
+- **Collision with the field.** Natural ground is no longer collided as its blocks' boxes
+  (`BlockWorld::boxes` leaves them out) but as the fill's field (`Terrain::depth`, unloaded
+  voxels solid). The body's feet stand on the highest of the surfaces under its middle and four
+  points half its radius out (a column searched down in fifths of a metre and halved to a
+  millimetre); above what it may step onto, ground in the body (sampled round its edge every
+  0.35 m) pushes it out along the surface like a wall; on the ground and not leaving it, it is
+  kept on a slope going down. Built things stay boxes. Server and client run the same code on
+  the same fill, so they agree.
+- **Slopes (S §8.2).** No steps on natural ground: the height changes smoothly. The steepest
+  slope walked up has the tangent of the soles' grip (2.25 × (1 − friction): some 42° on dry
+  ground, 34° wet clay, 3° on ice), judged a little ahead so a bank's edge is stepped onto and a
+  steep slope is not; steeper ground is slid down with the acceleration its angle and grip
+  leave (g (sin θ − 0.7 μ cos θ)), with little control. The pace follows Tobler's hiking
+  function (a third of the flat pace up a 30 % grade, fastest a little downhill), and the effort
+  the ACSM's walking and running equations (a 10 % rise about doubles a walk's oxygen).
+- **Animals** stand on the fill's surface (one lookup a column: its depth from the top voxel's
+  middle); their paths cost slopes by Tobler's function and refuse ground steeper than their
+  kind's steepest (1.6 × its climb, 0.7–2.0 rise over run) except as a step it climbs or drops,
+  so herds go round by the gentle way.
+- **Built pieces (S §6).** A piece standing on natural ground has a buried skirt: its four
+  sides drawn half a metre below its base, so no gap shows where the surface dips under it.
+  **Level ground** (a digging tool, two hours) cuts a three-metre square down to its middle
+  height and fills its hollows from what is cut, the rest heaped beside; volume is conserved.
+- **Footsteps** take the material in the voxel the feet stand in (the smooth surface lies
+  within a natural voxel), as before.
+- Tests: `hearth_physics/tests/smooth_ground.rs` (slopes, the steepest by footing, sliding,
+  cliffs and ledges, no tunnelling at sprint and fall speeds, determinism),
+  `hearth_world/tests/ground.rs` (levelling), `hearth_fauna` nav (going round steep ground),
+  `hearth/tests/smooth_ground.rs` (the skirt), `hearth_player/tests/living.rs` (effort uphill).
+
 ## The meshers
 
 All three prototypes are **dual**: a *cell* is the cube between eight neighbouring samples;

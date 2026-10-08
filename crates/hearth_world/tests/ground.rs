@@ -222,3 +222,39 @@ fn a_changed_cube_crosses_the_wire_exactly() {
     assert_eq!(back.fill(), c.fill());
     assert!((0..hearth_math::CUBE_VOLUME).all(|i| back.get_index(i) == c.get_index(i)));
 }
+
+#[test]
+fn levelling_cuts_the_high_ground_into_the_hollows() {
+    let (mut map, reg, s) = field("hearth:loam", 0.3);
+    // A hummock and a hollow side by side in a 3 m square: a mound of 0.6 m³ piled at one
+    // corner, 0.4 m³ dug from the other.
+    ground::pile(&mut map, &reg, DVec3::new(-0.5, 0.3, -0.5), 0.6, s, 0.6);
+    let any = |_: BlockStateId| true;
+    ground::dig(
+        &mut map,
+        &reg,
+        DVec3::new(1.5, 0.3, 1.5),
+        DVec3::Y,
+        0.5,
+        0.4,
+        &any,
+    );
+    let (lo, hi) = region();
+    let before = total(&ground::volume(&map, &reg, lo, hi));
+    let left = ground::level(&mut map, &reg, (-1, -1), (1, 1), 0.33, &any);
+    let after = total(&ground::volume(&map, &reg, lo, hi));
+    // Conserved: what is in the ground and what was set aside make the volume before.
+    assert!(
+        (after + total(&left) - before).abs() < 0.02,
+        "{before} → {after} + {}",
+        total(&left)
+    );
+    // Level: the surface over the square within a few centimetres of the plane.
+    for x in -1..=1 {
+        for z in -1..=1 {
+            let top = DVec3::new(x as f64 + 0.5, 3.0, z as f64 + 0.5);
+            let hit = ground::raycast(&map, &reg, top, DVec3::NEG_Y, 6.0).expect("ground");
+            assert!((hit.at.y - 0.33).abs() < 0.06, "({x}, {z}) at {}", hit.at.y);
+        }
+    }
+}

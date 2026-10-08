@@ -383,11 +383,12 @@ pub fn first_spawn(lw: &LocalWorld, place: Option<&dyn Fn(DVec2) -> DVec2>) -> D
     ground_at(lw, sx, sz)
 }
 
-/// Feet on the ground at a column: on the surface or the water, a little above.
+/// Feet on the ground at a column: on the surface or the water (the smooth ground's surface is
+/// the terrain's height itself, S §2.2), a hair above.
 fn ground_at(lw: &LocalWorld, x: i32, z: i32) -> DVec3 {
     DVec3::new(
         x as f64 + 0.5,
-        lw.surface_y(x as f64 + 0.5, z as f64 + 0.5) + 0.5,
+        lw.surface_y(x as f64 + 0.5, z as f64 + 0.5) + 0.05,
         z as f64 + 0.5,
     )
 }
@@ -538,6 +539,8 @@ fn report_of(m: &Moved) -> Report {
         eyes_under: m.airless_s > 0.0,
         airless_s: m.airless_s,
         straining: m.straining,
+        grade: m.grade,
+        sliding: false,
     }
 }
 

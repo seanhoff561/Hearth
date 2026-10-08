@@ -97,6 +97,9 @@ pub enum Effect {
     Remove,
     /// Dug out: the block goes and its loose earth falls in a spoil pile beside the hole.
     Excavate,
+    /// The ground about it is levelled for building (S §6): cut down to its middle height and
+    /// its hollows filled, the rest heaped beside.
+    Level,
     /// Taken a little at a time: the block goes once its whole mass has been taken.
     Deplete,
     /// A laid fire is lit.

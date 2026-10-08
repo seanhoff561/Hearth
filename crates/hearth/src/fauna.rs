@@ -127,8 +127,19 @@ pub fn surface_in(
                     }
                 }
             }
+            // Natural ground stands where its smooth surface is (S §8.1), within its voxels.
+            let top = if reg.has(s, hearth_world::StateFlags::NATURAL) {
+                smooth_top(map, reg, x, z, y).unwrap_or(y as f64 + shape.top())
+            } else {
+                y as f64 + shape.top()
+            };
+            let depth = if depth > 0.0 {
+                depth + (y as f64 + shape.top() - top)
+            } else {
+                0.0
+            };
             return Some(Footing {
-                y: y as f64 + shape.top(),
+                y: top,
                 water: depth > 0.0,
                 depth,
             });
@@ -137,6 +148,16 @@ pub fn surface_in(
         above = s;
     }
     None
+}
+
+/// The smooth ground's surface in a column whose natural voxel at `y` is the top one: its
+/// fill's depth from the voxel's middle (one lookup, so a herd's paths stay cheap; on a slope
+/// the fill's depth is across it, a few centimetres short of the height).
+pub fn smooth_top(map: &CubeMap, reg: &BlockRegistry, x: f64, z: f64, y: i32) -> Option<f64> {
+    let p = BlockPos::new(map.planet().wrap_x(x.floor() as i32), y, z.floor() as i32);
+    let q = map.fill(p, reg)?;
+    let depth = hearth_world::fill::Fill::depth(q) as f64;
+    Some((y as f64 + 0.5 + depth).clamp(y as f64, y as f64 + 1.0))
 }
 
 impl MapGround<'_> {

@@ -30,6 +30,7 @@ fn harm(w: &mut World) {
         immersion: 1.0,
         airless_s: 600.0,
         yaw: 0.0,
+        grade: 0.0,
     }));
 }
 
@@ -250,10 +251,21 @@ fn spectating_far_off_streams_the_world_there_and_resuming_stands_the_body_on_it
     w.until(10.0, |w| {
         w.ground_under(w.mover.pos + DVec3::Y * 0.1).is_some()
     });
+    // On the ground, once settled: on a block's top, or on the smooth ground's surface (S §8.1:
+    // inside it just under the feet, out of it just over them).
+    w.run(20);
+    let at = w.mover.pos;
     let feet = BlockPos::containing(at + DVec3::Y * 0.1);
+    let field = |p: DVec3| hearth_world::ground::field(&w.mirror, &w.reg, p);
+    let on_block = w.free(feet) && w.solid(feet.down());
+    let on_ground = field(at - DVec3::Y * 0.08) > 0.0 && field(at + DVec3::Y * 0.1) <= 0.0;
     assert!(
-        w.free(feet) && w.solid(feet.down()),
-        "not standing on the ground at {at}"
+        on_block || on_ground,
+        "not standing on the ground at {at}: field {} under, {} over; blocks {:?} {:?}",
+        field(at - DVec3::Y * 0.08),
+        field(at + DVec3::Y * 0.1),
+        w.mirror.block(feet),
+        w.mirror.block(feet.down())
     );
     let _ = std::fs::remove_dir_all(&d);
 }

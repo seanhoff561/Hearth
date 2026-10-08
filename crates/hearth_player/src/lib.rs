@@ -290,6 +290,20 @@ impl Player {
             a.met = a.met.max(cfg.met("climbing"));
         }
         a.speed_m_s = r.speed as f32;
+        // Up and down hill (S §8.2; the ACSM's walking and running equations): the climb's
+        // share of the oxygen a pace costs; going down saves a little, steep descent no more.
+        if r.grade.abs() > 0.005 && r.speed > 0.1 {
+            let v = r.speed * 60.0;
+            let running = matches!(r.motion, Motion::Jogging | Motion::Sprinting);
+            let (horizontal, vertical) = if running { (0.2, 0.9) } else { (0.1, 1.8) };
+            let flat = horizontal * v + 3.5;
+            let grade = if r.grade > 0.0 {
+                r.grade
+            } else {
+                r.grade * 0.33
+            };
+            a.met *= ((flat + vertical * v * grade) / flat).clamp(0.75, 4.0) as f32;
+        }
         a.posture = match self.mover.stance {
             _ if r.motion == Motion::Paddling => Posture::Sitting,
             Stance::Crawling | Stance::Swimming => Posture::Lying,

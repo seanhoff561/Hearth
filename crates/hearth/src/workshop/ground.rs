@@ -150,6 +150,70 @@ impl Workshop {
         dug as f64
     }
 
+    /// Levels the ground for building (S §6): the three-metre square about the column aimed at
+    /// cut down to its middle height and its hollows filled from what is cut; what is left over
+    /// goes on a heap beside it, away from the player. Returns the volume moved (m³).
+    pub(super) fn level_ground(&mut self, h: &mut Here, pos: BlockPos) -> f64 {
+        let reg = h.lw.reg.clone();
+        let content = h.lw.content.clone();
+        let diggable = |s: BlockStateId| family(&content, &reg, s).is_some_and(|g| g.slumps());
+        // The surface over the square's columns, and their middle height.
+        let mut heights = Vec::new();
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                let top = DVec3::new(
+                    (pos.x + dx) as f64 + 0.5,
+                    pos.y as f64 + 4.0,
+                    (pos.z + dz) as f64 + 0.5,
+                );
+                if let Some(hit) = ground::raycast(&h.lw.map, &reg, top, DVec3::NEG_Y, 9.0) {
+                    heights.push(hit.at.y);
+                }
+            }
+        }
+        if heights.is_empty() {
+            return 0.0;
+        }
+        let level = heights.iter().sum::<f64>() / heights.len() as f64;
+        let before = ground::volume(
+            &h.lw.map,
+            &reg,
+            BlockPos::new(pos.x - 1, level.floor() as i32 - 4, pos.z - 1),
+            BlockPos::new(pos.x + 1, level.ceil() as i32 + 4, pos.z + 1),
+        );
+        let lo = BlockPos::new(pos.x - 1, level.floor() as i32 - 4, pos.z - 1);
+        let hi = BlockPos::new(pos.x + 1, level.ceil() as i32 + 4, pos.z + 1);
+        let left = self.ground_edit(h, lo, hi, |map, reg| {
+            ground::level(
+                map,
+                reg,
+                (pos.x - 1, pos.z - 1),
+                (pos.x + 1, pos.z + 1),
+                level,
+                &diggable,
+            )
+        });
+        // The rest on a heap a stride beyond the square, away from the player.
+        let middle = DVec3::new(pos.x as f64 + 0.5, level, pos.z as f64 + 0.5);
+        let feet = h.player.mover.pos;
+        let mut away = DVec3::new(middle.x - feet.x, 0.0, middle.z - feet.z);
+        if away.length_squared() < 1e-6 {
+            away = DVec3::X;
+        }
+        let heap = middle + away.normalize() * 3.0;
+        for (s, v) in &left {
+            let lo = BlockPos::containing(heap - DVec3::new(7.0, 7.0, 7.0));
+            let hi = BlockPos::containing(heap + DVec3::new(7.0, 4.0 + *v as f64, 7.0));
+            self.ground_edit(h, lo, hi, |map, reg| {
+                ground::pile(map, reg, heap, 0.8, *s, *v)
+            });
+        }
+        self.settle_ground(h, BlockPos::containing(heap), 3);
+        let after = ground::volume(&h.lw.map, &reg, lo, hi);
+        let total = |t: &ground::Taken| t.iter().map(|(_, v)| *v as f64).sum::<f64>();
+        (total(&before) - total(&after)).abs() + total(&left)
+    }
+
     /// Lets loose ground about `at` slump to its angle of repose, wet in rain.
     pub(super) fn settle_ground(&mut self, h: &mut Here, at: BlockPos, radius: i32) {
         let reg = h.lw.reg.clone();

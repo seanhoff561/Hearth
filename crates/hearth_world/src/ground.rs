@@ -36,6 +36,12 @@ pub fn occupancy(q: i8) -> f32 {
 /// The ground's depth (voxels, positive inside) at a point: the fill at the voxels' centres,
 /// trilinear between them; unloaded ground is outside.
 pub fn field(map: &CubeMap, reg: &BlockRegistry, p: DVec3) -> f32 {
+    field_or(map, reg, p, -RANGE)
+}
+
+/// The ground's depth as `field`, unloaded voxels counting `unloaded` (collision takes them as
+/// solid, so nothing falls through the world before it arrives).
+pub fn field_or(map: &CubeMap, reg: &BlockRegistry, p: DVec3, unloaded: f32) -> f32 {
     let q = p - DVec3::splat(0.5);
     let b = q.floor();
     let f = q - b;
@@ -48,7 +54,7 @@ pub fn field(map: &CubeMap, reg: &BlockRegistry, p: DVec3) -> f32 {
             * if dz == 1 { f.z } else { 1.0 - f.z };
         let d = map
             .fill(BlockPos::new(bx + dx, by + dy, bz + dz), reg)
-            .map_or(-RANGE, Fill::depth);
+            .map_or(unloaded, Fill::depth);
         sum += w * d as f64;
     }
     sum as f32
@@ -483,6 +489,84 @@ pub fn volume(map: &CubeMap, reg: &BlockRegistry, lo: BlockPos, hi: BlockPos) ->
         }
     }
     v
+}
+
+/// Levels the ground over the columns `lo..=hi` (x, z) to the plane at height `y` (S §6, Level
+/// ground): what stands above it is taken off (only what `diggable` allows), and the hollows
+/// below it are filled with what was taken, the most of it first; volume is conserved. Returns
+/// what was taken and not used, to be heaped elsewhere.
+pub fn level(
+    map: &mut CubeMap,
+    reg: &BlockRegistry,
+    lo: (i32, i32),
+    hi: (i32, i32),
+    y: f64,
+    diggable: &dyn Fn(BlockStateId) -> bool,
+) -> Taken {
+    let (y0, y1) = ((y - 3.0).floor() as i32, (y + 3.0).ceil() as i32);
+    let want = |vy: i32| ((y - vy as f64) as f32).clamp(0.0, 1.0);
+    let mut taken: Taken = Vec::new();
+    // Cut down to the plane.
+    for x in lo.0..=hi.0 {
+        for z in lo.1..=hi.1 {
+            for vy in y0..=y1 {
+                let p = BlockPos::new(x, vy, z);
+                let Some(s) = map.block(p) else {
+                    continue;
+                };
+                if !reg.has(s, StateFlags::NATURAL) || !diggable(s) {
+                    continue;
+                }
+                let occ = occupancy_at(map, reg, p);
+                let w = want(vy);
+                if occ > w + STEP {
+                    // What the fill holds after, to its step: that is what was taken.
+                    set_occupancy(map, reg, p, w, s);
+                    add(&mut taken, s, occ - occupancy_at(map, reg, p));
+                }
+            }
+        }
+    }
+    // Fill up to it, the most-taken material first.
+    taken.sort_by(|a, b| b.1.total_cmp(&a.1));
+    for x in lo.0..=hi.0 {
+        for z in lo.1..=hi.1 {
+            for vy in y0..=y1 {
+                let p = BlockPos::new(x, vy, z);
+                let Some(s) = map.block(p) else {
+                    continue;
+                };
+                let natural = reg.has(s, StateFlags::NATURAL);
+                if !natural && !room(reg, s) {
+                    continue;
+                }
+                let occ = if natural {
+                    occupancy_at(map, reg, p)
+                } else {
+                    0.0
+                };
+                let need = want(vy) - occ;
+                if need <= STEP {
+                    continue;
+                }
+                let Some(k) = taken.iter().position(|(_, v)| *v > GONE) else {
+                    continue;
+                };
+                let got = need.min(taken[k].1);
+                let state = if natural { s } else { taken[k].0 };
+                set_occupancy(map, reg, p, occ + got, state);
+                taken[k].1 -= occupancy_at(map, reg, p) - occ;
+            }
+        }
+    }
+    refill(
+        map,
+        reg,
+        BlockPos::new(lo.0, y0, lo.1),
+        BlockPos::new(hi.0, y1, hi.1),
+    );
+    taken.retain(|(_, v)| *v > GONE);
+    taken
 }
 
 /// Whether ground can be put into a voxel holding `s`: air, or what gives way to it (grass and

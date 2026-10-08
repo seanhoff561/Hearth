@@ -131,3 +131,61 @@ fn open_edges_inside(m: &hearth_smooth::Mesh, lo: Vec3, hi: Vec3) -> usize {
         })
         .count()
 }
+
+/// A built piece standing on the smooth ground has a buried skirt (S §6): side faces reaching
+/// half a metre below its base, so no gap shows where the ground dips under it.
+#[test]
+fn a_piece_on_the_ground_has_a_buried_skirt() {
+    use hearth_render::atlas::TextureArray;
+    use hearth_render::mesh::MeshOptions;
+    use hearth_render::models::BlockModels;
+    let mut world = LocalWorld::create(11, PlanetSize::Tiny, 256, None).expect("world");
+    let (sx, sz) = world.terrain().find_spawn(false);
+    let at = glam::DVec3::new(
+        sx as f64 + 0.5,
+        world.surface_y(sx as f64, sz as f64),
+        sz as f64 + 0.5,
+    );
+    let positions = world.load_area(at, 1, 1, None);
+    let reg = world.reg.clone();
+    // The natural voxel holding the surface, and a log set on it.
+    let mut p = hearth_math::BlockPos::containing(at);
+    while !world
+        .map
+        .block(p)
+        .is_some_and(|s| reg.has(s, StateFlags::NATURAL))
+    {
+        p = p.down();
+    }
+    let log = reg.default_state("hearth:oak_log");
+    assert!(!log.is_air());
+    world.map.set_block(p.up(), log, &reg);
+    let atlas = TextureArray::from_entries(&hearth_texgen::textures_for(Some(&world.content)));
+    let models = BlockModels::build(&reg, &atlas);
+    let meshes = world.mesh(&models, &positions, MeshOptions::default());
+    let m = meshes
+        .iter()
+        .find(|m| m.pos == p.up().cube())
+        .expect("the log's cube");
+    let base = p.up().local();
+    // Corners below the log's base, within its column.
+    let skirt = m
+        .models
+        .iter()
+        .filter(|q| {
+            q.corners.iter().all(|c| {
+                let x = (c[0] & 0xffff) as u16 as i16 as f32 / 256.0;
+                let y = (c[0] >> 16) as u16 as i16 as f32 / 256.0;
+                let z = (c[1] & 0xffff) as u16 as i16 as f32 / 256.0;
+                (x - base.x as f32).abs() <= 1.0
+                    && (z - base.z as f32).abs() <= 1.0
+                    && y <= base.y as f32 + 1e-3
+                    && y >= base.y as f32 - 0.5 - 1e-3
+            }) && q.corners.iter().any(|c| {
+                let y = (c[0] >> 16) as u16 as i16 as f32 / 256.0;
+                y < base.y as f32 - 0.4
+            })
+        })
+        .count();
+    assert_eq!(skirt, 4, "{skirt} skirt faces");
+}

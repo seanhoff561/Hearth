@@ -30,6 +30,9 @@ pub struct Walker {
     pub swims: bool,
     /// A fish: only in water.
     pub fish: bool,
+    /// The steepest ground it walks up or down (rise over run, S §8.5); steeper than this,
+    /// only what it climbs in a step.
+    pub steepest: f64,
 }
 
 /// The water a fish needs under it (m).
@@ -48,6 +51,9 @@ impl Walker {
             wade: (sp.shoulder_m as f64 * 0.6).max(0.04),
             swims: sp.swim_m_s.is_some() || sp.aquatic || sp.marine,
             fish,
+            // Bigger, longer-legged bodies take steeper ground; a mountain goat's 60° and more
+            // is the agile few's, from their climbing.
+            steepest: (climb * 1.6).clamp(0.7, 2.0),
         }
     }
 
@@ -57,9 +63,11 @@ impl Walker {
         if f.water { f.level() } else { f.y }
     }
 
-    /// Whether a body at `level` may step onto a footing; the cost of the step against level
-    /// ground if so.
-    pub fn step(&self, level: f64, to: &Footing) -> Option<f64> {
+    /// Whether a body at `level` may step `run` metres across onto a footing; the cost of the
+    /// step against level ground if so. Steep ground costs as walking it does (Tobler's
+    /// function: a third of the pace up a 30 % grade), more than its steepest only as a step it
+    /// climbs or drops.
+    pub fn step(&self, level: f64, to: &Footing, run: f64) -> Option<f64> {
         if self.fish {
             return (to.water && to.depth >= FISH_DEPTH).then_some(1.0);
         }
@@ -78,7 +86,15 @@ impl Walker {
         } else {
             1.0
         };
-        Some((1.0 + 0.6 * dy.abs()) * wet)
+        let grade = dy / run.max(0.1);
+        let tobler = |g: f64| (-3.5 * (g + 0.05).abs()).exp();
+        let slope = if grade.abs() > self.steepest {
+            // A ledge or a drop: taken, with care.
+            3.0 + 0.6 * dy.abs()
+        } else {
+            tobler(0.0) / tobler(grade)
+        };
+        Some(slope * wet)
     }
 }
 
@@ -169,24 +185,26 @@ pub fn find_way(ground: &dyn Ground, from: DVec3, to: DVec2, w: &Walker, budget:
             let Some(f) = foot(c, n.level) else {
                 continue;
             };
-            let Some(factor) = w.step(n.level, &f) else {
+            let len = if dx != 0 && dz != 0 {
+                std::f64::consts::SQRT_2
+            } else {
+                1.0
+            };
+            let Some(factor) = w.step(n.level, &f, len) else {
                 continue;
             };
             if dx != 0 && dz != 0 {
                 // Not between two trunks or around a corner.
                 let side =
                     |c: (i32, i32), foot: &mut dyn FnMut((i32, i32), f64) -> Option<Footing>| {
-                        foot(c, n.level).and_then(|f| w.step(n.level, &f)).is_some()
+                        foot(c, n.level)
+                            .and_then(|f| w.step(n.level, &f, 1.0))
+                            .is_some()
                     };
                 if !side((k.0 + dx, k.1), &mut foot) || !side((k.0, k.1 + dz), &mut foot) {
                     continue;
                 }
             }
-            let len = if dx != 0 && dz != 0 {
-                std::f64::consts::SQRT_2
-            } else {
-                1.0
-            };
             let g = n.g + len * factor;
             if let Some(m) = nodes.get(&c)
                 && (m.closed || m.g <= g)
@@ -239,7 +257,7 @@ pub fn straight(ground: &dyn Ground, a: DVec3, b: DVec3, w: &Walker) -> bool {
         let Some(f) = ground.footing(x, z, level) else {
             return false;
         };
-        if w.step(level, &f).is_none() {
+        if w.step(level, &f, d.length() / n as f64).is_none() {
             return false;
         }
         level = Walker::level(&f);
@@ -498,7 +516,59 @@ mod tests {
             wade: 0.7,
             swims: true,
             fish: false,
+            steepest: 1.76,
         }
+    }
+
+    /// Smooth ground with a ridge across x = 10..20: a 1:1 face (45°) up to 10 m high, except a
+    /// gentle saddle (1:6) between z = 30 and 40.
+    struct Ridge;
+
+    impl Ground for Ridge {
+        fn footing(&self, x: f64, z: f64, _y: f64) -> Option<Footing> {
+            let rise = if (10.0..20.0).contains(&x) {
+                let d = 5.0 - (x - 15.0).abs();
+                if (30.0..40.0).contains(&z) {
+                    d / 6.0
+                } else {
+                    d * 2.0
+                }
+            } else {
+                0.0
+            };
+            Some(Footing::dry(rise.max(0.0)))
+        }
+
+        fn top(&self, x: f64, z: f64) -> Option<Footing> {
+            self.footing(x, z, 0.0)
+        }
+    }
+
+    #[test]
+    fn steep_ground_is_gone_round_by_the_gentle_way() {
+        // A sheep (steepest 1.3) goes round by the saddle; it does not climb the 2:1 face.
+        let sheep = Walker {
+            climb: 0.8,
+            drop: 2.0,
+            steepest: 1.3,
+            ..deer()
+        };
+        let way = find_way(
+            &Ridge,
+            DVec3::new(5.5, 0.0, 10.5),
+            DVec2::new(25.5, 10.5),
+            &sheep,
+            20_000,
+        );
+        assert!(way.reaches);
+        assert!(
+            way.points
+                .iter()
+                .filter(|p| (10.0..20.0).contains(&p.x))
+                .all(|p| (29.0..41.0).contains(&p.z)),
+            "{:?}",
+            way.points
+        );
     }
 
     #[test]

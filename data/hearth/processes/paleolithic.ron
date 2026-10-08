@@ -291,6 +291,16 @@
             outputs: [],
         ),
         (
+            // Before building on uneven ground (S §6): a three-metre square cut down to its
+            // middle height and its hollows filled, some 2 m³ of earth moved with a digging stick
+            // (about a cubic metre an hour, as digging).
+            id: "level_ground", status: Implemented, name: "Level the ground", action: "cut the high ground down into the hollows",
+            verb: "level", effect: Level,
+            target: Block(Any([Material((categories: [Soil, Sediment, Clay])), Id("grass_block"), Id("podzol"), Id("moss_block"), Id("spoil")])),
+            inputs: [], tools: [(property: "digging", min: 0.2)], duration: (hours: 2.0), work: (pose: StandDig, stroke_s: 1.6, stroke: "a thrust and lever of the stick, the earth dragged level", hands: Both), mets: 5.0, wear: 0.02,
+            outputs: [],
+        ),
+        (
             id: "dig_snow", status: Implemented, name: "Dig snow", action: "scoop out the snow",
             verb: "dig", target: Block(Material((categories: [Snow]))), effect: Excavate,
             inputs: [], duration: (hours: 0.5), work: (pose: KneelDig, stroke_s: 1.5, stroke: "a scoop of snow", hands: Both), mets: 5.0,

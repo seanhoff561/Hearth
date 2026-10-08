@@ -1199,6 +1199,9 @@ impl Workshop {
                 self.dig_ground(h, pos, rest);
                 self.dug = 0.0;
             }
+            (Effect::Level, AimAt::Block { pos, .. }) => {
+                self.level_ground(h, pos);
+            }
             (Effect::Deplete, AimAt::Block { pos, .. }) => {
                 let made_kg: f32 = o.made.iter().map(|s| s.mass(h.items)).sum();
                 let kg = self.depleted.entry(pos).or_default();

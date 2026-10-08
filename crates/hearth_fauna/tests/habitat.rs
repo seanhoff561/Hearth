@@ -40,7 +40,8 @@ fn a_generated_temperate_region_feeds_its_animals() {
         (sz as f64 / CELL_M).floor() as i64,
     );
     let h = land.habitat(cell);
-    assert!(h.land > 0.5, "the spawn is on land: {h:?}");
+    // On land (a coastal spawn's cell may be half sea).
+    assert!(h.land >= 0.5, "the spawn is on land: {h:?}");
     assert_eq!(h.realm(), Realm::Palearctic);
     let mut eco = Ecology::new(catalog.clone(), 7, 0.0, &land);
     let key = eco.region_key(sx as f64, sz as f64);

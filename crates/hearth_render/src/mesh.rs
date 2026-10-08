@@ -635,6 +635,54 @@ impl Mesher<'_> {
                 }
             }
         }
+        // Built pieces on the smooth ground (S §6): a buried skirt half a metre down below each
+        // one standing on natural ground, so no gap shows where the surface dips under its
+        // base (the ground covers the skirt where it reaches higher).
+        if inp.ground.is_some() {
+            let mut quads = Vec::new();
+            for y in 0..CUBE_SIZE {
+                for z in 0..CUBE_SIZE {
+                    for x in 0..CUBE_SIZE {
+                        let s = inp.at(x, y, z);
+                        if s.is_air() || self.reg.has(s, StateFlags::NATURAL) {
+                            continue;
+                        }
+                        let StateModel::Cube(cube) = self.models.get(s) else {
+                            continue;
+                        };
+                        if cube.waving || !self.reg.has(inp.at(x, y - 1, z), StateFlags::NATURAL) {
+                            continue;
+                        }
+                        let li = if cube.layer == RenderLayer::Opaque {
+                            0
+                        } else {
+                            1
+                        };
+                        quads.clear();
+                        crate::models::box_quads(
+                            Vec3::new(0.0, -0.5, 0.0),
+                            Vec3::new(1.0, 0.0, 1.0),
+                            |d| cube.faces[d.index()],
+                            true,
+                            &mut quads,
+                        );
+                        for q in &quads {
+                            // The sides only, and not against another piece beside it.
+                            let Some(d) = q.dir.filter(|d| d.axis() != hearth_math::Axis::Y) else {
+                                continue;
+                            };
+                            let o = d.offset();
+                            let beside = inp.at(x + o.x, y, z + o.z);
+                            if self.opaque(beside) && !self.reg.has(beside, StateFlags::NATURAL) {
+                                continue;
+                            }
+                            let q = crate::models::ModelQuad { cull: None, ..*q };
+                            models[li].push(self.general(inp, x, y, z, &q));
+                        }
+                    }
+                }
+            }
+        }
         for (li, dirs) in groups.iter_mut().enumerate() {
             for (di, g) in dirs.iter_mut().enumerate() {
                 out.quad_counts[li][di] = g.len() as u32;

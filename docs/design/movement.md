@@ -1,7 +1,9 @@
 # Movement
 
 *Status: implemented (V2-3 part b, `hearth_physics`, `hearth_player`, D67); driven from input
-by the client every frame (V2-3 part c, `world-loop.md`).*
+by the client every frame (V2-3 part c, `world-loop.md`). Since S3 natural ground is collided
+as the smooth ground's field, with slopes walked, slid and paced as `smooth-terrain.md` says
+(D271).*
 
 ## Purpose
 How a body moves through the block world (v2 §9.2): human speeds, realistic jumps, climbing

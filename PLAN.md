@@ -50,7 +50,7 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 
 ## Completed
 M0–M3 (v1 engine); V2-0 – V2-10; V2-12 (the Neolithic); S0 (D222); P0–P2; E0 (the human
-systems archived, D230); Audit 0; Q1; E1–E6; P3–P5 (P6 removed, D258); Audit 1; S1; S2; E7.
+systems archived, D230); Audit 0; Q1; E1–E6; P3–P5 (P6 removed, D258); Audit 1; S1; S2; E7; S3.
 What each did: `PROGRESS.md`, `docs/history/` and the design docs. V2-11 and V2.1's H0–H10
 superseded.
 
@@ -173,12 +173,13 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   10,000 hair-card vertices and the eyes), measured on the owner's PC; meshing a body in about
   0.7 s (dev-opt build) on a worker thread.
 
-## S3 — Movement, collision and navigation
-- Field-based capsule collision on server and client, slope walking, sliding and footing,
-  footsteps and footprints on smooth ground, the nav grid rebuilt for animals,
-  built-piece skirts and Level ground (S §6, §8).
-- *Accept:* S §13 collision and movement tests; animals path well over hills, scree and
-  riverbanks; 300 animals within budget.
+## From S3 (open; S3 done 2026-10-08, D271–D273)
+- The grip by wetness (the ground families' wet friction) and footwear; loose footing slipping
+  now and then on scree and sand, and moving disturbing it (S §8.2, §8.4); cutting steps.
+- The player's footprints (as the animals' signs); dust kicked up.
+- Animals' capsules against the field near players; trees' skeleton capsules (S5).
+- Level ground's footprint chosen (a 3 m square now), and its preview with the dig preview.
+- The budgets (300 animals, movement substeps) measured on the PC.
 
 ## S4 — Distant terrain
 - Fixed-point LOD heights, smooth LOD meshing, matched shading and overlays, canopy shapes in

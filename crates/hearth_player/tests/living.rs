@@ -209,3 +209,23 @@ fn a_tired_body_sleeps_till_rested_and_the_cold_wakes_it() {
         "the cold wakes a bare body within the hour or two"
     );
 }
+
+#[test]
+fn walking_uphill_costs_more() {
+    use hearth_physics::testing::Surface;
+    let cfg = config();
+    let walk = |grade: f64| {
+        let g = Grid::smooth(Surface {
+            grade: (grade, 0.0),
+            ..Surface::default()
+        });
+        let mut p = Player::new(&cfg, DVec3::new(0.5, 0.3, 0.5), 1);
+        let r = live(&mut p, &cfg, &g, &east(Gait::Walk), 4.0);
+        let last = r.last().copied().expect("steps");
+        p.activity(&cfg, &last).met
+    };
+    let flat = walk(0.0);
+    let up = walk(0.1);
+    // A tenth's rise costs about twice the flat's oxygen at a walking pace (ACSM).
+    assert!(up > 1.6 * flat && up < 2.8 * flat, "flat {flat} up {up}");
+}
