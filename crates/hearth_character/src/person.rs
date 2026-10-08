@@ -48,13 +48,17 @@ pub struct Meshes {
     pub eyes: Option<EyeMesh>,
 }
 
-/// The meshes of a person of this appearance wearing these garments, at this detail.
+/// The meshes of a person of this appearance wearing these garments, at this detail: the skin,
+/// the garments and the hair made side by side.
 pub fn meshes(a: &Appearance, worn: &[&str], detail: Detail) -> Meshes {
-    let mut body = anatomy(a, detail.cell());
-    body.merge(&fitted(a, worn));
+    let ((mut body, garments), hair) = rayon::join(
+        || rayon::join(|| anatomy(a, detail.cell()), || fitted(a, worn)),
+        || hair(a),
+    );
+    body.merge(&garments);
     Meshes {
         body,
-        hair: hair(a),
+        hair,
         eyes: (detail != Detail::Far).then(|| eyes(a)),
     }
 }

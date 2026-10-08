@@ -12,6 +12,7 @@
 
 use glam::{Affine3A, IVec3, Quat, Vec3};
 use hearth_smooth::{Field, Method, Region};
+use rayon::prelude::*;
 
 use crate::appearance::{Appearance, BodyType, Face, FacialHair, HairStyle};
 use crate::rig::{JOINTS, Joint, Proportions};
@@ -1034,46 +1035,58 @@ pub fn anatomy(a: &Appearance, cell: f32) -> Anatomy {
         }
         Some(field_at(local, p).0)
     };
-    let mut local: Vec<Form> = Vec::with_capacity(forms.len());
     // The field first on a grid COARSE times sparser; a fine sample is evaluated only where the
     // nearest coarse one is near enough the skin that the fine one could lie within the fill's
     // range of it (the distances change no faster than distance does, with a margin for the
-    // ellipsoids' approximate ones).
+    // ellipsoids' approximate ones). Each layer of each is evaluated on its own (E4.1 §4.3:
+    // the creator's rebuilds over every core), the result the same.
     let csize = size.map(|s| s.div_ceil(COARSE) + 1);
     let mut coarse = vec![f32::MAX; csize[0] * csize[1] * csize[2]];
-    for y in 0..csize[1] {
-        for z in 0..csize[2] {
-            for x in 0..csize[0] {
-                let p = lo + Vec3::new(x as f32, y as f32, z as f32) * (cell * COARSE as f32);
-                if let Some(d) = sample(p, &mut local) {
-                    coarse[(y * csize[2] + z) * csize[0] + x] = d;
+    coarse
+        .par_chunks_mut(csize[2] * csize[0])
+        .enumerate()
+        .for_each_init(
+            || Vec::with_capacity(forms.len()),
+            |local, (y, layer)| {
+                for z in 0..csize[2] {
+                    for x in 0..csize[0] {
+                        let p =
+                            lo + Vec3::new(x as f32, y as f32, z as f32) * (cell * COARSE as f32);
+                        if let Some(d) = sample(p, local) {
+                            layer[z * csize[0] + x] = d;
+                        }
+                    }
                 }
-            }
-        }
-    }
+            },
+        );
     let near = cell * (COARSE as f32 * 0.87 + hearth_smooth::FILL_RANGE + 1.0) * 1.5;
     let mut fill = vec![-127i8; size[0] * size[1] * size[2]];
-    for y in 0..size[1] {
-        for z in 0..size[2] {
-            for x in 0..size[0] {
+    fill.par_chunks_mut(size[2] * size[0])
+        .enumerate()
+        .for_each_init(
+            || Vec::with_capacity(forms.len()),
+            |local, (y, layer)| {
                 let c = |i: usize| (i + COARSE / 2) / COARSE;
-                let dc = coarse[(c(y) * csize[2] + c(z)) * csize[0] + c(x)];
-                let i = (y * size[2] + z) * size[0] + x;
-                if dc == f32::MAX || dc > near {
-                    continue;
+                for z in 0..size[2] {
+                    for x in 0..size[0] {
+                        let dc = coarse[(c(y) * csize[2] + c(z)) * csize[0] + c(x)];
+                        let i = z * size[0] + x;
+                        if dc == f32::MAX || dc > near {
+                            continue;
+                        }
+                        if dc < -near {
+                            layer[i] = 127;
+                            continue;
+                        }
+                        let p = lo + Vec3::new(x as f32, y as f32, z as f32) * cell;
+                        if let Some(d) = sample(p, local) {
+                            // Positive inside, in cells.
+                            layer[i] = hearth_smooth::quantize(-d / cell);
+                        }
+                    }
                 }
-                if dc < -near {
-                    fill[i] = 127;
-                    continue;
-                }
-                let p = lo + Vec3::new(x as f32, y as f32, z as f32) * cell;
-                if let Some(d) = sample(p, &mut local) {
-                    // Positive inside, in cells.
-                    fill[i] = hearth_smooth::quantize(-d / cell);
-                }
-            }
-        }
-    }
+            },
+        );
     let material = vec![0u16; fill.len()];
     let field = Field::from_parts(IVec3::ZERO, size, fill, material).expect("the field's arrays");
     let mesh = hearth_smooth::mesh(
@@ -1087,16 +1100,50 @@ pub fn anatomy(a: &Appearance, cell: f32) -> Anatomy {
         bind: bind_pose(&dims),
         ..Anatomy::default()
     };
-    // Each vertex follows the joints of the forms nearest it, by nearness.
+    // Each vertex follows the joints of the forms nearest it, by nearness (each vertex on its
+    // own, over every core).
     let sigma = 0.012 * dims.stature;
-    for p in &mesh.positions {
+    let vertices: Vec<_> = mesh
+        .positions
+        .par_iter()
+        .map_init(
+            || Vec::with_capacity(forms.len()),
+            |local, p| skin_vertex(*p, lo, cell, sigma, &a, &dims, &forms, &sample, local),
+        )
+        .collect();
+    for (world, normal, joints, weights, tissue) in vertices {
+        out.positions.push(world);
+        out.normals.push(normal);
+        out.joints.push(joints);
+        out.weights.push(weights);
+        out.tissue.push(tissue);
+    }
+    out
+}
+
+/// A skin vertex as the mesh placed it (`p`, in cells from `lo`): set onto the field's zero by
+/// Newton steps, its normal the field's gradient, its joints and weights those of the forms
+/// nearest it, its tissue (lips, nails, short hair).
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn skin_vertex(
+    p: Vec3,
+    lo: Vec3,
+    cell: f32,
+    sigma: f32,
+    a: &Appearance,
+    dims: &Proportions,
+    forms: &[Form],
+    sample: &(dyn Fn(Vec3, &mut Vec<Form>) -> Option<f32> + Sync),
+    local: &mut Vec<Form>,
+) -> (Vec3, Vec3, [u8; 4], [f32; 4], [f32; 4]) {
+    {
         // The mesh's place and slope come from the quantized field, which flattens where two
         // surfaces near each other (the creases between forms); the field itself sets both
         // right: two Newton steps onto its zero, and its gradient for the normal.
-        let mut world = lo + *p * cell;
+        let mut world = lo + p * cell;
         let mut normal = Vec3::Y;
         for _ in 0..3 {
-            let Some(d) = sample(world, &mut local) else {
+            let Some(d) = sample(world, local) else {
                 break;
             };
             let e = cell * 0.25;
@@ -1104,8 +1151,8 @@ pub fn anatomy(a: &Appearance, cell: f32) -> Anatomy {
             for axis in 0..3 {
                 let mut o = Vec3::ZERO;
                 o[axis] = e;
-                let hi = sample(world + o, &mut local).unwrap_or(d + e);
-                let lo = sample(world - o, &mut local).unwrap_or(d - e);
+                let hi = sample(world + o, local).unwrap_or(d + e);
+                let lo = sample(world - o, local).unwrap_or(d - e);
                 g[axis] = (hi - lo) / (2.0 * e);
             }
             let len = g.length();
@@ -1122,7 +1169,7 @@ pub fn anatomy(a: &Appearance, cell: f32) -> Anatomy {
         // Lips and nails, thin as they are, are what the skin is wherever it lies within a
         // part of a cell of them.
         let mut tissue = [0.0f32; 4];
-        tissue[2] = short_hair(&a, &dims, world);
+        tissue[2] = short_hair(a, dims, world);
         for form in forms.iter().filter(|f| !f.cut) {
             let d = form.distance(world);
             let k = match form.tissue {
@@ -1146,13 +1193,8 @@ pub fn anatomy(a: &Appearance, cell: f32) -> Anatomy {
             joints[i] = *jn as u8;
             weights[i] = w / sum;
         }
-        out.positions.push(world);
-        out.normals.push(normal);
-        out.joints.push(joints);
-        out.weights.push(weights);
-        out.tissue.push(tissue);
+        (world, normal, joints, weights, tissue)
     }
-    out
 }
 
 #[cfg(test)]

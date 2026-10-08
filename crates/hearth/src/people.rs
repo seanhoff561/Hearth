@@ -1,8 +1,9 @@
 //! People drawn as sculpted, skinned bodies (Amendment E §8, E7): a person's meshes kept for
-//! their appearance, the garments fitted to them and the detail they are seen at (built on a
-//! worker thread, the last ones drawn meanwhile), their hair and eyes moving frame by frame,
-//! their skin as the body simulation has left it. Garments not fitted as meshes are drawn as
-//! the rig's boxes over the body.
+//! their appearance's shape, the garments fitted to them and the detail they are seen at (built
+//! on a worker thread, the last ones drawn meanwhile: a new shape first at the coarse detail, in a
+//! quarter of a second, then at the detail wanted), their colours drawn as they are each frame,
+//! their hair and eyes moving frame by frame, their skin as the body simulation has left it.
+//! Garments not fitted as meshes are drawn as the rig's boxes over the body.
 
 use std::sync::{Arc, mpsc};
 
@@ -18,19 +19,67 @@ use hearth_protocol::BodyView;
 use hearth_render::GpuContext;
 use hearth_render::body::{PersonFrame, PersonMeshes, PersonMotion, SkinLook, SkinState};
 
-/// What a person's meshes are made from.
+/// What a person's meshes are made from: the appearance's shape (its colours are drawn each
+/// frame, E4.1 §4.3), the garments fitted, the detail.
 #[derive(Debug, Clone, PartialEq)]
 struct Key {
-    appearance: Appearance,
+    shape: Appearance,
     worn: Vec<String>,
     detail: Detail,
 }
 
+impl Key {
+    /// Whether the meshes of `other` are of the same person as these (at any detail).
+    fn same_shape(&self, other: &Key) -> bool {
+        self.shape == other.shape && self.worn == other.worn
+    }
+}
+
+/// An appearance as far as the meshes go: its colours (skin, undertone, freckles, hair and
+/// eyes) left out, as every frame draws them from the appearance as it is.
+fn shape_of(a: &Appearance) -> Appearance {
+    let d = Appearance::default();
+    Appearance {
+        skin_tone: d.skin_tone,
+        undertone: d.undertone,
+        freckles: d.freckles,
+        hair_color: d.hair_color,
+        eyes: d.eyes,
+        ..a.clone()
+    }
+}
+
+/// How coarse a detail is (the coarsest first).
+fn coarseness(d: Detail) -> u8 {
+    match d {
+        Detail::Far => 2,
+        Detail::Near => 1,
+        Detail::Close => 0,
+    }
+}
+
+/// Built meshes kept for a person: the latest few settings, so one gone back to shows at once.
+const KEPT: usize = 6;
+
+/// Meshes built: what from, on the GPU, and as built (their hair's guides start its motion).
+struct Built {
+    key: Key,
+    gpu: Arc<PersonMeshes>,
+    meshes: Arc<Meshes>,
+}
+
 /// One person shown as a sculpted body.
 pub struct Person {
-    shown: Option<(Key, Arc<PersonMeshes>)>,
+    /// The meshes drawn, and the number of the build they came from.
+    shown: Option<(u64, Arc<Built>)>,
     motion: Option<PersonMotion>,
-    pending: Option<(Key, mpsc::Receiver<Meshes>)>,
+    /// Builds under way, numbered in the order begun: at most a coarse one of the newest shape
+    /// and one at the detail wanted.
+    pending: Vec<(u64, Key, mpsc::Receiver<Meshes>)>,
+    /// The meshes built lately, the newest last.
+    kept: Vec<Arc<Built>>,
+    /// The next build's number.
+    next: u64,
     /// The rig dressed in the garments not fitted as meshes (drawn as boxes), and those garbs.
     boxes: Option<(Vec<Garb>, Rig)>,
     seed: u64,
@@ -50,61 +99,143 @@ impl Person {
         Self {
             shown: None,
             motion: None,
-            pending: None,
+            pending: Vec::new(),
+            kept: Vec::new(),
+            next: 0,
             boxes: None,
             seed,
         }
     }
 
-    fn take(&mut self, ctx: &GpuContext, key: Key, m: Meshes) {
-        let hair_changed = self
-            .shown
-            .as_ref()
-            .is_none_or(|(k, _)| k.appearance != key.appearance);
-        if hair_changed || self.motion.is_none() {
-            self.motion = Some(PersonMotion::new(&key.appearance, &m, self.seed));
-        }
-        self.shown = Some((key, Arc::new(PersonMeshes::upload(ctx, &m))));
+    /// The key of the meshes drawn.
+    fn shown_key(&self) -> Option<&Key> {
+        self.shown.as_ref().map(|(_, b)| &b.key)
     }
 
-    /// Keeps the meshes for this figure at this detail: when they change, starts building them
-    /// on a worker thread (still drawing the last ones), and takes them up when built. With
-    /// `wait`, builds them here and now (screenshots).
+    /// Draws these meshes from now on (numbered `n`).
+    fn show(&mut self, n: u64, built: Arc<Built>) {
+        let hair_changed = self.shown_key().is_none_or(|k| k.shape != built.key.shape);
+        if hair_changed || self.motion.is_none() {
+            self.motion = Some(PersonMotion::new(
+                &built.key.shape,
+                &built.meshes,
+                self.seed,
+            ));
+        }
+        self.shown = Some((n, built));
+    }
+
+    /// Uploads meshes built and keeps them.
+    fn keep_built(&mut self, ctx: &GpuContext, key: Key, m: Meshes) -> Arc<Built> {
+        let built = Arc::new(Built {
+            gpu: Arc::new(PersonMeshes::upload(ctx, &m)),
+            meshes: Arc::new(m),
+            key,
+        });
+        self.kept.retain(|b| b.key != built.key);
+        self.kept.push(built.clone());
+        if self.kept.len() > KEPT {
+            self.kept.remove(0);
+        }
+        built
+    }
+
+    /// Starts building the meshes of `key` on a worker thread.
+    fn build(&mut self, key: Key) {
+        let (tx, rx) = mpsc::channel();
+        let (a, worn, detail) = (key.shape.clone(), key.worn.clone(), key.detail);
+        let spawned = std::thread::Builder::new()
+            .name("person".into())
+            .spawn(move || {
+                let refs: Vec<&str> = worn.iter().map(String::as_str).collect();
+                let _ = tx.send(meshes(&a, &refs, detail));
+            });
+        match spawned {
+            Ok(_) => {
+                self.pending.push((self.next, key, rx));
+                self.next += 1;
+            }
+            Err(e) => log::error!("could not build a person: {e}"),
+        }
+    }
+
+    /// Keeps the meshes for this figure at this detail (E4.1 §4.3). Its colours need none: they
+    /// are drawn as they are each frame. A new shape is built on a worker thread, first at the
+    /// coarse detail (a quarter of a second) and then at the detail wanted, the last meshes
+    /// drawn meanwhile (they follow the rig, so a height changed shows at once, roughly); while
+    /// a slider is dragged each build done is shown and the newest shape built next. A setting
+    /// gone back to is shown at once from the meshes kept. With `wait`, builds them here and now
+    /// (screenshots).
     pub fn keep(&mut self, ctx: &GpuContext, figure: &Figure, detail: Detail, wait: bool) {
-        let key = Key {
-            appearance: figure.appearance.clone(),
+        let wish = Key {
+            shape: shape_of(&figure.appearance),
             worn: fitted(&figure.garbs),
             detail,
         };
-        if let Some((k, rx)) = &self.pending {
-            match rx.try_recv() {
+        // Builds done: kept, and shown if begun after what is shown (a newer shape, or a finer
+        // detail of it).
+        let mut i = 0;
+        while i < self.pending.len() {
+            match self.pending[i].2.try_recv() {
                 Ok(m) => {
-                    let k = k.clone();
-                    self.pending = None;
-                    self.take(ctx, k, m);
+                    let (n, k, _) = self.pending.swap_remove(i);
+                    let built = self.keep_built(ctx, k, m);
+                    if self.shown.as_ref().is_none_or(|(s, _)| n > *s) {
+                        self.show(n, built);
+                    }
                 }
-                Err(mpsc::TryRecvError::Disconnected) => self.pending = None,
-                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.pending.swap_remove(i);
+                }
+                Err(mpsc::TryRecvError::Empty) => i += 1,
             }
         }
-        // One build at a time: while one is under way, a newer wish waits for it (sliders
-        // dragged make many).
-        let current = self.shown.as_ref().is_some_and(|(k, _)| *k == key)
-            || (self.pending.is_some() && !wait);
-        if !current {
-            let worn: Vec<String> = key.worn.clone();
-            let a = key.appearance.clone();
-            if wait {
-                let refs: Vec<&str> = worn.iter().map(String::as_str).collect();
-                let m = meshes(&a, &refs, detail);
-                self.take(ctx, key, m);
-            } else {
-                let (tx, rx) = mpsc::channel();
-                std::thread::spawn(move || {
-                    let refs: Vec<&str> = worn.iter().map(String::as_str).collect();
-                    let _ = tx.send(meshes(&a, &refs, detail));
+        // A setting built before: at once, at the finest detail kept up to the one wanted.
+        if self.shown_key() != Some(&wish) {
+            let kept = self
+                .kept
+                .iter()
+                .filter(|b| {
+                    b.key.same_shape(&wish) && coarseness(b.key.detail) >= coarseness(detail)
+                })
+                .min_by_key(|b| coarseness(b.key.detail))
+                .cloned();
+            if let Some(b) = kept
+                && self.shown_key() != Some(&b.key)
+            {
+                let n = self.next;
+                self.next += 1;
+                self.show(n, b);
+            }
+        }
+        let shown_shape = self.shown_key().is_some_and(|k| k.same_shape(&wish));
+        let current = self.shown_key() == Some(&wish);
+        if wait {
+            if !current {
+                let refs: Vec<&str> = wish.worn.iter().map(String::as_str).collect();
+                let m = meshes(&wish.shape, &refs, detail);
+                let n = self.next;
+                self.next += 1;
+                let built = self.keep_built(ctx, wish, m);
+                self.show(n, built);
+            }
+        } else if !current {
+            let coarse_busy = self
+                .pending
+                .iter()
+                .any(|(_, p, _)| p.detail == Detail::Far && detail != Detail::Far);
+            let fine_busy = self.pending.iter().any(|(_, p, _)| p.detail == detail);
+            if shown_shape || detail == Detail::Far {
+                // The shape shown: on to the detail wanted.
+                if !fine_busy {
+                    self.build(wish);
+                }
+            } else if !coarse_busy {
+                // A new shape: coarse first, the newest each time one is done.
+                self.build(Key {
+                    detail: Detail::Far,
+                    ..wish
                 });
-                self.pending = Some((key, rx));
             }
         }
         let others: Vec<Garb> = figure
@@ -125,9 +256,12 @@ impl Person {
         self.shown.is_some()
     }
 
-    /// The appearance the meshes shown were built from (the creator's benchmark).
-    pub fn shown_appearance(&self) -> Option<&Appearance> {
-        self.shown.as_ref().map(|(k, _)| &k.appearance)
+    /// The detail of the meshes shown if they are of this appearance's shape (the creator's
+    /// benchmark).
+    pub fn shows(&self, a: &Appearance) -> Option<Detail> {
+        self.shown_key()
+            .filter(|k| k.shape == shape_of(a))
+            .map(|k| k.detail)
     }
 
     /// The rig to draw the unfitted garments' boxes from (with `Show::clothes_only`).
@@ -153,9 +287,10 @@ impl Person {
         light: [f32; 2],
         hide_head: bool,
     ) -> Option<(Arc<PersonMeshes>, PersonFrame)> {
-        let (key, meshes) = self.shown.as_ref()?;
+        let meshes = self.shown.as_ref().map(|(_, b)| b.gpu.clone())?;
         let motion = self.motion.as_mut()?;
-        let a = &key.appearance;
+        // The colours as they are now, whatever shape the meshes shown were built for.
+        let a = &figure.appearance;
         let mut palette = meshes.body.palette(&figure.rig, pose, place);
         let look = SkinLook {
             state,
@@ -175,7 +310,7 @@ impl Person {
             frame.hair = None;
             frame.eyes = None;
         }
-        Some((meshes.clone(), frame))
+        Some((meshes, frame))
     }
 }
 

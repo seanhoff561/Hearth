@@ -547,7 +547,23 @@ fn creator(o: &Opts) -> anyhow::Result<Report> {
         let t = Instant::now();
         std::hint::black_box(meshes(&a0, &worn, d));
         r.add(&format!("build {name}"), ms(t.elapsed()), "ms");
+        let t = Instant::now();
+        std::hint::black_box(hearth_character::anatomy::anatomy(&a0, d.cell()));
+        r.add(
+            &format!("  of which the body {name}"),
+            ms(t.elapsed()),
+            "ms",
+        );
     }
+    let t = Instant::now();
+    std::hint::black_box(hearth_character::garment::fitted(&a0, &worn));
+    r.add("  the garments fitted", ms(t.elapsed()), "ms");
+    let t = Instant::now();
+    std::hint::black_box(hearth_character::hair::hair(&a0));
+    r.add("  the hair", ms(t.elapsed()), "ms");
+    let t = Instant::now();
+    std::hint::black_box(hearth_character::eyes::eyes(&a0));
+    r.add("  the eyes", ms(t.elapsed()), "ms");
 
     // Sliders dragged as the creator's preview takes them (`App`'s preview: the figure set and
     // dressed, its meshes kept at Close, the frame drawn), a change a frame at 60 Hz.
@@ -636,23 +652,26 @@ fn creator(o: &Opts) -> anyhow::Result<Report> {
                 ctx.queue.submit([enc.finish()]);
             }
             frame_ms.push(ms(t0.elapsed()));
-            // Frames behind: since the settings the person shown was built from.
-            let shown = person.shown_appearance();
+            // Frames behind: since the settings whose shape the person shown has (its colours
+            // are drawn as they are).
             let lag = history
                 .iter()
                 .rev()
-                .position(|h| Some(h) == shown)
+                .position(|h| person.shows(h).is_some())
                 .unwrap_or(history.len());
             lags.push(lag as f64);
         }
         let t_end = Instant::now();
-        while !person.shown_appearance().is_some_and(|s| *s == a)
-            && t_end.elapsed() < Duration::from_secs(30)
-        {
+        let mut first = None;
+        while person.shows(&a) != Some(Detail::Close) && t_end.elapsed() < Duration::from_secs(30) {
             person.keep(&ctx, &fig, Detail::Close, false);
+            if first.is_none() && person.shows(&a).is_some() {
+                first = Some(ms(t_end.elapsed()));
+            }
             std::thread::sleep(Duration::from_millis(2));
         }
         let settle = ms(t_end.elapsed());
+        let first = first.unwrap_or(settle);
         let _ = ctx.device.poll(wgpu::PollType::wait_indefinitely());
         frame_ms.sort_by(f64::total_cmp);
         lags.sort_by(f64::total_cmp);
@@ -678,9 +697,10 @@ fn creator(o: &Opts) -> anyhow::Result<Report> {
         );
         r.add(
             &format!("{name}: the last setting shown after"),
-            settle,
+            first,
             "ms",
         );
+        r.add(&format!("{name}: at full detail after"), settle, "ms");
     }
     Ok(r)
 }
