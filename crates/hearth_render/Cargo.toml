@@ -13,6 +13,7 @@ hearth_character.workspace = true
 hearth_core.workspace = true
 hearth_math.workspace = true
 hearth_world.workspace = true
+hearth_smooth.workspace = true
 hearth_texgen.workspace = true
 rustc-hash.workspace = true
 smallvec.workspace = true
