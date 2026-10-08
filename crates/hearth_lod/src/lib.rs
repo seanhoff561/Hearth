@@ -626,6 +626,11 @@ impl GroundVertex {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Seasons(pub u32);
 
+/// What `LodGen::seasons_of` tells climates apart by: latitude (half degrees), mean
+/// temperature (quarter degrees), range (half degrees), precipitation (20 mm), dry seasons
+/// (tenths, winter's in the high byte), and whether it is the sea.
+type SeasonKey = (i32, i32, i32, i32, i32, bool);
+
 /// Snow lies as the near terrain's first layer from this depth (m; half a layer of 0.125 m);
 /// ice shows from this thickness (m).
 const SNOW_SHOWS_M: f64 = 0.0625;
@@ -1039,6 +1044,8 @@ pub struct LodGen {
     burnt: Option<BlockStateId>,
     /// Each state's ground material slot.
     slots: Vec<u8>,
+    /// The seasons of snow and ice by climate (`seasons_of`), shared by the tiles built.
+    seasons: std::sync::Mutex<FxHashMap<SeasonKey, Seasons>>,
 }
 
 impl LodGen {
@@ -1075,6 +1082,7 @@ impl LodGen {
             leaves: [leaf("oak"), leaf("birch"), leaf("spruce"), leaf("mangrove")],
             burnt: reg.parse_state("hearth:burnt_ground").ok(),
             slots: reg.ground_slots().0,
+            seasons: Default::default(),
         }
     }
 
@@ -1113,7 +1121,7 @@ impl LodGen {
         let near =
             wg.terrain
                 .nearby_scaled(mx - cs, mz - cs, mx + size + cs, mz + size + cs, cs as f64);
-        let mut seasons = FxHashMap::default();
+
         for j in -1..=TILE {
             for i in -1..=TILE {
                 let (bx, bz) = (mx + i * cs, mz + j * cs);
@@ -1121,7 +1129,7 @@ impl LodGen {
                 let z = bz + cs / 2;
                 let s = wg.terrain.sample_with(x, z, &near);
                 let mut col = self.column(wg, veg, &s, x, z, &normals, southern);
-                col.seasons = seasons_of(&mut seasons, &normals, &s);
+                col.seasons = self.seasons_of(&normals, &s);
                 // The player's changes standing above the ground.
                 if let Some((y, state)) = world.edits.get(&(x, z))
                     && *y + 1 > col.top
@@ -1166,6 +1174,37 @@ impl LodGen {
             trunks.sort_by_key(|t| (t.z, t.x));
         }
         mesh(key, &cols, &trunks)
+    }
+
+    /// The seasons of snow and ice at a column (`Seasons`), from the cover model of its
+    /// climate: the place's latitude and dry seasons (`normals`, the tile's), its own
+    /// temperatures and precipitation. Places of much the same climate share one model run.
+    fn seasons_of(&self, normals: &hearth_env::climate::Normals, s: &ColumnSample) -> Seasons {
+        let range = (2.0 * (s.t_warm - s.temperature)).max(0.0);
+        let key = (
+            (normals.lat_deg * 2.0).round() as i32,
+            (s.temperature * 4.0).round() as i32,
+            (range * 2.0).round() as i32,
+            (s.precipitation / 20.0).round() as i32,
+            ((normals.winter_dry * 10.0).round() as i32) << 8
+                | (normals.summer_dry * 10.0).round() as i32,
+            s.ocean,
+        );
+        let lock = || self.seasons.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(v) = lock().get(&key) {
+            return *v;
+        }
+        let n = hearth_env::climate::Normals::new(
+            key.0 as f64 / 2.0,
+            key.1 as f64 / 4.0,
+            key.2 as f64 / 2.0,
+            key.3 as f64 * 20.0,
+            (key.4 >> 8) as f64 / 10.0,
+            (key.4 & 255) as f64 / 10.0,
+        );
+        let v = Seasons::of(&hearth_env::climate::SeasonalCover::compute(&n), key.5);
+        lock().insert(key, v);
+        v
     }
 
     /// Coarse levels: a crown where the trees are expected to close over the ground, at the
@@ -1318,35 +1357,6 @@ impl LodGen {
             crown: None,
         }
     }
-}
-
-/// The seasons of snow and ice at a column (`Seasons`), from the cover model of its climate:
-/// the place's latitude and dry seasons (`normals`, the tile's), its own temperatures and
-/// precipitation. Columns of much the same climate share one model run (`memo`).
-fn seasons_of(
-    memo: &mut FxHashMap<(i32, i32, i32, bool), Seasons>,
-    normals: &hearth_env::climate::Normals,
-    s: &ColumnSample,
-) -> Seasons {
-    let range = (2.0 * (s.t_warm - s.temperature)).max(0.0);
-    let sea = s.ocean;
-    let key = (
-        (s.temperature * 4.0).round() as i32,
-        (range * 2.0).round() as i32,
-        (s.precipitation / 20.0).round() as i32,
-        sea,
-    );
-    *memo.entry(key).or_insert_with(|| {
-        let n = hearth_env::climate::Normals::new(
-            normals.lat_deg,
-            key.0 as f64 / 4.0,
-            key.1 as f64 / 2.0,
-            key.2 as f64 * 20.0,
-            normals.winter_dry,
-            normals.summer_dry,
-        );
-        Seasons::of(&hearth_env::climate::SeasonalCover::compute(&n), sea)
-    })
 }
 
 /// The usual trees of a biome for the coarse levels: leaves (oak, birch, spruce, mangrove),
