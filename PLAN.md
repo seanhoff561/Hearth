@@ -188,7 +188,6 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   tiles if it needs them.
 - Overhangs as smooth shelves (S §5); the crown boxes' snow by the seasons; impostors between
   boxes and canopy (S5).
-- `tools/shots/lod_horizon.shots`: since E4 the volcano views stand inside the ground.
 
 ## Audit 2
 After S4, covering S1, S2, E7, S3, S4.

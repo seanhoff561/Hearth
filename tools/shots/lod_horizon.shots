@@ -5,7 +5,7 @@
 defaults: seed=7, w=1280, h=720, dist=8, season=summer, hour=11, clouds=0.2, dry=true, lod=512
 x=3155, z=-6737, y=180, yaw=0, pitch=8, out=bench-out/lod/hill_fog.png
 x=3155, z=-6737, y=180, yaw=0, pitch=8, fog=false, out=bench-out/lod/hill_nofog.png
-x=10506, z=8200, y=420, yaw=180, pitch=6, out=bench-out/lod/volcano_fog.png
-x=10506, z=8200, y=420, yaw=180, pitch=6, fog=false, out=bench-out/lod/volcano_nofog.png
+x=10506, z=8200, above=30, yaw=180, pitch=6, out=bench-out/lod/volcano_fog.png
+x=10506, z=8200, above=30, yaw=180, pitch=6, fog=false, out=bench-out/lod/volcano_nofog.png
 x=2592, z=-6216, y=6, yaw=0, pitch=2, out=bench-out/lod/sea_level.png
 x=3155, z=-6737, y=180, yaw=0, pitch=8, hour=18.6, out=bench-out/lod/hill_evening.png
