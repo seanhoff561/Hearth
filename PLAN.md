@@ -64,6 +64,9 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
   life at real heights (`docs/design/terrain.md`, `planet.md`, `physiology.md`, D244–D248).
 - **E5** — the Wild Earth start: the creator, suggested places verified in the world, eras
   "Coming soon", waking at dawn, new lives as chosen (`docs/design/start.md`, D249–D251).
+- **P3** — looking and the hands: picking and highlight, names and hand hints, each hand its
+  button and natural use from data, the action menu, learned preferences
+  (`docs/design/hands.md`, D252–D254).
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -104,15 +107,10 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
 - A place's card on the globe's hover, not only on the click (E §6.3).
 - Easy's first-time hints at the first waking (E §6.5) come with P6.
 
-## P3 — Looking and the hands
-- Highlighting and precise picking, name tags and hand hints (§5.1); the intent resolver
-  (`data/hearth/interaction/intents.ron`) with safe defaults, learned preferences, stowing to free
-  a hand and hold-to-repeat (§5.2); the middle-click action menu (§5.3); feedback without
-  clutter, the crosshair's offer list removed (§5.4); controller mapping.
-- *Accept:* a scripted playtest covers every example of §5.2; nothing happens without a
-  highlighted target or an action on oneself; picking costs under 0.2 ms a frame.
-- *Amended by E §9.1:* clicking with no target follows E §3.2; hold-to-repeat becomes stroke by
-  stroke work (E §7.2); no progress ring.
+## From P3 (before Audit 1)
+- The bot and acceptance suites drive the server directly; a scripted playtest through the
+  client's buttons (the §5.2 examples end to end) wants a headless client (with the full suite).
+- The action menu as a radial on the controller; sub-object picking with S5 and P7.
 
 ## P4 — Poses, animation, sleep and time (with E6)
 - The work-pose library with IK; every process with its pose (lint); first- and third-person

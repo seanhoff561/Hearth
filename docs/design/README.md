@@ -36,6 +36,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | The Neolithic (pottery, fields, herds, cloth, timber, moving loads) | [neolithic.md](neolithic.md) | implemented (V2-12) |
 | Menus and world management | [menus.md](menus.md) | implemented (P1) |
 | Controls: bindings, lone modifiers, the controller, a click at nothing, blows | [controls.md](controls.md) | implemented (E2) |
+| Looking and the hands: picking, highlight, each hand's use, the action menu | [hands.md](hands.md) | implemented (P3) |
 | The interface's look: typefaces, panels, the journal's pages | [interface.md](interface.md) | implemented (Q1) |
 | Game modes and Creative | [modes-creative.md](modes-creative.md) | implemented (P2) |
 | Budgets: every system's cost | [budgets.md](budgets.md) | living document (Audit 0) |

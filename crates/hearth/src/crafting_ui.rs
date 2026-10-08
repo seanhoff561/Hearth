@@ -28,6 +28,8 @@ pub enum Do {
     Eat(Path),
     Drink(DrinkFrom),
     Fill(Path),
+    /// Lie down to rest or sleep (the Rest screen).
+    Rest,
 }
 
 /// One line of the list by the crosshair.
@@ -355,6 +357,17 @@ impl Crafting {
             out.push(Offer {
                 words: "drink".into(),
                 act: Some(Do::Drink(DrinkFrom::Water(s.aim))),
+                why: None,
+                play_s: None,
+                material: None,
+                with: None,
+            });
+        }
+        // Looking at nothing (at oneself, or the open ground): rest or sleep (P §5.3).
+        if aimed.is_none() {
+            out.push(Offer {
+                words: "lie down to rest or sleep".into(),
+                act: Some(Do::Rest),
                 why: None,
                 play_s: None,
                 material: None,

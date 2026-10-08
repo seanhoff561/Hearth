@@ -260,3 +260,6 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D249 (2026-10-08) The creator returns on the box body; Randomize correlates pigmentation
 - D250 (2026-10-08) Suggested places are verified by sampling the world made
 - D251 (2026-10-08) A life wakes at dawn, lying in the grass, and gets up by acting
+- D252 (2026-10-08) Each hand its button and its natural use, from data
+- D253 (2026-10-08) The action menu holds the rest; what is chosen there twice becomes the default
+- D254 (2026-10-08) The crosshair shows a name and the hands, not a list

@@ -21,7 +21,7 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -32,7 +32,8 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5. V2-11 superseded.
 | E3 — Earth's clock | done 2026-10-08 (D240–D243) |
 | E4 — Earth's size | done 2026-10-08 (D244–D248) |
 | E5 — Wild Earth start | done 2026-10-08 (D249–D251) |
-| P3 → P4 with E6 → P5 → P6, Audit 1 | next |
+| P3 — looking and the hands | done 2026-10-08 (D252–D254) |
+| P4 with E6 → P5 → P6, Audit 1 | next |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
@@ -41,11 +42,45 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5. V2-11 superseded.
 | Row | State |
 |---|---|
 | Smooth world (S) | S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
-| Playability (P) | P0–P2 done; open issues in `dev/PLAYTEST.md` |
+| Playability (P) | P0–P3 done; open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E5 done 2026-10-08; E6–E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
 
-## Latest: E5 — the Wild Earth start (2026-10-08, D249–D251)
+## Latest: P3 — looking and the hands (2026-10-08, D252–D254)
+- **The two hands:** left click works the left hand and right click the right (E the right;
+  the controller's triggers). Each does its natural use on what is looked at, with what it
+  holds:
+  - the use comes from data (`interaction/intents.ron`, a resolver in `hearth_craft`,
+    mind-agnostic);
+  - the tools are that hand's;
+  - a held thing is put away when the use wants an empty hand, and brought back after;
+  - held, the button does the work again as each is done.
+- **Safe defaults only:** no punching animals, no eating what is not known to be food, no
+  building (linted).
+- **The action menu** (the wheel's click):
+  - every action for what is looked at, with its tools and about how long, greyed with what it
+    lacks; one's own actions and rest when looking at nothing;
+  - done with either hand;
+  - a process picked twice running over a hand's own use becomes that hand's use there
+    (`hands.json`; Controls forgets).
+  - Creative's pick moves to Ctrl + the wheel's click.
+- **By the crosshair:** what is looked at is outlined and named (off, brief or always), with
+  what each hand would do. There is no offer list and no work bar. Discoveries are a quiet
+  note by a small journal.
+- **Picking:** some 2.5 µs a frame (under 0.2 ms asked).
+- **Deferred** (`PLAN.md`): a scripted playtest through the client's buttons; the controller's
+  radial menu; sub-object picking (S5, P7).
+- **Real?** The hands do what hands do with the thing held: the amendment's every example is
+  tested.
+- **Lean?** The rules are data. One resolver serves both hands and any future mind; the offer
+  list's code is the menu's.
+- **Fast?** 2.5 µs a pick. The hands' uses are drawn up with the list, five times a second.
+- **Whole?** Hands, menu, hints, highlight, names, stowing and learned uses work together. The
+  layout test lays out the new Controls rows.
+- **Organic?** A hand's use follows from what it holds and what is there, through the
+  processes' own verbs.
+
+## E5 — the Wild Earth start (2026-10-08, D249–D251)
 - The character creator is back (making a world: name and mode, the place, then who; and the
   death screen):
   - saved profiles; body, height and build;

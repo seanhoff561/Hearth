@@ -1159,9 +1159,15 @@ impl App {
                         &pad,
                         pad_sensitivity,
                     );
-                    // Knapping by hand opens its screen.
-                    if let Some(k) = c.knap_request.take() {
-                        run.menus.open(Screen::Knapping(Box::new(k)));
+                    // Knapping by hand opens its screen; resting asked for, the Rest screen.
+                    let rest = std::mem::take(&mut c.rest_request).then_some(Screen::Rest);
+                    if let Some(k) = c
+                        .knap_request
+                        .take()
+                        .map(|k| Screen::Knapping(Box::new(k)))
+                        .or(rest)
+                    {
+                        run.menus.open(k);
                         if run.captured {
                             run.captured = false;
                             let _ = run.window.set_cursor_grab(CursorGrabMode::None);

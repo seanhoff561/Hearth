@@ -237,6 +237,8 @@ pub struct Client {
     pub return_to_hand: bool,
     /// The action menu is open (P §5.3).
     pub action_menu: bool,
+    /// Resting asked for from the action menu (the app opens the Rest screen).
+    pub rest_request: bool,
     /// The name of what is looked at, and what each hand would do, by the crosshair.
     name_tags: hearth_core::options::NameTags,
     hand_hints: bool,
@@ -462,6 +464,7 @@ impl Client {
             restore: None,
             return_to_hand: true,
             action_menu: false,
+            rest_request: false,
             name_tags: Default::default(),
             hand_hints: true,
             menu_picks: Default::default(),
@@ -786,6 +789,10 @@ impl Client {
             Do::Eat(p) => ToServer::Eat(p),
             Do::Drink(f) => ToServer::Drink(f),
             Do::Fill(skin) => ToServer::Fill { skin, aim },
+            Do::Rest => {
+                self.rest_request = true;
+                return;
+            }
         };
         self.server.send(m);
     }
