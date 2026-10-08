@@ -25,6 +25,24 @@ impl Rect {
         p.0 >= self.x && p.0 < self.x + self.w && p.1 >= self.y && p.1 < self.y + self.h
     }
 
+    /// Where two rectangles overlap, if they do.
+    pub fn intersect(&self, o: &Rect) -> Option<Rect> {
+        let (x0, y0) = (self.x.max(o.x), self.y.max(o.y));
+        let (x1, y1) = (
+            (self.x + self.w).min(o.x + o.w),
+            (self.y + self.h).min(o.y + o.h),
+        );
+        (x1 > x0 && y1 > y0).then(|| Rect::new(x0, y0, x1 - x0, y1 - y0))
+    }
+
+    /// Whether `o` lies wholly within this one.
+    pub fn holds(&self, o: &Rect) -> bool {
+        o.x >= self.x - 0.01
+            && o.y >= self.y - 0.01
+            && o.x + o.w <= self.x + self.w + 0.01
+            && o.y + o.h <= self.y + self.h + 0.01
+    }
+
     /// Split into a left part `w` wide and the rest (with `gap` between).
     pub fn split_left(&self, w: f32, gap: f32) -> (Rect, Rect) {
         (
@@ -114,6 +132,20 @@ impl UiInput {
     }
 }
 
+/// An interactive widget as it was laid out this frame (kept when [`UiState::layout`] is on, for
+/// the layout test).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Placed {
+    /// What it shows.
+    pub text: String,
+    /// Where it is (interface pixels; in a scrolled area, where the scroll puts it now).
+    pub rect: Rect,
+    /// The scrolled area it is in, if any, and how far the area's rows run (interface pixels).
+    pub area: Option<(Rect, f32)>,
+    /// How wide its text is drawn.
+    pub text_w: f32,
+}
+
 /// What persists between frames.
 #[derive(Debug, Clone, Default)]
 pub struct UiState {
@@ -127,8 +159,24 @@ pub struct UiState {
     pub cursor: usize,
     /// Scroll offsets by list id (interface pixels).
     pub scroll: rustc_hash::FxHashMap<u64, f32>,
+    /// How far each scrolled area's rows ran last frame (interface pixels).
+    extent: rustc_hash::FxHashMap<u64, f32>,
+    /// Where the pointer took hold of a scroll bar (interface pixels below the bar's top).
+    grab: f32,
+    /// The widgets laid out this frame, when kept (the layout test turns it on).
+    pub layout: Option<Vec<Placed>>,
     /// Presses since the owner last took them (for the click's sound).
     pub clicks: u32,
+}
+
+impl UiState {
+    /// A state that keeps where each frame's widgets were laid out (for the layout test).
+    pub fn recording() -> Self {
+        Self {
+            layout: Some(Vec::new()),
+            ..Self::default()
+        }
+    }
 }
 
 /// Colours of the interface.
@@ -158,6 +206,17 @@ pub struct Ui<'a> {
     pub size: (f32, f32),
     /// Clicks are taken by an open popup this frame.
     pub blocked: bool,
+    /// The scrolled area being laid out, if any, and how far its rows ran last frame: the
+    /// pointer counts only within it.
+    area: Option<(Rect, f32)>,
+    /// Where the focused widget lies, when it is in the scrolled area being laid out.
+    focused_at: Option<Rect>,
+}
+
+/// A scrolled area's id: its label and where it begins (not its height, which follows the
+/// window).
+fn id_label_id(label: &str, area: &Rect) -> u64 {
+    id_of(label, &Rect::new(area.x, area.y, 0.0, 0.0))
 }
 
 /// A widget's id from a seed (screens mix the label and the place).
@@ -203,6 +262,9 @@ impl<'a> Ui<'a> {
         if input.released {
             state.active = None;
         }
+        if let Some(l) = state.layout.as_mut() {
+            l.clear();
+        }
         Self {
             font,
             lang,
@@ -211,6 +273,8 @@ impl<'a> Ui<'a> {
             state,
             size,
             blocked: false,
+            area: None,
+            focused_at: None,
         }
     }
 
@@ -220,12 +284,163 @@ impl<'a> Ui<'a> {
     }
 
     fn hot(&self, r: &Rect) -> bool {
-        !self.blocked && self.input.pointer.is_some_and(|p| r.contains(p))
+        !self.blocked
+            && self
+                .input
+                .pointer
+                .is_some_and(|p| r.contains(p) && self.area.is_none_or(|(a, _)| a.contains(p)))
     }
 
-    fn focusable(&mut self, id: u64) -> bool {
+    fn focusable(&mut self, id: u64, r: &Rect) -> bool {
         self.state.order.push(id);
-        self.state.focus == Some(id)
+        let focused = self.state.focus == Some(id);
+        if focused && self.area.is_some() {
+            self.focused_at = Some(*r);
+        }
+        focused
+    }
+
+    /// Notes an interactive widget and what it shows, when the layout is kept.
+    fn placed(&mut self, r: &Rect, text: &str) {
+        let area = self.area;
+        let text_w = self.font.width(text) as f32;
+        if let Some(l) = self.state.layout.as_mut() {
+            l.push(Placed {
+                text: text.to_owned(),
+                rect: *r,
+                area,
+                text_w,
+            });
+        }
+    }
+
+    /// How far the rows of the scrolled area `id_label` at `area` ran last frame, if it was laid
+    /// out (its size aside: a window's change of height keeps its scroll).
+    pub fn scroll_ran(&self, area: &Rect, id_label: &str) -> Option<f32> {
+        self.state.extent.get(&id_label_id(id_label, area)).copied()
+    }
+
+    /// A row of tabs across `r`, the chosen one marked; true when another is chosen.
+    pub fn tabs(&mut self, r: Rect, labels: &[String], index: &mut usize) -> bool {
+        if labels.is_empty() {
+            return false;
+        }
+        let n = labels.len() as f32;
+        let w = ((r.w - 2.0 * (n - 1.0)) / n).floor();
+        let mut changed = false;
+        let open = *index;
+        for (i, label) in labels.iter().enumerate() {
+            let t = Rect::new(r.x + i as f32 * (w + 2.0), r.y, w, r.h);
+            if self.button(t, label) && i != *index {
+                *index = i;
+                changed = true;
+            }
+            if i == open {
+                // The open tab, underlined.
+                self.draw
+                    .rect(t.x + 1.0, t.y + t.h - 3.0, t.w - 2.0, 2.0, theme::FOCUS);
+            }
+        }
+        changed
+    }
+
+    /// A column of rows in `area` that scrolls when they run past it: `body` lays its rows down
+    /// the column it is given (from the area's top, moved by the scroll). Rows past the area's
+    /// edges are cut away; the wheel over the area, the bar at its right dragged, and the keys
+    /// moving the focus to a row out of sight all scroll it. Returns whether it scrolls.
+    pub fn scroll(
+        &mut self,
+        area: Rect,
+        id_label: &str,
+        gap: f32,
+        body: impl FnOnce(&mut Ui<'_>, &mut Column),
+    ) -> bool {
+        const BAR: f32 = 4.0;
+        let id = id_label_id(id_label, &area);
+        let bar_id = id ^ 0x5c40_11ba;
+        let ran = self.state.extent.get(&id).copied().unwrap_or(0.0);
+        let max = (ran - area.h).max(0.0);
+        let mut off = self.state.scroll.get(&id).copied().unwrap_or(0.0);
+        if max > 0.0 {
+            if self.hot(&area) && self.input.scroll != 0.0 {
+                off -= self.input.scroll * 24.0;
+            }
+            let bar_h = (area.h * area.h / ran).max(8.0);
+            let track = Rect::new(area.x + area.w - BAR, area.y, BAR, area.h);
+            if self.hot(&track) && self.input.pressed {
+                let bar_y = area.y + (area.h - bar_h) * off.clamp(0.0, max) / max;
+                let y = self.input.pointer.map_or(0.0, |p| p.1);
+                self.state.grab = if (bar_y..bar_y + bar_h).contains(&y) {
+                    y - bar_y
+                } else {
+                    bar_h / 2.0
+                };
+                self.state.active = Some(bar_id);
+            }
+            if self.state.active == Some(bar_id)
+                && self.input.down
+                && let Some(p) = self.input.pointer
+            {
+                let t = (p.1 - self.state.grab - area.y) / (area.h - bar_h).max(1.0);
+                off = t * max;
+            }
+        }
+        off = off.clamp(0.0, max);
+        // The rows, cut to the area (and to any area it is within).
+        let outer = self.draw.clip();
+        let inner = [area.x, area.y, area.x + area.w, area.y + area.h];
+        let clip = match outer {
+            Some(o) => [
+                o[0].max(inner[0]),
+                o[1].max(inner[1]),
+                o[2].min(inner[2]),
+                o[3].min(inner[3]),
+            ],
+            None => inner,
+        };
+        self.draw.set_clip(Some(clip));
+        let outer_area = self.area.replace((area, ran));
+        let outer_focus = self.focused_at.take();
+        let mut col = Column::new(
+            area.x,
+            area.y - off,
+            area.w - if max > 0.0 { BAR + 2.0 } else { 0.0 },
+        );
+        col.gap = gap;
+        let top = col.y;
+        body(self, &mut col);
+        let ran = (col.y - top - gap).max(0.0);
+        // The focused row kept in sight.
+        if let Some(f) = self.focused_at.take() {
+            if f.y < area.y {
+                off -= area.y - f.y;
+            } else if f.y + f.h > area.y + area.h {
+                off += f.y + f.h - (area.y + area.h);
+            }
+        }
+        self.area = outer_area;
+        self.focused_at = outer_focus;
+        self.draw.set_clip(outer);
+        let max = (ran - area.h).max(0.0);
+        self.state.extent.insert(id, ran);
+        self.state.scroll.insert(id, off.clamp(0.0, max));
+        if max > 0.0 {
+            let off = off.clamp(0.0, max);
+            let bar_h = (area.h * area.h / ran).max(8.0);
+            let bar_y = area.y + (area.h - bar_h) * off / max;
+            let x = area.x + area.w - BAR;
+            self.draw
+                .rect(x, area.y, BAR, area.h, theme::FIELD.with_alpha(120));
+            let held = self.state.active == Some(bar_id);
+            self.draw.rect(
+                x,
+                bar_y,
+                BAR,
+                bar_h,
+                theme::EDGE.with_alpha(if held { 230 } else { 160 }),
+            );
+        }
+        max > 0.0
     }
 
     fn frame(&mut self, r: &Rect, fill: Rgba, focused: bool) {
@@ -273,7 +488,8 @@ impl<'a> Ui<'a> {
 
     pub fn button_enabled(&mut self, r: Rect, label: &str, enabled: bool) -> bool {
         let id = id_of(label, &r);
-        let focused = enabled && self.focusable(id);
+        let focused = enabled && self.focusable(id, &r);
+        self.placed(&r, label);
         let hot = enabled && self.hot(&r);
         if hot && self.input.pressed {
             self.state.active = Some(id);
@@ -310,7 +526,8 @@ impl<'a> Ui<'a> {
         text: &str,
     ) -> bool {
         let id = id_of(label, &r);
-        let focused = self.focusable(id);
+        let focused = self.focusable(id, &r);
+        self.placed(&r, &format!("{label}: {text}"));
         let hot = self.hot(&r);
         if hot && self.input.pressed {
             self.state.active = Some(id);
@@ -392,7 +609,14 @@ impl<'a> Ui<'a> {
     /// A text field; true when its text changed. Clicking focuses it; typing edits it.
     pub fn text_field(&mut self, r: Rect, label: &str, value: &mut String, max_len: usize) -> bool {
         let id = id_of(label, &r);
-        let focused = self.focusable(id);
+        let focused = self.focusable(id, &r);
+        let shown = if value.is_empty() {
+            label
+        } else {
+            value.as_str()
+        };
+        let shown = shown.to_owned();
+        self.placed(&r, &shown);
         if self.hot(&r) && self.input.pressed {
             self.state.focus = Some(id);
             self.state.cursor = usize::MAX;
@@ -475,6 +699,7 @@ impl<'a> Ui<'a> {
         mut row: impl FnMut(&mut Ui<'_>, Rect, usize, bool),
     ) -> Option<usize> {
         let id = id_of(id_label, &r);
+        self.placed(&r, "");
         let content = count as f32 * row_h;
         let max = (content - r.h).max(0.0);
         let mut off = self.state.scroll.get(&id).copied().unwrap_or(0.0);
@@ -607,6 +832,81 @@ mod tests {
             ui.text_field(b, "Name", &mut name, 16)
         });
         assert_eq!(name, "Ad");
+    }
+
+    /// Twenty rows in an area that shows five: the rest are cut away, and the wheel or the keys
+    /// bring them into sight.
+    #[test]
+    fn a_long_column_scrolls_within_its_area() {
+        let mut st = UiState::recording();
+        let area = Rect::new(10.0, 20.0, 120.0, 100.0);
+        let rows = |ui: &mut Ui<'_>, c: &mut Column| {
+            for i in 0..20 {
+                ui.button(c.row(16.0), &format!("Row {i}"));
+            }
+        };
+        let none = UiInput::default();
+        // The first frame learns how far the rows run; the second knows it scrolls.
+        frame(&mut st, &none, |ui| ui.scroll(area, "list", 4.0, rows));
+        assert!(frame(&mut st, &none, |ui| ui.scroll(area, "list", 4.0, rows)));
+        let shown = |st: &UiState| {
+            st.layout
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter(|p| area.holds(&p.rect))
+                .map(|p| p.text.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(shown(&st).first().map(String::as_str), Some("Row 0"));
+        assert_eq!(st.layout.as_ref().unwrap().len(), 20, "every row laid out");
+        // Clicks past the area's edge reach nothing.
+        let below = UiInput {
+            pointer: Some((50.0, 130.0)),
+            pressed: true,
+            down: true,
+            ..Default::default()
+        };
+        frame(&mut st, &below, |ui| ui.scroll(area, "list", 4.0, rows));
+        assert_eq!(st.active, None);
+        // The wheel scrolls toward the end.
+        let wheel = UiInput {
+            pointer: Some((50.0, 60.0)),
+            scroll: -20.0,
+            ..Default::default()
+        };
+        frame(&mut st, &wheel, |ui| ui.scroll(area, "list", 4.0, rows));
+        frame(&mut st, &none, |ui| ui.scroll(area, "list", 4.0, rows));
+        assert_eq!(
+            shown(&st).last().map(String::as_str),
+            Some("Row 19"),
+            "{:?}",
+            shown(&st)
+        );
+        // The keys take the focus to the first row, out of sight above: the column follows it.
+        let down = UiInput {
+            keys: vec![NavKey::Down],
+            ..Default::default()
+        };
+        frame(&mut st, &down, |ui| ui.scroll(area, "list", 4.0, rows));
+        frame(&mut st, &none, |ui| ui.scroll(area, "list", 4.0, rows));
+        assert!(
+            shown(&st).contains(&"Row 0".to_owned()),
+            "the focused row in sight: {:?}",
+            shown(&st)
+        );
+    }
+
+    #[test]
+    fn drawing_is_cut_to_the_clip() {
+        let mut d = DrawList::new(2);
+        d.set_clip(Some([0.0, 0.0, 10.0, 10.0]));
+        d.rect(5.0, 5.0, 10.0, 10.0, Rgba::WHITE);
+        let xs: Vec<f32> = d.vertices.iter().map(|v| v.pos[0]).collect();
+        assert!(xs.iter().all(|&x| (10.0..=20.0).contains(&x)), "{xs:?}");
+        let n = d.vertices.len();
+        d.rect(20.0, 20.0, 5.0, 5.0, Rgba::WHITE);
+        assert_eq!(d.vertices.len(), n, "wholly outside: nothing drawn");
     }
 
     #[test]

@@ -41,6 +41,25 @@ impl LocalWorld {
         resolution: usize,
         cache_dir: Option<&Path>,
     ) -> anyhow::Result<Self> {
+        let settings = WorldGenSettings {
+            seed,
+            planet_size: size,
+            grid_resolution: resolution,
+            ..WorldGenSettings::default()
+        }
+        .sanitized();
+        Self::create_with(&settings, cache_dir, &|f, stage| {
+            log::debug!("planet {:.0}% {stage}", f * 100.0);
+        })
+    }
+
+    /// Builds (or loads from `cache_dir`) the planet of `settings`, telling `progress` how far it
+    /// has come (a share and the stage's words), and prepares a generator.
+    pub fn create_with(
+        settings: &WorldGenSettings,
+        cache_dir: Option<&Path>,
+        progress: hearth_worldgen::planet::Progress<'_>,
+    ) -> anyhow::Result<Self> {
         let (content, report) = hearth_content::Content::load(&[data_pack_dir()]);
         let content = Arc::new(content.ok_or_else(|| {
             let msgs: Vec<String> = report.sorted().iter().map(|d| d.to_string()).collect();
@@ -55,33 +74,18 @@ impl LocalWorld {
         })?);
         let defs = hearth_world::datapack::load_block_defs(&[data_pack_dir()])?;
         let reg = Arc::new(BlockRegistry::build(defs)?);
-        let settings = WorldGenSettings {
-            seed,
-            planet_size: size,
-            grid_resolution: resolution,
-            ..WorldGenSettings::default()
-        }
-        .sanitized();
         let t0 = Instant::now();
-        let cache = cache_dir.map(|d| {
-            d.join(format!(
-                "planet_{seed}_{}_{}.bin.zst",
-                size.name(),
-                settings.grid_resolution
-            ))
-        });
+        let cache = cache_dir.map(|d| d.join(planet_cache_name(settings)));
         let grid = match cache.as_ref().filter(|p| p.exists()) {
             Some(p) => match PlanetGrid::load(p) {
                 Ok(g) => g,
                 Err(e) => {
                     log::warn!("planet cache unreadable ({e}); rebuilding");
-                    PlanetGrid::build(&settings, &|_, _| {})
+                    PlanetGrid::build(settings, progress)
                 }
             },
             None => {
-                let g = PlanetGrid::build(&settings, &|f, stage| {
-                    log::debug!("planet {:.0}% {stage}", f * 100.0);
-                });
+                let g = PlanetGrid::build(settings, progress);
                 if let Some(p) = &cache {
                     if let Some(d) = p.parent() {
                         std::fs::create_dir_all(d).ok();
@@ -298,4 +302,21 @@ pub fn data_pack_dir() -> std::path::PathBuf {
         }
     }
     hearth_world::datapack::builtin_pack_dir()
+}
+
+/// The planet cache's file for world-generation settings: its seed, size, resolution and (when
+/// not the standard) vertical scale.
+pub fn planet_cache_name(settings: &WorldGenSettings) -> String {
+    let scale = settings.vertical_scale_factor;
+    let scale = if (scale - 1.0).abs() < 1e-9 {
+        String::new()
+    } else {
+        format!("_v{:.0}", scale * 100.0)
+    };
+    format!(
+        "planet_{}_{}_{}{scale}.bin.zst",
+        settings.seed,
+        settings.planet_size.name(),
+        settings.grid_resolution
+    )
 }

@@ -26,6 +26,8 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
         childhood: false,
         era: hearth::eras::WILD_EARTH.to_owned(),
         birth: None,
+        shape: Default::default(),
+        birthplace: None,
     }
 }
 
@@ -348,5 +350,56 @@ fn things_are_carried_put_down_picked_up_and_dragged() {
         _ => None,
     });
     drop(server);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A new world's player is born where the globe chose (Amendment P §4.3): a place across the
+/// planet from where the world would have put them, kept by the world when it is opened again.
+#[test]
+fn a_world_begins_where_its_birthplace_was_chosen() {
+    let dir = std::env::temp_dir().join(format!("hearth-birthplace-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let view = View {
+        radius: 2,
+        vertical: 2,
+    };
+    // Where the world would put them.
+    let found = {
+        let server = Server::start(spec(&dir.join("found")), atlas(), view);
+        wait(&server, 120.0, |m| match m {
+            ToClient::Ready(r) => Some(r.player.pos),
+            _ => None,
+        })
+    };
+    // A third of the way round and a little north: land is found near it.
+    let mut s = spec(&dir.join("chosen"));
+    let round = hearth_math::PlanetSize::Tiny.circumference() as f64;
+    let want = glam::DVec2::new(found.x + round / 3.0, found.z - 600.0);
+    s.birthplace = Some(want);
+    let near = |p: DVec3| {
+        let dx = (p.x - want.x).rem_euclid(round);
+        let dx = dx.min(round - dx);
+        (dx * dx + (p.z - want.y).powi(2)).sqrt()
+    };
+    let at = {
+        let server = Server::start(s.clone(), atlas(), view);
+        wait(&server, 120.0, |m| match m {
+            ToClient::Ready(r) => Some(r.player.pos),
+            _ => None,
+        })
+    };
+    // Land found near it (the point itself may be water or steep).
+    assert!(near(at) < 1_500.0, "born {:.0} m from the place chosen", near(at));
+    assert!(near(found) > 5_000.0, "a place the world would not have chosen");
+    // Opened again, the world remembers its birthplace (the calendar starts by it).
+    s.birthplace = None;
+    let again = {
+        let server = Server::start(s, atlas(), view);
+        wait(&server, 120.0, |m| match m {
+            ToClient::Ready(r) => Some(r.player.pos),
+            _ => None,
+        })
+    };
+    assert!((again - at).length() < 1.0, "the player is where they were");
     let _ = std::fs::remove_dir_all(&dir);
 }

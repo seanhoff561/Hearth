@@ -75,6 +75,49 @@ pub struct WorldSpec {
     /// Tests and bots: which of the births offered in an era's world the player takes (none:
     /// the player chooses).
     pub birth: Option<usize>,
+    /// A new world's shape beyond its planet's size (Create World's More options).
+    pub shape: WorldShape,
+    /// Where a new world's first life is born (world x, z), chosen on the globe; `None`: where
+    /// the world finds a place.
+    pub birthplace: Option<DVec2>,
+}
+
+/// A new world's shape, as Create World's More options set it (Amendment P §4.3); each `None`
+/// the game's default.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct WorldShape {
+    /// How tall the land is drawn, against the standard (0.25–2).
+    pub vertical_scale: Option<f64>,
+    /// Minutes of play in a day.
+    pub day_length_min: Option<u32>,
+    pub days_per_season: Option<u32>,
+    pub starting_season: Option<hearth_content::schema::Season>,
+}
+
+impl WorldShape {
+    /// The world-generation settings of a new world of `seed` and `size`.
+    pub fn planet(&self, seed: u64, size: PlanetSize) -> hearth_worldgen::WorldGenSettings {
+        hearth_worldgen::WorldGenSettings {
+            seed,
+            planet_size: size,
+            vertical_scale_factor: self.vertical_scale.unwrap_or(1.0),
+            ..Default::default()
+        }
+        .sanitized()
+    }
+
+    /// Sets a new world's life and time settings to this shape.
+    pub fn apply(&self, life: &mut hearth_save::LifeSettings) {
+        if let Some(d) = self.day_length_min {
+            life.day_length_min = d;
+        }
+        if let Some(d) = self.days_per_season {
+            life.days_per_season = d;
+        }
+        if let Some(s) = self.starting_season {
+            life.starting_season = s;
+        }
+    }
 }
 
 /// How much terrain to keep around the player (cubes).
@@ -181,17 +224,14 @@ fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> 
         return Ok(Some(Save { dir, meta }));
     }
     std::fs::create_dir_all(saves)?;
-    let planet = hearth_worldgen::WorldGenSettings {
-        seed: spec.seed,
-        planet_size: spec.planet,
-        ..Default::default()
-    }
-    .sanitized();
+    let planet = spec.shape.planet(spec.seed, spec.planet);
     let mut settings = WorldSettings::new(planet);
     settings.era = spec.era.clone();
     settings.life = hearth_save::LifeSettings::from_content(&lw.content.time);
     settings.life.set_death(spec.death);
     settings.life.knowledge_mode = spec.knowledge;
+    spec.shape.apply(&mut settings.life);
+    settings.birthplace = spec.birthplace.map(|p| [p.x, p.y]);
     let meta = WorldMeta::new(&spec.name, settings, lw.reg.state_names());
     let dir = WorldDir::create(saves, &meta)?;
     log::info!("created world {:?} in {}", spec.name, dir.root.display());
@@ -308,6 +348,28 @@ pub fn calendar_at(
     starting: hearth_content::schema::Season,
     place: Option<&dyn Fn(DVec2) -> DVec2>,
 ) -> (Calendar, DVec3) {
+    calendar_in(lw, Calendar::from_config(&lw.content.time), starting, place)
+}
+
+/// A world's calendar by its life and time settings: the day's length and the season's as the
+/// world was made with, the rest as the game's.
+pub fn calendar_of(
+    content: &hearth_content::Content,
+    life: &hearth_save::LifeSettings,
+) -> Calendar {
+    let mut c = Calendar::from_config(&content.time);
+    c.day_length_s = life.day_length_min.max(1) as f64 * 60.0;
+    c.days_per_season = life.days_per_season.max(1);
+    c
+}
+
+/// As [`calendar_at`], from a calendar `base`.
+pub fn calendar_in(
+    lw: &LocalWorld,
+    base: Calendar,
+    starting: hearth_content::schema::Season,
+    place: Option<&dyn Fn(DVec2) -> DVec2>,
+) -> (Calendar, DVec3) {
     let planet = *lw.map.planet();
     let (mut sx, mut sz) = lw.terrain().find_spawn(false);
     if let Some(place) = place {
@@ -317,7 +379,7 @@ pub fn calendar_at(
             .spawn_near(at.x.floor() as i32, at.y.floor() as i32);
     }
     let first_spawn = ground_at(lw, sx, sz);
-    let calendar = Calendar::from_config(&lw.content.time).start_at(
+    let calendar = base.start_at(
         starting,
         planet.latitude(first_spawn.z) < 0.0,
         0.33,
@@ -548,18 +610,27 @@ fn run(
     inbox: Receiver<ToServer>,
     tx: &Sender<ToClient>,
 ) -> anyhow::Result<()> {
-    // A saved world keeps its own seed and planet.
-    let mut seed = spec.seed;
-    let mut size = spec.planet;
+    // A saved world keeps its own planet.
+    let mut gen_settings = spec.shape.planet(spec.seed, spec.planet);
     if let Some(saves) = &spec.saves_dir {
         let root = saves.join(&spec.name);
         if root.join("level.json").exists() {
             let (_, meta, _) = WorldDir::open(&root)?;
-            seed = meta.settings.planet.seed;
-            size = meta.settings.planet.planet_size;
+            gen_settings = meta.settings.planet.clone();
         }
     }
-    let mut lw = LocalWorld::create(seed, size, 0, spec.cache_dir.as_deref())?;
+    let seed = gen_settings.seed;
+    let progress = |share: f32, stage: &str| {
+        let _ = tx.send(ToClient::Progress {
+            share,
+            stage: stage.to_owned(),
+        });
+    };
+    progress(0.0, "menu.making.opening");
+    let mut lw = LocalWorld::create_with(&gen_settings, spec.cache_dir.as_deref(), &|f, stage| {
+        log::debug!("planet {:.0}% {stage}", f * 100.0);
+        progress(f, stage);
+    })?;
     let planet = *lw.map.planet();
     let mut save_state = open_save(&spec, &lw)?;
 
@@ -571,6 +642,7 @@ fn run(
             let mut life = hearth_save::LifeSettings::from_content(&content.time);
             life.set_death(spec.death);
             life.knowledge_mode = spec.knowledge;
+            spec.shape.apply(&mut life);
             (life, 0)
         }
     };
@@ -604,7 +676,8 @@ fn run(
                 })
             });
         crate::eras::history(&lw, &content, &graph, e, seed, file.as_deref(), &|f| {
-            log::debug!("deep time {:.0}%", f * 100.0)
+            log::debug!("deep time {:.0}%", f * 100.0);
+            progress(f, "menu.making.deep_time");
         })
     });
     // The calendar starts in the morning of the starting season at the world's first spawn.
@@ -612,7 +685,14 @@ fn run(
         (Some(h), Some(e)) => crate::eras::spawn_among(h, e, at),
         _ => at,
     };
-    let (calendar, first_spawn) = calendar_at(&lw, life.starting_season, Some(&among));
+    // Born where the player chose on the globe, among the era's people there; else where the
+    // world finds a place.
+    let birthplace = save_state.as_ref().map_or(spec.birthplace, |s| {
+        s.meta.settings.birthplace.map(|[x, z]| DVec2::new(x, z))
+    });
+    let place = |at: DVec2| among(birthplace.unwrap_or(at));
+    let base = calendar_of(&content, &life);
+    let (calendar, first_spawn) = calendar_in(&lw, base, life.starting_season, Some(&place));
     let mut env = EnvSampler::new(lw.grid(), calendar);
 
     let saved =
@@ -987,7 +1067,13 @@ fn run(
             hearth_people::sim::HOUSEHOLD_M,
             RECENT_YEARS,
             now,
-            &|f| log::debug!("the recent past {:.0}%", f * 100.0),
+            &|f| {
+                log::debug!("the recent past {:.0}%", f * 100.0);
+                let _ = tx.send(ToClient::Progress {
+                    share: f,
+                    stage: "menu.making.recent".into(),
+                });
+            },
         );
         log::info!(
             "the recent past lived: {bands} bands, a century, in {:.1} s",

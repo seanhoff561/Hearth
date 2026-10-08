@@ -40,6 +40,9 @@ pub struct DrawList {
     pub vertices: Vec<UiVertex>,
     /// Screen pixels per interface pixel.
     pub scale: f32,
+    /// Where drawing shows (interface pixels: left, top, right, bottom); what falls outside is
+    /// cut away (a scrolled area's rows past its edges).
+    clip: Option<[f32; 4]>,
 }
 
 impl DrawList {
@@ -47,17 +50,58 @@ impl DrawList {
         Self {
             vertices: Vec::new(),
             scale: scale.max(1) as f32,
+            clip: None,
         }
     }
 
     pub fn clear(&mut self, scale: u32) {
         self.vertices.clear();
         self.scale = scale.max(1) as f32;
+        self.clip = None;
+    }
+
+    /// Sets where drawing shows (interface pixels: left, top, right, bottom; `None` the whole
+    /// frame), returning what it was.
+    pub fn set_clip(&mut self, clip: Option<[f32; 4]>) -> Option<[f32; 4]> {
+        std::mem::replace(&mut self.clip, clip)
+    }
+
+    /// Where drawing shows now.
+    pub fn clip(&self) -> Option<[f32; 4]> {
+        self.clip
     }
 
     fn quad(&mut self, x: f32, y: f32, w: f32, h: f32, uv: [f32; 4], color: Rgba) {
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let (mut x0, mut y0, mut x1, mut y1) = (x, y, x + w, y + h);
+        let mut uv = uv;
+        if let Some([cl, ct, cr, cb]) = self.clip {
+            if cr <= cl || cb <= ct || x1 <= cl || x0 >= cr || y1 <= ct || y0 >= cb {
+                return;
+            }
+            // Cut to the clip, the texture staying where it was.
+            let (du, dv) = ((uv[2] - uv[0]) / w, (uv[3] - uv[1]) / h);
+            if x0 < cl {
+                uv[0] += (cl - x0) * du;
+                x0 = cl;
+            }
+            if x1 > cr {
+                uv[2] -= (x1 - cr) * du;
+                x1 = cr;
+            }
+            if y0 < ct {
+                uv[1] += (ct - y0) * dv;
+                y0 = ct;
+            }
+            if y1 > cb {
+                uv[3] -= (y1 - cb) * dv;
+                y1 = cb;
+            }
+        }
         let s = self.scale;
-        let (x0, y0, x1, y1) = (x * s, y * s, (x + w) * s, (y + h) * s);
+        let (x0, y0, x1, y1) = (x0 * s, y0 * s, x1 * s, y1 * s);
         let v = |px: f32, py: f32, u: f32, t: f32| UiVertex {
             pos: [px, py],
             uv: [u, t],

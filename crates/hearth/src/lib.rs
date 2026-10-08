@@ -43,5 +43,6 @@ pub mod structure;
 pub mod water_env;
 pub mod wildfire;
 pub mod workshop;
+pub mod worlds;
 
 pub use app::{LaunchConfig, resolve_dirs, run};

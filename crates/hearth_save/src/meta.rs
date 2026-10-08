@@ -12,7 +12,8 @@ use crate::settings::WorldSettings;
 /// * 3 — settings grouped into `settings.{planet,life,era}`, `clock` replaces `time`.
 /// * 4 — v2's death rules retired (D167, H9): `life.death_rules` becomes `life.after_death` and
 ///   `life.born_again` (and Permadeath's scope).
-pub const FORMAT: u32 = 4;
+/// * 5 — the first life's birthplace chosen on the globe (`settings.birthplace`, Amendment P).
+pub const FORMAT: u32 = 5;
 
 /// Oldest format this build can migrate from.
 pub const OLDEST_SUPPORTED: u32 = 2;

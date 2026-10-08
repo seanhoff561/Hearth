@@ -88,6 +88,41 @@ pub struct App {
     conversation_probe: Option<String>,
     conversation_models: Vec<String>,
     probing: Option<std::sync::mpsc::Receiver<Probe>>,
+    /// A new world's planet being made, and then its globe while the birthplace is chosen
+    /// (Amendment P §4.3).
+    making: Option<Making>,
+    choosing: Option<Choosing>,
+}
+
+/// A new world's planet size, shape and birthplace (a saved world keeps its own).
+#[derive(Debug, Clone, Copy)]
+struct NewShape {
+    size: hearth_math::PlanetSize,
+    shape: crate::server::WorldShape,
+    birthplace: Option<glam::DVec2>,
+}
+
+impl Default for NewShape {
+    fn default() -> Self {
+        Self {
+            size: hearth_math::PlanetSize::Standard,
+            shape: Default::default(),
+            birthplace: None,
+        }
+    }
+}
+
+/// A new world's planet being made on its own thread: what it is doing and how far it has come.
+struct Making {
+    choice: crate::menus::NewWorldChoice,
+    progress: Arc<std::sync::Mutex<(f32, String)>>,
+    handle: std::thread::JoinHandle<anyhow::Result<Arc<hearth_worldgen::region::Terrain>>>,
+}
+
+/// A new world's globe, its birthplace being chosen.
+struct Choosing {
+    terrain: Arc<hearth_worldgen::region::Terrain>,
+    picker: crate::globe::GlobePicker,
 }
 
 /// What came of trying the conversation backend from the options screen.
@@ -152,6 +187,8 @@ impl App {
             conversation_probe: None,
             conversation_models: Vec::new(),
             probing: None,
+            making: None,
+            choosing: None,
         }
     }
 
@@ -612,22 +649,29 @@ impl App {
         death: hearth_save::Death,
         knowledge: hearth_save::KnowledgeMode,
         era: &str,
+        new: NewShape,
     ) {
         let Some(run) = &mut self.running else {
             return;
         };
         log::info!("playing world {folder:?}");
+        let mut spec = Client::default_world(
+            folder,
+            seed,
+            Some(self.dirs.cache()),
+            Some(self.dirs.saves()),
+            self.profiles.wish(),
+            death,
+            knowledge,
+            era,
+        );
+        spec.planet = new.size;
+        spec.shape = new.shape;
+        spec.birthplace = new.birthplace;
+        self.making = None;
+        self.choosing = None;
         let mut client = Client::new(
-            Client::default_world(
-                folder,
-                seed,
-                Some(self.dirs.cache()),
-                Some(self.dirs.saves()),
-                self.profiles.wish(),
-                death,
-                knowledge,
-                era,
-            ),
+            spec,
             &self.options,
             run.renderer.color_format(),
             self.content.content.as_deref(),
@@ -635,6 +679,106 @@ impl App {
         client.apply_options(&self.options);
         run.client = Some(client);
         run.menus.close_all();
+    }
+
+    /// Starts making a new world's planet (cached where the world will find it), its progress
+    /// shown until its globe opens to choose the birthplace.
+    fn make_planet(&mut self, choice: crate::menus::NewWorldChoice) {
+        let progress = Arc::new(std::sync::Mutex::new((0.0f32, String::new())));
+        let settings = choice.shape.planet(choice.seed, choice.size);
+        let cache = self
+            .dirs
+            .cache()
+            .join(crate::scene::planet_cache_name(&settings));
+        let told = progress.clone();
+        let handle = std::thread::Builder::new()
+            .name("new planet".into())
+            .spawn(move || {
+                use hearth_worldgen::planet::PlanetGrid;
+                let tell = |f: f32, stage: &str| {
+                    if let Ok(mut p) = told.lock() {
+                        *p = (f, stage.to_owned());
+                    }
+                };
+                let grid = match PlanetGrid::load(&cache) {
+                    Ok(g) if cache.exists() => g,
+                    _ => {
+                        let g = PlanetGrid::build(&settings, &tell);
+                        if let Some(d) = cache.parent() {
+                            std::fs::create_dir_all(d).ok();
+                        }
+                        if let Err(e) = g.save(&cache) {
+                            log::warn!("could not cache planet: {e}");
+                        }
+                        g
+                    }
+                };
+                Ok(Arc::new(hearth_worldgen::region::Terrain::new(Arc::new(
+                    grid,
+                ))))
+            });
+        match handle {
+            Ok(handle) => {
+                if let Some(run) = &mut self.running {
+                    run.menus.open(Screen::Making {
+                        stage: String::new(),
+                        share: 0.0,
+                    });
+                }
+                self.making = Some(Making {
+                    choice,
+                    progress,
+                    handle,
+                });
+            }
+            Err(e) => log::error!("could not start making the planet: {e}"),
+        }
+    }
+
+    /// Follows the planet being made; when it is done, opens its globe to choose the birthplace.
+    fn follow_making(&mut self) {
+        let Some(run) = &mut self.running else {
+            return;
+        };
+        let Some(m) = &self.making else {
+            return;
+        };
+        if !m.handle.is_finished() {
+            let (share, stage) = m.progress.lock().map(|p| p.clone()).unwrap_or_default();
+            if let Some(Screen::Making { stage: s, share: f }) = run.menus.top_mut() {
+                *s = if stage.is_empty() {
+                    String::new()
+                } else {
+                    format!("{stage}…")
+                };
+                *f = share;
+            }
+            return;
+        }
+        let Some(m) = self.making.take() else {
+            return;
+        };
+        match m.handle.join() {
+            Ok(Ok(terrain)) => {
+                let (x, z) = terrain.find_spawn(false);
+                let (lat, lon) = crate::globe::lat_lon(
+                    terrain.planet(),
+                    glam::DVec3::new(x as f64, 0.0, z as f64),
+                );
+                let mut picker = crate::globe::GlobePicker::default();
+                picker.open(&terrain, lat, lon);
+                if matches!(run.menus.top_mut(), Some(Screen::Making { .. })) {
+                    run.menus.back();
+                    run.menus.open(Screen::Birthplace {
+                        choice: m.choice,
+                        chosen: None,
+                    });
+                    self.choosing = Some(Choosing { terrain, picker });
+                }
+            }
+            Ok(Err(e)) => log::error!("the planet could not be made: {e}"),
+            Err(_) => log::error!("the planet's thread failed"),
+        }
     }
 
     /// Does what the menus asked.
@@ -647,7 +791,26 @@ impl App {
                     death,
                     knowledge,
                     era,
-                } => self.play(&folder, seed, death, knowledge, &era),
+                    size,
+                    shape,
+                    birthplace,
+                } => self.play(
+                    &folder,
+                    seed,
+                    death,
+                    knowledge,
+                    &era,
+                    NewShape {
+                        size,
+                        shape,
+                        birthplace,
+                    },
+                ),
+                MenuAction::CreateWorld(choice) => self.make_planet(choice),
+                MenuAction::CancelCreate => {
+                    self.making = None;
+                    self.choosing = None;
+                }
                 MenuAction::WatchWorld { folder } => {
                     self.play(
                         &folder,
@@ -655,6 +818,7 @@ impl App {
                         Default::default(),
                         Default::default(),
                         crate::eras::WILD_EARTH,
+                        NewShape::default(),
                     );
                     if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
                         c.watch_on_ready = true;
@@ -680,6 +844,11 @@ impl App {
                         c.speak(person, ask);
                     }
                     self.set_captured(true);
+                }
+                MenuAction::Save => {
+                    if let Some(c) = self.running.as_ref().and_then(|r| r.client.as_ref()) {
+                        c.save_now();
+                    }
                 }
                 MenuAction::TestConversation => self.probe_conversation(false),
                 MenuAction::ListModels => self.probe_conversation(true),
@@ -762,7 +931,18 @@ impl App {
                                 log::error!("could not archive the world: {e}");
                             }
                         }
-                        self.play(&spec.name, spec.seed, spec.death, spec.knowledge, &spec.era);
+                        self.play(
+                            &spec.name,
+                            spec.seed,
+                            spec.death,
+                            spec.knowledge,
+                            &spec.era,
+                            NewShape {
+                                size: spec.planet,
+                                shape: spec.shape,
+                                birthplace: spec.birthplace,
+                            },
+                        );
                     }
                 }
                 MenuAction::BornAgain { elsewhere, female } => {
@@ -896,6 +1076,7 @@ impl App {
 
     fn frame(&mut self) {
         self.probed();
+        self.follow_making();
         let sensitivity = self.options.controls.mouse_sensitivity;
         let invert = self.options.controls.invert_y;
         let pad_sensitivity = self.options.controls.controller_sensitivity;
@@ -1001,6 +1182,7 @@ impl App {
                 }
             }
             let client = &mut run.client;
+            let choosing = &mut self.choosing;
             let interface = &mut run.interface;
             let menus = &mut run.menus;
             let options = &mut self.options;
@@ -1017,6 +1199,20 @@ impl App {
                 match client.as_mut() {
                     Some(c) => c.render(ctx, enc, targets, dt as f32),
                     None => clear(enc, targets.color),
+                }
+                // A new world's globe, its birthplace being chosen, under the screen.
+                if client.is_none()
+                    && let Some(ch) = choosing.as_mut()
+                {
+                    let at = ch.picker.view;
+                    ch.picker.render(
+                        ctx,
+                        enc,
+                        targets.color,
+                        targets.size,
+                        format,
+                        (at.lat, at.lon),
+                    );
                 }
                 let gui = options.video.gui_scale;
                 let backdrop = options.accessibility.text_background_opacity;
@@ -1042,6 +1238,11 @@ impl App {
                             .map_or_else(Vec::new, |w| w.chronicle.clone()),
                         conversation_probe: conversation_probe.clone(),
                         conversation_models: conversation_models.clone(),
+                        time_words: client.as_ref().and_then(|c| c.time_words(ui.lang)),
+                        globe: choosing.as_mut().map(|ch| crate::menus::GlobeContext {
+                            picker: &mut ch.picker,
+                            terrain: ch.terrain.clone(),
+                        }),
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
@@ -1162,6 +1363,7 @@ impl ApplicationHandler for App {
                 hearth_save::Death::default(),
                 hearth_save::KnowledgeMode::default(),
                 crate::eras::WILD_EARTH,
+                NewShape::default(),
             );
         }
         self.apply_display_mode();

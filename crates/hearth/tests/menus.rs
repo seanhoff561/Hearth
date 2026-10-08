@@ -78,6 +78,8 @@ fn render(
                 chronicle: Vec::new(),
                 conversation_probe: None,
                 conversation_models: Vec::new(),
+                globe: None,
+                time_words: Some("Late afternoon, the third day of autumn".into()),
             };
             actions = menus.ui(ui, &mut cx);
         },
@@ -144,18 +146,11 @@ fn the_screens_draw_and_answer() {
             Screen::Worlds {
                 list: Vec::new(),
                 selected: None,
+                ask: None,
+                note: None,
             },
         ),
-        (
-            "new_world",
-            Screen::NewWorld {
-                name: "Hearthstead".into(),
-                seed: String::new(),
-                death: hearth_save::Death::default(),
-                knowledge: 0,
-                era: 0,
-            },
-        ),
+        ("new_world", Screen::new_world()),
         (
             "births",
             Screen::Births {
@@ -179,7 +174,7 @@ fn the_screens_draw_and_answer() {
             },
         ),
         ("options", Screen::Options),
-        ("video", Screen::Video),
+        ("video", Screen::Video { tab: 0 }),
         ("sound", Screen::Sound),
         ("born", born(12.0, Some(true), "Ash")),
         ("born_north", born(58.0, Some(false), "")),

@@ -2770,3 +2770,17 @@ grid lost and regained its light as the compressed day turned the sky across the
 star is now summed over the 27 cells about the pixel at its own crisp width (widened only where a
 pixel is coarser than a star: a wider star looked blurred to the owner), and scintillates a few
 times a second, barely overhead, more low and in wind.
+
+## D226 — The planet is made before the world opens, so the birthplace is chosen first
+Create World (Amendment P §4.3) asks a name, a seed, the player's name and the era, the world's
+shape under More options (planet size, height of the land, the day's and the season's length,
+the starting season; kept in the world's settings). Its Create makes the planet on a thread of
+the app, its stages shown, and caches it where the server finds it (`planet_cache_name`, which
+now names a vertical scale other than the standard); the planet's globe then opens to choose
+where to be born, and only then is the world opened, with the birthplace in its spec. The world
+keeps the birthplace (`settings.birthplace`, save format 5; worlds before it found their own
+place): its first life is born on land near it, among the era's people there, and its calendar
+starts by it, as it did by the place the world found. Worlds deleted go to `saves/trash/` with the
+time of their deletion in the folder's name and are restored from there or emptied; backups are
+dated copies in `saves/backups/`. Pages lay their rows in a scrolled area that fits any window,
+the footer held at the bottom, and the layout test holds every screen to that.

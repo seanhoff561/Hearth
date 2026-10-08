@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use hearth_character::{Appearance, Loincloth};
+use hearth_character::Appearance;
 use hearth_core::options::{DisplayMode, GraphicsPreset, Options, Quality};
 use hearth_input::{ActionId, CaptureResult, InputKey, KeyBindings, RebindCapture};
 use hearth_render::figure::PreviewLight;
@@ -15,55 +15,53 @@ use hearth_ui::{Column, Rect, Ui};
 
 use crate::profiles::Born;
 
-/// A world on disk.
-#[derive(Debug, Clone)]
-pub struct WorldEntry {
-    /// Its folder in the saves (the name the server opens).
-    pub folder: String,
-    pub name: String,
-    pub last_played_unix: u64,
-    /// Ended with its character's death (permadeath).
-    pub ended: bool,
-}
-
-/// The worlds in a saves folder, most recently played first.
-pub fn list_worlds(saves: &Path) -> Vec<WorldEntry> {
-    let mut out: Vec<WorldEntry> = std::fs::read_dir(saves)
-        .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .filter(|e| e.path().join("level.json").exists())
-                .filter_map(|e| {
-                    let folder = e.file_name().to_str()?.to_owned();
-                    let (_, meta, _) = hearth_save::WorldDir::open(&e.path()).ok()?;
-                    Some(WorldEntry {
-                        folder,
-                        name: meta.name,
-                        last_played_unix: meta.last_played_unix,
-                        ended: meta.ended,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    out.sort_by_key(|w| std::cmp::Reverse(w.last_played_unix));
-    out
+/// A question the Worlds screen is asking about the world chosen.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WorldsAsk {
+    /// Its new name, being typed.
+    Rename(String),
+    /// Whether to delete it (to the trash).
+    Delete,
 }
 
 pub enum Screen {
     Title,
+    /// The worlds on disk (Amendment P §4.2): the one chosen, a question asked about it, and
+    /// what came of the last thing done.
     Worlds {
-        list: Vec<WorldEntry>,
+        list: Vec<crate::worlds::WorldInfo>,
+        selected: Option<usize>,
+        ask: Option<WorldsAsk>,
+        note: Option<String>,
+    },
+    /// The worlds deleted in the last thirty days.
+    Trash {
+        list: Vec<crate::worlds::Trashed>,
         selected: Option<usize>,
     },
+    /// Create World (Amendment P §4.3): its name and seed, the era, and — shown on asking — the
+    /// world's shape.
     NewWorld {
         name: String,
         seed: String,
-        /// What death means there: the preset's settings, each changeable (Addendum B §2).
-        death: hearth_save::Death,
-        /// How knowledge is gained (Discovery, Guided, Open).
-        knowledge: usize,
         /// Which of the eras there are to play (V2.1 §15.3).
         era: usize,
+        /// Whether More options are shown, the planet's size among the presets, and the rest of
+        /// the world's shape.
+        more: bool,
+        size: usize,
+        shape: crate::server::WorldShape,
+    },
+    /// The planet being made: what is being done, and how far it has come (0–1).
+    Making {
+        stage: String,
+        share: f32,
+    },
+    /// Where to be born, chosen on the globe (Amendment P §4.3): the world asked for, and the
+    /// place chosen (latitude, longitude in radians).
+    Birthplace {
+        choice: NewWorldChoice,
+        chosen: Option<(f32, f32)>,
     },
     /// The households the player may be born into (H8): one chosen, and a daughter, a son or
     /// as chance has it.
@@ -88,7 +86,10 @@ pub enum Screen {
     },
     Pause,
     Options,
-    Video,
+    /// The video settings, by the group shown.
+    Video {
+        tab: usize,
+    },
     Sound,
     Controls {
         capturing: Option<ActionId>,
@@ -120,6 +121,53 @@ pub enum Screen {
         sway: f32,
         light: usize,
     },
+}
+
+/// A new world as Create World asked for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewWorldChoice {
+    pub folder: String,
+    pub seed: u64,
+    /// Its era's id.
+    pub era: String,
+    pub size: hearth_math::PlanetSize,
+    pub shape: crate::server::WorldShape,
+}
+
+/// The planet sizes Create World offers, the standard first among them by its place.
+const SIZES: [(hearth_math::PlanetSize, &str); 5] = [
+    (hearth_math::PlanetSize::Small, "menu.new_world.size.small"),
+    (
+        hearth_math::PlanetSize::Standard,
+        "menu.new_world.size.standard",
+    ),
+    (hearth_math::PlanetSize::Large, "menu.new_world.size.large"),
+    (hearth_math::PlanetSize::Huge, "menu.new_world.size.huge"),
+    (hearth_math::PlanetSize::Vast, "menu.new_world.size.vast"),
+];
+
+impl Screen {
+    /// A fresh Create World.
+    pub fn new_world() -> Self {
+        Screen::NewWorld {
+            name: String::new(),
+            seed: String::new(),
+            era: 0,
+            more: false,
+            size: 1,
+            shape: Default::default(),
+        }
+    }
+
+    /// The Worlds screen, with the worlds in `saves`.
+    pub fn worlds(saves: &Path) -> Self {
+        Screen::Worlds {
+            list: crate::worlds::list(saves),
+            selected: None,
+            ask: None,
+            note: None,
+        }
+    }
 }
 
 /// The people a screen shows, side by side, for the app to draw.
@@ -164,7 +212,16 @@ pub enum MenuAction {
         knowledge: hearth_save::KnowledgeMode,
         /// A new world's era (its id).
         era: String,
+        /// A new world's planet size and shape.
+        size: hearth_math::PlanetSize,
+        shape: crate::server::WorldShape,
+        /// Where a new world's first life is born (world x, z), chosen on the globe.
+        birthplace: Option<glam::DVec2>,
     },
+    /// Make a new world's planet, then choose where to be born on it.
+    CreateWorld(NewWorldChoice),
+    /// Making the planet given up: back to Create World.
+    CancelCreate,
     /// Born into the household chosen of those offered (H8).
     BeBorn {
         choice: usize,
@@ -227,6 +284,8 @@ pub enum MenuAction {
         person: u64,
         ask: hearth_people::player::Ask,
     },
+    /// Save the world now (it goes on).
+    Save,
     /// Try the conversation backend with a harmless request, or ask it for its models.
     TestConversation,
     ListModels,
@@ -256,6 +315,16 @@ pub struct MenuContext<'a> {
     /// What came of trying the conversation backend, and the models its server lists.
     pub conversation_probe: Option<String>,
     pub conversation_models: Vec<String>,
+    /// The globe of a new world's planet, while its birthplace is chosen.
+    pub globe: Option<GlobeContext<'a>>,
+    /// The time of day and the year in words, in a world.
+    pub time_words: Option<String>,
+}
+
+/// The globe a birthplace is chosen on, and the planet it shows.
+pub struct GlobeContext<'a> {
+    pub picker: &'a mut crate::globe::GlobePicker,
+    pub terrain: std::sync::Arc<hearth_worldgen::region::Terrain>,
 }
 
 /// What the death screen says.
@@ -270,46 +339,6 @@ pub struct DeathInfo {
     pub others: Vec<hearth_protocol::Other>,
 }
 
-const KNOWLEDGE_MODES: [hearth_save::KnowledgeMode; 3] = [
-    hearth_save::KnowledgeMode::Discovery,
-    hearth_save::KnowledgeMode::Guided,
-    hearth_save::KnowledgeMode::Open,
-];
-
-/// Whom a dead player may live on as, as the Create World screen offers it.
-const INHABIT_SCOPES: [(&str, hearth_save::InhabitScope); 4] = [
-    ("inhabit.anyone", hearth_save::InhabitScope::Anyone),
-    (
-        "inhabit.kin_group_region",
-        hearth_save::InhabitScope::KinGroupRegion,
-    ),
-    ("inhabit.kin_only", hearth_save::InhabitScope::KinOnly),
-    ("inhabit.none", hearth_save::InhabitScope::None),
-];
-
-/// What is kept of what was known after death, as the Create World screen offers it.
-const AFTER_DEATH: [(&str, hearth_save::AfterDeath); 3] = [
-    (
-        "after_death.theirs_only",
-        hearth_save::AfterDeath::TheirsOnly,
-    ),
-    ("after_death.head_start", hearth_save::AfterDeath::HeadStart),
-    (
-        "after_death.keep_everything",
-        hearth_save::AfterDeath::KeepEverything,
-    ),
-];
-
-/// The death presets' names (Addendum B §2.5; v2's rules retired into them, D167).
-fn preset_key(p: hearth_save::DeathPreset) -> &'static str {
-    match p {
-        hearth_save::DeathPreset::Authentic => "rules.authentic",
-        hearth_save::DeathPreset::Legacy => "rules.legacy",
-        hearth_save::DeathPreset::Hardy => "rules.hardy",
-        hearth_save::DeathPreset::Permadeath => "rules.permadeath",
-    }
-}
-
 /// The open screens, the top one shown.
 pub struct Menus {
     stack: Vec<Screen>,
@@ -321,6 +350,44 @@ pub struct Menus {
 
 const W: f32 = 220.0;
 const ROW: f32 = 18.0;
+/// Where a page's rows begin, under its title.
+const PAGE_TOP: f32 = 28.0;
+
+/// A page of rows (Amendment P §4.1): its title, its rows in a column `wide` across from `top`
+/// that scrolls when the window is too short for them, and its footer (Done, Back) at the
+/// window's bottom, always in the same place. Returns the footer's row.
+fn page(
+    ui: &mut Ui<'_>,
+    title: &str,
+    id: &str,
+    wide: f32,
+    top: f32,
+    gap: f32,
+    body: impl FnOnce(&mut Ui<'_>, &mut Column),
+) -> Rect {
+    page_footed(ui, title, id, wide, top, gap, 1, body)
+}
+
+/// A page whose footer has `rows` rows (the first returned; the next each `ROW + 4` below).
+#[allow(clippy::too_many_arguments)]
+fn page_footed(
+    ui: &mut Ui<'_>,
+    title: &str,
+    id: &str,
+    wide: f32,
+    top: f32,
+    gap: f32,
+    rows: usize,
+    body: impl FnOnce(&mut Ui<'_>, &mut Column),
+) -> Rect {
+    let size = ui.size;
+    ui.title(12.0, title);
+    let x = ((size.0 - wide) / 2.0).round();
+    let room = (size.1 - top - rows as f32 * (ROW + 4.0) - 12.0).max(ROW);
+    let area = Rect::new(x, top, wide, room);
+    ui.scroll(area, id, gap, body);
+    Rect::new(x, (area.y + area.h + 8.0).round(), wide, ROW)
+}
 
 impl Menus {
     pub fn title() -> Self {
@@ -342,6 +409,11 @@ impl Menus {
     /// The people a screen shows this frame, if one does.
     pub fn preview(&self) -> Option<&Preview> {
         self.preview.as_ref()
+    }
+
+    /// The screen shown, to update.
+    pub fn top_mut(&mut self) -> Option<&mut Screen> {
+        self.stack.last_mut()
     }
 
     pub fn is_open(&self) -> bool {
@@ -420,8 +492,9 @@ impl Menus {
         let mut push: Option<Screen> = None;
         let mut pop = false;
         let size = ui.size;
-        // A veil over the world behind the menus.
-        if cx.in_game {
+        // A veil over the world behind the menus (the globe a birthplace is chosen on shows).
+        if matches!(top, Screen::Birthplace { .. }) {
+        } else if cx.in_game {
             ui.draw
                 .rect(0.0, 0.0, size.0, size.1, theme::PANEL.with_alpha(120));
         } else {
@@ -445,10 +518,7 @@ impl Menus {
                 ui.title((size.1 * 0.2 + 42.0).round(), &sub);
                 let mut c = Column::new(x, (size.1 * 0.48).round(), W);
                 if ui.button(c.row(ROW), &ui.t("menu.title.play")) {
-                    push = Some(Screen::Worlds {
-                        list: list_worlds(&cx.saves),
-                        selected: None,
-                    });
+                    push = Some(Screen::worlds(&cx.saves));
                 }
                 if ui.button(c.row(ROW), &ui.t("menu.options")) {
                     push = Some(Screen::Options);
@@ -457,25 +527,65 @@ impl Menus {
                     out.push(MenuAction::QuitGame);
                 }
             }
-            Screen::Worlds { list, selected } => {
-                ui.title(16.0, &ui.t("menu.worlds.title"));
-                let list_r = Rect::new(x - 40.0, 34.0, W + 80.0, (size.1 - 100.0).max(60.0));
+            Screen::Worlds {
+                list,
+                selected,
+                ask,
+                note,
+            } => {
+                ui.title(12.0, &ui.t("menu.worlds.title"));
+                let wide = (W + 120.0).min(size.0 - 16.0);
+                let xw = ((size.0 - wide) / 2.0).round();
+                // Three rows of buttons below the list, and a line for what came of the last.
+                let foot_h = 3.0 * (ROW + 4.0) + 12.0;
+                let list_r = Rect::new(
+                    xw,
+                    PAGE_TOP,
+                    wide,
+                    (size.1 - PAGE_TOP - foot_h - 8.0).max(30.0),
+                );
                 let entries = list.clone();
+                let eras = cx.eras.clone();
+                let played_label = ui.t("menu.worlds.played");
                 let clicked = ui.list(
                     list_r,
                     "worlds",
                     entries.len(),
-                    20.0,
+                    22.0,
                     *selected,
                     |ui, r, i, _| {
                         let w = &entries[i];
+                        let era = eras
+                            .iter()
+                            .find(|e| e.0 == w.era)
+                            .map_or_else(|| w.era.clone(), |e| e.1.clone());
                         let name = if w.ended {
                             format!("{} {}", w.name, ui.t("menu.worlds.ended"))
                         } else {
                             w.name.clone()
                         };
+                        let (y, m, d, _, _) = crate::worlds::civil(w.last_played_unix);
+                        let mut second = format!(
+                            "{era} · {played_label} {} · {y:04}-{m:02}-{d:02}",
+                            crate::worlds::played_words(w.played_s)
+                        );
+                        if let Some((who, age)) = &w.character {
+                            let who = if who.is_empty() {
+                                ui.t("menu.born.you")
+                            } else {
+                                who.clone()
+                            };
+                            second = format!("{who}, {:.0} · {second}", age.floor());
+                        }
+                        let fit = |ui: &Ui<'_>, t: String| {
+                            let mut t = t;
+                            while ui.font.width(&t) as f32 > r.w - 12.0 && t.pop().is_some() {}
+                            t
+                        };
+                        let name = fit(ui, name);
+                        let second = fit(ui, second);
                         ui.label(r.x + 4.0, r.y + 2.0, &name, theme::TEXT);
-                        ui.label(r.x + 4.0, r.y + 11.0, &w.folder, theme::DIM);
+                        ui.label(r.x + 4.0, r.y + 12.0, &second, theme::DIM);
                     },
                 );
                 if entries.is_empty() {
@@ -483,7 +593,7 @@ impl Menus {
                     ui.text_centred(&list_r, &hint, theme::DIM);
                 }
                 if let Some(i) = clicked {
-                    if *selected == Some(i) && !entries[i].ended {
+                    if *selected == Some(i) && !entries[i].ended && ask.is_none() {
                         // A second click plays it.
                         out.push(MenuAction::Play {
                             folder: entries[i].folder.clone(),
@@ -491,200 +601,411 @@ impl Menus {
                             death: Default::default(),
                             knowledge: Default::default(),
                             era: crate::eras::WILD_EARTH.to_owned(),
+                            size: hearth_math::PlanetSize::Standard,
+                            shape: Default::default(),
+                            birthplace: None,
                         });
                     }
                     *selected = Some(i);
+                    *ask = None;
                 }
-                let mut c = Column::new(x - 40.0, size.1 - 82.0, W + 80.0);
-                // Any world may be watched (the Observer, V2.1 §15.4), an ended one too.
-                if ui.button_enabled(c.row(ROW), &ui.t("menu.worlds.watch"), selected.is_some())
-                    && let Some(i) = *selected
-                {
-                    out.push(MenuAction::WatchWorld {
-                        folder: entries[i].folder.clone(),
-                    });
+                let chosen = selected.and_then(|i| entries.get(i)).cloned();
+                let mut c = Column::new(xw, list_r.y + list_r.h + 6.0, wide);
+                let thirds = |r: Rect| {
+                    let w = ((r.w - 8.0) / 3.0).floor();
+                    let (a, rest) = r.split_left(w, 4.0);
+                    let (b, d) = rest.split_left(w, 4.0);
+                    (a, b, d)
+                };
+                let saves = cx.saves.clone();
+                let mut reload = false;
+                match (ask.clone(), &chosen) {
+                    (Some(WorldsAsk::Rename(mut name)), Some(w)) => {
+                        ui.text_field(c.row(ROW), &ui.t("menu.worlds.new_name"), &mut name, 32);
+                        let (a, b, _) = thirds(c.row(ROW));
+                        if ui.button_enabled(
+                            a,
+                            &ui.t("menu.worlds.rename"),
+                            !name.trim().is_empty(),
+                        ) {
+                            *note = crate::worlds::rename(&saves, &w.folder, &name)
+                                .err()
+                                .map(|e| e.to_string());
+                            *ask = None;
+                            reload = true;
+                        } else if ui.button(b, &ui.t("menu.cancel")) {
+                            *ask = None;
+                        } else {
+                            *ask = Some(WorldsAsk::Rename(name));
+                        }
+                    }
+                    (Some(WorldsAsk::Delete), Some(w)) => {
+                        let q = ui
+                            .lang
+                            .format("menu.worlds.delete_ask", &[("name", &w.name)]);
+                        for l in ui.font.wrap(&q, wide as u32).into_iter().take(2) {
+                            ui.label(xw, c.y, &l, theme::WARN);
+                            c.space(hearth_ui::font::LINE as f32);
+                        }
+                        c.space(2.0);
+                        let (a, b, _) = thirds(c.row(ROW));
+                        if ui.button(a, &ui.t("menu.worlds.delete")) {
+                            *note = crate::worlds::delete(
+                                &saves,
+                                &w.folder,
+                                hearth_save::meta::unix_now(),
+                            )
+                            .err()
+                            .map(|e| e.to_string());
+                            *ask = None;
+                            *selected = None;
+                            reload = true;
+                        }
+                        if ui.button(b, &ui.t("menu.cancel")) {
+                            *ask = None;
+                        }
+                    }
+                    _ => {
+                        *ask = None;
+                        let some = chosen.is_some();
+                        let playable = chosen.as_ref().is_some_and(|w| !w.ended);
+                        let (a, b, d) = thirds(c.row(ROW));
+                        if ui.button_enabled(a, &ui.t("menu.worlds.play"), playable)
+                            && let Some(w) = &chosen
+                        {
+                            out.push(MenuAction::Play {
+                                folder: w.folder.clone(),
+                                seed: 0,
+                                death: Default::default(),
+                                knowledge: Default::default(),
+                                era: crate::eras::WILD_EARTH.to_owned(),
+                                size: hearth_math::PlanetSize::Standard,
+                                shape: Default::default(),
+                                birthplace: None,
+                            });
+                        }
+                        if ui.button(b, &ui.t("menu.worlds.new")) {
+                            push = Some(Screen::new_world());
+                        }
+                        if ui.button(d, &ui.t("menu.back")) {
+                            pop = true;
+                        }
+                        let (a, b, d) = thirds(c.row(ROW));
+                        if ui.button_enabled(a, &ui.t("menu.worlds.rename"), some)
+                            && let Some(w) = &chosen
+                        {
+                            *ask = Some(WorldsAsk::Rename(w.name.clone()));
+                        }
+                        if ui.button_enabled(b, &ui.t("menu.worlds.duplicate"), some)
+                            && let Some(w) = &chosen
+                        {
+                            *note = Some(match crate::worlds::duplicate(&saves, &w.folder) {
+                                Ok(f) => {
+                                    ui.lang.format("menu.worlds.duplicated", &[("folder", &f)])
+                                }
+                                Err(e) => e.to_string(),
+                            });
+                            reload = true;
+                        }
+                        if ui.button_enabled(d, &ui.t("menu.worlds.back_up"), some)
+                            && let Some(w) = &chosen
+                        {
+                            *note = Some(
+                                match crate::worlds::back_up(
+                                    &saves,
+                                    &w.folder,
+                                    hearth_save::meta::unix_now(),
+                                ) {
+                                    Ok(p) => ui.lang.format(
+                                        "menu.worlds.backed_up",
+                                        &[(
+                                            "folder",
+                                            &p.file_name()
+                                                .map(|f| f.to_string_lossy().into_owned())
+                                                .unwrap_or_default(),
+                                        )],
+                                    ),
+                                    Err(e) => e.to_string(),
+                                },
+                            );
+                        }
+                        let (a, b, d) = thirds(c.row(ROW));
+                        if ui.button_enabled(a, &ui.t("menu.worlds.delete"), some) {
+                            *ask = Some(WorldsAsk::Delete);
+                        }
+                        if ui.button_enabled(b, &ui.t("menu.worlds.open_folder"), some)
+                            && let Some(w) = &chosen
+                        {
+                            *note = crate::worlds::open_folder(&saves.join(&w.folder))
+                                .err()
+                                .map(|e| e.to_string());
+                        }
+                        if ui.button(d, &ui.t("menu.worlds.trash")) {
+                            push = Some(Screen::Trash {
+                                list: crate::worlds::trashed(&saves),
+                                selected: None,
+                            });
+                        }
+                    }
                 }
-                c.space(4.0);
+                if let Some(n) = note.as_ref() {
+                    let n = n.clone();
+                    ui.label(xw, c.y + 2.0, &n, theme::DIM);
+                }
+                if reload {
+                    *list = crate::worlds::list(&saves);
+                    if selected.is_some_and(|i| i >= list.len()) {
+                        *selected = None;
+                    }
+                }
+            }
+            Screen::Trash { list, selected } => {
+                ui.title(12.0, &ui.t("menu.trash.title"));
+                let wide = (W + 120.0).min(size.0 - 16.0);
+                let xw = ((size.0 - wide) / 2.0).round();
+                let foot_h = 2.0 * (ROW + 4.0) + 8.0;
+                let list_r = Rect::new(
+                    xw,
+                    PAGE_TOP,
+                    wide,
+                    (size.1 - PAGE_TOP - foot_h - 8.0).max(30.0),
+                );
+                let entries = list.clone();
+                let deleted = ui.t("menu.trash.deleted");
+                if let Some(i) = ui.list(
+                    list_r,
+                    "trash",
+                    entries.len(),
+                    22.0,
+                    *selected,
+                    |ui, r, i, _| {
+                        let t = &entries[i];
+                        let (y, m, d, _, _) = crate::worlds::civil(t.deleted_unix);
+                        ui.label(r.x + 4.0, r.y + 2.0, &t.name, theme::TEXT);
+                        ui.label(
+                            r.x + 4.0,
+                            r.y + 12.0,
+                            &format!("{deleted} {y:04}-{m:02}-{d:02}"),
+                            theme::DIM,
+                        );
+                    },
+                ) {
+                    *selected = Some(i);
+                }
+                if entries.is_empty() {
+                    let hint = ui.t("menu.trash.none");
+                    ui.text_centred(&list_r, &hint, theme::DIM);
+                }
+                let mut c = Column::new(xw, list_r.y + list_r.h + 6.0, wide);
                 let row = c.row(ROW);
-                let (a, rest) = row.split_left((W + 80.0 - 8.0) / 3.0, 4.0);
-                let (b, d) = rest.split_left((W + 80.0 - 8.0) / 3.0, 4.0);
-                let playable = selected.is_some_and(|i| !entries[i].ended);
-                if ui.button_enabled(a, &ui.t("menu.worlds.play"), playable)
-                    && let Some(i) = *selected
+                let w3 = ((wide - 8.0) / 3.0).floor();
+                let (a, rest) = row.split_left(w3, 4.0);
+                let (b, d) = rest.split_left(w3, 4.0);
+                let saves = cx.saves.clone();
+                if ui.button_enabled(a, &ui.t("menu.trash.restore"), selected.is_some())
+                    && let Some(t) = selected.and_then(|i| entries.get(i))
                 {
-                    out.push(MenuAction::Play {
-                        folder: entries[i].folder.clone(),
-                        seed: 0,
-                        death: Default::default(),
-                        knowledge: Default::default(),
-                        era: crate::eras::WILD_EARTH.to_owned(),
-                    });
+                    let _ = crate::worlds::restore(&saves, &t.entry);
+                    *list = crate::worlds::trashed(&saves);
+                    *selected = None;
                 }
-                if ui.button(b, &ui.t("menu.worlds.new")) {
-                    push = Some(Screen::NewWorld {
-                        name: String::new(),
-                        seed: String::new(),
-                        death: hearth_save::Death::default(),
-                        knowledge: 0,
-                        era: 0,
-                    });
+                if ui.button_enabled(b, &ui.t("menu.trash.empty"), !entries.is_empty()) {
+                    crate::worlds::empty_trash(&saves, hearth_save::meta::unix_now(), true);
+                    list.clear();
+                    *selected = None;
                 }
                 if ui.button(d, &ui.t("menu.back")) {
                     pop = true;
+                    // The worlds below, as they are now.
+                    if let Some(Screen::Worlds { list, .. }) = self.stack.iter_mut().rev().nth(1) {
+                        *list = crate::worlds::list(&saves);
+                    }
                 }
             }
             Screen::NewWorld {
                 name,
                 seed,
-                death,
-                knowledge,
                 era,
+                more,
+                size: size_i,
+                shape,
             } => {
-                ui.title(30.0, &ui.t("menu.new_world.title"));
-                let mut c = Column::new(x, 60.0, W);
-                ui.label(x, c.y, &ui.t("menu.new_world.name"), theme::DIM);
-                c.space(10.0);
-                ui.text_field(c.row(ROW), &ui.t("menu.new_world.name_hint"), name, 32);
-                c.space(6.0);
-                ui.label(x, c.y, &ui.t("menu.new_world.seed"), theme::DIM);
-                c.space(10.0);
-                ui.text_field(c.row(ROW), &ui.t("menu.new_world.seed_hint"), seed, 20);
-                c.space(6.0);
-                // Who is born there (V2.1 Addendum A): a name, a daughter or a son or as chance
-                // has it, and the loincloth first worn; the looks come from the parents.
+                let title = ui.t("menu.new_world.title");
+                let wide = W + 60.0;
+                let folder = folder_name(name);
+                let exists = cx.saves.join(&folder).join("level.json").exists();
+                let eras = cx.eras.clone();
                 let wish = &mut *cx.profiles;
                 let before = wish.clone();
-                ui.label(x, c.y, &ui.t("menu.new_world.you"), theme::DIM);
-                c.space(10.0);
-                ui.text_field(
-                    c.row(ROW),
-                    &ui.t("menu.new_world.your_name"),
-                    &mut wish.name,
-                    32,
-                );
-                born_choice(ui, c.row(ROW), &mut wish.born);
-                let cloths = [Loincloth::Hide, Loincloth::PlantFibre];
-                let cloth_names: Vec<String> =
-                    ["character.loincloth.hide", "character.loincloth.fibre"]
-                        .iter()
-                        .map(|k| ui.t(k))
-                        .collect();
-                let mut i = cloths
-                    .iter()
-                    .position(|x| *x == wish.loincloth)
-                    .unwrap_or(0);
-                if ui.cycle(
-                    c.row(ROW),
-                    &ui.t("menu.character.loincloth"),
-                    &cloth_names,
-                    &mut i,
-                ) {
-                    wish.loincloth = cloths[i];
-                }
+                let footer =
+                    page_footed(ui, &title, "new_world", wide, PAGE_TOP, 4.0, 1, |ui, c| {
+                        let x = c.x;
+                        let line = hearth_ui::font::LINE as f32;
+                        ui.label(x, c.y, &ui.t("menu.new_world.name"), theme::DIM);
+                        c.space(line);
+                        ui.text_field(c.row(ROW), &ui.t("menu.new_world.name_hint"), name, 32);
+                        if exists {
+                            ui.label(x, c.y, &ui.t("menu.new_world.exists"), theme::WARN);
+                            c.space(line);
+                        }
+                        ui.label(x, c.y, &ui.t("menu.new_world.seed"), theme::DIM);
+                        c.space(line);
+                        ui.text_field(c.row(ROW), &ui.t("menu.new_world.seed_hint"), seed, 20);
+                        // The one born there: a name (or none); a daughter or a son is asked at the
+                        // birth, the looks come from the parents (V2.1 Addendum A).
+                        ui.text_field(
+                            c.row(ROW),
+                            &ui.t("menu.new_world.your_name"),
+                            &mut wish.name,
+                            32,
+                        );
+                        // When the world is: its era, and how its people live then (V2.1 §15.3).
+                        if !eras.is_empty() {
+                            let names: Vec<String> = eras.iter().map(|e| e.1.clone()).collect();
+                            *era = (*era).min(names.len() - 1);
+                            ui.cycle(c.row(ROW), &ui.t("menu.new_world.era"), &names, era);
+                            for l in ui.font.wrap(&eras[*era].2, c.w as u32) {
+                                ui.label(x, c.y, &l, theme::DIM);
+                                c.space(line);
+                            }
+                            c.space(2.0);
+                        }
+                        // The world's shape, asked only when wanted.
+                        let label = if *more {
+                            ui.t("menu.new_world.fewer")
+                        } else {
+                            ui.t("menu.new_world.more")
+                        };
+                        if ui.button(c.row(ROW), &label) {
+                            *more = !*more;
+                        }
+                        if *more {
+                            let names: Vec<String> = SIZES.iter().map(|(_, k)| ui.t(k)).collect();
+                            ui.cycle(c.row(ROW), &ui.t("menu.new_world.size"), &names, size_i);
+                            let scales = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+                            let snames: Vec<String> = scales
+                                .iter()
+                                .map(|v| format!("{:.0}%", v * 100.0))
+                                .collect();
+                            let mut si = scales
+                                .iter()
+                                .position(|v| {
+                                    (v - shape.vertical_scale.unwrap_or(1.0)).abs() < 1e-6
+                                })
+                                .unwrap_or(2);
+                            if ui.cycle(
+                                c.row(ROW),
+                                &ui.t("menu.new_world.vertical"),
+                                &snames,
+                                &mut si,
+                            ) {
+                                shape.vertical_scale = Some(scales[si]);
+                            }
+                            let days = [24u32, 36, 48, 72, 96, 120];
+                            let dnames: Vec<String> = days
+                                .iter()
+                                .map(|d| {
+                                    ui.lang
+                                        .format("menu.new_world.minutes", &[("n", &d.to_string())])
+                                })
+                                .collect();
+                            let mut di = days
+                                .iter()
+                                .position(|d| Some(*d) == shape.day_length_min)
+                                .unwrap_or(2);
+                            if ui.cycle(
+                                c.row(ROW),
+                                &ui.t("menu.new_world.day_length"),
+                                &dnames,
+                                &mut di,
+                            ) {
+                                shape.day_length_min = Some(days[di]);
+                            }
+                            let seasons = [4u32, 6, 8, 12, 16, 30];
+                            let pnames: Vec<String> =
+                                seasons.iter().map(|d| d.to_string()).collect();
+                            let mut pi = seasons
+                                .iter()
+                                .position(|d| Some(*d) == shape.days_per_season)
+                                .unwrap_or(2);
+                            if ui.cycle(
+                                c.row(ROW),
+                                &ui.t("menu.new_world.season_days"),
+                                &pnames,
+                                &mut pi,
+                            ) {
+                                shape.days_per_season = Some(seasons[pi]);
+                            }
+                            use hearth_content::schema::Season;
+                            let all = [
+                                Season::Spring,
+                                Season::Summer,
+                                Season::Autumn,
+                                Season::Winter,
+                            ];
+                            let names: Vec<String> = ["spring", "summer", "autumn", "winter"]
+                                .iter()
+                                .map(|k| ui.t(&format!("season.{k}")))
+                                .collect();
+                            let mut wi = all
+                                .iter()
+                                .position(|s| Some(*s) == shape.starting_season)
+                                .unwrap_or(0);
+                            if ui.cycle(c.row(ROW), &ui.t("menu.new_world.season"), &names, &mut wi)
+                            {
+                                shape.starting_season = Some(all[wi]);
+                            }
+                        }
+                    });
                 if *wish != before {
                     out.push(MenuAction::ProfilesChanged);
                 }
-                ui.label(x, c.y, &ui.t("menu.new_world.looks"), theme::DIM);
-                c.space(10.0);
-                // What death means (Addendum B §2): a preset (v2's rules among them, D167), each
-                // of its settings changeable after — whom one may live on as, what is kept of what
-                // was known, whether one may be born again.
-                let presets = hearth_save::DeathPreset::ALL;
-                let mut names: Vec<String> = presets.iter().map(|p| ui.t(preset_key(*p))).collect();
-                // "Custom" only while the settings are none of the presets.
-                let was = death
-                    .is()
-                    .and_then(|p| presets.iter().position(|q| *q == p));
-                if was.is_none() {
-                    names.push(ui.t("rules.custom"));
-                }
-                let mut i = was.unwrap_or(presets.len());
-                if ui.cycle(c.row(ROW), &ui.t("menu.new_world.death"), &names, &mut i)
-                    && let Some(p) = presets.get(i)
-                {
-                    *death = hearth_save::Death::preset(*p);
-                }
-                let scopes: Vec<String> = INHABIT_SCOPES.iter().map(|(k, _)| ui.t(k)).collect();
-                let mut i = INHABIT_SCOPES
-                    .iter()
-                    .position(|(_, s)| *s == death.inhabit)
-                    .unwrap_or(0);
-                if ui.cycle(c.row(ROW), &ui.t("menu.new_world.inhabit"), &scopes, &mut i) {
-                    death.inhabit = INHABIT_SCOPES[i].1;
-                }
-                let kept: Vec<String> = AFTER_DEATH.iter().map(|(k, _)| ui.t(k)).collect();
-                let mut i = AFTER_DEATH
-                    .iter()
-                    .position(|(_, a)| *a == death.after)
-                    .unwrap_or(0);
-                if ui.cycle(
-                    c.row(ROW),
-                    &ui.t("menu.new_world.after_death"),
-                    &kept,
-                    &mut i,
-                ) {
-                    death.after = AFTER_DEATH[i].1;
-                }
-                let again = [ui.t("born_again.yes"), ui.t("born_again.no")];
-                let mut i = usize::from(!death.born_again);
-                if ui.cycle(
-                    c.row(ROW),
-                    &ui.t("menu.new_world.born_again"),
-                    &again,
-                    &mut i,
-                ) {
-                    death.born_again = i == 0;
-                }
-                let modes: Vec<String> = [
-                    "menu.knowledge.discovery",
-                    "menu.knowledge.guided",
-                    "menu.knowledge.open",
-                ]
-                .iter()
-                .map(|k| ui.t(k))
-                .collect();
-                ui.cycle(
-                    c.row(ROW),
-                    &ui.t("menu.new_world.knowledge"),
-                    &modes,
-                    knowledge,
-                );
-                // When the world is: its era, and how its people live then (V2.1 §15.3).
-                if !cx.eras.is_empty() {
-                    let names: Vec<String> = cx.eras.iter().map(|e| e.1.clone()).collect();
-                    *era = (*era).min(names.len() - 1);
-                    ui.cycle(c.row(ROW), &ui.t("menu.new_world.era"), &names, era);
-                    for l in ui.font.wrap(&cx.eras[*era].2, (W + 60.0) as u32) {
-                        ui.label(x, c.y, &l, theme::DIM);
-                        c.space(hearth_ui::font::LINE as f32);
-                    }
-                }
-                c.space(10.0);
-                let folder = folder_name(name);
-                let exists = cx.saves.join(&folder).join("level.json").exists();
-                if exists {
-                    ui.label(x, c.y, &ui.t("menu.new_world.exists"), theme::WARN);
-                    c.space(10.0);
-                }
-                if ui.button_enabled(c.row(ROW), &ui.t("menu.new_world.create"), !exists) {
-                    out.push(MenuAction::Play {
+                let (a, b) = footer.split_left((footer.w - 4.0) / 2.0, 4.0);
+                if ui.button_enabled(a, &ui.t("menu.new_world.create"), !exists) {
+                    out.push(MenuAction::CreateWorld(NewWorldChoice {
                         folder,
                         seed: parse_seed(seed),
-                        death: *death,
-                        knowledge: KNOWLEDGE_MODES[(*knowledge).min(KNOWLEDGE_MODES.len() - 1)],
-                        era: cx
-                            .eras
+                        era: eras
                             .get(*era)
                             .map_or_else(|| crate::eras::WILD_EARTH.to_owned(), |e| e.0.clone()),
-                    });
+                        size: SIZES[(*size_i).min(SIZES.len() - 1)].0,
+                        shape: *shape,
+                    }));
                 }
-                if ui.button(c.row(ROW), &ui.t("menu.back")) {
+                if ui.button(b, &ui.t("menu.back")) {
                     pop = true;
                 }
             }
+            Screen::Making { stage, share } => {
+                // The planet being made, what is being done, and how far it has come.
+                ui.title((size.1 * 0.35).round(), &ui.t("menu.making.title"));
+                let wide = (W + 120.0).min(size.0 - 16.0);
+                let xw = ((size.0 - wide) / 2.0).round();
+                let y = (size.1 * 0.35 + 20.0).round();
+                let words = stage.clone();
+                ui.text_centred(&Rect::new(xw, y, wide, 10.0), &words, theme::TEXT);
+                let bar = Rect::new(xw, y + 16.0, wide, 6.0);
+                ui.draw.rect(bar.x, bar.y, bar.w, bar.h, theme::FIELD);
+                ui.draw.rect(
+                    bar.x,
+                    bar.y,
+                    bar.w * share.clamp(0.0, 1.0),
+                    bar.h,
+                    theme::FILL,
+                );
+                let cancel = Rect::new(((size.0 - W) / 2.0).round(), y + 34.0, W, ROW);
+                if ui.button(cancel, &ui.t("menu.cancel")) {
+                    out.push(MenuAction::CancelCreate);
+                    pop = true;
+                }
+            }
+            Screen::Birthplace { choice, chosen } => {
+                birthplace_screen(ui, cx, choice, chosen, &mut out, &mut pop);
+            }
             Screen::Chronicle { scroll } => {
                 ui.title(24.0, &ui.t("menu.chronicle.title"));
-                let rows = ((size.1 - 90.0) / ROW).max(4.0) as usize;
+                // Rows of the chronicle that fit above the buttons (each a row and its gap).
+                let rows = ((size.1 - 44.0 - 46.0) / (ROW + 2.0)).max(1.0) as usize;
                 let wide = (size.0 - 40.0).min(560.0);
                 let x0 = ((size.0 - wide) / 2.0).round();
                 let mut c = Column::new(x0, 44.0, wide);
@@ -719,247 +1040,286 @@ impl Menus {
                 }
             }
             Screen::Pause => {
-                ui.title((size.1 * 0.3).round(), &ui.t("menu.pause.title"));
-                let mut c = Column::new(x, (size.1 * 0.3 + 20.0).round(), W);
-                if ui.button(c.row(ROW), &ui.t("menu.pause.resume")) {
-                    out.push(MenuAction::Resume);
-                }
-                if ui.button(c.row(ROW), &ui.t("menu.pause.watch")) {
-                    out.push(MenuAction::Watch);
-                }
-                if ui.button(c.row(ROW), &ui.t("menu.options")) {
-                    push = Some(Screen::Options);
-                }
-                if ui.button(c.row(ROW), &ui.t("menu.pause.quit")) {
+                let title = ui.t("menu.pause.title");
+                let when = cx.time_words.clone();
+                let footer = page(ui, &title, "pause", W, PAGE_TOP, 4.0, |ui, c| {
+                    if let Some(w) = &when {
+                        ui.text_centred(&Rect::new(c.x, c.y, c.w, 10.0), w, theme::DIM);
+                        c.space(14.0);
+                    }
+                    if ui.button(c.row(ROW), &ui.t("menu.pause.resume")) {
+                        out.push(MenuAction::Resume);
+                    }
+                    if ui.button(c.row(ROW), &ui.t("menu.options")) {
+                        push = Some(Screen::Options);
+                    }
+                    if ui.button(c.row(ROW), &ui.t("menu.pause.watch")) {
+                        out.push(MenuAction::Watch);
+                    }
+                    if ui.button(c.row(ROW), &ui.t("menu.pause.save")) {
+                        out.push(MenuAction::Save);
+                    }
+                });
+                if ui.button(footer, &ui.t("menu.pause.quit")) {
                     out.push(MenuAction::QuitToTitle);
                 }
             }
             Screen::Options => {
-                ui.title(30.0, &ui.t("menu.options"));
-                let mut c = Column::new(x, 56.0, W);
-                if ui.button(c.row(ROW), &ui.t("menu.options.video")) {
-                    push = Some(Screen::Video);
-                }
-                if ui.button(c.row(ROW), &ui.t("menu.options.sound")) {
-                    push = Some(Screen::Sound);
-                }
-                if ui.button(c.row(ROW), &ui.t("menu.options.controls")) {
-                    push = Some(Screen::Controls {
-                        capturing: None,
-                        capture: RebindCapture::new(),
-                    });
-                }
-                if ui.button(c.row(ROW), &ui.t("menu.options.accessibility")) {
-                    push = Some(Screen::Accessibility);
-                }
-                if ui.button(c.row(ROW), &ui.t("menu.options.conversation")) {
-                    push = Some(Screen::Conversation);
-                }
-                let names: Vec<String> = cx
-                    .languages
-                    .iter()
-                    .map(|code| language_name(ui, code))
-                    .collect();
-                let mut i = cx
-                    .languages
-                    .iter()
-                    .position(|l| *l == cx.options.language)
-                    .unwrap_or(0);
-                if ui.cycle(c.row(ROW), &ui.t("menu.options.language"), &names, &mut i) {
-                    cx.options.language = cx.languages[i].clone();
-                    out.push(MenuAction::LanguageChanged);
-                    out.push(MenuAction::OptionsChanged);
-                }
-                c.space(8.0);
-                if ui.button(c.row(ROW), &ui.t("menu.done")) {
+                let title = ui.t("menu.options");
+                let footer = page(ui, &title, "options", W, PAGE_TOP, 4.0, |ui, c| {
+                    if ui.button(c.row(ROW), &ui.t("menu.options.video")) {
+                        push = Some(Screen::Video { tab: 0 });
+                    }
+                    if ui.button(c.row(ROW), &ui.t("menu.options.sound")) {
+                        push = Some(Screen::Sound);
+                    }
+                    if ui.button(c.row(ROW), &ui.t("menu.options.controls")) {
+                        push = Some(Screen::Controls {
+                            capturing: None,
+                            capture: RebindCapture::new(),
+                        });
+                    }
+                    if ui.button(c.row(ROW), &ui.t("menu.options.accessibility")) {
+                        push = Some(Screen::Accessibility);
+                    }
+                    if ui.button(c.row(ROW), &ui.t("menu.options.conversation")) {
+                        push = Some(Screen::Conversation);
+                    }
+                    let names: Vec<String> = cx
+                        .languages
+                        .iter()
+                        .map(|code| language_name(ui, code))
+                        .collect();
+                    let mut i = cx
+                        .languages
+                        .iter()
+                        .position(|l| *l == cx.options.language)
+                        .unwrap_or(0);
+                    if ui.cycle(c.row(ROW), &ui.t("menu.options.language"), &names, &mut i) {
+                        cx.options.language = cx.languages[i].clone();
+                        out.push(MenuAction::LanguageChanged);
+                        out.push(MenuAction::OptionsChanged);
+                    }
+                    // Deleted worlds, gone for good (Amendment P §4.2).
+                    let trashed = crate::worlds::trashed(&cx.saves).len();
+                    let label = ui
+                        .lang
+                        .format("menu.options.empty_trash", &[("n", &trashed.to_string())]);
+                    if ui.button_enabled(c.row(ROW), &label, trashed > 0) {
+                        crate::worlds::empty_trash(&cx.saves, hearth_save::meta::unix_now(), true);
+                    }
+                });
+                if ui.button(footer, &ui.t("menu.done")) {
                     pop = true;
                 }
             }
-            Screen::Video => {
-                ui.title(12.0, &ui.t("menu.options.video"));
+            Screen::Video { tab } => {
                 let mut changed = false;
-                let v = &mut cx.options.video;
                 let wide = W + 120.0;
-                let mut c = Column::new(((size.0 - wide) / 2.0).round(), 28.0, wide);
-                c.gap = 3.0;
-                let presets = [
-                    GraphicsPreset::Fast,
-                    GraphicsPreset::Fancy,
-                    GraphicsPreset::Fabulous,
-                    GraphicsPreset::Custom,
-                ];
-                let names: Vec<String> = ["fast", "fancy", "fabulous", "custom"]
+                let xw = ((size.0 - wide) / 2.0).round();
+                // The settings in groups (P §4.1): the screen, the quality of the image, how far
+                // the eye sees.
+                let tabs: Vec<String> = ["display", "quality", "distance"]
                     .iter()
-                    .map(|k| ui.t(&format!("menu.video.preset.{k}")))
+                    .map(|k| ui.t(&format!("menu.video.tab.{k}")))
                     .collect();
-                let mut i = presets.iter().position(|p| *p == v.graphics).unwrap_or(3);
-                if ui.cycle(c.row(ROW), &ui.t("menu.video.preset"), &names, &mut i) {
-                    v.apply_preset(presets[i]);
-                    changed = true;
-                }
-                let mut rd = v.render_distance as f32;
-                let text = format!("{}", rd.round());
-                if ui.slider(
-                    c.row(ROW),
-                    &ui.t("menu.video.render_distance"),
-                    &mut rd,
-                    2.0,
-                    32.0,
-                    &text,
-                ) {
-                    v.render_distance = rd.round() as u32;
-                    changed = true;
-                }
-                let mut vd = v.vertical_render_distance as f32;
-                let text = format!("{}", vd.round());
-                if ui.slider(
-                    c.row(ROW),
-                    &ui.t("menu.video.vertical_distance"),
-                    &mut vd,
-                    2.0,
-                    16.0,
-                    &text,
-                ) {
-                    v.vertical_render_distance = vd.round() as u32;
-                    changed = true;
-                }
-                let mut ld = v.lod_distance as f32;
-                let lod_text = if ld < 1.0 {
-                    ui.t("ui.off")
-                } else {
-                    format!("{}", ld.round())
-                };
-                if ui.slider(
-                    c.row(ROW),
-                    &ui.t("menu.video.lod_distance"),
-                    &mut ld,
-                    0.0,
-                    1024.0,
-                    &lod_text,
-                ) {
-                    v.lod_distance = ((ld / 32.0).round() * 32.0) as u32;
-                    changed = true;
-                }
+                ui.tabs(Rect::new(xw, PAGE_TOP, wide, ROW), &tabs, tab);
+                let title = ui.t("menu.options.video");
+                let id = ["video_display", "video_quality", "video_distance"][(*tab).min(2)];
+                let v = &mut cx.options.video;
                 let qualities = [Quality::Low, Quality::Medium, Quality::High];
-                let qnames: Vec<String> = ["low", "medium", "high"]
-                    .iter()
-                    .map(|k| ui.t(&format!("menu.quality.{k}")))
-                    .collect();
-                let mut qi = qualities
-                    .iter()
-                    .position(|q| *q == v.lod_detail)
-                    .unwrap_or(1);
-                if ui.cycle(c.row(ROW), &ui.t("menu.video.lod_detail"), &qnames, &mut qi) {
-                    v.lod_detail = qualities[qi];
-                    v.refresh_preset();
-                    changed = true;
-                }
-                let mut wi = qualities
-                    .iter()
-                    .position(|q| *q == v.shader.water)
-                    .unwrap_or(1);
-                if ui.cycle(c.row(ROW), &ui.t("menu.video.water"), &qnames, &mut wi) {
-                    v.shader.water = qualities[wi];
-                    v.refresh_preset();
-                    changed = true;
-                }
-                {
-                    use hearth_core::options::AntiAliasing;
-                    let modes = [AntiAliasing::Off, AntiAliasing::Taa];
-                    let names = [ui.t("menu.video.aa.off"), ui.t("menu.video.aa.taa")];
-                    let mut ai = usize::from(v.anti_aliasing == AntiAliasing::Taa);
-                    if ui.cycle(
-                        c.row(ROW),
-                        &ui.t("menu.video.anti_aliasing"),
-                        &names,
-                        &mut ai,
-                    ) {
-                        v.anti_aliasing = modes[ai];
-                        v.refresh_preset();
-                        changed = true;
+                let footer = page(ui, &title, id, wide, PAGE_TOP + ROW + 6.0, 3.0, |ui, c| {
+                    let qnames: Vec<String> = ["low", "medium", "high"]
+                        .iter()
+                        .map(|k| ui.t(&format!("menu.quality.{k}")))
+                        .collect();
+                    match *tab {
+                        0 => {
+                            let modes = [
+                                DisplayMode::Windowed,
+                                DisplayMode::Borderless,
+                                DisplayMode::Exclusive,
+                            ];
+                            let mnames: Vec<String> = ["windowed", "borderless", "exclusive"]
+                                .iter()
+                                .map(|k| ui.t(&format!("menu.video.display.{k}")))
+                                .collect();
+                            let mut mi =
+                                modes.iter().position(|m| *m == v.display_mode).unwrap_or(0);
+                            if ui.cycle(c.row(ROW), &ui.t("menu.video.display"), &mnames, &mut mi) {
+                                v.display_mode = modes[mi];
+                                changed = true;
+                            }
+                            let gnames: Vec<String> =
+                                std::iter::once(ui.t("menu.video.gui_scale.auto"))
+                                    .chain((1..=6).map(|n| n.to_string()))
+                                    .collect();
+                            let mut gi = (v.gui_scale as usize).min(6);
+                            if ui.cycle(c.row(ROW), &ui.t("menu.video.gui_scale"), &gnames, &mut gi)
+                            {
+                                v.gui_scale = gi as u32;
+                                changed = true;
+                            }
+                            let mut fov = v.fov;
+                            let text = format!("{}°", fov.round());
+                            if ui.slider(
+                                c.row(ROW),
+                                &ui.t("menu.video.fov"),
+                                &mut fov,
+                                30.0,
+                                110.0,
+                                &text,
+                            ) {
+                                v.fov = fov.round();
+                                changed = true;
+                            }
+                            let mut vsync = v.vsync;
+                            if ui.toggle(c.row(ROW), &ui.t("menu.video.vsync"), &mut vsync) {
+                                v.vsync = vsync;
+                                changed = true;
+                            }
+                            let mut fps = if v.max_framerate == 0 {
+                                300.0
+                            } else {
+                                v.max_framerate as f32
+                            };
+                            let fps_text = if fps >= 300.0 {
+                                ui.t("menu.video.unlimited")
+                            } else {
+                                format!("{}", fps.round())
+                            };
+                            if ui.slider(
+                                c.row(ROW),
+                                &ui.t("menu.video.max_fps"),
+                                &mut fps,
+                                30.0,
+                                300.0,
+                                &fps_text,
+                            ) {
+                                v.max_framerate = if fps >= 299.5 { 0 } else { fps.round() as u32 };
+                                changed = true;
+                            }
+                        }
+                        1 => {
+                            let presets = [
+                                GraphicsPreset::Fast,
+                                GraphicsPreset::Fancy,
+                                GraphicsPreset::Fabulous,
+                                GraphicsPreset::Custom,
+                            ];
+                            let names: Vec<String> = ["fast", "fancy", "fabulous", "custom"]
+                                .iter()
+                                .map(|k| ui.t(&format!("menu.video.preset.{k}")))
+                                .collect();
+                            let mut i = presets.iter().position(|p| *p == v.graphics).unwrap_or(3);
+                            if ui.cycle(c.row(ROW), &ui.t("menu.video.preset"), &names, &mut i) {
+                                v.apply_preset(presets[i]);
+                                changed = true;
+                            }
+                            let scales = [0.5f32, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0];
+                            let snames: Vec<String> = scales
+                                .iter()
+                                .map(|s| format!("{}%", (s * 100.0).round()))
+                                .collect();
+                            let mut si = scales
+                                .iter()
+                                .position(|s| (s - v.render_scale).abs() < 0.01)
+                                .unwrap_or(3);
+                            if ui.cycle(
+                                c.row(ROW),
+                                &ui.t("menu.video.render_scale"),
+                                &snames,
+                                &mut si,
+                            ) {
+                                v.render_scale = scales[si];
+                                changed = true;
+                            }
+                            use hearth_core::options::AntiAliasing;
+                            let aa = [AntiAliasing::Off, AntiAliasing::Taa];
+                            let aa_names = [ui.t("menu.video.aa.off"), ui.t("menu.video.aa.taa")];
+                            let mut ai = usize::from(v.anti_aliasing == AntiAliasing::Taa);
+                            if ui.cycle(
+                                c.row(ROW),
+                                &ui.t("menu.video.anti_aliasing"),
+                                &aa_names,
+                                &mut ai,
+                            ) {
+                                v.anti_aliasing = aa[ai];
+                                v.refresh_preset();
+                                changed = true;
+                            }
+                            let mut qi = qualities
+                                .iter()
+                                .position(|q| *q == v.lod_detail)
+                                .unwrap_or(1);
+                            if ui.cycle(
+                                c.row(ROW),
+                                &ui.t("menu.video.lod_detail"),
+                                &qnames,
+                                &mut qi,
+                            ) {
+                                v.lod_detail = qualities[qi];
+                                v.refresh_preset();
+                                changed = true;
+                            }
+                            let mut wi = qualities
+                                .iter()
+                                .position(|q| *q == v.shader.water)
+                                .unwrap_or(1);
+                            if ui.cycle(c.row(ROW), &ui.t("menu.video.water"), &qnames, &mut wi) {
+                                v.shader.water = qualities[wi];
+                                v.refresh_preset();
+                                changed = true;
+                            }
+                        }
+                        _ => {
+                            let mut rd = v.render_distance as f32;
+                            let text = format!("{}", rd.round());
+                            if ui.slider(
+                                c.row(ROW),
+                                &ui.t("menu.video.render_distance"),
+                                &mut rd,
+                                2.0,
+                                32.0,
+                                &text,
+                            ) {
+                                v.render_distance = rd.round() as u32;
+                                changed = true;
+                            }
+                            let mut vd = v.vertical_render_distance as f32;
+                            let text = format!("{}", vd.round());
+                            if ui.slider(
+                                c.row(ROW),
+                                &ui.t("menu.video.vertical_distance"),
+                                &mut vd,
+                                2.0,
+                                16.0,
+                                &text,
+                            ) {
+                                v.vertical_render_distance = vd.round() as u32;
+                                changed = true;
+                            }
+                            let mut ld = v.lod_distance as f32;
+                            let lod_text = if ld < 1.0 {
+                                ui.t("ui.off")
+                            } else {
+                                format!("{}", ld.round())
+                            };
+                            if ui.slider(
+                                c.row(ROW),
+                                &ui.t("menu.video.lod_distance"),
+                                &mut ld,
+                                0.0,
+                                1024.0,
+                                &lod_text,
+                            ) {
+                                v.lod_distance = ((ld / 32.0).round() * 32.0) as u32;
+                                changed = true;
+                            }
+                        }
                     }
-                }
-                let mut fov = v.fov;
-                let text = format!("{}°", fov.round());
-                if ui.slider(
-                    c.row(ROW),
-                    &ui.t("menu.video.fov"),
-                    &mut fov,
-                    30.0,
-                    110.0,
-                    &text,
-                ) {
-                    v.fov = fov.round();
-                    changed = true;
-                }
-                let scales = [0.5f32, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0];
-                let snames: Vec<String> = scales
-                    .iter()
-                    .map(|s| format!("{}%", (s * 100.0).round()))
-                    .collect();
-                let mut si = scales
-                    .iter()
-                    .position(|s| (s - v.render_scale).abs() < 0.01)
-                    .unwrap_or(3);
-                if ui.cycle(
-                    c.row(ROW),
-                    &ui.t("menu.video.render_scale"),
-                    &snames,
-                    &mut si,
-                ) {
-                    v.render_scale = scales[si];
-                    changed = true;
-                }
-                let gnames: Vec<String> = std::iter::once(ui.t("menu.video.gui_scale.auto"))
-                    .chain((1..=6).map(|n| n.to_string()))
-                    .collect();
-                let mut gi = (v.gui_scale as usize).min(6);
-                if ui.cycle(c.row(ROW), &ui.t("menu.video.gui_scale"), &gnames, &mut gi) {
-                    v.gui_scale = gi as u32;
-                    changed = true;
-                }
-                let mut vsync = v.vsync;
-                if ui.toggle(c.row(ROW), &ui.t("menu.video.vsync"), &mut vsync) {
-                    v.vsync = vsync;
-                    changed = true;
-                }
-                let mut fps = if v.max_framerate == 0 {
-                    300.0
-                } else {
-                    v.max_framerate as f32
-                };
-                let fps_text = if fps >= 300.0 {
-                    ui.t("menu.video.unlimited")
-                } else {
-                    format!("{}", fps.round())
-                };
-                if ui.slider(
-                    c.row(ROW),
-                    &ui.t("menu.video.max_fps"),
-                    &mut fps,
-                    30.0,
-                    300.0,
-                    &fps_text,
-                ) {
-                    v.max_framerate = if fps >= 299.5 { 0 } else { fps.round() as u32 };
-                    changed = true;
-                }
-                let modes = [
-                    DisplayMode::Windowed,
-                    DisplayMode::Borderless,
-                    DisplayMode::Exclusive,
-                ];
-                let mnames: Vec<String> = ["windowed", "borderless", "exclusive"]
-                    .iter()
-                    .map(|k| ui.t(&format!("menu.video.display.{k}")))
-                    .collect();
-                let mut mi = modes.iter().position(|m| *m == v.display_mode).unwrap_or(0);
-                if ui.cycle(c.row(ROW), &ui.t("menu.video.display"), &mnames, &mut mi) {
-                    v.display_mode = modes[mi];
-                    changed = true;
-                }
-                c.space(4.0);
-                if ui.button(c.row(ROW), &ui.t("menu.done")) {
+                });
+                if ui.button(footer, &ui.t("menu.done")) {
                     pop = true;
                 }
                 if changed {
@@ -1059,53 +1419,51 @@ impl Menus {
                 }
             }
             Screen::Sound => {
-                ui.title(30.0, &ui.t("menu.options.sound"));
+                let title = ui.t("menu.options.sound");
                 let s = &mut cx.options.sound;
-                let wide = W + 120.0;
-                let mut c = Column::new(((size.0 - wide) / 2.0).round(), 56.0, wide);
-                c.gap = 3.0;
+                let devices = cx.audio_devices;
                 let mut changed = false;
-                // The categories that have sounds so far.
-                for (key, value) in [
-                    ("master", &mut s.master),
-                    ("weather", &mut s.weather),
-                    ("players", &mut s.players),
-                    ("ambient", &mut s.ambient),
-                    ("ui", &mut s.ui),
-                ] {
-                    let mut v = *value;
-                    let text = if v <= 0.0 {
-                        ui.t("ui.off")
-                    } else {
-                        format!("{}%", (v * 100.0).round())
-                    };
-                    let label = ui.t(&format!("menu.sound.{key}"));
-                    if ui.slider(c.row(ROW), &label, &mut v, 0.0, 1.0, &text) {
-                        *value = v;
+                let footer = page(ui, &title, "sound", W + 120.0, PAGE_TOP, 3.0, |ui, c| {
+                    // The categories that have sounds so far.
+                    for (key, value) in [
+                        ("master", &mut s.master),
+                        ("weather", &mut s.weather),
+                        ("players", &mut s.players),
+                        ("ambient", &mut s.ambient),
+                        ("ui", &mut s.ui),
+                    ] {
+                        let mut v = *value;
+                        let text = if v <= 0.0 {
+                            ui.t("ui.off")
+                        } else {
+                            format!("{}%", (v * 100.0).round())
+                        };
+                        let label = ui.t(&format!("menu.sound.{key}"));
+                        if ui.slider(c.row(ROW), &label, &mut v, 0.0, 1.0, &text) {
+                            *value = v;
+                            changed = true;
+                        }
+                    }
+                    let mut names = vec![ui.t("menu.sound.device.default")];
+                    names.extend(devices.iter().cloned());
+                    let mut i = devices
+                        .iter()
+                        .position(|d| *d == s.device)
+                        .map_or(0, |p| p + 1);
+                    if ui.cycle(c.row(ROW), &ui.t("menu.sound.device"), &names, &mut i) {
+                        s.device = match i {
+                            0 => String::new(),
+                            i => devices[i - 1].clone(),
+                        };
                         changed = true;
                     }
-                }
-                let mut names = vec![ui.t("menu.sound.device.default")];
-                names.extend(cx.audio_devices.iter().cloned());
-                let mut i = cx
-                    .audio_devices
-                    .iter()
-                    .position(|d| *d == s.device)
-                    .map_or(0, |p| p + 1);
-                if ui.cycle(c.row(ROW), &ui.t("menu.sound.device"), &names, &mut i) {
-                    s.device = match i {
-                        0 => String::new(),
-                        i => cx.audio_devices[i - 1].clone(),
-                    };
-                    changed = true;
-                }
-                let mut captions = s.subtitles;
-                if ui.toggle(c.row(ROW), &ui.t("menu.sound.subtitles"), &mut captions) {
-                    s.subtitles = captions;
-                    changed = true;
-                }
-                c.space(8.0);
-                if ui.button(c.row(ROW), &ui.t("menu.done")) {
+                    let mut captions = s.subtitles;
+                    if ui.toggle(c.row(ROW), &ui.t("menu.sound.subtitles"), &mut captions) {
+                        s.subtitles = captions;
+                        changed = true;
+                    }
+                });
+                if ui.button(footer, &ui.t("menu.done")) {
                     pop = true;
                 }
                 if changed {
@@ -1236,200 +1594,202 @@ impl Menus {
             }
             Screen::Conversation => {
                 use hearth_core::options::{ConversationApi, ConversationBackend};
-                ui.title(12.0, &ui.t("menu.options.conversation"));
+                let title = ui.t("menu.options.conversation");
                 let wide = W + 120.0;
-                let xw = ((size.0 - wide) / 2.0).round();
-                let mut c = Column::new(xw, 28.0, wide);
-                c.gap = 3.0;
                 let o = &mut cx.options.conversation;
                 let before = o.clone();
-                let kinds = [
-                    ConversationBackend::Off,
-                    ConversationBackend::Local,
-                    ConversationBackend::Remote,
-                ];
-                let kind_names: Vec<String> = [
-                    "menu.conversation.off",
-                    "menu.conversation.local",
-                    "menu.conversation.remote",
-                ]
-                .iter()
-                .map(|k| ui.t(k))
-                .collect();
-                let mut i = kinds.iter().position(|k| *k == o.backend).unwrap_or(0);
-                if ui.cycle(
-                    c.row(ROW),
-                    &ui.t("menu.conversation.backend"),
-                    &kind_names,
-                    &mut i,
-                ) {
-                    o.backend = kinds[i];
-                    // A provider over the internet: the Messages API's address and key, until
-                    // the player says otherwise; this computer's own server: Ollama's.
-                    match o.backend {
-                        ConversationBackend::Remote
-                            if before.backend != ConversationBackend::Remote =>
-                        {
-                            o.api = ConversationApi::Anthropic;
-                            o.url = "https://api.anthropic.com/v1".to_owned();
-                            o.key_env = "ANTHROPIC_API_KEY".to_owned();
-                            o.model.clear();
-                        }
-                        ConversationBackend::Local
-                            if before.backend != ConversationBackend::Local =>
-                        {
-                            o.api = ConversationApi::OpenAiCompatible;
-                            o.url = "http://127.0.0.1:11434/v1".to_owned();
-                            o.key_env.clear();
-                            o.model.clear();
-                        }
-                        _ => {}
-                    }
-                }
-                if o.backend != ConversationBackend::Off {
-                    let apis = [
-                        ConversationApi::OpenAiCompatible,
-                        ConversationApi::Anthropic,
+                let probe = cx.conversation_probe.clone();
+                let models = cx.conversation_models.clone();
+                let footer = page(ui, &title, "conversation", wide, PAGE_TOP, 3.0, |ui, c| {
+                    let xw = c.x;
+                    let wide = c.w;
+                    let kinds = [
+                        ConversationBackend::Off,
+                        ConversationBackend::Local,
+                        ConversationBackend::Remote,
                     ];
-                    let api_names: Vec<String> =
-                        ["menu.conversation.openai", "menu.conversation.anthropic"]
-                            .iter()
-                            .map(|k| ui.t(k))
-                            .collect();
-                    let mut a = apis.iter().position(|k| *k == o.api).unwrap_or(0);
+                    let kind_names: Vec<String> = [
+                        "menu.conversation.off",
+                        "menu.conversation.local",
+                        "menu.conversation.remote",
+                    ]
+                    .iter()
+                    .map(|k| ui.t(k))
+                    .collect();
+                    let mut i = kinds.iter().position(|k| *k == o.backend).unwrap_or(0);
                     if ui.cycle(
                         c.row(ROW),
-                        &ui.t("menu.conversation.api"),
-                        &api_names,
-                        &mut a,
+                        &ui.t("menu.conversation.backend"),
+                        &kind_names,
+                        &mut i,
                     ) {
-                        o.api = apis[a];
+                        o.backend = kinds[i];
+                        // A provider over the internet: the Messages API's address and key, until
+                        // the player says otherwise; this computer's own server: Ollama's.
+                        match o.backend {
+                            ConversationBackend::Remote
+                                if before.backend != ConversationBackend::Remote =>
+                            {
+                                o.api = ConversationApi::Anthropic;
+                                o.url = "https://api.anthropic.com/v1".to_owned();
+                                o.key_env = "ANTHROPIC_API_KEY".to_owned();
+                                o.model.clear();
+                            }
+                            ConversationBackend::Local
+                                if before.backend != ConversationBackend::Local =>
+                            {
+                                o.api = ConversationApi::OpenAiCompatible;
+                                o.url = "http://127.0.0.1:11434/v1".to_owned();
+                                o.key_env.clear();
+                                o.model.clear();
+                            }
+                            _ => {}
+                        }
                     }
-                    ui.label(xw, c.y, &ui.t("menu.conversation.url"), theme::DIM);
-                    c.space(10.0);
-                    ui.text_field(c.row(ROW), &ui.t("menu.conversation.url"), &mut o.url, 120);
-                    ui.label(xw, c.y, &ui.t("menu.conversation.model"), theme::DIM);
-                    c.space(10.0);
-                    ui.text_field(
-                        c.row(ROW),
-                        &ui.t("menu.conversation.model_hint"),
-                        &mut o.model,
-                        80,
-                    );
-                    if !cx.conversation_models.is_empty() {
-                        let mut m = cx
-                            .conversation_models
-                            .iter()
-                            .position(|x| *x == o.model)
-                            .unwrap_or(0);
+                    if o.backend != ConversationBackend::Off {
+                        let apis = [
+                            ConversationApi::OpenAiCompatible,
+                            ConversationApi::Anthropic,
+                        ];
+                        let api_names: Vec<String> =
+                            ["menu.conversation.openai", "menu.conversation.anthropic"]
+                                .iter()
+                                .map(|k| ui.t(k))
+                                .collect();
+                        let mut a = apis.iter().position(|k| *k == o.api).unwrap_or(0);
                         if ui.cycle(
                             c.row(ROW),
-                            &ui.t("menu.conversation.listed"),
-                            &cx.conversation_models,
-                            &mut m,
-                        ) || o.model.is_empty()
-                        {
-                            o.model = cx.conversation_models[m].clone();
+                            &ui.t("menu.conversation.api"),
+                            &api_names,
+                            &mut a,
+                        ) {
+                            o.api = apis[a];
                         }
-                    } else if ui.button(c.row(ROW), &ui.t("menu.conversation.list")) {
-                        out.push(MenuAction::ListModels);
-                    }
-                    ui.label(xw, c.y, &ui.t("menu.conversation.key"), theme::DIM);
-                    c.space(10.0);
-                    ui.text_field(
-                        c.row(ROW),
-                        &ui.t("menu.conversation.key_hint"),
-                        &mut o.key_env,
-                        60,
-                    );
-                    ui.toggle(
-                        c.row(ROW),
-                        &ui.t("menu.conversation.free_text"),
-                        &mut o.free_text,
-                    );
-                    let budgets = [2000u32, 4000, 8000, 15000];
-                    let budget_names: Vec<String> =
-                        budgets.iter().map(|b| format!("{} s", b / 1000)).collect();
-                    let mut b = budgets
-                        .iter()
-                        .position(|x| *x >= o.budget_ms)
-                        .unwrap_or(budgets.len() - 1);
-                    if ui.cycle(
-                        c.row(ROW),
-                        &ui.t("menu.conversation.budget"),
-                        &budget_names,
-                        &mut b,
-                    ) {
-                        o.budget_ms = budgets[b];
-                    }
-                    if ui.button(c.row(ROW), &ui.t("menu.conversation.test")) {
-                        out.push(MenuAction::TestConversation);
-                    }
-                    if let Some(p) = &cx.conversation_probe {
-                        for l in ui.font.wrap(p, wide as u32) {
-                            ui.label(xw, c.y, &l, theme::TEXT);
+                        ui.label(xw, c.y, &ui.t("menu.conversation.url"), theme::DIM);
+                        c.space(10.0);
+                        ui.text_field(c.row(ROW), &ui.t("menu.conversation.url"), &mut o.url, 120);
+                        ui.label(xw, c.y, &ui.t("menu.conversation.model"), theme::DIM);
+                        c.space(10.0);
+                        ui.text_field(
+                            c.row(ROW),
+                            &ui.t("menu.conversation.model_hint"),
+                            &mut o.model,
+                            80,
+                        );
+                        if !models.is_empty() {
+                            let mut m = cx
+                                .conversation_models
+                                .iter()
+                                .position(|x| *x == o.model)
+                                .unwrap_or(0);
+                            if ui.cycle(
+                                c.row(ROW),
+                                &ui.t("menu.conversation.listed"),
+                                &models,
+                                &mut m,
+                            ) || o.model.is_empty()
+                            {
+                                o.model = models[m].clone();
+                            }
+                        } else if ui.button(c.row(ROW), &ui.t("menu.conversation.list")) {
+                            out.push(MenuAction::ListModels);
+                        }
+                        ui.label(xw, c.y, &ui.t("menu.conversation.key"), theme::DIM);
+                        c.space(10.0);
+                        ui.text_field(
+                            c.row(ROW),
+                            &ui.t("menu.conversation.key_hint"),
+                            &mut o.key_env,
+                            60,
+                        );
+                        ui.toggle(
+                            c.row(ROW),
+                            &ui.t("menu.conversation.free_text"),
+                            &mut o.free_text,
+                        );
+                        let budgets = [2000u32, 4000, 8000, 15000];
+                        let budget_names: Vec<String> =
+                            budgets.iter().map(|b| format!("{} s", b / 1000)).collect();
+                        let mut b = budgets
+                            .iter()
+                            .position(|x| *x >= o.budget_ms)
+                            .unwrap_or(budgets.len() - 1);
+                        if ui.cycle(
+                            c.row(ROW),
+                            &ui.t("menu.conversation.budget"),
+                            &budget_names,
+                            &mut b,
+                        ) {
+                            o.budget_ms = budgets[b];
+                        }
+                        if ui.button(c.row(ROW), &ui.t("menu.conversation.test")) {
+                            out.push(MenuAction::TestConversation);
+                        }
+                        if let Some(p) = &probe {
+                            for l in ui.font.wrap(p, wide as u32) {
+                                ui.label(xw, c.y, &l, theme::TEXT);
+                                c.space(10.0);
+                            }
+                        }
+                        let note = if o.backend == ConversationBackend::Remote {
+                            "menu.conversation.remote_note"
+                        } else {
+                            "menu.conversation.local_note"
+                        };
+                        for l in ui.font.wrap(&ui.t(note), wide as u32) {
+                            ui.label(xw, c.y, &l, theme::DIM);
+                            c.space(10.0);
+                        }
+                    } else {
+                        for l in ui
+                            .font
+                            .wrap(&ui.t("menu.conversation.off_note"), wide as u32)
+                        {
+                            ui.label(xw, c.y, &l, theme::DIM);
                             c.space(10.0);
                         }
                     }
-                    let note = if o.backend == ConversationBackend::Remote {
-                        "menu.conversation.remote_note"
-                    } else {
-                        "menu.conversation.local_note"
-                    };
-                    for l in ui.font.wrap(&ui.t(note), wide as u32) {
-                        ui.label(xw, c.y, &l, theme::DIM);
-                        c.space(10.0);
-                    }
-                } else {
-                    for l in ui
-                        .font
-                        .wrap(&ui.t("menu.conversation.off_note"), wide as u32)
-                    {
-                        ui.label(xw, c.y, &l, theme::DIM);
-                        c.space(10.0);
-                    }
-                }
+                });
                 if *o != before {
                     out.push(MenuAction::OptionsChanged);
                 }
-                c.space(6.0);
-                if ui.button(c.row(ROW), &ui.t("menu.done")) {
+                if ui.button(footer, &ui.t("menu.done")) {
                     pop = true;
                 }
             }
             Screen::Accessibility => {
-                ui.title(30.0, &ui.t("menu.options.accessibility"));
+                let title = ui.t("menu.options.accessibility");
                 let a = &mut cx.options.accessibility;
-                let mut c = Column::new(x, 56.0, W);
-                let mut op = a.text_background_opacity;
-                let text = format!("{}%", (op * 100.0).round());
-                if ui.slider(
-                    c.row(ROW),
-                    &ui.t("menu.accessibility.text_background"),
-                    &mut op,
-                    0.0,
-                    1.0,
-                    &text,
-                ) {
-                    a.text_background_opacity = op;
+                let mut changed = false;
+                let footer = page(ui, &title, "accessibility", W, PAGE_TOP, 4.0, |ui, c| {
+                    let mut op = a.text_background_opacity;
+                    let text = format!("{}%", (op * 100.0).round());
+                    if ui.slider(
+                        c.row(ROW),
+                        &ui.t("menu.accessibility.text_background"),
+                        &mut op,
+                        0.0,
+                        1.0,
+                        &text,
+                    ) {
+                        a.text_background_opacity = op;
+                        changed = true;
+                    }
+                    changed |= ui.toggle(
+                        c.row(ROW),
+                        &ui.t("menu.accessibility.guided_hud"),
+                        &mut a.guided_hud,
+                    );
+                    changed |= ui.toggle(
+                        c.row(ROW),
+                        &ui.t("menu.accessibility.reduce_motion"),
+                        &mut a.reduce_motion,
+                    );
+                });
+                if changed {
                     out.push(MenuAction::OptionsChanged);
                 }
-                if ui.toggle(
-                    c.row(ROW),
-                    &ui.t("menu.accessibility.guided_hud"),
-                    &mut a.guided_hud,
-                ) {
-                    out.push(MenuAction::OptionsChanged);
-                }
-                if ui.toggle(
-                    c.row(ROW),
-                    &ui.t("menu.accessibility.reduce_motion"),
-                    &mut a.reduce_motion,
-                ) {
-                    out.push(MenuAction::OptionsChanged);
-                }
-                c.space(8.0);
-                if ui.button(c.row(ROW), &ui.t("menu.done")) {
+                if ui.button(footer, &ui.t("menu.done")) {
                     pop = true;
                 }
             }
@@ -1546,6 +1906,102 @@ fn born_screen(
     (preview, begin)
 }
 
+/// Where to be born (Amendment P §4.3): the planet's globe behind the screen (the app draws
+/// it), turned by dragging and zoomed by the wheel; the place under the pointer told in plain
+/// words; a click chooses (a sea's point is born on its nearest coast), "Recommended" the place
+/// the world finds best for a first life, "Surprise me" anywhere on land.
+fn birthplace_screen(
+    ui: &mut Ui<'_>,
+    cx: &mut MenuContext<'_>,
+    choice: &NewWorldChoice,
+    chosen: &mut Option<(f32, f32)>,
+    out: &mut Vec<MenuAction>,
+    pop: &mut bool,
+) {
+    let size = ui.size;
+    ui.title(10.0, &ui.t("menu.birthplace.title"));
+    let wide = (W + 160.0).min(size.0 - 16.0);
+    let xw = ((size.0 - wide) / 2.0).round();
+    // The buttons along the bottom: two rows.
+    let foot = Rect::new(
+        xw,
+        size.1 - 2.0 * (ROW + 4.0) - 6.0,
+        wide,
+        2.0 * (ROW + 4.0),
+    );
+    let scale = ui.draw.scale;
+    let pointer = ui.input.pointer;
+    let mut said: Option<String> = None;
+    if let Some(g) = cx.globe.as_mut() {
+        let over_globe = pointer.is_some_and(|p| p.1 > 24.0 && p.1 < foot.y);
+        if let Some(p) = pointer {
+            g.picker.cursor_moved(glam::Vec2::new(p.0, p.1) * scale);
+        }
+        if over_globe {
+            if ui.input.pressed {
+                g.picker.button(true);
+            }
+            if ui.input.released
+                && let Some(ll) = g.picker.button(false)
+            {
+                *chosen = Some(ll);
+            }
+            if ui.input.scroll != 0.0 {
+                g.picker.view.zoom_by(ui.input.scroll.round() as i32);
+            }
+        }
+        let shown = g.picker.hovered().or(*chosen);
+        said = shown.map(|(lat, lon)| crate::globe::describe(&g.terrain, lat, lon));
+    }
+    let mut y = 24.0;
+    for l in said
+        .iter()
+        .flat_map(|s| ui.font.wrap(s, wide as u32))
+        .take(4)
+    {
+        let lw = ui.font.width(&l) as f32;
+        ui.label(((size.0 - lw) / 2.0).round(), y, &l, theme::TEXT);
+        y += hearth_ui::font::LINE as f32;
+    }
+    let w3 = ((wide - 8.0) / 3.0).floor();
+    let row = Rect::new(foot.x, foot.y, wide, ROW);
+    let (a, rest) = row.split_left(w3, 4.0);
+    let (b, d) = rest.split_left(w3, 4.0);
+    let recommended = ui.button(a, &ui.t("menu.birthplace.recommended"));
+    let surprise = ui.button(b, &ui.t("menu.birthplace.surprise"));
+    if recommended || surprise {
+        let random = surprise;
+        if let Some(g) = cx.globe.as_mut() {
+            let (x, z) = g.terrain.find_spawn(random);
+            let at = glam::DVec3::new(x as f64, 0.0, z as f64);
+            let (lat, lon) = crate::globe::lat_lon(g.terrain.planet(), at);
+            g.picker.view.lat = lat;
+            g.picker.view.lon = lon;
+            *chosen = Some((lat, lon));
+        }
+    }
+    if ui.button(d, &ui.t("menu.back")) {
+        out.push(MenuAction::CancelCreate);
+        *pop = true;
+    }
+    let row = Rect::new(foot.x, foot.y + ROW + 4.0, wide, ROW);
+    if ui.button_enabled(row, &ui.t("menu.birthplace.born_here"), chosen.is_some())
+        && let (Some((lat, lon)), Some(g)) = (*chosen, cx.globe.as_ref())
+    {
+        let (x, z) = crate::globe::world_xz(g.terrain.planet(), lat, lon);
+        out.push(MenuAction::Play {
+            folder: choice.folder.clone(),
+            seed: choice.seed,
+            death: Default::default(),
+            knowledge: Default::default(),
+            era: choice.era.clone(),
+            size: choice.size,
+            shape: choice.shape,
+            birthplace: Some(glam::DVec2::new(x as f64 + 0.5, z as f64 + 0.5)),
+        });
+    }
+}
+
 /// A daughter, a son, or as chance has it.
 /// The households the player may be born into (H8): each told by who its people are, never how
 /// they look; one chosen, and a daughter, a son or as chance has it.
@@ -1612,107 +2068,109 @@ fn death_screen(
         // Alive again: nothing to face.
         return;
     };
-    let x = ((size.0 - W) / 2.0).round();
-    let top = if d.story.is_empty() { 0.22 } else { 0.05 };
-    ui.title((size.1 * top).round(), &d.words);
-    let mut c = Column::new(x, (size.1 * top + 20.0).round(), W);
-    for line in &d.story {
-        for l in ui.font.wrap(line, (W + 120.0) as u32) {
-            let lw = ui.font.width(&l) as f32;
-            ui.label(((size.0 - lw) / 2.0).round(), c.y, &l, theme::TEXT);
-            c.space(hearth_ui::font::LINE as f32);
-        }
-    }
-    if !d.story.is_empty() {
-        c.space(6.0);
-    }
-    // Who to live on as, by the filter chosen (those the world's scope allows were sent).
-    if d.death.inhabit != hearth_save::InhabitScope::None && !d.others.is_empty() {
-        let names: Vec<String> = DEATH_FILTERS.iter().map(|k| ui.t(k)).collect();
-        ui.cycle(c.row(ROW), &ui.t("menu.death.among"), &names, filter);
-        let shown: Vec<&hearth_protocol::Other> = d
-            .others
-            .iter()
-            .filter(|o| match *filter {
-                0 => o.family,
-                1 => o.group,
-                2 => o.near,
-                _ => true,
-            })
-            .take(5)
-            .collect();
-        if shown.is_empty() {
-            ui.label(x, c.y, &ui.t("menu.death.none"), theme::DIM);
-            c.space(hearth_ui::font::LINE as f32 + 2.0);
-        }
-        for o in shown {
-            let key = if o.child {
-                "menu.death.live_as_child"
-            } else {
-                "menu.death.live_as"
-            };
-            let words = ui.lang.format(key, &[("who", &o.words)]);
-            if ui.button(c.row(ROW), &words) {
-                out.push(MenuAction::LiveAs(o.id));
+    let wide = (W + 120.0).min(size.0 - 16.0);
+    let footer = page_footed(ui, &d.words, "death", wide, PAGE_TOP, 4.0, 2, |ui, c| {
+        let x = c.x;
+        let size = ui.size;
+        for line in &d.story {
+            for l in ui.font.wrap(line, c.w as u32) {
+                let lw = ui.font.width(&l) as f32;
+                ui.label(((size.0 - lw) / 2.0).round(), c.y, &l, theme::TEXT);
+                c.space(hearth_ui::font::LINE as f32);
             }
         }
-        c.space(6.0);
-    }
-    // What the world keeps of what was known; Permadeath ends it.
-    let said = if d.death.ends_the_world() {
-        "body.death.permadeath"
-    } else {
-        match d.death.after {
-            hearth_save::AfterDeath::TheirsOnly => "body.death.theirs_only",
-            hearth_save::AfterDeath::HeadStart => "body.death.head_start",
-            hearth_save::AfterDeath::KeepEverything => "body.death.keep_everything",
+        if !d.story.is_empty() {
+            c.space(6.0);
         }
-    };
-    for line in ui.font.wrap(&ui.t(said), (W + 80.0) as u32) {
-        let lw = ui.font.width(&line) as f32;
-        ui.label(((size.0 - lw) / 2.0).round(), c.y, &line, theme::DIM);
-        c.space(hearth_ui::font::LINE as f32);
-    }
-    c.space(8.0);
-    if d.death.born_again {
-        // Born again as a baby (Addendum A's birth): here or elsewhere, a daughter or a son or
-        // as chance has it.
-        let before = cx.profiles.born;
-        born_choice(ui, c.row(ROW), &mut cx.profiles.born);
-        if cx.profiles.born != before {
-            out.push(MenuAction::ProfilesChanged);
+        // Who to live on as, by the filter chosen (those the world's scope allows were sent).
+        if d.death.inhabit != hearth_save::InhabitScope::None && !d.others.is_empty() {
+            let names: Vec<String> = DEATH_FILTERS.iter().map(|k| ui.t(k)).collect();
+            ui.cycle(c.row(ROW), &ui.t("menu.death.among"), &names, filter);
+            let shown: Vec<&hearth_protocol::Other> = d
+                .others
+                .iter()
+                .filter(|o| match *filter {
+                    0 => o.family,
+                    1 => o.group,
+                    2 => o.near,
+                    _ => true,
+                })
+                .collect();
+            if shown.is_empty() {
+                ui.label(x, c.y, &ui.t("menu.death.none"), theme::DIM);
+                c.space(hearth_ui::font::LINE as f32 + 2.0);
+            }
+            for o in shown {
+                let key = if o.child {
+                    "menu.death.live_as_child"
+                } else {
+                    "menu.death.live_as"
+                };
+                let words = ui.lang.format(key, &[("who", &o.words)]);
+                if ui.button(c.row(ROW), &words) {
+                    out.push(MenuAction::LiveAs(o.id));
+                }
+            }
+            c.space(6.0);
         }
-        let female = cx.profiles.born.female();
-        if ui.button(c.row(ROW), &ui.t("menu.death.born_again")) {
-            out.push(MenuAction::BornAgain {
-                elsewhere: false,
-                female,
-            });
+        // What the world keeps of what was known; Permadeath ends it.
+        let said = if d.death.ends_the_world() {
+            "body.death.permadeath"
+        } else {
+            match d.death.after {
+                hearth_save::AfterDeath::TheirsOnly => "body.death.theirs_only",
+                hearth_save::AfterDeath::HeadStart => "body.death.head_start",
+                hearth_save::AfterDeath::KeepEverything => "body.death.keep_everything",
+            }
+        };
+        for line in ui.font.wrap(&ui.t(said), c.w as u32) {
+            let lw = ui.font.width(&line) as f32;
+            ui.label(((size.0 - lw) / 2.0).round(), c.y, &line, theme::DIM);
+            c.space(hearth_ui::font::LINE as f32);
         }
-        if ui.button(c.row(ROW), &ui.t("menu.death.born_elsewhere")) {
-            out.push(MenuAction::BornAgain {
-                elsewhere: true,
-                female,
-            });
+        c.space(8.0);
+        if d.death.born_again {
+            // Born again as a baby (Addendum A's birth): here or elsewhere, a daughter or a son
+            // or as chance has it.
+            let before = cx.profiles.born;
+            born_choice(ui, c.row(ROW), &mut cx.profiles.born);
+            if cx.profiles.born != before {
+                out.push(MenuAction::ProfilesChanged);
+            }
+            let female = cx.profiles.born.female();
+            if ui.button(c.row(ROW), &ui.t("menu.death.born_again")) {
+                out.push(MenuAction::BornAgain {
+                    elsewhere: false,
+                    female,
+                });
+            }
+            if ui.button(c.row(ROW), &ui.t("menu.death.born_elsewhere")) {
+                out.push(MenuAction::BornAgain {
+                    elsewhere: true,
+                    female,
+                });
+            }
         }
-    }
-    if d.death.ends_the_world() {
-        for line in d.summary.iter().flatten() {
-            let lw = ui.font.width(line) as f32;
-            ui.label(((size.0 - lw) / 2.0).round(), c.y, line, theme::TEXT);
-            c.space(hearth_ui::font::LINE as f32 + 1.0);
+        if d.death.ends_the_world() {
+            for line in d.summary.iter().flatten() {
+                for l in ui.font.wrap(line, c.w as u32) {
+                    let lw = ui.font.width(&l) as f32;
+                    ui.label(((size.0 - lw) / 2.0).round(), c.y, &l, theme::TEXT);
+                    c.space(hearth_ui::font::LINE as f32 + 1.0);
+                }
+            }
         }
-        c.space(6.0);
-    }
-    c.space(6.0);
-    if ui.button(c.row(ROW), &ui.t("menu.death.watch")) {
+    });
+    let (a, b) = footer.split_left((footer.w - 4.0) / 2.0, 4.0);
+    if ui.button(a, &ui.t("menu.death.watch")) {
         out.push(MenuAction::Spectate);
     }
-    if ui.button(c.row(ROW), &ui.t("menu.death.again")) {
-        out.push(MenuAction::Restart);
-    }
-    if ui.button(c.row(ROW), &ui.t("menu.death.to_title")) {
+    if ui.button(b, &ui.t("menu.death.to_title")) {
         out.push(MenuAction::QuitToTitle);
+    }
+    let again = Rect::new(footer.x, footer.y + ROW + 4.0, footer.w, ROW);
+    if ui.button(again, &ui.t("menu.death.again")) {
+        out.push(MenuAction::Restart);
     }
 }
 

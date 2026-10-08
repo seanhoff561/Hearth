@@ -52,6 +52,7 @@ pub fn migrate(v: &mut Value) -> Result<MigrationReport, SaveError> {
         let step = match report.to {
             2 => v2_to_v3(obj)?,
             3 => v3_to_v4(obj),
+            4 => v4_to_v5(obj),
             other => {
                 return Err(SaveError::Corrupt(format!(
                     "no migration from format {other}"
@@ -63,6 +64,15 @@ pub fn migrate(v: &mut Value) -> Result<MigrationReport, SaveError> {
         report.steps.push(step);
     }
     Ok(report)
+}
+
+/// Format 4 → 5: worlds made before the birthplace was chosen keep the place the world found
+/// (none chosen).
+fn v4_to_v5(obj: &mut Map<String, Value>) -> String {
+    if let Some(settings) = obj.get_mut("settings").and_then(Value::as_object_mut) {
+        settings.entry("birthplace").or_insert(Value::Null);
+    }
+    "4→5: no birthplace chosen (the place the world finds)".into()
 }
 
 fn take(obj: &mut Map<String, Value>, key: &str) -> Result<Value, SaveError> {

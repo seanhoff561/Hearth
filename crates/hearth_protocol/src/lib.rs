@@ -375,6 +375,12 @@ pub struct Plume {
 
 /// From the server.
 pub enum ToClient {
+    /// The world being made or opened: how far it has come (0–1) and what is being done (a
+    /// word key of the interface's, or the planet's own words).
+    Progress {
+        share: f32,
+        stage: String,
+    },
     Ready(Box<Ready>),
     /// A cube's blocks and light, for the client's own collision.
     Cube(CubePos, Arc<Cube>),

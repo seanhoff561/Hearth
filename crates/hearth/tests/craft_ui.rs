@@ -100,6 +100,8 @@ fn the_making_screens_draw() {
                     chronicle: Vec::new(),
                     conversation_probe: None,
                     conversation_models: Vec::new(),
+                    globe: None,
+                    time_words: None,
                 };
                 menus.ui(ui, &mut cx);
             },

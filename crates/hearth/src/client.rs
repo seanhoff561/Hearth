@@ -190,6 +190,8 @@ pub struct Client {
     /// Extra ticks per second of play (asked of the server).
     pub time_warp: f64,
     pub status: String,
+    /// How far the world being made or opened has come (0–1).
+    pub progress: f32,
     /// The debug screen (F3), and the frame rate it shows.
     pub debug_overlay: bool,
     pub fps: f64,
@@ -435,7 +437,8 @@ impl Client {
             tick_frac: 0.0,
             calendar,
             time_warp: 0.0,
-            status: "generating planet".into(),
+            status: "menu.making.opening".into(),
+            progress: 0.0,
             debug_overlay: false,
             fps: 0.0,
             hearing: crate::hearing::Hearing::default(),
@@ -2231,6 +2234,8 @@ impl Client {
             childhood: true,
             era: era.to_owned(),
             birth: None,
+            shape: Default::default(),
+            birthplace: None,
         }
     }
 
@@ -2791,6 +2796,10 @@ impl Client {
                 break;
             };
             match ev {
+                ToClient::Progress { share, stage } => {
+                    self.status = stage;
+                    self.progress = share;
+                }
                 ToClient::Ready(r) => {
                     let r = *r;
                     let planet = r.planet;
@@ -3381,6 +3390,10 @@ impl Client {
     /// `backdrop` is the opacity of the panels behind text (0–1).
     pub fn hud(&self, ui: &mut Ui<'_>, backdrop: f32) {
         let (w, h) = ui.size;
+        if self.world.is_none() {
+            self.draw_loading(ui);
+            return;
+        }
         let veil = (backdrop.clamp(0.0, 1.0) * 255.0) as u8;
         if let Some(b) = &self.body
             && b.dead.is_none()
@@ -3751,6 +3764,84 @@ impl Client {
         for (k, (text, alpha)) in lines.iter().enumerate() {
             let a = (alpha * 255.0) as u8;
             ui.label(left, top + k as f32 * lh, text, Rgba([255, 255, 255, a]));
+        }
+    }
+
+    /// Saves the world now; it goes on.
+    pub fn save_now(&self) {
+        self.server.send(ToServer::Save);
+    }
+
+    /// The time of day and the year in words, as the player knows them without a clock (Amendment
+    /// P §7.2): "late afternoon, the third day of autumn".
+    pub fn time_words(&self, l: &Lang) -> Option<String> {
+        let w = self.world.as_ref()?;
+        let p = self.camera.pos;
+        let m = self.calendar.at(self.now_ticks());
+        let hour = m.local_time(w.planet.solar_time_offset(p.x)) * 24.0;
+        let part = match hour {
+            h if h < 4.5 => "night",
+            h if h < 6.5 => "dawn",
+            h if h < 9.5 => "morning",
+            h if h < 11.5 => "late_morning",
+            h if h < 13.5 => "midday",
+            h if h < 16.0 => "afternoon",
+            h if h < 18.5 => "late_afternoon",
+            h if h < 21.0 => "evening",
+            _ => "night",
+        };
+        let southern = w.planet.latitude(p.z) < 0.0;
+        let day = (m.season_progress() * self.calendar.days_per_season as f64) as u32 + 1;
+        let season = format!("{:?}", m.season(southern)).to_lowercase();
+        let nth = match day {
+            1..=10 => l.get(&format!("time.nth.{day}")).to_owned(),
+            n => n.to_string(),
+        };
+        Some(l.format(
+            "time.words",
+            &[
+                ("part", l.get(&format!("time.part.{part}"))),
+                ("nth", &nth),
+                ("season", &l.get(&format!("season.{season}")).to_lowercase()),
+            ],
+        ))
+    }
+
+    /// The world being made or opened (Amendment P §4.3): what is being done, how far it has
+    /// come, and a tip.
+    fn draw_loading(&self, ui: &mut Ui<'_>) {
+        use hearth_ui::widgets::theme;
+        let (w, h) = ui.size;
+        ui.draw
+            .rect(0.0, 0.0, w, h, hearth_ui::Rgba([14, 18, 24, 255]));
+        let wide = (w - 16.0).min(340.0);
+        let x = ((w - wide) / 2.0).round();
+        let y = (h * 0.38).round();
+        ui.title(y, &ui.t("menu.making.title"));
+        let stage = if self.status.starts_with("menu.") {
+            ui.t(&self.status)
+        } else {
+            format!("{}…", self.status)
+        };
+        let r = hearth_ui::Rect::new(x, y + 18.0, wide, 10.0);
+        ui.text_centred(&r, &stage, theme::TEXT);
+        ui.draw.rect(x, y + 34.0, wide, 6.0, theme::FIELD);
+        ui.draw.rect(
+            x,
+            y + 34.0,
+            wide * self.progress.clamp(0.0, 1.0),
+            6.0,
+            theme::FILL,
+        );
+        // A tip, the same one while the world is made.
+        let tips = ui.lang.get("menu.making.tips").to_owned();
+        let tips: Vec<&str> = tips.split('|').collect();
+        let tip = tips[(self.world_spec().seed as usize) % tips.len().max(1)];
+        let mut ty = y + 52.0;
+        for l in ui.font.wrap(tip, wide as u32) {
+            let lw = ui.font.width(&l) as f32;
+            ui.label(((w - lw) / 2.0).round(), ty, &l, theme::DIM);
+            ty += hearth_ui::font::LINE as f32;
         }
     }
 

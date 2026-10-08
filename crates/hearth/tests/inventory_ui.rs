@@ -138,6 +138,8 @@ fn the_inventory_moves_things_where_they_are_put() {
                     chronicle: Vec::new(),
                     conversation_probe: None,
                     conversation_models: Vec::new(),
+                    globe: None,
+                    time_words: None,
                 };
                 actions = menus.ui(ui, &mut cx);
             },

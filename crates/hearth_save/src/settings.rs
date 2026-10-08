@@ -250,6 +250,10 @@ pub struct WorldSettings {
     pub life: LifeSettings,
     /// Era id (`eras/`).
     pub era: String,
+    /// Where the first life is born (world x, z), chosen on the globe (Amendment P §4.3);
+    /// `None`: where the world finds a place. The world's calendar starts by it.
+    #[serde(default)]
+    pub birthplace: Option<[f64; 2]>,
 }
 
 impl WorldSettings {
@@ -258,6 +262,7 @@ impl WorldSettings {
             planet,
             life: LifeSettings::default(),
             era: "hearth:wild_earth".into(),
+            birthplace: None,
         }
     }
 }

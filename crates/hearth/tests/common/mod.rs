@@ -151,6 +151,8 @@ impl World {
             childhood,
             era: era.to_owned(),
             birth,
+            shape: Default::default(),
+            birthplace: None,
         };
         let atlas = Arc::new(TextureArray::from_entries(&hearth_texgen::textures_for(
             None,

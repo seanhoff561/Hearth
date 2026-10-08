@@ -665,7 +665,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [ ] V2-12 — Neolithic
 - [x] S0 — Baseline and prototype (2026-10-07; D222)
 - [x] P0 — Triage and quick fixes (2026-10-08; D224, D225)
-- [ ] P1 — Menus and world management
+- [x] P1 — Menus and world management (2026-10-08; D226)
 - [ ] P2 — Game modes and Creative
 - [ ] P3 — Looking, highlighting and the hands
 - [ ] P4 — Poses, animation and skipping waits; sleep and time
@@ -712,7 +712,7 @@ with `dev/PLAYTEST.md` (every reported issue, its cause and its state).
 | Milestone | State | Open issues in `dev/PLAYTEST.md` |
 |---|---|---|
 | P0 — Triage and quick fixes | done 2026-10-08 (plant drag by reach; clouds, waves, rain and stars at real speeds) | #6–#9 and #18 fixed; #1–#5 and #10–#17 open for P1–P7G |
-| P1 — Menus and world management | planned | — |
+| P1 — Menus and world management | done 2026-10-08 (pages that fit; worlds, trash, Create World, the birthplace, pause) | #1–#3 fixed; #4 the mode with P2 |
 | P2 — Game modes and Creative | planned | — |
 | P3 — Looking, highlighting and the hands | planned | — |
 | P4 — Poses, skipping waits, sleep and time | planned | — |
@@ -1410,6 +1410,30 @@ P0 — Triage and quick fixes (Amendment P, `docs/spec/amendment-p-playability.m
   Known from P0: the motion-timing check that renders sequences is P5's; cloud shapes do not yet
   evolve; the stars' width at render scales below about 1000 pixels of height is wider than at
   full size.
+
+P1 — Menus and world management (Amendment P §4; PLAN.md; `docs/design/menus.md`; D226), done
+2026-10-08:
+- [x] Layout that fits: every page's rows in a scrolled area (clipped drawing, the pointer only
+  within it, wheel, bar, keys and controller), the footer held at the bottom; Video in tabs
+  (Display, Quality, Distance). The layout test (`tests/layout.rs`) lays out 21 screens at
+  seven resolutions, five interface scales, full screen and windowed (1,470 layouts) and finds
+  no widget out of reach, overlapping or with its text cut.
+- [x] Worlds: name, era, the player's name and age, play time and last played; Rename,
+  Duplicate, Back up (dated copies), Open folder, Delete (asked, naming the world) to a trash
+  kept thirty days, restored from the Trash screen, emptied there or in Options
+  (`worlds::tests`).
+- [x] Create World: a name, a seed, the player's name and the era; More options for the planet's
+  size, the height of the land, the day's and season's length and the starting season (saved
+  with the world). The death and knowledge rules and the loincloth are gone from it (P2's modes
+  set them).
+- [x] The planet made with its stages shown, then the globe to choose where to be born
+  (Recommended, Surprise me, or a click; the place under the pointer described); the world
+  opened with its birthplace kept (save format 5) and the life born near it
+  (`tests/server.rs`); the world's opening told with a bar and a tip (`ToClient::Progress`).
+- [x] Pause: the time in words, Back to the game, Options, Watch, Save, Save and quit.
+  Known from P1: the world list has no globe thumbnail yet; the globe's hover words are its
+  climate and land (who lives there and its dangers come with P2/P6); the mode on Create World
+  and the world's Edit come with P2, the Field Guide with P6.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
