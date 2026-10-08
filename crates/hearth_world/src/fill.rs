@@ -3,8 +3,10 @@
 //! crossing, which lets the 1 m grid hold a surface to some centimetres.
 //!
 //! Only cubes the surface passes through keep a fill array; elsewhere a voxel's fill follows
-//! from what it is: natural ground full, anything else empty (`Fill::of_state`). The fill of a
-//! natural voxel is positive and of any other negative; [`Fill::agree`] keeps it so.
+//! from what it is: natural ground full, anything else empty (`Fill::of_state`). Anything but
+//! natural ground is outside it; natural ground may be less than half full, its surface below
+//! the voxel's centre (dug, or a thin layer). A voxel whose state changes takes the fill its
+//! new state says (`UNSET`) until its fill is set.
 
 use hearth_math::CUBE_VOLUME;
 
@@ -15,6 +17,8 @@ pub const RANGE: f32 = 1.5;
 /// Fully inside the ground, and fully out of it.
 pub const FULL: i8 = 127;
 pub const EMPTY: i8 = -127;
+/// Stored for a voxel whose state changed and whose fill was not set since: its state says it.
+pub const UNSET: i8 = i8::MIN;
 
 /// One cube's fill, in index order (`y << 8 | z << 4 | x`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,9 +56,21 @@ impl Fill {
     }
 
     /// A value made to agree with what the voxel is: a natural voxel inside the ground, any
-    /// other outside, by at least the least step.
+    /// other outside, by at least the least step (the generator's rule: its states are ground
+    /// where the centre is).
     pub fn agree(q: i8, natural: bool) -> i8 {
         if natural { q.max(1) } else { q.min(-1) }
+    }
+
+    /// A stored value read for a voxel of what it is now: unset, its state's; anything but
+    /// natural ground outside.
+    pub fn read(q: i8, natural: bool) -> i8 {
+        match (q, natural) {
+            (UNSET, true) => FULL,
+            (UNSET, false) => EMPTY,
+            (q, true) => q,
+            (q, false) => q.min(-1),
+        }
     }
 
     /// Whether every voxel is wholly inside or wholly outside: the surface does not pass

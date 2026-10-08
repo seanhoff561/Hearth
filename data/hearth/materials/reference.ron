@@ -216,4 +216,38 @@
             source: "Oke 1987, table 1.1 (water 0.03-0.10 at high sun, more at low sun)",
         ),
     ],
+    // How natural ground behaves (Amendment S §2.3), the first family matching a material its
+    // own. Angle of repose of the loose material, dry and rain-wet (moist grains hold steeper
+    // by capillary cohesion; wet clay and loess lose their strength); none: rock, which stands
+    // until it breaks. Friction is a shod foot's on the ground, dry, wet and iced. Sharpness is
+    // how crisp its surface's edges stand (the mesher's feature solve).
+    ground: [
+        (id: "snow", name: "snow", matches: (categories: [Snow]), sharpness: 0.0,
+         repose_deg: Some((38.0, 30.0)), friction: (0.3, 0.2, 0.1), walk_sound: "snow",
+         source: "McClung and Schaerer 2006, The Avalanche Handbook, 3rd ed., ch. 4; ISO 13287 shoe tests on snow"),
+        (id: "ice", name: "ice", matches: (categories: [Ice]), sharpness: 0.6,
+         friction: (0.1, 0.05, 0.05), walk_sound: "glass",
+         source: "Gronqvist et al. 2001, Measurement of slipperiness, Ergonomics 44: 1102-1117"),
+        (id: "sand", name: "sand", matches: (tags: ["sand"]), sharpness: 0.05,
+         repose_deg: Some((34.0, 40.0)), friction: (0.55, 0.6, 0.15), walk_sound: "sand",
+         source: "Al-Hashemi and Al-Amoudi 2018, A review on the angle of repose of granular materials, Powder Technol. 330: 397-417"),
+        (id: "gravel", name: "gravel", matches: (ids: ["gravel"], tags: ["placer"]), sharpness: 0.3,
+         repose_deg: Some((40.0, 41.0)), friction: (0.6, 0.55, 0.15), walk_sound: "gravel",
+         source: "Al-Hashemi and Al-Amoudi 2018; Carson 1977, Angles of repose, angles of shearing resistance and angles of talus slopes, Earth Surf. Proc. 2: 363-380"),
+        (id: "ash_and_loess", name: "volcanic ash and loess", matches: (ids: ["volcanic_ash", "loess"]), sharpness: 0.2,
+         repose_deg: Some((35.0, 25.0)), friction: (0.55, 0.35, 0.1), walk_sound: "sand",
+         source: "Derbyshire et al. 2000, Landslides in the Gansu loess, Geol. Soc. Eng. Geol. Spec. Publ. 15", uncertain: true),
+        (id: "clay", name: "clay", matches: (categories: [Clay], tags: ["plastic"]), sharpness: 0.35,
+         repose_deg: Some((40.0, 20.0)), friction: (0.6, 0.25, 0.1), walk_sound: "mud",
+         source: "Craig 2004, Soil Mechanics, 7th ed., ch. 4-5; Gronqvist et al. 2001", uncertain: true),
+        (id: "peat", name: "peat", matches: (ids: ["peat"], tags: ["organic"]), sharpness: 0.15,
+         repose_deg: Some((40.0, 30.0)), friction: (0.5, 0.35, 0.1), walk_sound: "moss",
+         source: "Hobbs 1986, Mire morphology and the properties and behaviour of some British and foreign peats, Q. J. Eng. Geol. 19: 7-80", uncertain: true),
+        (id: "soil", name: "soil and loose earth", matches: (categories: [Soil, Sediment, Pigment]), sharpness: 0.2,
+         repose_deg: Some((37.0, 42.0)), friction: (0.6, 0.4, 0.1), walk_sound: "soil",
+         source: "Al-Hashemi and Al-Amoudi 2018; Craig 2004, ch. 4", uncertain: true),
+        (id: "rock", name: "rock", matches: (categories: [Rock, Mineral, Ore, Salt, Fuel, Metal]), sharpness: 0.9,
+         friction: (0.7, 0.5, 0.1), walk_sound: "stone",
+         source: "Gronqvist et al. 2001; Barton 1973, Review of a new shear-strength criterion for rock joints, Eng. Geol. 7: 287-332"),
+    ],
 )

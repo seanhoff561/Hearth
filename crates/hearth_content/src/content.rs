@@ -255,6 +255,17 @@ fn load_singleton<T: DeserializeOwned>(
 }
 
 impl Content {
+    /// The ground family of a material (Amendment S §2.3): the first whose filter matches.
+    pub fn ground_of(&self, material: &str) -> Option<&crate::schema::material::GroundFamily> {
+        let m = self.materials.get(material)?;
+        self.reference
+            .ground
+            .iter()
+            .find(|g| g.matches.matches(material, m))
+    }
+}
+
+impl Content {
     /// Loads every domain from `packs` (base pack first). Returns `None` when a required file is
     /// missing or unreadable; the report lists every problem found either way.
     pub fn load(packs: &[PathBuf]) -> (Option<Content>, Report) {

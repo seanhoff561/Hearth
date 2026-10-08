@@ -201,6 +201,25 @@ impl CubeMap {
         self.block(pos).unwrap_or(BlockStateId::AIR)
     }
 
+    /// A voxel's fill (Amendment S §2.1): how far inside the ground's surface it lies, made to
+    /// agree with what it is; `None` if its cube is not loaded.
+    pub fn fill(&self, pos: BlockPos, reg: &BlockRegistry) -> Option<i8> {
+        let pos = self.planet.wrap_block(pos);
+        self.cubes
+            .get(&pos.cube())
+            .map(|c| c.fill_at(reg, pos.local().index()))
+    }
+
+    /// Sets a voxel's fill; false if its cube is not loaded.
+    pub fn set_fill(&mut self, pos: BlockPos, q: i8, reg: &BlockRegistry) -> bool {
+        let pos = self.planet.wrap_block(pos);
+        let Some(c) = self.cubes.get_mut(&pos.cube()) else {
+            return false;
+        };
+        Arc::make_mut(c).set_fill(reg, pos.local().index(), q);
+        true
+    }
+
     /// Sets a block. Returns the previous state, or `None` if the cube isn't loaded. Keeps the
     /// column heightmap exact.
     pub fn set_block(

@@ -142,12 +142,15 @@ fn generated_blocks(
             "map_color".into(),
             format!("#{r:02x}{g:02x}{bl:02x}").into(),
         );
-        // How the ground sounds underfoot, where its material says more than the template.
-        if let Some(sound) = content
-            .materials
-            .get(b.material.as_str())
-            .and_then(|m| ground_sound(b.kind, &b.material, &m.tags))
-        {
+        // How the ground sounds underfoot: its family's footsteps (Amendment S §2.3); loose
+        // stones lying on it rattle like gravel.
+        let sound = match b.kind {
+            hearth_content::generate::NaturalKind::Cobbles => Some("gravel"),
+            _ => content
+                .ground_of(&b.material)
+                .map(|g| g.walk_sound.as_str()),
+        };
+        if let Some(sound) = sound {
             obj.insert("sound".into(), sound.into());
         }
         obj.insert("material".into(), b.material.into());
@@ -205,26 +208,6 @@ fn generated_blocks(
         out.push((id, obj));
     }
     out
-}
-
-/// The sound group of a natural block whose material sounds unlike its template: sands hiss,
-/// clays and muds squelch, gravels crunch, organic earths are soft.
-fn ground_sound(
-    kind: hearth_content::generate::NaturalKind,
-    material: &str,
-    tags: &[String],
-) -> Option<&'static str> {
-    use hearth_content::generate::NaturalKind as K;
-    let has = |t: &str| tags.iter().any(|x| x == t);
-    match kind {
-        K::Placer | K::Cobbles => Some("gravel"),
-        K::Soil | K::Loose if has("sand") => Some("sand"),
-        K::Soil | K::Loose if has("plastic") => Some("mud"),
-        K::Soil | K::Loose if has("organic") => Some("moss"),
-        K::Soil | K::Loose if has("frozen") => Some("stone"),
-        K::Loose if material.ends_with("gravel") => Some("gravel"),
-        _ => None,
-    }
 }
 
 /// Loads all block definitions from the given pack roots, in priority order (later packs

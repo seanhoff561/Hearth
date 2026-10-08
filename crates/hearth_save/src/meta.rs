@@ -10,7 +10,7 @@ use crate::settings::WorldSettings;
 /// * 1–5 — before Amendment E: worlds with people in them (V2.1); refused.
 /// * 6 — Amendment E: no simulated people; death means a new life (`life.after_death` only).
 /// * 7 — Earth's clock (E3): `life.start` instead of the day's and the season's lengths.
-pub const FORMAT: u32 = 7;
+pub const FORMAT: u32 = 8;
 
 /// Oldest format this build can migrate from.
 pub const OLDEST_SUPPORTED: u32 = 6;

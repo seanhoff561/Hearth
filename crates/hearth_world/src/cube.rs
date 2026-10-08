@@ -101,6 +101,9 @@ impl Cube {
         let old = self.blocks.set(p.index(), state);
         if old != state {
             self.version = self.version.wrapping_add(1);
+            if let Some(f) = &mut self.fill {
+                f.0[p.index()] = crate::fill::UNSET;
+            }
             match (old.is_air(), state.is_air()) {
                 (true, false) => self.non_air += 1,
                 (false, true) => self.non_air -= 1,
@@ -110,12 +113,12 @@ impl Cube {
         old
     }
 
-    /// A voxel's fill (by index): its own where the surface passes, made to agree with what
-    /// the voxel is now.
+    /// A voxel's fill (by index): its own where the surface passes, read for what the voxel
+    /// is now (`Fill::read`).
     pub fn fill_at(&self, reg: &BlockRegistry, i: usize) -> i8 {
         let natural = reg.has(self.blocks.get(i), StateFlags::NATURAL);
         match &self.fill {
-            Some(f) => Fill::agree(f.0[i], natural),
+            Some(f) => Fill::read(f.0[i], natural),
             None => Fill::of_state(reg, self.blocks.get(i)),
         }
     }
@@ -318,8 +321,13 @@ mod tests {
         let (back, n) = Cube::read_bytes(&b, &|v| BlockStateId(v)).unwrap();
         assert_eq!(n, b.len());
         assert_eq!(back.fill(), c.fill());
-        // A voxel dug out reads outside the ground whatever its fill held.
+        // A voxel whose state changes takes its new state's fill until its own is set.
         c.set(LocalPos::new(1, 1, 1), BlockStateId::AIR);
-        assert!(c.fill_at(&reg, i) < 0);
+        assert_eq!(c.fill_at(&reg, i), crate::fill::EMPTY);
+        c.set(LocalPos::new(1, 1, 1), stone);
+        assert_eq!(c.fill_at(&reg, i), crate::fill::FULL);
+        // Natural ground may be less than half full.
+        c.set_fill(&reg, i, -30);
+        assert_eq!(c.fill_at(&reg, i), -30);
     }
 }

@@ -237,6 +237,39 @@ impl MaterialFilter {
 pub struct MaterialReference {
     pub schema: u32,
     pub families: Vec<ReferenceFamily>,
+    /// How natural ground behaves underfoot and when dug, by family (Amendment S §2.3).
+    #[serde(default)]
+    pub ground: Vec<GroundFamily>,
+}
+
+/// How a family of natural ground behaves (Amendment S §2.3): its surface's crispness, the
+/// slopes its loose material comes to rest at, its grip underfoot and its footsteps. The first
+/// family whose filter matches a material is its own.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GroundFamily {
+    pub id: String,
+    pub name: String,
+    pub matches: MaterialFilter,
+    /// 0 soft and rounded … 1 crisp-edged (the mesher's feature solve).
+    pub sharpness: f32,
+    /// The angle of repose of the loose material (degrees), dry and rain-wet; none: it does not
+    /// flow (rock), it stands until it breaks.
+    #[serde(default)]
+    pub repose_deg: Option<(f32, f32)>,
+    /// Friction coefficient underfoot: dry, wet, iced.
+    pub friction: (f32, f32, f32),
+    /// The footsteps' sound group.
+    pub walk_sound: String,
+    pub source: String,
+    #[serde(default)]
+    pub uncertain: bool,
+}
+
+impl GroundFamily {
+    /// Whether loose material of the family flows when piled past its repose.
+    pub fn slumps(&self) -> bool {
+        self.repose_deg.is_some()
+    }
 }
 
 /// A material family's measured ranges, their source and the materials held to them.

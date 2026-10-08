@@ -742,9 +742,10 @@ fn terrain_only(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result
         );
         rows.push(row);
     }
-    // An edit as saved today: one dug block in `blocks.json`.
+    // An edit as saved today: one dug block and its fill in `blocks.json`.
     let edit = crate::edits::EditsSave {
         blocks: vec![(BlockPos::new(11_660, 87, -9_460), "hearth:air".into())],
+        fills: vec![(BlockPos::new(11_660, 87, -9_460), -127)],
     };
     let edit_json = serde_json::to_string(&edit)?.len()
         - serde_json::to_string(&crate::edits::EditsSave::default())?.len();

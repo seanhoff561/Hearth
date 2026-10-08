@@ -2,6 +2,9 @@
 //! over each cube as it loads again, and saved with the world (`blocks.json`). Terrain is
 //! generated afresh whenever a cube loads; the player's changes, the finite water
 //! (`hearth_world::water`) and the seasonal cover (`season_cover`) are laid over it in turn.
+//! A change to the ground keeps its fill (Amendment S §2.4); a change saved before fill was
+//! kept takes the regenerated ground's, made to agree with what the block is now, so old
+//! worlds' digging blends into the smooth ground about it.
 
 use hearth_math::{BlockPos, CubePos};
 use hearth_world::{BlockRegistry, BlockStateId, CubeMap};
@@ -14,12 +17,17 @@ use serde::{Deserialize, Serialize};
 pub struct EditsSave {
     #[serde(default)]
     pub blocks: Vec<(BlockPos, String)>,
+    /// The fill of changed ground, where it was changed (save format 8).
+    #[serde(default)]
+    pub fills: Vec<(BlockPos, i8)>,
 }
 
 /// The player's changes to the terrain, by cube.
 #[derive(Debug, Clone, Default)]
 pub struct Edits {
     by_cube: FxHashMap<CubePos, FxHashMap<BlockPos, BlockStateId>>,
+    /// The fill of changed voxels, where it was changed.
+    fills: FxHashMap<BlockPos, i8>,
     /// Changes to blocks this content no longer has, kept as saved (they come back with them).
     unknown: Vec<(BlockPos, String)>,
     /// Counts the changes made (to tell when the distant terrain should hear of them).
@@ -28,7 +36,10 @@ pub struct Edits {
 
 impl Edits {
     pub fn load(save: EditsSave, reg: &BlockRegistry) -> Self {
-        let mut edits = Self::default();
+        let mut edits = Self {
+            fills: save.fills.into_iter().collect(),
+            ..Self::default()
+        };
         for (p, name) in save.blocks {
             match reg.parse_state(&name) {
                 Ok(state) => edits.set(p, state),
@@ -53,13 +64,26 @@ impl Edits {
             .chain(self.unknown.iter().cloned())
             .collect();
         blocks.sort_by_key(|(p, _)| (p.x, p.y, p.z));
-        EditsSave { blocks }
+        let mut fills: Vec<(BlockPos, i8)> = self.fills.iter().map(|(p, q)| (*p, *q)).collect();
+        fills.sort_by_key(|(p, _)| (p.x, p.y, p.z));
+        EditsSave { blocks, fills }
     }
 
     /// Records that the block at `p` is now `state`.
     pub fn set(&mut self, p: BlockPos, state: BlockStateId) {
         self.by_cube.entry(p.cube()).or_default().insert(p, state);
         self.version += 1;
+    }
+
+    /// Records the fill of the voxel at `p` (it was dug or filled).
+    pub fn set_fill(&mut self, p: BlockPos, q: i8) {
+        self.fills.insert(p, q);
+        self.version += 1;
+    }
+
+    /// The changed fill at `p`, if the ground there was changed.
+    pub fn fill(&self, p: BlockPos) -> Option<i8> {
+        self.fills.get(&p).copied()
     }
 
     /// Counts the changes made so far.
@@ -87,6 +111,7 @@ impl Edits {
 
     /// Forgets any change at `p` (the block is the generator's again).
     pub fn forget(&mut self, p: BlockPos) {
+        self.fills.remove(&p);
         if let Some(m) = self.by_cube.get_mut(&p.cube()) {
             if m.remove(&p).is_some() {
                 self.version += 1;
@@ -122,11 +147,42 @@ impl Edits {
         self.len() == 0
     }
 
-    /// Lays the changes inside `cube` (just generated and inserted) over it.
+    /// Lays the changes inside `cube` (just generated and inserted) over it: each changed
+    /// block, then the changed fill; a block changed without its fill keeps the regenerated
+    /// ground's, which agrees with it as it is read.
     pub fn restore(&self, map: &mut CubeMap, reg: &BlockRegistry, cube: CubePos) {
         if let Some(m) = self.by_cube.get(&cube) {
             for (p, s) in m {
+                let was = map.fill(*p, reg);
                 map.set_block(*p, *s, reg);
+                // Changed without its fill (saved before fill was kept): the regenerated
+                // ground's, agreeing with the block as it is now.
+                if !self.fills.contains_key(p)
+                    && let Some(q) = was
+                {
+                    // At least half in (or out): its faces meet the ground about it.
+                    use hearth_world::Fill;
+                    let q = if reg.has(*s, hearth_world::StateFlags::NATURAL) {
+                        q.max(Fill::quantize(0.5))
+                    } else {
+                        q.min(Fill::quantize(-0.5))
+                    };
+                    map.set_fill(*p, q, reg);
+                }
+            }
+        }
+        if self.fills.is_empty() {
+            return;
+        }
+        let o = cube.min_block();
+        for y in 0..16 {
+            for z in 0..16 {
+                for x in 0..16 {
+                    let p = BlockPos::new(o.x + x, o.y + y, o.z + z);
+                    if let Some(q) = self.fills.get(&p) {
+                        map.set_fill(p, *q, reg);
+                    }
+                }
             }
         }
     }
@@ -162,5 +218,13 @@ mod tests {
         assert_eq!(back.len(), 2);
         // The unknown kind is not shown but is saved again as it was.
         assert_eq!(back.save(&reg).blocks.len(), 3);
+        // A save from before fill was kept loads with none; a fill set round-trips.
+        let mut e = back;
+        assert_eq!(e.fill(BlockPos::new(3, 4, 5)), None);
+        e.set_fill(BlockPos::new(3, 4, 5), -40);
+        let again = Edits::load(e.save(&reg), &reg);
+        assert_eq!(again.fill(BlockPos::new(3, 4, 5)), Some(-40));
+        let old: EditsSave = serde_json::from_str(r#"{"blocks": []}"#).expect("an old save");
+        assert!(old.fills.is_empty());
     }
 }

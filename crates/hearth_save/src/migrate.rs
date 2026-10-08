@@ -67,6 +67,14 @@ pub fn migrate(v: &mut Value) -> Result<MigrationReport, SaveError> {
             .steps
             .push("6 → 7: the clock is Earth's; the world wakes to a spring morning".into());
     }
+    if report.to == 7 {
+        // The smooth ground (S1): changed ground keeps its fill (`blocks.json`'s `fills`); the
+        // changes saved before take the regenerated ground's as they load.
+        report.to = 8;
+        report.steps.push(
+            "7 → 8: changed ground keeps its fill; older changes blend into the ground".into(),
+        );
+    }
     v["format"] = json!(report.to);
     Ok(report)
 }
@@ -104,7 +112,8 @@ mod tests {
                                   "realism": {"preset": "authentic"}}},
         });
         let r = migrate(&mut v).unwrap();
-        assert_eq!((r.from, r.to), (6, 7));
+        assert_eq!((r.from, r.to), (6, FORMAT));
+        assert_eq!(r.steps.len(), 2, "walked through every step: {:?}", r.steps);
         let life = &v["settings"]["life"];
         assert_eq!(life["start"], "spring_morning");
         assert!(life.get("day_length_min").is_none() && life.get("axial_tilt_deg").is_none());

@@ -1434,6 +1434,44 @@ fn reference_report(c: &Content, report: &mut Report) {
     );
 }
 
+/// Natural ground's behaviour (Amendment S §2.3): every natural block's material has a ground
+/// family, and the families' values are physical.
+fn ground(c: &Content, report: &mut Report) {
+    for g in &c.reference.ground {
+        let bad = |why: String| format!("ground family `{}`: {why}", g.id);
+        if !(0.0..=1.0).contains(&g.sharpness) {
+            report.error(
+                "ground",
+                None,
+                None,
+                bad(format!("sharpness {}", g.sharpness)),
+            );
+        }
+        if let Some((dry, wet)) = g.repose_deg
+            && !((5.0..=60.0).contains(&dry) && (5.0..=60.0).contains(&wet))
+        {
+            report.error("ground", None, None, bad(format!("repose {dry}°, {wet}°")));
+        }
+        let (d, w, i) = g.friction;
+        if !(i > 0.0 && i <= w.min(d) && d <= 1.2 && w <= 1.2) {
+            report.error("ground", None, None, bad(format!("friction {d}, {w}, {i}")));
+        }
+    }
+    for b in crate::generate::natural_blocks(c) {
+        if c.ground_of(&b.material).is_none() {
+            report.error(
+                "ground",
+                None,
+                None,
+                format!(
+                    "natural block `{}` ({}) has no ground family in `materials/reference.ron`",
+                    b.id, b.material
+                ),
+            );
+        }
+    }
+}
+
 pub fn lint(c: &Content, ctx: &LintContext) -> Report {
     let mut report = Report::default();
     crate::validate::validate(c, &mut report);
@@ -1448,6 +1486,7 @@ pub fn lint(c: &Content, ctx: &LintContext) -> Report {
     reference_report(c, &mut report);
     primary_report(c, &mut report);
     intents(c, &mut report);
+    ground(c, &mut report);
     work_models(c, &mut report);
     effort_report(&effort(c, &reach), &mut report);
     let uncertain = c.uncertain_entries();

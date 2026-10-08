@@ -6,6 +6,7 @@
 //! * [`light`] — lazily allocated 4-bit light channels.
 //! * [`cube`] — a 16³ cube.
 //! * [`fill`] — how far each voxel is inside the ground's surface (the smooth world's field).
+//! * [`ground`] — the ground as that field: looking at it, digging and piling, slumping.
 //! * [`storage`] — the loaded world: wrap-aware cube map and column heightmaps.
 //! * [`query`] — raycasts against real block shapes and collision box gathering.
 //! * [`water`] — finite, conserved water the player moves, and its quality.
@@ -14,6 +15,7 @@ pub mod block;
 pub mod cube;
 pub mod datapack;
 pub mod fill;
+pub mod ground;
 pub mod light;
 pub mod lighting;
 pub mod palette;
