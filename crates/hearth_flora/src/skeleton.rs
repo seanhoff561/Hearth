@@ -39,6 +39,23 @@ pub struct Skeleton {
     pub diameter: f32,
 }
 
+impl Skeleton {
+    /// Turned about its foot by `yaw` (radians) and moved by `offset` (m).
+    pub fn placed(mut self, yaw: f32, offset: Vec3) -> Self {
+        let rot = glam::Quat::from_rotation_y(yaw);
+        let at = |p: Vec3| rot * p + offset;
+        for s in &mut self.wood {
+            s.a = at(s.a);
+            s.b = at(s.b);
+        }
+        for b in &mut self.foliage {
+            b.a = at(b.a);
+            b.b = at(b.b);
+        }
+        self
+    }
+}
+
 /// How wide the crown is at a relative height in it (0 its base, 1 its top), as a share of
 /// its widest.
 pub fn envelope(crown: Crown, t: f32) -> f32 {

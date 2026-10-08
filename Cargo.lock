@@ -1053,6 +1053,7 @@ dependencies = [
 name = "hearth_flora"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "glam",
  "hearth_content",
  "hearth_math",

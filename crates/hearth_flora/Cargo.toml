@@ -1,6 +1,6 @@
 [package]
 name = "hearth_flora"
-description = "The growth model of trees and woody shrubs: allometry, stages, branching skeletons and their blocks, as cached templates."
+description = "The growth model of trees and woody shrubs: allometry, stages, branching skeletons, their blocks as cached templates, and their meshes."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+bytemuck.workspace = true
 hearth_content.workspace = true
 hearth_math.workspace = true
 glam.workspace = true

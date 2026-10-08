@@ -118,6 +118,22 @@ impl Turn {
         (x, z)
     }
 
+    /// Where a point of a template's skeleton (metres; x and z) lands relative to the foot
+    /// block's minimum corner: on the block's middle (or, for a `corner` trunk, its corner),
+    /// then turned and mirrored as its blocks are (`apply`), so the point stays in the block
+    /// its template put it in.
+    pub fn apply_f(self, x: f32, z: f32, corner: bool) -> (f32, f32) {
+        let (c, off) = if corner { (1.0, 0.0) } else { (0.0, 0.5) };
+        let (mut x, mut z) = (x + off, z + off);
+        if self.mirror {
+            x = (1.0 - c) - x;
+        }
+        for _ in 0..self.quarter {
+            (x, z) = ((1.0 - c) - z, x);
+        }
+        (x, z)
+    }
+
     /// A part turned with its tree.
     #[inline]
     pub fn part(self, p: Part) -> Part {
@@ -436,9 +452,24 @@ pub fn voxelize(sk: &Skeleton, foliage_density: f32, seed: u64) -> TreeTemplate 
     }
 }
 
+/// A variant's skeleton as it stands in its template: grown, turned about its foot to the
+/// variant's own angle and set off its block's middle by up to 0.4 m, so trees face every way
+/// and stand off the grid's points (P §11.1). Its blocks and its mesh are both made from it.
+pub fn variant_skeleton(sp: &Species, stage: Stage, variant: u8) -> Skeleton {
+    let h = hearth_math::hash::derive_seed(variant as u64 * 0x51 + stage.index() as u64, &sp.id)
+        ^ 0x9a3c_11d7;
+    let yaw = unit_f32(h) * std::f32::consts::TAU;
+    let offset = Vec3::new(
+        (unit_f32(h.rotate_left(21)) - 0.5) * 0.8,
+        0.0,
+        (unit_f32(h.rotate_left(42)) - 0.5) * 0.8,
+    );
+    skeleton::grow(sp, stage, variant as u32).placed(yaw, offset)
+}
+
 /// Grows a template.
 pub fn template(sp: &Species, stage: Stage, variant: u8) -> TreeTemplate {
-    let sk = skeleton::grow(sp, stage, variant as u32);
+    let sk = variant_skeleton(sp, stage, variant);
     if stage == Stage::Seedling {
         // Under 0.6 m: a leafy tuft in one block.
         return TreeTemplate {
@@ -549,6 +580,45 @@ mod tests {
             seen,
             [(-1, -1), (-1, 0), (0, -1), (0, 0)].into_iter().collect()
         );
+    }
+
+    #[test]
+    fn a_turned_point_stays_in_its_turned_block() {
+        for corner in [false, true] {
+            let off = if corner { 0.0 } else { 0.5 };
+            for quarter in 0..4 {
+                for mirror in [false, true] {
+                    let t = Turn { quarter, mirror };
+                    for (x, z) in [(0.13f32, 0.71f32), (-2.4, 1.05), (3.9, -0.6)] {
+                        // The block the template puts the point in (after its offset).
+                        let (bx, bz) = ((x + off).floor() as i32, (z + off).floor() as i32);
+                        let (tx, tz) = t.apply(bx, bz, corner);
+                        let (fx, fz) = t.apply_f(x, z, corner);
+                        assert_eq!(
+                            (fx.floor() as i32, fz.floor() as i32),
+                            (tx, tz),
+                            "{corner} {quarter} {mirror}: ({x}, {z}) to ({fx}, {fz})"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn variants_face_every_way_off_the_blocks_middle() {
+        let sp = crate::growth::tests::oak();
+        let feet: Vec<Vec3> = (0..VARIANTS)
+            .map(|v| variant_skeleton(&sp, Stage::Young, v).wood[0].a)
+            .collect();
+        // The foot stays within its block, never on its middle.
+        for f in &feet {
+            assert!(f.x.abs() <= 0.4 && f.z.abs() <= 0.4, "{f}");
+            assert!(f.x.abs() > 1e-4 || f.z.abs() > 1e-4, "{f}");
+        }
+        let distinct: std::collections::BTreeSet<i32> =
+            feet.iter().map(|f| (f.x * 1000.0) as i32).collect();
+        assert_eq!(distinct.len(), VARIANTS as usize);
     }
 
     #[test]
