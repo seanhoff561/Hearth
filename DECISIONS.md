@@ -2784,3 +2784,25 @@ starts by it, as it did by the place the world found. Worlds deleted go to `save
 time of their deletion in the folder's name and are restored from there or emptied; backups are
 dated copies in `saves/backups/`. Pages lay their rows in a scrolled area that fits any window,
 the footer held at the bottom, and the layout test holds every screen to that.
+
+## D227 — Amendments E and Q: the order of work
+`docs/spec/amendments-e-q.md` (2026-10-08) holds Amendment E (Earth-True) and Amendment Q (the
+Quality Charter). The order of work from now (`PLAN.md`): P2 finished without anything E §2
+removes; E0 (the human systems removed, archived as `archive/humans-v2.1`); Audit 0 and its
+high-priority fixes; Q1 (the interface); E1–E5; P3, P4 with E6, P5, P6; Audit 1; S1, S2, E7,
+S3, S4; Audit 2; S5 with P7, P7G, S6, S7, S8, P8; Audit 3; V2-13, V2-14 (technology only);
+Audit 4; V2-15, V2-16; Audit 5; Phase R-A (R1, R2, R3, R5); Audit 6; Phase R-B (R0, R7, R8,
+R9); Audit 7; R10; Phase F (simulated humanity, designed in E1), an audit every three
+milestones. H11–H13 are removed; V2.1 and its Addenda are superseded. The plan as it stood
+before is kept in `docs/history/plan-2026-10-08.md`. Amendment Q sits above the per-amendment
+details: an unspecified or ambiguous choice is decided by its principle, "as real as Earth, as
+fast as a game, and all of a piece". The spec's text names the original block game only as "the
+original game" here (clean-room rule).
+
+## D228 — The definition of done: the five tests and the checklist
+Every change passes Q §1's five tests — Real, Lean, Fast, Whole, Organic — and every milestone's
+`PROGRESS.md` entry ends with Q §8.1's checklist, a line for each (what became more like Earth
+and against which reference; what was removed or simplified; the gate and budgets; what might
+look out of place and how it was checked; the repetition checks). A "no" is fixed before the
+milestone closes or recorded here with why and when. Where realism and performance conflict,
+perceptual realism decides, and a significant simplification is recorded with its error bound.

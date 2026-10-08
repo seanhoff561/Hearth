@@ -721,6 +721,14 @@ with `dev/PLAYTEST.md` (every reported issue, its cause and its state).
 | P7, P7G — Natural placement; grasses | planned (with S5) | — |
 | P8 — Playtest pass | planned (after S8) | — |
 
+## Earth-True and Quality Status
+Amendments E and Q (`docs/spec/amendments-e-q.md`, D227, D228): the order of work is `PLAN.md`'s.
+
+| Row | State |
+|---|---|
+| Earth-True | E0–E7 planned; the human systems (H0–H10) to be removed in E0 and archived |
+| Quality | no audit yet; Audit 0 after E0; open high-priority findings: none recorded yet |
+
 ## Humans Status
 What of V2.1's people is implemented (used by the simulation) and what is planned (data or
 design only). Updated with each H milestone.

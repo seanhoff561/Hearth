@@ -1,348 +1,127 @@
-# Plan (v2, with V2.1)
+# Plan
 
-The game follows `docs/spec/v2-direction-change.md` (v2), which overrides the original build
-spec `docs/spec/v1-build-prompt.md` (v1) where they conflict. `MIGRATION.md` maps every v1
-milestone and subsystem to its fate. Since 2026-10-07 Amendment S
-(`docs/spec/amendment-s-smooth-world.md`) makes natural terrain, trees, bodies and items smooth on
-the same voxel grid, as milestones S0–S8 after V2-12 (`MIGRATION_SMOOTH.md`); and Amendment P
-(`docs/spec/amendment-p-playability.md`) makes the game easy to understand and pleasant to
-play, as milestones P0–P8: P0–P6 after S0 and before S1, P7 with S5, P7G after it, P8 after S8
-(D223; `dev/PLAYTEST.md` tracks every reported issue). Since 2026-10-03 the amendment
-`docs/spec/v2.1-realistic-humans.md` (V2.1, with its Addenda: A, the player is born; B, births
-in multiplayer and life after death) replaces
-v2 §8.4 and §17 and milestone V2-11 with milestones H0–H13 (simulated people, from genes to
-societies); `MIGRATION_HUMANS.md` maps what V2-11 had built onto them (D162). Each milestone ends with: design doc(s) in
-`docs/design/` updated, data added, tests, `scripts/check.sh` and `hearth content lint` green,
-the performance gate `scripts/perf-gate.sh` passed (or a regression over 5 % justified in
-`DECISIONS.md` and the baseline moved with `--accept`, D59), `PROGRESS.md` (incl. the Content
-Status table) updated, and a commit.
+The game follows `docs/spec/v2-direction-change.md` (v2) over `docs/spec/v1-build-prompt.md` (v1),
+as amended by Amendment S (`docs/spec/amendment-s-smooth-world.md`, smooth world), Amendment P
+(`docs/spec/amendment-p-playability.md`, playability) and, since 2026-10-08, Amendments E and Q
+(`docs/spec/amendments-e-q.md`): **Amendment E** (Earth-True: real Earth time and size, work
+stroke by stroke, Wild Earth as an adult you design, the simulated humans removed and planned as
+Phase F) and **Amendment Q** (the Quality Charter, above the per-amendment details). V2.1 and its
+Addenda are superseded (archived in E0). The full plan as it stood before is
+`docs/history/plan-2026-10-08.md`.
 
-Engine work that v1 scheduled but that is not done yet is folded into the first v2 milestone
-that needs it (marked **Engine**), keeping v1's acceptance criteria for it.
+## Definition of done (every milestone)
+- Implement; design docs in `docs/design/` current; data added; tests.
+- `scripts/check.sh`, `hearth content lint` and the performance gate `scripts/perf-gate.sh` green
+  (a regression over 5 % justified in `DECISIONS.md` and the baseline moved, D59).
+- **The five tests (Q §1):** every change is *Real* (more like the real Earth, perceptibly, or
+  needed for something that is), *Lean* (needed now, the simplest thing; nothing unused left),
+  *Fast* (within its budget, measured), *Whole* (nothing out of place in scale, light, colour,
+  detail, motion, sound or style) and *Organic* (no visible repetition; procedural first).
+  Where realism and performance conflict: perceptual realism, the simplification and its error
+  bound recorded in `DECISIONS.md`.
+- **The milestone checklist (Q §8.1)** in its `PROGRESS.md` entry, one line each: Real? Lean?
+  Fast? Whole? Organic? Any "no" fixed before the milestone closes, or a `DECISIONS.md` entry
+  saying why not and when.
+- `PROGRESS.md` (its status rows), `dev/PLAYTEST.md` updated; a commit.
 
-## Completed v1 engine milestones
-- **M0 Foundation** — workspace, options, input actions, window, wgpu bring-up.
-- **M1 Voxel core** — wrap-aware planet coordinates, registries, block states, palette cubes,
-  heightmaps, raycasts.
-- **M2 World generation** — planet model (tectonics, erosion, drainage, climate), regional
-  sampler, biomes, cube generation, caves, features.
-- **M3 Near-field rendering** — texgen, texture array, greedy meshing, GPU-driven culling,
-  translucency, headless screenshots, fly-camera preview.
-- The light engine part of v1 M5 (sky/block light, cross-cube BFS, incremental updates).
+## Order of work (Amendments E and Q, D227)
+1. **P2** finished, building nothing E §2 removes (no summoning people, no inhabiting or being
+   born again, no people overlays).
+2. **E0** — remove the human systems.
+3. **Audit 0**, then its high-priority fixes.
+4. **Q1** — the new interface design.
+5. **E1 → E2 → E3 → E4 → E5.**
+6. **P3** → **P4 with E6** → **P5** → **P6** (as amended by E §9.1).
+7. **Audit 1.**
+8. **S1 → S2 → E7 → S3 → S4** (S4 as amended by E §9.2).
+9. **Audit 2.**
+10. **S5 with P7 → P7G → S6** (animals and items) **→ S7 → S8 → P8.**
+11. **Audit 3.**
+12. **V2-13 → V2-14** (technology only).
+13. **Audit 4.**
+14. **V2-15 → V2-16** (as amended by E §9.4).
+15. **Audit 5.**
+16. **Phase R-A: R1 → R2 → R3 → R5** (as amended by E §9.3).
+17. **Audit 6.**
+18. **Phase R-B: R0 → R7 → R8 → R9.**
+19. **Audit 7.**
+20. **R10.**
+21. **Phase F**, an audit after every three milestones.
 
-## V2-0 — Migration & content platform
-- `MIGRATION.md`, this plan (done with the direction change).
-- `hearth_content` crate: loaders for every domain of §3.1 (RON preferred, JSON accepted),
-  serde structs as schemas (`deny_unknown_fields`), `notes` / `realism_source` / `uncertain`
-  on every entry, `status: implemented|planned` where relevant.
-- Units (SI internally, `units.ron`), `time.ron` scales, balance layer with Authentic / Hardy /
-  Custom presets (`balance/`).
-- Form × material generation of items and block families.
-- `hearth content lint` (schemas, cross-references, reachability, habitats, food-web producers,
-  unit sanity, file/line diagnostics) and `hearth content graph` (DOT/SVG + HTML under
-  `docs/generated/`); lint runs in `scripts/check.sh`.
-- Hot reload (F3+T) plumbing: reload registries, report systems that can't reload.
-- **Engine (v1 M4 saves):** world directory with versioned metadata, content registry mapping,
-  region files for cubes; migration framework; format 1 refused with a clear message.
-- World settings struct for v2 options (Knowledge Mode incl. `Open`, realism preset, etc.).
-- Remove dropped v1 content (ore blocks and MC ore bands, MC workstations, beds, wool colours,
-  MC-only building blocks) and their textures/models.
-- `docs/design/` skeleton (one doc per system) + `interactions.md` matrix.
-- *Accept:* lint passes on the seed dataset; format-1 worlds refused with a clear message; a
-  V2-0 save loads after a deliberate format change via a migration test.
+## Completed
+- **M0–M3** — v1 engine: foundation, voxel core, world generation, near-field rendering.
+- **V2-0 – V2-10** — content platform, time and seasons, geology and hydrology, the player's body,
+  carrying and clothing, process crafting and knowledge, flora, fauna, structural building, the
+  vertical slice review, ecosystem waves.
+- **V2-11** — superseded by V2.1 (H0–H10), itself superseded by Amendment E.
+- **H0 – H10** — the simulated humans (genetics to societies, history, the Observer, the
+  conversation backend); removed in E0, archived as `archive/humans-v2.1`.
+- **V2-12** — the Neolithic: pottery, fields and grain domestication, herds, textiles, timber,
+  moving loads.
+- **S0** — Baseline-S and the smooth-terrain prototypes (D222).
+- **P0** — triage and quick fixes (D224, D225). **P1** — menus and world management (D226).
 
-## V2-1 — Time, calendar & seasons
-- Calendar (day length 20–120 min, days per season 3–91, starting season), the two time scales
-  in one module (`time.ron`), axial tilt → solar declination, sun position and day length by
-  latitude, polar day/night, synodic moon; hemispheres.
-- Seasonal climate: monthly temperature/precipitation from the planet climate (seasonal
-  amplitude, ITCZ shift, monsoons), weather cells that follow it (rain/snow/storms, wet/dry
-  seasons), snow cover accumulation/melt (snow layers), lake/river ice growth and thaw,
-  permafrost flags.
-- Phenology state plumbing (per-species calendars come with flora in V2-6); seasonal grass/
-  foliage colormaps as GPU parameters (no remeshing).
-- **Engine (v1 M6):** atmosphere (transmittance/multi-scatter/sky-view LUTs), sun/moon/stars by
-  latitude and local time, day-night lighting, HDR + tonemap + auto-exposure, realistic
-  darkness, fog/aerial perspective.
-- **Engine (v1 M10 part):** weather rendering (rain/snow particles, clouds).
-- *Accept:* screenshot suite at 4 seasons × 3 latitudes; unit tests for solar position and day
-  length against known values; a headless year shows correct snow, ice and wet/dry timing by
-  latitude.
-
-## V2-2 — Geology, soils, hydrology & resources
-- Geological provinces from the tectonic history; stratigraphy (flat and folded layers, dips,
-  outcrops), crystalline basement, geothermal gradient; volcanic landforms and rocks.
-- Soils from climate × parent rock × vegetation × drainage × slope, with profiles; clays, sands,
-  gravels, peat, loess, alluvium, permafrost.
-- Groundwater table, springs, seasonal river levels, floodplains; finite conserved
-  player-moved water with levelling and flow (**Engine, v1 M5 fluids**); water quality.
-- Coasts: coral reefs (fringing, barrier, atolls), kelp, mudflats/salt marsh, mangroves, rocky
-  intertidal, sea ice.
-- Deposit models for every Appendix D resource with surface indicators (gossans, stains,
-  float, placers, indicator plants); panning.
-- Surface detail: layer blocks, loose stones/pebbles/boulders, talus with angle of repose.
-- **Engine (v1 M7):** water rendering (waves, reflections, refraction, absorption, foam,
-  underwater fog, caustics) plus ice.
-- Minimal globe spawn picker for testing (finished in V2-15).
-- *Accept:* `worldmap` geology/soil/deposit layers; statistical tests that deposits occur only in
-  their provinces at plausible frequencies; each Era 0–5 resource reachable from every continent
-  at Standard size, or lint flags the gap.
-
-## V2-3 — Player: character, body & physiology
-- **Engine (v1 M4):** `hearth_protocol`, integrated server thread (20 TPS), client mirror,
-  physics/collision shared with entities, saves of players.
-- **Engine (v1 M11 framework):** UI toolkit and text rendering (clean-room font), screens
-  framework, options screens, controller support, localization plumbing, audio engine.
-- Character creator with rotatable preview and profiles; realistic blocky rig; first-person
-  arms/body; walk/jog/sprint/crouch/crawl/swim/climb, falls by impact speed.
-- Physiology: energy and macronutrients, fresh-food reserve, hydration, food safety,
-  thermoregulation (clo, wetness, wind, radiation), sleep with smooth time acceleration and
-  interruptions, fatigue, localized injuries and illnesses, stamina; death modes (Legacy,
-  Permadeath, Hardy).
-- Diegetic HUD, Body panel (B), optional Guided HUD; body audio.
-- *Accept:* headless physiology tests (hypothermia in 5 °C rain without clothing vs fur + fire;
-  dehydration fatal after ~3 game days; sprain vs fracture recovery on the right time scale).
-
-## V2-4 — Inventory, carrying & clothing
-- Hands, body attachment points, containers with grids and limits, mass/volume/footprint,
-  placing items in the world, dragging/rolling/travois, encumbrance, quick slots 1–6 + radial.
-- Clothing layers with insulation, wind/water resistance, capacity; visible on the model.
-- *Accept:* capacity and encumbrance tests; UI round-trip tests; a 100 kg log section can only be
-  dragged, slowly.
-
-## V2-5 — Interaction, process crafting & knowledge
-- Gathering by hand; excavation with spoil piles and angle of repose; contextual actions.
-- Process engine (inputs, tools by property, conditions, durations on the right scale, quality,
-  by-products, failures); thermal model for fires and items; fire-making; cooking and
-  preservation basics; tool condition and maintenance.
-- Minigames (knapping first), skills, journal with discovery routes (experiment, observation,
-  inference, evidence), Knowledge Modes; Era 0–2 knowledge and processes.
-- *Accept:* a scripted bot goes from nothing to fire, a hafted stone spear, sewn hide clothing
-  and dried meat using only discovery routes; no unreachable Era 0–2 nodes; effort rollup rises
-  by era.
-
-## V2-6 — Flora framework (temperate first)
-- Plant model; procedural tree growth for the temperate species set (real heights/girths,
-  branches as sub-block models, root flares); wood properties; passable foliage (slows, hides,
-  partial shade); climbing; felling as a physical event, limbing, bucking; understory; edible/
-  medicinal/toxic plants; succession; vegetation cell state; wildfire.
-- **Engine (v1 M8, rest):** the quadtree, surface sampling, meshing, streaming and handoff exist
-  (built in V2-2, D52); add the on-disk LOD cache, edits reaching the LOD, occlusion culling and
-  a VRAM budget for LOD tiles, and a TAA option — LOD tiles show vegetation state and season.
-- *Accept:* species silhouettes at 3 ages (screenshots); a cleared area goes through succession
-  over simulated years; wildfire spreads and burns out plausibly in a dry-season test; v1 M8's
-  horizon screenshot from a peak and fly-through benchmark.
-
-## V2-7 — Fauna framework (temperate forest first)
-- **Engine (v1 M9 infrastructure):** ECS integration, body plans with shared skeletons,
-  procedural animation, pathfinding (walk/swim/fly/climb), instanced rendering, animal audio.
-- Species coat textures; senses with wind-carried scent; utility AI behaviours; herds and
-  packs; ecological cells with population dynamics; materialization/folding; biogeographic
-  realms; predators and dangerous herbivores with real attack causes; tracking; hunting;
-  butchering; Tier 1 temperate fauna; ambient birds and insects.
-- *Accept:* 50-year headless run stays within plausible bounds for every species; heavy hunting
-  depletes and later recovers a local deer population; every predator attack logs a realistic
-  cause.
-
-## V2-8 — Structural building & shelter
-- Construction pieces and stages; incremental stability solver (support propagation + load
-  check) with collapses and debris; excavation supports; roofs/rain/rot rules; shelter quality;
-  builder's view; Era 0–3 techniques.
-- *Accept:* a too-long stone span collapses; a timber-supported tunnel stands; thatch keeps rain
-  out while a flat bark roof leaks; solver within budget on large structures.
-
-## V2-9 — Vertical slice review
-- Temperate forest year from a loincloth in spring; scripted bot run through a year with
-  screenshots and logs; `docs/review/slice-1.md`; fix the top issues before expanding.
-
-## V2-10 — Ecosystem expansion waves
-- Boreal/tundra/polar → grassland/steppe/desert → savanna/tropical forest → mountains/alpine →
-  wetlands/rivers/lakes → oceans (coasts, reefs, kelp, open ocean, deep sea bioluminescence).
-- *Accept:* per-wave 50-year stability runs and screenshot suites.
-
-## V2-11 — *Australopithecus* & the agent framework (superseded by V2.1)
-- Parts (a)–(d) done and kept (`MIGRATION_HUMANS.md`): the population and its hunters, the agent
-  crate on the player's body, knowledge, carrying and process engine, hominins drawn out near the
-  player with their days, nests, alarms and flight, sites, habituation and learning by watching;
-  its acceptance met (decades in suitable habitat; a scripted observer gains knapping insight).
-  Part (e) (docs and the gate) folds into H0.
-
-The H milestones each end as every milestone does (docs, data, tests, `scripts/check.sh`, the
-content lint, the performance gate, `PROGRESS.md` with its **Humans Status** table, a commit).
-*Australopithecus* keeps working throughout: it is the first species profile on the framework.
-
-## H0 — Framework migration
-- `MIGRATION_HUMANS.md`; the **Person** composition with versioned components (body, mind,
-  knowledge, social, life history, possessions now; genome, phenotype and psyche joining with
-  H1–H2); **species profiles** in `data/hearth/humans/species/` (*Australopithecus*
-  implemented; *Homo erectus*, *H. neanderthalensis*, *H. sapiens* as data); one random stream
-  per person; a step that reads the state before it, so neither order nor thread count changes
-  the outcome; the **persons registry**, saved with the world under a version with migrations;
-  the developer **inspector** (F3 mode) for any person; *Australopithecus* ported onto it.
-- *Accept:* *Australopithecus* behave at least as well as before (the V2-11 tests on the new
-  framework); save/load round-trips persons; the determinism test (same seed and inputs, and one
-  thread or many, give the same persons after a run) passes.
-
-## H1 — Genetics engine
-- Genome (23 chromosome pairs, a few hundred loci), meiosis with crossovers, mutation,
-  inbreeding, lineage and kinship coefficients; genotype → phenotype for appearance, health,
-  temperament (personality model chosen in `DECISIONS.md`) and aptitude; heritability
-  calibration; the ancestry lint (ground rule 1); phenotype-driven figures, so families look
-  related.
-- **The player's genome is a child's of two parents** (Addendum A): the character creator loses
-  its appearance editor (name and sex stay); until families live in the world (H3) the parents
-  are drawn from the spawn region's gene pool and shown.
-- *Accept:* V2.1 §18's genetics tests; family resemblance visible in a generated
-  three-generation family screenshot set.
-
-## H2 — Psyche and mind core
-- Personality and its behaviour mappings, appraisal emotions, mood and stress, values;
-  perception; episodic and semantic memory, beliefs; routines, utility selection and HTN
-  planning on the process engine; budgets.
-- *Accept:* agents complete multi-step plans (a hafted spear from scratch, knowing how); modest
-  trait–behaviour correlations; emotions visible and contagious.
-
-## H3 — Life course and demography
-- Pair bonds (abstracted), pregnancy, birth, the life stages from infant to elder with child body
-  models and animations, development, ageing, death, mourning and inheritance; life tables.
-- **The player is born** (Addendum A, `docs/design/humans/player-birth.md`): into a family of the
-  world — in Wild Earth one of its few wandering families (D164) — growing up at the childhood
-  pace through moments and the years between, and coming of age.
-- **Death** (Addendum B §2, `docs/design/humans/life-after-death.md`, D167): the death as an event
-  of the world, the death screen and the life story; **Spectate** (the Observer's entry: a free
-  camera following any person or animal, its controls with H9); **Restart** (replay the world or
-  start a new one, the old save archived); **Inhabit an adult** (body, knowledge, relationships
-  taken over; the "Who you are" briefing).
-- *Accept:* a 200-year forager run meets V2.1 §14.3's targets; children visibly learn by
-  imitation and play; families persist across generations; a scripted player is born, grows up
-  through its moments and comes of age in its family; a scripted player dies, reads its life
-  story and goes on as a grown kinsman.
-
-## H4 — Social systems
-- Kinship systems, households, relationships and obligations, cooperation and sharing norms,
-  reputation and gossip, norms and sanctions, status and group decisions, conflict escalation
-  and de-escalation, strangers.
-- *Accept:* V2.1 §18's social tests; a group debates and decides where to move camp; a norm
-  violation produces gossip and sanctions.
-
-## H5 — Culture and language
-- The culture generator and model, transmission and evolution; generated languages, families and
-  drift, names; speech acts, gestures, subtitles with partial translation; the player learning a
-  language.
-- *Accept:* two cultures from one ancestor diverge after a split with related languages and
-  customs; the player learns a language over play.
-
-## H6 — Knowledge and social learning
-- Observation (generalized from the hominins'), teaching, apprenticeship, storytelling, agents'
-  own discoveries, the collective brain's retention and loss, diffusion between groups, the
-  anachronism guard.
-- *Accept:* knowledge is lost in an isolated small population and kept in a large connected one;
-  the player is taught a technique faster than discovering it.
-
-## H7 — Tiers and persistence
-- Household and demographic tiers, promotion and demotion conserving state, individuals
-  instantiated from populations with synthesized genealogies, persistent persons, pruning to
-  genealogy stubs, budgets.
-- *Accept:* leaving a band and coming back finds it consistent; a population instantiated on
-  approach has coherent families; budgets met.
-
-## H8 — History simulation and Paleolithic eras
-- The deep-time layer (dispersal from the cradle over the planet's real geography, gene pools,
-  cultures, languages, knowledge geography, the chronicle) and the recent-history layer about the
-  spawn; species profiles of *H. erectus*, Neanderthals and *H. sapiens* implemented; Lower,
-  Middle and Upper Paleolithic era profiles (routines, camps, seasonal rounds, aggregation); the
-  era selector enables them; **birth options**: two to four households of the chosen area to be
-  born into (Addendum A); after death **be born again** and **inhabit a child** (its childhood
-  from its age), with the eligibility rules and scope filters; Wild Earth's families as many as
-  the players a world expects (Addendum B).
-- *Accept:* `docs/review/era-*.md` reviews for the three eras; dispersal plausible on the
-  planet's geography; births offered at places across the eras.
-
-## H9 — Observer mode and the player in society
-- The Chronicle mode (time controls, overlays, following people, stepping in as a birth into a
-  chosen household); obligations, family and children, joining another group; the interaction UI
-  (speech-act wheel, gestures, give and trade, asking to be taught, teaching).
-- **Life after death in full** (Addendum B §2): the inhabiting flow (filters, consent prompts, the
-  "not right now" rules), the **Knowledge after death** setting, the **Permadeath** preset, v2's
-  death rules retired with a save migration (D167).
-- *Accept:* a scripted player, born into a band, is taught, forms a family and goes on as their
-  grown child after death; the Observer's fast-forward meets its budget.
-
-## H10 — Optional conversation backend
-- The `ConversationBackend` trait (none / local / remote, off by default), prompts built from a
-  person's own state, player free text parsed into speech acts, anachronism and knowledge
-  filters.
-- *Accept:* disabled, nothing changes; enabled, a conversation suite never leaks unknown facts or
-  anachronisms and never changes state outside speech acts.
-
-## V2-12 — Neolithic
-- Plant and animal domestication across generations, farming (soils, seasons, weeds, pests,
-  irrigation, fallow, manure), pottery and kilns, spinning and weaving, permanent houses,
-  querns and bread, dairy, storage, boats and sledges, the wheel.
-- *Accept:* a bot domesticates a grain and sees yields rise; a sheep lineage becomes docile and
-  woolly; under-fired pottery fails.
-- *Later (Amendment P §11.5.7):* the domesticated cereals are grasses, so with P7G the crops
-  (wheat, barley, rice, the millets, maize, sorghum) move onto the sward-and-blade system:
-  fields as a sward of the crop with ripening heads and weeds, hay meadows and mowing, pasture
-  and grazing managed.
-
-## Amendment S — Smooth voxel world (S0–S8)
-Amendment S (`docs/spec/amendment-s-smooth-world.md`, 2026-10-07) makes natural terrain smooth
-on the same 1 m voxel grid (a fill value per voxel), leaves real foliage, trees real trunks, and
-bodies and items smooth forms; every simulation system stays on the grid. It is engine work
-inserted here, after V2-12 and before the remaining H milestones (S §0.2); Amendment R stays last.
-`MIGRATION_SMOOTH.md` maps each subsystem to Keep / Modify / Replace; Baseline-S and the latest
-numbers live in `BENCHMARKS.md`; `docs/review/smooth-world.md` is the visual review. Each S
-milestone: implement, design docs and data, tests, `scripts/check.sh`, `hearth content lint`,
-the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
-
-## S0 — Baseline and prototype
-- `MIGRATION_SMOOTH.md`; Baseline-S benchmarks and screenshots (S §12.1); the mesher prototypes
-  (Surface Nets, Surface Nets with sharp features, Dual Contouring) on the test scenes (rolling
-  hills, sea cliffs, a cave, a dune field, a riverbank, a talus slope, a dug pit with its spoil,
-  a mountain ridge; S §3.1); a material-blending and biplanar-shading prototype on two
-  materials; `docs/design/art-direction.md` (S §1.1).
-- *Accept:* `DECISIONS.md` has the algorithm choice with screenshots and numbers; Baseline-S
-  recorded.
-
-## Amendment P — Playability pass (P0–P8)
-Amendment P (`docs/spec/amendment-p-playability.md`, 2026-10-07) makes the game easy to
-understand, pleasant to control and honest about how real life works, from the player's side:
-menus that fit and scroll and manage worlds, three modes (Realistic, Easy, Creative) in place of
-the many world-rule settings, Creative's powers and spectating, the one thing looked at
-highlighted and each hand doing its natural thing to it, the body doing the work, sleep and time
-that make sense, motion at real speeds, learning to play; then natural generation without the
-grid (P7, with S5) and grasses as a living layer (P7G, after S5). P0–P6 come here, after S0 and
-before S1 (P §0.1, D223); P8, the playability review, after S8. `dev/PLAYTEST.md` tracks every
-reported issue. Each P milestone: implement, design docs and data, tests, `scripts/check.sh`,
-`hearth content lint`, `PROGRESS.md` (with its Playability Status row) and `dev/PLAYTEST.md`,
-commit.
-
-## P0 — Triage and quick fixes
-- `dev/PLAYTEST.md`: every reported issue reproduced and its cause recorded. Plants slow a body by
-  how high they reach on it, how dense and stiff they are and how much of its path they fill,
-  not by the worst block in its box (P §10.1). Clouds, stars and water at real speeds in real
-  seconds (P §8; the full audit is P5).
-- *Accept:* a sprint through short grass at most 2 % slower than over bare ground; clouds, stars
-  and water move at real speeds at normal time; each issue has its cause recorded.
-
-## P1 — Menus and world management
-- Scrollable, responsive layouts and the automated layout test at every resolution, GUI scale
-  and display mode (P §4.1); the Worlds screen with delete (to a trash kept 30 days), rename,
-  duplicate, back up and the mode's edit (§4.2); the short Create World screen, the planet's
-  progress screen, the globe birthplace picker and the birth step (§4.3); the pause menu (§4.4).
-  It brings V2-15's world-creation flow forward.
-- *Accept:* the layout test passes at every resolution, scale and display mode; a world created
-  with a chosen birthplace, deleted and restored from the trash.
+## Audits (Amendment Q §8.2)
+Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
+`scripts/lean-check.sh` and a fresh-eyes review, the gate and a profile of the worst scene,
+realism and cohesion against the reference ranges and real references, the repetition metrics,
+a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five lines in
+`PROGRESS.md`. **Audit 0** (after E0) also sets the baseline: the restart files cut down (Q §5.4),
+a fluff inventory, the original-game-era leftovers with a plan each (Q §5.8),
+`data/hearth/materials/reference.ron` started, `docs/design/budgets.md`, `scripts/lean-check.sh`.
 
 ## P2 — Game modes and Creative
 - `data/hearth/balance/modes.ron` and the three modes (§2); changing mode toward less strict; F3
   and Developer mode; Creative's powers, inventory, pick and remove, time and weather panel,
   clear view, spectating that streams the world about the camera and resumes there (§3).
+- *Amended by E §0.3, §9.1:* no People in the creative inventory, no summoning or removing people,
+  no inhabiting or being born again; every mode starts as an adult.
 - *Accept:* Realistic and Easy have no spectating, time control or Observer; Creative is
-  invulnerable and places and summons every category; spectating far away loads full-detail
-  terrain, plants, animals and people about the camera, and resuming sets the body safely on the
-  ground there; children can be neither summoned nor removed.
+  invulnerable and places and summons every (non-human) category; spectating far away loads
+  full-detail terrain, plants and animals about the camera, and resuming sets the body safely on
+  the ground there.
+
+## E0 — Remove the human systems (E §2)
+- Tag `archive/humans-v2.1`; the V2.1 docs, spec and `MIGRATION_HUMANS.md` to
+  `docs/archive/humans-v2.1/` with its README; remove `hearth_people`, `hearth_ai`, the human
+  modules, screens, protocol messages, data, schemas and tests; every knowledge node reachable by
+  a lone player (lint); saves with people refused clearly or migrated; the Actor rule (E §2.3)
+  for what the player's body does.
+- *Accept:* E §2.4's checks; the build and all remaining tests green; `PLAN.md` and
+  `PROGRESS.md` say what was removed and why.
+
+## Q1 — Interface design (Q §6)
+- An OFL typeface rendered as SDF/MSDF text; quiet panels in natural low-saturation colours;
+  item icons rendered from the items' meshes; a lightly diegetic journal; accessibility and the
+  layout test kept. Only `hearth_ui` and the screens.
+
+## E1 — The future humanity plan (documents only, E §10)
+- `docs/design/future/humanity/` (README, roadmap and one document per E §10 section), research
+  notes; `docs/design/future-humanity.md` pointing there; Phase F below. No code.
+
+## E2 — Controls (E §3)
+- Any key bindable alone (Ctrl, Alt, left and right modifiers; releases fed to the rebind
+  capture); hold and tap rules for a lone modifier with combinations; clicking with no target
+  uses the item in hand or attacks (punch, swing, thrust, kick), physically.
+- *Accept:* E §11's control tests; the owner's Ctrl/Alt report resolved in `dev/PLAYTEST.md`.
+
+## E3 — Real Earth time (E §4)
+- One clock: 86,400 s days, the 365.2422-day year, the 29.530589-day month, tilt 23.44°; the sky
+  by real astronomy with the equation of time; every motion and process at its real rate;
+  Sleep and Rest / Wait the only way time passes faster; start "Spring morning" or "Now".
+- *Accept:* E §11's time tests; no compressed clock left; Rest / Wait works.
+
+## E4 — Real Earth size (E §5)
+- `PlanetSize::Earth` only (test planets in Developer mode); the generator recalibrated with
+  nested refinement levels; real heights, lapse rate, tree and snow lines, altitude physiology;
+  lazy simulation planet-wide; a far-field planet layer to the real horizon.
+- *Accept:* E §11's Earth-scale tests; an Earth world made in ≤ ~45 s with a progress screen;
+  performance targets met or honestly recorded.
+
+## E5 — Wild Earth start (E §6)
+- The character creator back; 3–5 suggested places with verified "what to look for" and "watch
+  out for"; other eras "Coming soon"; waking at dawn; death: a new life or restart.
+- *Accept:* E §11's start tests; title screen to waking at dawn; places add ≤ ~15 s.
 
 ## P3 — Looking and the hands
 - Highlighting and precise picking, name tags and hand hints (§5.1); the intent resolver
@@ -351,14 +130,25 @@ commit.
   clutter, the crosshair's offer list removed (§5.4); controller mapping.
 - *Accept:* a scripted playtest covers every example of §5.2; nothing happens without a
   highlighted target or an action on oneself; picking costs under 0.2 ms a frame.
+- *Amended by E §9.1:* clicking with no target follows E §3.2; hold-to-repeat becomes stroke by
+  stroke work (E §7.2); no progress ring.
 
-## P4 — Poses, animation and skipping; sleep and time
+## P4 — Poses, animation, sleep and time (with E6)
 - The work-pose library with IK; every process with its pose (lint); first- and third-person
   views; people using the same poses; skipping a long action with the fade, interruptions,
   cancelling with partial progress kept, queued repeats (§6). Sleep by the two-process model with
   the lie-down menu; the time in words (§7).
 - *Accept:* every process animates; lying down at night leads to sleep within a realistic time;
   every refusal explains itself; skipping gives what waiting gives.
+- *Amended by E §9.1:* no skipping active work (Rest / Wait for waiting processes); no people;
+  sleep on real 24-hour days.
+
+## E6 — Work the way the body does it (with P4, E §7)
+- No timers or progress bars: active work stroke by stroke while the button is held, rates from
+  real sources, work in progress persistent; gathering one thing at a time from a loose-objects
+  layer and from living plants; waiting processes on real-rate state models, inspectable.
+- *Accept:* E §11's work tests; every active process animates stroke by stroke; every waiting
+  process can be inspected; no progress bars remain.
 
 ## P5 — Motion timing audit
 - `docs/design/motion-timing.md`: everything that moves, its clock (real or game) and its speed,
@@ -370,6 +160,21 @@ commit.
   Guide (§9).
 - *Accept:* the bot completes every chapter; a new player can learn sleeping, drinking, fire and
   the hands unaided.
+- *Amended by E §9.1:* no People chapter; teach stroke-by-stroke work, gathering one thing at a
+  time, inspecting the meat over the fire, Rest / Wait; set in a Wild Earth valley at real time.
+
+## Audit 1
+After P6, covering E1–E6 and P3–P6.
+
+## Amendment S — Smooth voxel world (S0–S8)
+Amendment S (`docs/spec/amendment-s-smooth-world.md`, 2026-10-07) makes natural terrain smooth
+on the same 1 m voxel grid (a fill value per voxel), leaves real foliage, trees real trunks, and
+bodies and items smooth forms; every simulation system stays on the grid. It is engine work
+inserted here, after V2-12 and before the remaining H milestones (S §0.2); Amendment R stays last.
+`MIGRATION_SMOOTH.md` maps each subsystem to Keep / Modify / Replace; Baseline-S and the latest
+numbers live in `BENCHMARKS.md`; `docs/review/smooth-world.md` is the visual review. Each S
+milestone: implement, design docs and data, tests, `scripts/check.sh`, `hearth content lint`,
+the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 
 ## S1 — Fill data and editing core
 - Fill values in cubes and generation (S §2), material properties (sharpness, angle of repose,
@@ -386,6 +191,12 @@ commit.
 - *Accept:* S §13 meshing tests; the screenshot suite shows smooth terrain everywhere; frame
   targets met for terrain-only scenes.
 
+## E7 — Realistic human body, face and hair (after S2, E §8)
+- Anatomically realistic skinned bodies with morphs, skin with subsurface scattering and state
+  from the body simulation, faces and eyes, card hair with anisotropic shading and physics and
+  real growth, the loincloth fitted, first-person arms; the creator updated.
+- *Accept:* the E7 review screenshots; a close-up character within about 1 ms of GPU at High.
+
 ## S3 — Movement, collision and navigation
 - Field-based capsule collision on server and client, slope walking, sliding and footing,
   footsteps and footprints on smooth ground, the nav grid rebuilt for animals and humans,
@@ -398,6 +209,11 @@ commit.
   LOD (S §5).
 - *Accept:* no visible seam or color jump at the near/far transition in the screenshot suite;
   v1 §8.4 targets still pass.
+- *Amended by E §9.2:* blended into the far-field planet layer out to the real horizon; measured
+  on the Earth-sized planet.
+
+## Audit 2
+After S4, covering S1, S2, E7, S3, S4.
 
 ## S5 — Trees and foliage (with P7)
 - Smooth trunks and branches, felling rigid bodies and log meshes, leaf clusters with
@@ -432,6 +248,7 @@ commit.
   material (S §10).
 - *Accept:* a three-generation family screenshot set shows resemblance; herds and crowds stay
   within budgets; every item form renders for every material.
+- *Amended by E §9.2:* animals and items; the human body is E7's.
 
 ## S7 — Water, snow, ice, caves and built-piece polish
 - S §9 in full and S §6 visual polish.
@@ -452,40 +269,34 @@ commit.
 - *Accept:* every issue in `dev/PLAYTEST.md` resolved or explained; the review's top items
   fixed.
 
-## H11 — Neolithic society
-- Villages, farming and herding households, lineages, storage, feasting, early inequality, crowd
-  diseases; the Neolithic era profile.
+## Audit 3
+After P8, covering S5–S8.
 
 ## V2-13 — Metallurgy & mining
 - Prospecting, mining with supports, ore processing, charcoal, furnaces, bellows, crucibles,
   casting, alloying, bloomery, smithing, heat treatment; metal tools and armour.
 - *Accept:* realistic yields; bronze needs copper and tin sources; iron needs a bloomery and
   forging; measurable tool quality differences.
-
-## H12 — Bronze Age society
-- Specialists, exchange and markets, chiefdoms and early states, temples, towns, organized
-  conflict (abstracted, ground rule 4); the Bronze Age era profile.
+- Technology only (E §9.4): usable alone, in Creative and in multiplayer.
 
 ## V2-14 — Late scope: Iron Age & Classical
 - Lime mortar and concrete, arches/vaults/domes, cranes and pulleys, lathe, glassblowing, water
   wheel with a minimal mechanical power network, advanced boats and sails, carts with draft
   animals; `docs/design/future-systems.md` ready for Era 6.
+- Technology only (E §9.4).
 
-## H13 — Iron Age / Classical society
-- Kingdoms and city-states, coinage, law, cities; the era profile.
+## Audit 4
+After V2-14.
 
 ## V2-15 — World creation & menus
-- *Brought forward by P1:* the short Create World screen with the mode, the planet's progress,
-  the globe birthplace picker and the birth step; V2-15 keeps the rest.
-- Full §16 flow: planet settings, life & time settings, era selector with the deep-time
-  progress, globe spawn picker with region info, the birth options (Addendum A; no appearance
-  editor), the Observer's entry; map with exploration memory.
-- **Engine (v1 M11/M12 remainder):** remaining screens, resource packs with hot reload, WASM
-  mod API + examples, `MODDING.md`.
-- *Accept:* UI tests; spawning at chosen points across climates works.
+- *Amended by E §6, §9.4:* Create World is name, seed, mode, era (Wild Earth only; the others
+  "Coming soon") and starting date, then the suggested places, then the character creator.
+- The map with exploration memory; **Engine (v1 M11/M12 remainder):** remaining screens, resource
+  packs with hot reload, WASM mod API + examples, `MODDING.md`.
+- *Accept:* UI tests; starting at chosen places across climates works.
 
 ## V2-16 — Long-run balance, performance & cohesion QA
-- 100-year headless planet runs and 500-year planet history runs with the era reviews (V2.1);
+- long-run headless planet runs at Earth scale and real time (E §9.4);
   §21 budgets and v1 frame-rate targets verified
   (`BENCHMARKS.md`); interaction matrix fully checked; screenshot suite across ecosystems,
   seasons and times of day; "survive two years in three climates" bot run;
@@ -493,9 +304,12 @@ commit.
 - **Engine (v1 M13/M14):** profiling, zero steady-state allocations, software-adapter run,
   README/BUILDING/MODDING/ASSETS_LICENSES, fresh-clone build, soak test.
 
+## Audit 5
+After V2-16, before Phase R.
+
 ## Phase R (after the game is complete)
 Amendment R (`dev/AMENDMENT_R.md`, 2026-10-03): open-source release, multiplayer, AI and voice,
-the guide and the trailer (since Amendment S, describing and showing the smooth world). None of it starts until every H and V2 milestone above, through V2-16,
+the guide and the trailer (since Amendment S, describing and showing the smooth world). None of it starts until every milestone above, through V2-16,
 is complete and accepted (R §0.1). Until then only its **multiplayer-ready rule** applies (R §0.3,
 D166): gameplay state on the server's side, new messages serializable and versioned through the
 channel, no simulation assuming a single player. When V2-16 is done: re-read the amendment, write
@@ -553,3 +367,37 @@ channel, no simulation assuming a single player. When V2-16 is done: re-read the
 - **R10 — Launch readiness review.** Fresh-machine installs, the guide followed literally,
   security and privacy reviews, a performance re-check, `dev/LAUNCH_REPORT.md` with the owner's
   decisions still to confirm (R §0.5); the v0.1.0 release drafted, not published.
+
+*Amended by E §9.3:* Phase R-A is **R1 → R2 → R3 → R5**; R4 (AI Bridge) and R6 (agent voices)
+move into Phase F. R3's births in multiplayer are removed: starts and new lives use E §6.3 and
+§6.6 (suggested places, anywhere, near a friend), and R3 adds player-to-player body interactions
+on the Actor rule, contact by consent, hostile ones by PvP. The guide's people, eras and AI
+sections become "Coming later"; the trailer's people beat becomes players together. Audit 6
+after R-A; Audit 7 before R10.
+
+## Phase F — Simulated humanity (after R10; E §10, designed in E1)
+Each milestone's acceptance tests are detailed when Phase F begins; an audit after every three.
+- **F0 — Research and prototypes:** model latency, throughput and quality on reference hardware
+  for System 1 and System 2; a five-person believability prototype; a voice-latency prototype.
+- **F1 — People foundation:** the Person record and levels C0–C2 on the Actor framework; genetics,
+  life course and demography restored from the archive, adapted to real time and
+  childhood-as-the-past.
+- **F2 — The History Engine:** region graph, settlements, polities, economy, conflict, culture,
+  era snapshots, with plausibility tests.
+- **F3 — The World Bible and the Historian:** narrative with fact validation and lazy zoom.
+- **F4 — Procedural minds (C2):** needs, emotions, planner, routines, social rules, pathfinding at
+  every scale.
+- **F5 — The System 1 action model:** training pipeline, batched runtime, fallback.
+- **F6 — Reflective minds (C3):** memory, reflection, structured outputs, validators, budgets; the
+  AI Bridge providers.
+- **F7 — Conversation and voice (C4):** turn-taking, streaming speech in and out, voices,
+  languages and translation options, multiplayer.
+- **F8 — Societies:** households, cooperation, institutions as collective agents, deliberation,
+  markets, conflict and war.
+- **F9 — Settlements:** people building with the real construction system; growth and roads.
+- **F10 — Births and childhood:** any household, the vignette engine with the real family's
+  minds, coming of age.
+- **F11 — Eras:** the Upper Paleolithic vertical slice first, then the others, each with an
+  authenticity review.
+- **F12 — Scale, cost and safety hardening:** million-person regions, cost and latency budgets,
+  red-team suites, multiplayer determinism through the decision journal.

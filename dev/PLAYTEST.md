@@ -1,4 +1,4 @@
-# Playtest issues (Amendment P)
+# Playtest issues (Amendments P and E)
 
 The owner's playtest reports and Amendment P's findings (`docs/spec/amendment-p-playability.md`),
 one numbered item each: how to reproduce it, its cause once found, its status and the milestone
@@ -30,3 +30,13 @@ Statuses: **open**, **cause found**, **fixed** (with the test or screenshot that
 | 16 | Sleep and the time of day are hard to understand | Play through a day | *(from the code)* no time in words, no account of skipped time, no sleep model by the hour (see 12) | open | P4 |
 | 17 | Which button does what is confusing | Try to pick, dig, drink | *(from the code)* primary use plus a wheel through offers (`crafting_ui.rs`), rather than each hand doing its natural thing on what is highlighted | open | P3 |
 | 18 | Rain and snow thrown sideways when the wind changes | Rain or snow while the wind shifts | *(from the code, found in P0's look at what moves)* `precip.wgsl` moved each particle by `wind × seconds`, the same product: a freshening wind threw the rain sideways at tens to hundreds of metres a second; and the clock, `f32` seconds up to 100 000, lost precision as the world aged | **fixed** (P0): the air's drift is summed in real seconds and wrapped by whole boxes; every fall speed and wobble is whole in a 1,000-s clock, so it wraps unseen (`motion-timing.md`) | P0 |
+| 19 | Ctrl and Alt cannot be bound as keys of their own, only in a combination | Controls → rebind an action → press Ctrl alone | *(from the code, E §3.1)* the Controls screen feeds only presses to `RebindCapture`; its `release` is never called, so a lone modifier waits for another key | open | E2 |
+| 20 | Clicking with no target does nothing; it should use the thing in hand or strike | Hold a spear (or nothing) and click at the sky | *(owner)* no primary use or unarmed attack exists for an empty aim | open | E2 |
+| 21 | Day and night, task times and the speeds of people and animals are not those of real life | Play a day; time a task; watch a deer run | *(owner)* the compressed clock (48-minute days, 8-day seasons, v2 §4.2) and processes of fixed durations | open | E3 |
+| 22 | Tasks take a fixed time behind a progress bar; things are not gathered one at a time from what is there | Gather stones; dig | *(owner)* processes have `duration` and random output amounts (`gather_stones` 2–3 cobbles in 0.02 h) | open | E6 |
+| 23 | Waiting processes (cooking, drying) cannot be looked at to see how they are going | Hang meat to dry, come back | *(owner)* no inspection of a waiting process's state or history | open | E6 |
+| 24 | Days, nights, seasons, weather and the sky are not at Earth's timing; the world is not Earth's size | Create a world | *(owner)* the compressed clock; planet-size presets (Standard recommended), scaled heights | open | E3, E4 |
+| 25 | Wild Earth should start as an adult, at one of a few places with what to look for, without hominins; other eras “Coming soon” | New world → Wild Earth | *(owner)* the start is a birth into a family; hominins live in Wild Earth | open | E5 |
+| 26 | Remove the talking options and the conversation backend for now | Talk to a person | *(owner)* Amendment E removes the simulated humans (E §2) | open | E0 |
+| 27 | The character creator should be back, and hair and the whole body should look real to match the smooth world | New world | *(owner)* the creator went with births (Addendum A); bodies are cuboid rigs | open | E5, E7 |
+| 28 | Plan the future simulated humanity in depth, but do not build it yet | — | *(owner)* E §10 | open | E1 |
