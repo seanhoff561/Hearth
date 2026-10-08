@@ -82,6 +82,10 @@ pub struct App {
     ambience_sent: Instant,
     /// Who the player begins as.
     profiles: Profiles,
+    /// The character creator's person, its drawing, and its boxes this frame.
+    preview_figure: Option<hearth_character::Figure>,
+    figure_preview: Option<hearth_render::figure::FigurePreview>,
+    preview_boxes: Vec<hearth_character::FigureInstance>,
     /// A new world's planet being made, and then its globe while the birthplace is chosen
     /// (Amendment P §4.3).
     making: Option<Making>,
@@ -175,6 +179,9 @@ impl App {
             audio_checked: Instant::now(),
             ambience_sent: Instant::now(),
             profiles,
+            preview_figure: None,
+            figure_preview: None,
+            preview_boxes: Vec::new(),
             making: None,
             choosing: None,
         }
@@ -581,17 +588,22 @@ impl App {
     }
 
     /// Starts playing a world.
-    /// The eras a new world may be made in: (id, name, how its people live), playable ones in
-    /// their order.
-    fn eras(&self) -> Vec<(String, String, String)> {
+    /// The eras in their order: (id, name, its one line, whether it is playable yet).
+    fn eras(&self) -> Vec<(String, String, String, bool)> {
         let Some(c) = self.content.content.as_deref() else {
             return Vec::new();
         };
-        let mut eras: Vec<&hearth_content::schema::era::Era> =
-            c.eras.iter().filter(|e| e.available).collect();
+        let mut eras: Vec<&hearth_content::schema::era::Era> = c.eras.iter().collect();
         eras.sort_by_key(|e| e.order);
         eras.into_iter()
-            .map(|e| (e.id.clone(), e.name.clone(), e.description.clone()))
+            .map(|e| {
+                (
+                    e.id.clone(),
+                    e.name.clone(),
+                    e.description.clone(),
+                    e.available,
+                )
+            })
             .collect()
     }
 
@@ -623,7 +635,7 @@ impl App {
             seed,
             Some(self.dirs.cache()),
             Some(self.dirs.saves()),
-            self.profiles.appearance(seed),
+            self.profiles.current().clone(),
             knowledge,
             era,
         );
@@ -1095,6 +1107,9 @@ impl App {
             let languages = &self.languages;
             let audio_devices = &self.audio_devices;
             let profiles = &mut self.profiles;
+            let preview_figure = &mut self.preview_figure;
+            let figure_preview = &mut self.figure_preview;
+            let preview_boxes = &mut self.preview_boxes;
             let format = run.renderer.color_format();
             if run.renderer.render_with(|ctx, enc, targets| {
                 match client.as_mut() {
@@ -1148,6 +1163,50 @@ impl App {
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
+                // The character creator's person, over its space in the interface.
+                if let Some(p) = menus.preview() {
+                    let fig = preview_figure.get_or_insert_with(|| {
+                        hearth_character::Figure::starting(p.appearance.clone())
+                    });
+                    fig.set_appearance(&p.appearance);
+                    fig.dress(&hearth_character::starting_garbs(&p.appearance));
+                    let drive = hearth_character::Drive {
+                        breaths_per_min: 12.0,
+                        ..Default::default()
+                    };
+                    let pose = fig.animator.update(&fig.rig, &drive, dt as f32);
+                    preview_boxes.clear();
+                    hearth_character::instances(
+                        &fig.rig,
+                        &fig.palette,
+                        &pose,
+                        glam::Affine3A::from_rotation_y(p.yaw),
+                        hearth_character::Show::default(),
+                        preview_boxes,
+                    );
+                    let s = interface.scale as f32;
+                    let rect = [
+                        (p.rect.x * s) as u32,
+                        (p.rect.y * s) as u32,
+                        (p.rect.w * s) as u32,
+                        (p.rect.h * s) as u32,
+                    ];
+                    let r = figure_preview.get_or_insert_with(|| {
+                        hearth_render::figure::FigurePreview::new(ctx, format)
+                    });
+                    // Framed for the tallest person, so heights compare.
+                    r.render(
+                        ctx,
+                        enc,
+                        targets.color,
+                        targets.size,
+                        rect,
+                        preview_boxes,
+                        2.0,
+                        0.55,
+                        p.light,
+                    );
+                }
             }) {
                 self.frames_rendered += 1;
                 run.title_frames += 1;

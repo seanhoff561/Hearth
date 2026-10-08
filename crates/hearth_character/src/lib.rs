@@ -10,7 +10,8 @@ pub mod rig;
 
 pub use animate::{Activity, Animator, Doing, Drive, Gesture, Holding, Pose};
 pub use appearance::{
-    Appearance, BodyType, EyeColor, FacialHair, HAIR_COLORS, HairStyle, Loincloth,
+    Appearance, BodyType, EyeColor, Eyebrows, FACE_PRESETS, Face, FacialHair, HAIR_COLORS,
+    HairStyle, Loincloth,
 };
 pub use instances::{FigureInstance, Palette, Show, instances, skinned, solid};
 pub use rig::{EYE, Garb, Joint, Region, Rig, Stuff, starting_garbs};

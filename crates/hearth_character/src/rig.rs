@@ -232,6 +232,8 @@ pub enum Stuff {
     Shadow,
     Sclera,
     Iris,
+    /// A freckle on the skin.
+    Freckle,
     Cloth,
     /// A garment's own colour (sRGB).
     Dyed([u8; 3]),
@@ -525,13 +527,18 @@ fn face(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
     let (c, half) = head_box(d);
     let front = c.z + half.z;
     let eye_y = (EYE - HEAD_JOINT) * h;
+    let f = a.face;
+    // Each feature a little smaller or larger than the average, as its slider says.
+    let (eye, apart) = (1.0 + 0.15 * f.eyes, 1.0 + 0.06 * f.eyes);
+    let brow_t = 0.0035 * h * a.eyebrows.weight();
+    let ear = 1.0 + 0.2 * f.ears;
     for s in [1.0, -1.0] {
-        let x = s * 0.018 * h;
+        let x = s * 0.018 * h * apart;
         add(
             out,
             Joint::Head,
             v(x, eye_y, front + 0.0006 * h),
-            v(0.017 * h, 0.0075 * h, 0.002 * h),
+            v(0.017 * h * eye, 0.0075 * h * eye, 0.002 * h),
             Stuff::Sclera,
             r,
             0.0,
@@ -540,51 +547,137 @@ fn face(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
             out,
             Joint::Head,
             v(x, eye_y, front + 0.0016 * h),
-            v(0.0075 * h, 0.0075 * h, 0.002 * h),
+            v(0.0075 * h * eye, 0.0075 * h * eye, 0.002 * h),
             Stuff::Iris,
             r,
             0.0,
         );
+        // The brow ridge, lower and further forward when heavy, and the eyebrows on it.
+        let ridge = 0.0015 * h * (1.0 + f.brow);
         add(
             out,
             Joint::Head,
-            v(s * 0.019 * h, eye_y + 0.011 * h, front + 0.0012 * h),
-            v(0.021 * h, 0.0035 * h, 0.003 * h),
+            v(
+                s * 0.019 * h * apart,
+                eye_y + (0.011 - 0.0015 * f.brow) * h,
+                front + 0.0012 * h + ridge,
+            ),
+            v(0.021 * h, brow_t, 0.003 * h),
             Stuff::Brow,
             r,
             0.0,
+        );
+        if f.brow > 0.0 {
+            add(
+                out,
+                Joint::Head,
+                v(
+                    s * 0.019 * h * apart,
+                    eye_y + 0.0085 * h,
+                    front + ridge / 2.0,
+                ),
+                v(0.024 * h, 0.006 * h, ridge),
+                Stuff::Skin,
+                r,
+                0.0,
+            );
+        }
+        // Cheekbones: below and outside the eyes, standing out as they are high.
+        let cheek = 0.5 + 0.5 * f.cheekbones;
+        add(
+            out,
+            Joint::Head,
+            v(
+                s * half.x * 0.62,
+                eye_y - 0.016 * h,
+                front - 0.006 * h + 0.003 * h * cheek,
+            ),
+            v(0.022 * h, 0.014 * h, 0.012 * h),
+            Stuff::Skin,
+            r,
+            0.004 * h,
         );
         // Ears.
         add(
             out,
             Joint::Head,
-            v(s * (half.x + 0.002 * h), eye_y - 0.011 * h, c.z - 0.006 * h),
-            v(0.006 * h, 0.034 * h, 0.02 * h),
+            v(
+                s * (half.x + 0.002 * h * ear),
+                eye_y - 0.011 * h,
+                c.z - 0.006 * h,
+            ),
+            v(0.006 * h * ear, 0.034 * h * ear, 0.02 * h * ear),
             Stuff::Skin,
             r,
             0.0,
         );
     }
-    // Nose and mouth.
+    // Nose, jaw, chin and mouth.
+    let nose = 1.0 + 0.2 * f.nose;
     add(
         out,
         Joint::Head,
-        v(0.0, eye_y - 0.016 * h, front + 0.005 * h),
-        v(0.013 * h, 0.032 * h, 0.012 * h),
+        v(0.0, eye_y - 0.016 * h * nose, front + 0.005 * h * nose),
+        v(
+            0.013 * h * (1.0 + 0.12 * f.nose),
+            0.032 * h * nose,
+            0.012 * h * nose,
+        ),
         Stuff::Skin,
         r,
         0.003 * h,
     );
     let mouth_y = 0.014 * h;
+    let low = c.y - half.y;
+    if f.jaw > 0.0 {
+        // A broad jaw: the lower face wider than the skull's box.
+        add(
+            out,
+            Joint::Head,
+            v(0.0, (low + mouth_y) / 2.0, c.z + 0.1 * half.z),
+            v(d.head_w * (1.0 + 0.08 * f.jaw), mouth_y - low, half.z * 1.7),
+            Stuff::Skin,
+            r,
+            0.006 * h,
+        );
+    }
+    add(
+        out,
+        Joint::Head,
+        v(0.0, low + 0.008 * h, front + 0.0015 * h * (1.0 + f.jaw)),
+        v(0.034 * h * (1.0 + 0.3 * f.jaw), 0.016 * h, 0.004 * h),
+        Stuff::Skin,
+        r,
+        0.002 * h,
+    );
     add(
         out,
         Joint::Head,
         v(0.0, mouth_y, front + 0.0008 * h),
-        v(0.028 * h, 0.0045 * h, 0.002 * h),
+        v(0.028 * h, 0.0045 * h * (1.0 + 0.35 * f.lips), 0.002 * h),
         Stuff::Lips,
         r,
         0.0,
     );
+    // Freckles over the nose and cheeks: a few for a light sprinkling, dozens for many.
+    let n = (a.freckles * 28.0).round() as usize;
+    for i in 0..n {
+        // Spread by the golden angle over two patches beside the nose.
+        let t = (i as f32 + 0.5) / 28.0;
+        let ang = i as f32 * 2.399_963;
+        let s = if i % 2 == 0 { 1.0 } else { -1.0 };
+        let x = s * (0.012 + 0.02 * t.sqrt() * ang.cos().abs()) * h;
+        let y = eye_y - 0.012 * h + 0.012 * h * t.sqrt() * ang.sin();
+        add(
+            out,
+            Joint::Head,
+            v(x, y, front + 0.0004 * h),
+            v(0.0022 * h, 0.0022 * h, 0.001 * h),
+            Stuff::Freckle,
+            r,
+            0.0,
+        );
+    }
     // Facial hair, over the lower face; the mouth stays in front of it.
     let jaw = |out: &mut Vec<Part>, below: f32, thick: f32, stuff: Stuff| {
         let top = mouth_y + 0.004 * h;
@@ -707,7 +800,10 @@ fn hair(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
         }
     };
     // Hair hanging behind, down to `low`, split into `strands` slabs (waves alternate).
+    // The styles that hang: from a third shorter than their own to a third longer.
+    let long = 0.67 + 0.66 * a.hair_length.clamp(0.0, 1.0);
     let fall = |out: &mut Vec<Part>, t: f32, low: f32, strands: usize, wave: f32| {
+        let low = low * long;
         let w = (d.head_w + 2.0 * t) / strands as f32;
         for i in 0..strands {
             let x = -(d.head_w + 2.0 * t) / 2.0 + w * (i as f32 + 0.5);
@@ -724,6 +820,7 @@ fn hair(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
         }
     };
     let curtains = |out: &mut Vec<Part>, t: f32, low: f32| {
+        let low = low * long;
         for s in [1.0, -1.0] {
             add(
                 out,
@@ -800,8 +897,8 @@ fn hair(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
                 add(
                     out,
                     Joint::Head,
-                    v(x, (nape - 0.19 * h) / 2.0, back - 0.012 * h),
-                    v(0.011 * h, 0.19 * h + 0.01 * h, 0.011 * h),
+                    v(x, (nape - 0.19 * h * long) / 2.0, back - 0.012 * h),
+                    v(0.011 * h, 0.19 * h * long + 0.01 * h, 0.011 * h),
                     Stuff::Hair,
                     r,
                     0.0,
@@ -818,10 +915,10 @@ fn hair(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
                     Joint::Head,
                     v(
                         sx * (half.x + 0.008 * h),
-                        (nape - 0.09 * h) / 2.0 + 0.01 * h,
+                        (nape - 0.09 * h * long) / 2.0 + 0.01 * h,
                         c.z - cz * (half.z + 0.008 * h),
                     ),
-                    v(0.015 * h, 0.1 * h + 0.02 * h, 0.015 * h),
+                    v(0.015 * h, 0.1 * h * long + 0.02 * h, 0.015 * h),
                     Stuff::Hair,
                     r,
                     0.0,

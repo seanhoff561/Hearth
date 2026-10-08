@@ -110,6 +110,10 @@ fn screens() -> Vec<(&'static str, Box<dyn Fn() -> Screen>)> {
             Box::new(|| Screen::Creative(Default::default())),
         ),
         ("death", Box::new(|| Screen::Death)),
+        (
+            "character",
+            Box::new(|| Screen::Character(Default::default())),
+        ),
     ]
 }
 
@@ -145,11 +149,20 @@ fn lay_out(screen: &dyn Fn() -> Screen, size: (f32, f32)) -> Vec<Placed> {
             }),
             inventory: None,
             journal: None,
-            eras: vec![(
-                "hearth:wild_earth".into(),
-                "Wild Earth".into(),
-                "A wild Earth without people. Survive, learn and build from nothing.".into(),
-            )],
+            eras: vec![
+                (
+                    "hearth:wild_earth".into(),
+                    "Wild Earth".into(),
+                    "A wild Earth without people. Survive, learn and build from nothing.".into(),
+                    true,
+                ),
+                (
+                    "hearth:lower_paleolithic".into(),
+                    "Lower Paleolithic".into(),
+                    "Homo erectus with hand axes and wooden spears, keeping fire.".into(),
+                    false,
+                ),
+            ],
             modes: vec![
                 ("hearth:creative".into(), "Creative".into(), "Build, explore and experiment freely. You can't be hurt, can fly, can place or summon anything, and can control time and weather.".into()),
                 ("hearth:easy".into(), "Easy".into(), "The same world, more forgiving.".into()),

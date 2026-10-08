@@ -1,99 +1,88 @@
-//! Who the player begins as (until Amendment E's character creator, E5): a name, a woman, a man
-//! or as chance has it, and the loincloth they first wear — kept in `birth.json` for the next
-//! world. (The character profiles of before, `characters.json`, give their chosen one's name,
-//! sex and loincloth once.)
+//! The player's people (Amendment E §6.2): appearances made in the character creator, kept as
+//! profiles in `characters.json`, one of them chosen for the next life. (The wishes kept in
+//! `birth.json` before the creator came back give a first profile their name, body and
+//! loincloth once.)
 
 use std::path::Path;
 
 use hearth_character::{Appearance, BodyType, Loincloth};
 use serde::{Deserialize, Serialize};
 
-/// Where the wishes are kept, in the game's folder.
-pub const FILE: &str = "birth.json";
+/// Where the profiles are kept, in the game's folder.
+pub const FILE: &str = "characters.json";
 
-/// Born a daughter, a son, or as chance has it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum Born {
-    #[default]
-    Chance,
-    Daughter,
-    Son,
-}
-
-impl Born {
-    pub const ALL: [Born; 3] = [Born::Chance, Born::Daughter, Born::Son];
-
-    /// The words for it.
-    pub fn key(self) -> &'static str {
-        match self {
-            Born::Chance => "birth.chance",
-            Born::Daughter => "birth.daughter",
-            Born::Son => "birth.son",
-        }
-    }
-
-    /// Female, male, or for the father's gamete to decide.
-    pub fn female(self) -> Option<bool> {
-        match self {
-            Born::Chance => None,
-            Born::Daughter => Some(true),
-            Born::Son => Some(false),
-        }
-    }
-}
-
-/// The player's wishes for their next birth.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Profiles {
-    pub name: String,
-    pub born: Born,
-    pub loincloth: Loincloth,
+    pub list: Vec<Appearance>,
+    pub selected: usize,
 }
 
-/// The character profiles of before: people the player made, one chosen.
+impl Default for Profiles {
+    fn default() -> Self {
+        Self {
+            list: vec![Appearance::default()],
+            selected: 0,
+        }
+    }
+}
+
+/// The wishes of before: a name, a body (or chance), a loincloth.
 #[derive(Default, Deserialize)]
 #[serde(default)]
-struct Characters {
-    list: Vec<Appearance>,
-    selected: usize,
+struct Wishes {
+    name: String,
+    born: String,
+    loincloth: Loincloth,
 }
 
 impl Profiles {
-    /// The wishes saved at `path`, or none yet.
+    /// The profiles saved at `path`, or a first one.
     pub fn load(path: &Path) -> Self {
-        let mut p: Profiles = match std::fs::read_to_string(path) {
+        let p: Profiles = match std::fs::read_to_string(path) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
-                log::warn!("{} unreadable ({e}): starting anew", path.display());
+                log::warn!("{} unreadable ({e}): starting a new one", path.display());
                 Profiles::default()
             }),
             Err(_) => Profiles::default(),
         };
-        p.name = p.name.chars().take(32).collect();
-        p
+        p.sanitized()
     }
 
-    /// The wishes in the game's folder; where there are none yet, the name, sex and loincloth of
-    /// the character chosen in the profiles of before.
+    /// The profiles in the game's folder; where there are none yet, one from the wishes of
+    /// before.
     pub fn load_or_migrate(dir: &Path) -> Self {
         let path = dir.join(FILE);
         if path.exists() {
             return Self::load(&path);
         }
-        let old: Characters = std::fs::read_to_string(dir.join("characters.json"))
+        let Some(w) = std::fs::read_to_string(dir.join("birth.json"))
             .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
-        old.list
-            .get(old.selected.min(old.list.len().saturating_sub(1)))
-            .map_or_else(Profiles::default, |a| Profiles {
-                name: a.name.chars().take(32).collect(),
-                born: match a.body {
-                    BodyType::Female => Born::Daughter,
-                    BodyType::Male => Born::Son,
-                },
-                loincloth: a.loincloth,
-            })
+            .and_then(|t| serde_json::from_str::<Wishes>(&t).ok())
+        else {
+            return Profiles::default();
+        };
+        let mut a = if w.born == "Daughter" {
+            Appearance::female()
+        } else {
+            Appearance::default()
+        };
+        a.name = w.name;
+        a.loincloth = w.loincloth;
+        Profiles {
+            list: vec![a],
+            selected: 0,
+        }
+        .sanitized()
+    }
+
+    fn sanitized(mut self) -> Self {
+        self.list = self.list.into_iter().map(Appearance::sanitized).collect();
+        if self.list.is_empty() {
+            self.list.push(Appearance::default());
+        }
+        self.selected = self.selected.min(self.list.len() - 1);
+        self
     }
 
     /// Writes them (through a temporary file, so a crash leaves the old ones).
@@ -104,18 +93,41 @@ impl Profiles {
         std::fs::rename(&tmp, path)
     }
 
-    /// The adult the player begins as: the profile's name, body and loincloth (chance decided by
-    /// `seed`), with the default looks of that body.
-    pub fn appearance(&self, seed: u64) -> Appearance {
-        let female = self.born.female().unwrap_or(seed.is_multiple_of(2));
-        let mut a = if female {
+    /// The one chosen for the next life.
+    pub fn current(&self) -> &Appearance {
+        &self.list[self.selected.min(self.list.len() - 1)]
+    }
+
+    pub fn current_mut(&mut self) -> &mut Appearance {
+        let i = self.selected.min(self.list.len() - 1);
+        &mut self.list[i]
+    }
+
+    /// Adds a new person (of the other body to the last), chosen.
+    pub fn add(&mut self) {
+        let female = self.list.last().is_some_and(|a| a.body == BodyType::Male);
+        self.list.push(if female {
             Appearance::female()
         } else {
             Appearance::default()
-        };
-        a.name = self.name.trim().to_owned();
-        a.loincloth = self.loincloth;
-        a.sanitized()
+        });
+        self.selected = self.list.len() - 1;
+    }
+
+    /// Removes the chosen person, keeping at least one.
+    pub fn remove(&mut self) {
+        if self.list.len() > 1 {
+            self.list.remove(self.selected);
+            self.selected = self.selected.min(self.list.len() - 1);
+        }
+    }
+
+    /// A profile's name, or "Person N" (`unnamed` is the words with `{n}`).
+    pub fn name(&self, i: usize, unnamed: &str) -> String {
+        match self.list.get(i) {
+            Some(a) if !a.name.trim().is_empty() => a.name.clone(),
+            _ => unnamed.replace("{n}", &(i + 1).to_string()),
+        }
     }
 }
 
@@ -124,31 +136,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wishes_save_load_and_come_from_the_characters_of_before() {
-        let dir = std::env::temp_dir().join(format!("hearth-birth-{}", std::process::id()));
+    fn profiles_save_load_and_come_from_the_wishes_of_before() {
+        let dir = std::env::temp_dir().join(format!("hearth-profiles-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("dir");
-        // The characters of before: the chosen one's name, sex and loincloth.
-        let old = r#"{"list":[{"name":"Bo"},{"name":"Ash","body":"Female","loincloth":"PlantFibre"}],"selected":1}"#;
-        std::fs::write(dir.join("characters.json"), old).expect("write");
+        // The wishes of before: a first profile with their name, body and loincloth.
+        let old = r#"{"name":"Ash","born":"Daughter","loincloth":"PlantFibre"}"#;
+        std::fs::write(dir.join("birth.json"), old).expect("write");
         let p = Profiles::load_or_migrate(&dir);
-        assert_eq!(
-            p,
-            Profiles {
-                name: "Ash".into(),
-                born: Born::Daughter,
-                loincloth: Loincloth::PlantFibre,
-            }
-        );
-        assert_eq!(p.appearance(1).body, BodyType::Female);
-        // Saved, they are what is loaded.
-        let changed = Profiles {
-            born: Born::Chance,
-            ..p
-        };
+        assert_eq!(p.list.len(), 1);
+        assert_eq!(p.current().name, "Ash");
+        assert_eq!(p.current().body, BodyType::Female);
+        assert_eq!(p.current().loincloth, Loincloth::PlantFibre);
+        // Made in the creator and saved, they are what is loaded.
+        let mut changed = p.clone();
+        changed.add();
+        *changed.current_mut() = changed.current().randomized(9);
         changed.save(&dir.join(FILE)).expect("save");
-        assert_eq!(Profiles::load_or_migrate(&dir), changed);
-        assert_eq!(changed.appearance(2).name, "Ash");
-        // Rubbish: chance, no name.
+        let back = Profiles::load_or_migrate(&dir);
+        assert_eq!(back, changed);
+        assert_eq!(back.selected, 1);
+        assert_eq!(back.name(1, "Person {n}"), "Person 2");
+        assert_eq!(back.name(0, "Person {n}"), "Ash");
+        // Removing keeps one at least.
+        let mut one = back.clone();
+        one.remove();
+        one.remove();
+        assert_eq!(one.list.len(), 1);
+        // Rubbish: one default person.
         std::fs::write(dir.join(FILE), "not json").expect("write");
         assert_eq!(Profiles::load_or_migrate(&dir), Profiles::default());
         std::fs::remove_dir_all(&dir).ok();

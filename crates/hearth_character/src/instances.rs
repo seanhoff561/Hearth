@@ -29,6 +29,7 @@ pub struct Palette {
     pub shadow: [u8; 3],
     pub sclera: [u8; 3],
     pub iris: [u8; 3],
+    pub freckle: [u8; 3],
     pub cloth: [u8; 3],
 }
 
@@ -47,6 +48,8 @@ impl Palette {
             shadow: linear_to_srgb(mix(skin, hair, 0.45)),
             sclera: [232, 228, 220],
             iris: a.eyes.srgb(),
+            // Freckles: the skin's own melanin, gathered (darker and warmer).
+            freckle: linear_to_srgb([skin[0] * 0.62, skin[1] * 0.48, skin[2] * 0.38]),
             cloth: a.loincloth.srgb(),
         }
     }
@@ -60,6 +63,7 @@ impl Palette {
             Stuff::Shadow => self.shadow,
             Stuff::Sclera => self.sclera,
             Stuff::Iris => self.iris,
+            Stuff::Freckle => self.freckle,
             Stuff::Cloth => self.cloth,
             Stuff::Dyed(c) => c,
         }

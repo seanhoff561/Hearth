@@ -1,7 +1,9 @@
-//! How a person looks (v2 §9.1): body, height and build, skin tone and undertone, hair and
-//! facial hair, eyes, a name, and the loincloth everyone starts in. Purely cosmetic: the body
-//! model is one reference adult (D66).
+//! How a person looks (v2 §9.1, Amendment E §6.2): body, height and build, skin tone,
+//! undertone and freckles, the face's shape, hair (style, length, colour), eyebrows and facial
+//! hair, eyes, a name, and the loincloth everyone starts in. Purely cosmetic: the body model is
+//! one reference adult (D66), and how a person looks changes nothing they can do.
 
+use hearth_math::hash::Rng;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -142,6 +144,171 @@ impl EyeColor {
     }
 }
 
+/// How heavy the eyebrows are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Eyebrows {
+    Fine,
+    #[default]
+    Natural,
+    Thick,
+    Bushy,
+}
+
+impl Eyebrows {
+    pub const ALL: [Eyebrows; 4] = [
+        Eyebrows::Fine,
+        Eyebrows::Natural,
+        Eyebrows::Thick,
+        Eyebrows::Bushy,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Eyebrows::Fine => "character.brows.fine",
+            Eyebrows::Natural => "character.brows.natural",
+            Eyebrows::Thick => "character.brows.thick",
+            Eyebrows::Bushy => "character.brows.bushy",
+        }
+    }
+
+    /// How thick, against a natural brow's.
+    pub fn weight(self) -> f32 {
+        match self {
+            Eyebrows::Fine => 0.6,
+            Eyebrows::Natural => 1.0,
+            Eyebrows::Thick => 1.4,
+            Eyebrows::Bushy => 1.8,
+        }
+    }
+}
+
+/// The face's shape: each feature from −1 (narrow, small, low) through 0 (the average) to 1
+/// (wide, large, strong).
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Face {
+    pub jaw: f32,
+    pub cheekbones: f32,
+    pub brow: f32,
+    pub nose: f32,
+    pub eyes: f32,
+    pub lips: f32,
+    pub ears: f32,
+}
+
+impl Face {
+    /// The sliders' language keys, in their order.
+    pub const KEYS: [&'static str; 7] = [
+        "character.face.jaw",
+        "character.face.cheekbones",
+        "character.face.brow",
+        "character.face.nose",
+        "character.face.eyes",
+        "character.face.lips",
+        "character.face.ears",
+    ];
+
+    /// Each feature in the sliders' order.
+    pub fn features_mut(&mut self) -> [&mut f32; 7] {
+        [
+            &mut self.jaw,
+            &mut self.cheekbones,
+            &mut self.brow,
+            &mut self.nose,
+            &mut self.eyes,
+            &mut self.lips,
+            &mut self.ears,
+        ]
+    }
+
+    fn sanitized(mut self) -> Self {
+        for v in self.features_mut() {
+            *v = if v.is_finite() {
+                v.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
+        }
+        self
+    }
+}
+
+/// Faces to begin from (their language keys), before the sliders.
+pub const FACE_PRESETS: [(&str, Face); 6] = [
+    (
+        "character.face.preset.oval",
+        Face {
+            jaw: 0.0,
+            cheekbones: 0.0,
+            brow: 0.0,
+            nose: 0.0,
+            eyes: 0.0,
+            lips: 0.0,
+            ears: 0.0,
+        },
+    ),
+    (
+        "character.face.preset.round",
+        Face {
+            jaw: -0.3,
+            cheekbones: 0.4,
+            brow: -0.3,
+            nose: -0.2,
+            eyes: 0.2,
+            lips: 0.2,
+            ears: 0.0,
+        },
+    ),
+    (
+        "character.face.preset.square",
+        Face {
+            jaw: 0.8,
+            cheekbones: 0.2,
+            brow: 0.4,
+            nose: 0.1,
+            eyes: -0.1,
+            lips: 0.0,
+            ears: 0.1,
+        },
+    ),
+    (
+        "character.face.preset.long",
+        Face {
+            jaw: 0.1,
+            cheekbones: -0.2,
+            brow: 0.2,
+            nose: 0.6,
+            eyes: -0.2,
+            lips: -0.2,
+            ears: 0.3,
+        },
+    ),
+    (
+        "character.face.preset.heart",
+        Face {
+            jaw: -0.7,
+            cheekbones: 0.6,
+            brow: -0.1,
+            nose: -0.3,
+            eyes: 0.4,
+            lips: 0.3,
+            ears: -0.1,
+        },
+    ),
+    (
+        "character.face.preset.angular",
+        Face {
+            jaw: 0.5,
+            cheekbones: 0.9,
+            brow: 0.7,
+            nose: 0.4,
+            eyes: -0.3,
+            lips: -0.3,
+            ears: 0.0,
+        },
+    ),
+];
+
 /// What the loincloth is made of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Loincloth {
@@ -209,9 +376,15 @@ pub struct Appearance {
     pub skin_tone: f32,
     /// −1 cool (pink) – 0 neutral – 1 warm (golden).
     pub undertone: f32,
+    /// 0 none – 1 many.
+    pub freckles: f32,
+    pub face: Face,
     pub hair: HairStyle,
+    /// 0 shortest – 0.5 the style's own – 1 longest (for the styles that hang).
+    pub hair_length: f32,
     /// sRGB.
     pub hair_color: [u8; 3],
+    pub eyebrows: Eyebrows,
     pub facial_hair: FacialHair,
     pub eyes: EyeColor,
     pub loincloth: Loincloth,
@@ -226,8 +399,12 @@ impl Default for Appearance {
             build: 0.5,
             skin_tone: 0.5,
             undertone: 0.2,
+            freckles: 0.0,
+            face: Face::default(),
             hair: HairStyle::ShortCrop,
+            hair_length: 0.5,
             hair_color: HAIR_COLORS[1].1,
+            eyebrows: Eyebrows::Natural,
             facial_hair: FacialHair::None,
             eyes: EyeColor::Brown,
             loincloth: Loincloth::Hide,
@@ -265,8 +442,119 @@ impl Appearance {
         } else {
             0.0
         };
+        self.freckles = unit(self.freckles, 0.0);
+        self.hair_length = unit(self.hair_length, 0.5);
+        self.face = self.face.sanitized();
         self.name = self.name.chars().take(32).collect();
         self
+    }
+
+    /// Someone drawn from the natural variation of adults (the name and body kept): height and
+    /// build about the body's means, skin across the human range, and the lighter hair and eyes
+    /// and the freckles found together, as they are, with the lightest skins (the pigmentation
+    /// genes act on all three; red hair goes with freckles).
+    pub fn randomized(&self, seed: u64) -> Self {
+        let mut r = Rng::new(seed ^ 0x5eed_face);
+        let mut normal = |mean: f32, sd: f32| {
+            let (u, v) = (r.next_f32().max(1e-6), r.next_f32());
+            mean + sd * (-2.0 * u.ln()).sqrt() * (std::f32::consts::TAU * v).cos()
+        };
+        let female = self.body == BodyType::Female;
+        // Adult heights (sd some 7 cm) and builds.
+        let height_m = normal(if female { 1.63 } else { 1.76 }, 0.07);
+        let build = normal(0.5, 0.17);
+        let mut face = Face::default();
+        for v in face.features_mut() {
+            *v = normal(0.0, 0.4);
+        }
+        let mut r = Rng::new(seed ^ 0x0dd_c010);
+        let skin_tone = r.next_f32();
+        let undertone = r.range_f32(-0.6, 0.8);
+        // How far the lightest pigmentation reaches at this tone: none past the middle.
+        let light = smoothstep(0.5, 0.05, skin_tone);
+        let pick = |r: &mut Rng, weights: &[f32]| {
+            let total: f32 = weights.iter().sum();
+            let mut x = r.next_f32() * total;
+            for (i, w) in weights.iter().enumerate() {
+                if x < *w {
+                    return i;
+                }
+                x -= w;
+            }
+            weights.len() - 1
+        };
+        // Eyes: brown, dark brown, hazel, amber, green, blue, grey.
+        let dark = smoothstep(0.4, 0.8, skin_tone);
+        let eyes = EyeColor::ALL[pick(
+            &mut r,
+            &[
+                0.45,
+                0.2 + 0.8 * dark,
+                0.08 + 0.12 * light,
+                0.03,
+                0.15 * light,
+                0.6 * light,
+                0.12 * light,
+            ],
+        )];
+        // Hair: black, dark brown, brown, light brown, auburn, red, strawberry blonde, blonde,
+        // platinum; grey and white with age.
+        let hair_i = pick(
+            &mut r,
+            &[
+                0.35 + 0.9 * dark,
+                0.35,
+                0.25 + 0.1 * light,
+                0.35 * light,
+                0.06 * light,
+                0.06 * light,
+                0.04 * light,
+                0.35 * light,
+                0.05 * light,
+                0.04,
+                0.015,
+            ],
+        );
+        let red = (4..=6).contains(&hair_i);
+        let freckles = if red {
+            r.range_f32(0.45, 1.0)
+        } else if r.next_f32() < 0.35 * light {
+            r.range_f32(0.1, 0.6)
+        } else {
+            0.0
+        };
+        let hair = loop {
+            let h = HairStyle::ALL[r.below(HairStyle::ALL.len() as u32) as usize];
+            // Few women are bald.
+            if h != HairStyle::Bald || !female || r.next_f32() < 0.1 {
+                break h;
+            }
+        };
+        let facial_hair = if female {
+            FacialHair::None
+        } else {
+            FacialHair::ALL[pick(&mut r, &[0.4, 0.15, 0.08, 0.07, 0.15, 0.15])]
+        };
+        let eyebrows =
+            Eyebrows::ALL[pick(&mut r, &[0.2 + 0.2 * female as u8 as f32, 0.5, 0.25, 0.1])];
+        Self {
+            name: self.name.clone(),
+            body: self.body,
+            height_m,
+            build,
+            skin_tone,
+            undertone,
+            freckles,
+            face,
+            hair,
+            hair_length: r.next_f32(),
+            hair_color: HAIR_COLORS[hair_i].1,
+            eyebrows,
+            facial_hair,
+            eyes,
+            loincloth: self.loincloth,
+        }
+        .sanitized()
     }
 
     /// The skin's albedo (linear RGB).
@@ -301,6 +589,12 @@ pub fn linear_to_srgb(c: [f32; 3]) -> [u8; 3] {
         };
         (s * 255.0).round() as u8
     })
+}
+
+/// 0 at `a`, 1 at `b` (either way round), smooth between.
+fn smoothstep(a: f32, b: f32, x: f32) -> f32 {
+    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Relative luminance of a linear colour.
@@ -375,6 +669,70 @@ pub fn from_hsl([h, s, l]: [f32; 3]) -> [u8; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_appearance_round_trips_and_old_ones_load() {
+        let a = Appearance {
+            name: "Ash".into(),
+            freckles: 0.7,
+            face: FACE_PRESETS[4].1,
+            hair_length: 0.9,
+            eyebrows: Eyebrows::Thick,
+            ..Appearance::female()
+        }
+        .randomized(3);
+        let text = serde_json::to_string(&a).expect("to json");
+        let back: Appearance = serde_json::from_str(&text).expect("from json");
+        assert_eq!(back, a);
+        assert_eq!(back.sanitized(), a, "already in range");
+        // One saved before the face and freckles: the average face, none.
+        let old: Appearance = serde_json::from_str(r#"{"name":"Bo","skin_tone":0.3}"#).unwrap();
+        assert_eq!(old.face, Face::default());
+        assert_eq!(old.freckles, 0.0);
+        assert_eq!(old.hair_length, 0.5);
+    }
+
+    #[test]
+    fn randomize_draws_adults_with_pigmentation_as_it_goes_together() {
+        let base = Appearance::default();
+        let people: Vec<Appearance> = (0..4000).map(|s| base.randomized(s)).collect();
+        let light_eyes =
+            |a: &Appearance| matches!(a.eyes, EyeColor::Blue | EyeColor::Green | EyeColor::Grey);
+        let fair_hair = |a: &Appearance| HAIR_COLORS[3..9].iter().any(|(_, c)| *c == a.hair_color);
+        let share = |set: &[&Appearance], f: &dyn Fn(&Appearance) -> bool| {
+            set.iter().filter(|a| f(a)).count() as f32 / set.len().max(1) as f32
+        };
+        let darker: Vec<&Appearance> = people.iter().filter(|a| a.skin_tone > 0.6).collect();
+        let lightest: Vec<&Appearance> = people.iter().filter(|a| a.skin_tone < 0.15).collect();
+        assert!(darker.len() > 1000 && lightest.len() > 300);
+        // No blue eyes or blond hair with dark skin; common with the lightest.
+        assert_eq!(share(&darker, &light_eyes), 0.0);
+        assert_eq!(share(&darker, &fair_hair), 0.0);
+        assert!(
+            share(&lightest, &light_eyes) > 0.3,
+            "{}",
+            share(&lightest, &light_eyes)
+        );
+        assert!(share(&lightest, &fair_hair) > 0.3);
+        // Red hair goes with freckles.
+        let red: Vec<&Appearance> = people
+            .iter()
+            .filter(|a| HAIR_COLORS[4..7].iter().any(|(_, c)| *c == a.hair_color))
+            .collect();
+        assert!(!red.is_empty());
+        assert!(red.iter().all(|a| a.freckles >= 0.45));
+        assert!(share(&darker, &|a| a.freckles > 0.0) == 0.0);
+        // Adults of the body's heights; the name and body kept.
+        let mean = people.iter().map(|a| a.height_m).sum::<f32>() / people.len() as f32;
+        assert!((1.73..1.79).contains(&mean), "{mean}");
+        assert!(
+            people
+                .iter()
+                .all(|a| a.body == base.body && a == &a.clone().sanitized())
+        );
+        assert_ne!(base.randomized(1), base.randomized(2));
+        assert_eq!(base.randomized(1), base.randomized(1));
+    }
 
     #[test]
     fn hsl_round_trips() {

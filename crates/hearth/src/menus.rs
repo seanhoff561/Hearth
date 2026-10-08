@@ -10,8 +10,6 @@ use hearth_input::{InputKey, KeyBindings};
 use hearth_ui::widgets::theme;
 use hearth_ui::{Column, Rect, Ui};
 
-use crate::profiles::Born;
-
 /// A question the Worlds screen is asking about the world chosen.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WorldsAsk {
@@ -171,6 +169,8 @@ pub enum Screen {
     Sound,
     Controls(crate::controls_ui::ControlsScreen),
     Accessibility,
+    /// The character creator (Amendment E §6.2).
+    Character(crate::character_ui::CharacterScreen),
 }
 
 /// A new world as Create World asked for it.
@@ -326,8 +326,9 @@ pub struct MenuContext<'a> {
     pub inventory: Option<crate::inventory_ui::InventoryView<'a>>,
     /// What the player knows, in a world.
     pub journal: Option<crate::journal_ui::JournalView<'a>>,
-    /// The eras a new world may be made in (id, name, how its people live), playable first.
-    pub eras: Vec<(String, String, String)>,
+    /// The eras in their order (id, name, its one line, whether it is playable yet: the others
+    /// are "Coming soon", Amendment E §6.4).
+    pub eras: Vec<(String, String, String, bool)>,
     /// The game modes (id, name, summary) in Create World's order (Amendment P §2).
     pub modes: Vec<(String, String, String)>,
     /// The globe of a new world's planet, while its birthplace is chosen.
@@ -364,6 +365,8 @@ pub struct DeathInfo {
 /// The open screens, the top one shown.
 pub struct Menus {
     stack: Vec<Screen>,
+    /// The person the creator shows this frame, for the app to draw.
+    preview: Option<crate::character_ui::Preview>,
 }
 
 pub(crate) const W: f32 = 220.0;
@@ -411,11 +414,20 @@ impl Menus {
     pub fn title() -> Self {
         Self {
             stack: vec![Screen::Title],
+            preview: None,
         }
     }
 
     pub fn none() -> Self {
-        Self { stack: Vec::new() }
+        Self {
+            stack: Vec::new(),
+            preview: None,
+        }
+    }
+
+    /// The person on the character creator, when it is shown.
+    pub fn preview(&self) -> Option<&crate::character_ui::Preview> {
+        self.preview.as_ref()
     }
 
     /// The screen shown, to update.
@@ -484,6 +496,7 @@ impl Menus {
     /// Draws the top screen and returns what was chosen.
     pub fn ui(&mut self, ui: &mut Ui<'_>, cx: &mut MenuContext<'_>) -> Vec<MenuAction> {
         let mut out = Vec::new();
+        self.preview = None;
         let Some(top) = self.stack.last_mut() else {
             return out;
         };
@@ -895,8 +908,8 @@ impl Menus {
                         })
                         .unwrap_or(0);
                 }
-                let wish = &mut *cx.profiles;
-                let before = wish.clone();
+                let people = cx.profiles.clone();
+                let unnamed = ui.t("menu.character.unnamed");
                 let footer =
                     page_footed(ui, &title, "new_world", wide, PAGE_TOP, 4.0, 1, |ui, c| {
                         let x = c.x;
@@ -911,22 +924,36 @@ impl Menus {
                         ui.label(x, c.y, &ui.t("menu.new_world.seed"), theme::DIM);
                         c.space(line);
                         ui.text_field(c.row(ROW), &ui.t("menu.new_world.seed_hint"), seed, 20);
-                        // Who the player begins as: a name (or none), a woman, a man or as chance
-                        // has it (Amendment E §6.1; the character creator comes with E5).
-                        ui.text_field(
-                            c.row(ROW),
-                            &ui.t("menu.new_world.your_name"),
-                            &mut wish.name,
-                            32,
+                        // Who the player begins as, made in the character creator (E §6.2).
+                        let who = ui.lang.format(
+                            "menu.new_world.who",
+                            &[("name", &people.name(people.selected, &unnamed))],
                         );
-                        born_choice(ui, c.row(ROW), &mut wish.born);
+                        if ui.button(c.row(ROW), &who) {
+                            push = Some(Screen::Character(Default::default()));
+                        }
                         // The era: Wild Earth, the others coming (Amendment E §6.4).
                         if !eras.is_empty() {
-                            let names: Vec<String> = eras.iter().map(|e| e.1.clone()).collect();
+                            let soon = ui.t("menu.new_world.era.coming_soon");
+                            let names: Vec<String> = eras
+                                .iter()
+                                .map(|e| {
+                                    if e.3 {
+                                        e.1.clone()
+                                    } else {
+                                        format!("{} ({soon})", e.1)
+                                    }
+                                })
+                                .collect();
                             *era = (*era).min(names.len() - 1);
                             ui.cycle(c.row(ROW), &ui.t("menu.new_world.era"), &names, era);
+                            let colour = if eras[*era].3 {
+                                theme::DIM
+                            } else {
+                                theme::GREYED
+                            };
                             for l in ui.font.wrap(&eras[*era].2, c.w as u32) {
-                                ui.label(x, c.y, &l, theme::DIM);
+                                ui.label(x, c.y, &l, colour);
                                 c.space(line);
                             }
                             c.space(2.0);
@@ -977,11 +1004,9 @@ impl Menus {
                             }
                         }
                     });
-                if *wish != before {
-                    out.push(MenuAction::ProfilesChanged);
-                }
                 let (a, b) = footer.split_left((footer.w - 4.0) / 2.0, 4.0);
-                if ui.button_enabled(a, &ui.t("menu.new_world.create"), !exists) {
+                let playable = eras.get(*era).is_none_or(|e| e.3);
+                if ui.button_enabled(a, &ui.t("menu.new_world.create"), !exists && playable) {
                     out.push(MenuAction::CreateWorld(NewWorldChoice {
                         folder,
                         seed: parse_seed(seed),
@@ -1515,6 +1540,14 @@ impl Menus {
             Screen::Death => {
                 death_screen(ui, cx, &mut out);
             }
+            Screen::Character(st) => {
+                let o = crate::character_ui::character_screen(ui, cx.profiles, st);
+                self.preview = Some(o.preview);
+                if o.changed {
+                    out.push(MenuAction::ProfilesChanged);
+                }
+                pop |= o.done;
+            }
             Screen::Rest => {
                 let title = ui.t("rest.title");
                 let when = cx.time_words.clone();
@@ -1717,15 +1750,6 @@ fn birthplace_screen(
             birthplace: Some(glam::DVec2::new(x as f64 + 0.5, z as f64 + 0.5)),
             mode: Some(choice.mode.clone()),
         });
-    }
-}
-
-/// A woman, a man, or as chance has it.
-fn born_choice(ui: &mut Ui<'_>, r: Rect, born: &mut Born) {
-    let names: Vec<String> = Born::ALL.iter().map(|b| ui.t(b.key())).collect();
-    let mut i = Born::ALL.iter().position(|b| b == born).unwrap_or(0);
-    if ui.cycle(r, &ui.t("menu.new_world.born"), &names, &mut i) {
-        *born = Born::ALL[i];
     }
 }
 

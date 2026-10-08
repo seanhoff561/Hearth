@@ -192,6 +192,8 @@ pub mod theme {
     pub const FOCUS: Rgba = Rgba([214, 184, 116, 255]);
     pub const TEXT: Rgba = Rgba([238, 234, 224, 255]);
     pub const DIM: Rgba = Rgba([166, 160, 150, 255]);
+    /// Words for what cannot be chosen yet (greyed).
+    pub const GREYED: Rgba = Rgba([110, 106, 100, 255]);
     pub const FIELD: Rgba = Rgba([14, 13, 11, 230]);
     pub const FILL: Rgba = Rgba([118, 142, 104, 255]);
     pub const WARN: Rgba = Rgba([214, 118, 90, 255]);

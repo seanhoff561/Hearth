@@ -292,14 +292,17 @@ pub enum PreviewLight {
     Overcast,
     Dusk,
     Firelight,
+    /// A full moon's light.
+    Night,
 }
 
 impl PreviewLight {
-    pub const ALL: [PreviewLight; 4] = [
+    pub const ALL: [PreviewLight; 5] = [
         PreviewLight::Daylight,
         PreviewLight::Overcast,
         PreviewLight::Dusk,
         PreviewLight::Firelight,
+        PreviewLight::Night,
     ];
 
     pub fn key(self) -> &'static str {
@@ -308,6 +311,7 @@ impl PreviewLight {
             PreviewLight::Overcast => "character.light.overcast",
             PreviewLight::Dusk => "character.light.dusk",
             PreviewLight::Firelight => "character.light.firelight",
+            PreviewLight::Night => "character.light.night",
         }
     }
 
@@ -338,6 +342,13 @@ impl PreviewLight {
                 Vec3::new(60.0, 37.0, 18.0),
                 Vec3::new(0.3, 0.3, 0.45),
                 Vec3::new(6.0, 3.5, 1.6),
+            ),
+            // A full moon high (some 0.25 lux), seen bluish by the dark-adapted eye.
+            PreviewLight::Night => (
+                Vec3::new(-0.3, 0.8, 0.52).normalize(),
+                Vec3::new(0.21, 0.24, 0.32),
+                Vec3::new(0.03, 0.035, 0.05),
+                Vec3::new(0.02, 0.02, 0.022),
             ),
         }
     }
@@ -462,8 +473,9 @@ impl FigurePreview {
         let view = glam::camera::rh::view::look_at_mat4(eye, center, Vec3::Y);
         let proj = glam::camera::rh::proj::directx::perspective_infinite_reverse(fov, aspect, 0.05);
         let (dir, sun, sky, ground) = light.lighting();
-        // Exposed for the light on a face turned toward it, as the eye would adapt.
-        let level = (sun.y + sky.y).max(1e-3);
+        // Exposed for the light on a face turned toward it, as the eye would adapt (though
+        // not all the way to moonlight: the night stays dim).
+        let level = (sun.y + sky.y).max(0.6);
         // A display without an sRGB format gets its gamma from the shader.
         let encode = if self.srgb { 0.0 } else { 1.0 };
         let u = PreviewUniform {

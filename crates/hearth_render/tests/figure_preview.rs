@@ -23,6 +23,8 @@ fn bodies_stand_in_the_preview() {
             skin_tone: 0.85,
             hair_color: HAIR_COLORS[0].1,
             facial_hair: FacialHair::ShortBeard,
+            face: hearth_character::FACE_PRESETS[2].1,
+            eyebrows: hearth_character::Eyebrows::Thick,
             ..Appearance::default()
         },
         Appearance {
@@ -31,6 +33,9 @@ fn bodies_stand_in_the_preview() {
             hair: HairStyle::LongWavy,
             hair_color: HAIR_COLORS[5].1,
             eyes: EyeColor::Green,
+            freckles: 0.8,
+            face: hearth_character::FACE_PRESETS[4].1,
+            hair_length: 1.0,
             ..Appearance::female()
         },
         Appearance {

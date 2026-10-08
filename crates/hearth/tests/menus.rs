@@ -102,9 +102,11 @@ fn the_screens_draw_and_answer() {
         ("pause", Screen::Pause),
         ("rest", Screen::Rest),
         ("death", Screen::Death),
+        ("character_menu", Screen::Character(Default::default())),
     ];
     for (name, screen) in screens {
         let mut menus = Menus::none();
+        let creator = matches!(screen, Screen::Character(_));
         menus.open(screen);
         render(
             &ctx,
@@ -114,6 +116,14 @@ fn the_screens_draw_and_answer() {
             &mut bindings,
             name,
         );
+        // The creator shows its person within the frame, beside its rows.
+        if creator {
+            let p = menus.preview().expect("the creator's person");
+            assert!(p.rect.w > 100.0 && p.rect.x + p.rect.w <= 640.0 && p.rect.h > 200.0);
+            assert_eq!(p.appearance, hearth_character::Appearance::default());
+        } else {
+            assert!(menus.preview().is_none());
+        }
     }
     // A click on the title's first button (Play) opens the worlds.
     let mut menus = Menus::title();

@@ -6,6 +6,7 @@ pub mod app;
 pub mod bench;
 pub mod body_panel;
 pub mod building;
+pub mod character_ui;
 pub mod clear_view;
 pub mod client;
 pub mod content_cli;
