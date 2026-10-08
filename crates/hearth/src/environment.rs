@@ -203,7 +203,17 @@ impl EnvSampler {
         // Clouds drift with the wind at their height (Amendment P §8), the drift carried from
         // frame to frame, so a change in the wind changes how fast they go, never where they are.
         let real_s = m.days * DAY_S;
-        let cloud_base = 600.0 + 700.0 * (1.0 - w.humidity);
+        // Cumulus form where rising air cools to its dew point, the lifting condensation level,
+        // above the ground (Espy: some 125 m per degree between air and dew point, about 25 m
+        // per percent of relative humidity short of saturation): over the region's ground, so
+        // mountains stand into the clouds rather than through a sheet at a fixed height.
+        let (gx, gz) = self
+            .grid
+            .geom
+            .grid_coords(self.planet.wrap_xf(cam.x), cam.z);
+        let ground =
+            (self.grid.elevation.bilinear(gx, gz).max(0.0) as f64) * self.grid.vertical_scale;
+        let cloud_base = ground + (2500.0 * (1.0 - w.humidity)).clamp(600.0, 3000.0);
         let (cloud_offset, air, wind_dir) = {
             let mut mo = self.motion.borrow_mut();
             let dt = mo

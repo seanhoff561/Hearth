@@ -10,6 +10,7 @@
 //! The physiology uses one reference adult whatever the character looks like: height and build
 //! are cosmetic (v2 §9.1).
 
+pub mod altitude;
 pub mod clothing;
 pub mod energy;
 pub mod harm;
@@ -64,6 +65,8 @@ pub struct Exposure {
     pub local_hour: f32,
     /// 0–1: noise and threat nearby (they wake sleepers).
     pub disturbance: f32,
+    /// Height above the sea (m): the air thins with it.
+    pub altitude_m: f32,
 }
 
 impl Exposure {
@@ -81,6 +84,7 @@ impl Exposure {
             ground_clo: 0.0,
             local_hour: 12.0,
             disturbance: 0.0,
+            altitude_m: 0.0,
         }
     }
 }
@@ -241,6 +245,8 @@ pub enum Death {
     Starvation,
     BloodLoss,
     Drowning,
+    /// The heights: severe mountain sickness, or days in the death zone.
+    Altitude,
     /// An illness (content id).
     Illness(String),
     /// A fatal injury, such as a long fall (what caused it).
@@ -412,6 +418,9 @@ pub struct Body {
     /// Real seconds the skin of the hands, the feet and the face has been freezing.
     #[serde(default)]
     pub freezing_s: [f64; 3],
+    /// Toward height: acclimatisation and mountain sickness.
+    #[serde(default)]
+    pub altitude: altitude::Altitude,
     /// Medicines working: (kind, strength 0–1, real seconds left).
     #[serde(default)]
     pub medicines: Vec<(String, f32, f64)>,
@@ -452,6 +461,7 @@ impl Body {
             dead: None,
             age_s: 0.0,
             freezing_s: [0.0; 3],
+            altitude: altitude::Altitude::default(),
             seed,
             draws: 0,
             last: Flows::default(),
@@ -553,14 +563,19 @@ impl Body {
             dt,
         );
 
+        // Height: the thin air, acclimatisation, mountain sickness.
+        self.altitude.step(exposure.altitude_m as f64, dt);
+        let capacity = self.altitude.capacity(exposure.altitude_m as f64);
+
         // Stamina, in seconds: effort beyond what the body sustains aerobically (half
-        // of all-out) spends it; less than that lets it come back, quickly at first and then
-        // slowly, as the muscles' phosphocreatine does.
+        // of all-out, less in thin air) spends it; less than that lets it come back, quickly at
+        // first and then slowly, as the muscles' phosphocreatine does (more slowly up high).
         let sp = cfg.params.stamina;
         let effort = activity.exertion as f64;
-        if effort > AEROBIC {
+        let aerobic = AEROBIC * capacity;
+        if effort > aerobic {
             self.stamina -=
-                (effort - AEROBIC) / (1.0 - AEROBIC) / sp.all_out_s.max(1.0) as f64 * dt;
+                (effort - aerobic) / (1.0 - aerobic) / sp.all_out_s.max(1.0) as f64 * dt;
         } else {
             let tired = (self.sleep.pressure - 0.6).max(0.0) / 0.4;
             let condition = (1.0 - 0.5 * tired)
@@ -570,7 +585,8 @@ impl Body {
                 } else {
                     1.0
                 };
-            let rate = (1.0 - effort / AEROBIC) * condition / sp.recover_s.max(1.0) as f64;
+            let rate =
+                (1.0 - effort / aerobic) * condition * capacity / sp.recover_s.max(1.0) as f64;
             self.stamina += (1.0 - self.stamina) * (1.0 - (-rate * dt).exp());
         }
         self.stamina = self.stamina.clamp(0.0, 1.0);
@@ -773,6 +789,8 @@ impl Body {
             Some(Death::BloodLoss)
         } else if self.energy.fat_share(mass) <= FATAL_FAT {
             Some(Death::Starvation)
+        } else if self.altitude.fatal() {
+            Some(Death::Altitude)
         } else {
             None
         };
@@ -783,7 +801,7 @@ impl Body {
         if self.dead.is_some() {
             return Err(Refusal::Dead);
         }
-        if self.active_illness_effects(cfg).any(|e| e == "nausea") {
+        if self.active_illness_effects(cfg).any(|e| e == "nausea") || self.altitude.sickness > 0.5 {
             return Err(Refusal::Nauseous);
         }
         if self.energy.room_l(cfg.params.stomach_capacity_l as f64) < food.volume_l {
@@ -1019,7 +1037,14 @@ impl Body {
             .filter(|(k, _, _)| k == "analgesic")
             .map(|(_, s, _)| *s)
             .fold(0.0f32, f32::max);
+        // Mountain sickness's headache, and its weakness.
+        let sick = self.altitude.sickness as f32;
+        pain += 0.6 * (sick as f64 - 0.15).max(0.0);
         fx.pain = (pain as f32 * (1.0 - eased)).min(1.0);
+        fx.strength = fx.strength.min(1.0 - 0.5 * sick);
+        if self.altitude.capacity(self.altitude.height_m) < 0.35 {
+            fx.sprint = false;
+        }
         for e in self.active_illness_effects(cfg) {
             match e {
                 "weakness" => fx.strength = fx.strength.min(0.6),

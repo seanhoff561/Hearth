@@ -487,6 +487,7 @@ impl Workshop {
             water_near,
             near,
             season: Some(h.moment.season(southern)),
+            altitude_m: (at.y / h.lw.generator.terrain.vertical_scale() as f64) as f32,
         }
     }
 

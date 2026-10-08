@@ -256,3 +256,4 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D245 (2026-10-08) Terrain refinement: nested levels, made a tile at a time, the same whichever tile
 - D246 (2026-10-08) The blocks read a level once per area; far tiles read coarse levels
 - D247 (2026-10-08) Earth's heights on an Earth-sized planet; the test planets keep theirs
+- D248 (2026-10-08) Heights act on the body and on boiling; clouds stand above the ground

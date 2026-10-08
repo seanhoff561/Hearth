@@ -231,6 +231,8 @@ pub struct Surroundings {
     pub near: Vec<String>,
     /// The season where the work is.
     pub season: Option<Season>,
+    /// Height above the sea (m): water boils cooler up high, and boiling takes longer.
+    pub altitude_m: f32,
 }
 
 /// What a process can draw on: the things at hand, what is looked at, the surroundings.
@@ -638,8 +640,12 @@ fn plan_ordered(
     for cond in &def.conditions {
         condition_ok(cond, bench, carried_water).map_err(Lack::Condition)?;
     }
-    // Time: the skilled person's, slower for a novice, by the tools.
+    // Time: the skilled person's, slower for a novice, by the tools; boiling the slower the
+    // cooler water boils up high (cooking's pace about halves for each 10 °C: Q10 ≈ 2).
     let mut hours = def.duration.hours;
+    if def.verb.as_deref() == Some("boil") {
+        hours *= boiling_slowdown(bench.around.altitude_m);
+    }
     if def.attended {
         hours *= 2.0 - skill.clamp(0.0, 1.0);
         for (_, v) in &tools {
@@ -654,6 +660,13 @@ fn plan_ordered(
         material,
         hours,
     })
+}
+
+/// How much longer boiling takes at a height (m) than at the sea: water boils some 10 °C cooler
+/// at 3,000 m, and cooking's pace about halves for each 10 °C (Q10 ≈ 2).
+pub fn boiling_slowdown(altitude_m: f32) -> f32 {
+    let boiling = hearth_math::atmosphere::boiling_c(altitude_m as f64);
+    2f64.powf(((100.0 - boiling) / 10.0).max(0.0)) as f32
 }
 
 /// What may be done with what is on the bench: every recipe the person may attempt that is
@@ -1084,4 +1097,17 @@ pub fn finish_batch(
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod altitude_tests {
+    use super::boiling_slowdown;
+
+    #[test]
+    fn boiling_takes_longer_up_high() {
+        assert_eq!(boiling_slowdown(0.0), 1.0);
+        let at_3000 = boiling_slowdown(3000.0);
+        assert!((1.8..2.2).contains(&at_3000), "{at_3000}");
+        assert!(boiling_slowdown(5000.0) > 3.0);
+    }
 }

@@ -68,6 +68,7 @@
   "body.death.starvation": "starved",
   "body.death.blood_loss": "bled to death",
   "body.death.drowning": "drowned",
+  "body.death.altitude": "died of the heights' thin air",
   "body.death.illness": "died of {illness}",
   "body.death.injury": "died of a {cause}",
   "debug.position": "Position {x} {y} {z} · latitude {lat}° longitude {lon}°",

@@ -161,7 +161,8 @@ horizon when that is farther (so the land never stops short of the skyline):
 ### Seasons and weather (D34, D37)
 - Grass and leaf colours from a climate code per quad and the date (`docs/design/seasons.md`);
   deciduous leaves thin out and show twigs as they fall, in the cutout pass.
-- Clouds: a 2D layer at the weather's cloud base, lit by the sun and sky. Under a thick deck or
+- Clouds: a 2D layer at the weather's cloud base (the lifting condensation level above the
+  region's ground: 25 m per percent of humidity short of saturation, 600–3,000 m; E4), lit by the sun and sky. Under a thick deck or
   in rain and snow, the sky, haze and distance fade to the grey of the cloud base.
 - Rain and snow: particles generated in the vertex shader in a 48×32×48 m box that wraps
   around the camera (fixed in the world), up to 40,000 at full intensity, falling with the

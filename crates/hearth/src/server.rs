@@ -488,6 +488,8 @@ fn exposure(
         ground_clo: 0.0,
         local_hour: (env.local_time(moment, pos.x) * 24.0) as f32,
         disturbance: 0.0,
+        // Blocks are metres up and down on Earth; a test planet's are taller.
+        altitude_m: (pos.y / lw.generator.terrain.vertical_scale() as f64) as f32,
     }
 }
 

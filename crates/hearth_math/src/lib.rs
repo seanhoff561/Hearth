@@ -3,6 +3,7 @@
 //! and small deterministic hashing helpers.
 
 pub mod aabb;
+pub mod atmosphere;
 pub mod coords;
 pub mod direction;
 pub mod hash;

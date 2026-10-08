@@ -756,6 +756,10 @@ impl Client {
             water_near,
             near: Vec::new(),
             season: Some(moment.season(southern)),
+            // Blocks are metres up and down on Earth; a test planet's are taller.
+            altitude_m: self.world.as_ref().map_or(feet.y, |w| {
+                feet.y / hearth_math::planet::auto_vertical_scale_for(w.planet.circumference())
+            }) as f32,
         }
     }
 
@@ -3825,6 +3829,7 @@ fn death_words(l: &Lang, d: &hearth_body::Death) -> String {
         Death::Starvation => "body.death.starvation",
         Death::BloodLoss => "body.death.blood_loss",
         Death::Drowning => "body.death.drowning",
+        Death::Altitude => "body.death.altitude",
         Death::Illness(id) => {
             let name = id.rsplit(':').next().unwrap_or(id).replace('_', " ");
             return l.format("body.death.illness", &[("illness", &name)]);

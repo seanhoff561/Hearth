@@ -86,6 +86,29 @@ hours (the world going faster while it sleeps), a sprain heals in days and a fra
   words (localisation keys `body.*`), core and skin temperature, blood lost, bleeding, sickness,
   stamina, wetness.
 
+## Height (E4)
+`hearth_body::altitude`, the air from `hearth_math::atmosphere` (the standard atmosphere, ISO 2533).
+- **Thin air**: aerobic capacity follows the oxygen the air holds at the height the body feels:
+  unchanged to some 1,500 m, about three quarters at 3,000 m and two fifths at 5,000 m on
+  arrival, a fifth on the highest summit after weeks up high (VO2max at altitude: Fulco et al.
+  1998). The effort the body sustains (stamina's aerobic line) and stamina's return scale with
+  it; below a third, no sprinting.
+- **Acclimatisation**: from 2,000 m (any body copes below) it follows a climb at some 400 m a day,
+  to 5,400 m at most (no one lives long higher), and is lost over some ten days below; it takes
+  0.4 of its height above 1,500 m off the height the body feels.
+- **Mountain sickness**: above 2,500 m, more than 500 m above what the body is used to, it comes on
+  over some eight hours (time constant), the worse the higher (at its worst 2 km more), and goes
+  over half a day once the body has caught up or come down: headache (pain), weakness, past a half
+  nausea (food refused). Severe for a day, it kills (cerebral or pulmonary oedema, untreated).
+- **The death zone**: where the body feels more than 5,800 m (some 8,000 m for the acclimatised)
+  it wastes, and dies within some three days.
+- **Boiling**: water boils some 10 °C cooler at 3,000 m and 70 °C on the highest summit
+  (Clausius–Clapeyron), and boiling processes take the longer for it (cooking's pace about halves
+  per 10 °C: twice as long at 3,000 m; `hearth_craft::boiling_slowdown`).
+- Tests: `hearth_math::atmosphere` (pressure and boiling at 3 km and on Everest),
+  `hearth_body::altitude` (acclimatisation over days, sickness climbing fast, the summit fatal in
+  days), `hearth_craft` (boiling twice as long at 3 km).
+
 ## Parameters
 `body/human.ron` (body size ranges, basal rate, METs, stomach, water, temperatures, blood,
 loads, speeds, stamina), `body/injuries.ron`, `body/illnesses.ron`, garments in `clothing/`
