@@ -535,31 +535,7 @@ fn usual_density(prey: &Species) -> f32 {
     }
 }
 
-impl Ecology {
-    /// Sets a group of a species down at a place, its numbers as given and drawn out already
-    /// (the family a player is born into): its id, or none where its region is not yet made.
-    pub fn place_group(&mut self, species: u16, at: [f64; 2], numbers: [u16; 4]) -> Option<u64> {
-        let key = self.region_key(at[0], at[1]);
-        let id = self.next_id;
-        let r = self.regions.get_mut(&key)?;
-        self.next_id += 1;
-        let [young, juveniles, females, males] = numbers;
-        r.groups.push(Group {
-            id,
-            species,
-            home: at,
-            pos: at,
-            young,
-            juveniles,
-            females,
-            males,
-            condition: 0.75,
-            food: 0.0,
-            live: true,
-        });
-        Some(id)
-    }
-}
+impl Ecology {}
 
 impl Region {
     /// The local index of the cell at a world position, if it is in this region.
@@ -611,16 +587,6 @@ impl Region {
         {
             out.push(c);
         }
-    }
-
-    /// Individuals of a pool species (by slot) in the region.
-    pub fn pool_total(&self, slot: usize) -> f64 {
-        let r = slot * REGION_LEN..(slot + 1) * REGION_LEN;
-        self.young[r.clone()]
-            .iter()
-            .chain(&self.adults[r])
-            .map(|v| *v as f64)
-            .sum()
     }
 }
 
@@ -736,10 +702,20 @@ impl Ecology {
         if sp.cold_limit.is_some_and(|m| h.coldest_c() < m) {
             return false;
         }
+        if sp.waterside && !sp.aquatic && !sp.marine {
+            h.fresh > 0.0 && h.land > 0.0
+        } else {
+            Self::lives_in(sp, h)
+        }
+    }
+
+    /// Whether a cell has the medium a species lives in: sea for a marine one, fresh water for a
+    /// fish of the rivers and lakes, land for the rest.
+    fn lives_in(sp: &Species, h: &Habitat) -> bool {
         if sp.marine {
             h.sea > 0.0
-        } else if sp.aquatic || sp.waterside {
-            h.fresh > 0.0 && (sp.aquatic || h.land > 0.0)
+        } else if sp.aquatic {
+            h.fresh > 0.0
         } else {
             h.land > 0.0
         }
@@ -2112,7 +2088,10 @@ impl Ecology {
                 (g.home[0] + a.cos() * d).rem_euclid(wrap),
                 g.home[1] + a.sin() * d,
             ];
-            if r.cell_at(self.cells_around, cand[0], cand[1]).is_some() {
+            // Never into a cell it cannot live in (a deer out at sea, a fish on land).
+            if r.cell_at(self.cells_around, cand[0], cand[1])
+                .is_some_and(|c| Self::lives_in(sp, &r.habitat[c]))
+            {
                 r.groups[gi].pos = cand;
             }
         }
@@ -2636,20 +2615,6 @@ impl Ecology {
         }
         *self.deaths.entry((s, Cause::Hunting)).or_default() += taken as f64;
         taken
-    }
-
-    /// The area a species can live in across the loaded regions, km².
-    pub fn range_km2(&self, species: usize) -> f64 {
-        let sp = &self.catalog.species[species];
-        let mut a = 0.0;
-        for r in self.regions.values() {
-            for h in &r.habitat {
-                if self.suits(sp, h) {
-                    a += Self::area(sp, h) as f64;
-                }
-            }
-        }
-        a
     }
 
     /// The animals of a species its range across the loaded regions holds at its usual

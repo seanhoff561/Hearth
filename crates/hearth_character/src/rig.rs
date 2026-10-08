@@ -126,11 +126,6 @@ pub struct Proportions {
     pub shank_t: f32,
     /// Depth of the bust (0 for a male body).
     pub bust_d: f32,
-    /// The lengths the head, the trunk and the hands are reckoned in: the stature, for a grown
-    /// body; a child's head is larger for it, its trunk a little longer, its hands smaller.
-    pub head_unit: f32,
-    pub torso_unit: f32,
-    pub arm_unit: f32,
 }
 
 impl Proportions {
@@ -142,124 +137,49 @@ impl Proportions {
         let g = 0.82 + 0.36 * a.build;
         let gw = 0.72 + 0.56 * a.build;
         let bones = 0.96 + 0.08 * a.build;
-        // A child: the head a quarter of a newborn's height (an eighth of a grown one's), the
-        // legs a third of it (over half), the arms a little short, the trunk the rest; round
-        // limbs and belly; a woman's hips and bust from puberty.
-        let young = 1.0 - a.grown.clamp(0.0, 1.0);
-        let head_k = 1.0 + 0.12 / (TOP - CHIN) * young.powf(2.5);
-        let leg_k = 1.0 - 0.17 / HIP * young * young;
-        let torso_k = (1.0 - HIP * leg_k - (TOP - CHIN) * head_k) / (1.0 - HIP - (TOP - CHIN));
-        let arm_k = 1.0 - 0.18 * young;
-        let round = 1.0 + 0.25 * young;
-        let puberty = ((a.grown - 0.65) / 0.3).clamp(0.0, 1.0);
-        let puberty = puberty * puberty * (3.0 - 2.0 * puberty);
-        let girl = |m: f32, f: f32| if female { m + (f - m) * puberty } else { m };
-        let (lh, th, ah) = (h * leg_k, h * torso_k, h * arm_k);
         Self {
             stature: h,
-            upper_arm: 0.186 * ah,
-            forearm: 0.146 * ah,
-            hand: 0.108 * ah,
-            thigh: (HIP - KNEE) * lh,
-            shank: (KNEE - ANKLE) * lh,
-            ankle: ANKLE * lh,
-            hip: HIP * lh,
+            upper_arm: 0.186 * h,
+            forearm: 0.146 * h,
+            hand: 0.108 * h,
+            thigh: (HIP - KNEE) * h,
+            shank: (KNEE - ANKLE) * h,
+            ankle: ANKLE * h,
+            hip: HIP * h,
             foot_len: 0.152 * h,
             foot_w: 0.055 * h,
             // Bony shoulder (biacromial) and hip breadths of adult surveys.
-            shoulder_w: pick(0.237, 0.224) * h * bones * (1.0 + 0.12 * young),
-            chest_w: pick(0.180, 0.168) * h * g * (1.0 + 0.2 * young),
-            chest_d: pick(0.130, 0.118) * h * g * (1.0 + 0.2 * young),
-            waist_w: pick(0.165, 0.150) * h * gw * (1.0 + 0.3 * young),
-            waist_d: pick(0.118, 0.108) * h * gw * (1.0 + 0.3 * young),
-            hip_w: girl(0.196, 0.220) * h * (0.9 + 0.2 * a.build) * (1.0 + 0.1 * young),
+            shoulder_w: pick(0.237, 0.224) * h * bones,
+            chest_w: pick(0.180, 0.168) * h * g,
+            chest_d: pick(0.130, 0.118) * h * g,
+            waist_w: pick(0.165, 0.150) * h * gw,
+            waist_d: pick(0.118, 0.108) * h * gw,
+            hip_w: pick(0.196, 0.220) * h * (0.9 + 0.2 * a.build),
             pelvis_d: pick(0.120, 0.124) * h * g,
-            hip_spacing: girl(0.100, 0.110) * h,
-            head_w: pick(0.088, 0.086) * h * head_k,
-            head_d: pick(0.112, 0.109) * h * head_k,
-            head_h: (TOP - CHIN) * h * head_k,
-            neck_w: pick(0.068, 0.060) * h * (0.9 + 0.2 * a.build) * round,
-            neck_d: pick(0.070, 0.062) * h * (0.9 + 0.2 * a.build) * round,
-            arm_t: pick(0.056, 0.050) * h * g * round,
-            forearm_t: pick(0.046, 0.040) * h * g * round,
-            hand_t: pick(0.018, 0.016) * ah,
-            hand_w: pick(0.050, 0.046) * ah,
+            hip_spacing: pick(0.100, 0.110) * h,
+            head_w: pick(0.088, 0.086) * h,
+            head_d: pick(0.112, 0.109) * h,
+            head_h: (TOP - CHIN) * h,
+            neck_w: pick(0.068, 0.060) * h * (0.9 + 0.2 * a.build),
+            neck_d: pick(0.070, 0.062) * h * (0.9 + 0.2 * a.build),
+            arm_t: pick(0.056, 0.050) * h * g,
+            forearm_t: pick(0.046, 0.040) * h * g,
+            hand_t: pick(0.018, 0.016) * h,
+            hand_w: pick(0.050, 0.046) * h,
             // At the top of the thigh and the calf; the limbs taper below.
-            thigh_t: pick(0.100, 0.112) * h * g * round,
-            shank_t: pick(0.062, 0.060) * h * g * round,
+            thigh_t: pick(0.100, 0.112) * h * g,
+            shank_t: pick(0.062, 0.060) * h * g,
             bust_d: if female {
-                0.022 * h * (0.8 + 0.4 * a.build) * puberty
+                0.022 * h * (0.8 + 0.4 * a.build)
             } else {
                 0.0
             },
-            head_unit: h * head_k,
-            torso_unit: th,
-            arm_unit: ah,
         }
-    }
-
-    /// A body of the appearance's plan: ours, or an archaic people's.
-    pub fn of_plan(a: &Appearance) -> Self {
-        match a.plan {
-            crate::appearance::Plan::Modern => Self::of(a),
-            crate::appearance::Plan::Erectus => Self::erectus(a),
-            crate::appearance::Plan::Neanderthal => Self::neanderthal(a),
-        }
-    }
-
-    /// *Homo erectus*'s body (the Nariokotome boy, Ruff's reconstructions): legs a little long
-    /// for its height, narrow hips and a narrow, flat-sided chest, the braincase long and low
-    /// over a jutting face.
-    pub fn erectus(a: &Appearance) -> Self {
-        let mut d = Self::of(a);
-        let longer = 1.04;
-        d.thigh *= longer;
-        d.shank *= longer;
-        d.hip = d.thigh + d.shank + d.ankle;
-        d.upper_arm *= 0.98;
-        d.forearm *= 0.98;
-        d.hip_w *= 0.92;
-        d.hip_spacing *= 0.94;
-        d.chest_w *= 0.96;
-        d.waist_w *= 0.95;
-        d.head_w *= 0.96;
-        d.head_d *= 1.12;
-        d.head_h *= 0.94;
-        d.neck_w *= 1.06;
-        d
-    }
-
-    /// A Neanderthal's body (Trinkaus, Ruff, Weaver): short, broad and heavy — a barrel chest,
-    /// wide hips, forearms and shins short for the limbs, thick limbs, a long low braincase over a
-    /// big face on a thick neck.
-    pub fn neanderthal(a: &Appearance) -> Self {
-        let mut d = Self::of(a);
-        d.forearm *= 0.92;
-        d.shank *= 0.92;
-        d.thigh *= 1.02;
-        d.hip = d.thigh + d.shank + d.ankle;
-        d.shoulder_w *= 1.06;
-        d.chest_w *= 1.14;
-        d.chest_d *= 1.16;
-        d.waist_w *= 1.1;
-        d.waist_d *= 1.1;
-        d.hip_w *= 1.08;
-        d.pelvis_d *= 1.06;
-        d.arm_t *= 1.12;
-        d.forearm_t *= 1.1;
-        d.thigh_t *= 1.1;
-        d.shank_t *= 1.08;
-        d.head_w *= 1.04;
-        d.head_d *= 1.16;
-        d.head_h *= 0.96;
-        d.neck_w *= 1.12;
-        d.neck_d *= 1.1;
-        d
     }
 
     /// Each joint's offset from its parent in the rest pose (the root's from the ground).
     pub fn rest_offsets(&self) -> [Vec3; JOINTS] {
-        let h = self.torso_unit;
+        let h = self.stature;
         let shoulder_x = self.shoulder_w / 2.0 - 0.012 * h;
         let mut o = [Vec3::ZERO; JOINTS];
         let mut set = |j: Joint, v: Vec3| o[j.index()] = v;
@@ -353,12 +273,12 @@ impl Rig {
     /// The point between the eyes in the head joint's frame.
     pub fn eye_in_head(&self) -> Vec3 {
         let (c, half) = head_box(&self.dims);
-        Vec3::new(0.0, (EYE - HEAD_JOINT) * self.dims.head_unit, c.z + half.z)
+        Vec3::new(0.0, (EYE - HEAD_JOINT) * self.dims.stature, c.z + half.z)
     }
 
     pub fn new(a: &Appearance) -> Self {
         let a = a.clone().sanitized();
-        let dims = Proportions::of_plan(&a);
+        let dims = Proportions::of(&a);
         let mut parts = Vec::new();
         body(&dims, &mut parts);
         face(&a, &dims, &mut parts);
@@ -400,8 +320,7 @@ fn add(
 }
 
 fn body(d: &Proportions, out: &mut Vec<Part>) {
-    let h = d.torso_unit;
-    let (hh, ah) = (d.head_unit, d.arm_unit);
+    let h = d.stature;
     let v = Vec3::new;
     let b = Region::Body;
     let skin = Stuff::Skin;
@@ -468,11 +387,11 @@ fn body(d: &Proportions, out: &mut Vec<Part>) {
     add(
         out,
         Joint::Head,
-        v(0.0, 0.055 * hh, 0.012 * hh),
+        v(0.0, 0.055 * h, 0.012 * h),
         v(d.head_w, d.head_h, d.head_d),
         skin,
         Region::Head,
-        0.016 * hh,
+        0.016 * h,
     );
     for (s, sh, el, wr) in [
         (1.0, Joint::ShoulderL, Joint::ElbowL, Joint::WristL),
@@ -501,18 +420,18 @@ fn body(d: &Proportions, out: &mut Vec<Part>) {
         add(
             out,
             wr,
-            v(0.0, -0.046 * ah, 0.002 * ah),
-            v(d.hand_t, 0.092 * ah, d.hand_w),
+            v(0.0, -0.046 * h, 0.002 * h),
+            v(d.hand_t, 0.092 * h, d.hand_w),
             skin,
             b,
-            0.004 * ah,
+            0.004 * h,
         );
         // The thumb, forward of the palm.
         add(
             out,
             wr,
-            v(-s * 0.002 * ah, -0.03 * ah, d.hand_w / 2.0 + 0.004 * ah),
-            v(0.012 * ah, 0.035 * ah, 0.01 * ah),
+            v(-s * 0.002 * h, -0.03 * h, d.hand_w / 2.0 + 0.004 * h),
+            v(0.012 * h, 0.035 * h, 0.01 * h),
             skin,
             b,
             0.0,
@@ -592,7 +511,7 @@ fn limb(
 
 /// The head's box in the head joint's frame: centre and half sizes.
 fn head_box(d: &Proportions) -> (Vec3, Vec3) {
-    let h = d.head_unit;
+    let h = d.stature;
     (
         Vec3::new(0.0, 0.055 * h, 0.012 * h),
         Vec3::new(d.head_w, d.head_h, d.head_d) / 2.0,
@@ -600,7 +519,7 @@ fn head_box(d: &Proportions) -> (Vec3, Vec3) {
 }
 
 fn face(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
-    let h = d.head_unit;
+    let h = d.stature;
     let v = Vec3::new;
     let r = Region::Head;
     let (c, half) = head_box(d);
@@ -732,7 +651,7 @@ fn face(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
 }
 
 fn hair(a: &Appearance, d: &Proportions, out: &mut Vec<Part>) {
-    let h = d.head_unit;
+    let h = d.stature;
     let v = Vec3::new;
     let r = Region::Head;
     let (c, half) = head_box(d);
@@ -976,7 +895,7 @@ fn layer_thickness(l: ClothingLayer) -> f32 {
 
 /// The boxes of the garments worn, over the body's.
 fn garments(body: &[Part], d: &Proportions, garbs: &[Garb], out: &mut Vec<Part>) -> bool {
-    let h = d.torso_unit;
+    let h = d.stature;
     let v = Vec3::new;
     let mut hooded = false;
     for g in garbs {

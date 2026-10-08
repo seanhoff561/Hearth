@@ -1198,6 +1198,117 @@ fn tree_blocks(c: &Content, blocks: &[(String, Option<String>)], report: &mut Re
     }
 }
 
+/// Materials held to their family's measured ranges (`materials/reference.ron`, Amendment Q
+/// §2.1): albedo outside the range is an error, roughness (a perceptual estimate) a warning.
+fn reference_report(c: &Content, report: &mut Report) {
+    let mut family_of: FxHashMap<&str, &str> = FxHashMap::default();
+    let unit = |r: (f32, f32)| (0.0..=1.0).contains(&r.0) && r.0 <= r.1 && r.1 <= 1.0;
+    for f in &c.reference.families {
+        if !unit(f.albedo) || !unit(f.roughness) || !unit(f.translucency) {
+            report.error(
+                "reference",
+                None,
+                None,
+                format!(
+                    "material family `{}` has a range outside 0–1 or reversed",
+                    f.id
+                ),
+            );
+        }
+        if !(1.0..=3.0).contains(&f.ior) {
+            report.error(
+                "reference",
+                None,
+                None,
+                format!(
+                    "material family `{}` has an index of refraction of {}",
+                    f.id, f.ior
+                ),
+            );
+        }
+        for id in &f.members {
+            if let Some(other) = family_of.insert(id.as_str(), &f.id) {
+                report.error(
+                    "reference",
+                    None,
+                    None,
+                    format!("material `{id}` is in both `{other}` and `{}`", f.id),
+                );
+            }
+        }
+    }
+    for f in &c.reference.families {
+        for id in &f.members {
+            let Some((m, o)) = c
+                .materials
+                .iter_with_origin()
+                .find(|(m, _)| m.id() == id.as_str())
+            else {
+                report.error(
+                    "unknown-ref",
+                    None,
+                    None,
+                    format!("material family `{}` names unknown material `{id}`", f.id),
+                );
+                continue;
+            };
+            let albedo = m.appearance.color.albedo();
+            if albedo < f.albedo.0 || albedo > f.albedo.1 {
+                report.error(
+                    "reference",
+                    Some(o.file.clone()),
+                    o.line,
+                    format!(
+                        "`{id}`: albedo {albedo:.3} outside {} ({:.2}–{:.2}; {})",
+                        f.name, f.albedo.0, f.albedo.1, f.source
+                    ),
+                );
+            }
+            if let Some(r) = m.appearance.roughness
+                && (r < f.roughness.0 || r > f.roughness.1)
+            {
+                report.warning(
+                    "reference",
+                    Some(o.file.clone()),
+                    o.line,
+                    format!(
+                        "`{id}`: roughness {r} outside {}'s {:.2}–{:.2}",
+                        f.name, f.roughness.0, f.roughness.1
+                    ),
+                );
+            }
+        }
+    }
+    let measured = |cat: MaterialCategory| {
+        matches!(
+            cat,
+            MaterialCategory::Rock
+                | MaterialCategory::Sediment
+                | MaterialCategory::Soil
+                | MaterialCategory::Clay
+                | MaterialCategory::Snow
+                | MaterialCategory::Ice
+                | MaterialCategory::Fuel
+                | MaterialCategory::Bark
+                | MaterialCategory::Wood
+        )
+    };
+    let open = c
+        .materials
+        .iter()
+        .filter(|m| measured(m.category) && !family_of.contains_key(m.id()))
+        .count();
+    report.info(
+        "reference",
+        format!(
+            "{} material families hold {} materials to measured ranges; {open} rocks, soils, \
+             woods and the like have no family yet",
+            c.reference.families.len(),
+            family_of.len()
+        ),
+    );
+}
+
 pub fn lint(c: &Content, ctx: &LintContext) -> Report {
     let mut report = Report::default();
     crate::validate::validate(c, &mut report);
@@ -1209,6 +1320,7 @@ pub fn lint(c: &Content, ctx: &LintContext) -> Report {
     let reach = reachability_in(c, ctx.blocks.as_deref());
     reachability_report(c, &reach, &mut report);
     food_webs(c, &mut report);
+    reference_report(c, &mut report);
     effort_report(&effort(c, &reach), &mut report);
     let uncertain = c.uncertain_entries();
     report.info(

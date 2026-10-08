@@ -37,10 +37,6 @@ pub struct WorldMeta {
     /// Data packs enabled for the world, in load order (the base pack is implicit).
     #[serde(default)]
     pub data_packs: Vec<String>,
-    /// The world ended with its character's death (permadeath): it is kept to remember, not
-    /// played (`life.json` holds the life's summary).
-    #[serde(default)]
-    pub ended: bool,
 }
 
 impl WorldMeta {
@@ -56,7 +52,6 @@ impl WorldMeta {
             clock: Clock::default(),
             block_states,
             data_packs: Vec::new(),
-            ended: false,
         }
     }
 }

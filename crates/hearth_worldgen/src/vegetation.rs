@@ -238,10 +238,6 @@ impl Vegetation {
         }
     }
 
-    pub fn is_undisturbed(&self) -> bool {
-        self.disturbances.list.is_empty()
-    }
-
     /// Every disturbance, oldest first.
     pub fn disturbances(&self) -> &[Disturbance] {
         &self.disturbances.list

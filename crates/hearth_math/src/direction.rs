@@ -103,16 +103,6 @@ impl Direction {
         }
     }
 
-    /// True for Up, South, East (the positive direction along the axis).
-    #[inline]
-    pub fn is_positive(self) -> bool {
-        matches!(self, Direction::Up | Direction::South | Direction::East)
-    }
-
-    pub fn is_horizontal(self) -> bool {
-        self.axis() != Axis::Y
-    }
-
     /// Rotates a horizontal direction 90° clockwise (seen from above). Vertical directions are
     /// returned unchanged.
     pub fn rotate_cw(self) -> Direction {

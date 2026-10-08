@@ -1110,7 +1110,14 @@ pub fn render_shot(
     }
     let models = BlockModels::build(&lw.reg, atlas);
     let meshes = lw.mesh(&models, &positions, MeshOptions::default());
-    let mut scene = SceneRenderer::new(ctx, atlas, OFFSCREEN_FORMAT, planet, 4, 4);
+    let mut scene = SceneRenderer::new(
+        ctx,
+        atlas,
+        OFFSCREEN_FORMAT,
+        planet,
+        hearth_render::scene::MIP_LEVELS,
+        hearth_render::scene::ANISOTROPY,
+    );
     scene.smoke.set_plumes(plumes);
     scene.terrain.render_distance = spec.distance;
     scene.terrain.vertical_distance = 64;

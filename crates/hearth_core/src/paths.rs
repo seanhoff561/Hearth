@@ -46,21 +46,6 @@ impl GameDirs {
     pub fn screenshots(&self) -> PathBuf {
         self.root.join("screenshots")
     }
-    pub fn resource_packs(&self) -> PathBuf {
-        self.root.join("resourcepacks")
-    }
-    pub fn data_packs(&self) -> PathBuf {
-        self.root.join("datapacks")
-    }
-    pub fn mods(&self) -> PathBuf {
-        self.root.join("mods")
-    }
-    pub fn logs(&self) -> PathBuf {
-        self.root.join("logs")
-    }
-    pub fn crash_reports(&self) -> PathBuf {
-        self.root.join("crash-reports")
-    }
     /// Regenerable data (planet analysis grids, shader caches); safe to delete.
     pub fn cache(&self) -> PathBuf {
         self.root.join("cache")
@@ -68,14 +53,7 @@ impl GameDirs {
 
     /// Creates the root and the standard subfolders if they don't exist yet.
     pub fn ensure_created(&self) -> std::io::Result<()> {
-        for dir in [
-            self.root.clone(),
-            self.saves(),
-            self.screenshots(),
-            self.resource_packs(),
-            self.mods(),
-            self.logs(),
-        ] {
+        for dir in [self.root.clone(), self.saves(), self.screenshots()] {
             std::fs::create_dir_all(dir)?;
         }
         Ok(())

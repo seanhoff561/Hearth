@@ -258,16 +258,12 @@ mod tests {
         assert_eq!(b.get(builtin::JOURNAL), Some(Binding::key(Key::J)));
         assert_eq!(b.get(builtin::BODY_PANEL), Some(Binding::key(Key::B)));
         assert_eq!(
-            b.get(builtin::SWAP_OFFHAND),
-            Some(Binding::mouse(MouseButton::Forward))
-        );
-        assert_eq!(
             b.get(builtin::TOGGLE_PERSPECTIVE),
             Some(Binding::mouse(MouseButton::Back))
         );
         assert_eq!(b.get(builtin::WORLD_MAP), Some(Binding::key(Key::M)));
         assert_eq!(b.get(builtin::FULLSCREEN), Some(Binding::key(Key::F11)));
-        assert_eq!(b.get(builtin::HOTBAR_9), Some(Binding::key(Key::Digit9)));
+        assert_eq!(b.get(builtin::HOTBAR_6), Some(Binding::key(Key::Digit6)));
     }
 
     #[test]
@@ -293,9 +289,9 @@ mod tests {
     #[test]
     fn debug_chords_do_not_conflict_with_gameplay() {
         let b = KeyBindings::builtin_defaults();
-        // F3+A vs A (strafe left), F3+T vs T (chat).
-        assert!(!b.is_conflicting(builtin::DEBUG_RELOAD_CHUNKS));
-        assert!(!b.is_conflicting(builtin::DEBUG_RELOAD_RESOURCES));
+        // F3+W vs W (forward), F3+Left vs Left.
+        assert!(!b.is_conflicting(builtin::DEBUG_TIME_WARP));
+        assert!(!b.is_conflicting(builtin::DEBUG_TIME_BACK));
     }
 
     #[test]
@@ -308,10 +304,10 @@ mod tests {
     #[test]
     fn unbinding_and_reset_all() {
         let mut b = KeyBindings::builtin_defaults();
-        b.set(builtin::CHAT, None);
+        b.set(builtin::SHOUT, None);
         b.set(builtin::ATTACK, Some(Binding::key(Key::F)));
         assert!(!b.all_default());
-        assert!(!b.is_conflicting(builtin::CHAT));
+        assert!(!b.is_conflicting(builtin::SHOUT));
         b.reset_all();
         assert!(b.all_default());
     }
@@ -320,9 +316,9 @@ mod tests {
     fn map_round_trip_only_stores_changes() {
         let mut b = KeyBindings::builtin_defaults();
         b.set(builtin::FORWARD, Some(Binding::key(Key::Up)));
-        b.set(builtin::CHAT, None);
+        b.set(builtin::SHOUT, None);
         b.set(
-            builtin::SCREENSHOT,
+            builtin::JOURNAL,
             Some(Binding::with(
                 Key::P,
                 Modifiers::CTRL.union(Modifiers::SHIFT),
@@ -331,8 +327,8 @@ mod tests {
         let map = b.to_map();
         assert_eq!(map.len(), 3);
         assert_eq!(map["key.forward"], "up");
-        assert_eq!(map["key.chat"], "none");
-        assert_eq!(map["key.screenshot"], "ctrl+shift+p");
+        assert_eq!(map["key.shout"], "none");
+        assert_eq!(map["key.journal"], "ctrl+shift+p");
         let back = KeyBindings::from_map(ActionRegistry::with_builtins(), &map);
         for id in b.registry().ids() {
             assert_eq!(back.get(id), b.get(id));

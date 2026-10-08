@@ -97,7 +97,7 @@ impl Workshop {
         };
         if let Some((s, _)) = rest {
             let at = crate::server::rest_on(h.lw, h.player.mover.pos);
-            h.world_items.add_owned(s, at.to_array(), 0.0, 0);
+            h.world_items.add(s, at.to_array(), 0.0);
             *h.items_changed = true;
         }
         h.out.push(acted(

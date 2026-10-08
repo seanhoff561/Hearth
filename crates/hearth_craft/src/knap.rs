@@ -236,26 +236,6 @@ impl Knap {
         }
     }
 
-    /// How far the stone runs from `at` along `d` (cells).
-    pub fn width_along(&self, at: (f32, f32), d: (f32, f32)) -> f32 {
-        let mut t = 0.0;
-        let mut inside = 0.0;
-        while t < (self.w + self.h) as f32 {
-            let (x, y) = (at.0 + d.0 * t, at.1 + d.1 * t);
-            if self.at(x.floor() as i32, y.floor() as i32) {
-                inside = t;
-            }
-            t += 0.25;
-        }
-        inside
-    }
-
-    /// The force (0–1) whose flake runs `share` of the way across the stone at `at` along
-    /// `d`.
-    pub fn force_for(&self, at: (f32, f32), d: (f32, f32), share: f32) -> f32 {
-        ((self.width_along(at, d) * share - 2.0) / 7.0).clamp(0.0, 1.0)
-    }
-
     /// The connected parts of the stone (cells by index).
     fn parts(&self) -> Vec<Vec<usize>> {
         let mut seen = vec![false; self.stone.len()];

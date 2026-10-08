@@ -58,13 +58,6 @@ impl InputState {
         self.options = options;
     }
 
-    /// Makes sure the slot table covers all registered actions (after a mod registers more).
-    pub fn sync_action_count(&mut self, count: usize) {
-        if self.slots.len() < count {
-            self.slots.resize(count, ActionSlot::default());
-        }
-    }
-
     /// Current context (gameplay, container screen, …).
     pub fn context(&self) -> Contexts {
         self.context
@@ -110,10 +103,6 @@ impl InputState {
     /// Modifier bits currently held.
     pub fn modifiers(&self) -> Modifiers {
         Modifiers(self.held.iter().fold(0, |acc, k| acc | k.modifier_bit()))
-    }
-
-    pub fn is_key_held(&self, key: InputKey) -> bool {
-        self.held.contains(&key)
     }
 
     /// Feeds a key or mouse button press. Returns the actions it activated.
@@ -205,13 +194,6 @@ impl InputState {
         }
         self.held.clear();
         self.debug_key_held = false;
-    }
-
-    /// Clears toggle latches (e.g. on death or when entering a vehicle).
-    pub fn clear_toggles(&mut self) {
-        for s in &mut self.slots {
-            s.latched = false;
-        }
     }
 
     pub fn add_mouse_motion(&mut self, dx: f64, dy: f64) {
@@ -386,9 +368,9 @@ mod tests {
     fn debug_chords() {
         let (b, mut s) = setup();
         s.press(kb(Key::F3), &b);
-        s.press(kb(Key::G), &b);
-        assert!(s.was_pressed(DEBUG_CHUNK_BORDERS));
-        s.release(kb(Key::G), &b);
+        s.press(kb(Key::W), &b);
+        assert!(s.was_pressed(DEBUG_TIME_WARP));
+        s.release(kb(Key::W), &b);
         s.release(kb(Key::F3), &b);
         assert!(
             !s.debug_overlay_toggled(),
@@ -399,18 +381,18 @@ mod tests {
         s.release(kb(Key::F3), &b);
         assert!(s.debug_overlay_toggled());
         s.end_frame();
-        // Without F3, A is just strafe-left.
-        s.press(kb(Key::A), &b);
-        assert!(s.is_down(LEFT) && !s.was_pressed(DEBUG_RELOAD_CHUNKS));
+        // Without F3, W is just forward.
+        s.press(kb(Key::W), &b);
+        assert!(s.is_down(FORWARD) && !s.was_pressed(DEBUG_TIME_WARP));
     }
 
     #[test]
     fn debug_chord_overrides_plain_meaning() {
         let (b, mut s) = setup();
         s.press(kb(Key::F3), &b);
-        s.press(kb(Key::T), &b);
-        assert!(s.was_pressed(DEBUG_RELOAD_RESOURCES));
-        assert!(!s.was_pressed(CHAT));
+        s.press(kb(Key::W), &b);
+        assert!(s.was_pressed(DEBUG_TIME_WARP));
+        assert!(!s.was_pressed(FORWARD) && !s.is_down(FORWARD));
     }
 
     #[test]

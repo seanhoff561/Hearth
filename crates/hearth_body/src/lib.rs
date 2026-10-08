@@ -904,18 +904,6 @@ impl Body {
         }
     }
 
-    /// Applies a treatment to an illness.
-    pub fn treat_illness(&mut self, cfg: &BodyConfig, id: &str, treatment: &str) {
-        let Some(kind) = cfg.illness(id) else {
-            return;
-        };
-        if let Some(i) = self.illnesses.iter_mut().find(|i| i.id == kind.id)
-            && !i.treatments.iter().any(|t| t == treatment)
-        {
-            i.treatments.push(treatment.to_owned());
-        }
-    }
-
     /// The injuries of landing at `impact_m_s` (after the ground's cushioning). Below 5.5 m/s
     /// (a drop of 1.5 m) nothing; then sprained ankles and bruises; fractures in a fifth of
     /// falls from 3 m, most from 6 m; deep wounds past 11 m/s; and death: rare below 12 m/s,

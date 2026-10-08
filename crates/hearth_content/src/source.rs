@@ -75,6 +75,9 @@ fn read(path: PathBuf, namespace: &str, pack: usize, report: &mut Report) -> Opt
     }
 }
 
+/// The file name (without extension) of a domain's reference table, which is not an entry file.
+pub const REFERENCE: &str = "reference";
+
 /// All files of a list domain (`<ns>/<domain>.ron|json` and `<ns>/<domain>/**`), in pack
 /// order then path order.
 pub fn domain_files(packs: &[PathBuf], domain: &str, report: &mut Report) -> Vec<SourceFile> {
@@ -89,6 +92,8 @@ pub fn domain_files(packs: &[PathBuf], domain: &str, report: &mut Report) -> Vec
                 }
             }
             collect(&dir.join(domain), &mut files);
+            // A domain's reference table (`materials/reference.ron`) is a singleton of its own.
+            files.retain(|p| p.file_stem().and_then(|s| s.to_str()) != Some(REFERENCE));
             out.extend(files.into_iter().filter_map(|p| read(p, &ns, i, report)));
         }
     }

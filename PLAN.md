@@ -49,30 +49,26 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 21. **Phase F**, an audit after every three milestones.
 
 ## Completed
-- **M0–M3** — v1 engine: foundation, voxel core, world generation, near-field rendering.
-- **V2-0 – V2-10** — content platform, time and seasons, geology and hydrology, the player's body,
-  carrying and clothing, process crafting and knowledge, flora, fauna, structural building, the
-  vertical slice review, ecosystem waves.
-- **V2-11** — superseded by V2.1 (H0–H10), itself superseded by Amendment E.
-- **H0 – H10** — the simulated humans (genetics to societies, history, the Observer, the
-  conversation backend); removed in E0, archived as `archive/humans-v2.1`.
-- **V2-12** — the Neolithic: pottery, fields and grain domestication, herds, textiles, timber,
-  moving loads.
-- **S0** — Baseline-S and the smooth-terrain prototypes (D222).
-- **P0** — triage and quick fixes (D224, D225). **P1** — menus and world management (D226).
-- **P2** — game modes and Creative (D229). **E0** — the human systems removed (D230): two crates,
-  their modules, screens, protocol, data, schemas and tests, about 42,800 lines, because
-  Amendment E keeps the game to a lone player on a true Earth until Phase F plans people anew;
-  archived in `docs/archive/humans-v2.1/` and the branch `archive/humans-v2.1`.
+- **M0–M3** (v1 engine); **V2-0 – V2-10** (content platform to ecosystem waves); **V2-12** (the
+  Neolithic); **S0** (D222); **P0–P2** (D224–D226, D229). V2-11 and V2.1's H0–H10 superseded.
+- **E0** — the human systems removed and archived (D230): Amendment E keeps the game to a lone
+  player on a true Earth until Phase F plans people anew.
+- **Audit 0** — the baseline (`docs/review/audits/AUDIT-0.md`, D231–D234).
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
 `scripts/lean-check.sh` and a fresh-eyes review, the gate and a profile of the worst scene,
 realism and cohesion against the reference ranges and real references, the repetition metrics,
 a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five lines in
-`PROGRESS.md`. **Audit 0** (after E0) also sets the baseline: the restart files cut down (Q §5.4),
-a fluff inventory, the original-game-era leftovers with a plan each (Q §5.8),
-`data/hearth/materials/reference.ron` started, `docs/design/budgets.md`, `scripts/lean-check.sh`.
+`PROGRESS.md`.
+
+## From Audit 0 (medium priority; each when its file is next touched)
+- Split the eight files over 2,000 lines along the cut lines in AUDIT-0 (`client.rs`,
+  `workshop.rs`, `server.rs`'s `run` into a `ServerWorld`, `ecology.rs`, `live.rs`,
+  `screenshot.rs`, `bench.rs`, the bot test).
+- One `smoothstep`; debug tools (F3+T, the counting allocator) behind Developer mode; material
+  statuses derived from use; planned knowledge cut to id, name and a line; Q §3's repetition
+  checks in the screenshot suite (with S2).
 
 ## Q1 — Interface design (Q §6)
 - An OFL typeface rendered as SDF/MSDF text; quiet panels in natural low-saturation colours;
@@ -119,13 +115,13 @@ a fluff inventory, the original-game-era leftovers with a plan each (Q §5.8),
 
 ## P4 — Poses, animation, sleep and time (with E6)
 - The work-pose library with IK; every process with its pose (lint); first- and third-person
-  views; people using the same poses; skipping a long action with the fade, interruptions,
+  views; skipping a long action with the fade, interruptions,
   cancelling with partial progress kept, queued repeats (§6). Sleep by the two-process model with
   the lie-down menu; the time in words (§7).
 - *Accept:* every process animates; lying down at night leads to sleep within a realistic time;
   every refusal explains itself; skipping gives what waiting gives.
-- *Amended by E §9.1:* no skipping active work (Rest / Wait for waiting processes); no people;
-  sleep on real 24-hour days.
+- *Amended by E §9.1:* no skipping active work (Rest / Wait for waiting processes); sleep on
+  real 24-hour days. Poses are mind-agnostic actions (the Actor rule, E §2.3).
 
 ## E6 — Work the way the body does it (with P4, E §7)
 - No timers or progress bars: active work stroke by stroke while the button is held, rates from
@@ -183,10 +179,10 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 
 ## S3 — Movement, collision and navigation
 - Field-based capsule collision on server and client, slope walking, sliding and footing,
-  footsteps and footprints on smooth ground, the nav grid rebuilt for animals and humans,
+  footsteps and footprints on smooth ground, the nav grid rebuilt for animals,
   built-piece skirts and Level ground (S §6, §8).
-- *Accept:* S §13 collision and movement tests; animals and humans path well over hills, scree
-  and riverbanks; budgets met.
+- *Accept:* S §13 collision and movement tests; animals path well over hills, scree and
+  riverbanks; 300 animals within budget.
 
 ## S4 — Distant terrain
 - Fixed-point LOD heights, smooth LOD meshing, matched shading and overlays, canopy shapes in
@@ -211,7 +207,7 @@ After S4, covering S1, S2, E7, S3, S4.
   their branches; every natural thing at real-valued positions and turns, spaced by
   competition, clustered by dispersal, in clonal patches, crowns merging into hedges,
   thickets and reed beds, foliage occupancy from the plants' real shapes; rocks, logs, trees,
-  landforms, veins and strata and people's places off the grid's axes (P §11.1–11.2); a
+  landforms, veins and strata off the grid's axes (P §11.1–11.2); a
   building grid of each structure's own origin and turn evaluated (§11.3).
 - *Accept:* §11.4's statistical tests (spacing, clustering, cover, no position quantized to
   the grid, occupancy matching what is drawn) and screenshots (meadow, forest edge, thicket,
@@ -246,9 +242,9 @@ After S4, covering S1, S2, E7, S3, S4.
   one coherent world.
 
 ## P8 — Playability review
-- Play as the owner does, in all three modes: create a world, choose a birthplace, be born, grow
-  up, survive a season, sleep, make fire, hunt, build a shelter, die and go on; spectate and
-  build in Creative. A screenshot sequence (or video) a step; `docs/review/playability.md`
+- Play as the owner does, in all three modes: create a world and a character, choose where to
+  begin, survive a season, sleep, make fire, hunt, build a shelter, die and begin a new life;
+  spectate and build in Creative. A screenshot sequence (or video) a step; `docs/review/playability.md`
   with what still confuses, drags or fiddles; the top items fixed.
 - *Accept:* every issue in `dev/PLAYTEST.md` resolved or explained; the review's top items
   fixed.
@@ -291,97 +287,37 @@ After V2-14.
 ## Audit 5
 After V2-16, before Phase R.
 
-## Phase R (after the game is complete)
-Amendment R (`dev/AMENDMENT_R.md`, 2026-10-03): open-source release, multiplayer, AI and voice,
-the guide and the trailer (since Amendment S, describing and showing the smooth world). None of it starts until every milestone above, through V2-16,
-is complete and accepted (R §0.1). Until then only its **multiplayer-ready rule** applies (R §0.3,
-D166): gameplay state on the server's side, new messages serializable and versioned through the
-channel, no simulation assuming a single player. When V2-16 is done: re-read the amendment, write
-`RELEASE_PLAN.md`, then R1. Each R milestone: implement, document, test, all checks,
-`PROGRESS.md` (with its Release Status table), commit.
+## Phase R (after V2-16; `dev/AMENDMENT_R.md` as amended by E §9.3)
+Nothing of it starts before V2-16 is accepted; until then only the **multiplayer-ready rule**
+(R §0.3, D166): gameplay state on the server's side, messages serializable and versioned, no
+simulation assuming one player. Then: re-read the amendment, write `RELEASE_PLAN.md`, R1. Each R
+milestone's acceptance is R §12's and is detailed in `RELEASE_PLAN.md`.
 
-### Phase R-A — online features
-- **R1 — Networking core.** `hearth_net`: QUIC, protocol and versioning, the in-memory transport
-  for single-player, server-authoritative intents, handshake and identity keys. *Accept:*
-  single-player runs through the network layer with no regressions in the v1/v2 benchmarks.
-- **R2 — Replication and world sync.** Seed-plus-deltas cube sync with hashes, LOD updates,
-  interest management, snapshots and deltas, prediction and reconciliation, lag compensation,
-  replicated processes, plants, animals and people. *Accept:* 4 bot clients play an hour under
-  150 ms latency and 2 % loss without desyncs; controls feel immediate.
-- **R3 — Hosting, joining and administration.** Host & Play, dedicated server and Docker image,
-  `server.toml`, LAN discovery, UPnP, invite codes, relay, community list protocol, roles and the
-  admin panel, block/mute/report, PvP and sleep settings, mod sync; **births and deaths in
-  multiplayer** (Addendum B, `docs/design/humans/multiplayer-births.md`, D168): the shared start
-  lobby and shared childhood, Remembered Childhood, family links between players with consent, a
-  player pair's child invitations, the death choices and spectators, the birth settings, logging
-  off (resting, or living on quietly).
-  *Accept:* a 32-bot soak on a dedicated server meets budgets; join flows work across platforms.
-- **R4 — AI Bridge.** Providers, capability levels, the Agent Bridge (WebSocket + MCP) with
-  examples, guardrails, decision journal, budgets and fallbacks, AI settings and wizard step.
-  *Accept:* R §12's AI tests; a local-model setup in under five minutes by the guide; the game
-  identical with AI off.
-- **R5 — Proximity voice.** Capture, DSP, Opus, transport, server range gating, spatial audio with
-  occlusion and reverb, whisper and shout as in-world noise, controls, indicators, settings.
-  *Accept:* R §12's voice tests; two players across a cave wall hear each other muffled; a shout
-  scares a nearby herd.
-- **R6 — Voice for agents.** Local and hosted speech-to-text, speech to speech acts gated by
-  language knowledge, `VoiceBackend` (vocalizations, local phoneme TTS speaking generated
-  languages, hosted TTS), stable per-person voices with emotional prosody, client-side synthesis.
-  *Accept:* talking to an agent by voice end to end with local models only; relatives sound
-  alike.
+### Phase R-A — online features (R1 → R2 → R3 → R5; R4 and R6 move to Phase F)
+- **R1 — Networking core:** `hearth_net`, QUIC, versioned protocol, the in-memory transport for
+  single-player, server-authoritative intents, identity keys. *Accept:* no regression in the
+  benchmarks through the network layer.
+- **R2 — Replication and world sync:** seed plus deltas with hashes, interest management,
+  prediction and reconciliation, lag compensation. *Accept:* 4 bots play an hour at 150 ms and
+  2 % loss without desync.
+- **R3 — Hosting, joining, administration:** Host & Play, dedicated server, LAN, invites, relay,
+  roles, moderation, mod sync; starts and new lives by E §6.3 and §6.6; body interactions between
+  players on the Actor rule. *Accept:* a 32-bot soak within budgets.
+- **R5 — Proximity voice:** Opus, range gating, spatial audio with occlusion, whisper and shout
+  as in-world noise. *Accept:* two players across a cave wall hear each other muffled.
 
-### Phase R-B — release (only after R-A passes)
-- **R0 — Repository audit and open-source foundation.** R §1.1–1.2, §1.4: licenses, `cargo
-  deny`/`cargo about`, secrets and clean-room scans, `xtask`, devcontainer, `scripts/rename`,
-  `RELEASE_PLAN.md`; the working files (`PROGRESS.md`, `PLAN.md`, `MIGRATION*.md`,
-  `DECISIONS.md`) into `dev/`. *Accept:* a fresh clone builds and runs on all three platforms in
-  CI; no secrets or foreign trademarks; licenses complete.
-- **R7 — Packaging, CI and releases.** R §1.3, §1.5 (first-run wizard — with a Profile step,
-  name and identity key, where a character creator was: Addendum B — diagnostics), the update
-  check, measured system requirements. *Accept:* a test tag produces every artifact; each
-  installs and runs on a clean VM per OS; Releases page to playing in under five minutes.
-- **R8 — README, guide, docs site and in-game Field Guide.** R §9 in full, with generated tables,
-  feature anchors and readability checks; birth, childhood, the death choices and births in
-  multiplayer told plainly (Addendum B). *Accept:* every docs check passes; every implemented
-  system has a guide section; nothing unimplemented described as available.
-- **R9 — Branding, press kit and trailers.** R §8 and §10: the cinematic system, every trailer
-  cut (a birth or childhood moment in the launch trailer's people beat if it reads well:
-  Addendum B), thumbnail, descriptions, the review loop. *Accept:* trailers rendered and reviewed;
-  `trailer/REVIEW.md` complete; licenses recorded.
-- **R10 — Launch readiness review.** Fresh-machine installs, the guide followed literally,
-  security and privacy reviews, a performance re-check, `dev/LAUNCH_REPORT.md` with the owner's
-  decisions still to confirm (R §0.5); the v0.1.0 release drafted, not published.
+### Phase R-B — release (after Audit 6)
+- **R0 — Repository audit and open-source foundation** (licenses, `cargo deny`, clean-room and
+  secret scans, the working files into `dev/`).
+- **R7 — Packaging, CI and releases** (first-run wizard with a Profile step, update check).
+- **R8 — README, guide, docs site and the Field Guide** (people, eras and AI "Coming later").
+- **R9 — Branding, press kit and trailers** (players together where the people beat was).
+- **R10 — Launch readiness review** (after Audit 7): `dev/LAUNCH_REPORT.md`, v0.1.0 drafted.
 
-*Amended by E §9.3:* Phase R-A is **R1 → R2 → R3 → R5**; R4 (AI Bridge) and R6 (agent voices)
-move into Phase F. R3's births in multiplayer are removed: starts and new lives use E §6.3 and
-§6.6 (suggested places, anywhere, near a friend), and R3 adds player-to-player body interactions
-on the Actor rule, contact by consent, hostile ones by PvP. The guide's people, eras and AI
-sections become "Coming later"; the trailer's people beat becomes players together. Audit 6
-after R-A; Audit 7 before R10.
-
-## Phase F — Simulated humanity (after R10; E §10, designed in E1)
-Each milestone's acceptance tests are detailed when Phase F begins; an audit after every three.
-- **F0 — Research and prototypes:** model latency, throughput and quality on reference hardware
-  for System 1 and System 2; a five-person believability prototype; a voice-latency prototype.
-- **F1 — People foundation:** the Person record and levels C0–C2 on the Actor framework; genetics,
-  life course and demography restored from the archive, adapted to real time and
-  childhood-as-the-past.
-- **F2 — The History Engine:** region graph, settlements, polities, economy, conflict, culture,
-  era snapshots, with plausibility tests.
-- **F3 — The World Bible and the Historian:** narrative with fact validation and lazy zoom.
-- **F4 — Procedural minds (C2):** needs, emotions, planner, routines, social rules, pathfinding at
-  every scale.
-- **F5 — The System 1 action model:** training pipeline, batched runtime, fallback.
-- **F6 — Reflective minds (C3):** memory, reflection, structured outputs, validators, budgets; the
-  AI Bridge providers.
-- **F7 — Conversation and voice (C4):** turn-taking, streaming speech in and out, voices,
-  languages and translation options, multiplayer.
-- **F8 — Societies:** households, cooperation, institutions as collective agents, deliberation,
-  markets, conflict and war.
-- **F9 — Settlements:** people building with the real construction system; growth and roads.
-- **F10 — Births and childhood:** any household, the vignette engine with the real family's
-  minds, coming of age.
-- **F11 — Eras:** the Upper Paleolithic vertical slice first, then the others, each with an
-  authenticity review.
-- **F12 — Scale, cost and safety hardening:** million-person regions, cost and latency budgets,
-  red-team suites, multiplayer determinism through the decision journal.
+## Phase F — Simulated humanity (after R10; designed in E1, `docs/design/future/humanity/`)
+F0 research and prototypes; F1 people foundation (the archive's genetics, life course and
+demography adapted); F2 the History Engine; F3 the World Bible and the Historian; F4 procedural
+minds; F5 the System 1 action model; F6 reflective minds and the AI Bridge (R4); F7 conversation
+and voice (R6); F8 societies; F9 settlements; F10 births and childhood; F11 eras, the Upper
+Paleolithic first; F12 scale, cost and safety. Acceptance detailed when Phase F begins; an audit
+after every three.

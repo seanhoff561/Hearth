@@ -365,11 +365,6 @@ impl Crafting {
         }
     }
 
-    /// The chosen offer's action, if it can be done.
-    pub fn chosen_act(&self) -> Option<Do> {
-        self.offers.get(self.chosen).and_then(|o| o.act.clone())
-    }
-
     /// The chosen offer, if it can be done.
     pub fn chosen(&self) -> Option<&Offer> {
         self.offers.get(self.chosen).filter(|o| o.act.is_some())

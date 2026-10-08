@@ -11,7 +11,6 @@ use smallvec::SmallVec;
 pub struct ShapeId(pub u16);
 
 impl ShapeId {
-    pub const EMPTY: ShapeId = ShapeId(0);
     pub const FULL: ShapeId = ShapeId(1);
 }
 

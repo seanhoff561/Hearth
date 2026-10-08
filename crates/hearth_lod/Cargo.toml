@@ -20,7 +20,6 @@ rustc-hash.workspace = true
 
 [dev-dependencies]
 hearth_content.workspace = true
-rayon.workspace = true
 
 [lints]
 workspace = true

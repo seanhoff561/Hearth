@@ -31,19 +31,10 @@ pub struct Options {
     pub video: VideoOptions,
     pub controls: ControlOptions,
     pub sound: SoundOptions,
-    pub chat: ChatOptions,
     pub accessibility: AccessibilityOptions,
-    pub skin: SkinOptions,
     pub window: WindowState,
     /// Language code, e.g. `en_us`.
     pub language: String,
-    /// Enabled resource packs, lowest priority first (the built-in pack is implicit and always
-    /// at the bottom).
-    pub resource_packs: Vec<String>,
-    /// Show advanced tooltips (F3+H).
-    pub advanced_tooltips: bool,
-    /// Pause the game when the window loses focus.
-    pub pause_on_lost_focus: bool,
     /// Developer mode (Amendment P §2): the debug screen (F3) shows everything in every mode,
     /// not only how the game performs, and Creative's clear view is open.
     pub developer_mode: bool,
@@ -56,14 +47,9 @@ impl Default for Options {
             video: VideoOptions::default(),
             controls: ControlOptions::default(),
             sound: SoundOptions::default(),
-            chat: ChatOptions::default(),
             accessibility: AccessibilityOptions::default(),
-            skin: SkinOptions::default(),
             window: WindowState::default(),
             language: "en_us".to_owned(),
-            resource_packs: Vec::new(),
-            advanced_tooltips: false,
-            pause_on_lost_focus: true,
             developer_mode: false,
         }
     }
@@ -126,7 +112,6 @@ impl Options {
         self.video.sanitize();
         self.controls.sanitize();
         self.sound.sanitize();
-        self.chat.sanitize();
         self.accessibility.sanitize();
         if self.language.trim().is_empty() {
             self.language = "en_us".to_owned();
@@ -144,13 +129,16 @@ fn toml_serialize<T: Serialize>(value: &T) -> Result<String, impl std::fmt::Disp
 }
 
 /// Overall graphics quality preset. Changing any preset-controlled sub-setting switches the
-/// preset to `Custom`.
+/// preset to `Custom`. The names of the original game's presets load as their equivalents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GraphicsPreset {
-    Fast,
-    Fancy,
-    Fabulous,
+    #[serde(alias = "fast")]
+    Low,
+    #[serde(alias = "fancy")]
+    Medium,
+    #[serde(alias = "fabulous")]
+    High,
     Custom,
 }
 
@@ -174,46 +162,14 @@ pub enum DisplayMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CloudMode {
-    Off,
-    Fast,
-    Fancy,
-    Volumetric,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParticleMode {
-    All,
-    Decreased,
-    Minimal,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ChunkBuilderMode {
-    Threaded,
-    SemiBlocking,
-    FullyBlocking,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AttackIndicator {
-    Off,
-    Crosshair,
-    Hotbar,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum AntiAliasing {
+    /// Off (an options file's `fxaa`, never built, loads as off).
+    #[serde(alias = "fxaa")]
     Off,
-    Fxaa,
     Taa,
 }
 
-/// Generic four-step quality level used by the shader-quality group.
+/// Generic four-step quality level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Quality {
@@ -223,55 +179,17 @@ pub enum Quality {
     High,
 }
 
-/// Shader quality group (water, shadows, volumetrics, sky, weather, exposure).
+/// Shader quality group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ShaderOptions {
     pub water: Quality,
-    pub shadows: Quality,
-    pub volumetrics: Quality,
-    pub sky: Quality,
-    pub weather_effects: Quality,
-    pub auto_exposure: bool,
-    pub bloom: bool,
 }
 
 impl Default for ShaderOptions {
     fn default() -> Self {
-        Self::for_preset(GraphicsPreset::Fancy)
-    }
-}
-
-impl ShaderOptions {
-    pub fn for_preset(preset: GraphicsPreset) -> Self {
-        match preset {
-            GraphicsPreset::Fast => Self {
-                water: Quality::Low,
-                shadows: Quality::Off,
-                volumetrics: Quality::Off,
-                sky: Quality::Low,
-                weather_effects: Quality::Low,
-                auto_exposure: true,
-                bloom: false,
-            },
-            GraphicsPreset::Fancy | GraphicsPreset::Custom => Self {
-                water: Quality::Medium,
-                shadows: Quality::Medium,
-                volumetrics: Quality::Low,
-                sky: Quality::Medium,
-                weather_effects: Quality::Medium,
-                auto_exposure: true,
-                bloom: true,
-            },
-            GraphicsPreset::Fabulous => Self {
-                water: Quality::High,
-                shadows: Quality::High,
-                volumetrics: Quality::Medium,
-                sky: Quality::High,
-                weather_effects: Quality::High,
-                auto_exposure: true,
-                bloom: true,
-            },
+        Self {
+            water: Quality::Medium,
         }
     }
 }
@@ -285,8 +203,6 @@ pub struct VideoOptions {
     pub render_distance: u32,
     /// Full-detail cubes above and below the player (4–32).
     pub vertical_render_distance: u32,
-    /// Radius in chunks within which the world is simulated (5–32).
-    pub simulation_distance: u32,
     /// Level-of-detail terrain radius in chunks; 0 disables LOD (0–4096).
     pub lod_distance: u32,
     /// Video memory budget for LOD tiles in MiB.
@@ -306,53 +222,22 @@ pub struct VideoOptions {
     pub monitor: Option<String>,
     /// GUI scale; 0 = auto.
     pub gui_scale: u32,
-    /// 0.0 = Moody (strict realism), 1.0 = Bright (generous minimum exposure).
-    pub brightness: f32,
     /// Vertical field of view in degrees (30–110).
     pub fov: f32,
-    /// Strength of speed/sprint FOV changes (0–1).
-    pub fov_effects: f32,
     pub view_bobbing: bool,
-    /// Strength of nausea/underwater distortion effects (0–1).
-    pub distortion_effects: f32,
-    /// Strength of screen overlays such as damage tilt and darkness (0–1).
-    pub screen_effects: f32,
-    pub clouds: CloudMode,
-    /// Cloud layer base height in blocks above sea level.
-    pub cloud_height: i32,
-    pub particles: ParticleMode,
-    /// Mipmap levels (0–4).
-    pub mipmap_levels: u32,
-    /// Biome blend radius in blocks (0–15).
-    pub biome_blend: u32,
-    /// Entity render distance scale (0.5–5.0).
-    pub entity_distance: f32,
-    pub entity_shadows: bool,
-    pub smooth_lighting: bool,
-    pub chunk_builder: ChunkBuilderMode,
-    pub attack_indicator: AttackIndicator,
-    /// Anisotropic filtering samples (1, 2, 4, 8 or 16).
-    pub anisotropic_filtering: u32,
     pub anti_aliasing: AntiAliasing,
     /// Internal render resolution scale (0.5–2.0): below 1 the frame is upscaled (FSR 1),
     /// above 1 filtered down. 1 in every preset.
     pub render_scale: f32,
-    /// Bend distant terrain below the horizon according to planet curvature.
-    pub planet_curvature: bool,
-    /// Sway leaves, grass and crops in the wind.
-    pub wind_sway: bool,
-    /// Held light sources (torches, lanterns) light up the surroundings.
-    pub dynamic_held_light: bool,
     pub shader: ShaderOptions,
 }
 
 impl Default for VideoOptions {
     fn default() -> Self {
         let mut v = Self {
-            graphics: GraphicsPreset::Fancy,
+            graphics: GraphicsPreset::Medium,
             render_distance: 12,
             vertical_render_distance: 8,
-            simulation_distance: 12,
             lod_distance: 256,
             lod_vram_budget_mb: 1024,
             lod_detail: Quality::Medium,
@@ -364,31 +249,13 @@ impl Default for VideoOptions {
             exclusive_refresh_millihertz: None,
             monitor: None,
             gui_scale: 0,
-            brightness: 0.5,
             fov: 70.0,
-            fov_effects: 1.0,
             view_bobbing: true,
-            distortion_effects: 1.0,
-            screen_effects: 1.0,
-            clouds: CloudMode::Fancy,
-            cloud_height: 320,
-            particles: ParticleMode::All,
-            mipmap_levels: 4,
-            biome_blend: 5,
-            entity_distance: 1.0,
-            entity_shadows: true,
-            smooth_lighting: true,
-            chunk_builder: ChunkBuilderMode::Threaded,
-            attack_indicator: AttackIndicator::Crosshair,
-            anisotropic_filtering: 4,
-            anti_aliasing: AntiAliasing::Fxaa,
+            anti_aliasing: AntiAliasing::Off,
             render_scale: 1.0,
-            planet_curvature: true,
-            wind_sway: true,
-            dynamic_held_light: true,
             shader: ShaderOptions::default(),
         };
-        v.apply_preset(GraphicsPreset::Fancy);
+        v.apply_preset(GraphicsPreset::Medium);
         v
     }
 }
@@ -397,61 +264,31 @@ impl Default for VideoOptions {
 #[derive(Debug, Clone, PartialEq)]
 struct PresetValues {
     lod_detail: Quality,
-    clouds: CloudMode,
-    particles: ParticleMode,
-    entity_shadows: bool,
-    smooth_lighting: bool,
     anti_aliasing: AntiAliasing,
-    wind_sway: bool,
-    shader: ShaderOptions,
+    water: Quality,
 }
 
 impl PresetValues {
     fn for_preset(preset: GraphicsPreset) -> Self {
-        match preset {
-            GraphicsPreset::Fast => Self {
-                lod_detail: Quality::Low,
-                clouds: CloudMode::Fast,
-                particles: ParticleMode::Decreased,
-                entity_shadows: false,
-                smooth_lighting: true,
-                anti_aliasing: AntiAliasing::Off,
-                wind_sway: false,
-                shader: ShaderOptions::for_preset(preset),
-            },
-            GraphicsPreset::Fancy | GraphicsPreset::Custom => Self {
-                lod_detail: Quality::Medium,
-                clouds: CloudMode::Fancy,
-                particles: ParticleMode::All,
-                entity_shadows: true,
-                smooth_lighting: true,
-                anti_aliasing: AntiAliasing::Fxaa,
-                wind_sway: true,
-                shader: ShaderOptions::for_preset(GraphicsPreset::Fancy),
-            },
-            GraphicsPreset::Fabulous => Self {
-                lod_detail: Quality::High,
-                clouds: CloudMode::Volumetric,
-                particles: ParticleMode::All,
-                entity_shadows: true,
-                smooth_lighting: true,
-                anti_aliasing: AntiAliasing::Taa,
-                wind_sway: true,
-                shader: ShaderOptions::for_preset(preset),
-            },
+        let (lod_detail, anti_aliasing, water) = match preset {
+            GraphicsPreset::Low => (Quality::Low, AntiAliasing::Off, Quality::Low),
+            GraphicsPreset::Medium | GraphicsPreset::Custom => {
+                (Quality::Medium, AntiAliasing::Off, Quality::Medium)
+            }
+            GraphicsPreset::High => (Quality::High, AntiAliasing::Taa, Quality::High),
+        };
+        Self {
+            lod_detail,
+            anti_aliasing,
+            water,
         }
     }
 
     fn of(v: &VideoOptions) -> Self {
         Self {
             lod_detail: v.lod_detail,
-            clouds: v.clouds,
-            particles: v.particles,
-            entity_shadows: v.entity_shadows,
-            smooth_lighting: v.smooth_lighting,
             anti_aliasing: v.anti_aliasing,
-            wind_sway: v.wind_sway,
-            shader: v.shader.clone(),
+            water: v.shader.water,
         }
     }
 }
@@ -465,22 +302,17 @@ impl VideoOptions {
         }
         let p = PresetValues::for_preset(preset);
         self.lod_detail = p.lod_detail;
-        self.clouds = p.clouds;
-        self.particles = p.particles;
-        self.entity_shadows = p.entity_shadows;
-        self.smooth_lighting = p.smooth_lighting;
         self.anti_aliasing = p.anti_aliasing;
-        self.wind_sway = p.wind_sway;
-        self.shader = p.shader;
+        self.shader.water = p.water;
     }
 
     /// Returns the preset whose sub-settings exactly match the current values, or `Custom`.
     pub fn detect_preset(&self) -> GraphicsPreset {
         let current = PresetValues::of(self);
         [
-            GraphicsPreset::Fast,
-            GraphicsPreset::Fancy,
-            GraphicsPreset::Fabulous,
+            GraphicsPreset::Low,
+            GraphicsPreset::Medium,
+            GraphicsPreset::High,
         ]
         .into_iter()
         .find(|p| PresetValues::for_preset(*p) == current)
@@ -513,28 +345,12 @@ impl VideoOptions {
     fn sanitize(&mut self) {
         self.render_distance = self.render_distance.clamp(2, 32);
         self.vertical_render_distance = self.vertical_render_distance.clamp(4, 32);
-        self.simulation_distance = self.simulation_distance.clamp(5, 32);
         self.lod_distance = self.lod_distance.min(4096);
         self.lod_vram_budget_mb = self.lod_vram_budget_mb.clamp(64, 16384);
         if self.max_framerate != 0 {
             self.max_framerate = self.max_framerate.clamp(10, 260);
         }
-        self.brightness = finite_clamp(self.brightness, 0.0, 1.0, 0.5);
         self.fov = finite_clamp(self.fov, 30.0, 110.0, 70.0);
-        self.fov_effects = finite_clamp(self.fov_effects, 0.0, 1.0, 1.0);
-        self.distortion_effects = finite_clamp(self.distortion_effects, 0.0, 1.0, 1.0);
-        self.screen_effects = finite_clamp(self.screen_effects, 0.0, 1.0, 1.0);
-        self.cloud_height = self.cloud_height.clamp(64, 2048);
-        self.mipmap_levels = self.mipmap_levels.min(4);
-        self.biome_blend = self.biome_blend.min(15);
-        self.entity_distance = finite_clamp(self.entity_distance, 0.5, 5.0, 1.0);
-        self.anisotropic_filtering = match self.anisotropic_filtering {
-            0 | 1 => 1,
-            2 => 2,
-            3 | 4 => 4,
-            5..=8 => 8,
-            _ => 16,
-        };
         self.render_scale = finite_clamp(self.render_scale, 0.5, 2.0, 1.0);
         if self.graphics != GraphicsPreset::Custom {
             // A hand-edited file may claim a preset whose values it doesn't match.
@@ -559,14 +375,8 @@ pub struct ControlOptions {
     /// Mouse sensitivity 0–1 (0.5 is the familiar default).
     pub mouse_sensitivity: f32,
     pub invert_y: bool,
-    pub raw_input: bool,
-    /// Scroll sensitivity multiplier (0.01–10).
-    pub scroll_sensitivity: f32,
-    /// Each scroll event moves exactly one step regardless of its magnitude.
-    pub discrete_scrolling: bool,
     pub toggle_sneak: bool,
     pub toggle_sprint: bool,
-    pub auto_jump: bool,
     /// Controller look sensitivity 0–1.
     pub controller_sensitivity: f32,
     /// Action id → binding string, e.g. `"key.forward" = "w"`, `"key.drop_stack" = "ctrl+x"`.
@@ -579,12 +389,8 @@ impl Default for ControlOptions {
         Self {
             mouse_sensitivity: 0.5,
             invert_y: false,
-            raw_input: true,
-            scroll_sensitivity: 1.0,
-            discrete_scrolling: false,
             toggle_sneak: false,
             toggle_sprint: false,
-            auto_jump: false,
             controller_sensitivity: 0.5,
             key_bindings: BTreeMap::new(),
         }
@@ -594,7 +400,6 @@ impl Default for ControlOptions {
 impl ControlOptions {
     fn sanitize(&mut self) {
         self.mouse_sensitivity = finite_clamp(self.mouse_sensitivity, 0.0, 1.0, 0.5);
-        self.scroll_sensitivity = finite_clamp(self.scroll_sensitivity, 0.01, 10.0, 1.0);
         self.controller_sensitivity = finite_clamp(self.controller_sensitivity, 0.0, 1.0, 0.5);
     }
 }
@@ -709,79 +514,13 @@ impl SoundOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ChatVisibility {
-    Shown,
-    CommandsOnly,
-    Hidden,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ChatOptions {
-    pub visibility: ChatVisibility,
-    pub colors: bool,
-    pub web_links: bool,
-    /// Text opacity 0.1–1.
-    pub opacity: f32,
-    /// Chat text scale 0–1.
-    pub scale: f32,
-    /// Width in GUI pixels (40–320).
-    pub width: u32,
-    /// Height when focused in GUI pixels (20–180).
-    pub height_focused: u32,
-    /// Height when unfocused in GUI pixels (20–180).
-    pub height_unfocused: u32,
-    /// Extra spacing between lines 0–1.
-    pub line_spacing: f32,
-    /// Seconds before a message is shown (0–6).
-    pub delay: f32,
-}
-
-impl Default for ChatOptions {
-    fn default() -> Self {
-        Self {
-            visibility: ChatVisibility::Shown,
-            colors: true,
-            web_links: false,
-            opacity: 1.0,
-            scale: 1.0,
-            width: 320,
-            height_focused: 180,
-            height_unfocused: 90,
-            line_spacing: 0.0,
-            delay: 0.0,
-        }
-    }
-}
-
-impl ChatOptions {
-    fn sanitize(&mut self) {
-        self.opacity = finite_clamp(self.opacity, 0.1, 1.0, 1.0);
-        self.scale = finite_clamp(self.scale, 0.0, 1.0, 1.0);
-        self.width = self.width.clamp(40, 320);
-        self.height_focused = self.height_focused.clamp(20, 180);
-        self.height_unfocused = self.height_unfocused.clamp(20, 180);
-        self.line_spacing = finite_clamp(self.line_spacing, 0.0, 1.0, 0.0);
-        self.delay = finite_clamp(self.delay, 0.0, 6.0, 0.0);
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AccessibilityOptions {
-    /// Opacity of the background behind chat/subtitle text (0–1).
+    /// Opacity of the background behind subtitle text (0–1).
     pub text_background_opacity: f32,
-    pub high_contrast: bool,
     /// Reduce camera shake, flashes and pulsing effects.
     pub reduce_motion: bool,
-    /// How strongly darkness effects pulse (0–1).
-    pub darkness_pulsing: f32,
-    /// Hide lightning sky flashes.
-    pub hide_lightning_flashes: bool,
-    /// Scale of the damage tilt (0–1).
-    pub damage_tilt: f32,
     /// Compact bars for food, water, warmth, rest, stamina and blood (v2 §9.9's "Guided" HUD)
     /// besides the body's sensations.
     pub guided_hud: bool,
@@ -791,11 +530,7 @@ impl Default for AccessibilityOptions {
     fn default() -> Self {
         Self {
             text_background_opacity: 0.5,
-            high_contrast: false,
             reduce_motion: false,
-            darkness_pulsing: 1.0,
-            hide_lightning_flashes: false,
-            damage_tilt: 1.0,
             guided_hud: false,
         }
     }
@@ -804,32 +539,6 @@ impl Default for AccessibilityOptions {
 impl AccessibilityOptions {
     fn sanitize(&mut self) {
         self.text_background_opacity = finite_clamp(self.text_background_opacity, 0.0, 1.0, 0.5);
-        self.darkness_pulsing = finite_clamp(self.darkness_pulsing, 0.0, 1.0, 1.0);
-        self.damage_tilt = finite_clamp(self.damage_tilt, 0.0, 1.0, 1.0);
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MainHand {
-    Left,
-    Right,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct SkinOptions {
-    /// Built-in skin id.
-    pub skin: String,
-    pub main_hand: MainHand,
-}
-
-impl Default for SkinOptions {
-    fn default() -> Self {
-        Self {
-            skin: "hearth:wanderer".to_owned(),
-            main_hand: MainHand::Right,
-        }
     }
 }
 
@@ -893,7 +602,6 @@ mod tests {
             render_distance = 99
             fov = 500.0
             max_framerate = 3
-            anisotropic_filtering = 7
             [sound]
             master = 4.0
         "#;
@@ -901,7 +609,6 @@ mod tests {
         assert_eq!(o.video.render_distance, 32);
         assert_eq!(o.video.fov, 110.0);
         assert_eq!(o.video.max_framerate, 10);
-        assert_eq!(o.video.anisotropic_filtering, 8);
         assert_eq!(o.sound.master, 1.0);
     }
 
@@ -915,15 +622,30 @@ mod tests {
     #[test]
     fn preset_switches_to_custom_on_change() {
         let mut v = VideoOptions::default();
-        assert_eq!(v.graphics, GraphicsPreset::Fancy);
-        v.apply_preset(GraphicsPreset::Fabulous);
-        assert_eq!(v.detect_preset(), GraphicsPreset::Fabulous);
-        v.shader.shadows = Quality::Low;
+        assert_eq!(v.graphics, GraphicsPreset::Medium);
+        v.apply_preset(GraphicsPreset::High);
+        assert_eq!(v.detect_preset(), GraphicsPreset::High);
+        v.shader.water = Quality::Low;
         v.refresh_preset();
         assert_eq!(v.graphics, GraphicsPreset::Custom);
-        v.apply_preset(GraphicsPreset::Fast);
-        assert_eq!(v.graphics, GraphicsPreset::Fast);
-        assert_eq!(v.detect_preset(), GraphicsPreset::Fast);
+        v.apply_preset(GraphicsPreset::Low);
+        assert_eq!(v.graphics, GraphicsPreset::Low);
+        assert_eq!(v.detect_preset(), GraphicsPreset::Low);
+    }
+
+    #[test]
+    fn the_original_preset_names_load_as_their_equivalents() {
+        let o =
+            Options::from_toml_str("[video]\ngraphics = \"fabulous\"\nanti_aliasing = \"fxaa\"\n")
+                .unwrap();
+        // A file's FXAA (never built) is off; with the other values left at their defaults the
+        // preset is what the values say, not what the file claimed.
+        assert_eq!(o.video.anti_aliasing, AntiAliasing::Off);
+        assert_eq!(o.video.graphics, GraphicsPreset::Medium);
+        let fast =
+            "[video]\ngraphics = \"fast\"\nlod_detail = \"low\"\n[video.shader]\nwater = \"low\"\n";
+        let o = Options::from_toml_str(fast).unwrap();
+        assert_eq!(o.video.graphics, GraphicsPreset::Low);
     }
 
     #[test]

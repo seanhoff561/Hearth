@@ -10,8 +10,8 @@ use hearth_content::schema::Season;
 use hearth_content::schema::config::TimeConfig;
 use serde::{Deserialize, Serialize};
 
-/// Simulation ticks per second of play.
-pub const TICKS_PER_SECOND: u64 = 20;
+/// Simulation ticks per second of play (the game's one rate, `hearth_core::TICKS_PER_SECOND`).
+pub const TICKS_PER_SECOND: u64 = hearth_content::time::TICKS_PER_SECOND as u64;
 
 /// Calendar settings of a world.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

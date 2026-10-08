@@ -239,11 +239,6 @@ impl Planet {
         ColumnPos::new(self.wrap_cube_x(c.x), c.z)
     }
 
-    #[inline]
-    pub fn wrap_pos(&self, p: DVec3) -> DVec3 {
-        DVec3::new(self.wrap_xf(p.x), p.y, p.z)
-    }
-
     /// Shortest signed X offset from `from` to `to` (in (−C/2, C/2]).
     #[inline]
     pub fn delta_x(&self, from: f64, to: f64) -> f64 {
@@ -283,29 +278,6 @@ impl Planet {
         DVec3::new(self.delta_x(from.x, to.x), to.y - from.y, to.z - from.z)
     }
 
-    /// Wrap-aware squared distance.
-    #[inline]
-    pub fn distance_sq(&self, a: DVec3, b: DVec3) -> f64 {
-        self.delta(a, b).length_squared()
-    }
-
-    /// Wrap-aware horizontal squared distance.
-    #[inline]
-    pub fn horizontal_distance_sq(&self, a: DVec3, b: DVec3) -> f64 {
-        let d = self.delta(a, b);
-        d.x * d.x + d.z * d.z
-    }
-
-    /// Wrap-aware block offset from `from` to `to`.
-    #[inline]
-    pub fn block_delta(&self, from: BlockPos, to: BlockPos) -> IVec3 {
-        IVec3::new(
-            self.delta_block_x(from.x, to.x),
-            to.y - from.y,
-            to.z - from.z,
-        )
-    }
-
     /// Wrap-aware cube offset from `from` to `to`.
     #[inline]
     pub fn cube_delta(&self, from: CubePos, to: CubePos) -> IVec3 {
@@ -339,12 +311,6 @@ impl Planet {
     #[inline]
     pub fn unwrap_near(&self, p: DVec3, reference: DVec3) -> DVec3 {
         DVec3::new(reference.x + self.delta_x(reference.x, p.x), p.y, p.z)
-    }
-
-    /// Integer-block version of [`Self::unwrap_near`].
-    #[inline]
-    pub fn unwrap_block_near(&self, b: BlockPos, reference: BlockPos) -> BlockPos {
-        BlockPos::new(reference.x + self.delta_block_x(reference.x, b.x), b.y, b.z)
     }
 
     // ------------------------------------------------------------------ geography
@@ -420,12 +386,6 @@ impl Planet {
         let pb = self.sphere_point(b.0, b.1);
         let dot = pa.dot(pb).clamp(-1.0, 1.0);
         dot.acos() * self.radius()
-    }
-
-    /// True if `z` lies past a pole edge.
-    #[inline]
-    pub fn is_beyond_pole(&self, z: f64) -> bool {
-        z.abs() > self.pole_edge_z()
     }
 
     /// Resolves a position past a pole edge to the far side of the pole: X shifts by C/2, Z is

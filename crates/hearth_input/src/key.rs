@@ -98,11 +98,6 @@ keys! {
 }
 
 impl Key {
-    /// True for Shift/Control/Alt keys, which can also act as binding modifiers.
-    pub fn is_modifier(self) -> bool {
-        self.modifier_bit() != 0
-    }
-
     /// The modifier bit this key contributes while held (0 if it is not a modifier key).
     pub fn modifier_bit(self) -> u8 {
         match self {
@@ -111,22 +106,6 @@ impl Key {
             Key::LeftAlt | Key::RightAlt => Modifiers::ALT.0,
             _ => 0,
         }
-    }
-
-    /// Digit keys 1–9 map to hotbar slots 0–8.
-    pub fn hotbar_index(self) -> Option<usize> {
-        Some(match self {
-            Key::Digit1 => 0,
-            Key::Digit2 => 1,
-            Key::Digit3 => 2,
-            Key::Digit4 => 3,
-            Key::Digit5 => 4,
-            Key::Digit6 => 5,
-            Key::Digit7 => 6,
-            Key::Digit8 => 7,
-            Key::Digit9 => 8,
-            _ => return None,
-        })
     }
 }
 

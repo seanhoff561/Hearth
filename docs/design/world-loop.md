@@ -31,7 +31,7 @@ responsively — ready for a network transport later without changing what eithe
   runs on between the server's messages.
 - **Input**: WASD walk; the sprint key jogs, pressed twice quickly it sprints; Space jumps,
   climbs a ledge ahead or swims up; the sneak key crouches (and dives or climbs down); C
-  crawls. After death Space lives on as a new person in the same region.
+  crawls. After death the death screen begins a new life (`ToServer::NewLife`).
 - **The first spawn** is warm-temperate lowland (D68), so a body in a loincloth lives through
   its first nights.
 - **Saves**: `level.json` (clock), `player.json` (format 1: the body and the mover).

@@ -13,7 +13,7 @@ saves/<world>/
   player.json     the player: format (1), body (hearth_body) and mover (hearth_physics),
                   carried things and knowledge
   items.json      the things lying in the world (V2-4)
-  crafts.json     stations and their fires, wildfires, harvest counts, the next kill (V2-5)
+  crafts.json     stations and their fires, wildfires, harvest counts (V2-5)
   blocks.json     the blocks the player has changed, by position and state name (V2-5, D73)
   region/         r.<x>.<y>.<z>.hrg, 8×8×8 cubes per file
 ```
@@ -31,7 +31,7 @@ saves/<world>/
   missing texture, and written back unchanged, so removing and restoring a mod loses nothing.
 - **World settings** (`settings.rs`): planet (world-gen settings), life & time (day length,
   days per season, starting season, axial tilt, realism preset + overrides, predator behavior,
-  knowledge mode, what death means, full map knowledge) and the era.
+  knowledge mode, what death means) and the era.
 
 ## Tests
 Fixture worlds in `crates/hearth_save/tests/fixtures`: a format-6 world (with `coal_ore`, no

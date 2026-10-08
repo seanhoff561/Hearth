@@ -15,8 +15,6 @@ COMMANDS:
     content uncertain          List data entries marked for realism review
     content status             Implemented/planned counts per content domain
     bench [OPTIONS]            Rendering benchmark (see `hearth bench --help`)
-    history [--seed N] [--era ID] [--size NAME] [--all]
-                               Run a world's deep time and print its peoples and chronicle
 
 OPTIONS:
     --game-dir <PATH>          Use PATH as the game directory (options, saves, screenshots)

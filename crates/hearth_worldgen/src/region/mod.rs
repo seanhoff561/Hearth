@@ -216,11 +216,6 @@ impl Terrain {
         self.sample_with(x, z, &segs)
     }
 
-    /// Height only (fast path for LOD and spawn searches).
-    pub fn surface_height(&self, x: i32, z: i32) -> f32 {
-        self.sample(x, z).height
-    }
-
     /// Water level at a column (NEG_INFINITY when dry).
     pub fn water_level(&self, x: i32, z: i32) -> f32 {
         self.sample(x, z).water

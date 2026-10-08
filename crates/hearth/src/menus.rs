@@ -1,8 +1,7 @@
-//! The screens (v1 §11, the minimal set for V2-3; the full flow is V2-15): the title, the worlds
-//! (pick one, or make a new one and say what is wished of the birth in it: a name, a daughter or
-//! a son — never looks, which come from the parents: V2.1 Addendum A), the birth shown, pause,
-//! death, and the options — video, sound, controls with rebinding, language, accessibility. Every screen is drawn each frame with the widgets of `hearth_ui`
-//! and says what the player chose.
+//! The screens (v1 §11; the full flow is V2-15): the title, the worlds (pick one, or make a new
+//! one: its mode, planet, place and the body chosen), pause, death, and the options — video,
+//! sound, controls with rebinding, language, accessibility. Every screen is drawn each frame with
+//! the widgets of `hearth_ui` and says what the player chose.
 
 use std::path::{Path, PathBuf};
 
@@ -570,11 +569,7 @@ impl Menus {
                             .iter()
                             .find(|e| e.0 == w.era)
                             .map_or_else(|| w.era.clone(), |e| e.1.clone());
-                        let name = if w.ended {
-                            format!("{} {}", w.name, ui.t("menu.worlds.ended"))
-                        } else {
-                            w.name.clone()
-                        };
+                        let name = w.name.clone();
                         let (y, m, d, _, _) = crate::worlds::civil(w.last_played_unix);
                         let mode = mode_of(w).map_or_else(String::new, |i| {
                             if w.played_in_creative && !bare(&modes[i].0).eq("creative") {
@@ -587,13 +582,8 @@ impl Menus {
                             "{mode}{era} · {played_label} {} · {y:04}-{m:02}-{d:02}",
                             crate::worlds::played_words(w.played_s)
                         );
-                        if let Some((who, age)) = &w.character {
-                            let who = if who.is_empty() {
-                                ui.t("menu.born.you")
-                            } else {
-                                who.clone()
-                            };
-                            second = format!("{who}, {:.0} · {second}", age.floor());
+                        if let Some(who) = &w.character {
+                            second = format!("{who} · {second}");
                         }
                         let fit = |ui: &Ui<'_>, t: String| {
                             let mut t = t;
@@ -611,7 +601,7 @@ impl Menus {
                     ui.text_centred(&list_r, &hint, theme::DIM);
                 }
                 if let Some(i) = clicked {
-                    if *selected == Some(i) && !entries[i].ended && ask.is_none() {
+                    if *selected == Some(i) && ask.is_none() {
                         // A second click plays it.
                         out.push(MenuAction::Play {
                             folder: entries[i].folder.clone(),
@@ -720,9 +710,8 @@ impl Menus {
                     _ => {
                         *ask = None;
                         let some = chosen.is_some();
-                        let playable = chosen.as_ref().is_some_and(|w| !w.ended);
                         let (a, b, d) = thirds(c.row(ROW));
-                        if ui.button_enabled(a, &ui.t("menu.worlds.play"), playable)
+                        if ui.button_enabled(a, &ui.t("menu.worlds.play"), some)
                             && let Some(w) = &chosen
                         {
                             out.push(MenuAction::Play {
@@ -1396,12 +1385,12 @@ impl Menus {
                         }
                         1 => {
                             let presets = [
-                                GraphicsPreset::Fast,
-                                GraphicsPreset::Fancy,
-                                GraphicsPreset::Fabulous,
+                                GraphicsPreset::Low,
+                                GraphicsPreset::Medium,
+                                GraphicsPreset::High,
                                 GraphicsPreset::Custom,
                             ];
-                            let names: Vec<String> = ["fast", "fancy", "fabulous", "custom"]
+                            let names: Vec<String> = ["low", "medium", "high", "custom"]
                                 .iter()
                                 .map(|k| ui.t(&format!("menu.video.preset.{k}")))
                                 .collect();

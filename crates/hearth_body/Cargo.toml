@@ -12,8 +12,5 @@ hearth_math.workspace = true
 hearth_content.workspace = true
 serde.workspace = true
 
-[dev-dependencies]
-serde_json.workspace = true
-
 [lints]
 workspace = true

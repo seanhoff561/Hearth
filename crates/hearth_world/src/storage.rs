@@ -47,19 +47,6 @@ impl Column {
         Self::with_estimate([NO_HEIGHT; CUBE_AREA])
     }
 
-    pub fn loaded_cubes(&self) -> &[i32] {
-        &self.loaded
-    }
-
-    pub fn is_loaded(&self, cy: i32) -> bool {
-        self.loaded.binary_search(&cy).is_ok()
-    }
-
-    #[inline]
-    pub fn sky_top_at(&self, lx: usize, lz: usize) -> i32 {
-        self.sky_top[lz * 16 + lx]
-    }
-
     fn mark_loaded(&mut self, cy: i32) {
         if let Err(i) = self.loaded.binary_search(&cy) {
             self.loaded.insert(i, cy);
@@ -97,10 +84,6 @@ impl CubeMap {
 
     pub fn cube_count(&self) -> usize {
         self.cubes.len()
-    }
-
-    pub fn column_count(&self) -> usize {
-        self.columns.len()
     }
 
     /// Creates the column record if missing, seeding its heightmap with `estimate`.
@@ -146,16 +129,8 @@ impl CubeMap {
             .map(Arc::make_mut)
     }
 
-    pub fn contains_cube(&self, pos: CubePos) -> bool {
-        self.cubes.contains_key(&self.planet.wrap_cube(pos))
-    }
-
     pub fn cubes(&self) -> impl Iterator<Item = (&CubePos, &Arc<Cube>)> {
         self.cubes.iter()
-    }
-
-    pub fn cube_positions(&self) -> impl Iterator<Item = CubePos> + '_ {
-        self.cubes.keys().copied()
     }
 
     /// Inserts (or replaces) a cube and updates its column's heightmap. Creates an unknown

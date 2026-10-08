@@ -203,7 +203,7 @@ box in `precip.rs`.
 - No lightning, fog banks, wet or snowy surface shading, puddles or splashes yet.
 - Rain streaks are thin and alias at a distance.
 
-## v2 extensions (planned)
-Passable foliage and branch models (V2-6), LOD showing vegetation state and the rest of v1
-M8 — disk cache, edits, occlusion culling, VRAM budget, TAA (V2-6), instanced animals (V2-7),
-fire, smoke, glowing hot items (V2-5), shadow maps and volumetric light (V2-16 at the latest).
+## Still to come
+The smooth terrain and its materials (Amendment S, S1–S8), shadow maps and volumetric light
+(S2–S8, V2-16 at the latest). Foliage, TAA, instanced animals, fire and smoke are built; see
+`flora.md`, `fauna.md` and `fire-and-food.md`.

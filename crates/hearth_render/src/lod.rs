@@ -485,10 +485,6 @@ impl LodRenderer {
         });
     }
 
-    pub fn tile_count(&self) -> usize {
-        self.tiles.len()
-    }
-
     /// Video memory the tiles' quads take (bytes).
     pub fn bytes(&self) -> u64 {
         self.pool.alloc.used() as u64 * QUAD_BYTES

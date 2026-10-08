@@ -18,7 +18,7 @@ use crate::schema::flora::Plant;
 use crate::schema::geology::{Deposit, Mineral, Province, Rock, Soil};
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
-use crate::schema::material::Material;
+use crate::schema::material::{Material, MaterialReference};
 use crate::schema::process::Process;
 use crate::schema::station::{ConstructionPiece, Workstation};
 use crate::schema::{Entry, Status};
@@ -83,10 +83,6 @@ impl<T> Table<T> {
         &self.origins[i]
     }
 
-    pub fn origin_of(&self, id: &str) -> Option<&Origin> {
-        self.index.get(id).map(|&i| &self.origins[i])
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.entries.iter()
     }
@@ -125,6 +121,8 @@ pub struct Content {
     pub units: Units,
     pub time: TimeConfig,
     pub body: BodyParams,
+    /// Measured ranges per material family (`materials/reference.ron`).
+    pub reference: MaterialReference,
     pub materials: Table<Material>,
     pub rocks: Table<Rock>,
     pub minerals: Table<Mineral>,
@@ -261,6 +259,7 @@ impl Content {
         let units = load_singleton::<Units>(packs, "units", &mut r);
         let time = load_singleton::<TimeConfig>(packs, "time", &mut r);
         let body = load_singleton::<BodyParams>(packs, "body/human", &mut r);
+        let reference = load_singleton::<MaterialReference>(packs, "materials/reference", &mut r);
         let materials = load_table::<Material>(packs, &mut r);
         let forms = load_table::<ItemForm>(packs, &mut r);
         let explicit_items = load_table::<Item>(packs, &mut r);
@@ -317,11 +316,16 @@ impl Content {
                 Some(b) => b,
                 None => return (None, r),
             },
+            reference: match reference {
+                Some(m) => m,
+                None => return (None, r),
+            },
         };
         for (name, schema) in [
             ("units", content.units.schema),
             ("time", content.time.schema),
             ("body/human", content.body.schema),
+            ("materials/reference", content.reference.schema),
         ] {
             if schema != 1 {
                 r.error(

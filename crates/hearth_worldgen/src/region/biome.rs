@@ -164,14 +164,6 @@ impl Biome {
         self.is_ocean() || matches!(self, Biome::River | Biome::Lake)
     }
 
-    /// Precipitation falls as snow here regardless of season.
-    pub fn is_snowy(self) -> bool {
-        matches!(
-            self,
-            Biome::SnowyTaiga | Biome::IceSheet | Biome::Glacier | Biome::PolarSea
-        )
-    }
-
     /// Map colour for the biome map.
     pub fn color(self) -> [u8; 3] {
         match self {

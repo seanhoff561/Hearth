@@ -211,7 +211,6 @@ dependencies = [
  "env_logger",
  "glam",
  "hearth_content",
- "hearth_core",
  "hearth_env",
  "hearth_math",
  "hearth_smooth",
@@ -219,7 +218,6 @@ dependencies = [
  "hearth_ui",
  "hearth_world",
  "hearth_worldgen",
- "log",
  "png",
  "rayon",
  "rustc-hash 2.1.3",
@@ -972,7 +970,6 @@ dependencies = [
  "hearth_content",
  "hearth_math",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1019,7 +1016,6 @@ dependencies = [
  "hearth_math",
  "rustc-hash 2.1.3",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1065,10 +1061,7 @@ dependencies = [
 name = "hearth_input"
 version = "0.1.0"
 dependencies = [
- "hearth_core",
  "log",
- "rustc-hash 2.1.3",
- "serde",
  "thiserror 2.0.21",
  "winit",
 ]
@@ -1095,7 +1088,6 @@ dependencies = [
  "hearth_world",
  "hearth_worldgen",
  "log",
- "rayon",
  "rustc-hash 2.1.3",
  "zstd",
 ]
@@ -1104,7 +1096,6 @@ dependencies = [
 name = "hearth_math"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "glam",
  "serde",
 ]
@@ -1170,7 +1161,6 @@ dependencies = [
  "log",
  "png",
  "pollster",
- "rayon",
  "rustc-hash 2.1.3",
  "smallvec",
  "thiserror 2.0.21",
@@ -1231,7 +1221,6 @@ dependencies = [
  "hearth_content",
  "hearth_core",
  "hearth_math",
- "log",
  "rustc-hash 2.1.3",
  "serde",
  "serde_json",
@@ -1243,10 +1232,8 @@ dependencies = [
 name = "hearth_worldgen"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "glam",
  "hearth_content",
- "hearth_core",
  "hearth_flora",
  "hearth_math",
  "hearth_world",

@@ -314,12 +314,6 @@ impl<'a> Ui<'a> {
         }
     }
 
-    /// How far the rows of the scrolled area `id_label` at `area` ran last frame, if it was laid
-    /// out (its size aside: a window's change of height keeps its scroll).
-    pub fn scroll_ran(&self, area: &Rect, id_label: &str) -> Option<f32> {
-        self.state.extent.get(&id_label_id(id_label, area)).copied()
-    }
-
     /// A row of tabs across `r`, the chosen one marked; true when another is chosen.
     pub fn tabs(&mut self, r: Rect, labels: &[String], index: &mut usize) -> bool {
         if labels.is_empty() {

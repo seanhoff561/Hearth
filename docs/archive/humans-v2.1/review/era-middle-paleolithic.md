@@ -4,12 +4,12 @@
 the south. A world of the era on the Standard planet of seed 3, its deep past run, a century of
 its households lived, a life born into one of them and two days of its band watched.*
 
-![A Neanderthal band at its fire, afternoon](era-middle-paleolithic-day.jpg)
+*(A Neanderthal band at its fire, afternoon: `era-middle-paleolithic-day.jpg`, on the branch `archive/humans-v2.1`)*
 
 *A Neanderthal band of 25 at its fire on its summer upland camp, beds of grass about it
 (latitude 17°, 33 °C).*
 
-![The same camp at dusk](era-middle-paleolithic-dusk.jpg)
+*(The same camp at dusk: `era-middle-paleolithic-dusk.jpg`, on the branch `archive/humans-v2.1`)*
 
 *The same camp at dusk, the sun three degrees down: the band gathered at the fire.*
 

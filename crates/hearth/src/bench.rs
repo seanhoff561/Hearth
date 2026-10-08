@@ -275,7 +275,7 @@ pub struct BenchOptions {
     pub software: bool,
     /// Measure the near terrain on the CPU only (no rendering).
     pub terrain_only: bool,
-    /// The graphics preset (default: the game's default, Fancy).
+    /// The graphics preset (default: the game's default, Medium).
     pub preset: Option<hearth_core::options::GraphicsPreset>,
     /// Vertical LOD error allowed on screen (pixels; 0: the distance rule alone).
     pub lod_error: f64,
@@ -346,8 +346,8 @@ OPTIONS:
                                  with FSR 1 below 1, filtered down above
     --water low|medium|high      Water shading quality (default: the preset's, medium)
     --software                   Use the software adapter
-    --preset fast|fancy|fabulous The graphics preset (default fancy; low and high name fast
-                                 and fabulous, Amendment S's Low and High)
+    --preset low|medium|high     The graphics preset (default medium; the older names fast,
+                                 fancy and fabulous are taken too)
     --terrain-only               No rendering: load and mesh each scene's near terrain and
                                  report what needs no GPU (meshing speed on all threads and on
                                  one, triangles, mesh and cube memory per surface cube, cube
@@ -404,10 +404,10 @@ impl BenchOptions {
                 "--preset" => {
                     use hearth_core::options::GraphicsPreset;
                     o.preset = Some(match val()?.as_str() {
-                        "fast" | "low" => GraphicsPreset::Fast,
-                        "fancy" | "medium" => GraphicsPreset::Fancy,
-                        "fabulous" | "high" => GraphicsPreset::Fabulous,
-                        other => anyhow::bail!("--preset fast|fancy|fabulous, not {other:?}"),
+                        "low" | "fast" => GraphicsPreset::Low,
+                        "medium" | "fancy" => GraphicsPreset::Medium,
+                        "high" | "fabulous" => GraphicsPreset::High,
+                        other => anyhow::bail!("--preset low|medium|high, not {other:?}"),
                     });
                 }
                 "--lod-error" => o.lod_error = val()?.parse::<f64>()?.max(0.0),
@@ -908,8 +908,8 @@ fn run_scene(
         atlas,
         OFFSCREEN_FORMAT,
         planet,
-        video.mipmap_levels,
-        video.anisotropic_filtering as u16,
+        hearth_render::scene::MIP_LEVELS,
+        hearth_render::scene::ANISOTROPY,
     );
     scene.terrain.render_distance = rd;
     scene.terrain.vertical_distance = video.vertical_render_distance as i32;

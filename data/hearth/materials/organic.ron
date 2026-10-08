@@ -223,7 +223,7 @@
          thermal: (ignition_c: 350), appearance: (color: "#d4502a", pattern: Porous, roughness: 0.9),
          notes: "Carried in tinder fungus or a clay pot it lives for hours."),
         (id: "charcoal", name: "charcoal", category: Fuel, tags: ["fuel", "pigment"], density_kg_m3: 300, fuel_mj_kg: 29.5,
-         thermal: (ignition_c: 350), appearance: (color: "#1c1b1b", pattern: Porous, roughness: 0.9),
+         thermal: (ignition_c: 350), appearance: (color: "#3a3838", pattern: Porous, roughness: 0.9),
          notes: "Burns hotter and cleaner than wood."),
         (id: "wood_ash", name: "wood ash", category: Other, tags: ["lye_source"], density_kg_m3: 600,
          appearance: (color: "#9a9894", pattern: Powder, roughness: 1.0), uncertain: true),

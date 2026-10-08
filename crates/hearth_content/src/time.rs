@@ -10,8 +10,8 @@
 use crate::schema::TimeScale;
 use crate::schema::config::TimeConfig;
 
-/// Simulation ticks per second of play.
-pub const TICKS_PER_SECOND: f64 = 20.0;
+/// Simulation ticks per second of play (the game's one rate, `hearth_core::TICKS_PER_SECOND`).
+pub const TICKS_PER_SECOND: f64 = hearth_core::TICKS_PER_SECOND as f64;
 
 /// Compression factors for a world's calendar settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -64,11 +64,6 @@ impl TimeScales {
         (self.play_seconds(real_hours, scale) * TICKS_PER_SECOND)
             .round()
             .max(1.0) as u64
-    }
-
-    /// Seconds of play in one game year.
-    pub fn year_length_s(&self) -> f64 {
-        self.days_per_year * self.day_length_s
     }
 }
 

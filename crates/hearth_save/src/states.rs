@@ -109,13 +109,6 @@ impl Remap {
             .copied()
             .unwrap_or(BlockStateId::AIR)
     }
-
-    pub fn is_identity(&self) -> bool {
-        self.table
-            .iter()
-            .enumerate()
-            .all(|(i, s)| s.0 as usize == i)
-    }
 }
 
 /// Builds the block registry for a world: content blocks plus placeholders for saved states the

@@ -57,14 +57,11 @@ compressed. All conversion goes through `TimeScales`.
   wake a sleeper (cold, heat, wet, pain, hunger, thirst, disturbance, or rested: after four
   hours, once pressure and the clock together fall below 0.2 — about eight hours after a long
   day, toward morning).
-- **Death and living on** (v2 §9.8, the world's rules, chosen when it is made): **Legacy**
-  (the default) — someone new, chosen from the player's people or made then, comes to the land
-  near where the player fell, carrying only a loincloth; **Hardy** — the same person comes to
-  again where the world began; **Permadeath** — the world ends, and its tale is kept
-  (`life.json`: days lived on the calendar, ground walked, farthest from where the life began,
-  the cause) and shown; the world is listed as ended and cannot be played. The body and its
-  belongings staying where they fell, and knowledge passed on as journal notes, come with items
-  (V2-4) and knowledge (V2-5).
+- **Death and a new life** (Amendment E §6.6, the world's mode): a new adult begins near where
+  the last life ended, or elsewhere, carrying only a loincloth; the body's belongings stay where
+  they fell. What the new person knows is the mode's (`AfterDeath`): in Realistic only their
+  own, the old journal readable as notes from a past life; in Easy what earlier lives
+  discovered, at a beginner's skill. Creative cannot die.
 - **Sleeping** (`hearth_player::Player::rest`, the server): the player lies down (Z); a body
   sleepy enough (0.3) and at ease drops off after 5 s of play; asleep, the world eases up to
   90× as fast (v2 §9.5: accelerated, not skipped: the weather, water and body go on), and

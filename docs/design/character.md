@@ -1,18 +1,19 @@
 # The player's person: appearance, rig and movement
 
-*Status: implemented (V2-3 part e, D70). Code: `crates/hearth_character` (appearance, rig,
+*Status: implemented (V2-3 part e, D70); the character creator returns with E5 (Amendment E
+§6.2) and the realistic body with E7. Code: `crates/hearth_character` (appearance, rig,
 animation, boxes), `crates/hearth_render/src/figure.rs` (drawing), `crates/hearth/src/client.rs`
-(the body in the world), `menus.rs` and `profiles.rs` (the character screen).*
+(the body in the world), `profiles.rs` (who the player begins as).*
 
 ## Purpose
-The player is a person (v2 §9.1–9.2): someone of their choosing, blocky but built like a human,
-who moves as people move. Their body is seen looking down, in a third-person view, and on the
-character screen.
+The player is a person (v2 §9.1–9.2): an adult of their choosing, blocky but built like a
+human, who moves as people move. Their body is seen looking down and in a third-person view.
 
 ## Model
-- **Appearance** (`Appearance`, kept as profiles in `characters.json`; each world keeps the
-  person it began with in `player.json`):
-  - body (female or male) with height 1.55–1.95 m and build (slight to heavy);
+- **Appearance** (`Appearance`; each world keeps the person it began with in `player.json`;
+  until E5's creator, a name and a body chosen on Create World, the rest from the world's seed,
+  `profiles.rs`):
+  - body (female or male) with an adult's height, 1.45–1.95 m, and build (slight to heavy);
   - skin tone on a continuous scale across the human range (ten swatches ordered by lightness,
     mapped to skin's diffuse albedo of about 0.6 at the lightest and 0.04 at the darkest), with
     an undertone tilting the hue at the same lightness;
@@ -72,7 +73,7 @@ character screen.
   - In the world they are lit as the terrain is: sky light by the sky-light level where the
     body is, the sun where the sky is open (wrapped a little, as skin scatters), firelight by
     the block light, then aerial perspective.
-  - The character screen's preview has its own lights (daylight, overcast, dusk, firelight),
+  - A preview (`figure.rs`, for E5's creator) has its own lights (daylight, overcast, dusk, firelight),
     exposure and tone mapping.
   - `hearth --screenshot person=4` stands someone in a shot; `body=true` looks through their
     eyes.

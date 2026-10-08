@@ -38,7 +38,7 @@ use crate::workshop::{Here, Workshop, WorkshopSave};
 /// Cubes generated per batch (bounded so nearby terrain appears quickly while moving).
 const BATCH: usize = 192;
 /// Seconds of play per tick.
-pub const TICK_S: f64 = 0.05;
+pub const TICK_S: f64 = 1.0 / hearth_core::TICKS_PER_SECOND as f64;
 /// Ticks between autosaves (five minutes).
 const AUTOSAVE_TICKS: u64 = 6000;
 /// Seasonal cover steps per year (as the year-scale snow model).
@@ -352,17 +352,7 @@ pub fn calendar_for(
     lw: &LocalWorld,
     starting: hearth_content::schema::Season,
 ) -> (Calendar, DVec3) {
-    calendar_at(lw, starting, None)
-}
-
-/// As [`calendar_for`], the first spawn moved by `place` (from the place found): an era's, among
-/// its people (H8).
-pub fn calendar_at(
-    lw: &LocalWorld,
-    starting: hearth_content::schema::Season,
-    place: Option<&dyn Fn(DVec2) -> DVec2>,
-) -> (Calendar, DVec3) {
-    calendar_in(lw, Calendar::from_config(&lw.content.time), starting, place)
+    calendar_in(lw, Calendar::from_config(&lw.content.time), starting, None)
 }
 
 /// A world's calendar by its life and time settings: the day's length and the season's as the
@@ -377,7 +367,8 @@ pub fn calendar_of(
     c
 }
 
-/// As [`calendar_at`], from a calendar `base`.
+/// As [`calendar_for`], from a calendar `base`, the first spawn moved by `place` (from the place
+/// found): the birthplace chosen on the globe.
 pub fn calendar_in(
     lw: &LocalWorld,
     base: Calendar,
@@ -969,7 +960,7 @@ fn run(
                         && let Some(stack) = player.carry.take(&items, &from, count)
                     {
                         let rest = rest_on(&lw, at);
-                        world_items.add_owned(stack, rest.to_array(), 0.0, 0);
+                        world_items.add(stack, rest.to_array(), 0.0);
                         worn = dress_carry(&player.carry);
                         items_changed = true;
                     }
@@ -981,7 +972,7 @@ fn run(
                         player.mover.pos
                     };
                     if let Some(stack) = player.carry.dragging.take() {
-                        world_items.add_owned(stack, rest_on(&lw, at).to_array(), 0.0, 0);
+                        world_items.add(stack, rest_on(&lw, at).to_array(), 0.0);
                         items_changed = true;
                     }
                 }
@@ -1039,7 +1030,7 @@ fn run(
                             }
                             end = hit.at;
                         }
-                        world_items.add_owned(f.stack, rest_on(&lw, end).to_array(), 0.0, 0);
+                        world_items.add(f.stack, rest_on(&lw, end).to_array(), 0.0);
                         items_changed = true;
                     }
                 }
@@ -1090,7 +1081,7 @@ fn run(
                             Err(s) => player.carry.drag(&items, s, body_kg).err(),
                         };
                         if let Some((s, _)) = left {
-                            world_items.add_owned(s, player.mover.pos.to_array(), 0.0, 0);
+                            world_items.add(s, player.mover.pos.to_array(), 0.0);
                             items_changed = true;
                         }
                     }

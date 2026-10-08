@@ -67,14 +67,6 @@ impl LightData {
         }
     }
 
-    /// Raw nibbles (materialising a uniform array).
-    pub fn to_nibbles(&self) -> Box<[u8; NIBBLE_BYTES]> {
-        match self {
-            LightData::Uniform(v) => Box::new([*v | (*v << 4); NIBBLE_BYTES]),
-            LightData::Nibbles(n) => n.clone(),
-        }
-    }
-
     pub fn heap_bytes(&self) -> usize {
         match self {
             LightData::Uniform(_) => 0,

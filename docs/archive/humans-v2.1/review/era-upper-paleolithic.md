@@ -5,11 +5,11 @@ bands of a few families, linked into peoples that gather each autumn. A world of
 Standard planet of seed 3, its deep past run, a century of its households lived, a life born into
 one of them and two days of its band watched.*
 
-![A band at its summer camp, afternoon](era-upper-paleolithic-day.jpg)
+*(A band at its summer camp, afternoon: `era-upper-paleolithic-day.jpg`, on the branch `archive/humans-v2.1`)*
 
 *A band of 49 at its summer upland camp, its fire and ten beds (latitude 24°, 35 °C).*
 
-![The same camp at dusk](era-upper-paleolithic-dusk.jpg)
+*(The same camp at dusk: `era-upper-paleolithic-dusk.jpg`, on the branch `archive/humans-v2.1`)*
 
 *The same camp at dusk, the sun three degrees down.*
 

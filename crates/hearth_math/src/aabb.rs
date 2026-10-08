@@ -116,16 +116,6 @@ impl Aabb {
             && self.max.z > o.min.z
     }
 
-    #[inline]
-    pub fn contains_point(&self, p: DVec3) -> bool {
-        p.x >= self.min.x
-            && p.x < self.max.x
-            && p.y >= self.min.y
-            && p.y < self.max.y
-            && p.z >= self.min.z
-            && p.z < self.max.z
-    }
-
     /// Range of block positions this box touches (inclusive min, inclusive max).
     pub fn block_range(&self) -> (BlockPos, BlockPos) {
         (

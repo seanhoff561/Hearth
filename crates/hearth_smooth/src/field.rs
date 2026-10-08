@@ -260,19 +260,6 @@ impl Field {
         self.trilinear(cell, t)
     }
 
-    /// The gradient at a point in sample units: the trilinear blend of its cell's corner
-    /// gradients, so it varies smoothly from cell to cell.
-    pub fn gradient_at(&self, p: Vec3) -> Vec3 {
-        let (cell, t) = self.locate(p);
-        let [x, y, z] = cell;
-        let g = |dx, dy, dz| self.gradient(x + dx, y + dy, z + dz);
-        let c00 = g(0, 0, 0).lerp(g(1, 0, 0), t.x);
-        let c10 = g(0, 1, 0).lerp(g(1, 1, 0), t.x);
-        let c01 = g(0, 0, 1).lerp(g(1, 0, 1), t.x);
-        let c11 = g(0, 1, 1).lerp(g(1, 1, 1), t.x);
-        c00.lerp(c10, t.y).lerp(c01.lerp(c11, t.y), t.z)
-    }
-
     /// The cell holding a point (clamped to the field) and the point's place in it.
     fn locate(&self, p: Vec3) -> ([usize; 3], Vec3) {
         let mut cell = [0usize; 3];

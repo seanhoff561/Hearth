@@ -10,7 +10,6 @@
 //! ([`LightEngine::block_changed`]). All positions go through the wrap-aware [`CubeMap`].
 
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 use hearth_math::{BlockPos, CUBE_SIZE, CubePos, Direction, LocalPos};
 
@@ -484,29 +483,13 @@ fn cmp_desc(a: &CubePos, b: &CubePos) -> std::cmp::Ordering {
     b.y.cmp(&a.y).then(a.x.cmp(&b.x)).then(a.z.cmp(&b.z))
 }
 
-/// Convenience: sky light of a block (15 above unloaded columns' tops).
-pub fn sky_light_at(map: &CubeMap, pos: BlockPos) -> u8 {
-    map.sky_light(pos)
-}
-
-/// Replaces a cube in the map and relights it (used by tools and tests).
-pub fn insert_and_light(
-    engine: &mut LightEngine,
-    map: &mut CubeMap,
-    reg: &BlockRegistry,
-    pos: CubePos,
-    cube: Cube,
-) {
-    map.insert_cube(pos, Arc::new(cube), reg);
-    engine.light_new_cubes(map, reg, &[pos]);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::block::BlockStateId;
     use crate::block::tests::test_registry;
     use hearth_math::{ColumnPos, Planet, PlanetSize};
+    use std::sync::Arc;
 
     fn world(reg: &BlockRegistry) -> CubeMap {
         CubeMap::new(Planet::from_size(PlanetSize::Tiny).unwrap()).tap(|m| {

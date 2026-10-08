@@ -711,10 +711,6 @@ impl BlockRegistry {
         self.blocks.iter().map(|(_, _, b)| b)
     }
 
-    pub fn block_registry(&self) -> &Registry<Block> {
-        &self.blocks
-    }
-
     /// The placeholder state for unknown blocks.
     pub fn unknown_state(&self) -> BlockStateId {
         self.unknown
@@ -776,16 +772,6 @@ impl BlockRegistry {
         &self.shapes[self.state_outline[s.0 as usize].0 as usize]
     }
 
-    /// Raw flag table (for workers that want a slice).
-    pub fn flag_table(&self) -> &[StateFlags] {
-        &self.state_flags
-    }
-
-    /// Raw light table (`emission << 4 | opacity`).
-    pub fn light_table(&self) -> &[u8] {
-        &self.state_light
-    }
-
     // ------------------------------------------------------------------ properties
 
     /// Value of property `name` in `state`, if the block has it.
@@ -794,10 +780,6 @@ impl BlockRegistry {
         let p = b.property_index(name)?;
         let v = b.value_index(state, p);
         Some(b.properties[p].values[v].as_str())
-    }
-
-    pub fn get_bool(&self, state: BlockStateId, name: &str) -> bool {
-        self.get(state, name) == Some("true")
     }
 
     pub fn get_int(&self, state: BlockStateId, name: &str) -> Option<i64> {

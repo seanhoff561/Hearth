@@ -752,10 +752,6 @@ impl TerrainRenderer {
         self.meshes.contains_key(&self.planet.wrap_cube(pos))
     }
 
-    pub fn mesh_count(&self) -> usize {
-        self.meshes.len()
-    }
-
     /// Visible cubes via cave culling (BFS through connected faces) and frustum tests, into
     /// `out` (the search's sets are passed in so they keep their memory between frames).
     fn visible_cubes(

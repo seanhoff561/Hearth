@@ -14,18 +14,16 @@ pub enum Category {
     Gameplay,
     Inventory,
     Creative,
-    Multiplayer,
     Miscellaneous,
     Debug,
 }
 
 impl Category {
-    pub const ALL: [Category; 7] = [
+    pub const ALL: [Category; 6] = [
         Category::Movement,
         Category::Gameplay,
         Category::Inventory,
         Category::Creative,
-        Category::Multiplayer,
         Category::Miscellaneous,
         Category::Debug,
     ];
@@ -37,7 +35,6 @@ impl Category {
             Category::Gameplay => "key.categories.gameplay",
             Category::Inventory => "key.categories.inventory",
             Category::Creative => "key.categories.creative",
-            Category::Multiplayer => "key.categories.multiplayer",
             Category::Miscellaneous => "key.categories.misc",
             Category::Debug => "key.categories.debug",
         }
@@ -107,30 +104,23 @@ pub mod builtin {
     }
     ids! {
         FORWARD = 0; LEFT = 1; BACK = 2; RIGHT = 3; JUMP = 4; SNEAK = 5; SPRINT = 6;
-        ATTACK = 7; USE = 8; PICK_BLOCK = 9;
-        INVENTORY = 10; DROP = 11; DROP_STACK = 12; SWAP_OFFHAND = 13;
-        HOTBAR_1 = 14; HOTBAR_2 = 15; HOTBAR_3 = 16; HOTBAR_4 = 17; HOTBAR_5 = 18;
-        HOTBAR_6 = 19; HOTBAR_7 = 20; HOTBAR_8 = 21; HOTBAR_9 = 22;
-        CHAT = 23; COMMAND = 24; PLAYER_LIST = 25;
-        HIDE_HUD = 26; SCREENSHOT = 27; DEBUG = 28; TOGGLE_PERSPECTIVE = 29;
-        WORLD_MAP = 30; FULLSCREEN = 31; SMOOTH_CAMERA = 32; PAUSE = 33;
-        DEBUG_RELOAD_CHUNKS = 34; DEBUG_HITBOXES = 35; DEBUG_CHUNK_BORDERS = 36;
-        DEBUG_RELOAD_RESOURCES = 37; DEBUG_ADVANCED_TOOLTIPS = 38; DEBUG_PAUSE_NO_MENU = 39;
-        DEBUG_FRAME_GRAPH = 40; DEBUG_PROFILER = 41;
-        DEBUG_TIME_FORWARD = 42; DEBUG_TIME_BACK = 43; DEBUG_SEASON_FORWARD = 44;
-        DEBUG_TIME_WARP = 45; CRAWL = 46; DEBUG_FREE_CAMERA = 47;
-        SLEEP = 48; BODY_PANEL = 49; INTERACT = 50; DRAG = 51; RADIAL = 52;
-        THROW = 53; JOURNAL = 54; SHOUT = 55; BUILDER_VIEW = 56;
-        WATCH_FASTER = 57; WATCH_SLOWER = 58;
-        CLEAR_VIEW = 59; SPECTATE = 60; CREATIVE_REMOVE = 61; NO_CLIP = 62;
+        ATTACK = 7; PICK_BLOCK = 8;
+        INVENTORY = 9; DROP = 10; DROP_STACK = 11;
+        HOTBAR_1 = 12; HOTBAR_2 = 13; HOTBAR_3 = 14; HOTBAR_4 = 15; HOTBAR_5 = 16; HOTBAR_6 = 17;
+        DEBUG = 18; TOGGLE_PERSPECTIVE = 19; WORLD_MAP = 20; FULLSCREEN = 21; PAUSE = 22;
+        DEBUG_RELOAD_RESOURCES = 23;
+        DEBUG_TIME_FORWARD = 24; DEBUG_TIME_BACK = 25; DEBUG_SEASON_FORWARD = 26;
+        DEBUG_TIME_WARP = 27; CRAWL = 28; DEBUG_FREE_CAMERA = 29;
+        SLEEP = 30; BODY_PANEL = 31; INTERACT = 32; DRAG = 33; RADIAL = 34;
+        THROW = 35; JOURNAL = 36; SHOUT = 37; BUILDER_VIEW = 38;
+        WATCH_FASTER = 39; WATCH_SLOWER = 40;
+        CLEAR_VIEW = 41; SPECTATE = 42; CREATIVE_REMOVE = 43; NO_CLIP = 44;
     }
     /// Number of built-in actions.
-    pub const COUNT: usize = 63;
+    pub const COUNT: usize = 45;
 
-    /// Hotbar actions in slot order.
-    pub const HOTBAR: [ActionId; 9] = [
-        HOTBAR_1, HOTBAR_2, HOTBAR_3, HOTBAR_4, HOTBAR_5, HOTBAR_6, HOTBAR_7, HOTBAR_8, HOTBAR_9,
-    ];
+    /// The quick slots' actions in slot order.
+    pub const HOTBAR: [ActionId; 6] = [HOTBAR_1, HOTBAR_2, HOTBAR_3, HOTBAR_4, HOTBAR_5, HOTBAR_6];
 }
 
 /// Registry of all actions (built-in first, then any added by mods).
@@ -168,7 +158,6 @@ impl ActionRegistry {
         add("key.sneak", C::Movement, g, k(Key::C), T);
         add("key.sprint", C::Movement, g, k(Key::LeftShift), T);
         add("key.attack", C::Gameplay, g, m(MouseButton::Left), H);
-        add("key.use", C::Gameplay, g, m(MouseButton::Right), H);
         add("key.pick_block", C::Gameplay, g, m(MouseButton::Middle), H);
         add("key.inventory", C::Inventory, gc, k(Key::Tab), H);
         add("key.drop", C::Inventory, gc, k(Key::G), H);
@@ -179,13 +168,6 @@ impl ActionRegistry {
             Some(Binding::with(Key::G, Modifiers::CTRL)),
             H,
         );
-        add(
-            "key.swap_offhand",
-            C::Inventory,
-            gc,
-            m(MouseButton::Forward),
-            H,
-        );
         let digits = [
             Key::Digit1,
             Key::Digit2,
@@ -193,18 +175,10 @@ impl ActionRegistry {
             Key::Digit4,
             Key::Digit5,
             Key::Digit6,
-            Key::Digit7,
-            Key::Digit8,
-            Key::Digit9,
         ];
         for (i, d) in digits.into_iter().enumerate() {
             add(&format!("key.hotbar.{}", i + 1), C::Inventory, gc, k(d), H);
         }
-        add("key.chat", C::Multiplayer, g, k(Key::T), H);
-        add("key.command", C::Multiplayer, g, k(Key::Slash), H);
-        add("key.player_list", C::Multiplayer, g, None, H);
-        add("key.hide_hud", C::Miscellaneous, g, k(Key::F1), H);
-        add("key.screenshot", C::Miscellaneous, glob, k(Key::F2), H);
         add("key.debug", C::Miscellaneous, g, k(Key::F3), H);
         add(
             "key.toggle_perspective",
@@ -215,16 +189,8 @@ impl ActionRegistry {
         );
         add("key.world_map", C::Miscellaneous, g, k(Key::M), H);
         add("key.fullscreen", C::Miscellaneous, glob, k(Key::F11), H);
-        add("key.smooth_camera", C::Miscellaneous, g, None, H);
         add("key.pause", C::Miscellaneous, g, k(Key::Escape), H);
-        add("key.debug.reload_chunks", C::Debug, dbg, k(Key::A), H);
-        add("key.debug.hitboxes", C::Debug, dbg, k(Key::B), H);
-        add("key.debug.chunk_borders", C::Debug, dbg, k(Key::G), H);
         add("key.debug.reload_resources", C::Debug, dbg, k(Key::T), H);
-        add("key.debug.advanced_tooltips", C::Debug, dbg, k(Key::H), H);
-        add("key.debug.pause_no_menu", C::Debug, dbg, k(Key::Escape), H);
-        add("key.debug.frame_graph", C::Debug, dbg, k(Key::Digit2), H);
-        add("key.debug.profiler", C::Debug, dbg, k(Key::Digit1), H);
         add("key.debug.time_forward", C::Debug, dbg, k(Key::Right), H);
         add("key.debug.time_back", C::Debug, dbg, k(Key::Left), H);
         add("key.debug.season_forward", C::Debug, dbg, k(Key::Up), H);
@@ -283,10 +249,5 @@ impl ActionRegistry {
 
     pub fn ids(&self) -> impl Iterator<Item = ActionId> + '_ {
         (0..self.defs.len()).map(|i| ActionId(i as u16))
-    }
-
-    /// Actions in a category, in registration order.
-    pub fn in_category(&self, cat: Category) -> impl Iterator<Item = ActionId> + '_ {
-        self.ids().filter(move |id| self.def(*id).category == cat)
     }
 }

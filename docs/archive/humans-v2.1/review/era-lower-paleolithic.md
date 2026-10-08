@@ -4,12 +4,12 @@
 axe and the wooden spear. A world of the era on the Standard planet of seed 3, its deep past run,
 a century of its households lived, a life born into one of them and a week of its band watched.*
 
-![An erectus band at its fire, afternoon](era-lower-paleolithic-day.jpg)
+*(An erectus band at its fire, afternoon: `era-lower-paleolithic-day.jpg`, on the branch `archive/humans-v2.1`)*
 
 *A band of *H. erectus* about its fire in a glade by a lake (latitude 50°, early summer, 15 h):
 no beds — they know none — but the fire kept, the grown sitting and the young about them.*
 
-![The same camp at dusk](era-lower-paleolithic-dusk.jpg)
+*(The same camp at dusk: `era-lower-paleolithic-dusk.jpg`, on the branch `archive/humans-v2.1`)*
 
 *The same camp at dusk, the band drawn in to the fire in the rain.*
 

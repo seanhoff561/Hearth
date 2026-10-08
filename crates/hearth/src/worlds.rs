@@ -31,10 +31,8 @@ pub struct WorldInfo {
     pub last_played_unix: u64,
     /// Seconds of play (the world's ticks at 20 a second).
     pub played_s: u64,
-    /// The player's person: their name and age (years), when there is one.
-    pub character: Option<(String, f64)>,
-    /// Ended with its character's death (permadeath).
-    pub ended: bool,
+    /// The player's name, when they have one.
+    pub character: Option<String>,
     /// Its game mode's id (none: a world from before the modes), and whether it was ever played
     /// in Creative (Amendment P §2).
     pub mode: Option<String>,
@@ -65,27 +63,9 @@ pub fn info(dir: &Path) -> Option<WorldInfo> {
         .pointer("/clock/ticks")
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    let life = level.pointer("/settings/life");
-    let life_num = |k: &str, d: f64| {
-        life.and_then(|l| l.get(k))
-            .and_then(Value::as_f64)
-            .unwrap_or(d)
-    };
-    // The player: their name, and their age now — their age when their life began and the
-    // days lived since, by the world's calendar.
     let character = read_json(&dir.join("player.json")).and_then(|p| {
-        let name = p.pointer("/appearance/name")?.as_str()?.trim().to_owned();
-        let born_tick = p
-            .pointer("/player/life/born_tick")
-            .and_then(Value::as_u64)?;
-        let start_age = p
-            .pointer("/household/age")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
-        let ticks_per_day = life_num("day_length_min", 48.0) * 60.0 * 20.0;
-        let days_per_year = life_num("days_per_season", 8.0) * 4.0;
-        let lived = ticks.saturating_sub(born_tick) as f64 / ticks_per_day.max(1.0);
-        Some((name, start_age + lived / days_per_year.max(1.0)))
+        let name = p.pointer("/appearance/name")?.as_str()?.trim();
+        (!name.is_empty()).then(|| name.to_owned())
     });
     Some(WorldInfo {
         folder,
@@ -103,7 +83,6 @@ pub fn info(dir: &Path) -> Option<WorldInfo> {
         last_played_unix: num(&level, "last_played_unix"),
         played_s: ticks / 20,
         character,
-        ended: level.get("ended").and_then(Value::as_bool).unwrap_or(false),
         mode: level
             .pointer("/settings/mode")
             .and_then(Value::as_str)
@@ -345,10 +324,8 @@ mod tests {
         });
         std::fs::write(dir.join("level.json"), serde_json::to_vec(&level).unwrap()).unwrap();
         std::fs::write(dir.join("region").join("r.0.0.0.hrg"), b"cubes").unwrap();
-        // Born as a baby at the world's start: 2 h of play is 2.5 days of 48 minutes.
         let player = serde_json::json!({
             "appearance": {"name": "Ama"}, "player": {"life": {"born_tick": 0}},
-            "household": {"age": 0.0},
         });
         std::fs::write(
             dir.join("player.json"),
@@ -404,9 +381,7 @@ mod tests {
         assert_eq!(w.era, "hearth:upper_paleolithic");
         assert_eq!(w.played_s, 7200);
         assert_eq!(played_words(w.played_s), "2 h 0 min");
-        let (name, age) = w.character.clone().unwrap();
-        assert_eq!(name, "Ama");
-        assert!((age - 2.5 / 32.0).abs() < 1e-9, "{age}");
+        assert_eq!(w.character.as_deref(), Some("Ama"));
         let _ = std::fs::remove_dir_all(&s);
     }
 

@@ -16,7 +16,6 @@ serde_json.workspace = true
 rustc-hash.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
-log.workspace = true
 glam.workspace = true
 bytemuck.workspace = true
 

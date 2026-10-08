@@ -194,18 +194,6 @@ pub fn skin_presets() -> [f32; 10] {
     std::array::from_fn(|i| i as f32 / 9.0)
 }
 
-/// The body plan a person is built on (V2.1 §2; H8): ours, or an archaic people's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum Plan {
-    #[default]
-    Modern,
-    /// *Homo erectus*: tall and long-legged, narrow-hipped, a long low braincase.
-    Erectus,
-    /// Neanderthals: short and broad, barrel-chested, short in the forearm and shin, a long low
-    /// braincase over a big face.
-    Neanderthal,
-}
-
 /// A person's look.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -213,11 +201,8 @@ pub struct Appearance {
     /// Optional.
     pub name: String,
     pub body: BodyType,
-    /// Standing height (m), 0.4–1.95: a newborn's to a tall grown one's.
+    /// Standing height (m), within an adult's range ([`MIN_HEIGHT_M`]–[`MAX_HEIGHT_M`]).
     pub height_m: f32,
-    /// How grown its body is, 0 a newborn's … 1 grown: a child's head is large and its legs
-    /// short for its height, its limbs round; a bust and a woman's hips come with puberty.
-    pub grown: f32,
     /// 0 slight – 0.5 average – 1 heavy.
     pub build: f32,
     /// 0 lightest – 1 darkest.
@@ -230,8 +215,6 @@ pub struct Appearance {
     pub facial_hair: FacialHair,
     pub eyes: EyeColor,
     pub loincloth: Loincloth,
-    /// The body plan its figure is built on.
-    pub plan: Plan,
 }
 
 impl Default for Appearance {
@@ -240,7 +223,6 @@ impl Default for Appearance {
             name: String::new(),
             body: BodyType::Male,
             height_m: 1.75,
-            grown: 1.0,
             build: 0.5,
             skin_tone: 0.5,
             undertone: 0.2,
@@ -249,13 +231,12 @@ impl Default for Appearance {
             facial_hair: FacialHair::None,
             eyes: EyeColor::Brown,
             loincloth: Loincloth::Hide,
-            plan: Plan::Modern,
         }
     }
 }
 
-/// The shortest a figure stands: a newborn.
-pub const MIN_HEIGHT_M: f32 = 0.4;
+/// An adult's standing height (m), shortest to tallest (Amendment E §6.2: adults only).
+pub const MIN_HEIGHT_M: f32 = 1.45;
 pub const MAX_HEIGHT_M: f32 = 1.95;
 
 impl Appearance {
@@ -278,7 +259,6 @@ impl Appearance {
         };
         let unit = |v: f32, d: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { d };
         self.build = unit(self.build, 0.5);
-        self.grown = unit(self.grown, 1.0);
         self.skin_tone = unit(self.skin_tone, 0.5);
         self.undertone = if self.undertone.is_finite() {
             self.undertone.clamp(-1.0, 1.0)

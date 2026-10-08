@@ -2,7 +2,7 @@
 # Baseline-S (Amendment S §12.1, docs/spec/amendment-s-smooth-world.md): the numbers the smooth
 # world is held to, measured on the machine this runs on before any of it reaches the game.
 #
-# With a graphics card it runs the benchmark scenes at the High (Fabulous) and Low (Fast)
+# With a graphics card it runs the benchmark scenes at the High and Low
 # presets at 1440p (frame time p50, p99 and worst, GPU time per pass, triangles and draws,
 # video memory), then the near terrain on the CPU (meshing speed, memory per surface cube,
 # payload and edit sizes) and the smooth-mesher prototypes (`bench smooth`). Results are

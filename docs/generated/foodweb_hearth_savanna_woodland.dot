@@ -1,6 +1,0 @@
-digraph "Food web: Savanna–woodland mosaic" {
-  rankdir=LR; node [shape=box, style="rounded,filled", fontname="sans-serif"];
-  n0 [label="Umbrella thorn acacia", fillcolor="#cfe8c4"];
-  n1 [label="African baobab", fillcolor="#cfe8c4"];
-  n2 [label="Red oat grass", fillcolor="#cfe8c4"];
-}

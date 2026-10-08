@@ -159,6 +159,10 @@ pub struct SceneRenderer {
     inv_view_proj: glam::Mat4,
 }
 
+/// The terrain textures' mip levels and anisotropic filtering, the game's and its tools'.
+pub const MIP_LEVELS: u32 = 4;
+pub const ANISOTROPY: u16 = 4;
+
 impl SceneRenderer {
     pub fn new(
         ctx: &GpuContext,
@@ -208,11 +212,6 @@ impl SceneRenderer {
         }
         let scaled = |v: u32| ((v as f32 * s).round() as u32).max(1);
         (scaled(size.0), scaled(size.1))
-    }
-
-    /// Forgets the eye's adaptation (the next frame adapts instantly).
-    pub fn reset_adaptation(&mut self) {
-        self.adapted = None;
     }
 
     /// Turns temporal anti-aliasing on or off.

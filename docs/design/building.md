@@ -1,6 +1,6 @@
 # Building and structure
 
-*Status: V2-8 in progress — (a) pieces in the world, (b) stability, (c) excavation, (d) weather, (e) shelter, (f) the builder's view, (g) the techniques of Eras 0–3 and (h) acceptance done. Pieces' data since V2-0
+*Status: implemented (V2-8: pieces in the world, stability, excavation, weather, shelter, the builder's view, the techniques of Eras 0–3). Pieces' data since V2-0
 (`construction/`).*
 
 ## Pieces in the world (V2-8 (a))

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{Color, Range, entry};
+use crate::id::IdRef;
 
 /// Broad material classes, used by filters ("any rock", "any wood").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -227,5 +228,52 @@ impl MaterialFilter {
         self.categories.contains(&m.category)
             || self.tags.iter().any(|t| m.tags.contains(t))
             || self.ids.iter().any(|r| r.as_str() == id)
+    }
+}
+
+/// `materials/reference.ron`: measured ranges per material family (Amendment Q §2.1). The lint
+/// holds each family's members to its ranges.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialReference {
+    pub schema: u32,
+    pub families: Vec<ReferenceFamily>,
+}
+
+/// A material family's measured ranges, their source and the materials held to them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReferenceFamily {
+    pub id: String,
+    pub name: String,
+    /// Diffuse albedo: the linear luminance of the base colour (visible band).
+    pub albedo: (f32, f32),
+    /// Perceptual roughness, 0 a mirror … 1 matte.
+    pub roughness: (f32, f32),
+    /// Index of refraction (the specular at normal incidence follows from it).
+    pub ior: f32,
+    /// How much light passes through, 0 opaque … 1.
+    pub translucency: (f32, f32),
+    /// Materials held to the ranges.
+    #[serde(default)]
+    pub members: Vec<IdRef>,
+    pub source: String,
+    /// Ranges estimated rather than measured.
+    #[serde(default)]
+    pub uncertain: bool,
+}
+
+impl Color {
+    /// The colour's linear luminance (sRGB decoded, Rec. 709 weights): a surface's diffuse
+    /// albedo when the colour is its base colour.
+    pub fn albedo(&self) -> f32 {
+        let lin = |v: u8| {
+            let c = v as f32 / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let [r, g, b] = self.0;
+        0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
     }
 }

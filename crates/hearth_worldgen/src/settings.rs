@@ -62,13 +62,6 @@ impl Default for WorldGenSettings {
 }
 
 impl WorldGenSettings {
-    pub fn with_seed(seed: u64) -> Self {
-        Self {
-            seed,
-            ..Self::default()
-        }
-    }
-
     pub fn planet(&self) -> Result<Planet, PlanetError> {
         Planet::from_size(self.planet_size)
     }

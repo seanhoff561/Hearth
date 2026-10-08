@@ -196,17 +196,6 @@ impl BlockFbm {
         sum * self.norm
     }
 
-    /// Sum of the first `max_octaves` octaves (coarser evaluation for LOD sampling).
-    #[inline]
-    pub fn sample2_limited(&self, x: f64, z: f64, max_octaves: usize) -> f64 {
-        let mut sum = 0.0;
-        for (i, (n, f, p, a)) in self.octaves.iter().take(max_octaves).enumerate() {
-            let off = i as f64 * 17.13;
-            sum += n.noise2(x * f, z * f + off, *p) * a;
-        }
-        sum * self.norm
-    }
-
     #[inline]
     pub fn sample3(&self, x: f64, y: f64, z: f64) -> f64 {
         let mut sum = 0.0;
@@ -232,15 +221,6 @@ impl BlockFbm {
             sum += r * a;
         }
         sum * self.norm
-    }
-
-    /// Wavelength of the finest octave in blocks.
-    pub fn finest_wavelength(&self) -> f64 {
-        self.octaves.last().map_or(f64::INFINITY, |o| 1.0 / o.1)
-    }
-
-    pub fn octave_count(&self) -> usize {
-        self.octaves.len()
     }
 }
 

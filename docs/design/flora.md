@@ -1,6 +1,6 @@
 # Flora
 
-*Status: in progress (V2-6). Code: `crates/hearth_flora` (the growth model), the placement,
+*Status: implemented (V2-6). Code: `crates/hearth_flora` (the growth model), the placement,
 succession and vegetation state in `hearth_worldgen` (`trees`, `cubegen::features`,
 `cubegen::succession`, `vegetation`), felling and the regrowing of loaded terrain in
 `crates/hearth` (`workshop`, `server`). Data: `data/hearth/flora`,

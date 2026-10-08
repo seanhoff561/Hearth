@@ -22,7 +22,7 @@
             density_kg_m3: 2400, hardness_mohs: 5.5, fracture: Conchoidal, knapping: 0.97,
             strength: (compressive_mpa: 200), thermal: (conductivity_w_mk: 1.3, melting_c: 900),
             workability: 0.3, durability: 0.9,
-            appearance: (color: "#16151a", pattern: Glassy, roughness: 0.05),
+            appearance: (color: "#312f38", pattern: Glassy, roughness: 0.05),
             notes: "Volcanic glass: the sharpest edges of any natural material, but brittle.",
         ),
         (
@@ -36,7 +36,7 @@
             density_kg_m3: 2900, hardness_mohs: 6.0, fracture: Uneven, knapping: 0.35,
             strength: (compressive_mpa: 250, tensile_mpa: 15), thermal: (conductivity_w_mk: 1.7, specific_heat_j_kgk: 840, melting_c: 1200),
             workability: 0.2, durability: 1.0,
-            appearance: (color: "#3c3d40", pattern: Speckled, roughness: 0.8),
+            appearance: (color: "#4a4b4e", pattern: Speckled, roughness: 0.8),
         ),
         (
             id: "rhyolite", status: Implemented, name: "rhyolite", category: Rock, tags: ["knappable"],
@@ -156,7 +156,7 @@
             id: "scoria", status: Implemented, name: "scoria", category: Rock, tags: ["lightweight", "abrasive"],
             density_kg_m3: 1500, hardness_mohs: 6.0, fracture: Uneven, porosity: 0.5,
             strength: (compressive_mpa: 15), workability: 0.4, durability: 0.6,
-            appearance: (color: "#5b2c22", color2: "#241c1b", pattern: Porous, roughness: 1.0),
+            appearance: (color: "#683328", color2: "#241c1b", pattern: Porous, roughness: 1.0),
             uncertain: true, notes: "Frothy basaltic cinders of cinder cones; bulk density varies widely.",
         ),
         (
@@ -191,21 +191,21 @@
             id: "lignite", status: Implemented, name: "lignite", category: Fuel, tags: ["fuel", "coal", "soft_stone"],
             density_kg_m3: 1250, hardness_mohs: 1.5, fracture: Uneven, porosity: 0.3,
             fuel_mj_kg: 15.0, thermal: (ignition_c: 250), workability: 0.8, durability: 0.3,
-            appearance: (color: "#3b2e22", color2: "#2a211a", pattern: Layered, roughness: 0.9),
+            appearance: (color: "#48392b", color2: "#2a211a", pattern: Layered, roughness: 0.9),
             uncertain: true, notes: "Brown coal: young, wet, crumbly and smoky; heat value varies with moisture.",
         ),
         (
             id: "bituminous_coal", status: Implemented, name: "bituminous coal", category: Fuel, tags: ["fuel", "coal"],
             density_kg_m3: 1350, hardness_mohs: 2.0, fracture: Uneven,
             fuel_mj_kg: 27.0, thermal: (ignition_c: 400), workability: 0.6, durability: 0.5,
-            appearance: (color: "#1f1d1b", color2: "#3a3733", pattern: Banded, roughness: 0.5),
+            appearance: (color: "#3b3835", color2: "#3a3733", pattern: Banded, roughness: 0.5),
             notes: "Black banded coal of the coal measures; cokes when heated without air.",
         ),
         (
             id: "anthracite", status: Implemented, name: "anthracite", category: Fuel, tags: ["fuel", "coal"],
             density_kg_m3: 1500, hardness_mohs: 2.8, fracture: Conchoidal,
             fuel_mj_kg: 31.0, thermal: (ignition_c: 500), workability: 0.5, durability: 0.7,
-            appearance: (color: "#151518", pattern: Glassy, roughness: 0.3),
+            appearance: (color: "#38383e", pattern: Glassy, roughness: 0.3),
             notes: "Hard glossy coal of folded coal measures: hard to light, burns hot and clean.",
         ),
         (

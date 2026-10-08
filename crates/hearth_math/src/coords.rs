@@ -108,13 +108,6 @@ impl BlockPos {
     pub fn center(self) -> DVec3 {
         self.as_dvec3() + DVec3::splat(0.5)
     }
-
-    /// Manhattan distance (not wrap-aware).
-    pub fn manhattan(self, o: BlockPos) -> i64 {
-        (self.x as i64 - o.x as i64).abs()
-            + (self.y as i64 - o.y as i64).abs()
-            + (self.z as i64 - o.z as i64).abs()
-    }
 }
 
 impl Add<IVec3> for BlockPos {

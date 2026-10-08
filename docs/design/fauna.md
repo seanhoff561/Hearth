@@ -1,8 +1,8 @@
 # Fauna and ecosystems
 
-*Status: in progress (V2-7). Species and ecosystems started in V2-0 (`fauna/`, `ecosystems/`).*
+*Status: implemented (V2-7). Species and ecosystems started in V2-0 (`fauna/`, `ecosystems/`).*
 
-## Planned model
+## Model
 Real species on shared body plans with procedural animation; senses including wind-carried
 scent; utility AI over behaviours (forage, flee, stalk, defend young, migrate…); herds and packs;
 ecological cells (256 m) holding population densities and age/sex structure, advanced in

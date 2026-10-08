@@ -2613,8 +2613,14 @@ impl Client {
                         reg: r.reg,
                         mirror: CubeMap::new(planet),
                     });
-                    let mut scene =
-                        SceneRenderer::new(ctx, &self.atlas, self.color_format, planet, 4, 4);
+                    let mut scene = SceneRenderer::new(
+                        ctx,
+                        &self.atlas,
+                        self.color_format,
+                        planet,
+                        hearth_render::scene::MIP_LEVELS,
+                        hearth_render::scene::ANISOTROPY,
+                    );
                     scene.terrain.render_distance = self.radius;
                     scene.terrain.vertical_distance = self.vertical;
                     scene.render_scale = self.render_scale;

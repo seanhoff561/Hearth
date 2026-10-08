@@ -77,12 +77,6 @@ impl Normals {
         )
     }
 
-    /// Normals with the mean temperature shifted by an elevation difference (lapse rate).
-    pub fn at_elevation_offset(mut self, metres: f64) -> Self {
-        self.t_mean -= hearth_worldgen::planet::climate::LAPSE_RATE * metres;
-        self
-    }
-
     pub fn southern(&self) -> bool {
         self.lat_deg < 0.0
     }

@@ -74,9 +74,6 @@ pub struct LifeSettings {
     /// What is kept of what was known when a new life begins.
     #[serde(default)]
     pub after_death: AfterDeath,
-    /// Reveal the whole map instead of only what the character has seen.
-    #[serde(default)]
-    pub full_map_knowledge: bool,
 }
 
 impl Default for LifeSettings {
@@ -90,7 +87,6 @@ impl Default for LifeSettings {
             predator_behavior: PredatorBehavior::default(),
             knowledge_mode: KnowledgeMode::default(),
             after_death: AfterDeath::default(),
-            full_map_knowledge: false,
         }
     }
 }

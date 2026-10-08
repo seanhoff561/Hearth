@@ -1,5 +1,5 @@
-//! Registries map namespaced ids to dense numeric ids assigned at load time. Saves persist the
-//! numeric→name mapping ([`IdMapping`]) so adding or removing mods never corrupts a world.
+//! Registries map namespaced ids to dense numeric ids assigned at load time. Saves store names,
+//! not numeric ids, so adding or removing content never corrupts a world.
 
 use rustc_hash::FxHashMap;
 
@@ -105,10 +105,6 @@ impl<T> Registry<T> {
         self.frozen = true;
     }
 
-    pub fn is_frozen(&self) -> bool {
-        self.frozen
-    }
-
     #[inline]
     pub fn get(&self, raw: RawId) -> Option<&T> {
         self.values.get(raw as usize)
@@ -135,11 +131,6 @@ impl<T> Registry<T> {
         self.id_of(name).and_then(|i| self.get(i))
     }
 
-    #[inline]
-    pub fn name_of(&self, raw: RawId) -> Option<&ResourceLocation> {
-        self.names.get(raw as usize)
-    }
-
     pub fn len(&self) -> usize {
         self.values.len()
     }
@@ -154,57 +145,6 @@ impl<T> Registry<T> {
             .zip(self.values.iter())
             .enumerate()
             .map(|(i, (n, v))| (i as RawId, n, v))
-    }
-
-    pub fn names(&self) -> &[ResourceLocation] {
-        &self.names
-    }
-
-    /// The numeric→name mapping to store in saves.
-    pub fn mapping(&self) -> IdMapping {
-        IdMapping {
-            names: self.names.iter().map(|n| n.to_string()).collect(),
-        }
-    }
-}
-
-/// Numeric→name table persisted in a save for one registry.
-#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub struct IdMapping {
-    pub names: Vec<String>,
-}
-
-impl IdMapping {
-    /// Builds a remap table from saved ids to the current registry's ids. Names the current
-    /// registry doesn't know map to `fallback` (a visible placeholder), and are reported.
-    pub fn remap_to<T>(
-        &self,
-        registry: &Registry<T>,
-        fallback: RawId,
-    ) -> (Vec<RawId>, Vec<String>) {
-        let mut missing = Vec::new();
-        let table = self
-            .names
-            .iter()
-            .map(|n| match registry.id_of_str(n) {
-                Some(id) => id,
-                None => {
-                    missing.push(n.clone());
-                    fallback
-                }
-            })
-            .collect();
-        (table, missing)
-    }
-
-    /// True if the saved mapping is identical to the registry's (no remapping needed).
-    pub fn is_identity_for<T>(&self, registry: &Registry<T>) -> bool {
-        self.names.len() <= registry.len()
-            && self.names.iter().enumerate().all(|(i, n)| {
-                registry
-                    .name_of(i as RawId)
-                    .is_some_and(|r| r.as_str() == n)
-            })
     }
 }
 
@@ -245,23 +185,5 @@ mod tests {
             r.register(rl("b"), ()),
             Err(RegistryError::Full { .. })
         ));
-    }
-
-    #[test]
-    fn remap_with_missing_entries() {
-        let mut old: Registry<()> = Registry::new("block", 16);
-        for n in ["air", "stone", "mymod:ruby", "dirt"] {
-            old.register(rl(n), ()).unwrap();
-        }
-        let saved = old.mapping();
-        let mut new: Registry<()> = Registry::new("block", 16);
-        for n in ["air", "unknown", "dirt", "stone"] {
-            new.register(rl(n), ()).unwrap();
-        }
-        let (table, missing) = saved.remap_to(&new, 1);
-        assert_eq!(table, vec![0, 3, 1, 2]);
-        assert_eq!(missing, vec!["mymod:ruby".to_string()]);
-        assert!(!saved.is_identity_for(&new));
-        assert!(saved.is_identity_for(&old));
     }
 }

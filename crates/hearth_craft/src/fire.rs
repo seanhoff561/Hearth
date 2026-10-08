@@ -150,10 +150,6 @@ impl Fire {
         }
     }
 
-    pub fn fuel_kg(&self) -> f32 {
-        self.fuel.iter().map(|f| f.kg).sum()
-    }
-
     /// Whether it gives fire to cook on or take from (flames or glowing coals).
     pub fn lit(&self) -> bool {
         self.flaming || (self.coals_kg > 0.01 && !self.banked)

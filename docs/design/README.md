@@ -25,14 +25,16 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Processes and the knowledge graph (crafting, discovery, skills, journal, knapping) | [knowledge-and-processes.md](knowledge-and-processes.md) | implemented for Eras 0–2 (V2-5) |
 | Fire, cooking, preservation and food | [fire-and-food.md](fire-and-food.md) | implemented (V2-5) |
 | Gathering by hand and digging | [gathering.md](gathering.md) | implemented (V2-5) |
-| Flora | [flora.md](flora.md) | planned (V2-6) |
-| Fauna and ecosystems | [fauna.md](fauna.md) | planned (V2-7) |
-| Building and structure | [building.md](building.md) | planned (V2-8) |
+| Flora | [flora.md](flora.md) | implemented (V2-6, V2-10) |
+| Fauna and ecosystems | [fauna.md](fauna.md) | implemented (V2-7, V2-10) |
+| Building and structure | [building.md](building.md) | implemented (V2-8) |
 | Smooth terrain: fill, meshing, shading (Amendment S) | [smooth-terrain.md](smooth-terrain.md) | prototype (S0); S1–S8 |
-| Art direction: stylized realism | [art-direction.md](art-direction.md) | living document (S0) |
+| Art direction: photographic plausibility | [art-direction.md](art-direction.md) | living document (S0, Q) |
 | Motion timing: what moves, by which clock, how fast | [motion-timing.md](motion-timing.md) | partial (P0); the audit and its check P5 |
 | The Neolithic (pottery, fields, herds, cloth, timber, moving loads) | [neolithic.md](neolithic.md) | implemented (V2-12) |
+| Menus and world management | [menus.md](menus.md) | implemented (P1) |
 | Game modes and Creative | [modes-creative.md](modes-creative.md) | implemented (P2) |
+| Budgets: every system's cost | [budgets.md](budgets.md) | living document (Audit 0) |
 | Interaction matrix | [interactions.md](interactions.md) | living document |
 | Future systems (Eras 6–8) | [future-systems.md](future-systems.md) | design only |
 | Future humanity (eras, simulated humans) | [future-humanity.md](future-humanity.md) | design only (E1 rewrites) |
