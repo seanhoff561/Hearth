@@ -12,9 +12,9 @@ use std::sync::OnceLock;
 use hearth_worldgen::WorldGenerator;
 use rustc_hash::FxHasher;
 
-use crate::{LodGen, LodQuad, LodWorld, TileKey, TileMesh};
+use crate::{GroundVertex, LodGen, LodQuad, LodWorld, TileKey, TileMesh};
 
-const MAGIC: &[u8; 4] = b"HLT1";
+const MAGIC: &[u8; 4] = b"HLT2";
 
 /// Tiles on disk.
 pub struct TileCache {
@@ -28,6 +28,10 @@ fn hash_mesh(h: &mut FxHasher, m: &TileMesh) {
     (m.min_y, m.max_y, m.error.to_bits()).hash(h);
     for q in &m.quads {
         (q.a, q.b, q.c, q.d).hash(h);
+    }
+    m.skirt.to_bits().hash(h);
+    for g in &m.ground {
+        (g.y, g.n, g.c, g.m).hash(h);
     }
 }
 
@@ -125,9 +129,21 @@ impl TileCache {
                 d: r.u32()?,
             });
         }
+        let skirt = f32::from_bits(r.u32()?);
+        let mut ground = Vec::with_capacity(crate::GROUND_SIDE * crate::GROUND_SIDE);
+        for _ in 0..crate::GROUND_SIDE * crate::GROUND_SIDE {
+            ground.push(GroundVertex {
+                y: r.i32()?,
+                n: r.u32()?,
+                c: r.u32()?,
+                m: r.u32()?,
+            });
+        }
         Some(TileMesh {
             key,
             origin,
+            ground,
+            skirt,
             quads,
             groups,
             min_y,
@@ -139,7 +155,7 @@ impl TileCache {
     /// Keeps a tile with its stamp (quietly gives up if the disk will not have it).
     pub fn store(&self, mesh: &TileMesh, stamp: u64) {
         let path = self.path(mesh.key);
-        let mut data = Vec::with_capacity(64 + mesh.quads.len() * 16);
+        let mut data = Vec::with_capacity(64 + (mesh.quads.len() + mesh.ground.len()) * 16);
         data.extend_from_slice(MAGIC);
         data.extend_from_slice(&stamp.to_le_bytes());
         data.extend_from_slice(&mesh.key.id().to_le_bytes());
@@ -155,6 +171,13 @@ impl TileCache {
         data.extend_from_slice(&(mesh.quads.len() as u32).to_le_bytes());
         for q in &mesh.quads {
             for v in [q.a, q.b, q.c, q.d] {
+                data.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        data.extend_from_slice(&mesh.skirt.to_bits().to_le_bytes());
+        for g in &mesh.ground {
+            data.extend_from_slice(&g.y.to_le_bytes());
+            for v in [g.n, g.c, g.m] {
                 data.extend_from_slice(&v.to_le_bytes());
             }
         }
@@ -232,6 +255,7 @@ mod tests {
                 .all(|(a, b)| { (a.a, a.b, a.c, a.d) == (b.a, b.b, b.c, b.d) })
         );
         assert_eq!((back.origin, back.groups), (built.origin, built.groups));
+        assert_eq!((back.ground, back.skirt), (built.ground, built.skirt));
         assert!(cache.load(key, stamp ^ 1).is_none(), "another stamp");
         // A fire that burned the tile changes its stamp; one far off does not.
         let burn = |x: i32, z: i32| Disturbance {

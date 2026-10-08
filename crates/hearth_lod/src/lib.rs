@@ -13,11 +13,13 @@
 //!   stand at their own blocks. Coarser levels, whose columns are wider than a crown, raise a
 //!   crown where the place's trees are expected to close over the ground and darken the ground
 //!   under sparser ones.
-//! * **Meshes** are flat-topped columns with the sides that show and skirts along the tile
-//!   edges, which hide cracks against neighbours of another level; crowns are boxes with the
-//!   faces no neighbour crown hides, and the ground under a crown is lit as shade. Every vertex carries the
-//!   colour of its block's texture, the block's tint kind and the column's climate code, so the
-//!   shader colours grass and leaves by season exactly as it does the full-detail terrain.
+//! * **Meshes.** The ground is a smooth height field (S §5): the columns' surface heights in
+//!   fixed point (`FIX`), the field's corners at the mean of the four columns about each, with
+//!   the field's normals, and skirts along the tile edges, which hide cracks against neighbours
+//!   of another level; crowns are boxes with the faces no neighbour crown hides, and the ground
+//!   under a crown is lit as shade. Every vertex carries the colour of its block's texture, the
+//!   block's tint kind and the column's climate code, so the shader colours grass and leaves by
+//!   season exactly as it does the full-detail terrain.
 
 use bytemuck::{Pod, Zeroable};
 use hearth_math::Planet;
@@ -549,21 +551,87 @@ impl LodQuad {
     }
 }
 
+/// The ground material slot of ground that is no natural block (`BlockRegistry::ground_slots`).
+pub const NO_SLOT: u8 = u8::MAX;
+/// Fixed-point heights: parts of a block (S §5).
+pub const FIX: i32 = 16;
+/// Corners along a tile side of its ground's height field.
+pub const GROUND_SIDE: usize = TILE as usize + 1;
+
+/// One corner of a tile's ground in 16 bytes; the vertex shader makes the grid's triangles (and
+/// the skirts along its edges) of them. Packed:
+/// * `y`: the surface's height, fixed-point (`FIX`), absolute;
+/// * `n`: the height field's normal, X and Z as signed 12-bit fractions (Y is up, the rest),
+///   and the tint kind (8);
+/// * `c`: sRGB colour (24) and ground material slot (8; `NO_SLOT` where the ground is no
+///   natural block, coloured as its block's texture);
+/// * `m`: climate (24), of the four columns about the corner how many are water (4) and under a
+///   crown (4).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
+pub struct GroundVertex {
+    pub y: i32,
+    pub n: u32,
+    pub c: u32,
+    pub m: u32,
+}
+
+impl GroundVertex {
+    pub fn height(&self) -> f32 {
+        self.y as f32 / FIX as f32
+    }
+
+    pub fn normal(&self) -> [f32; 3] {
+        let s12 = |v: u32| ((v << 20) as i32 >> 20) as f32 / 2047.0;
+        let (x, z) = (s12(self.n), s12(self.n >> 12));
+        [x, (1.0 - x * x - z * z).max(0.0).sqrt(), z]
+    }
+
+    pub fn rgb(&self) -> u32 {
+        self.c & 0xff_ffff
+    }
+
+    pub fn slot(&self) -> u8 {
+        (self.c >> 24) as u8
+    }
+
+    pub fn kind(&self) -> u8 {
+        (self.n >> 24) as u8
+    }
+
+    pub fn climate(&self) -> u32 {
+        self.m & 0xff_ffff
+    }
+
+    /// Shares of the four columns about the corner that are water and under a crown.
+    pub fn water(&self) -> f32 {
+        (self.m >> 24 & 15) as f32 / 4.0
+    }
+
+    pub fn shade(&self) -> f32 {
+        (self.m >> 28) as f32 / 4.0
+    }
+}
+
 /// The mesh of one tile.
 #[derive(Debug, Clone)]
 pub struct TileMesh {
     pub key: TileKey,
     /// World block of the minimum corner (X canonical).
     pub origin: [i32; 2],
-    /// Grouped by the way they face, in the order of `GROUP_FACES`.
+    /// The ground: a height field of `GROUND_SIDE` × `GROUND_SIDE` corners (rows along X, from
+    /// the minimum corner), every `key.column()` blocks.
+    pub ground: Vec<GroundVertex>,
+    /// How far the skirts along the ground's edges reach down (blocks).
+    pub skirt: f32,
+    /// Crowns and trunks, grouped by the way they face, in the order of `GROUP_FACES`.
     pub quads: Vec<LodQuad>,
     /// How many quads each group holds.
     pub groups: [u32; 6],
     pub min_y: i32,
     pub max_y: i32,
-    /// Vertical error of the tile's columns (blocks): half the largest step between the ground
-    /// (or water) tops of neighbouring columns — how far the flat-topped columns can stray from
-    /// the land they stand for.
+    /// Vertical error of the tile (blocks): how far the ground's surface, interpolated between
+    /// the corners, strays from the columns it was made from.
     pub error: f32,
 }
 
@@ -693,6 +761,11 @@ struct Crown {
 struct Col {
     /// First block above the ground or water.
     top: i32,
+    /// The surface's height at the column's middle, fixed-point (`FIX` to a block): the fill's
+    /// surface on land, the water's top on water.
+    h: i32,
+    /// The ground's material slot, `NO_SLOT` for water and blocks placed that are not ground.
+    slot: u8,
     rgb: u32,
     kind: u8,
     water: bool,
@@ -873,6 +946,8 @@ pub struct LodGen {
     leaves: [BlockStateId; 4],
     /// Ground a fire has burned over.
     burnt: Option<BlockStateId>,
+    /// Each state's ground material slot.
+    slots: Vec<u8>,
 }
 
 impl LodGen {
@@ -908,6 +983,7 @@ impl LodGen {
             class,
             leaves: [leaf("oak"), leaf("birch"), leaf("spruce"), leaf("mangrove")],
             burnt: reg.parse_state("hearth:burnt_ground").ok(),
+            slots: reg.ground_slots().0,
         }
     }
 
@@ -959,6 +1035,8 @@ impl LodGen {
                 {
                     let (rgb, kind) = self.colors.get(*state);
                     col.top = *y + 1;
+                    col.h = col.top * FIX;
+                    col.slot = self.slots[state.0 as usize];
                     col.rgb = rgb;
                     col.kind = kind;
                     col.water = false;
@@ -1109,6 +1187,8 @@ impl LodGen {
             });
             return Col {
                 top: s.water_i(),
+                h: s.water_i() * FIX,
+                slot: NO_SLOT,
                 rgb: pack(rgb),
                 kind: TINT_RGB,
                 water: true,
@@ -1134,6 +1214,8 @@ impl LodGen {
         let (rgb, kind) = self.colors.get(block);
         Col {
             top: ground,
+            h: (s.height * FIX as f32).round() as i32,
+            slot: self.slots[block.0 as usize],
             rgb,
             kind,
             water: false,
@@ -1196,15 +1278,103 @@ fn side(face: u32, x0: i32, x1: i32, z0: i32, z1: i32, lo: i32, hi: i32) -> [(i3
     }
 }
 
-/// Meshes a tile's columns (with their ring of neighbours) and trunks: row-merged ground tops,
-/// the sides that show and skirts along the tile edges; tree crowns as boxes floating over the
-/// ground (tops, bottoms and the sides no neighbour crown hides); trunks as thin boxes.
+/// The ground of a tile from its columns (with their ring of neighbours): a height field whose
+/// corners lie at the mean of the four columns about them (the surface through the columns'
+/// middles, interpolated), each with the normal of the field there, the mean colour of the
+/// columns of its kind, and how many of them are water and under a crown. Also the tile's
+/// error (how far the field strays from a column's own height, blocks), its skirt (blocks) and
+/// its height range (fixed-point).
+fn ground(cs: i32, cols: &[Col]) -> (Vec<GroundVertex>, f32, f32, (i32, i32)) {
+    let n = TILE + 2;
+    let at = |i: i32, j: i32| &cols[((j + 1) * n + (i + 1)) as usize];
+    let side = GROUND_SIDE as i32;
+    let mut out = Vec::with_capacity(GROUND_SIDE * GROUND_SIDE);
+    let (mut lo, mut hi) = (i32::MAX, i32::MIN);
+    for j in 0..side {
+        for i in 0..side {
+            let four = [at(i - 1, j - 1), at(i, j - 1), at(i - 1, j), at(i, j)];
+            let y = (four.iter().map(|c| c.h).sum::<i32>() as f32 / 4.0).round() as i32;
+            lo = lo.min(y);
+            hi = hi.max(y);
+            // The field's slope across the corner, from the columns on either side.
+            let scale = 1.0 / (2 * cs * FIX) as f32;
+            let dx = ((four[1].h + four[3].h) - (four[0].h + four[2].h)) as f32 * scale;
+            let dz = ((four[2].h + four[3].h) - (four[0].h + four[1].h)) as f32 * scale;
+            let len = (dx * dx + 1.0 + dz * dz).sqrt();
+            let snorm = |v: f32| ((-v / len * 2047.0).round() as i32 & 0xfff) as u32;
+            // Material, kind and climate from the column on the corner's far side (the same for
+            // the tiles either side of an edge), colour the mean of the columns of that kind.
+            let me = four[3];
+            let mut sum = [0.0f32; 3];
+            let mut k = 0.0;
+            for c in four
+                .iter()
+                .filter(|c| c.kind == me.kind && c.slot == me.slot)
+            {
+                for (ch, s) in sum.iter_mut().enumerate() {
+                    *s += to_linear((c.rgb >> (8 * ch)) as u8);
+                }
+                k += 1.0;
+            }
+            let rgb = pack(sum.map(|s| to_srgb(s / k)));
+            let water = four.iter().filter(|c| c.water).count() as u32;
+            let shade = four.iter().filter(|c| c.crown.is_some()).count() as u32;
+            out.push(GroundVertex {
+                y,
+                n: snorm(dx) | snorm(dz) << 12 | (me.kind as u32) << 24,
+                c: rgb | (me.slot as u32) << 24,
+                m: (me.climate & 0xff_ffff) | water << 24 | shade << 28,
+            });
+        }
+    }
+    let corner = |i: i32, j: i32| out[(j * side + i) as usize].y;
+    // How far a column's own height lies from the field's at its middle.
+    let mut error = 0;
+    for j in 0..TILE {
+        for i in 0..TILE {
+            let mid = corner(i, j) + corner(i + 1, j) + corner(i, j + 1) + corner(i + 1, j + 1);
+            error = error.max((at(i, j).h * 4 - mid).abs());
+        }
+    }
+    // Skirts deep enough to hide the crack against a neighbour a level coarser, whose edge runs
+    // straight between every other corner of this one.
+    let mut crack = 0;
+    for k in 1..side - 1 {
+        for (a, m, b) in [
+            (corner(k - 1, 0), corner(k, 0), corner(k + 1, 0)),
+            (
+                corner(k - 1, side - 1),
+                corner(k, side - 1),
+                corner(k + 1, side - 1),
+            ),
+            (corner(0, k - 1), corner(0, k), corner(0, k + 1)),
+            (
+                corner(side - 1, k - 1),
+                corner(side - 1, k),
+                corner(side - 1, k + 1),
+            ),
+        ] {
+            crack = crack.max((a - m).abs()).max((b - m).abs());
+        }
+    }
+    let fix = FIX as f32;
+    let skirt = (2 * cs) as f32 + crack as f32 / fix;
+    (out, error as f32 / (4.0 * fix), skirt, (lo, hi))
+}
+
+/// Meshes a tile's columns (with their ring of neighbours) and trunks: the ground as a height
+/// field (`ground`); tree crowns as boxes floating over it (tops, bottoms and the sides no
+/// neighbour crown hides); trunks as thin boxes.
 fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
     let cs = key.column();
     let n = TILE + 2;
     let at = |i: i32, j: i32| &cols[((j + 1) * n + (i + 1)) as usize];
     let mut v: [Vec<LodQuad>; 6] = Default::default();
-    let (mut min_y, mut max_y) = (i32::MAX, i32::MIN);
+    let (field, error, skirt, (lo, hi)) = ground(cs, cols);
+    let (mut min_y, mut max_y) = (
+        lo.div_euclid(FIX) - skirt.ceil() as i32,
+        hi.div_euclid(FIX) + 1,
+    );
     let mut quad = |v: &mut Vec<LodQuad>,
                     p: [(i32, i32, i32); 4],
                     rgb: u32,
@@ -1217,15 +1387,6 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
             max_y = max_y.max(y);
         }
         v.push(LodQuad::from_corners(face, p, rgb, kind, water, climate));
-    };
-    // Ground under a crown is in its shade: lit as from below.
-    let ground_face = |c: &Col| if c.crown.is_some() { DOWN } else { UP };
-    let same = |a: &Col, b: &Col| {
-        a.top == b.top
-            && a.rgb == b.rgb
-            && a.kind == b.kind
-            && a.water == b.water
-            && ground_face(a) == ground_face(b)
     };
     let same_crown = |a: &Col, b: &Col, top: bool| match (a.crown, b.crown) {
         (Some(x), Some(y)) => {
@@ -1241,32 +1402,6 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
     };
     for j in 0..TILE {
         let (z0, z1) = (j * cs, (j + 1) * cs);
-        // Ground tops, merged along the row.
-        let mut i = 0;
-        while i < TILE {
-            let c = at(i, j);
-            let mut end = i;
-            while end + 1 < TILE && same(at(end + 1, j), c) {
-                end += 1;
-            }
-            let (x0, x1) = (i * cs, (end + 1) * cs);
-            // A ground top faces up, even where it is lit as shade.
-            quad(
-                &mut v[group(UP)],
-                [
-                    (x0, c.top, z1),
-                    (x1, c.top, z1),
-                    (x1, c.top, z0),
-                    (x0, c.top, z0),
-                ],
-                c.rgb,
-                c.kind,
-                c.water,
-                c.climate,
-                ground_face(c),
-            );
-            i = end + 1;
-        }
         // Crown tops and bottoms, merged along the row.
         for top in [true, false] {
             let mut i = 0;
@@ -1300,35 +1435,15 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
                 i = end + 1;
             }
         }
-        // Sides toward lower neighbours; along the tile edge, skirts reaching below both. Crown
-        // sides where no neighbour crown hides them.
+        // Crown sides where no neighbour crown hides them.
         for i in 0..TILE {
             let c = at(i, j);
+            let Some(cr) = c.crown else {
+                continue;
+            };
             let (x0, x1) = (i * cs, (i + 1) * cs);
             for (di, dj, face) in [(0, -1, NORTH), (0, 1, SOUTH), (-1, 0, WEST), (1, 0, EAST)] {
-                let (ni, nj) = (i + di, j + dj);
-                let nb = at(ni, nj);
-                let edge = !(0..TILE).contains(&ni) || !(0..TILE).contains(&nj);
-                let low = if edge {
-                    c.top.min(nb.top) - 2 * cs
-                } else {
-                    nb.top
-                };
-                if low < c.top {
-                    let p = side(face, x0, x1, z0, z1, low, c.top);
-                    quad(
-                        &mut v[group(face)],
-                        p,
-                        c.rgb,
-                        c.kind,
-                        c.water,
-                        c.climate,
-                        face,
-                    );
-                }
-                let Some(cr) = c.crown else {
-                    continue;
-                };
+                let nb = at(i + di, j + dj);
                 // The crown's side from its bottom (or the neighbour's ground) to its top, less
                 // what the neighbour's crown covers.
                 let lo = cr.bottom.max(nb.top);
@@ -1353,23 +1468,17 @@ fn mesh(key: TileKey, cols: &[Col], trunks: &[Trunk]) -> TileMesh {
             quad(&mut v[group(face)], p, t.rgb, TINT_RGB, false, 0, face);
         }
     }
-    let mut step = 0;
-    for j in 0..TILE {
-        for i in 0..TILE {
-            let c = at(i, j).top;
-            step = step.max((c - at(i + 1, j).top).abs());
-            step = step.max((c - at(i, j + 1).top).abs());
-        }
-    }
     let (mx, mz) = key.min_block();
     TileMesh {
         key,
         origin: [mx, mz],
+        ground: field,
+        skirt,
         groups: v.each_ref().map(|g| g.len() as u32),
         quads: v.concat(),
-        min_y: if min_y == i32::MAX { 0 } else { min_y },
-        max_y: if max_y == i32::MIN { 0 } else { max_y },
-        error: step as f32 * 0.5,
+        min_y,
+        max_y,
+        error,
     }
 }
 
@@ -1468,16 +1577,14 @@ mod tests {
     fn ground(top: i32) -> Col {
         Col {
             top,
+            h: top * FIX,
+            slot: NO_SLOT,
             rgb: 0x406080,
             kind: TINT_RGB,
             water: false,
             climate: 0,
             crown: None,
         }
-    }
-
-    fn faces(m: &TileMesh, face: u32) -> usize {
-        m.quads.iter().filter(|q| q.face() == face).count()
     }
 
     #[test]
@@ -1659,43 +1766,54 @@ mod tests {
     }
 
     #[test]
-    fn meshes_have_tops_sides_and_skirts() {
+    fn the_ground_is_a_smooth_height_field_with_skirts() {
         let key = TileKey {
             level: 1,
             x: 3,
             z: -2,
         };
         let n = (TILE + 2) as usize;
-        let mut cols = vec![ground(10); n * n];
-        // A single raised column in the middle of the tile.
-        cols[(17 * n) + 17].top = 14;
+        // A slope rising 0.25 a block eastward (half a block a column), and a raised column.
+        let mut cols: Vec<Col> = (0..n * n)
+            .map(|k| {
+                let i = (k % n) as i32 - 1;
+                Col {
+                    h: 10 * FIX + i * FIX / 2,
+                    ..ground(10)
+                }
+            })
+            .collect();
+        cols[(17 * n) + 17].h += 4 * FIX;
         let m = mesh(key, &cols, &[]);
-        // Flat rows merge into one top each (the raised column splits its row into three).
-        assert_eq!(faces(&m, UP), TILE as usize + 2);
-        // Four sides of the raised column, and skirts along all four tile edges.
-        assert_eq!(m.quads.len() - faces(&m, UP), 4 + 4 * TILE as usize);
-        assert_eq!(m.max_y, 14);
-        assert_eq!(m.min_y, 10 - 2 * key.column());
-        assert_grouped(&m);
-        assert!(m.quads.iter().all(|q| {
-            let ((x, _, z), (w, h)) = (q.corner(), q.size());
-            let (x1, z1) = match q.face() {
-                DOWN | UP => (x + w, z + h),
-                NORTH | SOUTH => (x + w, z),
-                _ => (x, z + w),
-            };
-            x1 <= key.size() && z1 <= key.size()
-        }));
+        assert!(m.quads.is_empty(), "no columns' tops or sides");
+        assert_eq!(m.ground.len(), GROUND_SIDE * GROUND_SIDE);
+        let at = |i: usize, j: usize| m.ground[j * GROUND_SIDE + i];
+        // Corners midway between the columns' heights: exact on the slope.
+        assert_eq!(at(0, 0).height(), 9.75);
+        assert_eq!(at(1, 0).height(), 10.25);
+        assert_eq!(at(32, 32).height(), 25.75);
+        // The slope's normal leans west.
+        let [nx, ny, nz] = at(5, 5).normal();
+        let want = 1.0 / 1.0625f32.sqrt();
+        assert!((nx + 0.25 * want).abs() < 1e-3 && (ny - want).abs() < 1e-3 && nz.abs() < 1e-3);
+        // The raised column shares itself among its four corners: the error is what is lost.
+        assert_eq!(at(16, 16).height() - at(15, 16).height(), 0.5 + 1.0);
+        assert_eq!(m.error, 3.0);
+        // Skirts reach two columns down, and the range covers them.
+        assert_eq!(m.skirt, 2.0 * 2.0 + 0.5);
+        assert_eq!(m.max_y, 26);
+        assert_eq!(m.min_y, 9 - 5);
+        assert_eq!(at(3, 3).rgb(), 0x406080);
+        assert_eq!((at(3, 3).water(), at(3, 3).shade()), (0.0, 0.0));
     }
 
-    /// Quads come grouped by the way they face (ground tops lit as shade face up).
+    /// Quads come grouped by the way they face.
     fn assert_grouped(m: &TileMesh) {
         assert_eq!(m.groups.iter().sum::<u32>() as usize, m.quads.len());
         let mut start = 0;
         for (g, &n) in m.groups.iter().enumerate() {
             for q in &m.quads[start..start + n as usize] {
-                let shade = GROUP_FACES[g] == UP && q.face() == DOWN;
-                assert!(q.face() == GROUP_FACES[g] || shade, "{q:?} in group {g}");
+                assert!(q.face() == GROUP_FACES[g], "{q:?} in group {g}");
             }
             start += n as usize;
         }
@@ -1840,17 +1958,15 @@ mod tests {
         );
         // The crown hangs above the ground: its bottom at 14, over ground at 10.
         assert!(m.quads.iter().any(|q| q.corner().1 == 14) && m.max_y == 19);
-        // The ground under the crowns is shaded (drawn as seen from below), in one piece.
-        let shaded_ground = m
-            .quads
-            .iter()
-            .filter(|q| q.rgb() == 0x406080 && q.face() == DOWN)
-            .count();
-        assert_eq!(shaded_ground, 1);
+        // The ground under the crowns (columns 5 and 6 of row 5) is shaded: half at the corners
+        // of the edge between them, a quarter at their outer corners, not at all a column away.
+        let shade = |i: usize, j: usize| m.ground[j * GROUND_SIDE + i].shade();
+        assert_eq!((shade(6, 5), shade(6, 6)), (0.5, 0.5));
+        assert_eq!((shade(5, 6), shade(7, 5), shade(8, 6)), (0.25, 0.25, 0.0));
         // The trunk: four sides of a one-block box.
         let bark = m.quads.iter().filter(|q| q.rgb() == 0x403020).count();
         assert_eq!(bark, 4);
-        // The shaded ground goes with the tops (it faces up), the crown's bottom alone down.
+        // The crown's bottom alone faces down.
         assert_grouped(&m);
         assert_eq!(m.groups[0], 1);
     }

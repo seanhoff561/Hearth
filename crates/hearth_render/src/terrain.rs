@@ -1377,6 +1377,11 @@ impl TerrainRenderer {
         self.draw_pass(pass, &self.pipes.smooth, 5);
     }
 
+    /// The buffer of the ground's materials (fixed for the renderer's life).
+    pub(crate) fn ground_materials_buffer(&self) -> &wgpu::Buffer {
+        &self.ground
+    }
+
     /// The ground's materials (one per slot of `smooth::GroundMaterials`, at most 256).
     pub fn set_ground_materials(&mut self, ctx: &GpuContext, materials: &[GroundMaterial]) {
         let n = materials.len().min(256);

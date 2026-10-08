@@ -1,14 +1,17 @@
 //! Distant terrain (v1 §8): LOD tile meshes (built by `hearth_lod`) drawn after the full-detail
 //! terrain, with the same globals — lighting, aerial perspective, planet curvature, seasonal
-//! tints — and a dithered handoff at the edge of the full-detail area.
+//! tints, the near ground's materials — and a dithered handoff at the edge of the full-detail
+//! area.
 //!
-//! Every tile's quads live in one pooled storage buffer as 16-byte records (`hearth_lod::
-//! LodQuad`) that the vertex shader expands into their four corners, and the frame's tiles are
-//! drawn with one indirect multi-draw (one draw per tile where the adapter can't). A tile's
-//! quads are grouped by the way they face, and only the groups that can face the camera are
-//! drawn. Where the terrain is GPU-culled, the tiles inside the frustum are also tested on the
-//! GPU against its Hi-Z pyramid (`shaders/lod_cull.wgsl`), so land hidden behind near terrain
-//! is not drawn.
+//! A tile's ground is a smooth height field (S §5): its 33 × 33 corners (16-byte
+//! `hearth_lod::GroundVertex`) in one pooled storage buffer, every tile drawn with the same
+//! triangles (and skirts along its edges) as an instance of one draw. Its crowns and trunks are
+//! quads: 16-byte records (`hearth_lod::LodQuad`) in another pool that the vertex shader
+//! expands into their four corners, the frame's tiles drawn with one indirect multi-draw (one
+//! draw per tile where the adapter can't). A tile's quads are grouped by the way they face, and
+//! only the groups that can face the camera are drawn. Where the terrain is GPU-culled, the
+//! quads of the tiles inside the frustum are also tested on the GPU against its Hi-Z pyramid
+//! (`shaders/lod_cull.wgsl`), so trees hidden behind near terrain are not drawn.
 
 use bytemuck::{Pod, Zeroable};
 use glam::{DVec3, Vec3};
@@ -21,6 +24,49 @@ use crate::terrain::{Arena, DEPTH_FORMAT, EARTH_RADIUS_M, TerrainRenderer};
 
 /// Bytes per LOD quad record (`hearth_lod::LodQuad`).
 pub const QUAD_BYTES: u64 = 16;
+/// Bytes per ground corner (`hearth_lod::GroundVertex`), and corners along a tile side.
+pub const GROUND_BYTES: u64 = 16;
+pub const GROUND_SIDE: u32 = 33;
+/// Corners of a tile's ground.
+const GROUND_CORNERS: u32 = GROUND_SIDE * GROUND_SIDE;
+
+/// The triangles of every tile's ground: the height field's cells, then the skirts hanging from
+/// its four edges (whose lower corners follow the field's, `vs_ground`).
+fn ground_indices() -> Vec<u32> {
+    let n = GROUND_SIDE;
+    let mut v = Vec::new();
+    for j in 0..n - 1 {
+        for i in 0..n - 1 {
+            let a = j * n + i;
+            let (b, c, d) = (a + 1, a + n, a + n + 1);
+            v.extend_from_slice(&[a, c, b, b, c, d]);
+        }
+    }
+    for e in 0..4 {
+        for k in 0..n - 1 {
+            let top = |k: u32| match e {
+                0 => k,
+                1 => (n - 1) * n + k,
+                2 => k * n,
+                _ => k * n + n - 1,
+            };
+            let low = |k: u32| GROUND_CORNERS + e * n + k;
+            v.extend_from_slice(&[top(k), low(k), top(k + 1), top(k + 1), low(k), low(k + 1)]);
+        }
+    }
+    v
+}
+
+/// A tile's ground as the shader reads it (`GroundTile` in `lod.wgsl`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct GroundTile {
+    /// Camera-relative origin, and the column size.
+    origin: [f32; 4],
+    base: u32,
+    skirt: f32,
+    pad: [u32; 2],
+}
 
 /// The faces of a tile's quad groups, in storage order (as `hearth_lod::GROUP_FACES`): down,
 /// north (−Z), west (−X), up, east (+X), south (+Z), in the terrain's face codes.
@@ -30,6 +76,9 @@ struct GpuTile {
     /// First quad in the pool, and how many; how many in each group (`GROUP_FACES`).
     off: u32,
     quads: u32,
+    /// First ground corner in its pool (`u32::MAX`: none), and the skirts' depth.
+    ground: u32,
+    skirt: f32,
     groups: [u32; 6],
     origin: [i32; 2],
     size: i32,
@@ -206,6 +255,8 @@ pub struct LodStats {
     /// quad groups facing the camera).
     pub drawn: usize,
     pub draws: usize,
+    /// Tiles whose ground is drawn (in the frustum).
+    pub grounds: usize,
     /// Quads of the groups facing the camera, in the frustum.
     pub quads: u64,
     pub bytes: u64,
@@ -218,10 +269,20 @@ pub struct LodRenderer {
     /// The largest buffer the device binds (bytes): what the quads can grow to.
     max_bytes: u64,
     pipeline: wgpu::RenderPipeline,
+    ground_pipeline: wgpu::RenderPipeline,
     layout1: wgpu::BindGroupLayout,
     bind1: wgpu::BindGroup,
-    /// All tiles' quad records.
+    /// All tiles' quad records, and their ground's corners.
     pool: Arena,
+    ground_pool: Arena,
+    /// This frame's grounds to draw, the buffer they go to, and the ground's triangles.
+    grounds: Vec<GroundTile>,
+    ground_tiles: wgpu::Buffer,
+    ground_capacity: usize,
+    ground_index: wgpu::Buffer,
+    ground_index_count: u32,
+    /// The near ground's materials (`TerrainRenderer`'s), which the ground is coloured by.
+    materials: wgpu::Buffer,
     origins: wgpu::Buffer,
     origins_capacity: usize,
     draw_buffer: wgpu::Buffer,
@@ -271,12 +332,34 @@ impl LodRenderer {
         };
         let layout1 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("lod layout 1"),
-            entries: &[storage(0), storage(1)],
+            entries: &[storage(0), storage(1), storage(2), storage(3), storage(4)],
         });
         let origins_capacity = 1024;
         let origins = Self::origins_buffer(device, origins_capacity);
         let pool = Arena::new(device, "lod quads", QUAD_BYTES, 1 << 20);
-        let bind1 = Self::bind(device, &layout1, &origins, &pool.buffer);
+        let ground_pool = Arena::new(device, "lod ground", GROUND_BYTES, GROUND_CORNERS * 512);
+        let ground_capacity = 1024;
+        let ground_tiles = Self::ground_tiles_buffer(device, ground_capacity);
+        let materials = terrain.ground_materials_buffer().clone();
+        let bind1 = Self::bind(
+            device,
+            &layout1,
+            [
+                &origins,
+                &pool.buffer,
+                &ground_tiles,
+                &ground_pool.buffer,
+                &materials,
+            ],
+        );
+        let indices = ground_indices();
+        let ground_index = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("lod ground indices"),
+            size: indices.len() as u64 * 4,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        ctx.write_buffer(&ground_index, 0, bytemuck::cast_slice(&indices));
         let draw_capacity = 1024;
         let draw_buffer = Self::draw_buffer(device, draw_capacity);
         let index_quads = 4096;
@@ -311,47 +394,57 @@ impl LodRenderer {
             ],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("lod"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs_lod"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                // Column faces are wound both ways; skirts must show from either side.
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs_lod"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipe = |label: &str, vs: &str, fs: &str| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some(vs),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    // Crowns' faces are wound both ways; skirts must show from either side.
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(fs),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: color_format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
         Self {
-            pipeline,
+            pipeline: pipe("lod", "vs_lod", "fs_lod"),
+            ground_pipeline: pipe("lod ground", "vs_ground", "fs_ground"),
             layout1,
             bind1,
             pool,
+            ground_pool,
+            grounds: Vec::new(),
+            ground_tiles,
+            ground_capacity,
+            ground_index,
+            ground_index_count: indices.len() as u32,
+            materials,
             origins,
             origins_capacity,
             draw_buffer,
@@ -382,6 +475,15 @@ impl LodRenderer {
         })
     }
 
+    fn ground_tiles_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("lod ground tiles"),
+            size: (capacity * std::mem::size_of::<GroundTile>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
     fn draw_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
         device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("lod draws"),
@@ -391,30 +493,44 @@ impl LodRenderer {
         })
     }
 
+    /// Bind group 1: the tile origins, quads, ground tiles, ground corners and materials.
     fn bind(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
-        origins: &wgpu::Buffer,
-        quads: &wgpu::Buffer,
+        buffers: [&wgpu::Buffer; 5],
     ) -> wgpu::BindGroup {
+        let entries: Vec<wgpu::BindGroupEntry> = buffers
+            .iter()
+            .enumerate()
+            .map(|(k, b)| wgpu::BindGroupEntry {
+                binding: k as u32,
+                resource: b.as_entire_binding(),
+            })
+            .collect();
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lod bind 1"),
             layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: origins.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: quads.as_entire_binding(),
-                },
-            ],
+            entries: &entries,
         })
     }
 
+    fn rebind(&mut self, device: &wgpu::Device) {
+        self.bind1 = Self::bind(
+            device,
+            &self.layout1,
+            [
+                &self.origins,
+                &self.pool.buffer,
+                &self.ground_tiles,
+                &self.ground_pool.buffer,
+                &self.materials,
+            ],
+        );
+    }
+
     /// Uploads (or replaces) a tile: its id, minimum corner in world blocks (X canonical), side,
-    /// height range and quad records (`QUAD_BYTES` each), grouped by the way they face, with the
+    /// height range, ground (`GROUND_SIDE`² corners of `GROUND_BYTES`, or none) with its skirts'
+    /// depth, and quad records (`QUAD_BYTES` each), grouped by the way they face, with the
     /// number in each group (`GROUP_FACES`).
     #[allow(clippy::too_many_arguments)]
     pub fn upload(
@@ -424,15 +540,56 @@ impl LodRenderer {
         origin: [i32; 2],
         size: i32,
         y: (i32, i32),
+        ground: &[u8],
+        skirt: f32,
         quads: &[u8],
         groups: [u32; 6],
     ) {
         self.remove(id);
         let n = (quads.len() as u64 / QUAD_BYTES) as u32;
         debug_assert_eq!(groups.iter().sum::<u32>(), n, "groups cover the quads");
-        if n == 0 {
+        let has_ground = ground.len() as u64 == GROUND_CORNERS as u64 * GROUND_BYTES;
+        if n == 0 && !has_ground {
             return;
         }
+        let mut ground_off = u32::MAX;
+        if has_ground {
+            let (off, grew) = self.ground_pool.alloc(ctx, GROUND_CORNERS);
+            if off == u32::MAX {
+                return;
+            }
+            self.bind_dirty |= grew;
+            ctx.write_buffer(&self.ground_pool.buffer, off as u64 * GROUND_BYTES, ground);
+            ground_off = off;
+        }
+        let mut off = 0;
+        if n > 0 {
+            off = self.alloc_quads(ctx, n);
+            if off == u32::MAX {
+                if ground_off != u32::MAX {
+                    self.ground_pool.alloc.free(ground_off, GROUND_CORNERS);
+                }
+                return;
+            }
+            ctx.write_buffer(&self.pool.buffer, off as u64 * QUAD_BYTES, quads);
+        }
+        self.tiles.insert(
+            id,
+            GpuTile {
+                off,
+                quads: n,
+                ground: ground_off,
+                skirt,
+                groups,
+                origin,
+                size,
+                y,
+            },
+        );
+    }
+
+    /// Room for `n` quads (`u32::MAX`: none), the index buffer long enough to draw them.
+    fn alloc_quads(&mut self, ctx: &GpuContext, n: u32) -> u32 {
         if n > self.index_quads {
             self.index_quads = n.next_power_of_two();
             self.index_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
@@ -448,22 +605,8 @@ impl LodRenderer {
             );
         }
         let (off, grew) = self.pool.alloc(ctx, n);
-        if off == u32::MAX {
-            return;
-        }
         self.bind_dirty |= grew;
-        ctx.write_buffer(&self.pool.buffer, off as u64 * QUAD_BYTES, quads);
-        self.tiles.insert(
-            id,
-            GpuTile {
-                off,
-                quads: n,
-                groups,
-                origin,
-                size,
-                y,
-            },
-        );
+        off
     }
 
     pub fn contains(&self, id: u64) -> bool {
@@ -472,30 +615,41 @@ impl LodRenderer {
 
     pub fn remove(&mut self, id: u64) {
         if let Some(t) = self.tiles.remove(&id) {
-            self.pool.alloc.free(t.off, t.quads);
+            Self::free(&mut self.pool, &mut self.ground_pool, &t);
+        }
+    }
+
+    fn free(pool: &mut Arena, ground_pool: &mut Arena, t: &GpuTile) {
+        if t.quads > 0 {
+            pool.alloc.free(t.off, t.quads);
+        }
+        if t.ground != u32::MAX {
+            ground_pool.alloc.free(t.ground, GROUND_CORNERS);
         }
     }
 
     /// Keeps only the tiles `keep` accepts.
     pub fn retain(&mut self, keep: impl Fn(u64) -> bool) {
-        let pool = &mut self.pool;
+        let (pool, ground_pool) = (&mut self.pool, &mut self.ground_pool);
         self.tiles.retain(|id, t| {
             let k = keep(*id);
             if !k {
-                pool.alloc.free(t.off, t.quads);
+                Self::free(pool, ground_pool, t);
             }
             k
         });
     }
 
-    /// The most the tiles' quads can take (bytes): the largest buffer the device binds.
+    /// The most the tiles' quads (or grounds) can take (bytes): the largest buffer the device
+    /// binds.
     pub fn max_bytes(&self) -> u64 {
         self.max_bytes
     }
 
-    /// Video memory the tiles' quads take (bytes).
+    /// Video memory the tiles' quads and grounds take (bytes).
     pub fn bytes(&self) -> u64 {
         self.pool.alloc.used() as u64 * QUAD_BYTES
+            + self.ground_pool.alloc.used() as u64 * GROUND_BYTES
     }
 
     /// Chooses this frame's draws among `show` (the tiles of the current selection): those
@@ -518,6 +672,7 @@ impl LodRenderer {
         let mut origins = std::mem::take(&mut self.origins_scratch);
         origins.clear();
         self.draws.clear();
+        self.grounds.clear();
         if let Some(c) = self.culler.as_mut() {
             c.data.clear();
         }
@@ -537,6 +692,14 @@ impl LodRenderer {
             let max = Vec3::new(ox + size, y1, oz + size);
             if !frustum.intersects_aabb(min, max) {
                 continue;
+            }
+            if t.ground != u32::MAX {
+                self.grounds.push(GroundTile {
+                    origin: [ox, -(cam.y as f32), oz, (t.size / 32) as f32],
+                    base: t.ground,
+                    skirt: t.skirt,
+                    pad: [0; 2],
+                });
             }
             // The groups that can face the camera (`GROUP_FACES`): a side group faces away when
             // the whole tile lies behind its faces' planes; tops face away when the camera is
@@ -604,12 +767,20 @@ impl LodRenderer {
             self.origins = Self::origins_buffer(&ctx.device, self.origins_capacity);
             self.bind_dirty = true;
         }
+        if self.grounds.len() > self.ground_capacity {
+            self.ground_capacity = self.grounds.len().next_power_of_two();
+            self.ground_tiles = Self::ground_tiles_buffer(&ctx.device, self.ground_capacity);
+            self.bind_dirty = true;
+        }
+        if !self.grounds.is_empty() {
+            ctx.write_buffer(&self.ground_tiles, 0, bytemuck::cast_slice(&self.grounds));
+        }
         if self.draws.len() > self.draw_capacity {
             self.draw_capacity = self.draws.len().next_power_of_two();
             self.draw_buffer = Self::draw_buffer(&ctx.device, self.draw_capacity);
         }
         if self.bind_dirty {
-            self.bind1 = Self::bind(&ctx.device, &self.layout1, &self.origins, &self.pool.buffer);
+            self.rebind(&ctx.device);
             self.bind_dirty = false;
         }
         let gpu = self.culler.is_some() && !self.draws.is_empty();
@@ -629,8 +800,9 @@ impl LodRenderer {
             tiles: self.tiles.len(),
             drawn,
             draws: self.draws.len(),
+            grounds: self.grounds.len(),
             quads,
-            bytes: self.pool.alloc.used() as u64 * QUAD_BYTES,
+            bytes: self.bytes(),
             gpu_culled: gpu && hzb.is_some(),
         };
     }
@@ -725,13 +897,21 @@ impl LodRenderer {
         bind0: &'a wgpu::BindGroup,
         waves: &'a wgpu::BindGroup,
     ) {
+        if self.draws.is_empty() && self.grounds.is_empty() {
+            return;
+        }
+        pass.set_bind_group(0, bind0, &[]);
+        pass.set_bind_group(1, &self.bind1, &[]);
+        pass.set_bind_group(2, waves, &[]);
+        if !self.grounds.is_empty() {
+            pass.set_pipeline(&self.ground_pipeline);
+            pass.set_index_buffer(self.ground_index.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..self.ground_index_count, 0, 0..self.grounds.len() as u32);
+        }
         if self.draws.is_empty() {
             return;
         }
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, bind0, &[]);
-        pass.set_bind_group(1, &self.bind1, &[]);
-        pass.set_bind_group(2, waves, &[]);
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         if let Some(c) = self.culler.as_ref().filter(|c| c.active) {
             pass.multi_draw_indexed_indirect_count(&c.draws, 0, &c.count, 0, c.data.len() as u32);

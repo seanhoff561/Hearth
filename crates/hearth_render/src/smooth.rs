@@ -8,7 +8,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::{IVec3, Vec3};
 use hearth_math::{BlockPos, CubePos};
 use hearth_smooth::{APRON, Field, MAX_BLEND, Method, Region};
-use hearth_world::{BlockRegistry, BlockStateId, CubeMap, StateFlags};
+use hearth_world::{BlockRegistry, BlockStateId, CubeMap};
 
 /// Samples a window takes on each axis: the cube and its apron.
 pub const WINDOW: usize = 16 + 2 * APRON;
@@ -39,32 +39,18 @@ impl GroundMaterials {
     /// The natural blocks of `reg`, in the registry's order; `sharpness` gives a material's
     /// (none: a block that names no material).
     pub fn new(reg: &BlockRegistry, sharpness: &dyn Fn(Option<&str>) -> f32) -> Self {
-        let mut slot_of = vec![NO_SLOT; reg.state_count()];
-        let mut slots = Vec::new();
-        for b in reg.blocks() {
-            let states: Vec<BlockStateId> = reg.states_of(b.id).collect();
-            if !states.iter().any(|s| reg.has(*s, StateFlags::NATURAL)) {
-                continue;
-            }
-            if slots.len() >= NO_SLOT as usize {
-                log::warn!(
-                    "more natural blocks than ground material slots; {} drawn as rock",
-                    b.name
-                );
-                continue;
-            }
-            let slot = slots.len() as u8;
-            for s in states {
-                if reg.has(s, StateFlags::NATURAL) {
-                    slot_of[s.0 as usize] = slot;
+        let (slot_of, ids) = reg.ground_slots();
+        let slots = ids
+            .into_iter()
+            .map(|id| {
+                let b = reg.block(id);
+                GroundSlot {
+                    block: b.name.to_string(),
+                    material: b.def.material.clone(),
+                    sharpness: sharpness(b.def.material.as_deref()).clamp(0.0, 1.0),
                 }
-            }
-            slots.push(GroundSlot {
-                block: b.name.to_string(),
-                material: b.def.material.clone(),
-                sharpness: sharpness(b.def.material.as_deref()).clamp(0.0, 1.0),
-            });
-        }
+            })
+            .collect();
         Self { slot_of, slots }
     }
 

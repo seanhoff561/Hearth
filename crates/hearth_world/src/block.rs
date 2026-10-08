@@ -902,6 +902,29 @@ impl BlockRegistry {
         format!("{}[{}]", b.name, props.join(","))
     }
 
+    /// The natural blocks as the smooth ground's material slots (Amendment S §4), in the
+    /// registry's order: each state's slot (`u8::MAX`: no ground), and each slot's block. The
+    /// near ground's meshes and the distant terrain number them alike. There are 255 slots;
+    /// natural blocks beyond them (far more than any data pack has) are not ground.
+    pub fn ground_slots(&self) -> (Vec<u8>, Vec<BlockId>) {
+        let mut slot_of = vec![u8::MAX; self.state_count()];
+        let mut slots = Vec::new();
+        for b in self.blocks() {
+            let natural: Vec<BlockStateId> = self
+                .states_of(b.id)
+                .filter(|s| self.has(*s, StateFlags::NATURAL))
+                .collect();
+            if natural.is_empty() || slots.len() >= u8::MAX as usize {
+                continue;
+            }
+            for s in natural {
+                slot_of[s.0 as usize] = slots.len() as u8;
+            }
+            slots.push(b.id);
+        }
+        (slot_of, slots)
+    }
+
     /// All states of a block.
     pub fn states_of(&self, id: BlockId) -> impl Iterator<Item = BlockStateId> {
         let b = self.block(id);
