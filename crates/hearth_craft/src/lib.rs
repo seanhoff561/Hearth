@@ -15,6 +15,7 @@ pub mod engine;
 pub mod fire;
 pub mod firing;
 pub mod food;
+pub mod intent;
 pub mod knap;
 pub mod knowledge;
 

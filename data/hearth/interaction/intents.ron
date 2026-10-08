@@ -1,0 +1,53 @@
+// The hands' natural uses (Amendment P §5.2, with E §3.2): with what a hand holds, on what is
+// looked at, what that hand does when its button is pressed. Tried in order; the first that can
+// be done now is the hand's. Only safe defaults: nothing irreversible or risky (eating what is
+// not known to be food, breaking what was built, a blow at what is not an animal) is here; those
+// are in the action menu. A hand holding something may put it away for an empty hand's use.
+(
+    schema: 1,
+    entries: [
+        // Tools on their work.
+        (id: "chop_tree", name: "Chop with an axe", hint: "chop", order: 10,
+         target: Block(Any([Suffix("_log"), Suffix("_branch")])),
+         holding: Property(property: "chopping", min: 0.2), act: Verb("chop")),
+        (id: "dig_with_tool", name: "Dig with a tool", hint: "dig", order: 10,
+         target: Block(Any([Material((categories: [Soil, Sediment, Clay])), Id("grass_block"), Id("podzol"), Id("moss_block"), Id("spoil")])),
+         holding: Property(property: "digging", min: 0.2), act: Verb("dig")),
+        (id: "strike_stone", name: "Strike the stone held in the other hand", hint: "strike", order: 10,
+         target: Nothing, holding: Property(property: "hard_hammer", min: 0.4), act: Verb("strike")),
+        (id: "strike_stone_lying", name: "Strike a stone lying there", hint: "strike", order: 11,
+         target: Thing, holding: Property(property: "hard_hammer", min: 0.4), act: Verb("strike")),
+        // Animals: a weapon's own blow.
+        (id: "spear_animal", name: "Thrust at an animal", hint: "thrust", order: 20,
+         target: Animal, holding: Use(Thrust), act: Blow),
+        (id: "weapon_animal", name: "Strike an animal", hint: "strike", order: 21,
+         target: Animal, holding: Weapon, act: Blow),
+        // Water.
+        (id: "fill_vessel", name: "Fill a vessel", hint: "fill", order: 30,
+         target: Water, holding: Vessel, act: Fill),
+        (id: "drink_cupped", name: "Drink from cupped hands", hint: "drink", order: 31,
+         target: Water, holding: Empty, act: Drink),
+        // The empty hand on what grows and lies about.
+        (id: "pick_up_thing", name: "Pick up", hint: "pick up", order: 40,
+         target: Thing, holding: Empty, act: PickUp),
+        (id: "pick", name: "Pick", hint: "pick", order: 41,
+         target: AnyBlock, holding: Empty, act: Verb("pick")),
+        (id: "gather_stones", name: "Pick up a stone", hint: "pick up", order: 42,
+         target: Block(Suffix("_cobbles")), holding: Empty, act: Process("gather_stones")),
+        (id: "snap_branch", name: "Snap off", hint: "snap off", order: 44,
+         target: Block(Any([Suffix("_branch"), Suffix("_twigs"), Material((categories: [Wood]))])),
+         holding: Empty, act: Verb("break")),
+        (id: "gather", name: "Gather", hint: "gather", order: 45,
+         target: AnyBlock, holding: Empty, act: Verb("gather")),
+        (id: "dig_by_hand", name: "Dig by hand", hint: "dig", order: 43,
+         target: Block(Any([Material((categories: [Soil, Sediment, Clay])), Id("grass_block"), Id("podzol"), Id("moss_block"), Id("spoil")])),
+         holding: Empty, act: Process("dig_by_hand")),
+        // Nothing looked at (E §3.2): eat or drink what is held, else its own use or a blow.
+        (id: "eat_held", name: "Eat", hint: "eat", order: 90,
+         target: Nothing, holding: Food, act: Eat),
+        (id: "drink_held", name: "Drink", hint: "drink", order: 91,
+         target: Nothing, holding: Vessel, act: Drink),
+        (id: "use_held", name: "Use or strike", hint: "strike", order: 99,
+         target: Nothing, holding: Anything, act: Blow),
+    ],
+)

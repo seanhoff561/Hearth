@@ -383,6 +383,58 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
     }
 }
 
+/// The hands' uses (Amendment P §5.2): each names a verb some process has or a process there
+/// is, and none is a default that is risky: no blow at nothing but an animal with an empty hand,
+/// no process that removes a built piece.
+fn intents(c: &Content, report: &mut Report) {
+    use crate::schema::interaction::{Holding, IntentAct, IntentTarget};
+    for (i, o) in c.intents.iter_with_origin() {
+        match &i.act {
+            IntentAct::Verb(v) => {
+                if !c
+                    .processes
+                    .iter()
+                    .any(|p| p.verb.as_deref() == Some(v.as_str()))
+                {
+                    report.error(
+                        "intent-verb",
+                        Some(o.file.clone()),
+                        o.line,
+                        format!("no process has the verb `{v}`"),
+                    );
+                }
+            }
+            IntentAct::Process(p) => {
+                let id = crate::IdRef::qualify(p);
+                match c.processes.get(id.as_str()) {
+                    None => report.error(
+                        "intent-process",
+                        Some(o.file.clone()),
+                        o.line,
+                        format!("no process `{p}`"),
+                    ),
+                    Some(def) if def.places.is_some() => report.error(
+                        "intent-risky",
+                        Some(o.file.clone()),
+                        o.line,
+                        format!("`{p}` builds: not a default"),
+                    ),
+                    Some(_) => {}
+                }
+            }
+            IntentAct::Blow if i.holding == Holding::Empty && i.target != IntentTarget::Nothing => {
+                report.error(
+                    "intent-risky",
+                    Some(o.file.clone()),
+                    o.line,
+                    "an empty hand's blow at something is not a default",
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Knowledge graph structure: cycles, era order, implemented-on-planned dependencies.
 fn knowledge_graph(c: &Content, report: &mut Report) {
     // Cycle detection by DFS colouring.
@@ -1344,6 +1396,7 @@ pub fn lint(c: &Content, ctx: &LintContext) -> Report {
     food_webs(c, &mut report);
     reference_report(c, &mut report);
     primary_report(c, &mut report);
+    intents(c, &mut report);
     effort_report(&effort(c, &reach), &mut report);
     let uncertain = c.uncertain_entries();
     report.info(

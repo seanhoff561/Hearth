@@ -242,6 +242,8 @@ pub struct Bench<'a> {
     pub at_hand: Vec<Handy<'a>>,
     pub aimed: Option<Aimed>,
     pub around: Surroundings,
+    /// The hand doing the work, when one is (Amendment P §5.2): its tools are that hand's.
+    pub tool_hand: Option<Hand>,
 }
 
 impl<'a> Bench<'a> {
@@ -300,7 +302,14 @@ impl<'a> Bench<'a> {
             at_hand,
             aimed,
             around,
+            tool_hand: None,
         }
+    }
+
+    /// The same bench with the work done by one hand: its tools come from that hand.
+    pub fn by_hand(mut self, hand: Option<Hand>) -> Self {
+        self.tool_hand = hand;
+        self
     }
 
     fn kind(&self, h: &Handy) -> Option<&'a ItemKind> {
@@ -539,7 +548,11 @@ fn choose_tools(
             .at_hand
             .iter()
             .enumerate()
-            .filter(|(i, h)| h.hand.is_some() && free[*i] > 0)
+            .filter(|(i, h)| {
+                h.hand
+                    .is_some_and(|hh| bench.tool_hand.is_none_or(|t| t == hh))
+                    && free[*i] > 0
+            })
             .filter_map(|(i, h)| h.stack.property(bench.items, &t.property).map(|v| (i, v)))
             .filter(|(_, v)| *v >= t.min)
             .max_by(|a, b| a.1.total_cmp(&b.1));

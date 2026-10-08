@@ -16,6 +16,7 @@ use crate::schema::era::Era;
 use crate::schema::fauna::Animal;
 use crate::schema::flora::Plant;
 use crate::schema::geology::{Deposit, Mineral, Province, Rock, Soil};
+use crate::schema::interaction::Intent;
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
 use crate::schema::material::{Material, MaterialReference};
@@ -144,6 +145,8 @@ pub struct Content {
     pub illnesses: Table<Illness>,
     pub garments: Table<Garment>,
     pub eras: Table<Era>,
+    /// The hands' natural uses (Amendment P §5.2).
+    pub intents: Table<Intent>,
     pub balance_keys: Table<BalanceKey>,
     pub balance_presets: Table<BalancePreset>,
     /// The game modes (Amendment P §2).
@@ -301,6 +304,7 @@ impl Content {
             illnesses: load_table(packs, &mut r),
             garments,
             eras: load_table(packs, &mut r),
+            intents: load_table(packs, &mut r),
             balance_keys: load_table(packs, &mut r),
             balance_presets: load_table(packs, &mut r),
             modes: load_table(packs, &mut r),

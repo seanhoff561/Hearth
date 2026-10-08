@@ -13,6 +13,7 @@ pub mod era;
 pub mod fauna;
 pub mod flora;
 pub mod geology;
+pub mod interaction;
 pub mod item;
 pub mod knowledge;
 pub mod material;
