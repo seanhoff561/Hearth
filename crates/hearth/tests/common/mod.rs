@@ -129,7 +129,6 @@ impl World {
         era: &str,
         birth: Option<usize>,
     ) -> Self {
-        let era_birth = era != hearth::eras::WILD_EARTH && birth.is_some();
         let spec = WorldSpec {
             name: "test".into(),
             seed,
@@ -153,7 +152,39 @@ impl World {
             birth,
             shape: Default::default(),
             birthplace: None,
+            mode: None,
         };
+        Self::start_spec(spec)
+    }
+
+    /// A world of Wild Earth on the Tiny planet in a game mode (Amendment P §2), begun grown.
+    #[allow(dead_code)]
+    pub fn start_mode(dir: &std::path::Path, mode: &str, seed: u64) -> Self {
+        let spec = WorldSpec {
+            name: "test".into(),
+            seed,
+            planet: hearth_math::PlanetSize::Tiny,
+            cache_dir: None,
+            saves_dir: Some(dir.to_path_buf()),
+            wish: hearth_protocol::Wish {
+                female: Some(false),
+                ..Default::default()
+            },
+            death: hearth_save::Death::default(),
+            knowledge: hearth_save::KnowledgeMode::Discovery,
+            childhood: false,
+            era: hearth::eras::WILD_EARTH.to_owned(),
+            birth: None,
+            shape: Default::default(),
+            birthplace: None,
+            mode: Some(mode.to_owned()),
+        };
+        Self::start_spec(spec)
+    }
+
+    /// A world of a spec.
+    pub fn start_spec(spec: WorldSpec) -> Self {
+        let era_birth = spec.era != hearth::eras::WILD_EARTH && spec.birth.is_some();
         let atlas = Arc::new(TextureArray::from_entries(&hearth_texgen::textures_for(
             None,
         )));

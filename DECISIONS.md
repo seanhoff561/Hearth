@@ -2806,3 +2806,14 @@ and against which reference; what was removed or simplified; the gate and budget
 look out of place and how it was checked; the repetition checks). A "no" is fixed before the
 milestone closes or recorded here with why and when. Where realism and performance conflict,
 perceptual realism decides, and a significant simplification is recorded with its error bound.
+
+## D229 — Modes on the server's side; Creative without people
+A world's mode is kept with it (`WorldSettings.mode`) and the server enforces it: outside
+Creative it refuses watching from an eye, being put somewhere, moving time, holding the weather
+and Creative's acts, so a client cannot ask for more than its mode allows (the multiplayer-ready
+rule). A world of no mode (tests, tools, worlds from before the modes) keeps everything open, so
+the existing tests run unchanged. Creative's inventory has no People (Amendment E §9.1): neither
+summoning nor removing persons is built. A Creative thing is set where a body could walk through
+(a plant gives way to it), never inside the player. Clear view is a filter on the frame's
+environment and senses, not a renderer mode: daylight, no haze, no weather, a plain image; caves
+stay as dark as their mesh light (a full-bright cave needs the smooth terrain's lighting, S2).

@@ -95,11 +95,13 @@ pub struct App {
 }
 
 /// A new world's planet size, shape and birthplace (a saved world keeps its own).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct NewShape {
     size: hearth_math::PlanetSize,
     shape: crate::server::WorldShape,
     birthplace: Option<glam::DVec2>,
+    /// Its game mode (Amendment P §2).
+    mode: Option<String>,
 }
 
 impl Default for NewShape {
@@ -108,6 +110,7 @@ impl Default for NewShape {
             size: hearth_math::PlanetSize::Standard,
             shape: Default::default(),
             birthplace: None,
+            mode: None,
         }
     }
 }
@@ -547,13 +550,13 @@ impl App {
                         p.childhood_skip(hearth_protocol::Skip::Next);
                     } else if action == builtin::CHILDHOOD_GROW_UP {
                         p.childhood_skip(hearth_protocol::Skip::GrownUp);
-                    } else if action == builtin::DEBUG_TIME_FORWARD {
+                    } else if action == builtin::DEBUG_TIME_FORWARD && p.may_watch() {
                         p.skip_hours(1.0);
-                    } else if action == builtin::DEBUG_TIME_BACK {
+                    } else if action == builtin::DEBUG_TIME_BACK && p.may_watch() {
                         p.skip_hours(-1.0);
-                    } else if action == builtin::DEBUG_SEASON_FORWARD {
+                    } else if action == builtin::DEBUG_SEASON_FORWARD && p.may_watch() {
                         p.skip_hours(24.0 * p.calendar.days_per_season as f64);
-                    } else if action == builtin::DEBUG_TIME_WARP {
+                    } else if action == builtin::DEBUG_TIME_WARP && p.may_watch() {
                         // Off → one game hour per real second → off.
                         let warp = if p.time_warp > 0.0 {
                             0.0
@@ -561,7 +564,11 @@ impl App {
                             p.calendar.ticks_per_day() / 24.0
                         };
                         p.set_time_warp(warp);
-                    } else if action == builtin::DEBUG_FREE_CAMERA {
+                    } else if action == builtin::NO_CLIP && p.creative() {
+                        // Through the ground: flying, and nothing stops the body.
+                        p.no_clip = !p.no_clip;
+                        p.flying |= p.no_clip;
+                    } else if action == builtin::DEBUG_FREE_CAMERA && p.may_watch() {
                         p.toggle_free_camera();
                     } else if action == builtin::TOGGLE_PERSPECTIVE {
                         p.toggle_perspective();
@@ -573,6 +580,32 @@ impl App {
                         p.toggle_body_panel();
                     } else if action == builtin::BUILDER_VIEW {
                         p.toggle_builder_view();
+                    } else if action == builtin::INVENTORY && p.creative() && !p.dead() {
+                        // Creative's inventory first; its Carried button the things carried.
+                        run.menus.open(Screen::Creative(Default::default()));
+                        release_mouse = true;
+                    } else if action == builtin::PICK_BLOCK && p.creative() {
+                        if let Some((tab, query)) = p.pick() {
+                            run.menus
+                                .open(Screen::Creative(crate::creative_ui::CreativeScreen {
+                                    tab,
+                                    query,
+                                    selected: Some(0),
+                                    ..Default::default()
+                                }));
+                            release_mouse = true;
+                        }
+                    } else if action == builtin::CLEAR_VIEW && (p.creative() || p.developer) {
+                        p.clear_view.on = !p.clear_view.on;
+                    } else if action == builtin::CREATIVE_REMOVE {
+                        p.remove_looked();
+                    } else if action == builtin::SPECTATE && p.creative() {
+                        // Spectate, and back: the body brought to where the eye is.
+                        if p.watching_alive() {
+                            p.resume_here();
+                        } else {
+                            p.observe();
+                        }
                     } else if action == builtin::INVENTORY && p.can_handle() {
                         run.menus.open(Screen::Inventory {
                             lifted: None,
@@ -642,6 +675,17 @@ impl App {
             .collect()
     }
 
+    /// The game modes (id, name, summary) in Create World's order (Amendment P §2).
+    fn modes(&self) -> Vec<(String, String, String)> {
+        let Some(c) = self.content.content.as_deref() else {
+            return Vec::new();
+        };
+        crate::modes::all(c)
+            .into_iter()
+            .map(|m| (m.id.clone(), m.name.clone(), m.summary.clone()))
+            .collect()
+    }
+
     fn play(
         &mut self,
         folder: &str,
@@ -668,6 +712,13 @@ impl App {
         spec.planet = new.size;
         spec.shape = new.shape;
         spec.birthplace = new.birthplace;
+        // A mode that does not begin with a birth (Creative) appears grown at the place.
+        if let Some(c) = self.content.content.as_deref()
+            && let Some(r) = crate::server::mode_rules(c, new.mode.as_deref())
+        {
+            spec.childhood &= r.born;
+        }
+        spec.mode = new.mode;
         self.making = None;
         self.choosing = None;
         let mut client = Client::new(
@@ -794,6 +845,7 @@ impl App {
                     size,
                     shape,
                     birthplace,
+                    mode,
                 } => self.play(
                     &folder,
                     seed,
@@ -804,9 +856,36 @@ impl App {
                         size,
                         shape,
                         birthplace,
+                        mode,
                     },
                 ),
                 MenuAction::CreateWorld(choice) => self.make_planet(choice),
+                MenuAction::ChangeMode { folder, mode } => {
+                    let saves = self.dirs.saves();
+                    let content = self.content.content.clone();
+                    let note = content.as_deref().and_then(|c| {
+                        let to = crate::server::mode_rules(c, Some(&mode))?;
+                        let from = crate::worlds::info(&saves.join(&folder)).map(|w| {
+                            crate::server::mode_rules(
+                                c,
+                                Some(w.mode.as_deref().unwrap_or(crate::modes::DEFAULT)),
+                            )
+                        });
+                        match crate::worlds::set_mode(&saves, &folder, from.flatten().as_ref(), &to)
+                        {
+                            Ok(true) => None,
+                            Ok(false) => Some("That mode is stricter than the world's.".to_owned()),
+                            Err(e) => Some(e.to_string()),
+                        }
+                    });
+                    if let Some(run) = &mut self.running
+                        && let Some(crate::menus::Screen::Worlds { list, note: n, .. }) =
+                            run.menus.top_mut()
+                    {
+                        *list = crate::worlds::list(&saves);
+                        *n = note;
+                    }
+                }
                 MenuAction::CancelCreate => {
                     self.making = None;
                     self.choosing = None;
@@ -822,6 +901,36 @@ impl App {
                     );
                     if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
                         c.watch_on_ready = true;
+                    }
+                }
+                MenuAction::Creative(act) => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.creative_act(act);
+                    }
+                }
+                MenuAction::ClearView(v) => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.clear_view = v;
+                    }
+                }
+                MenuAction::Instant(on) => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.set_instant(on);
+                    }
+                }
+                MenuAction::GoToHour(h) => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.go_to_hour(h);
+                    }
+                }
+                MenuAction::TimeSpeed(x) => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.time_speed(x);
+                    }
+                }
+                MenuAction::Weather(hold) => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.hold_weather(hold);
                     }
                 }
                 MenuAction::Watch => {
@@ -915,7 +1024,12 @@ impl App {
                         .running
                         .as_mut()
                         .and_then(|r| r.client.take())
-                        .map(|c| c.world_spec().clone());
+                        .map(|c| {
+                            // Begun again in the mode it was played in.
+                            let mut spec = c.world_spec().clone();
+                            spec.mode = c.rules.as_ref().map(|r| r.id.clone()).or(spec.mode);
+                            spec
+                        });
                     if let Some(spec) = spec {
                         let saves = self.dirs.saves();
                         let old = saves.join(&spec.name);
@@ -941,6 +1055,7 @@ impl App {
                                 size: spec.planet,
                                 shape: spec.shape,
                                 birthplace: spec.birthplace,
+                                mode: spec.mode.clone(),
                             },
                         );
                     }
@@ -1088,6 +1203,7 @@ impl App {
         let mut actions = Vec::new();
         let mut frame_dt = 0.0;
         let eras = self.eras();
+        let modes = self.modes();
         if let Some(run) = &mut self.running {
             let now = Instant::now();
             let dt = (now - run.last_frame).as_secs_f64().min(0.25);
@@ -1232,6 +1348,7 @@ impl App {
                         inventory: client.as_ref().and_then(|c| c.inventory_view()),
                         journal: client.as_ref().and_then(|c| c.journal_view()),
                         eras: eras.clone(),
+                        modes: modes.clone(),
                         chronicle: client
                             .as_ref()
                             .and_then(|c| c.watching.as_ref())
@@ -1239,6 +1356,11 @@ impl App {
                         conversation_probe: conversation_probe.clone(),
                         conversation_models: conversation_models.clone(),
                         time_words: client.as_ref().and_then(|c| c.time_words(ui.lang)),
+                        may_watch: client.as_ref().is_none_or(|c| c.may_watch()),
+                        creative: client.as_ref().is_some_and(|c| c.creative()),
+                        catalog: client.as_ref().map_or(&[][..], |c| &c.catalog[..]),
+                        instant: client.as_ref().is_none_or(|c| c.instant),
+                        clear_view: client.as_ref().map(|c| c.clear_view).unwrap_or_default(),
                         globe: choosing.as_mut().map(|ch| crate::menus::GlobeContext {
                             picker: &mut ch.picker,
                             terrain: ch.terrain.clone(),

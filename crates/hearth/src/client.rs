@@ -166,6 +166,18 @@ pub struct Client {
     eye_y: f64,
     /// Sprint key state: whether it was down last frame, when it was last released.
     sprint_was: bool,
+    /// Creative's flight (double-tap Jump), passing through the ground (no-clip), the flight's
+    /// speed (m/s, the wheel), and the Jump key's last state and release.
+    pub flying: bool,
+    pub no_clip: bool,
+    /// Creative's inventory (everything there is) and whether its actions are instant.
+    pub catalog: Vec<crate::creative::Entry>,
+    pub instant: bool,
+    /// Creative's clear view (F4) and its parts.
+    pub clear_view: crate::clear_view::ClearView,
+    pub fly_speed: f64,
+    jump_was: bool,
+    jump_released: Option<f64>,
     sprint_released: Option<f64>,
     sprinting: bool,
     clock_s: f64,
@@ -194,6 +206,8 @@ pub struct Client {
     pub progress: f32,
     /// The debug screen (F3), and the frame rate it shows.
     pub debug_overlay: bool,
+    /// Developer mode (Options): the debug screen in full in every mode.
+    pub developer: bool,
     pub fps: f64,
     /// What the player hears, the wind and rain where they stand (m/s, mm/h of water), whether
     /// the world is paused, and whether to caption the sounds.
@@ -281,6 +295,8 @@ pub struct Client {
     body_cfg: Option<Arc<hearth_body::BodyConfig>>,
     /// What death means in this world, and the life's tale if it has ended.
     pub death: hearth_save::Death,
+    /// The world's game mode (Amendment P §2), none for a world of no mode.
+    pub rules: Option<crate::modes::Rules>,
     pub ended: Option<hearth_protocol::LifeSummary>,
     /// The kinds of things, and what the player carries (as the server last said).
     pub items: Option<Arc<hearth_items::Items>>,
@@ -419,6 +435,14 @@ impl Client {
             last_report: None,
             eye_y: 0.0,
             sprint_was: false,
+            flying: false,
+            no_clip: false,
+            catalog: Vec::new(),
+            instant: true,
+            clear_view: Default::default(),
+            fly_speed: 10.0,
+            jump_was: false,
+            jump_released: None,
             sprint_released: None,
             sprinting: false,
             clock_s: 0.0,
@@ -440,6 +464,7 @@ impl Client {
             status: "menu.making.opening".into(),
             progress: 0.0,
             debug_overlay: false,
+            developer: false,
             fps: 0.0,
             hearing: crate::hearing::Hearing::default(),
             weather: (0.0, 0.0),
@@ -488,6 +513,7 @@ impl Client {
             body_panel: false,
             body_cfg: None,
             death: hearth_save::Death::default(),
+            rules: None,
             ended: None,
             items: None,
             carry: hearth_items::Carry::default(),
@@ -1070,23 +1096,79 @@ impl Client {
             .map(|(id, _)| id)
     }
 
+    /// Creative: does what its inventory asks, where the player looks.
+    pub fn creative_act(&mut self, act: hearth_protocol::CreativeAct) {
+        if self.creative() {
+            let aim = self.place_aim();
+            self.server.send(ToServer::Creative { act, aim });
+        }
+    }
+
+    /// Creative's instant actions on or off.
+    pub fn set_instant(&mut self, on: bool) {
+        self.instant = on;
+        self.server.send(ToServer::Instant(on));
+    }
+
+    /// Creative's remove tool: what the hands' aim rests on.
+    pub fn remove_looked(&mut self) {
+        let aimed = self.aim_at();
+        if self.creative() && aimed != AimAt::Nothing {
+            self.server.send(ToServer::Remove(aimed));
+        }
+    }
+
+    /// Creative's pick: the inventory's entry for what is looked at (its tab and name), if it
+    /// holds one.
+    pub fn pick(&self) -> Option<(usize, String)> {
+        use crate::creative::Category;
+        let w = self.world.as_ref()?;
+        let (cats, id): (&[Category], String) = match self.aim? {
+            Aim::Block { pos, .. } => {
+                let s = w.mirror.block(pos)?;
+                (
+                    &[Category::Terrain, Category::Plants, Category::Building],
+                    w.reg.block_of(s).name.to_string(),
+                )
+            }
+            Aim::Item(id) => (
+                &[Category::Items],
+                self.world_items
+                    .iter()
+                    .find(|t| t.id == id)?
+                    .stack
+                    .id
+                    .clone(),
+            ),
+            Aim::Animal(id) => (
+                &[Category::Animals],
+                self.fauna
+                    .as_ref()?
+                    .species
+                    .get(self.animals.get(&id)?.target.species as usize)?
+                    .id
+                    .clone(),
+            ),
+        };
+        let bare = |s: &str| s.rsplit(':').next().unwrap_or(s).to_owned();
+        // A plant's block bears its species' name with its part (`oak_log`, `hazel_leaves`).
+        let e = self
+            .catalog
+            .iter()
+            .filter(|e| cats.contains(&e.category))
+            .find(|e| {
+                bare(&e.id) == bare(&id) || bare(&id).starts_with(&format!("{}_", bare(&e.id)))
+            })?;
+        let tab = Category::ALL.iter().position(|c| *c == e.category)?;
+        Some((tab, e.name.clone()))
+    }
+
     /// The developer's inspector (F3): the person looked at — the nearest within 40 m whose
     /// middle lies within a few degrees of where the eye looks — told to the server when it
     /// changes; none when the debug screen is shut.
     fn inspect_target(&mut self) {
-        let target = if self.debug_overlay {
-            let eye = self.camera.pos;
-            let ahead = self.camera.forward().as_dvec3();
-            self.people
-                .iter()
-                .filter_map(|(id, s)| {
-                    let to = s.pos + DVec3::Y * (s.target.height_m as f64 * 0.6) - eye;
-                    let d = to.length();
-                    let cos = to.dot(ahead) / d.max(1e-6);
-                    (d < 40.0 && cos > 0.995).then_some((*id, d))
-                })
-                .min_by(|a, b| a.1.total_cmp(&b.1))
-                .map(|(id, _)| id)
+        let target = if self.debug_overlay && self.debug_full() {
+            self.person_in_sight(40.0, 0.995)
         } else {
             None
         };
@@ -2177,6 +2259,7 @@ impl Client {
     /// Takes changed options: the view, distances and detail; the conversation backend.
     pub fn apply_options(&mut self, options: &Options) {
         self.captions = options.sound.subtitles;
+        self.developer = options.developer_mode;
         if self.conversation_sent.as_ref() != Some(&options.conversation) {
             self.conversation_sent = Some(options.conversation.clone());
             self.server
@@ -2236,6 +2319,7 @@ impl Client {
             birth: None,
             shape: Default::default(),
             birthplace: None,
+            mode: None,
         }
     }
 
@@ -2244,9 +2328,44 @@ impl Client {
         self.server.send(ToServer::BeBorn { choice, female });
     }
 
+    /// Whether watching the world, its time and its weather are open: in Creative, or in a world
+    /// of no mode (tests and tools). Realistic and Easy have none of them (Amendment P §2).
+    pub fn may_watch(&self) -> bool {
+        self.rules.as_ref().is_none_or(|r| r.observer)
+    }
+
+    /// Whether the world is in Creative.
+    pub fn creative(&self) -> bool {
+        self.rules.as_ref().is_some_and(|r| r.creative)
+    }
+
     /// Jumps the clock forward (or back) by a number of game hours.
     pub fn skip_hours(&mut self, hours: f64) {
         self.server.send(ToServer::SkipHours(hours));
+    }
+
+    /// Creative: on to an hour of the day where the player is (local time), today or tomorrow.
+    pub fn go_to_hour(&mut self, hour: f64) {
+        let Some(w) = &self.world else {
+            return;
+        };
+        let m = self.calendar.at(self.now_ticks());
+        let now = m.local_time(w.planet.solar_time_offset(self.camera.pos.x)) * 24.0;
+        let ahead = (hour - now).rem_euclid(24.0);
+        if ahead > 1e-3 {
+            self.skip_hours(ahead);
+        }
+    }
+
+    /// Creative: time at a multiple of lived time (0: stopped).
+    pub fn time_speed(&mut self, times: f64) {
+        self.pause(times <= 0.0);
+        self.set_time_warp(((times - 1.0) * 20.0).max(0.0));
+    }
+
+    /// Creative: the weather held so (none: it goes its own way).
+    pub fn hold_weather(&mut self, hold: Option<hearth_env::weather::WeatherHold>) {
+        self.server.send(ToServer::HoldWeather(hold));
     }
 
     /// Sets the time warp (extra ticks per second of play).
@@ -2275,6 +2394,9 @@ impl Client {
 
     /// After death: watch the world with a free camera; the choices come back with Esc.
     pub fn spectate(&mut self) {
+        if !self.may_watch() {
+            return;
+        }
         self.spectating = true;
         if self.mode == CameraMode::Body {
             self.toggle_free_camera();
@@ -2286,6 +2408,9 @@ impl Client {
     /// Watches the world while alive (the Observer, V2.1 §15.4): the player put aside, its
     /// body still and safe, the eye free.
     pub fn observe(&mut self) {
+        if !self.may_watch() {
+            return;
+        }
         if self.dead() {
             self.spectate();
             return;
@@ -2300,6 +2425,17 @@ impl Client {
     /// Watching while alive (Esc steps back in).
     pub fn watching_alive(&self) -> bool {
         self.watching.as_ref().is_some_and(|w| w.alive) && !self.dead()
+    }
+
+    /// Creative: leaves spectating with the body brought to the eye, set safely on the ground
+    /// below it (Amendment P §3.3); Esc returns to the body where it was.
+    pub fn resume_here(&mut self) {
+        if !self.creative() {
+            return;
+        }
+        let at = self.camera.pos;
+        self.step_in();
+        self.server.send(ToServer::Place(at));
     }
 
     /// Steps back into the player's life from watching: time as lived again, the eye its own.
@@ -2750,13 +2886,55 @@ impl Client {
                 ..Intent::default()
             }
         };
+        // Creative's flight: Jump pressed twice quickly takes off or lands.
+        let creative = self.rules.as_ref().is_some_and(|r| r.creative);
+        let jump_key = input.is_active(builtin::JUMP) || pad.jump;
+        if creative && alive && jump_key && !self.jump_was {
+            if self
+                .jump_released
+                .is_some_and(|t| self.clock_s - t < DOUBLE_TAP_S)
+            {
+                self.flying = !self.flying;
+                self.jump_released = None;
+            }
+        } else if !jump_key && self.jump_was {
+            self.jump_released = Some(self.clock_s);
+        }
+        self.jump_was = jump_key;
+        if !creative || !alive {
+            self.flying = false;
+            self.no_clip = false;
+        }
         let ability = self.ability();
         let terrain = BlockWorld {
             map: &w.mirror,
             reg: &w.reg,
         };
         let vy_before = self.mover.vel.y;
-        let report = hearth_physics::step(&terrain, &mut self.mover, &intent, &ability, dt);
+        let report = if self.flying {
+            // The wheel sets the speed; Sprint triples it; Jump rises and Crouch descends.
+            let steps = input.take_scroll_steps(1.0, true);
+            if steps != 0 {
+                self.fly_speed = (self.fly_speed * 1.25f64.powi(steps)).clamp(2.0, 200.0);
+            }
+            let mut v = DVec3::new(intent.wish.x, 0.0, intent.wish.y) * self.fly_speed;
+            if jump_key {
+                v.y += self.fly_speed;
+            }
+            if intent.crouch {
+                v.y -= self.fly_speed;
+            }
+            if input.is_active(builtin::SPRINT) || pad.sprint {
+                v *= 3.0;
+            }
+            hearth_physics::fly(&terrain, &mut self.mover, v, dt, self.no_clip);
+            hearth_physics::Report {
+                speed: self.mover.vel.length(),
+                ..Default::default()
+            }
+        } else {
+            hearth_physics::step(&terrain, &mut self.mover, &intent, &ability, dt)
+        };
         let foot = self
             .hearing
             .moved(&w.mirror, &w.reg, &self.mover, &report, vy_before, dt);
@@ -2825,6 +3003,12 @@ impl Client {
                     self.figure = Some(Figure::new(r.appearance));
                     self.body_cfg = Some(r.body);
                     self.death = r.death;
+                    self.rules = crate::server::mode_rules(&r.content, r.mode.as_deref());
+                    self.catalog = if self.creative() {
+                        crate::creative::catalog(&r.content)
+                    } else {
+                        Vec::new()
+                    };
                     self.ended = r.ended;
                     self.base_items = Some(r.items.clone());
                     self.items = Some(r.items);
@@ -3286,6 +3470,12 @@ impl Client {
         let ticks = self.now_ticks();
         let view = self.view_camera();
         let senses = self.senses();
+        // Creative's clear view (or Developer mode's): the frame seen plainly.
+        let clear = if self.creative() || self.developer {
+            self.clear_view
+        } else {
+            crate::clear_view::ClearView::default()
+        };
         // Firelight where the eye is: the eye adapts to it as to daylight.
         let glow = self.world.as_ref().map_or(0.0, |w| {
             w.mirror
@@ -3330,6 +3520,7 @@ impl Client {
         env.calendar = self.calendar;
         let moment = self.calendar.at(ticks);
         let (e, weather) = env.sample(&moment, view.pos, glow, EnvOverrides::default());
+        let e = clear.environment(&e);
         // Rain is heard; snow falls silently.
         let rain = match weather.precip {
             hearth_env::weather::Precip::Rain => weather.precip_mm_h,
@@ -3380,7 +3571,7 @@ impl Client {
             );
         }
         scene.figures.set(ctx, &self.figure_boxes);
-        scene.senses = senses;
+        scene.senses = clear.senses(senses);
         scene.set_taa(ctx, self.taa);
         scene.prepare(ctx, &view, targets.size, &e, dt);
         scene.render(ctx, enc, targets.color, targets.depth, targets.size);
@@ -3797,14 +3988,33 @@ impl Client {
             1..=10 => l.get(&format!("time.nth.{day}")).to_owned(),
             n => n.to_string(),
         };
-        Some(l.format(
+        let words = l.format(
             "time.words",
             &[
                 ("part", l.get(&format!("time.part.{part}"))),
                 ("nth", &nth),
                 ("season", &l.get(&format!("season.{season}")).to_lowercase()),
             ],
-        ))
+        );
+        // Creative's exact clock beside the words (Amendment P §2).
+        let exact = self
+            .rules
+            .as_ref()
+            .is_some_and(|r| r.clock == crate::modes::Clock::Exact);
+        Some(if exact {
+            let year = (self.now_ticks() as f64
+                / self.calendar.ticks_per_day()
+                / self.calendar.days_per_year()) as u64
+                + 1;
+            format!(
+                "{words} · {:02}:{:02} · {}",
+                hour as u32,
+                (hour.fract() * 60.0) as u32,
+                l.format("time.year", &[("n", &year.to_string())])
+            )
+        } else {
+            words
+        })
     }
 
     /// The world being made or opened (Amendment P §4.3): what is being done, how far it has
@@ -3857,6 +4067,11 @@ impl Client {
             out.push(self.status.clone());
             return out;
         };
+        if !self.debug_full() {
+            // Realistic and Easy: how the game performs, nothing of the world.
+            out.extend(self.terrain_line(l));
+            return out;
+        }
         let p = self.camera.pos;
         let m = self.calendar.at(self.now_ticks());
         let local = m.local_time(w.planet.solar_time_offset(p.x)) * 24.0;
@@ -3972,21 +4187,30 @@ impl Client {
                 ],
             ));
         }
-        if let Some(s) = &self.scene {
-            let st = s.terrain.stats;
-            let (wanted, pending) = self.lod.as_ref().map_or((0, 0), |l| l.progress(&s.lod));
-            let _ = wanted;
-            out.push(l.format(
-                "debug.terrain",
-                &[
-                    ("cubes", &st.meshes.to_string()),
-                    ("visible", &st.visible_cubes.to_string()),
-                    ("lod_drawn", &s.lod.stats.drawn.to_string()),
-                    ("lod_queued", &pending.to_string()),
-                ],
-            ));
-        }
+        out.extend(self.terrain_line(l));
         out
+    }
+
+    /// Whether the debug screen shows everything: in Creative, in Developer mode, or in a world
+    /// of no mode (tests and tools); otherwise only how the game performs (Amendment P §2).
+    pub fn debug_full(&self) -> bool {
+        self.developer || self.rules.as_ref().is_none_or(|r| r.creative)
+    }
+
+    /// The terrain's work: cubes meshed and seen, distant tiles drawn and waiting.
+    fn terrain_line(&self, l: &Lang) -> Option<String> {
+        let s = self.scene.as_ref()?;
+        let st = s.terrain.stats;
+        let (_, pending) = self.lod.as_ref().map_or((0, 0), |lod| lod.progress(&s.lod));
+        Some(l.format(
+            "debug.terrain",
+            &[
+                ("cubes", &st.meshes.to_string()),
+                ("visible", &st.visible_cubes.to_string()),
+                ("lod_drawn", &s.lod.stats.drawn.to_string()),
+                ("lod_queued", &pending.to_string()),
+            ],
+        ))
     }
 
     /// One-line status for the window title.
@@ -4005,6 +4229,9 @@ impl Client {
         let Some(w) = &self.world else {
             return self.status.clone();
         };
+        if !self.debug_full() {
+            return format!("{fps:.0} fps");
+        }
         let p = self.camera.pos;
         let m = self.calendar.at(self.now_ticks());
         let local = m.local_time(w.planet.solar_time_offset(p.x)) * 24.0;

@@ -92,6 +92,46 @@ entry! {
     }
 }
 
+entry! {
+    /// A game mode (Amendment P §2): what it says of itself and the rules it sets — the realism
+    /// preset, how knowledge is gained, what death means, hints, the clock, whether the world
+    /// may be watched and its time and weather changed, Creative's powers, and how a life starts.
+    pub struct GameMode in "balance/modes", schema 1, name name {
+        pub name: String,
+        /// The summary Create World shows.
+        pub summary: String,
+        /// Its place among the modes (Create World's order).
+        pub order: u32,
+        /// How strict it is: a world's mode may change only toward a lower strictness.
+        pub strictness: u32,
+        /// The realism preset (`balance/presets`) its needs and injuries follow; empty: none (no
+        /// needs and no harm, Creative).
+        pub realism: String,
+        /// Discovery, Guided or Open.
+        pub knowledge: String,
+        /// After death: whom one may live on as (anyone, kin_group_region, kin_only, none), what
+        /// is kept of what was known (theirs_only, head_start, keep_everything), and whether one
+        /// may be born again.
+        pub inhabit: String,
+        pub after_death: String,
+        pub born_again: bool,
+        /// Predators' ways (authentic, wild, tranquil).
+        pub predators: String,
+        /// First-time hints on unless turned off.
+        pub hints: bool,
+        /// The clock shown: none (the time in words), optional (a small clock and day counter
+        /// may be shown), exact (an exact clock and date, editable).
+        pub clock: String,
+        /// Watching the world, the Observer, and changing time and weather.
+        pub observer: bool,
+        /// Creative's powers: needs always full and no harm, flight, the creative inventory,
+        /// instant actions, clear view.
+        pub creative: bool,
+        /// A first life is born (Addendum A), or appears grown at the place chosen.
+        pub born: bool,
+    }
+}
+
 fn yes() -> bool {
     true
 }

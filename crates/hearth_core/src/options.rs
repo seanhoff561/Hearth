@@ -46,6 +46,9 @@ pub struct Options {
     pub pause_on_lost_focus: bool,
     /// The optional conversation backend (V2.1 §10.4): off unless the player sets one up.
     pub conversation: ConversationOptions,
+    /// Developer mode (Amendment P §2): the debug screen (F3) shows everything in every mode,
+    /// not only how the game performs, and Creative's clear view is open.
+    pub developer_mode: bool,
 }
 
 impl Default for Options {
@@ -63,6 +66,7 @@ impl Default for Options {
             resource_packs: Vec::new(),
             advanced_tooltips: false,
             pause_on_lost_focus: true,
+            developer_mode: false,
             conversation: ConversationOptions::default(),
         }
     }

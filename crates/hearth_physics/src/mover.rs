@@ -254,6 +254,34 @@ pub fn step(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) -
     out
 }
 
+/// Creative's flight (Amendment P §3.1): the body moves at a velocity (m/s) without gravity,
+/// stopped by what is solid — or, passing `through`, through it (no-clip). Returns the movement
+/// made.
+pub fn fly(t: &impl Terrain, m: &mut Mover, v: DVec3, dt: f64, through: bool) -> DVec3 {
+    let d = v * dt;
+    let moved = if through {
+        d
+    } else {
+        // In pieces no longer than half a block, so nothing thin is passed.
+        let n = (d.length() / 0.5).ceil().max(1.0) as usize;
+        let mut scratch = Vec::new();
+        let mut moved = DVec3::ZERO;
+        for _ in 0..n {
+            let b = m.bounds();
+            let step = sweep(t, &b, d / n as f64, &mut scratch);
+            m.pos += step;
+            moved += step;
+        }
+        m.pos -= moved;
+        moved
+    };
+    m.pos += moved;
+    m.pos.x = t.wrap_x(m.pos.x);
+    m.vel = if dt > 0.0 { moved / dt } else { DVec3::ZERO };
+    m.on_ground = false;
+    moved
+}
+
 /// The water's surface over the body's column, if water reaches the feet.
 fn water_level(t: &impl Terrain, pos: DVec3) -> Option<f64> {
     let x = pos.x.floor() as i32;

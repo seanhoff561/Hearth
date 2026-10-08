@@ -666,7 +666,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] S0 — Baseline and prototype (2026-10-07; D222)
 - [x] P0 — Triage and quick fixes (2026-10-08; D224, D225)
 - [x] P1 — Menus and world management (2026-10-08; D226)
-- [ ] P2 — Game modes and Creative
+- [x] P2 — Game modes and Creative (2026-10-08; D229)
 - [ ] P3 — Looking, highlighting and the hands
 - [ ] P4 — Poses, animation and skipping waits; sleep and time
 - [ ] P5 — Motion audit
@@ -713,7 +713,7 @@ with `dev/PLAYTEST.md` (every reported issue, its cause and its state).
 |---|---|---|
 | P0 — Triage and quick fixes | done 2026-10-08 (plant drag by reach; clouds, waves, rain and stars at real speeds) | #6–#9 and #18 fixed; #1–#5 and #10–#17 open for P1–P7G |
 | P1 — Menus and world management | done 2026-10-08 (pages that fit; worlds, trash, Create World, the birthplace, pause) | #1–#3 fixed; #4 the mode with P2 |
-| P2 — Game modes and Creative | planned | — |
+| P2 — Game modes and Creative | done 2026-10-08 (three modes enforced by the server; Creative's powers, inventory without people, time and weather, clear view, spectating) | #4, #5, #14 fixed |
 | P3 — Looking, highlighting and the hands | planned | — |
 | P4 — Poses, skipping waits, sleep and time | planned | — |
 | P5 — Motion audit | planned | — |
@@ -1457,6 +1457,31 @@ P1 — Menus and world management (Amendment P §4; PLAN.md; `docs/design/menus.
   Known from P1: the world list has no globe thumbnail yet; the globe's hover words are its
   climate and land (who lives there and its dangers come with P2/P6); the mode on Create World
   and the world's Edit come with P2, the Field Guide with P6.
+
+P2 — Game modes and Creative (Amendment P §2–3 as amended by Amendment E §9.1;
+`docs/design/modes-creative.md`; D229), done 2026-10-08:
+- [x] Realistic, Easy and Creative (`data/hearth/balance/modes.ron`): chosen on Create World with
+  their summaries, their rules applied to the world and kept with it; a world's Mode changed on
+  the Worlds screen only toward less strict, Creative marking it for good (`worlds::tests`).
+  The server refuses, outside Creative, watching, being put elsewhere, moving time, holding the
+  weather and Creative's acts; the client hides them; F3 shows only performance there unless
+  Developer mode is on (`tests/creative.rs`).
+- [x] Creative: unhurt (no injury, illness, fall or drowning; the body kept whole), flight by a
+  double Jump with the wheel's speed and no-clip (F7); the inventory (terrain, plants, animals,
+  every item form and material, every piece in every material and the stations, knowledge;
+  searched) taking, placing, planting young or grown, summoning herds, building, teaching, its
+  actions instant; pick and remove (Delete); time and weather on the pause menu; clear view
+  (F4) and its parts; spectating (F6) with the world streamed about the eye, resuming on the
+  ground there. No people: per Amendment E none are summoned or removed.
+- Real? The modes set Earth-calibrated presets; Creative's spectating streams the real world
+  about the eye (checked 400 m off). Lean? The old Create World rule settings were already gone
+  (P1); the people's summoning written at first was taken out again for Amendment E; nothing
+  unused added (the catalogue reuses the content and item registries). Fast? No per-frame cost
+  outside Creative; the catalogue is built once at Ready. Whole? The new screens pass the layout
+  test at every resolution and scale; clear view is a filter of the same lighting, not a second
+  look. Organic? Summoned herds stand scattered, not in a row; nothing tiled added.
+  Known from P2: terrain and plant brushes (S1, P7G), favourites, item quality and outlines in
+  clear view are not built; pick stays on the middle click until P3.
 
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in

@@ -22,6 +22,83 @@ pub enum WorldsAsk {
     Rename(String),
     /// Whether to delete it (to the trash).
     Delete,
+    /// Its game mode changed to one less strict (Amendment P §2): which, in Create World's
+    /// order.
+    Mode(usize),
+}
+
+/// What Creative's time and weather panel shows chosen (indices into its choices).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TimeWeather {
+    pub hour: usize,
+    pub speed: usize,
+    pub weather: usize,
+    pub wind: usize,
+    pub temperature: usize,
+}
+
+/// The panel's choices: the hour to go on to, the time's speed (multiples of lived time; 0
+/// stopped), the weather held, the wind (m/s) and the air's temperature (°C).
+pub const HOURS: [Option<f64>; 7] = [
+    None,
+    Some(6.0),
+    Some(9.0),
+    Some(12.0),
+    Some(16.0),
+    Some(19.0),
+    Some(23.0),
+];
+pub const SPEEDS: [f64; 5] = [1.0, 0.0, 10.0, 60.0, 600.0];
+pub const WEATHERS: [&str; 6] = ["as_it_is", "clear", "cloudy", "rain", "downpour", "snow"];
+pub const WINDS: [Option<f64>; 5] = [None, Some(0.0), Some(5.0), Some(12.0), Some(25.0)];
+pub const TEMPERATURES: [Option<f64>; 6] = [
+    None,
+    Some(-15.0),
+    Some(0.0),
+    Some(10.0),
+    Some(20.0),
+    Some(32.0),
+];
+
+/// The weather the panel's choices hold (none: the weather goes its own way).
+pub fn weather_hold(t: &TimeWeather) -> Option<hearth_env::weather::WeatherHold> {
+    use hearth_env::weather::WeatherHold;
+    let mut h = match WEATHERS[t.weather.min(WEATHERS.len() - 1)] {
+        "clear" => WeatherHold {
+            humidity: Some(0.35),
+            precip_mm_h: Some(0.0),
+            ..Default::default()
+        },
+        "cloudy" => WeatherHold {
+            humidity: Some(0.85),
+            precip_mm_h: Some(0.0),
+            ..Default::default()
+        },
+        "rain" => WeatherHold {
+            humidity: Some(0.95),
+            precip_mm_h: Some(3.0),
+            ..Default::default()
+        },
+        "downpour" => WeatherHold {
+            humidity: Some(1.0),
+            precip_mm_h: Some(25.0),
+            ..Default::default()
+        },
+        "snow" => WeatherHold {
+            humidity: Some(0.95),
+            precip_mm_h: Some(2.0),
+            temperature_c: Some(-4.0),
+            ..Default::default()
+        },
+        _ => WeatherHold::default(),
+    };
+    if let Some(w) = WINDS[t.wind.min(WINDS.len() - 1)] {
+        h.wind_speed_m_s = Some(w);
+    }
+    if let Some(c) = TEMPERATURES[t.temperature.min(TEMPERATURES.len() - 1)] {
+        h.temperature_c = Some(c);
+    }
+    (h != WeatherHold::default()).then_some(h)
 }
 
 pub enum Screen {
@@ -51,6 +128,8 @@ pub enum Screen {
         more: bool,
         size: usize,
         shape: crate::server::WorldShape,
+        /// Which of the game modes (Amendment P §2), in Create World's order.
+        mode: usize,
     },
     /// The planet being made: what is being done, and how far it has come (0–1).
     Making {
@@ -85,6 +164,13 @@ pub enum Screen {
         turned: bool,
     },
     Pause,
+    /// Creative's time and weather (Amendment P §3.1): each a choice among a few, set as it is
+    /// chosen.
+    TimeWeather(TimeWeather),
+    /// Creative's inventory (Amendment P §3.1).
+    Creative(crate::creative_ui::CreativeScreen),
+    /// Creative's clear view and its parts (Amendment P §3.2).
+    ClearView,
     Options,
     /// The video settings, by the group shown.
     Video {
@@ -132,6 +218,8 @@ pub struct NewWorldChoice {
     pub era: String,
     pub size: hearth_math::PlanetSize,
     pub shape: crate::server::WorldShape,
+    /// Its game mode's id (Amendment P §2).
+    pub mode: String,
 }
 
 /// The planet sizes Create World offers, the standard first among them by its place.
@@ -156,6 +244,7 @@ impl Screen {
             more: false,
             size: 1,
             shape: Default::default(),
+            mode: usize::MAX,
         }
     }
 
@@ -217,9 +306,28 @@ pub enum MenuAction {
         shape: crate::server::WorldShape,
         /// Where a new world's first life is born (world x, z), chosen on the globe.
         birthplace: Option<glam::DVec2>,
+        /// A new world's game mode (a saved world keeps its own).
+        mode: Option<String>,
     },
     /// Make a new world's planet, then choose where to be born on it.
     CreateWorld(NewWorldChoice),
+    /// Creative: a thing of the inventory taken, placed or summoned.
+    Creative(crate::creative_ui::CreativeAct),
+    /// Creative's instant actions on or off.
+    Instant(bool),
+    /// Creative's clear view as set.
+    ClearView(crate::clear_view::ClearView),
+    /// Creative: on to an hour of the day (local).
+    GoToHour(f64),
+    /// Creative: time at a multiple of lived time (0: stopped).
+    TimeSpeed(f64),
+    /// Creative: the weather held so (none: let it go).
+    Weather(Option<hearth_env::weather::WeatherHold>),
+    /// A world's game mode changed (toward less strict; the world list is read again).
+    ChangeMode {
+        folder: String,
+        mode: String,
+    },
     /// Making the planet given up: back to Create World.
     CancelCreate,
     /// Born into the household chosen of those offered (H8).
@@ -310,6 +418,8 @@ pub struct MenuContext<'a> {
     pub journal: Option<crate::journal_ui::JournalView<'a>>,
     /// The eras a new world may be made in (id, name, how its people live), playable first.
     pub eras: Vec<(String, String, String)>,
+    /// The game modes (id, name, summary) in Create World's order (Amendment P §2).
+    pub modes: Vec<(String, String, String)>,
     /// The chronicle, while watching the world.
     pub chronicle: Vec<hearth_protocol::ChronicleEntry>,
     /// What came of trying the conversation backend, and the models its server lists.
@@ -319,6 +429,16 @@ pub struct MenuContext<'a> {
     pub globe: Option<GlobeContext<'a>>,
     /// The time of day and the year in words, in a world.
     pub time_words: Option<String>,
+    /// Whether watching the world is open (Creative, or a world of no mode), and whether the
+    /// world is in Creative (Amendment P §2).
+    pub may_watch: bool,
+    pub creative: bool,
+    /// Creative's inventory: everything there is (empty outside Creative), and whether its
+    /// actions are instant.
+    pub catalog: &'a [crate::creative::Entry],
+    pub instant: bool,
+    /// Creative's clear view as it is.
+    pub clear_view: crate::clear_view::ClearView,
 }
 
 /// The globe a birthplace is chosen on, and the planet it shows.
@@ -546,6 +666,18 @@ impl Menus {
                 );
                 let entries = list.clone();
                 let eras = cx.eras.clone();
+                let modes = cx.modes.clone();
+                let bare = |id: &str| id.rsplit(':').next().unwrap_or(id).to_owned();
+                // A world's mode's place in Create World's order (less strict first); a world from
+                // before the modes was played as Realistic.
+                let mode_of = |w: &crate::worlds::WorldInfo| {
+                    let id = w
+                        .mode
+                        .clone()
+                        .unwrap_or_else(|| crate::modes::DEFAULT.to_owned());
+                    modes.iter().position(|m| bare(&m.0) == bare(&id))
+                };
+                let in_creative = ui.t("menu.worlds.played_in_creative");
                 let played_label = ui.t("menu.worlds.played");
                 let clicked = ui.list(
                     list_r,
@@ -565,8 +697,15 @@ impl Menus {
                             w.name.clone()
                         };
                         let (y, m, d, _, _) = crate::worlds::civil(w.last_played_unix);
+                        let mode = mode_of(w).map_or_else(String::new, |i| {
+                            if w.played_in_creative && !bare(&modes[i].0).eq("creative") {
+                                format!("{} ({in_creative}) · ", modes[i].1)
+                            } else {
+                                format!("{} · ", modes[i].1)
+                            }
+                        });
                         let mut second = format!(
-                            "{era} · {played_label} {} · {y:04}-{m:02}-{d:02}",
+                            "{mode}{era} · {played_label} {} · {y:04}-{m:02}-{d:02}",
                             crate::worlds::played_words(w.played_s)
                         );
                         if let Some((who, age)) = &w.character {
@@ -604,6 +743,7 @@ impl Menus {
                             size: hearth_math::PlanetSize::Standard,
                             shape: Default::default(),
                             birthplace: None,
+                            mode: None,
                         });
                     }
                     *selected = Some(i);
@@ -637,6 +777,40 @@ impl Menus {
                             *ask = None;
                         } else {
                             *ask = Some(WorldsAsk::Rename(name));
+                        }
+                    }
+                    (Some(WorldsAsk::Mode(to)), Some(w)) => {
+                        // Only toward less strict: the modes before its own.
+                        let now = mode_of(w).unwrap_or(modes.len());
+                        let names: Vec<String> =
+                            modes.iter().take(now).map(|m| m.1.clone()).collect();
+                        let mut to = to.min(names.len().saturating_sub(1));
+                        if names.is_empty() {
+                            ui.label(xw, c.y, &ui.t("menu.worlds.mode_none"), theme::DIM);
+                            c.space(ROW);
+                        } else {
+                            ui.cycle(c.row(ROW), &ui.t("menu.new_world.mode"), &names, &mut to);
+                            let warn = if bare(&modes[to].0) == "creative" {
+                                ui.t("menu.worlds.mode_warn_creative")
+                            } else {
+                                ui.t("menu.worlds.mode_warn")
+                            };
+                            for l in ui.font.wrap(&warn, wide as u32).into_iter().take(2) {
+                                ui.label(xw, c.y, &l, theme::WARN);
+                                c.space(hearth_ui::font::LINE as f32);
+                            }
+                        }
+                        let (a, b, _) = thirds(c.row(ROW));
+                        if ui.button_enabled(a, &ui.t("menu.worlds.change"), !names.is_empty()) {
+                            out.push(MenuAction::ChangeMode {
+                                folder: w.folder.clone(),
+                                mode: modes[to].0.clone(),
+                            });
+                            *ask = None;
+                        } else if ui.button(b, &ui.t("menu.cancel")) {
+                            *ask = None;
+                        } else {
+                            *ask = Some(WorldsAsk::Mode(to));
                         }
                     }
                     (Some(WorldsAsk::Delete), Some(w)) => {
@@ -682,6 +856,7 @@ impl Menus {
                                 size: hearth_math::PlanetSize::Standard,
                                 shape: Default::default(),
                                 birthplace: None,
+                                mode: None,
                             });
                         }
                         if ui.button(b, &ui.t("menu.worlds.new")) {
@@ -729,9 +904,17 @@ impl Menus {
                                 },
                             );
                         }
-                        let (a, b, d) = thirds(c.row(ROW));
+                        let row = c.row(ROW);
+                        let q = ((row.w - 12.0) / 4.0).floor();
+                        let (a, rest) = row.split_left(q, 4.0);
+                        let (m, rest) = rest.split_left(q, 4.0);
+                        let (b, d) = rest.split_left(q, 4.0);
                         if ui.button_enabled(a, &ui.t("menu.worlds.delete"), some) {
                             *ask = Some(WorldsAsk::Delete);
+                        }
+                        let softer = chosen.as_ref().and_then(mode_of).is_some_and(|i| i > 0);
+                        if ui.button_enabled(m, &ui.t("menu.worlds.mode"), softer) {
+                            *ask = Some(WorldsAsk::Mode(0));
                         }
                         if ui.button_enabled(b, &ui.t("menu.worlds.open_folder"), some)
                             && let Some(w) = &chosen
@@ -829,12 +1012,23 @@ impl Menus {
                 more,
                 size: size_i,
                 shape,
+                mode,
             } => {
                 let title = ui.t("menu.new_world.title");
                 let wide = W + 60.0;
                 let folder = folder_name(name);
                 let exists = cx.saves.join(&folder).join("level.json").exists();
                 let eras = cx.eras.clone();
+                let modes = cx.modes.clone();
+                if *mode >= modes.len() {
+                    // Realistic, unless chosen otherwise.
+                    *mode = modes
+                        .iter()
+                        .position(|m| {
+                            m.0.rsplit(':').next() == crate::modes::DEFAULT.rsplit(':').next()
+                        })
+                        .unwrap_or(0);
+                }
                 let wish = &mut *cx.profiles;
                 let before = wish.clone();
                 let footer =
@@ -865,6 +1059,16 @@ impl Menus {
                             *era = (*era).min(names.len() - 1);
                             ui.cycle(c.row(ROW), &ui.t("menu.new_world.era"), &names, era);
                             for l in ui.font.wrap(&eras[*era].2, c.w as u32) {
+                                ui.label(x, c.y, &l, theme::DIM);
+                                c.space(line);
+                            }
+                            c.space(2.0);
+                        }
+                        // How the world is played: Creative, Easy or Realistic (Amendment P §2).
+                        if !modes.is_empty() {
+                            let names: Vec<String> = modes.iter().map(|m| m.1.clone()).collect();
+                            ui.cycle(c.row(ROW), &ui.t("menu.new_world.mode"), &names, mode);
+                            for l in ui.font.wrap(&modes[*mode].2, c.w as u32) {
                                 ui.label(x, c.y, &l, theme::DIM);
                                 c.space(line);
                             }
@@ -970,6 +1174,9 @@ impl Menus {
                             .map_or_else(|| crate::eras::WILD_EARTH.to_owned(), |e| e.0.clone()),
                         size: SIZES[(*size_i).min(SIZES.len() - 1)].0,
                         shape: *shape,
+                        mode: modes
+                            .get(*mode)
+                            .map_or_else(|| crate::modes::DEFAULT.to_owned(), |m| m.0.clone()),
                     }));
                 }
                 if ui.button(b, &ui.t("menu.back")) {
@@ -1053,8 +1260,14 @@ impl Menus {
                     if ui.button(c.row(ROW), &ui.t("menu.options")) {
                         push = Some(Screen::Options);
                     }
-                    if ui.button(c.row(ROW), &ui.t("menu.pause.watch")) {
+                    if cx.may_watch && ui.button(c.row(ROW), &ui.t("menu.pause.watch")) {
                         out.push(MenuAction::Watch);
+                    }
+                    if cx.creative && ui.button(c.row(ROW), &ui.t("menu.pause.time_weather")) {
+                        push = Some(Screen::TimeWeather(TimeWeather::default()));
+                    }
+                    if cx.creative && ui.button(c.row(ROW), &ui.t("menu.pause.clear_view")) {
+                        push = Some(Screen::ClearView);
                     }
                     if ui.button(c.row(ROW), &ui.t("menu.pause.save")) {
                         out.push(MenuAction::Save);
@@ -1062,6 +1275,141 @@ impl Menus {
                 });
                 if ui.button(footer, &ui.t("menu.pause.quit")) {
                     out.push(MenuAction::QuitToTitle);
+                }
+            }
+            Screen::Creative(st) => {
+                let mut instant = cx.instant;
+                let (act, next) =
+                    crate::creative_ui::creative_screen(ui, cx.catalog, st, &mut instant);
+                if instant != cx.instant {
+                    out.push(MenuAction::Instant(instant));
+                }
+                if let Some(a) = act {
+                    out.push(MenuAction::Creative(a));
+                }
+                match next {
+                    crate::creative_ui::Next::Stay => {}
+                    crate::creative_ui::Next::Close => out.push(MenuAction::Resume),
+                    crate::creative_ui::Next::Carried => {
+                        pop = true;
+                        push = Some(Screen::Inventory {
+                            lifted: None,
+                            turned: false,
+                        });
+                    }
+                }
+            }
+            Screen::ClearView => {
+                let title = ui.t("menu.clear_view.title");
+                let mut v = cx.clear_view;
+                let footer = page(ui, &title, "clear_view", W, PAGE_TOP, 4.0, |ui, c| {
+                    ui.toggle(c.row(ROW), &ui.t("menu.clear_view.on"), &mut v.on);
+                    ui.toggle(c.row(ROW), &ui.t("menu.clear_view.light"), &mut v.light);
+                    ui.toggle(c.row(ROW), &ui.t("menu.clear_view.air"), &mut v.air);
+                    ui.toggle(c.row(ROW), &ui.t("menu.clear_view.weather"), &mut v.weather);
+                    ui.toggle(c.row(ROW), &ui.t("menu.clear_view.plain"), &mut v.plain);
+                });
+                if v != cx.clear_view {
+                    out.push(MenuAction::ClearView(v));
+                }
+                if ui.button(footer, &ui.t("menu.done")) {
+                    pop = true;
+                }
+            }
+            Screen::TimeWeather(t) => {
+                let title = ui.t("menu.time_weather.title");
+                let when = cx.time_words.clone();
+                let footer = page(
+                    ui,
+                    &title,
+                    "time_weather",
+                    W + 40.0,
+                    PAGE_TOP,
+                    4.0,
+                    |ui, c| {
+                        if let Some(w) = &when {
+                            ui.text_centred(&Rect::new(c.x, c.y, c.w, 10.0), w, theme::DIM);
+                            c.space(14.0);
+                        }
+                        let hours: Vec<String> = HOURS
+                            .iter()
+                            .map(|h| match h {
+                                None => ui.t("menu.time_weather.now"),
+                                Some(h) => format!("{:02}:00", *h as u32),
+                            })
+                            .collect();
+                        if ui.cycle(
+                            c.row(ROW),
+                            &ui.t("menu.time_weather.hour"),
+                            &hours,
+                            &mut t.hour,
+                        ) && let Some(h) = HOURS[t.hour]
+                        {
+                            out.push(MenuAction::GoToHour(h));
+                        }
+                        let speeds: Vec<String> = SPEEDS
+                            .iter()
+                            .map(|s| match *s {
+                                0.0 => ui.t("menu.time_weather.stopped"),
+                                1.0 => ui.t("menu.time_weather.lived"),
+                                s => format!("×{s:.0}"),
+                            })
+                            .collect();
+                        if ui.cycle(
+                            c.row(ROW),
+                            &ui.t("menu.time_weather.speed"),
+                            &speeds,
+                            &mut t.speed,
+                        ) {
+                            out.push(MenuAction::TimeSpeed(SPEEDS[t.speed]));
+                        }
+                        let weathers: Vec<String> = WEATHERS
+                            .iter()
+                            .map(|w| ui.t(&format!("menu.time_weather.{w}")))
+                            .collect();
+                        let mut changed = ui.cycle(
+                            c.row(ROW),
+                            &ui.t("menu.time_weather.weather"),
+                            &weathers,
+                            &mut t.weather,
+                        );
+                        let winds: Vec<String> = WINDS
+                            .iter()
+                            .map(|w| {
+                                w.map_or_else(
+                                    || ui.t("menu.time_weather.as_it_is"),
+                                    |w| format!("{w:.0} m/s"),
+                                )
+                            })
+                            .collect();
+                        changed |= ui.cycle(
+                            c.row(ROW),
+                            &ui.t("menu.time_weather.wind"),
+                            &winds,
+                            &mut t.wind,
+                        );
+                        let temps: Vec<String> = TEMPERATURES
+                            .iter()
+                            .map(|w| {
+                                w.map_or_else(
+                                    || ui.t("menu.time_weather.as_it_is"),
+                                    |w| format!("{w:.0} °C"),
+                                )
+                            })
+                            .collect();
+                        changed |= ui.cycle(
+                            c.row(ROW),
+                            &ui.t("menu.time_weather.temperature"),
+                            &temps,
+                            &mut t.temperature,
+                        );
+                        if changed {
+                            out.push(MenuAction::Weather(weather_hold(t)));
+                        }
+                    },
+                );
+                if ui.button(footer, &ui.t("menu.done")) {
+                    pop = true;
                 }
             }
             Screen::Options => {
@@ -1098,6 +1446,14 @@ impl Menus {
                     if ui.cycle(c.row(ROW), &ui.t("menu.options.language"), &names, &mut i) {
                         cx.options.language = cx.languages[i].clone();
                         out.push(MenuAction::LanguageChanged);
+                        out.push(MenuAction::OptionsChanged);
+                    }
+                    // Advanced: the debug screen's full reading in every mode (Amendment P §2).
+                    if ui.toggle(
+                        c.row(ROW),
+                        &ui.t("menu.options.developer"),
+                        &mut cx.options.developer_mode,
+                    ) {
                         out.push(MenuAction::OptionsChanged);
                     }
                     // Deleted worlds, gone for good (Amendment P §4.2).
@@ -1998,6 +2354,7 @@ fn birthplace_screen(
             size: choice.size,
             shape: choice.shape,
             birthplace: Some(glam::DVec2::new(x as f64 + 0.5, z as f64 + 0.5)),
+            mode: Some(choice.mode.clone()),
         });
     }
 }
@@ -2161,10 +2518,16 @@ fn death_screen(
             }
         }
     });
-    let (a, b) = footer.split_left((footer.w - 4.0) / 2.0, 4.0);
-    if ui.button(a, &ui.t("menu.death.watch")) {
-        out.push(MenuAction::Spectate);
-    }
+    // Watching the world after death is Creative's alone (Amendment P §2).
+    let b = if cx.may_watch {
+        let (a, b) = footer.split_left((footer.w - 4.0) / 2.0, 4.0);
+        if ui.button(a, &ui.t("menu.death.watch")) {
+            out.push(MenuAction::Spectate);
+        }
+        b
+    } else {
+        footer
+    };
     if ui.button(b, &ui.t("menu.death.to_title")) {
         out.push(MenuAction::QuitToTitle);
     }

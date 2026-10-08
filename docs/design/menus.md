@@ -1,7 +1,7 @@
 # Menus and world management
 
-*Status: implemented (Amendment P P1); the mode on Create World and the world's Edit comes with
-P2, the Field Guide on the pause menu with P6.*
+*Status: implemented (Amendment P P1; the mode on Create World and the world's Edit with P2,
+`modes-creative.md`); the Field Guide on the pause menu comes with P6.*
 
 ## Purpose
 Screens that always fit the window, worlds that can be looked after, and a short way into a new

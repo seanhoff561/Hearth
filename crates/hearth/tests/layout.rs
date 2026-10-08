@@ -48,6 +48,7 @@ fn screens() -> Vec<(&'static str, Box<dyn Fn() -> Screen>)> {
                     era: hearth::eras::WILD_EARTH.into(),
                     size: hearth_math::PlanetSize::Standard,
                     shape: Default::default(),
+                    mode: "hearth:realistic".into(),
                 },
                 chosen: None,
             }),
@@ -77,6 +78,44 @@ fn screens() -> Vec<(&'static str, Box<dyn Fn() -> Screen>)> {
         ("accessibility", Box::new(|| Screen::Accessibility)),
         ("conversation", Box::new(|| Screen::Conversation)),
         ("pause", Box::new(|| Screen::Pause)),
+        (
+            "time_weather",
+            Box::new(|| Screen::TimeWeather(Default::default())),
+        ),
+        ("clear_view", Box::new(|| Screen::ClearView)),
+        (
+            "creative_animals",
+            Box::new(|| {
+                Screen::Creative(hearth::creative_ui::CreativeScreen {
+                    tab: 2,
+                    ..Default::default()
+                })
+            }),
+        ),
+        (
+            "worlds_mode",
+            Box::new(|| Screen::Worlds {
+                list: vec![hearth::worlds::WorldInfo {
+                    folder: "Hazel Valley".into(),
+                    name: "Hazel Valley".into(),
+                    era: "hearth:wild_earth".into(),
+                    created_unix: 1_790_000_000,
+                    last_played_unix: 1_790_100_000,
+                    played_s: 7_200,
+                    character: Some(("Ash".into(), 24.0)),
+                    ended: false,
+                    mode: Some("hearth:realistic".into()),
+                    played_in_creative: false,
+                }],
+                selected: Some(0),
+                ask: Some(hearth::menus::WorldsAsk::Mode(1)),
+                note: None,
+            }),
+        ),
+        (
+            "creative",
+            Box::new(|| Screen::Creative(Default::default())),
+        ),
         ("death", Box::new(|| Screen::Death)),
         (
             "births",
@@ -192,6 +231,11 @@ fn lay_out(screen: &dyn Fn() -> Screen, size: (f32, f32)) -> Vec<Placed> {
                 "Upper Paleolithic".into(),
                 "Modern people in bands, with blades, needles and art.".into(),
             )],
+            modes: vec![
+                ("hearth:creative".into(), "Creative".into(), "Build, explore and experiment freely. You can't be hurt, can fly, can place or summon anything, and can control time and weather.".into()),
+                ("hearth:easy".into(), "Easy".into(), "The same world, more forgiving.".into()),
+                ("hearth:realistic".into(), "Realistic".into(), "Life as it really is. Real needs, real dangers, real time. You only know what you learn, and when you die, life goes on through someone else.".into()),
+            ],
             chronicle: (0..30)
                 .map(|i| hearth_protocol::ChronicleEntry {
                     when: format!("Year {i}"),
@@ -203,6 +247,11 @@ fn lay_out(screen: &dyn Fn() -> Screen, size: (f32, f32)) -> Vec<Placed> {
             conversation_models: Vec::new(),
             globe: None,
             time_words: Some("Late afternoon, the third day of autumn".into()),
+                may_watch: true,
+                creative: true,
+                catalog: &[],
+                instant: true,
+                clear_view: Default::default(),
         };
         menus.ui(&mut ui, &mut cx);
     }

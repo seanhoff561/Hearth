@@ -80,6 +80,10 @@ pub struct WorldSpec {
     /// Where a new world's first life is born (world x, z), chosen on the globe; `None`: where
     /// the world finds a place.
     pub birthplace: Option<DVec2>,
+    /// A new world's game mode (`balance/modes.ron`, Amendment P §2): it sets the realism, the
+    /// knowledge, death's and the predators' rules over `death` and `knowledge`; `None` (tests
+    /// and tools): those as given, and every power of watching and of time open.
+    pub mode: Option<String>,
 }
 
 /// A new world's shape, as Create World's More options set it (Amendment P §4.3); each `None`
@@ -214,6 +218,51 @@ struct Save {
     meta: WorldMeta,
 }
 
+/// A new world's life settings: its time's, its shape's, and its mode's rules (or, with none,
+/// the death and knowledge given).
+fn new_life(spec: &WorldSpec, content: &hearth_content::Content) -> hearth_save::LifeSettings {
+    let mut life = hearth_save::LifeSettings::from_content(&content.time);
+    life.set_death(spec.death);
+    life.knowledge_mode = spec.knowledge;
+    if let Some(r) = mode_rules(content, spec.mode.as_deref()) {
+        crate::modes::apply(&r, &mut life);
+    }
+    spec.shape.apply(&mut life);
+    life
+}
+
+/// Creative's body (Amendment P §3.1): health, food, water, warmth, rest and stamina always full;
+/// no injury, illness or harm from a fall stays, and nothing kills it.
+fn creative_body(player: &mut Player, cfg: &BodyConfig, seed: u64, ticks: u64) {
+    let b = &mut player.body;
+    let worn = b.dead.is_some()
+        || !b.injuries.is_empty()
+        || !b.illnesses.is_empty()
+        || b.stamina < 0.95
+        || b.blood_l < b.blood_full_l * 0.99;
+    b.injuries.clear();
+    b.illnesses.clear();
+    b.stamina = 1.0;
+    if worn || ticks.is_multiple_of(40) {
+        let age = b.age_s;
+        let sized = (b.sized_kg, b.blood_full_l);
+        *b = hearth_body::Body::new(cfg, seed);
+        b.age_s = age;
+        (b.sized_kg, b.blood_full_l) = sized;
+        b.blood_l = b.blood_full_l;
+        player.asleep = false;
+    }
+}
+
+/// A mode's rules by its id (none for a world of no mode, or one no longer known).
+pub fn mode_rules(
+    content: &hearth_content::Content,
+    id: Option<&str>,
+) -> Option<crate::modes::Rules> {
+    id.and_then(|id| crate::modes::find(content, id))
+        .map(crate::modes::rules)
+}
+
 fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> {
     let Some(saves) = &spec.saves_dir else {
         return Ok(None);
@@ -227,10 +276,10 @@ fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> 
     let planet = spec.shape.planet(spec.seed, spec.planet);
     let mut settings = WorldSettings::new(planet);
     settings.era = spec.era.clone();
-    settings.life = hearth_save::LifeSettings::from_content(&lw.content.time);
-    settings.life.set_death(spec.death);
-    settings.life.knowledge_mode = spec.knowledge;
-    spec.shape.apply(&mut settings.life);
+    settings.life = new_life(spec, &lw.content);
+    settings.mode = spec.mode.clone();
+    settings.played_in_creative =
+        mode_rules(&lw.content, spec.mode.as_deref()).is_some_and(|r| r.creative);
     settings.birthplace = spec.birthplace.map(|p| [p.x, p.y]);
     let meta = WorldMeta::new(&spec.name, settings, lw.reg.state_names());
     let dir = WorldDir::create(saves, &meta)?;
@@ -638,14 +687,21 @@ fn run(
     let content = lw.content.clone();
     let (life, mut ticks) = match &save_state {
         Some(s) => (s.meta.settings.life.clone(), s.meta.clock.ticks),
-        None => {
-            let mut life = hearth_save::LifeSettings::from_content(&content.time);
-            life.set_death(spec.death);
-            life.knowledge_mode = spec.knowledge;
-            spec.shape.apply(&mut life);
-            (life, 0)
-        }
+        None => (new_life(&spec, &content), 0),
     };
+    // The world's mode: what may be done beyond living (watching, time, Creative's powers).
+    let rules = mode_rules(
+        &content,
+        match &save_state {
+            Some(s) => s.meta.settings.mode.as_deref(),
+            None => spec.mode.as_deref(),
+        },
+    );
+    // Watching the world, and moving its time and weather: Creative's, or a world of no mode.
+    let free = rules.as_ref().is_none_or(|r| r.observer);
+    let creative = rules.as_ref().is_some_and(|r| r.creative);
+    // Creative's instant actions (on by default, Amendment P §3.1).
+    let mut instant = true;
     let scales = TimeScales::new(life.day_length_min, life.days_per_season, &content.time);
     let balance = Balance::resolve(&content, &life.realism.preset, &life.realism.overrides);
     let mut cfg = Arc::new(BodyConfig::new(
@@ -951,6 +1007,7 @@ fn run(
             crafts: workshop.crafts.clone(),
             graph: workshop.graph.clone(),
             knowledge_mode: mode,
+            mode: rules.as_ref().map(|r| r.id.clone()),
             ended,
             lod_cache: spec.cache_dir.as_ref().map(|d| {
                 d.join("lod")
@@ -1177,11 +1234,15 @@ fn run(
                     player.mover = m.mover;
                     player.mover.scale = scale;
                     if !player.asleep
+                        && !creative
                         && let Some(v) = m.landed
                     {
                         player.body.land(&cfg, v);
                     }
-                    if m.airless_s >= DROWN_S && childhood.as_ref().is_none_or(|c| c.grown()) {
+                    if m.airless_s >= DROWN_S
+                        && !creative
+                        && childhood.as_ref().is_none_or(|c| c.grown())
+                    {
                         player.body.kill(hearth_body::Death::Drowning);
                     }
                     last_moved = Some(m);
@@ -1194,6 +1255,7 @@ fn run(
                     }
                     player.drowsy_s = 0.0;
                 }
+                Ok(ToServer::Place(_)) if !free => {}
                 Ok(ToServer::Place(p)) => {
                     let (x, z) = lw
                         .terrain()
@@ -1271,7 +1333,20 @@ fn run(
                 }
                 Ok(ToServer::Act { process, aim, hand }) => {
                     workshop.act(&mut here!(), &process, aim, hand);
+                    // Creative's instant actions: the work is done as soon as it is begun.
+                    if creative
+                        && instant
+                        && let Some(w) = &mut workshop.work
+                    {
+                        w.ticks = w.ticks.max(w.needed);
+                    }
                 }
+                Ok(ToServer::Creative { .. } | ToServer::Remove(_)) if !creative => {}
+                Ok(ToServer::Creative { act, aim }) => workshop.creative(&mut here!(), &act, aim),
+                Ok(ToServer::Remove(aim)) => {
+                    workshop.creative_remove(&mut here!(), aim);
+                }
+                Ok(ToServer::Instant(on)) => instant = on,
                 Ok(ToServer::StopWork) => workshop.stop(&mut here!()),
                 Ok(ToServer::Look(aim)) => workshop.look(&mut here!(), aim),
                 Ok(ToServer::Eat(path)) => workshop.eat(&mut here!(), &path),
@@ -1714,6 +1789,10 @@ fn run(
                         }
                     }
                 }
+                // Time and the weather are moved only where the mode allows (Amendment P §2).
+                Ok(ToServer::SkipHours(_) | ToServer::HoldWeather(_)) if !free => {}
+                Ok(ToServer::TimeWarp(w)) if !free && w > 0.0 => {}
+                Ok(ToServer::Observe(Some(_))) if !free => {}
                 Ok(ToServer::SkipHours(h)) => {
                     let dt = h / 24.0 * calendar.ticks_per_day();
                     ticks = (ticks as f64 + dt).max(0.0) as u64;
@@ -2093,6 +2172,9 @@ fn run(
                         let _ = tx.send(ToClient::Childhood(view));
                     }
                 }
+            }
+            if creative {
+                creative_body(&mut player, &cfg, seed ^ ticks, ticks);
             }
             {
                 let moment = calendar.at(ticks);

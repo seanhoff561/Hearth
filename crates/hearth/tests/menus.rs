@@ -75,11 +75,17 @@ fn render(
                 inventory: None,
                 journal: None,
                 eras: Vec::new(),
+                modes: Vec::new(),
                 chronicle: Vec::new(),
                 conversation_probe: None,
                 conversation_models: Vec::new(),
                 globe: None,
                 time_words: Some("Late afternoon, the third day of autumn".into()),
+                may_watch: true,
+                creative: true,
+                catalog: &[],
+                instant: true,
+                clear_view: Default::default(),
             };
             actions = menus.ui(ui, &mut cx);
         },

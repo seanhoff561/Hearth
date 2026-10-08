@@ -35,6 +35,10 @@ pub struct WorldInfo {
     pub character: Option<(String, f64)>,
     /// Ended with its character's death (permadeath).
     pub ended: bool,
+    /// Its game mode's id (none: a world from before the modes), and whether it was ever played
+    /// in Creative (Amendment P §2).
+    pub mode: Option<String>,
+    pub played_in_creative: bool,
 }
 
 /// A world in the trash.
@@ -100,7 +104,48 @@ pub fn info(dir: &Path) -> Option<WorldInfo> {
         played_s: ticks / 20,
         character,
         ended: level.get("ended").and_then(Value::as_bool).unwrap_or(false),
+        mode: level
+            .pointer("/settings/mode")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        played_in_creative: level
+            .pointer("/settings/played_in_creative")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     })
+}
+
+/// Changes a world's game mode (its Edit, Amendment P §2): only toward a less strict one; its
+/// rules set by the new mode, and a world once in Creative marked so for good. Whether it was
+/// changed.
+pub fn set_mode(
+    saves: &Path,
+    folder: &str,
+    from: Option<&crate::modes::Rules>,
+    to: &crate::modes::Rules,
+) -> std::io::Result<bool> {
+    if from.is_some_and(|f| !crate::modes::may_change(f, to)) {
+        return Ok(false);
+    }
+    let path = saves.join(folder).join("level.json");
+    let mut level = read_json(&path).ok_or_else(|| std::io::Error::other("no level.json"))?;
+    let settings = level
+        .get_mut("settings")
+        .ok_or_else(|| std::io::Error::other("no settings"))?;
+    let mut life: hearth_save::LifeSettings = settings
+        .get("life")
+        .cloned()
+        .and_then(|l| serde_json::from_value(l).ok())
+        .ok_or_else(|| std::io::Error::other("unreadable life settings"))?;
+    crate::modes::apply(to, &mut life);
+    settings["life"] = serde_json::to_value(&life).map_err(std::io::Error::other)?;
+    settings["mode"] = Value::String(to.id.clone());
+    if to.creative {
+        settings["played_in_creative"] = Value::Bool(true);
+    }
+    let text = serde_json::to_string_pretty(&level).map_err(std::io::Error::other)?;
+    std::fs::write(&path, text)?;
+    Ok(true)
 }
 
 /// The worlds in a saves folder, most recently played first.
@@ -310,6 +355,38 @@ mod tests {
             serde_json::to_vec(&player).unwrap(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_world_s_mode_changes_only_toward_less_strict_and_creative_marks_it() {
+        let content = hearth_content::Content::load_base();
+        let r = |id: &str| crate::modes::rules(crate::modes::find(&content, id).unwrap());
+        let s = saves("mode");
+        let dir = s.join("w");
+        std::fs::create_dir_all(&dir).unwrap();
+        let level = serde_json::json!({
+            "name": "W", "settings": {"era": "hearth:wild_earth", "mode": "hearth:realistic",
+            "life": serde_json::to_value(hearth_save::LifeSettings::default()).unwrap()},
+        });
+        std::fs::write(dir.join("level.json"), serde_json::to_vec(&level).unwrap()).unwrap();
+        let mode = |s: &Path| info(&s.join("w")).unwrap();
+        // Realistic to Easy: Easy's rules, not yet played in Creative.
+        assert!(set_mode(&s, "w", Some(&r("realistic")), &r("easy")).unwrap());
+        let w = mode(&s);
+        assert_eq!(w.mode.as_deref(), Some("hearth:easy"));
+        assert!(!w.played_in_creative);
+        let life: hearth_save::LifeSettings = serde_json::from_value(
+            read_json(&s.join("w").join("level.json")).unwrap()["settings"]["life"].clone(),
+        )
+        .unwrap();
+        assert_eq!(life.realism.preset, "hardy");
+        // Never back to stricter.
+        assert!(!set_mode(&s, "w", Some(&r("easy")), &r("realistic")).unwrap());
+        assert_eq!(mode(&s).mode.as_deref(), Some("hearth:easy"));
+        // To Creative: marked so for good.
+        assert!(set_mode(&s, "w", Some(&r("easy")), &r("creative")).unwrap());
+        assert!(mode(&s).played_in_creative);
+        let _ = std::fs::remove_dir_all(&s);
     }
 
     #[test]

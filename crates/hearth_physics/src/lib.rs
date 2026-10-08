@@ -12,7 +12,7 @@ mod mover;
 pub mod testing;
 mod world;
 
-pub use mover::{Ability, Gait, Intent, Motion, Mover, Report, Stance, step};
+pub use mover::{Ability, Gait, Intent, Motion, Mover, Report, Stance, fly, step};
 pub use world::{BlockWorld, Ground, Plant, Terrain};
 
 /// Gravity (m/s²).

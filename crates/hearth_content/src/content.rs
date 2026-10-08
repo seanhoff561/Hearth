@@ -11,7 +11,7 @@ use crate::generate::{ItemDef, generate_items};
 use crate::id::IdRef;
 use crate::schema::ai::{Cue, Prompt, WordList};
 use crate::schema::body::{BodyParams, Garment, Illness, Injury};
-use crate::schema::config::{BalanceKey, BalancePreset, TimeConfig, Units};
+use crate::schema::config::{BalanceKey, BalancePreset, GameMode, TimeConfig, Units};
 use crate::schema::culture::CultureGenerator;
 use crate::schema::ecosystem::Ecosystem;
 use crate::schema::era::Era;
@@ -182,6 +182,8 @@ pub struct Content {
     pub eras: Table<Era>,
     pub balance_keys: Table<BalanceKey>,
     pub balance_presets: Table<BalancePreset>,
+    /// The game modes (Amendment P §2).
+    pub modes: Table<GameMode>,
 }
 
 fn qualify(namespace: &str, id: &str) -> String {
@@ -358,6 +360,7 @@ impl Content {
             eras: load_table(packs, &mut r),
             balance_keys: load_table(packs, &mut r),
             balance_presets: load_table(packs, &mut r),
+            modes: load_table(packs, &mut r),
             units: match units {
                 Some(u) => u,
                 None => return (None, r),

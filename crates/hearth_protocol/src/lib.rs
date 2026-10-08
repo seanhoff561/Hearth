@@ -108,6 +108,14 @@ pub enum ToServer {
     /// Thrust or strike with what is held in the right hand along a direction (at an animal in
     /// reach).
     Thrust { dir: DVec3 },
+    /// Creative (Amendment P §3.1): a thing of the inventory taken, placed or summoned at what
+    /// is looked at (or before the player). Refused outside Creative.
+    Creative { act: CreativeAct, aim: AimAt },
+    /// Creative's remove tool: what is looked at (a block — a plant or a piece with it — a thing
+    /// lying, an animal) taken out of the world. Refused outside Creative.
+    Remove(AimAt),
+    /// Creative's instant actions on or off: work done as soon as it is begun.
+    Instant(bool),
     /// Development and tests: put a thing in the player's hands or containers (or a drag).
     Give(hearth_items::Stack),
     /// Debug: move the clock on (or back) by game hours.
@@ -168,6 +176,28 @@ pub enum ToServer {
     Quit,
     /// Save now; the world goes on (tools and bots keeping its moments).
     Save,
+}
+
+/// What Creative's inventory asks (Amendment P §3.1; no people, Amendment E §9.1).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum CreativeAct {
+    /// Items into the hands (or beside the player when they are full).
+    Take { item: String, count: u32 },
+    /// A block of a natural material.
+    Place { block: String },
+    /// A plant of a species, young or grown.
+    Plant { species: String, young: bool },
+    /// Animals of a species beside the player: one, or a herd.
+    Summon {
+        species: String,
+        female: bool,
+        young: bool,
+        count: u32,
+    },
+    /// A building piece (of a material) or a workstation, finished.
+    Build { piece: String },
+    /// A piece of knowledge known (or forgotten).
+    Learn { node: String, known: bool },
 }
 
 /// What the player looks at, as the server is told it.
@@ -290,6 +320,8 @@ pub struct Ready {
     pub graph: Arc<hearth_craft::Graph>,
     /// How knowledge is gained in this world.
     pub knowledge_mode: hearth_craft::Mode,
+    /// The world's game mode (`balance/modes.ron`, Amendment P §2), none for a world of no mode.
+    pub mode: Option<String>,
     /// The world ended (permadeath), and the life it ended with.
     pub ended: Option<LifeSummary>,
     /// Where the distant terrain's tiles of this world are kept on disk, if anywhere.

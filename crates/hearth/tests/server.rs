@@ -28,6 +28,7 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
         birth: None,
         shape: Default::default(),
         birthplace: None,
+        mode: None,
     }
 }
 
@@ -389,8 +390,15 @@ fn a_world_begins_where_its_birthplace_was_chosen() {
         })
     };
     // Land found near it (the point itself may be water or steep).
-    assert!(near(at) < 1_500.0, "born {:.0} m from the place chosen", near(at));
-    assert!(near(found) > 5_000.0, "a place the world would not have chosen");
+    assert!(
+        near(at) < 1_500.0,
+        "born {:.0} m from the place chosen",
+        near(at)
+    );
+    assert!(
+        near(found) > 5_000.0,
+        "a place the world would not have chosen"
+    );
     // Opened again, the world remembers its birthplace (the calendar starts by it).
     s.birthplace = None;
     let again = {

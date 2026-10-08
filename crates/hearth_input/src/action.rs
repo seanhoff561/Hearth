@@ -123,9 +123,10 @@ pub mod builtin {
         THROW = 53; JOURNAL = 54; SHOUT = 55; BUILDER_VIEW = 56;
         CHILDHOOD_NEXT = 57; CHILDHOOD_GROW_UP = 58; TALK = 59;
         WATCH_FASTER = 60; WATCH_SLOWER = 61;
+        CLEAR_VIEW = 62; SPECTATE = 63; CREATIVE_REMOVE = 64; NO_CLIP = 65;
     }
     /// Number of built-in actions.
-    pub const COUNT: usize = 62;
+    pub const COUNT: usize = 66;
 
     /// Hotbar actions in slot order.
     pub const HOTBAR: [ActionId; 9] = [
@@ -251,6 +252,11 @@ impl ActionRegistry {
         add("key.talk", C::Gameplay, g, k(Key::K), H);
         add("key.watch.faster", C::Gameplay, g, k(Key::RightBracket), H);
         add("key.watch.slower", C::Gameplay, g, k(Key::LeftBracket), H);
+        // Creative's (Amendment P §3, §13): keys no earlier action holds.
+        add("key.creative.clear_view", C::Creative, g, k(Key::F4), H);
+        add("key.creative.spectate", C::Creative, g, k(Key::F6), H);
+        add("key.creative.remove", C::Creative, g, k(Key::Delete), H);
+        add("key.creative.no_clip", C::Creative, g, k(Key::F7), H);
         debug_assert_eq!(r.defs.len(), builtin::COUNT);
         r
     }

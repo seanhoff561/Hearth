@@ -187,6 +187,8 @@ impl FireWorld for HereFire<'_, '_> {
 }
 
 /// An action's outcome in words, as the client is told it.
+mod creative;
+
 fn acted(process: &str, done: bool, words: impl Into<String>) -> ToClient {
     ToClient::Acted(Acted {
         process: process.to_owned(),

@@ -254,6 +254,13 @@ pub struct WorldSettings {
     /// `None`: where the world finds a place. The world's calendar starts by it.
     #[serde(default)]
     pub birthplace: Option<[f64; 2]>,
+    /// The game mode (`balance/modes.ron`, Amendment P §2) the world's rules were set by; `None`:
+    /// a world from before the modes, or one set rule by rule (tests and tools).
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// The world was ever played in Creative (shown in the world list; it cannot be undone).
+    #[serde(default)]
+    pub played_in_creative: bool,
 }
 
 impl WorldSettings {
@@ -263,6 +270,8 @@ impl WorldSettings {
             life: LifeSettings::default(),
             era: "hearth:wild_earth".into(),
             birthplace: None,
+            mode: None,
+            played_in_creative: false,
         }
     }
 }

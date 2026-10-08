@@ -33,6 +33,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Art direction: stylized realism | [art-direction.md](art-direction.md) | living document (S0) |
 | Motion timing: what moves, by which clock, how fast | [motion-timing.md](motion-timing.md) | partial (P0); the audit and its check P5 |
 | The Neolithic (pottery, fields, herds, cloth, timber, moving loads) | [neolithic.md](neolithic.md) | implemented (V2-12) |
+| Game modes and Creative | [modes-creative.md](modes-creative.md) | implemented (P2) |
 | Interaction matrix | [interactions.md](interactions.md) | living document |
 | Future systems (Eras 6–8) | [future-systems.md](future-systems.md) | design only |
 | Future humanity (eras, simulated humans) | [future-humanity.md](future-humanity.md) | design only |
