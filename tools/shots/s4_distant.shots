@@ -1,0 +1,13 @@
+# S4 (Amendment S §5, E §9.2): the distant ground as smooth height fields shaded with the near
+# ground's materials, canopies over far stands, snow by the near cover's seasons, and the land
+# out to the real horizon. Kept in docs/review/s4/ (as JPEGs). The near/far transition: `top`
+# looks down on the full-detail square (128 blocks) in its LOD; `ground` stands in it.
+# `hearth --screenshot-list tools/shots/s4_distant.shots`
+defaults: w=1280, h=720, hour=11, clouds=0.2, dry=true
+seed=7, dist=8, lod=128, season=summer, x=3155, z=-6737, y=180, yaw=0, pitch=8, out=bench-out/s4/hill.png
+seed=7, dist=8, lod=96, season=summer, x=3155, z=-6737, y=420, yaw=0, pitch=60, out=bench-out/s4/top.png
+seed=7, dist=8, lod=96, season=summer, x=3155, z=-6737, above=3, yaw=0, pitch=3, out=bench-out/s4/ground.png
+seed=7, planet=huge, res=256, dist=6, lod=128, x=14336, z=-43008, above=60, yaw=30, pitch=10, season=summer, out=bench-out/s4/forest_summer.png
+seed=7, planet=huge, res=256, dist=6, lod=128, x=14336, z=-43008, above=60, yaw=30, pitch=10, season=winter, out=bench-out/s4/forest_winter.png
+seed=7, planet=earth, res=256, dist=4, lod=256, season=summer, clouds=0.1, above=600, yaw=0, pitch=2, out=bench-out/s4/earth_600m.png
+seed=7, planet=earth, res=256, dist=4, lod=256, season=summer, clouds=0.1, above=3000, yaw=0, pitch=4, out=bench-out/s4/earth_3km.png

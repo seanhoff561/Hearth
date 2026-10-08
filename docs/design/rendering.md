@@ -111,12 +111,14 @@ glint of the sun on its smooth face, growing more opaque where it reflects more;
 it shows through it with its own shading, so thin lake ice reads as dark, glossy black ice. Far
 sea ice is the LOD's sea-ice colour, without the water's reflections.
 
-### Distant terrain (`hearth_lod`, `lod.rs`, `lod.wgsl`, D52, D54)
+### Distant terrain (`hearth_lod`, `lod.rs`, `lod.wgsl`, D52, D54, D274–D278)
 Beyond the full-detail cubes the land continues as LOD tiles out to the LOD distance, or to the
 horizon when that is farther (so the land never stops short of the skyline):
 - **Tiles**: a quadtree over the wrapped planet, 32×32 LOD columns per tile, a column of level
-  L being 2^L blocks (level-7 tiles are 4,096 blocks, and every planet circumference is a
-  multiple); a tile is split while the camera is within four tile sizes of it, so columns stay
+  L being 2^L blocks, from roots of the coarsest level (at most 10, tiles of 32,768 blocks)
+  whose tiles go round the planet a whole number of times; the coarsest levels, whose columns
+  read the terrain's coarsest refinement levels, are the far field out to the real horizon
+  (E §9.2, D278: from 3 km up on Earth some 2,200 tiles reach 230 km). A tile is split while the camera is within four tile sizes of it, so columns stay
   a few pixels wide, and rough tiles further (up to three more levels) until the steps between
   their columns stray no more than `lod_detail`'s limit on screen from what finer columns
   would show (Fancy 2 px, Fabulous 1 px, Fast 4 px; D57). A tile split before stays split a
@@ -124,10 +126,12 @@ horizon when that is farther (so the land never stops short of the skyline):
   along tile edges seal every border. About 1,000–2,000 tiles and 1–3 M quads out to 8–40 km,
   built in 0.5–1 s on 16 threads.
 - **Columns** are sampled straight from the surface sampler (never by generating cubes): the
-  top block from the soil and rock models, water with its tint and the bed showing through
-  the shallows. Vertices carry the texture's average colour, the tint kind and the climate
-  code, so the LOD shader colours grass and leaves by season with the same functions as the
-  full-detail terrain, and lays seasonal snow and sea ice.
+  surface's height in sixteenths of a block, the top block from the soil and rock models,
+  water with its tint and the bed showing through the shallows, and the seasons of snow and
+  ice from the near cover's year model (D277). Natural ground is coloured by the near ground's
+  material table (each material's mean, D275), other blocks by their texture's average colour;
+  the tint kind and the climate code colour grass and leaves by season with the same
+  functions as the full-detail terrain.
 - **Trees** (D56), as in Distant Horizons: on the finer levels (columns of up to 8 blocks,
   out to about a kilometre) each tile's real trees are grown by the world generator's own tree
   code (`FeatureGen::grow_trees` into a `TreeSink`) into a block-resolution map of the canopy,
@@ -137,12 +141,16 @@ horizon when that is farther (so the land never stops short of the skyline):
   average crowns cover as much ground as the leaves (a lone tree does not fill a whole
   column); the ground under a crown is lit as shade; within 512 blocks each trunk stands at its
   own block in bark colour. Coarser levels, whose columns are wider than a crown, raise a
-  crown at the usual height of the place's trees where they are expected to cover half the
-  ground or more, and darken the ground under sparser ones.
-- **Meshes**: row-merged tops, the sides that show, skirts along tile edges; crowns as boxes
-  with the faces no neighbour crown hides; trunks as one-block boxes. Quads are stored grouped
-  by the way they face, and each frame only the groups that can face the camera are drawn
-  (faces are drawn from both sides, so skirts show either way).
+  crown at the usual height of the place's trees, on every column where they close over the
+  ground and on as many columns as their cover where they are sparse; there the crowns are a
+  canopy surface (D276), rounded toward a stand's edge (conifers pointed), bare in winter and
+  the dry season, snowy with the ground.
+- **Meshes** (S4, D274): the ground a smooth height field of 33 × 33 corners a tile (each the
+  mean of the four columns about it, with the field's normal) with skirts along its edges,
+  every tile one instance of one draw; the canopy surface likewise, through the columns'
+  middles, cut where its cover falls below a half; crowns on the fine levels as boxes with the
+  faces no neighbour crown hides, and trunks as one-block boxes, as quads stored grouped by the
+  way they face, each frame only the groups that can face the camera drawn.
 - **Handoff**: across an 8-block band at the edge of the full-detail area the cubes thin out by
   an ordered dither while the LOD, drawn a hair behind them in depth, shows through their
   gaps; inside the area the LOD gives way entirely. The LOD shares the terrain's globals
@@ -192,9 +200,9 @@ box in `precip.rs`.
 ## Known simplifications
 - No shadow maps: direct light reaches faces with full sky light, so there are no cast shadows
   from trees or overhangs yet beyond the sky-light falloff.
-- LOD tiles are heightfields (no overhangs), are not cached on disk, do not yet reflect edits
-  to the world, are occluded by the near terrain but not by nearer LOD tiles, and have no VRAM
-  budget. No TAA.
+- LOD tiles are heightfields (no overhangs, S §5's smooth shelves not yet drawn); their quads
+  (crowns, trunks) are occluded by the near terrain on the GPU, their ground and canopy only
+  by the frustum; flat tiles draw as many triangles as rough ones. No TAA.
 - Water: screen-space reflections only at High (Medium reflects the sky, also where trees
   stand over far water), without temporal smoothing they flicker a little on ripples; waves
   follow the wind and not a river's flow; under water no god rays, bubbles or muffled sound, one kind

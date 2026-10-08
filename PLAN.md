@@ -153,7 +153,8 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 - Frame times for terrain-only scenes on the PC (`scripts/baseline-s.sh`).
 - The stony shore's shot place (`tools/shots/s0_baseline.shots`): E4 moved the coast; the
   camera stands in the ground there.
-- Snow as fill (S7); the distant terrain smooth (S4); plants, trees and loose stones (S5–S6).
+- Snow as fill (S7: the near snow lies under the smooth surface); plants, trees and loose
+  stones (S5–S6).
 
 ## From E7 (open; E7 done 2026-10-08, D266–D270, `docs/design/people.md`)
 - Faces: morph targets (same topology frame to frame) for expressions driven by the body (pain,
@@ -181,19 +182,13 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 - Level ground's footprint chosen (a 3 m square now), and its preview with the dig preview.
 - The budgets (300 animals, movement substeps) measured on the PC.
 
-## S4 — Distant terrain
-- Fixed-point LOD heights, smooth LOD meshing, matched shading and overlays, canopy shapes in
-  LOD (S §5).
-- *Accept:* no visible seam or color jump at the near/far transition in the screenshot suite;
-  v1 §8.4 targets still pass.
-- *Amended by E §9.2:* blended into the far-field planet layer out to the real horizon; measured
-  on the Earth-sized planet.
-- *From E4:* the far-field layer itself is built here (E4 left it): beyond the LOD's range, a smooth
-  curved mesh of the grid and the coarse refinement levels (`relief::Relief::patch` at level 0–1)
-  to the real horizon. Until then, from high up the LOD's reach (`draw_distance`) grows with the
-  horizon and its quads are held within the device's largest buffer by the budget
-  (`LodStream::keep_budget`); the screenshot tool, which builds all its tiles at once, can still
-  fill it (`lod=1024` from 600 m).
+## From S4 (open; S4 done 2026-10-08, D274–D278)
+- The v1 §8.4 frame targets and the LOD's GPU time with the height fields (2,304 triangles a
+  tile, ground and canopy frustum-culled only) measured on the PC; fewer triangles for flat
+  tiles if it needs them.
+- Overhangs as smooth shelves (S §5); the crown boxes' snow by the seasons; impostors between
+  boxes and canopy (S5).
+- `tools/shots/lod_horizon.shots`: since E4 the volcano views stand inside the ground.
 
 ## Audit 2
 After S4, covering S1, S2, E7, S3, S4.

@@ -1,7 +1,7 @@
 # Smooth terrain: fill, meshing and shading (Amendment S)
 
 *S0's prototypes and the decision they led to; S1's fill in the world, its ground families and
-its editing; S2's meshes and shading in the game. This page grows with S3–S4.
+its editing; S2's meshes and shading in the game; S3's movement; S4's distant ground.
 The look is set by `art-direction.md`; the plan of the change by `MIGRATION_SMOOTH.md`.*
 
 ## The fill
@@ -165,6 +165,30 @@ centres, unloaded ground outside.
   cliffs and ledges, no tunnelling at sprint and fall speeds, determinism),
   `hearth_world/tests/ground.rs` (levelling), `hearth_fauna` nav (going round steep ground),
   `hearth/tests/smooth_ground.rs` (the skirt), `hearth_player/tests/living.rs` (effort uphill).
+
+## The distant ground (S4, S §5, E §9.2; D274–D278)
+Code: `crates/hearth_lod/src/ground.rs` (the fields, the seasons), `lib.rs` (columns, boxes, the
+quadtree), `crates/hearth_render/src/lod.rs` and `shaders/lod.wgsl`.
+- **Fixed-point heights.** An LOD column keeps the fill's surface at its middle in sixteenths
+  of a block (water's top on water). A tile's ground is a smooth height field: 33 × 33 corners,
+  each the mean of the four columns about it, with the field's normal; tiles of a level share
+  their edges exactly, and skirts (two columns plus the edge's largest step) hide the cracks
+  against a level coarser. The tile's error, which refines rough land on screen, is how far the
+  field strays from its columns.
+- **Matched shading.** The ground takes the near ground's materials (one slot numbering for
+  both, `BlockRegistry::ground_slots`), at the mean of the noise `fs_smooth` blends, with the
+  same tints, wetness and light, and its snow and ice come and go with the seasons of the same
+  year model that lays the near cover. Across the handoff band the near ground thins out by
+  the dither over it: no seam or colour jump at the transition (`docs/review/s4/`).
+- **Canopies.** Crowns stay boxes where the LOD grows the tile's trees one by one (as the cubes'
+  trees are until S5); coarser levels draw a canopy surface over their stands, rounded to the
+  edge, conifers pointed (D276).
+- **To the horizon.** The far field is the LOD's coarsest levels (tiles of up to 32,768
+  blocks, columns of up to a kilometre), reading the terrain's coarsest refinement levels
+  (D278).
+- Tests: `hearth_lod` (the field, skirts and error; the canopy and its profiles; the boxes;
+  the seasons of snow and ice against the year model; the roots going round the planet; the
+  cache keeping all of it), `hearth/tests/lod_horizon.rs` (the land reaches the horizon).
 
 ## The meshers
 

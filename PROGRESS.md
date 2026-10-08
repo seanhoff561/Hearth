@@ -21,7 +21,8 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7, S3. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7, S3, S4. V2-11
+superseded.
 
 | Next, in order | State |
 |---|---|
@@ -40,19 +41,51 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7, S3.
 | S2 — smooth terrain drawn | done 2026-10-08 (D263–D265) |
 | E7 — realistic people | done 2026-10-08 (D266–D270) |
 | S3 — moving on the smooth ground | done 2026-10-08 (D271–D273) |
-| S4, Audit 2 | next |
+| S4 — the distant terrain smooth | done 2026-10-08 (D274–D278) |
+| Audit 2 | next |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
 
 | Row | State |
 |---|---|
-| Smooth world (S) | S2 done: natural ground meshed smooth on the server and drawn with blended procedural materials, wet and snow overlays (0.28–0.87 ms a surface cube, as the blocks); frame targets need the PC. S1 done: fill in every surface cube, generated and saved; ground families; dig, pile and settle conserving volume (sand to 34.3°). S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
+| Smooth world (S) | S4 done: the distant ground smooth height fields in fixed point, shaded with the near ground's materials and seasons, canopies over far stands, out to the real horizon. S3 done: movement on the field. S2 done: natural ground meshed smooth on the server and drawn with blended procedural materials, wet and snow overlays (0.28–0.87 ms a surface cube, as the blocks); frame targets need the PC. S1 done: fill in every surface cube, generated and saved; ground families; dig, pile and settle conserving volume (sand to 34.3°). S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E7 done 2026-10-08 |
-| Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); next: Audit 2 after S4 |
+| Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); next: Audit 2 |
 
-## Latest: S3 — moving on the smooth ground (2026-10-08, D271–D273)
+## Latest: S4 — the distant terrain smooth (2026-10-08, D274–D278)
+- **Heights:** LOD columns keep the fill's surface in sixteenths of a block.
+- **Ground:** each tile is a smooth height field of 33 × 33 corners (each the mean of the four
+  columns about it), with the field's normals and skirts sized to the crack against a coarser
+  neighbour. One instanced draw for every tile. A tile's error is how far the field strays
+  from its columns, so smooth slopes no longer refine as staircases.
+- **Matched shading:** natural ground takes the near ground's material table (one slot
+  numbering for both) at the mean of its noise, with the same tints and wetness. Snow and ice
+  follow the seasons of the same year model that lays the near cover.
+- **Trees:** crown boxes stay where trees are grown one by one (they match the cubes' trees
+  until S5). Far stands are a canopy surface, rounded to the edge, conifers pointed. Sparse
+  woodland crowns as many columns as its cover, so it stays woodland into the distance.
+- **To the horizon (E §9.2):** the quadtree's roots are now the coarsest tiles that go round
+  the planet whole (32,768 blocks on Earth); their columns read the coarsest refinement
+  levels. From 3 km up on Earth some 2,200 tiles reach 230 km, built in 12 s on 4 threads.
+- **Review:** `docs/review/s4/` (`tools/shots/s4_distant.shots`): from above, the full-detail
+  square sits in its LOD with no seam or colour jump. LOD tile cache format `HLT4`.
+- **Tests:** the height field, skirts and error; canopy profiles; crown boxes; snow and ice
+  seasons against the year model; roots round the planet; the cache. `lod_horizon` passes.
+- **Five tests:**
+  - *Real?* Heights from the fill; snow and ice from the same climate model as near.
+  - *Lean?* One mesh and shader for near LOD and far field; no separate planet mesh. The
+    renderer reads the near ground's own material table.
+  - *Fast?* Tiles build as fast as before once the season memo is warm (5.8 s for 1,600
+    tiles). The ground draws 2,304 triangles a tile: GPU time needs the PC (PLAN, From S4).
+  - *Whole?* Ground, water, snow, ice, canopies, the far field and the tile cache all changed.
+    Crown boxes keep the old snow rule, and near snow still sits under the smooth surface
+    (S7).
+  - *Organic?* Woodland thins into scattered crowns, winter comes to the far hills on the
+    same day as nearby.
+
+## S3 — moving on the smooth ground (2026-10-08, D271–D273)
 - **Collision:** natural ground is collided as the fill's field, not as block boxes; built
   things stay boxes. Server and client run the same code on the same fill.
   - The feet stand on the surface under the body's middle and four points half its radius out.

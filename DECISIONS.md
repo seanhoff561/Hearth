@@ -282,3 +282,8 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D271 (2026-10-08) Natural ground is collided as the fill's field; slopes by the soles' grip, Tobler's pace and the ACSM's effort
 - D272 (2026-10-08) Animals stand on the fill's surface by one lookup; their paths cost slopes and go round the steep
 - D273 (2026-10-08) Built pieces get a buried skirt; Level ground moves earth, conserved
+- D274 (2026-10-08) The distant ground is a height field of column means, in fixed point
+- D275 (2026-10-08) The distant ground is coloured by the near ground's materials
+- D276 (2026-10-08) Trees in the distance: boxes where they are trees, a canopy where they are stands
+- D277 (2026-10-08) Snow and ice in the distance follow the near cover's year model
+- D278 (2026-10-08) The far field is the LOD's coarsest levels, out to the real horizon
