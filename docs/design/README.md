@@ -38,5 +38,5 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Budgets: every system's cost | [budgets.md](budgets.md) | living document (Audit 0) |
 | Interaction matrix | [interactions.md](interactions.md) | living document |
 | Future systems (Eras 6–8) | [future-systems.md](future-systems.md) | design only |
-| Future humanity (eras, simulated humans) | [future-humanity.md](future-humanity.md) | design only (E1 rewrites) |
+| Simulated humanity (Phase F): minds, societies, history, eras | [future/humanity/README.md](future/humanity/README.md) | design only (E1) |
 | Simulated humans of V2.1 (removed by Amendment E) | [../archive/humans-v2.1/README.md](../archive/humans-v2.1/README.md) | archived (E0) |

@@ -21,13 +21,14 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
 | Audit 0, then its high-priority fixes | done 2026-10-08 (D231–D234) |
 | Q1 — interface design | done 2026-10-08 (D236) |
-| E1 → E5 — humanity plan; controls; Earth time; Earth size; Wild Earth start | planned |
+| E1 — the humanity plan | done 2026-10-08 (documents only) |
+| E2 → E5 — controls; Earth time; Earth size; Wild Earth start | planned |
 | P3 → P4 with E6 → P5 → P6, Audit 1 | planned |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
@@ -38,10 +39,21 @@ P0, P1, P2, E0, Audit 0, Q1. V2-11 superseded.
 |---|---|
 | Smooth world (S) | S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P2 done; open issues in `dev/PLAYTEST.md` |
-| Earth-True (E) | E0 done 2026-10-08 (D230); E1–E7 planned |
+| Earth-True (E) | E0, E1 done 2026-10-08; E2–E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
 
-## Latest: Q1 — the interface's look (2026-10-08, D236)
+## Latest: E1 — the future humanity plan (2026-10-08)
+- `docs/design/future/humanity/`: a README, one document per section of E §10 (the three loops;
+  the History Engine, Historian and World Bible; the Person record and levels C0–C4; System 1,
+  System 2, the planner and memory; conversation and voice; societies; lives and childhood;
+  compute; eras; the hard safety rules; evaluation; foundations), the F0–F12 roadmap and research
+  notes checked against the papers. `future-humanity.md` points there. No code.
+- Real? The design rests on cited work (generative agents, Project Sid, Voyager, AgentSociety,
+  Turchin's models, Henrich, SHOP2, ORCA) with its limits noted. Lean? Documents only; the old
+  page cut to a pointer. Fast? Budgets to be measured in F0. Whole? One person model at every
+  level; the same Actor as players. Organic? Not applicable.
+
+## Q1 — the interface's look (2026-10-08, D236)
 - Source Sans 3 for the interface and Source Serif 4 for the journal (SIL OFL,
   `ASSETS_LICENSES.md`) drawn from signed distance fields in one atlas, sharp at every
   interface scale; umber panels and warm off-white words; the journal as ruled notebook paper in

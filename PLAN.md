@@ -55,6 +55,7 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
   player on a true Earth until Phase F plans people anew.
 - **Audit 0** — the baseline (`docs/review/audits/AUDIT-0.md`, D231–D234).
 - **Q1** — the interface's typefaces, panels and journal (`docs/design/interface.md`, D236).
+- **E1** — simulated humanity designed for Phase F (`docs/design/future/humanity/`).
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -70,10 +71,6 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
 - One `smoothstep`; debug tools (F3+T, the counting allocator) behind Developer mode; material
   statuses derived from use; planned knowledge cut to id, name and a line; Q §3's repetition
   checks in the screenshot suite (with S2).
-
-## E1 — The future humanity plan (documents only, E §10)
-- `docs/design/future/humanity/` (README, roadmap and one document per E §10 section), research
-  notes; `docs/design/future-humanity.md` pointing there; Phase F below. No code.
 
 ## E2 — Controls (E §3)
 - Any key bindable alone (Ctrl, Alt, left and right modifiers; releases fed to the rebind
@@ -310,7 +307,7 @@ milestone's acceptance is R §12's and is detailed in `RELEASE_PLAN.md`.
 - **R9 — Branding, press kit and trailers** (players together where the people beat was).
 - **R10 — Launch readiness review** (after Audit 7): `dev/LAUNCH_REPORT.md`, v0.1.0 drafted.
 
-## Phase F — Simulated humanity (after R10; designed in E1, `docs/design/future/humanity/`)
+## Phase F — Simulated humanity (after R10; `docs/design/future/humanity/roadmap.md`)
 F0 research and prototypes; F1 people foundation (the archive's genetics, life course and
 demography adapted); F2 the History Engine; F3 the World Bible and the Historian; F4 procedural
 minds; F5 the System 1 action model; F6 reflective minds and the AI Bridge (R4); F7 conversation
