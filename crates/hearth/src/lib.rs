@@ -10,6 +10,7 @@ pub mod clear_view;
 pub mod client;
 pub mod content_cli;
 pub mod content_state;
+pub mod controls_ui;
 pub mod crafting_ui;
 pub mod creative;
 pub mod creative_ui;

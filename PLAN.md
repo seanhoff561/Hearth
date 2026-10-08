@@ -56,6 +56,8 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 - **Audit 0** — the baseline (`docs/review/audits/AUDIT-0.md`, D231–D234).
 - **Q1** — the interface's typefaces, panels and journal (`docs/design/interface.md`, D236).
 - **E1** — simulated humanity designed for Phase F (`docs/design/future/humanity/`).
+- **E2** — any key alone, the controller's own column, a click at nothing uses or strikes,
+  blows by the body (`docs/design/controls.md`, D237–D239).
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -71,12 +73,6 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
 - One `smoothstep`; debug tools (F3+T, the counting allocator) behind Developer mode; material
   statuses derived from use; planned knowledge cut to id, name and a line; Q §3's repetition
   checks in the screenshot suite (with S2).
-
-## E2 — Controls (E §3)
-- Any key bindable alone (Ctrl, Alt, left and right modifiers; releases fed to the rebind
-  capture); hold and tap rules for a lone modifier with combinations; clicking with no target
-  uses the item in hand or attacks (punch, swing, thrust, kick), physically.
-- *Accept:* E §11's control tests; the owner's Ctrl/Alt report resolved in `dev/PLAYTEST.md`.
 
 ## E3 — Real Earth time (E §4)
 - One clock: 86,400 s days, the 365.2422-day year, the 29.530589-day month, tilt 23.44°; the sky

@@ -21,14 +21,15 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
 | Audit 0, then its high-priority fixes | done 2026-10-08 (D231–D234) |
 | Q1 — interface design | done 2026-10-08 (D236) |
 | E1 — the humanity plan | done 2026-10-08 (documents only) |
-| E2 → E5 — controls; Earth time; Earth size; Wild Earth start | planned |
+| E2 — controls | done 2026-10-08 (D237–D239) |
+| E3 → E5 — Earth time; Earth size; Wild Earth start | planned |
 | P3 → P4 with E6 → P5 → P6, Audit 1 | planned |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
@@ -39,10 +40,36 @@ P0, P1, P2, E0, Audit 0, Q1, E1. V2-11 superseded.
 |---|---|
 | Smooth world (S) | S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P2 done; open issues in `dev/PLAYTEST.md` |
-| Earth-True (E) | E0, E1 done 2026-10-08; E2–E7 planned |
+| Earth-True (E) | E0, E1, E2 done 2026-10-08; E3–E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
 
-## Latest: E1 — the future humanity plan (2026-10-08)
+## Latest: E2 — controls (2026-10-08, D237–D239)
+- Any key alone: key releases reach the Controls screen's capture, so Left or Right Ctrl, Alt or
+  Shift let go alone binds that key. A hold action on a lone modifier lasts through its
+  combinations; a tap one comes on the release if nothing else was pressed (the debug key's rule,
+  generalised); the screen explains such overlaps in a note line. The system's shortcuts are
+  refused and left alone in play; Option and Command named on macOS. Every controller button
+  binds, in a column of its own (crouch, run and crawl toggle on a pad); mouse side buttons bind.
+- A click at nothing uses what is in hand: eat, drink, treat a wound, hold a brand up (a fire to
+  hungry animals), draw and loose a bow; else the item's data-defined blow (thrust, swing,
+  slash, stab, strike), else the fist; an empty hand punches; T kicks. Blows are the server's:
+  wind-up, strike and recovery at real speed, stamina, reach, paths tested against animal bodies
+  (misses happen), blunt, cutting or piercing wounds and a shove by momentum; the body shows
+  them (`docs/review/e2/gestures.jpg`). Protocol 4. `docs/design/controls.md`. Suite: 600
+  passed, 60 soak tests ignored, in 6 min 48 s.
+- **Manual check for the owner (Windows):** a lone Alt neither opens the window menu nor takes
+  the focus; AltGr acts as Right Alt (`dev/PLAYTEST.md` #19).
+- Real? Speeds, energies and reach from sports biomechanics and V2-7's hunting figures, the
+  bow's arrow speed from its draw, cuts and shoves from the wound model and momentum; the
+  uncertain ones marked, for P5's recorded-motion check. Lean? One input path for keys, mouse
+  and pad buttons (the pad's hard-wired flags gone); the debug rule generalised, not doubled; one
+  `use_of` and one blow choice for client and server; throwing and loosing share their flight.
+  Fast? Input costs nothing measurable; a blow tests a few segments against nearby animals
+  once. Whole? Blows use the body's stamina and the animals' wound model; every action works
+  from a pad; other players wait for PvP (R3). Organic? A blow lands where the animal is then,
+  so the outcome follows what it does.
+
+## E1 — the future humanity plan (2026-10-08)
 - `docs/design/future/humanity/`: a README, one document per section of E §10 (the three loops;
   the History Engine, Historian and World Bible; the Person record and levels C0–C4; System 1,
   System 2, the planner and memory; conversation and voice; societies; lives and childhood;

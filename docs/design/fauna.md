@@ -449,8 +449,11 @@ key). Tests may force a natural death (`ToServer::Die`).
 A thrown thing flies as before (no drag; points every 20 ms), now strays from the aim as the
 thrower's practice allows (about three degrees for a novice, half a degree with practice: the
 `throwing` skill, practised by every throw), and strikes the first animal its flight passes
-through. A thrust (the primary action aimed at an animal within the reach of what is in the
-right hand: a spear's 2.3 m and the arm) strikes the same way along the look. A body is its
+through. A blow (the primary action aimed at an animal, or at nothing; E2,
+`docs/design/controls.md`) lands at the end of its wind-up along its path (a spear's thrust
+along the look within the arm and the spear's 2.2 m, a swing's arc across the body, a kick from
+the hip) and strikes the same way; edges cut (shallower than a point, long, the throat and a
+leg's vessels and tendons first), and its momentum shoves the body struck. A body is its
 rig's torso (a box), the neck and head ahead of and above the chest, and the legs under it;
 where the blow strikes is the part: the chest (the front of the torso, where the heart and
 lungs are), the belly (the middle), the haunch (the hind part), a leg, the neck, the head.

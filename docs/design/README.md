@@ -33,6 +33,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Motion timing: what moves, by which clock, how fast | [motion-timing.md](motion-timing.md) | partial (P0); the audit and its check P5 |
 | The Neolithic (pottery, fields, herds, cloth, timber, moving loads) | [neolithic.md](neolithic.md) | implemented (V2-12) |
 | Menus and world management | [menus.md](menus.md) | implemented (P1) |
+| Controls: bindings, lone modifiers, the controller, a click at nothing, blows | [controls.md](controls.md) | implemented (E2) |
 | The interface's look: typefaces, panels, the journal's pages | [interface.md](interface.md) | implemented (Q1) |
 | Game modes and Creative | [modes-creative.md](modes-creative.md) | implemented (P2) |
 | Budgets: every system's cost | [budgets.md](budgets.md) | living document (Audit 0) |
