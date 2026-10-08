@@ -4,6 +4,7 @@
 pub mod alloc_count;
 pub mod app;
 pub mod bench;
+pub mod bench_earth;
 pub mod birthplace_ui;
 pub mod body_panel;
 pub mod building;
@@ -14,6 +15,7 @@ pub mod content_cli;
 pub mod content_state;
 pub mod controls_ui;
 pub mod crafting_ui;
+pub mod crash;
 pub mod creative;
 pub mod creative_ui;
 pub mod edits;

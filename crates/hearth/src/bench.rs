@@ -490,6 +490,13 @@ pub struct BenchRun {
 
 /// Runs the benchmark; returns the process exit code.
 pub fn run(args: &[String], cache_dir: Option<&Path>) -> i32 {
+    // The Earth-scale benchmarks (E4.1).
+    if let Some(what) = args
+        .first()
+        .filter(|a| ["globe", "creator", "load"].contains(&a.as_str()))
+    {
+        return crate::bench_earth::run(what, &args[1..], cache_dir);
+    }
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{HELP}");
         return 0;

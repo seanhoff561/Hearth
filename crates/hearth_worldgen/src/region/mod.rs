@@ -355,6 +355,10 @@ impl Terrain {
         if self.relief.is_some() {
             let key = (x.div_euclid(NEAR_SQUARE), z.div_euclid(NEAR_SQUARE));
             let near = self.near.0.get_or_insert_with(key, || {
+                hearth_core::prof::count(
+                    &format!("terrain.near.{}", hearth_core::prof::current_caller()),
+                    1,
+                );
                 let (x0, z0) = (key.0 * NEAR_SQUARE, key.1 * NEAR_SQUARE);
                 self.nearby(x0, z0, x0 + NEAR_SQUARE - 1, z0 + NEAR_SQUARE - 1)
             });

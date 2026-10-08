@@ -39,10 +39,7 @@ fn print_help() {
 }
 
 fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info,wgpu_core=warn,wgpu_hal=warn,naga=warn"),
-    )
-    .init();
+    hearth::crash::init_logging();
 
     let all: Vec<String> = std::env::args().skip(1).collect();
     if all.first().map(String::as_str) == Some("content") {
@@ -50,7 +47,10 @@ fn main() {
     }
     if all.first().map(String::as_str) == Some("bench") {
         let dirs = hearth::resolve_dirs(None);
-        std::process::exit(hearth::bench::run(&all[1..], Some(&dirs.cache())));
+        hearth::crash::open(&dirs.logs(), "bench");
+        let code = hearth::bench::run(&all[1..], Some(&dirs.cache()));
+        hearth::crash::clean_exit();
+        std::process::exit(code);
     }
 
     let mut config = LaunchConfig::default();
@@ -115,19 +115,23 @@ fn main() {
             s.software |= software;
         }
         let dirs = hearth::resolve_dirs(config.dirs);
+        hearth::crash::open(&dirs.logs(), "screenshot");
         if let Err(e) = hearth::screenshot::run(&shots, Some(&dirs.cache()), &dirs.screenshots()) {
-            log::error!("{e:#}");
-            eprintln!("screenshot failed: {e:#}");
+            hearth::crash::fatal(&format!("screenshot failed: {e:#}"));
             std::process::exit(1);
         }
+        hearth::crash::clean_exit();
         return;
     }
 
+    let dirs = hearth::resolve_dirs(config.dirs.take());
+    hearth::crash::open(&dirs.logs(), "latest");
+    config.dirs = Some(dirs);
     if let Err(e) = hearth::run(config) {
-        log::error!("{e:#}");
-        eprintln!("{} crashed: {e:#}", hearth_core::GAME_NAME);
+        hearth::crash::fatal(&format!("{} crashed: {e:#}", hearth_core::GAME_NAME));
         std::process::exit(1);
     }
+    hearth::crash::clean_exit();
 }
 
 fn fail(msg: &str) -> ! {

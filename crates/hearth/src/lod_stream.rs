@@ -361,6 +361,8 @@ impl LodStream {
                 self.cache.clone(),
             );
             self.pool.spawn(move || {
+                hearth_core::zone!("lod.tile");
+                let _c = hearth_core::prof::caller("lod");
                 // From disk where it was kept as it would be built now; else built (and kept).
                 let mesh = match &cache {
                     Some(c) => {

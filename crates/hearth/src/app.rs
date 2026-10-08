@@ -700,6 +700,7 @@ impl App {
             .name("new planet".into())
             .spawn(move || {
                 use hearth_worldgen::planet::PlanetGrid;
+                let _c = hearth_core::prof::caller("places.suggest");
                 let tell = |f: f32, stage: &str| {
                     if let Ok(mut p) = told.lock() {
                         *p = (f, stage.to_owned());
@@ -1355,6 +1356,7 @@ impl App {
                     .set_title(&format!("{} | {status}", hearth_core::window_title()));
                 if run.log_timer.elapsed().as_secs() >= 5 {
                     log::info!("{status}");
+                    crate::crash::note_memory();
                     run.log_timer = Instant::now();
                 }
                 run.title_timer = Instant::now();

@@ -141,9 +141,16 @@ impl GpuContext {
                 ..Default::default()
             })
             .await?;
-        device.on_uncaptured_error(Arc::new(|err| {
-            log::error!("wgpu error: {err}");
+        // Errors no scope caught, and a device lost, go to the log under words the crash log
+        // looks for (`hearth::crash`).
+        device.on_uncaptured_error(Arc::new(|err| match err {
+            wgpu::Error::OutOfMemory { .. } => log::error!("GPU OUT OF MEMORY: {err}"),
+            _ => log::error!("wgpu error: {err}"),
         }));
+        device.set_device_lost_callback(|reason, message| match reason {
+            wgpu::DeviceLostReason::Destroyed => log::debug!("GPU device destroyed: {message}"),
+            _ => log::error!("GPU DEVICE LOST ({reason:?}): {message}"),
+        });
         Ok(Self {
             instance,
             adapter,

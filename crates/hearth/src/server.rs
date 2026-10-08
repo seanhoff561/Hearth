@@ -637,6 +637,8 @@ fn run(
     inbox: Receiver<ToServer>,
     tx: &Sender<ToClient>,
 ) -> anyhow::Result<()> {
+    // What the server's thread works on, for the profile (E4.1).
+    let _caller = hearth_core::prof::caller("server");
     // A saved world keeps its own planet.
     let mut gen_settings = spec.shape.planet(spec.seed, spec.planet);
     if let Some(saves) = &spec.saves_dir {
@@ -654,10 +656,13 @@ fn run(
         });
     };
     progress(0.0, "menu.making.opening");
-    let mut lw = LocalWorld::create_with(&gen_settings, spec.cache_dir.as_deref(), &|f, stage| {
-        log::debug!("planet {:.0}% {stage}", f * 100.0);
-        progress(f, stage);
-    })?;
+    let mut lw = {
+        hearth_core::zone!("load.world");
+        LocalWorld::create_with(&gen_settings, spec.cache_dir.as_deref(), &|f, stage| {
+            log::debug!("planet {:.0}% {stage}", f * 100.0);
+            progress(f, stage);
+        })?
+    };
     let planet = *lw.map.planet();
     let mut save_state = open_save(&spec, &lw)?;
 
@@ -690,7 +695,11 @@ fn run(
         s.meta.settings.birthplace.map(|[x, z]| DVec2::new(x, z))
     });
     let place = |at: DVec2| birthplace.unwrap_or(at);
-    let first_spawn = first_spawn(&lw, Some(&place));
+    let first_spawn = {
+        hearth_core::zone!("load.spawn");
+        let _c = hearth_core::prof::caller("spawn");
+        first_spawn(&lw, Some(&place))
+    };
     let created = save_state.as_ref().map(|s| s.meta.created_unix);
     let calendar = calendar_of(&planet, life.start, created, first_spawn);
     let mut env = EnvSampler::new(lw.grid(), calendar);
@@ -798,13 +807,17 @@ fn run(
     let mut workshop = Workshop::new(&content, &items, mode, workshop_save, seed, ticks);
     // The animals: the populations about the player, saved with the world.
     let years_at = |t: u64| calendar.years(t);
-    let mut fauna = crate::fauna::Fauna::new(
-        &lw,
-        seed,
-        calendar.year_offset(),
-        years_at(ticks),
-        save_state.as_ref().map(|s| s.dir.root.as_path()),
-    );
+    let mut fauna = {
+        hearth_core::zone!("load.fauna");
+        let _c = hearth_core::prof::caller("fauna");
+        crate::fauna::Fauna::new(
+            &lw,
+            seed,
+            calendar.year_offset(),
+            years_at(ticks),
+            save_state.as_ref().map(|s| s.dir.root.as_path()),
+        )
+    };
     let mut animals_shown = false;
     // Watching the world (Creative's spectating): where its eye is.
     let mut observing: Option<DVec3> = None;
@@ -835,10 +848,13 @@ fn run(
     let mut rest_speed = 0.0f64;
     let sleep = content.time.sleep;
 
-    let lod = Arc::new(hearth_lod::LodGen::new(
-        &lw.reg,
-        &hearth_texgen::textures_for(Some(&lw.content)),
-    ));
+    let lod = {
+        hearth_core::zone!("load.lod_gen");
+        Arc::new(hearth_lod::LodGen::new(
+            &lw.reg,
+            &hearth_texgen::textures_for(Some(&lw.content)),
+        ))
+    };
     if tx
         .send(ToClient::Ready(Box::new(Ready {
             planet,
@@ -2044,11 +2060,15 @@ impl Stream {
             .drain(self.wanted.len() - take..)
             .map(|(_, p)| p)
             .collect();
+        hearth_core::zone!("stream.batch");
         let generator = lw.generator.clone();
         let veg = lw.vegetation.clone();
         let cubes: Vec<_> = batch
             .par_iter()
-            .map(|p| (*p, generator.generate_cube_in(*p, &veg)))
+            .map(|p| {
+                let _c = hearth_core::prof::caller("cubes");
+                (*p, generator.generate_cube_in(*p, &veg))
+            })
             .collect();
         for (p, (cube, next)) in cubes {
             self.grown.insert(p, (veg.clone(), next));

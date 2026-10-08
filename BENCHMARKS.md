@@ -729,3 +729,34 @@ An edit today: the dug block adds 78 bytes to `blocks.json` (generated terrain i
 An edit today: the dug block adds 78 bytes to `blocks.json` (generated terrain is never saved: an explored, unedited area costs nothing), and the server sends the whole changed cube to the client (the serialized size above).
 
 Against Baseline-S above (whose rows were taken on two threads, these on four; the places moved with E4, so compare a scene's own columns): one surface cube costs as before on one thread (0.28–0.87 ms); cube memory per surface cube grows by the fill array where the surface passes (+4 KiB, 5.5 → 7.7 KiB in the forest); mesh bytes per surface cube fall in the mountains (33.8 → 25.5 KiB) and grow on coasts (8.9 → 21.6 KiB), where smooth slopes replace few large greedy quads. Triangles count the smooth ground's with the quads'.
+
+
+## E4.1 before the fixes — the Earth-sized planet (`hearth bench globe|creator|load`), 4 cores, 16 GB, software adapter (llvmpipe)
+
+The cloud machine (4 cores, 16 GB, no GPU) is the lower configuration of E4.1 §6. Seed 7's planet, cached.
+
+**Globe** (`bench globe --seed 7`): the map as `globe::planet_map` makes it, 32.2 s a row of
+2,048 texels on all four cores, the whole map projected at 33,000 s (each texel ~2.7 tiles of the
+finest refinement level, 1.7 of the next, 0.2 of the coarsest built; 25.6, 18 and 16 ms a tile);
+hover (`describe`) 154 ms median, 319 ms 95th percentile, 427 ms slowest; a click's start spot
+(`spawn_near`) 314 ms median, its card (`Finder::verify`) 204 ms median and 940 ms slowest; the
+places suggested 5.0 s; 667 MiB resident at the peak.
+
+**Creator** (`bench creator --software`): a person's meshes 1,605 ms at Close, 529 ms Near,
+251 ms Far; a slider dragged a second (60 changes): the person shown 59 frames behind at the end,
+the last setting shown 2.3–2.7 s after (height, build, skin tone and hair colour alike); the main
+thread's own work under 0.2 ms a frame (the rest of the 37–47 ms frames is llvmpipe drawing).
+
+**Load** (`bench load --seed 7 --software --size 640x360`, render distance 12, LOD 256):
+
+| | Play → world shown | → in control | → whole render distance | peak resident | main thread frame (median / 95th / slowest) |
+|---|---:|---:|---:|---:|---:|
+| new world, after the menus (the globe's map still being made) | never (300 s limit) | never | never | — | 0.19 / 0.51 / 20.8 ms |
+| new world, alone | 2.8 s | 2.8 s | 46.2 s | 1,409 MiB | 0.21 / 780 / 1,003 ms |
+| its save | 32.8 s | 32.8 s | 63.6 s | 1,530 MiB | 0.24 / 0.37 / 691 ms |
+
+After the menus, the server's thread had 0.55 s of CPU in 300 s and the globe map's workers
+1,174 s: the world's setup waits in the global pool behind the map. Opening the save, `Fauna::new`
+took 30.5 s (458 tiles of the finest level). The main thread's slow frames are llvmpipe's drawing
+(`queue.submit`, 63 s over 2,160 frames) and the frame the world arrives in (the scene's pipelines
+made, 0.9 s); its own work (pump, update, render) took 9.1 s in all.

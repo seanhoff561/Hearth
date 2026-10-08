@@ -117,6 +117,26 @@ struct Pending {
     straining: bool,
 }
 
+/// How far the world about the player has come (E4.1 §4.4: the loading screen's stages, the
+/// load benchmark).
+#[derive(Debug, Clone, Default)]
+pub struct Loading {
+    /// What is being done before the world arrives, and how far it has come.
+    pub stage: String,
+    pub share: f32,
+    /// The world could not be opened (`stage` says why).
+    pub failed: bool,
+    /// The world has arrived: the loading screen gives way to it.
+    pub ready: bool,
+    /// The ground about the player is drawn: the cubes about the feet, one each way, meshed.
+    pub ground: bool,
+    /// Cubes drawn within the render distance, of all the server meshes there (all but the
+    /// outermost ring, whose neighbours are not loaded).
+    pub near: (usize, usize),
+    /// Distant tiles built, of those wanted.
+    pub lod: (usize, usize),
+}
+
 pub struct Client {
     server: Server,
     scene: Option<SceneRenderer>,
@@ -3089,6 +3109,42 @@ impl Client {
     }
 
     /// Applies the server's messages; call once per frame before rendering.
+    /// How far the world about the player has come.
+    pub fn loading(&self) -> Loading {
+        let mut l = Loading {
+            stage: self.status.clone(),
+            share: self.progress,
+            failed: self.status.starts_with("the world failed"),
+            ..Default::default()
+        };
+        let (Some(_), Some(scene)) = (&self.world, &self.scene) else {
+            return l;
+        };
+        l.ready = true;
+        let c = hearth_math::CubePos::containing(self.mover.pos);
+        let drawn = |dx: i32, dy: i32, dz: i32| {
+            scene
+                .terrain
+                .contains(hearth_math::CubePos::new(c.x + dx, c.y + dy, c.z + dz))
+        };
+        l.ground = (-1..=1).all(|dy| (-1..=1).all(|dz| (-1..=1).all(|dx| drawn(dx, dy, dz))));
+        let (r, v) = ((self.radius - 1).max(0), (self.vertical - 1).max(0));
+        let mut n = 0;
+        for dy in -v..=v {
+            for dz in -r..=r {
+                for dx in -r..=r {
+                    n += drawn(dx, dy, dz) as usize;
+                }
+            }
+        }
+        l.near = (n, ((2 * r + 1) * (2 * r + 1) * (2 * v + 1)) as usize);
+        if let Some(lod) = &self.lod {
+            let (wanted, left) = lod.progress(&scene.lod);
+            l.lod = (wanted - left, wanted);
+        }
+        l
+    }
+
     pub fn pump(&mut self, ctx: &GpuContext) {
         let mut uploaded = 0;
         while uploaded < UPLOADS_PER_FRAME {

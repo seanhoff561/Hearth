@@ -30,6 +30,7 @@ pub fn planet_map(terrain: &Terrain, width: usize) -> Vec<[u8; 4]> {
     let rows: Vec<Vec<(f32, [u8; 3], bool)>> = (0..height)
         .into_par_iter()
         .map(|y| {
+            let _c = hearth_core::prof::caller("globe.map");
             let z = planet.z_for_latitude(lat_of(y)) as i32;
             (0..width)
                 .map(|x| {

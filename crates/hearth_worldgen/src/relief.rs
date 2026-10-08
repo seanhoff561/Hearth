@@ -46,6 +46,13 @@ pub const MIN_CELL: f64 = 24.0;
 pub const MIN_GRID_CELL: f64 = 1000.0;
 /// Tiles kept per level.
 const TILES_KEPT: usize = 512;
+/// The zones a tile's making is timed in, by level.
+const BUILD_ZONES: [&str; 4] = [
+    "relief.build.L1",
+    "relief.build.L2",
+    "relief.build.L3",
+    "relief.build.L4+",
+];
 /// Seconds in a year.
 const YEAR_S: f64 = 31_557_600.0;
 /// Discharge of the grid's drainage per unit of its measure (a square degree at the equator of
@@ -518,14 +525,30 @@ impl Relief {
         f32::NEG_INFINITY
     }
 
-    /// A tile, from the cache or made.
+    /// A tile, from the cache or made: each made counted by its level and the caller it was made
+    /// for (`relief.tile.L<level>.<caller>`, E4.1 §3), and timed.
     fn tile(&self, level: usize, tx: i64, tz: i64) -> Arc<Tile> {
         let key = TileKey {
             level: level as u8,
             tx,
             tz,
         };
-        self.tiles[level - 1].get_or_insert_with(key, || self.build(level, tx, tz))
+        self.tiles[level - 1].get_or_insert_with(key, || {
+            let _zone = hearth_core::prof::Zone::new(BUILD_ZONES[(level - 1).min(3)]);
+            hearth_core::prof::count(
+                &format!(
+                    "relief.tile.L{level}.{}",
+                    hearth_core::prof::current_caller()
+                ),
+                1,
+            );
+            self.build(level, tx, tz)
+        })
+    }
+
+    /// Tiles kept now at each level, coarsest first.
+    pub fn tiles_kept(&self) -> Vec<usize> {
+        self.tiles.iter().map(Cache::len).collect()
     }
 
     /// The surface at a level (0: the grid's), interpolated bicubically between its cells.

@@ -125,6 +125,11 @@ impl Person {
         self.shown.is_some()
     }
 
+    /// The appearance the meshes shown were built from (the creator's benchmark).
+    pub fn shown_appearance(&self) -> Option<&Appearance> {
+        self.shown.as_ref().map(|(k, _)| &k.appearance)
+    }
+
     /// The rig to draw the unfitted garments' boxes from (with `Show::clothes_only`).
     pub fn garment_rig(&self) -> Option<&Rig> {
         self.boxes

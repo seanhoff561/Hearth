@@ -122,6 +122,7 @@ pub fn birthplace_screen(
                 *b.chosen = Some(ll);
                 // What is there, read from the world (a place without fresh water near has
                 // no card).
+                let _c = hearth_core::prof::caller("globe.click");
                 let (x, z) = crate::globe::world_xz(g.terrain.planet(), ll.0, ll.1);
                 let (x, z) = g.terrain.spawn_near(x, z);
                 *b.card = g
@@ -136,6 +137,7 @@ pub fn birthplace_screen(
         }
         if *b.anywhere {
             let shown = g.picker.hovered().or(*b.chosen);
+            let _c = hearth_core::prof::caller("globe.hover");
             said = shown.map(|(lat, lon)| crate::globe::describe(&g.terrain, lat, lon));
         }
     }

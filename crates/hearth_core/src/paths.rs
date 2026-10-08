@@ -46,6 +46,10 @@ impl GameDirs {
     pub fn screenshots(&self) -> PathBuf {
         self.root.join("screenshots")
     }
+    /// The sessions' logs (the last one's and the one before).
+    pub fn logs(&self) -> PathBuf {
+        self.root.join("logs")
+    }
     /// Regenerable data (planet analysis grids, shader caches); safe to delete.
     pub fn cache(&self) -> PathBuf {
         self.root.join("cache")

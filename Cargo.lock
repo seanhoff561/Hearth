@@ -1257,6 +1257,7 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "hearth_content",
+ "hearth_core",
  "hearth_flora",
  "hearth_math",
  "hearth_world",
