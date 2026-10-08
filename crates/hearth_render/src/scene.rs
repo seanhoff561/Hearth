@@ -52,6 +52,9 @@ pub struct Environment {
     /// Cloud base above sea level (blocks).
     pub cloud_base: f32,
     pub cloud_offset: Vec2,
+    /// How far the clouds' smaller shapes have slid against their larger (m): the clouds change
+    /// shape as they go (`CLOUD_CHURN_M_S`).
+    pub cloud_churn: f32,
     /// Aerosol density multiplier (1 = clear).
     pub haze: f32,
     /// Block-light level at the camera (0..1), for adaptation to firelight.
@@ -83,6 +86,7 @@ impl Default for Environment {
             cloud_cover: 0.0,
             cloud_base: 1500.0,
             cloud_offset: Vec2::ZERO,
+            cloud_churn: 0.0,
             haze: 1.0,
             block_light_at_camera: 0.0,
             aerial_perspective: true,
@@ -378,6 +382,7 @@ impl SceneRenderer {
             cloud_cover: env.cloud_cover,
             cloud_height: (env.cloud_base - camera.pos.y as f32).max(0.0),
             cloud_offset: env.cloud_offset,
+            cloud_churn: env.cloud_churn,
             exposure: e,
             night: self.night,
             moon_disc: MOON_LUMINANCE * e * moon_trans,

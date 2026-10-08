@@ -372,3 +372,65 @@ fn garments_dress_the_body() {
         "{bare} hair boxes, {hooded} under the hood (the beard)"
     );
 }
+
+/// Motion timing (P §8): a foot on the ground stays put on the ground — the body moves over it
+/// at the body's speed, the foot's own motion backward cancelling it — at a walk, a jog and a
+/// run; and a body at work loops its stroke at the work's tempo.
+#[test]
+fn feet_do_not_slide_and_work_keeps_its_tempo() {
+    let f = Figure::new(Appearance::default());
+    for (activity, speed) in [
+        (Activity::Walk, 1.4),
+        (Activity::Jog, 3.0),
+        (Activity::Sprint, 6.5),
+    ] {
+        let mut anim = Animator::default();
+        let drive = Drive {
+            activity,
+            speed,
+            ..Drive::default()
+        };
+        let dt = 1.0 / 240.0;
+        let mut worst = 0.0f32;
+        let mut prev: Option<f32> = None;
+        for i in 0..960 {
+            let pose = anim.update(&f.rig, &drive, dt);
+            let z = pose.joints(&f.rig)[Joint::AnkleL.index()].translation.z;
+            // The left foot is down and flat early in its cycle, in every gait. The ground
+            // goes back under the body at `speed`, and so must the planted ankle.
+            let flat = (0.03..0.18).contains(&anim.phase);
+            if i >= 240
+                && flat
+                && let Some(p) = prev
+            {
+                worst = worst.max(((z - p) / dt + speed).abs());
+            }
+            prev = flat.then_some(z);
+        }
+        eprintln!("{activity:?}: a planted foot slides at most {worst:.2} m/s");
+        assert!(
+            worst < 0.1 * speed,
+            "{activity:?}: a planted foot slides at {worst} m/s at {speed} m/s"
+        );
+    }
+    // At work: the stroke repeats at its tempo.
+    use hearth_content::schema::process::WorkPose;
+    let stroke_s = 1.4;
+    let drive = Drive {
+        activity: Activity::Work(WorkPose::StandChop),
+        stroke_s,
+        ..Drive::default()
+    };
+    let mut anim = Animator::default();
+    let dt = 1.0 / 100.0;
+    let mut wrist = Vec::new();
+    for _ in 0..600 {
+        let pose = anim.update(&f.rig, &drive, dt);
+        wrist.push(pose.joints(&f.rig)[Joint::WristR.index()].translation.y);
+    }
+    // The wrist's height one stroke apart is the same; half a stroke apart, not.
+    let n = (stroke_s / dt).round() as usize;
+    let (a, b, c) = (wrist[300], wrist[300 + n], wrist[300 + n / 2]);
+    assert!((a - b).abs() < 0.02, "a stroke later: {a} against {b}");
+    assert!((a - c).abs() > 0.05, "half a stroke later: {a} against {c}");
+}

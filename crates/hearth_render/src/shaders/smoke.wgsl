@@ -77,7 +77,8 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     // Rising and slowing, swelling, leaning downwind.
     let top = select(70.0, 1600.0, far) * (0.6 + 0.4 * strength);
     let h = top * (1.0 - (1.0 - a) * (1.0 - a));
-    let lean = P.wind.xyz * a * a * life * select(0.3, 0.25, far);
+    // Carried off by the wind, at the wind's speed by the end of its life.
+    let lean = P.wind.xyz * a * a * life * 0.5;
     let r = select(1.8 + 9.0 * a, 40.0 + 420.0 * a, far) * (0.7 + 0.5 * rand(id, 1u));
     let spread = select(0.8 + 3.0 * a, 60.0 + 250.0 * a, far);
     let off = vec3<f32>(rand(id, 2u) - 0.5, 0.0, rand(id, 3u) - 0.5) * 2.0 * spread;

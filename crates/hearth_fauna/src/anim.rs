@@ -343,9 +343,10 @@ const GALLOP: Gait = Gait {
     duty: 0.3,
     lift: 0.22,
 };
+// A hare's feet are down for a fifth of a fast bound.
 const BOUND: Gait = Gait {
     offsets: [0.5, 0.56, 0.0, 0.05],
-    duty: 0.32,
+    duty: 0.22,
     lift: 0.25,
 };
 
@@ -634,7 +635,9 @@ fn quadruped(rig: &Rig, m: &Motion, ground: &dyn Footing, p: &mut Pose) {
     let (ga, gb, gt) = gait_table(rig, m.gait);
     let stride = stride_of(rig, speed);
     let duty = ga.duty + (gb.duty - ga.duty) * gt;
-    let travel = (stride * duty).min(h * 0.9) * moving;
+    // A foot down goes back at the ground's pace: as far as the body goes while it is down
+    // (Amendment P §8: feet do not slide), within what the leg can reach.
+    let travel = (stride * duty).min(h * 1.7) * moving;
     let lift_f = ga.lift + (gb.lift - ga.lift) * gt;
     let galloping = (m.gait - 1.0).clamp(0.0, 1.0) * moving;
     let bob = -h

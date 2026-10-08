@@ -33,6 +33,7 @@ fn gpu_irradiance(ctx: &GpuContext, sky: &mut SkyRenderer, sun: DVec3, alt: f32)
         cloud_cover: 0.0,
         cloud_height: 0.0,
         cloud_offset: Vec2::ZERO,
+        cloud_churn: 0.0,
         exposure: 1.0,
         night: 0.0,
         moon_disc: 0.0,

@@ -415,3 +415,47 @@ fn the_coats_lie_in_the_atlas_without_overlapping() {
     assert_eq!(opaque as u32, faces, "painted pixels");
     println!("atlas {w}x{h}, {faces} pixels of coats");
 }
+
+/// Feet do not slide (Amendment P §8): a foot down goes back under the body at the ground's
+/// pace, walking, trotting and galloping.
+#[test]
+fn planted_feet_keep_pace_with_the_ground() {
+    let cat = catalog();
+    for id in [
+        "hearth:red_deer",
+        "hearth:gray_wolf",
+        "hearth:aurochs",
+        "hearth:brown_bear",
+        "hearth:brown_hare",
+    ] {
+        let sp = cat.get(id).expect(id);
+        let rig = Rig::of(sp, false);
+        for speed in [sp.walk_m_s, 4.0, 10.0] {
+            let mut d = Drive::standing();
+            d.speed = speed;
+            let mut m = Motion::new(3);
+            m.settle(&rig, &d);
+            let dt = 1.0 / 240.0;
+            let mut prev: Option<f32> = None;
+            let mut worst = 0.0f32;
+            for i in 0..720 {
+                m.update(&rig, &d, dt);
+                let p = pose(&rig, &m, &d, &Flat);
+                let f = p.slots[Slot::Foot(0).index()].translation;
+                let down = f.y.abs() < 1e-4;
+                if i > 120
+                    && down
+                    && let Some(z) = prev
+                {
+                    worst = worst.max(((f.z - z) / dt + speed).abs());
+                }
+                prev = down.then_some(f.z);
+            }
+            eprintln!("{id} at {speed} m/s: a foot down slides at most {worst:.2} m/s");
+            assert!(
+                worst < 0.1 * speed,
+                "{id} at {speed} m/s: a foot down slides at {worst} m/s"
+            );
+        }
+    }
+}

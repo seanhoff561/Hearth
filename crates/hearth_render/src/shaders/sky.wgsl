@@ -18,7 +18,8 @@ struct Params {
     misc: vec4<f32>,
     // rgb: direct sun + moon illuminance at the camera (pre-exposed); w: unused.
     direct: vec4<f32>,
-    // rgb: sky irradiance on a horizontal surface (pre-exposed); w: unused.
+    // rgb: sky irradiance on a horizontal surface (pre-exposed); w: how far the clouds' smaller
+    // shapes have slid against their larger (m).
     ambient: vec4<f32>,
     // rgb: grey of an overcast sky (pre-exposed); w: how far it replaces the clear sky.
     overcast: vec4<f32>,
@@ -158,7 +159,10 @@ fn clouds(dir: vec3<f32>, sky: vec3<f32>) -> vec4<f32> {
     let hit = dir.xz * t;
     let dist = length(hit);
     let p = (hit + P.clouds.zw) / 900.0;
-    let n = fbm2(p) * 0.75 + fbm2(p * 3.1 + 7.0) * 0.25;
+    // The shapes change as they go (Amendment P §8): the smaller slide across the larger, and
+    // the larger a quarter as fast the other way, so a cloud is another in some ten minutes.
+    let churn = vec2<f32>(0.8, 0.6) * (P.ambient.w / 900.0);
+    let n = fbm2(p - 0.25 * churn) * 0.75 + fbm2((p + churn) * 3.1 + 7.0) * 0.25;
     let density = smoothstep(1.0 - cover, 1.0 - cover + 0.25, n + cover * 0.35);
     if density <= 0.0 {
         return vec4<f32>(0.0);

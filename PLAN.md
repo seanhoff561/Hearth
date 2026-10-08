@@ -31,7 +31,7 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 3. **Audit 0**, then its high-priority fixes.
 4. **Q1** — the new interface design.
 5. **E1 → E2 → E3 → E4 → E5.**
-6. **P3** → **P4 with E6** → **P5** → **P6** (as amended by E §9.1).
+6. **P3** → **P4 with E6** → **P5**. (P6, Learn to Play, is removed: D258.)
 7. **Audit 1.**
 8. **S1 → S2 → E7 → S3 → S4** (S4 as amended by E §9.2).
 9. **Audit 2.**
@@ -103,13 +103,12 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
   Verified so far: `hearth_worldgen`, `hearth_body`, `hearth_player`, `hearth_craft`,
   `hearth_math`, clippy, fmt, content lint.
 - The grid's middle heights (1–3 km) are short of Earth's (`planet.md`): more and longer ranges.
-- The Body panel's words for breathlessness and mountain sickness (P6's HUD).
+- The Body panel's words for breathlessness and mountain sickness.
 
 ## From E5 (before Audit 1)
 - The waking life lies until it acts (D251): run the bot and acceptance suites (they act at
   once, which gets up) with the full suite above.
 - A place's card on the globe's hover, not only on the click (E §6.3).
-- Easy's first-time hints at the first waking (E §6.5) come with P6.
 
 ## From P3 (before Audit 1)
 - The bot and acceptance suites drive the server directly; a scripted playtest through the
@@ -125,21 +124,16 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
 - Gathering one thing at a time, the loose-objects layer and harvests from living plants: P7
   (E §9.1).
 
-## P5 — Motion timing audit
-- `docs/design/motion-timing.md`: everything that moves, its clock (real or game) and its speed,
-  and the automated check, fast-forward included (§8).
-- *Accept:* every animated visual listed and passing the check.
-
-## P6 — Learn to play
-- The tutorial's chapters and the bot that completes them, first-time hints, the basic Field
-  Guide (§9).
-- *Accept:* the bot completes every chapter; a new player can learn sleeping, drinking, fire and
-  the hands unaided.
-- *Amended by E §9.1:* no People chapter; teach stroke-by-stroke work, gathering one thing at a
-  time, inspecting the meat over the fire, Rest / Wait; set in a Wild Earth valley at real time.
+## From P5 (before Audit 1)
+- Rivers flowing at their current (their surfaces carry only the wind's waves), shallow water
+  slowing the waves near shore, waterfalls and splashes.
+- Fog banks that drift, lightning, flames that flicker (the fire's own model).
+- The timing check reads the shaders' speeds from their source; a check that renders short
+  sequences and measures the motion in the images would also catch a wrong scale in a
+  uniform.
 
 ## Audit 1
-After P6, covering E1–E6 and P3–P6.
+After P5, covering E1–E6 and P3–P5.
 
 ## Amendment S — Smooth voxel world (S0–S8)
 Amendment S (`docs/spec/amendment-s-smooth-world.md`, 2026-10-07) makes natural terrain smooth

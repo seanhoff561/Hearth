@@ -343,3 +343,96 @@ fn every_work_pose_stands_on_the_ground() {
     std::fs::create_dir_all(&out).ok();
     write_png(&out.join("work_poses.png"), w, h, &px).expect("png");
 }
+
+/// The gaits in profile, eight moments of a cycle each (`bench-out/gaits.png`, to look at):
+/// a walk, a jog and a sprint, the planted foot under the body.
+#[test]
+fn the_gaits_in_profile() {
+    let Ok(ctx) = GpuContext::headless(false) else {
+        eprintln!("skipped: no GPU adapter");
+        return;
+    };
+    let gaits = [
+        (Activity::Walk, 1.4),
+        (Activity::Jog, 3.0),
+        (Activity::Sprint, 6.5),
+    ];
+    let (cols, cw, ch) = (8u32, 160u32, 260u32);
+    let (w, h) = (cols * cw, gaits.len() as u32 * ch);
+    let target = OffscreenTarget::new(&ctx, w, h);
+    let mut preview = FigurePreview::new(&ctx, OFFSCREEN_FORMAT);
+    let f = Figure::starting(Appearance::default());
+    let mut first = true;
+    for (row, (activity, speed)) in gaits.into_iter().enumerate() {
+        let drive = Drive {
+            activity,
+            speed,
+            ..Drive::default()
+        };
+        let mut anim = f.animator;
+        // Settle into the gait, then one cycle in eight steps.
+        let cycle_s = activity.cycle_m() / speed;
+        for _ in 0..60 {
+            anim.update(&f.rig, &drive, 1.0 / 60.0);
+        }
+        for col in 0..cols {
+            let pose = anim.update(&f.rig, &drive, cycle_s / cols as f32);
+            let mut boxes = Vec::new();
+            let place = Affine3A::from_rotation_translation(
+                Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+                Vec3::ZERO,
+            );
+            instances(
+                &f.rig,
+                &f.palette,
+                &pose,
+                place,
+                Show::default(),
+                &mut boxes,
+            );
+            let mut enc = ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            if first {
+                first = false;
+                let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &target.color_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.05,
+                                g: 0.06,
+                                b: 0.08,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+            }
+            preview.render(
+                &ctx,
+                &mut enc,
+                &target.color_view,
+                (w, h),
+                [col * cw, row as u32 * ch, cw, ch],
+                &boxes,
+                2.2,
+                0.55,
+                PreviewLight::Overcast,
+            );
+            ctx.queue.submit(Some(enc.finish()));
+        }
+    }
+    let px = target.read_rgba(&ctx);
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
+    std::fs::create_dir_all(&out).ok();
+    write_png(&out.join("gaits.png"), w, h, &px).expect("png");
+}

@@ -37,6 +37,10 @@ const MOTION_STEP_S: f64 = 2.0;
 /// (seconds): a turn of the wind turns them over minutes, not at a stroke.
 const WIND_TURN_S: f64 = 120.0;
 
+/// How fast the clouds' smaller shapes (some 300 m across) slide against their larger (m/s): a
+/// cumulus lives some ten or twenty minutes, so a cloud is another in about ten.
+pub const CLOUD_CHURN_M_S: f64 = 0.5;
+
 /// What moves in the sky at real speeds, carried from frame to frame (Amendment P §8).
 #[derive(Debug, Clone, Copy, Default)]
 struct Motion {
@@ -44,6 +48,8 @@ struct Motion {
     at: Option<f64>,
     /// How far the clouds have drifted (m).
     clouds: DVec2,
+    /// How far the clouds' smaller shapes have slid against their larger (m).
+    churn: f64,
     /// How far the air near the ground has carried falling rain and snow (m).
     air: DVec2,
     /// The way the wind blows, as the clouds and waves follow it (radians, eased).
@@ -214,7 +220,7 @@ impl EnvSampler {
         let ground =
             (self.grid.elevation.bilinear(gx, gz).max(0.0) as f64) * self.grid.vertical_scale;
         let cloud_base = ground + (2500.0 * (1.0 - w.humidity)).clamp(600.0, 3000.0);
-        let (cloud_offset, air, wind_dir) = {
+        let (cloud_offset, air, wind_dir, cloud_churn) = {
             let mut mo = self.motion.borrow_mut();
             let dt = mo
                 .at
@@ -233,7 +239,8 @@ impl EnvSampler {
             let toward = DVec2::new(dir.sin(), -dir.cos());
             mo.clouds += toward * wind_aloft(w.wind_speed_m_s, cloud_base) * dt;
             mo.air += toward * w.wind_speed_m_s * dt;
-            (mo.clouds.as_vec2(), mo.air, dir)
+            mo.churn += CLOUD_CHURN_M_S * dt;
+            (mo.clouds.as_vec2(), mo.air, dir, mo.churn as f32)
         };
         let toward = Vec2::new(wind_dir.sin() as f32, -(wind_dir.cos()) as f32);
         let env = Environment {
@@ -253,6 +260,7 @@ impl EnvSampler {
             cloud_cover: w.cloud_cover as f32,
             cloud_base: cloud_base as f32,
             cloud_offset,
+            cloud_churn,
             haze: haze as f32,
             block_light_at_camera,
             aerial_perspective: true,
@@ -316,5 +324,54 @@ mod tests {
         // Smooth: no step much beyond a tick's worth of the strongest wind.
         let tick_s = 1.0 / per_s as f32;
         assert!(worst < 60.0 * tick_s, "a jump of {worst:.1} m in a tick");
+    }
+
+    /// Fast-forward (P §8): with the world going 1,000 times faster than play, the sky
+    /// time-lapses smoothly, each frame carrying the clouds and their change of shape a capped
+    /// step and never sweeping across the sky; at normal speed the shapes change at their rate.
+    #[test]
+    fn the_sky_time_lapses_smoothly_when_time_runs_fast() {
+        let settings = WorldGenSettings {
+            seed: 5,
+            grid_resolution: 64,
+            ..WorldGenSettings::default()
+        }
+        .sanitized();
+        let grid = Arc::new(PlanetGrid::build(&settings, &|_, _| {}));
+        let calendar = Calendar::default();
+        let env = EnvSampler::new(grid, calendar);
+        let at = DVec3::new(300.0, 80.0, -2000.0);
+        let per_s = hearth_env::calendar::TICKS_PER_SECOND;
+        let start = (400.0 * calendar.ticks_per_day()) as u64;
+        // Normal speed, a frame a tick: the shapes change at their rate.
+        let (e0, _) = env.sample(&calendar.at(start), at, 0.0, EnvOverrides::default());
+        let mut e1 = e0;
+        for tick in 1..=60 * per_s {
+            e1 = env
+                .sample(&calendar.at(start + tick), at, 0.0, EnvOverrides::default())
+                .0;
+        }
+        let rate = (e1.cloud_churn - e0.cloud_churn) as f64 / 60.0;
+        assert!(
+            (rate - CLOUD_CHURN_M_S).abs() < 0.01,
+            "the shapes change at {rate} m/s"
+        );
+        // A thousand times faster at 60 frames a second: some 17 s of the world a frame.
+        let step = 1000 * per_s / 60;
+        let mut last = e1;
+        let mut t = start + 60 * per_s;
+        for _ in 0..120 {
+            t += step;
+            let (e, w) = env.sample(&calendar.at(t), at, 0.0, EnvOverrides::default());
+            let drift = (e.cloud_offset - last.cloud_offset).length() as f64;
+            let most = wind_aloft(w.wind_speed_m_s, e.cloud_base as f64) * MOTION_STEP_S;
+            assert!(
+                drift <= most * 1.05 + 0.01,
+                "the clouds jumped {drift} m in a frame (at most {most})"
+            );
+            let churn = (e.cloud_churn - last.cloud_churn) as f64;
+            assert!(churn <= CLOUD_CHURN_M_S * MOTION_STEP_S + 1e-3, "{churn}");
+            last = e;
+        }
     }
 }

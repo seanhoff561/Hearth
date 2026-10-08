@@ -34,7 +34,8 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6. V2-11 superseded.
 | E5 — Wild Earth start | done 2026-10-08 (D249–D251) |
 | P3 — looking and the hands | done 2026-10-08 (D252–D254) |
 | P4 with E6 — work by the body, sleep | done 2026-10-08 (D255–D257) |
-| P5 → P6, Audit 1 | next |
+| P5 | done 2026-10-08 (P6 removed, D258) |
+| Audit 1 | next |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
@@ -43,11 +44,43 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6. V2-11 superseded.
 | Row | State |
 |---|---|
 | Smooth world (S) | S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
-| Playability (P) | P0–P4 done; open issues in `dev/PLAYTEST.md` |
+| Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E6 done 2026-10-08; E7 planned |
-| Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
+| Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 |
 
-## Latest: P4 with E6 — work by the body; sleep (2026-10-08, D255–D257)
+## Latest: P5 — motion timing (2026-10-08, D258–D259)
+- **Feet do not slide:** a person's planted foot now goes back under the body at the ground's
+  pace while it is flat, then rolls over its ball. The slip is under 0.04 m/s walking, 0.09
+  jogging and 0.19 sprinting; before, it was some 0.5 m/s at a walk. A foot swinging through
+  no longer dips into the ground (`docs/review/p5/gaits.png`). Animals' feet keep pace walking,
+  trotting and galloping: legs reach further, and a hare's bound has a shorter footfall.
+- **Clouds change shape** as they go: a cloud is another in some ten minutes. This is capped
+  like their drift when time runs fast.
+- **Smoke** is carried off at the wind's speed (it went at 0.3 of it).
+- **The audit:** `docs/design/motion-timing.md` lists everything that moves: its clock, its speed,
+  where it is done and what checks it. That covers the sky, water, rain and snow, sway,
+  caustics, textures, smoke, shimmer, the eye's meter, gaits, work strokes, blows and animals.
+  It says what does not move yet (rivers' flow, fog banks, lightning, flicker) and how the
+  visuals time-lapse in fast-forward.
+- **The check** (`hearth_render/tests/motion_timing.rs`):
+  - every clock a shader reads, in every function, must have its row in the document;
+  - a shader naming a clock the check does not know fails it;
+  - the speeds the shaders give must be the ones the document states.
+  - With it: the sky in fast-forward (a thousand times: a capped step a frame), and the feet
+    tests for people and animals.
+- **P6 removed** (D258): no tutorial, first-time hints or Field Guide.
+- **Deferred** (`PLAN.md`): rivers flowing at their current, waterfalls, fog banks, lightning,
+  flames; a check that measures motion in rendered images.
+- **Real?** Stance by the leg's geometry against the ground passed; the stride after
+  Alexander; smoke at the wind's speed; a cumulus's life.
+- **Lean?** One solver for the stance hip. One check reads the shaders and the document
+  together.
+- **Fast?** Five Newton steps a leg a frame. The checks run in milliseconds.
+- **Whole?** People, animals, the sky, water and particles are all timed against one table,
+  and fast-forward is covered.
+- **Organic?** Clouds grow and fade as they drift. Feet grip the ground.
+
+## P4 with E6 — work by the body; sleep (2026-10-08, D255–D257)
 - **Stroke by stroke:** every attended process has a work model (pose, stroke, hands; linted).
   Holding the hand's button works and letting go stops (or click to start and stop,
   Accessibility). Work part done is kept, saved, and taken up where it was left.
@@ -135,7 +168,7 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6. V2-11 superseded.
   - who begins the next life;
   - a new life near where the last one lived, at a place suggested for the season, or anywhere;
   - restarting the world.
-- Deferred (`PLAN.md`): the full suite (with E4's); cards on hover; Easy's hints at waking (P6);
+- Deferred (`PLAN.md`): the full suite (with E4's); cards on hover; Easy's hints at waking (removed with P6);
   Near a friend (Phase R).
 - **Real?** Heights about real adult means. Pigmentation correlated as the genes act. Places
   judged by the climate normals of the day. Every card's claim found in the world (tested by

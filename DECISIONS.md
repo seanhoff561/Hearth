@@ -266,3 +266,5 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D255 (2026-10-08) Work is held, stroke by stroke, and what is done stays done
 - D256 (2026-10-08) Work left to itself follows the weather; its state can be looked at
 - D257 (2026-10-08) Sleep comes at night: the drop-off threshold is the two-process model's
+- D258 (2026-10-08) P6 (Learn to Play) is removed: no tutorial, first-time hints or Field Guide
+- D259 (2026-10-08) Planted feet go back at the ground's pace; the shaders' speeds are checked against the document

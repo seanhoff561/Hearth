@@ -400,19 +400,25 @@ impl Animator {
                 let fwd_l = (TAU * ql).cos();
                 root = twist(-g.twist * fwd_l);
                 chest = twist(g.twist * 1.8 * fwd_l);
-                let (left_leg, right_leg) = (stride(g, ql), stride(g, qr));
+                let reach = Reach::of(rig, activity.cycle_m());
+                let (left_leg, right_leg) = (stride(g, &reach, ql), stride(g, &reach, qr));
                 // The hips ride on the feet that are down; between strides of a run they fly
                 // in an arc from the push to the landing.
                 let support = |l: &Leg| support_y(rig, l);
                 root_y = Some(match (ql < g.stance, qr < g.stance) {
                     (true, true) => support(&left_leg).max(support(&right_leg)),
+                    // A foot swinging through or about to come down is not put through the
+                    // ground: the body rises onto the other's toes to meet it.
+                    (true, false) | (false, true) if g.flight_m == 0.0 => {
+                        support(&left_leg).max(support(&right_leg))
+                    }
                     (true, false) => support(&left_leg),
                     (false, true) => support(&right_leg),
                     (false, false) => {
                         let flight = (0.5 - g.stance).max(1e-3);
                         let since = ((ql - g.stance).min(qr - g.stance) / flight).clamp(0.0, 1.0);
-                        let off = support(&stride(g, g.stance - 1e-4));
-                        let on = support(&stride(g, 0.0));
+                        let off = support(&stride(g, &reach, g.stance - 1e-4));
+                        let on = support(&stride(g, &reach, 0.0));
                         off + (on - off) * since + 4.0 * g.flight_m * since * (1.0 - since)
                     }
                 });
@@ -1013,7 +1019,7 @@ const JOG: Gait = Gait {
     hip_off: -15.0,
     hip_peak: 40.0,
     knee_contact: 18.0,
-    knee_load: 22.0,
+    knee_load: 16.0,
     knee_pre: 0.0,
     knee_swing: 95.0,
     push: 25.0,
@@ -1059,19 +1065,73 @@ const WADE: Gait = Gait {
     flight_m: 0.0,
 };
 
+/// What a stride must cover: the thigh's and shank's lengths, and the ground passed in a cycle.
+struct Reach {
+    thigh: f32,
+    shank: f32,
+    cycle: f32,
+}
+
+impl Reach {
+    fn of(rig: &Rig, cycle: f32) -> Self {
+        let r = &rig.rest;
+        Reach {
+            thigh: r[Joint::KneeL.index()].length(),
+            shank: r[Joint::AnkleL.index()].length(),
+            cycle,
+        }
+    }
+
+    /// The ankle's distance ahead of the hip with the hip flexed `hip` and the knee `knee`.
+    fn ahead(&self, hip: f32, knee: f32) -> f32 {
+        self.thigh * hip.to_radians().sin() + self.shank * (hip - knee).to_radians().sin()
+    }
+
+    /// The hip's flexion that puts the ankle `z` ahead of the hip with the knee at `knee`.
+    fn hip_for(&self, z: f32, knee: f32, guess: f32) -> f32 {
+        let mut h = guess.to_radians();
+        let k = knee.to_radians();
+        for _ in 0..5 {
+            let f = self.thigh * h.sin() + self.shank * (h - k).sin() - z;
+            let df = self.thigh * h.cos() + self.shank * (h - k).cos();
+            h -= f / df.max(0.2);
+        }
+        h.to_degrees()
+    }
+}
+
+/// Of the stance, the part with the foot flat; after it the heel rises and the body rolls over
+/// the ball of the foot, the ankle going back at a third of the ground's pace.
+const FLAT: f32 = 0.65;
+
+/// The hip's flexion in stance at `u` of it with the knee at `knee`: the planted ankle goes
+/// back under the body at the ground's pace (P §8.2: feet do not slide).
+fn stance_hip(g: &Gait, r: &Reach, u: f32, knee: f32) -> f32 {
+    let z0 = r.ahead(g.hip_contact, g.knee_contact);
+    let d = g.stance * r.cycle;
+    let gone = d * (u.min(FLAT) + (u - FLAT).max(0.0) / 3.0);
+    let guess = g.hip_contact + (g.hip_off - g.hip_contact) * u;
+    r.hip_for(z0 - gone, knee, guess)
+}
+
+/// The knee's flexion in stance at `u` of it: it gives under the load, straightens, then bends
+/// as the heel rises.
+fn stance_knee(g: &Gait, u: f32) -> f32 {
+    g.knee_contact
+        + g.knee_load * (PI * (u / 0.7).min(1.0)).sin()
+        + g.knee_pre * smooth(0.7, 1.0, u)
+}
+
 /// A leg at `q` of its cycle: the foot comes down at 0, carries the body (flat, rolling onto
 /// the toes at the end) until it leaves, then swings forward, knee bent, reaching past where
 /// it will land and settling back to meet the ground.
-fn stride(g: &Gait, q: f32) -> Leg {
+fn stride(g: &Gait, r: &Reach, q: f32) -> Leg {
     let q = q.rem_euclid(1.0);
     if q < g.stance {
         let u = q / g.stance;
-        let hip = g.hip_contact + (g.hip_off - g.hip_contact) * u;
-        // The knee gives under the load, straightens, then bends as the heel rises.
-        let knee = g.knee_contact
-            + g.knee_load * (PI * (u / 0.7).min(1.0)).sin()
-            + g.knee_pre * smooth(0.7, 1.0, u);
-        let heel_off = smooth(0.65, 1.0, u);
+        let knee = stance_knee(g, u);
+        let hip = stance_hip(g, r, u, knee);
+        let heel_off = smooth(FLAT, 1.0, u);
         Leg {
             hip,
             abduct: 1.5,
@@ -1080,8 +1140,10 @@ fn stride(g: &Gait, q: f32) -> Leg {
         }
     } else {
         let v = (q - g.stance) / (1.0 - g.stance);
+        // The swing begins where the stance left the hip.
+        let off = stance_hip(g, r, 1.0, stance_knee(g, 1.0));
         let hip = if v < 0.75 {
-            g.hip_off + (g.hip_peak - g.hip_off) * (PI / 2.0 * v / 0.75).sin()
+            off + (g.hip_peak - off) * (PI / 2.0 * v / 0.75).sin()
         } else {
             g.hip_peak + (g.hip_contact - g.hip_peak) * smooth(0.75, 1.0, v)
         };

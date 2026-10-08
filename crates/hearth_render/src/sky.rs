@@ -37,6 +37,7 @@ pub struct SkyParams {
     /// Cloud base height above the camera (blocks); ≤ 0 hides clouds.
     pub cloud_height: f32,
     pub cloud_offset: Vec2,
+    pub cloud_churn: f32,
     pub exposure: f32,
     pub night: f32,
     /// Moon disc radiance scale (pre-exposed).
@@ -392,7 +393,7 @@ impl SkyRenderer {
             ],
             misc: [p.star_visibility, p.exposure, p.night, p.moon_disc],
             direct: [p.direct.x, p.direct.y, p.direct.z, p.turbulence],
-            ambient: [p.ambient.x, p.ambient.y, p.ambient.z, 0.0],
+            ambient: [p.ambient.x, p.ambient.y, p.ambient.z, p.cloud_churn],
             overcast: p.overcast.to_array(),
         };
         ctx.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
