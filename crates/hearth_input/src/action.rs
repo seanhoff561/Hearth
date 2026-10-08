@@ -1,7 +1,7 @@
 //! Logical input actions (move forward, attack, open inventory, …), their categories, the input
 //! contexts they are active in, and their default bindings.
 
-use crate::key::{Binding, Key, Modifiers, MouseButton};
+use crate::key::{Binding, Key, Modifiers, MouseButton, PadButton};
 
 /// Dense index of a registered action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -75,13 +75,18 @@ impl Contexts {
     }
 }
 
-/// How a held action behaves when its "toggle" option is enabled.
+/// How an action is worked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToggleKind {
-    /// Always hold-to-activate.
-    HoldOnly,
-    /// Can be switched to toggle mode (sneak and sprint).
+pub enum Kind {
+    /// Active while its key is held (walking, the hands' work, dragging). On a modifier key it
+    /// starts on the press and stays held through combinations made with it.
+    Hold,
+    /// Held, or latched by a press when its toggle option is on (crouching, running).
     Toggleable,
+    /// Does one thing per press (the inventory, a quick slot, the journal). On a modifier key
+    /// (or the debug key) alone it waits for the key to be let go, and comes only if no other
+    /// key was pressed meanwhile, so the combinations made with that key still work.
+    Tap,
 }
 
 /// Static description of an action.
@@ -92,7 +97,9 @@ pub struct ActionDef {
     pub category: Category,
     pub contexts: Contexts,
     pub default: Option<Binding>,
-    pub toggle: ToggleKind,
+    /// The controller's button by default (a second binding, beside the key's).
+    pub pad: Option<PadButton>,
+    pub kind: Kind,
 }
 
 /// Built-in actions. Their ids are the indices they are registered at by
@@ -140,16 +147,17 @@ impl ActionRegistry {
         let k = |key| Some(Binding::key(key));
         let m = |b| Some(Binding::mouse(b));
         let mut r = Self { defs: Vec::new() };
-        let mut add = |id: &str, category, contexts, default, toggle| {
+        let mut add = |id: &str, category, contexts, default, kind| {
             r.defs.push(ActionDef {
                 id: id.to_owned(),
                 category,
                 contexts,
                 default,
-                toggle,
+                pad: None,
+                kind,
             });
         };
-        use ToggleKind::{HoldOnly as H, Toggleable as T};
+        use Kind::{Hold as H, Tap, Toggleable as T};
         add("key.forward", C::Movement, g, k(Key::W), H);
         add("key.left", C::Movement, g, k(Key::A), H);
         add("key.back", C::Movement, g, k(Key::S), H);
@@ -158,15 +166,21 @@ impl ActionRegistry {
         add("key.sneak", C::Movement, g, k(Key::C), T);
         add("key.sprint", C::Movement, g, k(Key::LeftShift), T);
         add("key.attack", C::Gameplay, g, m(MouseButton::Left), H);
-        add("key.pick_block", C::Gameplay, g, m(MouseButton::Middle), H);
-        add("key.inventory", C::Inventory, gc, k(Key::Tab), H);
-        add("key.drop", C::Inventory, gc, k(Key::G), H);
+        add(
+            "key.pick_block",
+            C::Gameplay,
+            g,
+            m(MouseButton::Middle),
+            Tap,
+        );
+        add("key.inventory", C::Inventory, gc, k(Key::Tab), Tap);
+        add("key.drop", C::Inventory, gc, k(Key::G), Tap);
         add(
             "key.drop_stack",
             C::Inventory,
             gc,
             Some(Binding::with(Key::G, Modifiers::CTRL)),
-            H,
+            Tap,
         );
         let digits = [
             Key::Digit1,
@@ -177,42 +191,75 @@ impl ActionRegistry {
             Key::Digit6,
         ];
         for (i, d) in digits.into_iter().enumerate() {
-            add(&format!("key.hotbar.{}", i + 1), C::Inventory, gc, k(d), H);
+            add(
+                &format!("key.hotbar.{}", i + 1),
+                C::Inventory,
+                gc,
+                k(d),
+                Tap,
+            );
         }
-        add("key.debug", C::Miscellaneous, g, k(Key::F3), H);
+        add("key.debug", C::Miscellaneous, g, k(Key::F3), Tap);
         add(
             "key.toggle_perspective",
             C::Miscellaneous,
             g,
             m(MouseButton::Back),
-            H,
+            Tap,
         );
-        add("key.world_map", C::Miscellaneous, g, k(Key::M), H);
-        add("key.fullscreen", C::Miscellaneous, glob, k(Key::F11), H);
-        add("key.pause", C::Miscellaneous, g, k(Key::Escape), H);
-        add("key.debug.reload_resources", C::Debug, dbg, k(Key::T), H);
-        add("key.debug.time_forward", C::Debug, dbg, k(Key::Right), H);
-        add("key.debug.time_back", C::Debug, dbg, k(Key::Left), H);
-        add("key.debug.season_forward", C::Debug, dbg, k(Key::Up), H);
-        add("key.debug.time_warp", C::Debug, dbg, k(Key::W), H);
+        add("key.world_map", C::Miscellaneous, g, k(Key::M), Tap);
+        add("key.fullscreen", C::Miscellaneous, glob, k(Key::F11), Tap);
+        add("key.pause", C::Miscellaneous, g, k(Key::Escape), Tap);
+        add("key.debug.reload_resources", C::Debug, dbg, k(Key::T), Tap);
+        add("key.debug.time_forward", C::Debug, dbg, k(Key::Right), Tap);
+        add("key.debug.time_back", C::Debug, dbg, k(Key::Left), Tap);
+        add("key.debug.season_forward", C::Debug, dbg, k(Key::Up), Tap);
+        add("key.debug.time_warp", C::Debug, dbg, k(Key::W), Tap);
         add("key.crawl", C::Movement, g, k(Key::Z), T);
-        add("key.debug.free_camera", C::Debug, dbg, k(Key::N), H);
-        add("key.sleep", C::Gameplay, g, k(Key::X), H);
-        add("key.body_panel", C::Gameplay, g, k(Key::B), H);
-        add("key.interact", C::Gameplay, g, k(Key::E), H);
+        add("key.debug.free_camera", C::Debug, dbg, k(Key::N), Tap);
+        add("key.sleep", C::Gameplay, g, k(Key::X), Tap);
+        add("key.body_panel", C::Gameplay, g, k(Key::B), Tap);
+        add("key.interact", C::Gameplay, g, k(Key::E), Tap);
         add("key.drag", C::Gameplay, g, k(Key::F), H);
         add("key.radial", C::Inventory, g, k(Key::Q), H);
         add("key.throw", C::Gameplay, g, k(Key::R), H);
-        add("key.journal", C::Gameplay, g, k(Key::J), H);
-        add("key.shout", C::Gameplay, g, k(Key::H), H);
-        add("key.builder_view", C::Gameplay, g, k(Key::V), H);
-        add("key.watch.faster", C::Gameplay, g, k(Key::RightBracket), H);
-        add("key.watch.slower", C::Gameplay, g, k(Key::LeftBracket), H);
+        add("key.journal", C::Gameplay, g, k(Key::J), Tap);
+        add("key.shout", C::Gameplay, g, k(Key::H), Tap);
+        add("key.builder_view", C::Gameplay, g, k(Key::V), Tap);
+        add(
+            "key.watch.faster",
+            C::Gameplay,
+            g,
+            k(Key::RightBracket),
+            Tap,
+        );
+        add("key.watch.slower", C::Gameplay, g, k(Key::LeftBracket), Tap);
         // Creative's (Amendment P §3, §13): keys no earlier action holds.
-        add("key.creative.clear_view", C::Creative, g, k(Key::F4), H);
-        add("key.creative.spectate", C::Creative, g, k(Key::F6), H);
-        add("key.creative.remove", C::Creative, g, k(Key::Delete), H);
-        add("key.creative.no_clip", C::Creative, g, k(Key::F7), H);
+        add("key.creative.clear_view", C::Creative, g, k(Key::F4), Tap);
+        add("key.creative.spectate", C::Creative, g, k(Key::F6), Tap);
+        add("key.creative.remove", C::Creative, g, k(Key::Delete), Tap);
+        add("key.creative.no_clip", C::Creative, g, k(Key::F7), Tap);
+        // The controller (v1 M11, V2-3): the sticks walk and look; every button can be rebound.
+        use PadButton as P;
+        for (id, b) in [
+            (builtin::JUMP, P::South),
+            (builtin::SNEAK, P::East),
+            (builtin::CRAWL, P::West),
+            (builtin::INVENTORY, P::North),
+            (builtin::SPRINT, P::LeftStick),
+            (builtin::TOGGLE_PERSPECTIVE, P::DPadRight),
+            (builtin::ATTACK, P::RightTrigger),
+            (builtin::INTERACT, P::LeftTrigger),
+            (builtin::THROW, P::RightBumper),
+            (builtin::RADIAL, P::LeftBumper),
+            (builtin::PAUSE, P::Start),
+            (builtin::WORLD_MAP, P::Select),
+            (builtin::JOURNAL, P::DPadUp),
+            (builtin::DROP, P::DPadDown),
+            (builtin::SLEEP, P::DPadLeft),
+        ] {
+            r.defs[id.0 as usize].pad = Some(b);
+        }
         debug_assert_eq!(r.defs.len(), builtin::COUNT);
         r
     }

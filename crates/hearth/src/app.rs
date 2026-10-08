@@ -19,7 +19,7 @@ use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 use crate::client::Client;
 use crate::content_state::ContentState;
 use crate::frame_limiter::FrameLimiter;
-use crate::gamepad::{Gamepads, Press};
+use crate::gamepad::{Gamepads, Polled, Press};
 use crate::interface::Interface;
 use crate::menus::{MenuAction, MenuContext, Menus, Screen};
 use crate::profiles::Profiles;
@@ -136,10 +136,11 @@ impl App {
             );
         }
         let options = Options::load_or_default(&dirs.options_file());
-        let bindings = KeyBindings::from_map(
+        let mut bindings = KeyBindings::from_map(
             hearth_input::ActionRegistry::with_builtins(),
             &options.controls.key_bindings,
         );
+        bindings.apply_pad_map(&options.controls.pad_bindings);
         let mut input = InputState::new(bindings.registry().len());
         input.set_options(InputOptions {
             toggle_sneak: options.controls.toggle_sneak,
@@ -351,6 +352,7 @@ impl App {
 
     fn save_options(&mut self) {
         self.options.controls.key_bindings = self.bindings.to_map();
+        self.options.controls.pad_bindings = self.bindings.pad_map();
         if let Err(e) = self.options.save(&self.dirs.options_file()) {
             log::error!("failed to save options: {e}");
         }
@@ -377,15 +379,19 @@ impl App {
         let Some(run) = &mut self.running else {
             return;
         };
-        // A binding being captured takes every key.
+        // A binding being captured takes every key, pressed and let go (a modifier let go
+        // alone binds itself).
         if run.menus.capturing() {
-            if pressed && run.menus.capture(key, &mut self.bindings) {
+            if run.menus.capture(key, pressed, &mut self.bindings) {
                 self.save_options();
             }
             return;
         }
         if run.menus.is_open() {
             if !pressed {
+                // What was held in play is let go (a tap it held back doesn't fire under a
+                // menu).
+                self.input.release(key, &self.bindings);
                 if key == InputKey::Mouse(MouseButton::Left) {
                     run.interface.button(false);
                 }
@@ -434,111 +440,7 @@ impl App {
         let globe_open = run.client.as_ref().is_some_and(|c| c.globe.open);
         if pressed {
             let activated: Vec<_> = self.input.press(key, &self.bindings).to_vec();
-            let mut release_mouse = false;
-            for action in activated {
-                log::debug!("action {}", self.bindings.registry().def(action).id);
-                if action == builtin::FULLSCREEN {
-                    self.toggle_fullscreen();
-                } else if action == builtin::PAUSE {
-                    let Some(run) = &mut self.running else {
-                        continue;
-                    };
-                    match &mut run.client {
-                        Some(c) if c.globe.open => c.globe.close(),
-                        // Spectating: back to the body.
-                        Some(c) if c.watching_alive() => c.step_in(),
-                        Some(c) => {
-                            c.pause(true);
-                            run.menus.open(Screen::Pause);
-                        }
-                        None => {}
-                    }
-                    release_mouse = true;
-                } else if action == builtin::DEBUG_RELOAD_RESOURCES {
-                    self.content.reload();
-                } else if let Some(run) = &mut self.running
-                    && let Some(p) = &mut run.client
-                {
-                    let watching = p.watching.is_some();
-                    if action == builtin::WORLD_MAP {
-                        release_mouse |= p.toggle_globe();
-                    } else if watching && action == builtin::WATCH_FASTER {
-                        p.watch_faster(1);
-                    } else if watching && action == builtin::WATCH_SLOWER {
-                        p.watch_faster(-1);
-                    } else if watching && action == builtin::INTERACT {
-                        p.watch_follow();
-                    } else if action == builtin::DEBUG_TIME_FORWARD && p.may_watch() {
-                        p.skip_hours(1.0);
-                    } else if action == builtin::DEBUG_TIME_BACK && p.may_watch() {
-                        p.skip_hours(-1.0);
-                    } else if action == builtin::DEBUG_SEASON_FORWARD && p.may_watch() {
-                        p.skip_hours(24.0 * p.calendar.days_per_season as f64);
-                    } else if action == builtin::DEBUG_TIME_WARP && p.may_watch() {
-                        // Off → one game hour per real second → off.
-                        let warp = if p.time_warp > 0.0 {
-                            0.0
-                        } else {
-                            p.calendar.ticks_per_day() / 24.0
-                        };
-                        p.set_time_warp(warp);
-                    } else if action == builtin::NO_CLIP && p.creative() {
-                        // Through the ground: flying, and nothing stops the body.
-                        p.no_clip = !p.no_clip;
-                        p.flying |= p.no_clip;
-                    } else if action == builtin::DEBUG_FREE_CAMERA && p.may_watch() {
-                        p.toggle_free_camera();
-                    } else if action == builtin::TOGGLE_PERSPECTIVE {
-                        p.toggle_perspective();
-                    } else if action == builtin::SLEEP {
-                        p.toggle_rest();
-                    } else if action == builtin::SHOUT {
-                        p.shout();
-                    } else if action == builtin::BODY_PANEL {
-                        p.toggle_body_panel();
-                    } else if action == builtin::BUILDER_VIEW {
-                        p.toggle_builder_view();
-                    } else if action == builtin::INVENTORY && p.creative() && !p.dead() {
-                        // Creative's inventory first; its Carried button the things carried.
-                        run.menus.open(Screen::Creative(Default::default()));
-                        release_mouse = true;
-                    } else if action == builtin::PICK_BLOCK && p.creative() {
-                        if let Some((tab, query)) = p.pick() {
-                            run.menus
-                                .open(Screen::Creative(crate::creative_ui::CreativeScreen {
-                                    tab,
-                                    query,
-                                    selected: Some(0),
-                                    ..Default::default()
-                                }));
-                            release_mouse = true;
-                        }
-                    } else if action == builtin::CLEAR_VIEW && (p.creative() || p.developer) {
-                        p.clear_view.on = !p.clear_view.on;
-                    } else if action == builtin::CREATIVE_REMOVE {
-                        p.remove_looked();
-                    } else if action == builtin::SPECTATE && p.creative() {
-                        // Spectate, and back: the body brought to where the eye is.
-                        if p.watching_alive() {
-                            p.resume_here();
-                        } else {
-                            p.observe();
-                        }
-                    } else if action == builtin::INVENTORY && p.can_handle() {
-                        run.menus.open(Screen::Inventory {
-                            lifted: None,
-                            turned: false,
-                        });
-                        release_mouse = true;
-                    } else if action == builtin::JOURNAL && p.crafting.is_some() {
-                        run.menus.open(Screen::Journal { tab: 0, scroll: 0 });
-                        release_mouse = true;
-                    }
-                }
-            }
-            if release_mouse {
-                self.set_captured(false);
-            }
+            self.fire(activated);
             if key == InputKey::Mouse(MouseButton::Left) {
                 if globe_open {
                     if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
@@ -549,13 +451,126 @@ impl App {
                 }
             }
         } else {
-            self.input.release(key, &self.bindings);
+            // A tap on a modifier key alone comes as it is let go.
+            let tapped = self.input.release(key, &self.bindings);
+            self.fire(tapped);
             if key == InputKey::Mouse(MouseButton::Left)
                 && globe_open
                 && let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut())
             {
                 c.globe_button(false);
             }
+        }
+    }
+
+    /// Does what the actions just pressed (or tapped) ask.
+    fn fire(&mut self, actions: Vec<hearth_input::ActionId>) {
+        let mut release_mouse = false;
+        for action in actions {
+            log::debug!("action {}", self.bindings.registry().def(action).id);
+            if action == builtin::FULLSCREEN {
+                self.toggle_fullscreen();
+            } else if action == builtin::PAUSE {
+                let Some(run) = &mut self.running else {
+                    continue;
+                };
+                match &mut run.client {
+                    Some(c) if c.globe.open => c.globe.close(),
+                    // Spectating: back to the body.
+                    Some(c) if c.watching_alive() => c.step_in(),
+                    Some(c) => {
+                        c.pause(true);
+                        run.menus.open(Screen::Pause);
+                    }
+                    None => {}
+                }
+                release_mouse = true;
+            } else if action == builtin::DEBUG_RELOAD_RESOURCES {
+                self.content.reload();
+            } else if let Some(run) = &mut self.running
+                && let Some(p) = &mut run.client
+            {
+                let watching = p.watching.is_some();
+                if action == builtin::DEBUG {
+                    p.toggle_debug();
+                } else if action == builtin::WORLD_MAP {
+                    release_mouse |= p.toggle_globe();
+                } else if watching && action == builtin::WATCH_FASTER {
+                    p.watch_faster(1);
+                } else if watching && action == builtin::WATCH_SLOWER {
+                    p.watch_faster(-1);
+                } else if watching && action == builtin::INTERACT {
+                    p.watch_follow();
+                } else if action == builtin::DEBUG_TIME_FORWARD && p.may_watch() {
+                    p.skip_hours(1.0);
+                } else if action == builtin::DEBUG_TIME_BACK && p.may_watch() {
+                    p.skip_hours(-1.0);
+                } else if action == builtin::DEBUG_SEASON_FORWARD && p.may_watch() {
+                    p.skip_hours(24.0 * p.calendar.days_per_season as f64);
+                } else if action == builtin::DEBUG_TIME_WARP && p.may_watch() {
+                    // Off → one game hour per real second → off.
+                    let warp = if p.time_warp > 0.0 {
+                        0.0
+                    } else {
+                        p.calendar.ticks_per_day() / 24.0
+                    };
+                    p.set_time_warp(warp);
+                } else if action == builtin::NO_CLIP && p.creative() {
+                    // Through the ground: flying, and nothing stops the body.
+                    p.no_clip = !p.no_clip;
+                    p.flying |= p.no_clip;
+                } else if action == builtin::DEBUG_FREE_CAMERA && p.may_watch() {
+                    p.toggle_free_camera();
+                } else if action == builtin::TOGGLE_PERSPECTIVE {
+                    p.toggle_perspective();
+                } else if action == builtin::SLEEP {
+                    p.toggle_rest();
+                } else if action == builtin::SHOUT {
+                    p.shout();
+                } else if action == builtin::BODY_PANEL {
+                    p.toggle_body_panel();
+                } else if action == builtin::BUILDER_VIEW {
+                    p.toggle_builder_view();
+                } else if action == builtin::INVENTORY && p.creative() && !p.dead() {
+                    // Creative's inventory first; its Carried button the things carried.
+                    run.menus.open(Screen::Creative(Default::default()));
+                    release_mouse = true;
+                } else if action == builtin::PICK_BLOCK && p.creative() {
+                    if let Some((tab, query)) = p.pick() {
+                        run.menus
+                            .open(Screen::Creative(crate::creative_ui::CreativeScreen {
+                                tab,
+                                query,
+                                selected: Some(0),
+                                ..Default::default()
+                            }));
+                        release_mouse = true;
+                    }
+                } else if action == builtin::CLEAR_VIEW && (p.creative() || p.developer) {
+                    p.clear_view.on = !p.clear_view.on;
+                } else if action == builtin::CREATIVE_REMOVE {
+                    p.remove_looked();
+                } else if action == builtin::SPECTATE && p.creative() {
+                    // Spectate, and back: the body brought to where the eye is.
+                    if p.watching_alive() {
+                        p.resume_here();
+                    } else {
+                        p.observe();
+                    }
+                } else if action == builtin::INVENTORY && p.can_handle() {
+                    run.menus.open(Screen::Inventory {
+                        lifted: None,
+                        turned: false,
+                    });
+                    release_mouse = true;
+                } else if action == builtin::JOURNAL && p.crafting.is_some() {
+                    run.menus.open(Screen::Journal { tab: 0, scroll: 0 });
+                    release_mouse = true;
+                }
+            }
+        }
+        if release_mouse {
+            self.set_captured(false);
         }
     }
 
@@ -965,54 +980,39 @@ impl App {
         run.captured = captured;
     }
 
-    /// What the controller's buttons do this frame.
-    fn pad_presses(&mut self, presses: Vec<Press>) {
+    /// What the controller did this frame: its buttons go where keys go (to a binding being
+    /// captured, or to play), and its steps move through an open menu.
+    fn pad_input(&mut self, polled: Polled) {
+        let Some(run) = &self.running else {
+            return;
+        };
+        // As things were before this frame's buttons (Start may open the pause screen).
+        let menu = run.menus.is_open() && !run.menus.capturing();
+        for (b, pressed) in polled.buttons {
+            self.handle_key(InputKey::Pad(b), pressed);
+        }
         let Some(run) = &mut self.running else {
             return;
         };
-        if run.menus.is_open() {
-            for p in presses {
-                let nav = match p {
-                    Press::Up => Some(NavKey::Up),
-                    Press::Down => Some(NavKey::Down),
-                    Press::Left => Some(NavKey::Left),
-                    Press::Right => Some(NavKey::Right),
-                    Press::South => Some(NavKey::Enter),
-                    _ => None,
-                };
-                if let Some(n) = nav {
-                    run.interface.key(n);
-                } else if matches!(p, Press::East | Press::Start) {
-                    let action = run.menus.back();
-                    if let Some(a) = action {
+        if !menu || !run.menus.is_open() {
+            return;
+        }
+        for p in polled.nav {
+            let nav = match p {
+                Press::Up => NavKey::Up,
+                Press::Down => NavKey::Down,
+                Press::Left => NavKey::Left,
+                Press::Right => NavKey::Right,
+                Press::Enter => NavKey::Enter,
+                Press::Back => {
+                    if let Some(a) = run.menus.back() {
                         self.menu_actions(vec![a]);
                         return;
                     }
+                    continue;
                 }
-            }
-            return;
-        }
-        let Some(c) = &mut run.client else {
-            return;
-        };
-        let mut release_mouse = false;
-        for p in presses {
-            match p {
-                Press::Start => {
-                    if c.globe.open {
-                        c.globe.close();
-                    } else {
-                        c.pause(true);
-                        run.menus.open(Screen::Pause);
-                        release_mouse = true;
-                    }
-                }
-                Press::Select => release_mouse |= c.toggle_globe(),
-                _ => {}
-            }
-        }
-        if release_mouse {
-            self.set_captured(false);
+            };
+            run.interface.key(nav);
         }
     }
 
@@ -1021,9 +1021,9 @@ impl App {
         let sensitivity = self.options.controls.mouse_sensitivity;
         let invert = self.options.controls.invert_y;
         let pad_sensitivity = self.options.controls.controller_sensitivity;
-        let presses = self.pads.poll(self.start.elapsed().as_secs_f64());
-        if !presses.is_empty() {
-            self.pad_presses(presses);
+        let polled = self.pads.poll(self.start.elapsed().as_secs_f64());
+        if !polled.buttons.is_empty() || !polled.nav.is_empty() {
+            self.pad_input(polled);
         }
         let pad = self.pads.pad;
         let mut actions = Vec::new();
@@ -1135,11 +1135,6 @@ impl App {
             }) {
                 self.frames_rendered += 1;
                 run.title_frames += 1;
-            }
-            if self.input.debug_overlay_toggled()
-                && let Some(c) = &mut run.client
-            {
-                c.toggle_debug();
             }
             let elapsed = run.title_timer.elapsed().as_secs_f64();
             // The globe describes the place under the cursor: keep up with it.
@@ -1255,6 +1250,9 @@ impl ApplicationHandler for App {
             WindowEvent::Moved(_) => self.remember_window_placement(),
             WindowEvent::Focused(false) => {
                 self.input.release_all();
+                if let Some(run) = &mut self.running {
+                    run.menus.capture_reset();
+                }
                 self.set_captured(false);
             }
             WindowEvent::KeyboardInput { event, .. } => {

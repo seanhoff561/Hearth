@@ -10,7 +10,7 @@ pub mod bindings;
 pub mod key;
 pub mod state;
 
-pub use action::{ActionDef, ActionId, ActionRegistry, Category, Contexts, ToggleKind, builtin};
+pub use action::{ActionDef, ActionId, ActionRegistry, Category, Contexts, Kind, builtin};
 pub use bindings::{CaptureResult, KeyBindings, RebindCapture};
-pub use key::{Binding, InputKey, Key, Modifiers, MouseButton};
+pub use key::{Binding, InputKey, Key, Modifiers, MouseButton, PadButton};
 pub use state::{InputOptions, InputState};

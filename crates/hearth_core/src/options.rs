@@ -382,6 +382,8 @@ pub struct ControlOptions {
     /// Action id → binding string, e.g. `"key.forward" = "w"`, `"key.drop_stack" = "ctrl+x"`.
     /// Missing entries use the action's default binding.
     pub key_bindings: BTreeMap<String, String>,
+    /// Action id → controller button, e.g. `"key.jump" = "pad.south"`, beside the keys.
+    pub pad_bindings: BTreeMap<String, String>,
 }
 
 impl Default for ControlOptions {
@@ -393,6 +395,7 @@ impl Default for ControlOptions {
             toggle_sprint: false,
             controller_sensitivity: 0.5,
             key_bindings: BTreeMap::new(),
+            pad_bindings: BTreeMap::new(),
         }
     }
 }

@@ -21,8 +21,8 @@ macro_rules! keys {
                 match self { $( Key::$variant => $name, )* }
             }
 
-            /// Short label for UI display, e.g. `Left Shift`.
-            pub fn display_name(self) -> &'static str {
+            /// Short label, e.g. `Left Shift` (see [`Key::display_name`]).
+            fn label(self) -> &'static str {
                 match self { $( Key::$variant => $display, )* }
             }
 
@@ -67,7 +67,7 @@ keys! {
     LeftControl => ControlLeft, "left_control", "Left Control";
     RightControl => ControlRight, "right_control", "Right Control";
     LeftAlt => AltLeft, "left_alt", "Left Alt"; RightAlt => AltRight, "right_alt", "Right Alt";
-    LeftSuper => SuperLeft, "left_super", "Left Win"; RightSuper => SuperRight, "right_super", "Right Win";
+    LeftSuper => SuperLeft, "left_super", "Left Super"; RightSuper => SuperRight, "right_super", "Right Super";
     Space => Space, "space", "Space"; Enter => Enter, "enter", "Enter";
     Escape => Escape, "escape", "Escape"; Backspace => Backspace, "backspace", "Backspace";
     Tab => Tab, "tab", "Tab"; CapsLock => CapsLock, "caps_lock", "Caps Lock";
@@ -107,7 +107,29 @@ impl Key {
             _ => 0,
         }
     }
+
+    /// Short label for UI display, e.g. `Left Shift`; Alt and the system key by this
+    /// platform's names (Option and Command on macOS, the Windows key on Windows).
+    pub fn display_name(self) -> &'static str {
+        let mac = cfg!(target_os = "macos");
+        match self {
+            Key::LeftAlt if mac => "Left Option",
+            Key::RightAlt if mac => "Right Option",
+            Key::LeftSuper if mac => "Left Command",
+            Key::RightSuper if mac => "Right Command",
+            Key::LeftSuper if cfg!(windows) => "Left Windows",
+            Key::RightSuper if cfg!(windows) => "Right Windows",
+            _ => self.label(),
+        }
+    }
 }
+
+/// The Alt modifier's name here (Option on macOS).
+const ALT_NAME: &str = if cfg!(target_os = "macos") {
+    "Option"
+} else {
+    "Alt"
+};
 
 /// A mouse button. `Back` is usually "mouse 4" and `Forward` "mouse 5".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -174,11 +196,107 @@ impl MouseButton {
     }
 }
 
+/// A game controller's button, by its place on the pad (South is A on an Xbox pad, Cross on a
+/// PlayStation one, B on a Nintendo one). The triggers count as pressed past most of their
+/// travel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum PadButton {
+    South,
+    East,
+    West,
+    North,
+    LeftBumper,
+    RightBumper,
+    LeftTrigger,
+    RightTrigger,
+    Select,
+    Start,
+    Guide,
+    LeftStick,
+    RightStick,
+    DPadUp,
+    DPadDown,
+    DPadLeft,
+    DPadRight,
+}
+
+impl PadButton {
+    pub const ALL: [PadButton; 17] = [
+        PadButton::South,
+        PadButton::East,
+        PadButton::West,
+        PadButton::North,
+        PadButton::LeftBumper,
+        PadButton::RightBumper,
+        PadButton::LeftTrigger,
+        PadButton::RightTrigger,
+        PadButton::Select,
+        PadButton::Start,
+        PadButton::Guide,
+        PadButton::LeftStick,
+        PadButton::RightStick,
+        PadButton::DPadUp,
+        PadButton::DPadDown,
+        PadButton::DPadLeft,
+        PadButton::DPadRight,
+    ];
+
+    /// Stable config name, e.g. `pad.south`.
+    pub fn name(self) -> &'static str {
+        match self {
+            PadButton::South => "pad.south",
+            PadButton::East => "pad.east",
+            PadButton::West => "pad.west",
+            PadButton::North => "pad.north",
+            PadButton::LeftBumper => "pad.left_bumper",
+            PadButton::RightBumper => "pad.right_bumper",
+            PadButton::LeftTrigger => "pad.left_trigger",
+            PadButton::RightTrigger => "pad.right_trigger",
+            PadButton::Select => "pad.select",
+            PadButton::Start => "pad.start",
+            PadButton::Guide => "pad.guide",
+            PadButton::LeftStick => "pad.left_stick",
+            PadButton::RightStick => "pad.right_stick",
+            PadButton::DPadUp => "pad.dpad_up",
+            PadButton::DPadDown => "pad.dpad_down",
+            PadButton::DPadLeft => "pad.dpad_left",
+            PadButton::DPadRight => "pad.dpad_right",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<PadButton> {
+        PadButton::ALL.into_iter().find(|b| b.name() == s)
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            PadButton::South => "Pad South",
+            PadButton::East => "Pad East",
+            PadButton::West => "Pad West",
+            PadButton::North => "Pad North",
+            PadButton::LeftBumper => "Left Bumper",
+            PadButton::RightBumper => "Right Bumper",
+            PadButton::LeftTrigger => "Left Trigger",
+            PadButton::RightTrigger => "Right Trigger",
+            PadButton::Select => "Select",
+            PadButton::Start => "Start",
+            PadButton::Guide => "Guide",
+            PadButton::LeftStick => "Left Stick",
+            PadButton::RightStick => "Right Stick",
+            PadButton::DPadUp => "D-pad Up",
+            PadButton::DPadDown => "D-pad Down",
+            PadButton::DPadLeft => "D-pad Left",
+            PadButton::DPadRight => "D-pad Right",
+        }
+    }
+}
+
 /// Any bindable physical input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum InputKey {
     Keyboard(Key),
     Mouse(MouseButton),
+    Pad(PadButton),
 }
 
 impl InputKey {
@@ -186,12 +304,15 @@ impl InputKey {
         match self {
             InputKey::Keyboard(k) => k.name().to_owned(),
             InputKey::Mouse(b) => b.name(),
+            InputKey::Pad(b) => b.name().to_owned(),
         }
     }
 
     pub fn from_name(s: &str) -> Option<InputKey> {
         if s.starts_with("mouse.") {
             MouseButton::from_name(s).map(InputKey::Mouse)
+        } else if s.starts_with("pad.") {
+            PadButton::from_name(s).map(InputKey::Pad)
         } else {
             Key::from_name(s).map(InputKey::Keyboard)
         }
@@ -201,14 +322,20 @@ impl InputKey {
         match self {
             InputKey::Keyboard(k) => k.display_name().to_owned(),
             InputKey::Mouse(b) => b.display_name(),
+            InputKey::Pad(b) => b.display_name().to_owned(),
         }
     }
 
     pub fn modifier_bit(self) -> u8 {
         match self {
             InputKey::Keyboard(k) => k.modifier_bit(),
-            InputKey::Mouse(_) => 0,
+            InputKey::Mouse(_) | InputKey::Pad(_) => 0,
         }
+    }
+
+    /// A controller's button.
+    pub fn is_pad(self) -> bool {
+        matches!(self, InputKey::Pad(_))
     }
 }
 
@@ -259,6 +386,13 @@ impl Binding {
         }
     }
 
+    pub const fn pad(b: PadButton) -> Binding {
+        Binding {
+            key: InputKey::Pad(b),
+            modifiers: Modifiers::NONE,
+        }
+    }
+
     pub const fn with(key: Key, modifiers: Modifiers) -> Binding {
         Binding {
             key: InputKey::Keyboard(key),
@@ -276,10 +410,40 @@ impl Binding {
             s.push_str("Shift + ");
         }
         if self.modifiers.contains(Modifiers::ALT) {
-            s.push_str("Alt + ");
+            s.push_str(ALT_NAME);
+            s.push_str(" + ");
         }
         s.push_str(&self.key.display_name());
         s
+    }
+
+    /// Shortcuts the operating system keeps for itself (switching and closing windows, the
+    /// window menu, the Start menu and task manager, the Linux consoles): never bound, and left
+    /// to the system in play.
+    pub fn reserved(&self) -> bool {
+        let InputKey::Keyboard(k) = self.key else {
+            return false;
+        };
+        let alt = self.modifiers.contains(Modifiers::ALT);
+        let ctrl = self.modifiers.contains(Modifiers::CTRL);
+        match k {
+            Key::Tab | Key::Space => alt && !ctrl,
+            Key::F4 => alt,
+            Key::Escape => alt || ctrl,
+            Key::Delete => alt && ctrl,
+            Key::F1
+            | Key::F2
+            | Key::F3
+            | Key::F5
+            | Key::F6
+            | Key::F7
+            | Key::F8
+            | Key::F9
+            | Key::F10
+            | Key::F11
+            | Key::F12 => alt && ctrl,
+            _ => false,
+        }
     }
 }
 
@@ -358,6 +522,18 @@ mod tests {
     }
 
     #[test]
+    fn pad_names_round_trip() {
+        for b in PadButton::ALL {
+            let k = InputKey::Pad(b);
+            assert_eq!(InputKey::from_name(&k.name()), Some(k));
+        }
+        assert_eq!(
+            "pad.right_trigger".parse::<Binding>(),
+            Ok(Binding::pad(PadButton::RightTrigger))
+        );
+    }
+
+    #[test]
     fn binding_parse_and_format() {
         let b: Binding = "ctrl+x".parse().unwrap();
         assert_eq!(b, Binding::with(Key::X, Modifiers::CTRL));
@@ -371,5 +547,32 @@ mod tests {
         assert!("hyper+x".parse::<Binding>().is_err());
         assert!("nokey".parse::<Binding>().is_err());
         assert!("shift+left_shift".parse::<Binding>().is_err());
+    }
+
+    #[test]
+    fn the_systems_shortcuts_are_reserved() {
+        for s in [
+            "alt+tab",
+            "shift+alt+tab",
+            "alt+f4",
+            "alt+space",
+            "ctrl+escape",
+            "ctrl+shift+escape",
+            "ctrl+alt+delete",
+            "ctrl+alt+f2",
+        ] {
+            assert!(s.parse::<Binding>().unwrap().reserved(), "{s}");
+        }
+        for s in [
+            "tab",
+            "f4",
+            "ctrl+g",
+            "left_alt",
+            "right_control",
+            "escape",
+            "mouse.4",
+        ] {
+            assert!(!s.parse::<Binding>().unwrap().reserved(), "{s}");
+        }
     }
 }

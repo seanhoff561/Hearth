@@ -4,7 +4,7 @@
 
 use hearth::menus::{MenuContext, Menus, Screen};
 use hearth_core::options::Options;
-use hearth_input::{ActionRegistry, KeyBindings, RebindCapture};
+use hearth_input::{ActionRegistry, KeyBindings};
 use hearth_ui::widgets::Placed;
 use hearth_ui::{DrawList, Font, Rect, Ui, UiInput, UiState};
 
@@ -68,13 +68,7 @@ fn screens() -> Vec<(&'static str, Box<dyn Fn() -> Screen>)> {
         ("video_quality", Box::new(|| Screen::Video { tab: 1 })),
         ("video_distance", Box::new(|| Screen::Video { tab: 2 })),
         ("sound", Box::new(|| Screen::Sound)),
-        (
-            "controls",
-            Box::new(|| Screen::Controls {
-                capturing: None,
-                capture: RebindCapture::new(),
-            }),
-        ),
+        ("controls", Box::new(Screen::controls)),
         ("accessibility", Box::new(|| Screen::Accessibility)),
         ("pause", Box::new(|| Screen::Pause)),
         (

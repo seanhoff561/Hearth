@@ -3,21 +3,28 @@
 
 use std::collections::BTreeMap;
 
-use crate::action::{ActionId, ActionRegistry};
-use crate::key::{Binding, InputKey, Modifiers};
+use crate::action::{ActionId, ActionRegistry, Contexts, builtin};
+use crate::key::{Binding, InputKey, Modifiers, PadButton};
 
-/// Current binding of every registered action.
+/// Current binding of every registered action: a key (or mouse button), and a controller
+/// button beside it.
 #[derive(Debug, Clone)]
 pub struct KeyBindings {
     registry: ActionRegistry,
     bindings: Vec<Option<Binding>>,
+    pads: Vec<Option<PadButton>>,
 }
 
 impl KeyBindings {
     /// Bindings initialised to every action's default.
     pub fn new(registry: ActionRegistry) -> Self {
         let bindings = registry.ids().map(|id| registry.def(id).default).collect();
-        Self { registry, bindings }
+        let pads = registry.ids().map(|id| registry.def(id).pad).collect();
+        Self {
+            registry,
+            bindings,
+            pads,
+        }
     }
 
     /// Default layout with only built-in actions.
@@ -31,10 +38,11 @@ impl KeyBindings {
 
     /// Registers a new action (e.g. from a mod) and binds it to its default.
     pub fn register(&mut self, def: crate::action::ActionDef) -> ActionId {
-        let default = def.default;
+        let (default, pad) = (def.default, def.pad);
         let id = self.registry.register(def);
         if id.0 as usize == self.bindings.len() {
             self.bindings.push(default);
+            self.pads.push(pad);
         }
         id
     }
@@ -52,12 +60,25 @@ impl KeyBindings {
         self.registry.def(action).default
     }
 
+    /// The action's controller button.
+    pub fn pad(&self, action: ActionId) -> Option<PadButton> {
+        self.pads[action.0 as usize]
+    }
+
+    /// Rebinds the action's controller button; `None` unbinds it.
+    pub fn set_pad(&mut self, action: ActionId, button: Option<PadButton>) {
+        self.pads[action.0 as usize] = button;
+    }
+
+    /// True if both the key and the controller button are the action's defaults.
     pub fn is_default(&self, action: ActionId) -> bool {
         self.get(action) == self.default_of(action)
+            && self.pad(action) == self.registry.def(action).pad
     }
 
     pub fn reset(&mut self, action: ActionId) {
         self.set(action, self.default_of(action));
+        self.set_pad(action, self.registry.def(action).pad);
     }
 
     pub fn reset_all(&mut self) {
@@ -92,12 +113,68 @@ impl KeyBindings {
         !self.conflicts_of(action).is_empty()
     }
 
-    /// All conflicting pairs `(a, b)` with `a < b`.
+    /// Actions that share a key with this one in another way: a modifier (or the debug key)
+    /// bound alone, and the combinations made with it. They work together (a held action stays
+    /// held through the combination; a tapped one waits for its key to be let go alone), so the
+    /// Controls screen explains them instead of flagging them.
+    pub fn overlaps_of(&self, action: ActionId) -> Vec<ActionId> {
+        let Some(b) = self.get(action) else {
+            return Vec::new();
+        };
+        let debug = self.get(builtin::DEBUG).map(|d| d.key);
+        let chord = |id: ActionId| {
+            self.registry
+                .def(id)
+                .contexts
+                .contains(Contexts::DEBUG_CHORD)
+        };
+        // Whether `combo` (of `id`) is a combination made with `key` held.
+        let made_with = |id: ActionId, combo: Binding, key: InputKey| {
+            combo.key != key
+                && (combo.modifiers.0 & key.modifier_bit() != 0
+                    || (Some(key) == debug && chord(id)))
+        };
+        let ctx = self.registry.def(action).contexts;
+        self.registry
+            .ids()
+            .filter(|&other| {
+                let Some(o) = self.get(other) else {
+                    return false;
+                };
+                let octx = self.registry.def(other).contexts;
+                other != action
+                    && (octx.overlaps(ctx) || chord(action) || chord(other))
+                    && (made_with(other, o, b.key) || made_with(action, b, o.key))
+            })
+            .collect()
+    }
+
+    /// Other actions on the same controller button in an overlapping context.
+    pub fn pad_conflicts_of(&self, action: ActionId) -> Vec<ActionId> {
+        let Some(b) = self.pad(action) else {
+            return Vec::new();
+        };
+        let ctx = self.registry.def(action).contexts;
+        self.registry
+            .ids()
+            .filter(|&other| {
+                other != action
+                    && self.pad(other) == Some(b)
+                    && self.registry.def(other).contexts.overlaps(ctx)
+            })
+            .collect()
+    }
+
+    /// All conflicting pairs `(a, b)` with `a < b`, of keys and of controller buttons.
     pub fn all_conflicts(&self) -> Vec<(ActionId, ActionId)> {
         let mut out = Vec::new();
         for a in self.registry.ids() {
-            for b in self.conflicts_of(a) {
-                if a < b {
+            for b in self
+                .conflicts_of(a)
+                .into_iter()
+                .chain(self.pad_conflicts_of(a))
+            {
+                if a < b && !out.contains(&(a, b)) {
                     out.push((a, b));
                 }
             }
@@ -105,11 +182,19 @@ impl KeyBindings {
         out
     }
 
-    /// Actions bound to `key` (any modifiers).
+    /// The action's binding that `key` would work: its key's binding, or its controller button.
+    pub fn binding_for(&self, action: ActionId, key: InputKey) -> Option<Binding> {
+        match key {
+            InputKey::Pad(b) => (self.pad(action) == Some(b)).then_some(Binding::pad(b)),
+            _ => self.get(action).filter(|b| b.key == key),
+        }
+    }
+
+    /// Actions bound to `key` (any modifiers), or to a controller button.
     pub fn actions_for_key(&self, key: InputKey) -> impl Iterator<Item = ActionId> + '_ {
         self.registry
             .ids()
-            .filter(move |&id| self.get(id).is_some_and(|b| b.key == key))
+            .filter(move |&id| self.binding_for(id, key).is_some())
     }
 
     /// Serializes the non-default bindings to the `options.toml` representation. Unbound
@@ -117,7 +202,7 @@ impl KeyBindings {
     pub fn to_map(&self) -> BTreeMap<String, String> {
         let mut map = BTreeMap::new();
         for id in self.registry.ids() {
-            if self.is_default(id) {
+            if self.get(id) == self.default_of(id) {
                 continue;
             }
             let value = match self.get(id) {
@@ -154,6 +239,35 @@ impl KeyBindings {
         let mut b = Self::new(registry);
         b.apply_map(map);
         b
+    }
+
+    /// The controller buttons that aren't the defaults, as `options.toml` keeps them.
+    pub fn pad_map(&self) -> BTreeMap<String, String> {
+        self.registry
+            .ids()
+            .filter(|&id| self.pad(id) != self.registry.def(id).pad)
+            .map(|id| {
+                let value = self.pad(id).map_or("none", |b| b.name());
+                (self.registry.def(id).id.clone(), value.to_owned())
+            })
+            .collect()
+    }
+
+    /// Applies stored controller buttons on top of the defaults.
+    pub fn apply_pad_map(&mut self, map: &BTreeMap<String, String>) {
+        for (action_id, value) in map {
+            let Some(id) = self.registry.find(action_id) else {
+                log::debug!("ignoring controller binding for unknown action {action_id}");
+                continue;
+            };
+            if value.eq_ignore_ascii_case("none") {
+                self.set_pad(id, None);
+            } else if let Some(b) = PadButton::from_name(value) {
+                self.set_pad(id, Some(b));
+            } else {
+                log::warn!("unknown controller button {value:?}; keeping default for {action_id}");
+            }
+        }
     }
 }
 
@@ -226,7 +340,8 @@ impl RebindCapture {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action::{ActionDef, Category, Contexts, ToggleKind, builtin};
+    use crate::action::{ActionDef, Category, Kind};
+    use crate::key::PadButton;
     use crate::key::{Key, MouseButton};
 
     #[test]
@@ -295,6 +410,31 @@ mod tests {
     }
 
     #[test]
+    fn lone_modifiers_and_their_combinations_overlap_without_conflict() {
+        let mut b = KeyBindings::builtin_defaults();
+        b.set(builtin::JOURNAL, Some(Binding::key(Key::LeftControl)));
+        assert!(!b.is_conflicting(builtin::JOURNAL));
+        assert_eq!(b.overlaps_of(builtin::JOURNAL), vec![builtin::DROP_STACK]);
+        assert_eq!(b.overlaps_of(builtin::DROP_STACK), vec![builtin::JOURNAL]);
+        // The other side's Ctrl makes the same combinations.
+        b.set(builtin::JOURNAL, Some(Binding::key(Key::RightControl)));
+        assert_eq!(b.overlaps_of(builtin::JOURNAL), vec![builtin::DROP_STACK]);
+        // Alt makes none of them; a plain key overlaps nothing.
+        b.set(builtin::JOURNAL, Some(Binding::key(Key::LeftAlt)));
+        assert!(b.overlaps_of(builtin::JOURNAL).is_empty());
+        assert!(b.overlaps_of(builtin::FORWARD).is_empty());
+        // The debug key alone and its chords.
+        assert!(
+            b.overlaps_of(builtin::DEBUG)
+                .contains(&builtin::DEBUG_TIME_WARP)
+        );
+        assert_eq!(
+            b.overlaps_of(builtin::DEBUG_TIME_WARP),
+            vec![builtin::DEBUG]
+        );
+    }
+
+    #[test]
     fn global_actions_conflict_with_gameplay() {
         let mut b = KeyBindings::builtin_defaults();
         b.set(builtin::FULLSCREEN, Some(Binding::key(Key::W)));
@@ -336,6 +476,39 @@ mod tests {
     }
 
     #[test]
+    fn controller_buttons_rebind_and_persist() {
+        let mut b = KeyBindings::builtin_defaults();
+        assert_eq!(b.pad(builtin::JUMP), Some(PadButton::South));
+        assert_eq!(
+            b.actions_for_key(InputKey::Pad(PadButton::South))
+                .collect::<Vec<_>>(),
+            vec![builtin::JUMP]
+        );
+        b.set_pad(builtin::JOURNAL, Some(PadButton::South));
+        assert_eq!(b.pad_conflicts_of(builtin::JUMP), vec![builtin::JOURNAL]);
+        assert!(
+            b.all_conflicts()
+                .contains(&(builtin::JUMP, builtin::JOURNAL))
+        );
+        b.set_pad(builtin::JOURNAL, Some(PadButton::Guide));
+        b.set_pad(builtin::THROW, None);
+        assert!(!b.all_default());
+        let map = b.pad_map();
+        assert_eq!(map.len(), 2);
+        assert_eq!(map["key.journal"], "pad.guide");
+        assert_eq!(map["key.throw"], "none");
+        let mut back = KeyBindings::builtin_defaults();
+        back.apply_pad_map(&map);
+        for id in b.registry().ids() {
+            assert_eq!(back.pad(id), b.pad(id));
+        }
+        // Keys and buttons are kept apart.
+        assert!(b.to_map().is_empty());
+        b.reset_all();
+        assert!(b.all_default());
+    }
+
+    #[test]
     fn bad_entries_fall_back_to_default() {
         let mut map = BTreeMap::new();
         map.insert("key.forward".to_owned(), "not_a_key".to_owned());
@@ -352,7 +525,8 @@ mod tests {
             category: Category::Miscellaneous,
             contexts: Contexts::GAMEPLAY,
             default: Some(Binding::key(Key::C)),
-            toggle: ToggleKind::HoldOnly,
+            pad: None,
+            kind: Kind::Hold,
         });
         assert_eq!(b.get(id), Some(Binding::key(Key::C)));
         let mut map = BTreeMap::new();
@@ -405,6 +579,24 @@ mod tests {
             c.release(InputKey::Keyboard(Key::LeftControl)),
             CaptureResult::Done(Some(Binding::with(Key::LeftControl, Modifiers::SHIFT)))
         );
+    }
+
+    /// E §3.1: each of the four alone, through the press and the release.
+    #[test]
+    fn capture_each_ctrl_and_alt_alone() {
+        for key in [
+            Key::LeftControl,
+            Key::RightControl,
+            Key::LeftAlt,
+            Key::RightAlt,
+        ] {
+            let mut c = RebindCapture::new();
+            assert_eq!(c.press(InputKey::Keyboard(key)), CaptureResult::Pending);
+            assert_eq!(
+                c.release(InputKey::Keyboard(key)),
+                CaptureResult::Done(Some(Binding::key(key)))
+            );
+        }
     }
 
     #[test]

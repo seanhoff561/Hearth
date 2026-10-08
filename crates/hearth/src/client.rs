@@ -2310,8 +2310,11 @@ impl Client {
         pad_sensitivity: f32,
     ) {
         self.clock_s += dt;
-        // The controller's right stick turns at up to 120–360 degrees a second.
-        if pad.look != DVec2::ZERO {
+        let choosing =
+            self.mode == CameraMode::Body && input.is_active(builtin::RADIAL) && !self.dead();
+        // The controller's right stick turns at up to 120–360 degrees a second (choosing a
+        // quick slot, it points at one instead).
+        if pad.look != DVec2::ZERO && !choosing {
             let rate = 120.0 + 240.0 * pad_sensitivity as f64;
             self.camera.yaw = (self.camera.yaw + (pad.look.x * rate * dt) as f32).rem_euclid(360.0);
             self.camera.pitch =
@@ -2335,13 +2338,16 @@ impl Client {
         let r = self.hearing.rhythms;
         self.heart_phase += dt * r.heart_bpm as f64 / 60.0;
         self.breath_phase += dt * r.breaths_per_min as f64 / 60.0;
-        if self.mode == CameraMode::Body && input.is_active(builtin::RADIAL) && !self.dead() {
+        if choosing {
             let v = self.radial.get_or_insert(DVec2::ZERO);
             if let Some((dx, dy)) = look {
                 *v += DVec2::new(dx, dy);
                 if v.length() > 120.0 {
                     *v = v.normalize() * 120.0;
                 }
+            }
+            if pad.look != DVec2::ZERO {
+                *v = pad.look.normalize() * 120.0;
             }
         } else if self.radial.is_some() {
             if let Some(n) = self.radial_choice() {
@@ -2421,6 +2427,10 @@ impl Client {
     }
 
     fn walk(&mut self, dt: f64, input: &mut InputState, wish: DVec2, pad: &crate::gamepad::Pad) {
+        // The controller's run, latched by the stick's click, ends as the stick comes back.
+        if pad.stick == DVec2::ZERO {
+            input.unlatch_pad(builtin::SPRINT);
+        }
         // The sprint key jogs; pressed twice quickly, it sprints until let go.
         let sprint_key = input.is_active(builtin::SPRINT);
         if sprint_key && !self.sprint_was {
@@ -2433,7 +2443,8 @@ impl Client {
             self.sprinting = false;
         }
         self.sprint_was = sprint_key;
-        let gait = if pad.sprint || (sprint_key && self.sprinting) {
+        // The stick's click sprints at once.
+        let gait = if input.pad_latched(builtin::SPRINT) || (sprint_key && self.sprinting) {
             Gait::Sprint
         } else if sprint_key || pad.stick.length() > 0.92 {
             Gait::Jog
@@ -2449,7 +2460,7 @@ impl Client {
                 .as_ref()
                 .is_none_or(|b| !b.asleep && !b.lying && b.status.effects.conscious);
         let intent = if alive {
-            let crouch = input.is_active(builtin::SNEAK) || pad.crouch;
+            let crouch = input.is_active(builtin::SNEAK);
             // A part-way stick walks slower; keys are full.
             let wish = if wish.length() > 1.0 {
                 wish.normalize()
@@ -2459,9 +2470,9 @@ impl Client {
             Intent {
                 wish,
                 gait,
-                jump: input.is_active(builtin::JUMP) || pad.jump,
+                jump: input.is_active(builtin::JUMP),
                 crouch,
-                crawl: input.is_active(builtin::CRAWL) || pad.crawl,
+                crawl: input.is_active(builtin::CRAWL),
                 descend: crouch,
             }
         } else {
@@ -2473,7 +2484,7 @@ impl Client {
         };
         // Creative's flight: Jump pressed twice quickly takes off or lands.
         let creative = self.rules.as_ref().is_some_and(|r| r.creative);
-        let jump_key = input.is_active(builtin::JUMP) || pad.jump;
+        let jump_key = input.is_active(builtin::JUMP);
         if creative && alive && jump_key && !self.jump_was {
             if self
                 .jump_released
@@ -2509,7 +2520,7 @@ impl Client {
             if intent.crouch {
                 v.y -= self.fly_speed;
             }
-            if input.is_active(builtin::SPRINT) || pad.sprint {
+            if input.is_active(builtin::SPRINT) {
                 v *= 3.0;
             }
             hearth_physics::fly(&terrain, &mut self.mover, v, dt, self.no_clip);

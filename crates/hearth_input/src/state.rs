@@ -1,9 +1,18 @@
 //! Per-frame input state: which actions are held, which were pressed or released since the
-//! last frame, toggle latches for sneak/sprint, and accumulated mouse motion and scrolling.
+//! last frame, toggle latches for crouching and running, and accumulated mouse motion and
+//! scrolling.
+//!
+//! A modifier key (Shift, Ctrl, Alt, either side) and the debug key can be bound alone and
+//! still be part of combinations (E §3.1). A *hold* action on such a key starts on the press and
+//! stays held through the combinations; a *tap* action waits for the key to be let go, and
+//! comes only if no other key was pressed while it was held.
+//!
+//! On a controller, crouching, running and crawling toggle with each press: the thumb that
+//! presses them is the one that steers.
 
-use crate::action::{ActionId, Contexts, ToggleKind};
+use crate::action::{ActionId, Contexts, Kind, builtin};
 use crate::bindings::KeyBindings;
-use crate::key::{InputKey, Modifiers};
+use crate::key::{Binding, InputKey, Modifiers};
 
 /// Options affecting how actions are interpreted.
 #[derive(Debug, Clone, Copy, Default)]
@@ -21,19 +30,29 @@ struct ActionSlot {
     released: bool,
     /// Latched state for toggle-mode actions.
     latched: bool,
+    /// Latched by a controller's button.
+    pad_latched: bool,
+}
+
+/// A key or button being held, and what it does.
+#[derive(Debug, Clone)]
+struct Held {
+    key: InputKey,
+    /// The actions it drives while held.
+    actions: Vec<ActionId>,
+    /// Tap actions bound to it alone, waiting for it to be let go.
+    taps: Vec<ActionId>,
+    /// Another key was pressed while this one was held: its waiting taps are dropped.
+    combined: bool,
 }
 
 /// Tracks raw input and derives action states.
 #[derive(Debug, Clone)]
 pub struct InputState {
-    held: Vec<InputKey>,
-    /// Actions activated by each currently held key, parallel to `held`.
-    held_actions: Vec<Vec<ActionId>>,
+    held: Vec<Held>,
     slots: Vec<ActionSlot>,
     context: Contexts,
     debug_key_held: bool,
-    /// A debug chord fired while the debug key was held (suppresses the overlay toggle).
-    debug_chord_used: bool,
     mouse_delta: (f64, f64),
     scroll_delta: f64,
     options: InputOptions,
@@ -43,11 +62,9 @@ impl InputState {
     pub fn new(action_count: usize) -> Self {
         Self {
             held: Vec::with_capacity(16),
-            held_actions: Vec::with_capacity(16),
             slots: vec![ActionSlot::default(); action_count],
             context: Contexts::GAMEPLAY,
             debug_key_held: false,
-            debug_chord_used: false,
             mouse_delta: (0.0, 0.0),
             scroll_delta: 0.0,
             options: InputOptions::default(),
@@ -70,8 +87,8 @@ impl InputState {
             return;
         }
         self.context = context;
-        for i in 0..self.held_actions.len() {
-            let actions = std::mem::take(&mut self.held_actions[i]);
+        for i in 0..self.held.len() {
+            let actions = std::mem::take(&mut self.held[i].actions);
             let mut keep = Vec::with_capacity(actions.len());
             for a in actions {
                 if self.action_active_in(a, bindings) {
@@ -80,7 +97,7 @@ impl InputState {
                     self.release_slot(a);
                 }
             }
-            self.held_actions[i] = keep;
+            self.held[i].actions = keep;
         }
     }
 
@@ -102,22 +119,27 @@ impl InputState {
 
     /// Modifier bits currently held.
     pub fn modifiers(&self) -> Modifiers {
-        Modifiers(self.held.iter().fold(0, |acc, k| acc | k.modifier_bit()))
+        Modifiers(
+            self.held
+                .iter()
+                .fold(0, |acc, h| acc | h.key.modifier_bit()),
+        )
     }
 
-    /// Feeds a key or mouse button press. Returns the actions it activated.
-    pub fn press(&mut self, key: InputKey, bindings: &KeyBindings) -> &[ActionId] {
-        if self.held.contains(&key) {
-            // OS key repeat: not a new press.
-            return &[];
-        }
-        let debug_binding = bindings.get(crate::action::builtin::DEBUG);
-        let modifiers = self.modifiers();
-        // Candidates: bound to this key, modifiers satisfied, active in the current context.
+    /// The actions a press of `key` with `modifiers` held means now: those bound to it whose
+    /// modifiers are held and that are active in the context, the most specific first.
+    fn candidates(
+        &self,
+        key: InputKey,
+        modifiers: Modifiers,
+        bindings: &KeyBindings,
+    ) -> Vec<ActionId> {
         let mut best = 0u32;
         let mut chosen: Vec<ActionId> = Vec::new();
         for id in bindings.actions_for_key(key) {
-            let Some(b) = bindings.get(id) else { continue };
+            let Some(b) = bindings.binding_for(id, key) else {
+                continue;
+            };
             if !modifiers.contains(b.modifiers) || !self.action_active_in(id, bindings) {
                 continue;
             }
@@ -136,26 +158,59 @@ impl InputState {
                 chosen.push(id);
             }
         }
-        for &id in &chosen {
-            let def = bindings.registry().def(id);
-            if def.contexts == Contexts::DEBUG_CHORD {
-                self.debug_chord_used = true;
-            }
-            let toggleable = def.toggle == ToggleKind::Toggleable && self.toggle_enabled(id);
-            let slot = &mut self.slots[id.0 as usize];
-            slot.holders = slot.holders.saturating_add(1);
-            slot.presses = slot.presses.saturating_add(1);
-            if toggleable {
-                slot.latched = !slot.latched;
+        chosen
+    }
+
+    /// Feeds a key or mouse button press. Returns the actions it activated now (a tap on a
+    /// modifier key alone comes from [`InputState::release`] instead).
+    pub fn press(&mut self, key: InputKey, bindings: &KeyBindings) -> &[ActionId] {
+        if self.held.iter().any(|h| h.key == key) {
+            // OS key repeat: not a new press.
+            return &[];
+        }
+        // Whatever is held now takes part in a combination.
+        for h in &mut self.held {
+            h.combined = true;
+        }
+        let modifiers = self.modifiers();
+        let debug_key = bindings.get(builtin::DEBUG).is_some_and(|b| b.key == key);
+        let mut held = Held {
+            key,
+            actions: Vec::new(),
+            taps: Vec::new(),
+            combined: false,
+        };
+        // The system's own shortcuts (Alt+Tab, Alt+F4) are left to it.
+        if !(Binding { key, modifiers }).reserved() {
+            // A modifier or the debug key may yet be part of a combination: its taps wait.
+            let prefix = key.modifier_bit() != 0 || debug_key;
+            for id in self.candidates(key, modifiers, bindings) {
+                let kind = bindings.registry().def(id).kind;
+                if prefix && kind == Kind::Tap {
+                    held.taps.push(id);
+                    continue;
+                }
+                if key.is_pad() && kind == Kind::Toggleable {
+                    let slot = &mut self.slots[id.0 as usize];
+                    slot.pad_latched = !slot.pad_latched;
+                    slot.presses = slot.presses.saturating_add(1);
+                    continue;
+                }
+                let toggleable = kind == Kind::Toggleable && self.toggle_enabled(id);
+                let slot = &mut self.slots[id.0 as usize];
+                slot.holders = slot.holders.saturating_add(1);
+                slot.presses = slot.presses.saturating_add(1);
+                if toggleable {
+                    slot.latched = !slot.latched;
+                }
+                held.actions.push(id);
             }
         }
-        if debug_binding.is_some_and(|b| b.key == key) {
+        if debug_key {
             self.debug_key_held = true;
-            self.debug_chord_used = false;
         }
-        self.held.push(key);
-        self.held_actions.push(chosen);
-        self.held_actions.last().map(Vec::as_slice).unwrap_or(&[])
+        self.held.push(held);
+        self.held.last().map_or(&[], |h| h.actions.as_slice())
     }
 
     fn toggle_enabled(&self, id: ActionId) -> bool {
@@ -163,36 +218,40 @@ impl InputState {
         (id == SNEAK && self.options.toggle_sneak) || (id == SPRINT && self.options.toggle_sprint)
     }
 
-    /// Feeds a key or mouse button release.
-    pub fn release(&mut self, key: InputKey, bindings: &KeyBindings) {
-        let Some(pos) = self.held.iter().position(|k| *k == key) else {
-            return;
+    /// Feeds a key or mouse button release. Returns the taps it fired: those bound to the key
+    /// alone when no other key was pressed while it was held.
+    pub fn release(&mut self, key: InputKey, bindings: &KeyBindings) -> Vec<ActionId> {
+        let Some(pos) = self.held.iter().position(|h| h.key == key) else {
+            return Vec::new();
         };
-        self.held.swap_remove(pos);
-        let actions = self.held_actions.swap_remove(pos);
-        for a in actions {
+        let held = self.held.swap_remove(pos);
+        for &a in &held.actions {
             self.release_slot(a);
         }
-        if bindings
-            .get(crate::action::builtin::DEBUG)
-            .is_some_and(|b| b.key == key)
-        {
-            self.debug_key_held = false;
-        }
-    }
-
-    /// Releases everything (window focus lost).
-    pub fn release_all(&mut self) {
-        for actions in self.held_actions.drain(..) {
-            for a in actions {
-                let slot = &mut self.slots[a.0 as usize];
-                slot.holders = slot.holders.saturating_sub(1);
-                if slot.holders == 0 {
+        let mut tapped = Vec::new();
+        if !held.combined {
+            for a in held.taps {
+                if self.action_active_in(a, bindings) {
+                    let slot = &mut self.slots[a.0 as usize];
+                    slot.presses = slot.presses.saturating_add(1);
                     slot.released = true;
+                    tapped.push(a);
                 }
             }
         }
-        self.held.clear();
+        if bindings.get(builtin::DEBUG).is_some_and(|b| b.key == key) {
+            self.debug_key_held = false;
+        }
+        tapped
+    }
+
+    /// Releases everything (window focus lost); taps waiting on a key are dropped.
+    pub fn release_all(&mut self) {
+        for held in std::mem::take(&mut self.held) {
+            for a in held.actions {
+                self.release_slot(a);
+            }
+        }
         self.debug_key_held = false;
     }
 
@@ -241,13 +300,26 @@ impl InputState {
         self.slots[action.0 as usize].holders > 0
     }
 
-    /// For toggle-capable actions: the latched state in toggle mode, otherwise held state.
+    /// For toggle-capable actions: the latched state in toggle mode, otherwise held state; or
+    /// latched by a controller's button.
     pub fn is_active(&self, action: ActionId) -> bool {
-        if self.toggle_enabled(action) {
-            self.slots[action.0 as usize].latched
-        } else {
-            self.is_down(action)
-        }
+        let slot = &self.slots[action.0 as usize];
+        slot.pad_latched
+            || if self.toggle_enabled(action) {
+                slot.latched
+            } else {
+                self.is_down(action)
+            }
+    }
+
+    /// Whether a controller's button latched the action.
+    pub fn pad_latched(&self, action: ActionId) -> bool {
+        self.slots[action.0 as usize].pad_latched
+    }
+
+    /// Lets go of what a controller's button latched (running, when the stick comes back).
+    pub fn unlatch_pad(&mut self, action: ActionId) {
+        self.slots[action.0 as usize].pad_latched = false;
     }
 
     /// True if the action was pressed at least once since the last frame.
@@ -269,12 +341,6 @@ impl InputState {
         self.debug_key_held
     }
 
-    /// True if the debug key was released since last frame without any chord being used, i.e.
-    /// the debug overlay should toggle.
-    pub fn debug_overlay_toggled(&self) -> bool {
-        self.was_released(crate::action::builtin::DEBUG) && !self.debug_chord_used
-    }
-
     /// Clears per-frame edges and deltas. Call once per frame after the game consumed input.
     pub fn end_frame(&mut self) {
         for s in &mut self.slots {
@@ -282,9 +348,6 @@ impl InputState {
             s.released = false;
         }
         self.mouse_delta = (0.0, 0.0);
-        if !self.debug_key_held {
-            self.debug_chord_used = false;
-        }
     }
 }
 
@@ -292,7 +355,7 @@ impl InputState {
 mod tests {
     use super::*;
     use crate::action::builtin::*;
-    use crate::key::{Binding, Key, MouseButton};
+    use crate::key::{Binding, Key, MouseButton, PadButton};
 
     fn kb(k: Key) -> InputKey {
         InputKey::Keyboard(k)
@@ -368,18 +431,22 @@ mod tests {
     fn debug_chords() {
         let (b, mut s) = setup();
         s.press(kb(Key::F3), &b);
+        assert!(
+            !s.was_pressed(DEBUG),
+            "the overlay waits for F3 to be let go"
+        );
         s.press(kb(Key::W), &b);
         assert!(s.was_pressed(DEBUG_TIME_WARP));
         s.release(kb(Key::W), &b);
-        s.release(kb(Key::F3), &b);
         assert!(
-            !s.debug_overlay_toggled(),
+            s.release(kb(Key::F3), &b).is_empty(),
             "chord suppresses the overlay toggle"
         );
+        assert!(!s.was_pressed(DEBUG));
         s.end_frame();
         s.press(kb(Key::F3), &b);
-        s.release(kb(Key::F3), &b);
-        assert!(s.debug_overlay_toggled());
+        assert_eq!(s.release(kb(Key::F3), &b), vec![DEBUG]);
+        assert!(s.was_pressed(DEBUG));
         s.end_frame();
         // Without F3, W is just forward.
         s.press(kb(Key::W), &b);
@@ -429,6 +496,124 @@ mod tests {
         s.release_all();
         assert!(!s.is_down(FORWARD) && !s.is_down(JUMP));
         assert!(s.was_released(JUMP));
+    }
+
+    /// E §3.1: a hold action on a lone modifier starts on the press and stays held through
+    /// combinations made with it.
+    #[test]
+    fn a_held_lone_modifier_lasts_through_combinations() {
+        let (mut b, mut s) = setup();
+        b.set(SNEAK, Some(Binding::key(Key::LeftControl)));
+        s.press(kb(Key::LeftControl), &b);
+        assert!(s.is_active(SNEAK), "crouching from the press");
+        s.press(kb(Key::G), &b);
+        assert!(
+            s.was_pressed(DROP_STACK) && !s.was_pressed(DROP),
+            "Ctrl + G still works"
+        );
+        assert!(s.is_active(SNEAK), "still crouching");
+        s.release(kb(Key::G), &b);
+        assert!(s.release(kb(Key::LeftControl), &b).is_empty());
+        assert!(!s.is_active(SNEAK) && s.was_released(SNEAK));
+    }
+
+    /// E §3.1: a tap action on a lone modifier comes when the key is let go, and only if no
+    /// combination was made with it meanwhile.
+    #[test]
+    fn a_tapped_lone_modifier_waits_for_the_release() {
+        let (mut b, mut s) = setup();
+        b.set(JOURNAL, Some(Binding::key(Key::LeftAlt)));
+        b.set(DROP_STACK, Some(Binding::with(Key::G, Modifiers::ALT)));
+        assert!(s.press(kb(Key::LeftAlt), &b).is_empty());
+        assert!(!s.was_pressed(JOURNAL), "not on the press");
+        assert_eq!(s.release(kb(Key::LeftAlt), &b), vec![JOURNAL]);
+        assert!(s.was_pressed(JOURNAL));
+        s.end_frame();
+        // Alt + G: the combination, and no journal.
+        s.press(kb(Key::LeftAlt), &b);
+        s.press(kb(Key::G), &b);
+        assert!(s.was_pressed(DROP_STACK));
+        s.release(kb(Key::G), &b);
+        assert!(s.release(kb(Key::LeftAlt), &b).is_empty());
+        assert!(!s.was_pressed(JOURNAL));
+        s.end_frame();
+        // Any other key or button pressed meanwhile counts as a combination.
+        s.press(kb(Key::LeftAlt), &b);
+        s.press(InputKey::Mouse(MouseButton::Left), &b);
+        assert!(s.release(kb(Key::LeftAlt), &b).is_empty());
+    }
+
+    /// Left and right modifiers are keys of their own.
+    #[test]
+    fn each_side_is_its_own_key() {
+        let (mut b, mut s) = setup();
+        b.set(JOURNAL, Some(Binding::key(Key::RightControl)));
+        b.set(INVENTORY, Some(Binding::key(Key::RightAlt)));
+        s.press(kb(Key::LeftControl), &b);
+        assert!(s.release(kb(Key::LeftControl), &b).is_empty());
+        s.press(kb(Key::LeftAlt), &b);
+        assert!(s.release(kb(Key::LeftAlt), &b).is_empty());
+        s.press(kb(Key::RightControl), &b);
+        assert_eq!(s.release(kb(Key::RightControl), &b), vec![JOURNAL]);
+        s.press(kb(Key::RightAlt), &b);
+        assert_eq!(s.release(kb(Key::RightAlt), &b), vec![INVENTORY]);
+        // Either side still makes the combination.
+        s.press(kb(Key::RightControl), &b);
+        s.press(kb(Key::G), &b);
+        assert!(s.was_pressed(DROP_STACK));
+    }
+
+    /// The system's shortcuts are left alone: Alt + F4 doesn't clear the view on its way out,
+    /// and Alt + Tab doesn't open the inventory or fire a tap on Alt.
+    #[test]
+    fn the_systems_shortcuts_do_nothing_in_play() {
+        let (mut b, mut s) = setup();
+        b.set(JOURNAL, Some(Binding::key(Key::LeftAlt)));
+        s.press(kb(Key::LeftAlt), &b);
+        assert!(s.press(kb(Key::F4), &b).is_empty());
+        assert!(!s.was_pressed(CLEAR_VIEW));
+        assert!(s.press(kb(Key::Tab), &b).is_empty());
+        assert!(!s.was_pressed(INVENTORY));
+        s.release(kb(Key::Tab), &b);
+        s.release(kb(Key::F4), &b);
+        assert!(s.release(kb(Key::LeftAlt), &b).is_empty());
+    }
+
+    #[test]
+    fn controller_buttons_work_actions() {
+        let (b, mut s) = setup();
+        let pad = |p| InputKey::Pad(p);
+        s.press(pad(PadButton::South), &b);
+        assert!(s.is_active(JUMP) && s.was_pressed(JUMP));
+        s.release(pad(PadButton::South), &b);
+        assert!(!s.is_active(JUMP));
+        // Crouching toggles on the controller.
+        s.press(pad(PadButton::East), &b);
+        s.release(pad(PadButton::East), &b);
+        assert!(s.is_active(SNEAK), "latched");
+        s.press(pad(PadButton::East), &b);
+        s.release(pad(PadButton::East), &b);
+        assert!(!s.is_active(SNEAK), "and let go");
+        // Running latches until the stick comes back.
+        s.press(pad(PadButton::LeftStick), &b);
+        s.release(pad(PadButton::LeftStick), &b);
+        assert!(s.is_active(SPRINT));
+        s.unlatch_pad(SPRINT);
+        assert!(!s.is_active(SPRINT));
+        // A held keyboard modifier doesn't change what a button does.
+        s.press(kb(Key::LeftControl), &b);
+        s.press(pad(PadButton::RightTrigger), &b);
+        assert!(s.is_down(ATTACK));
+    }
+
+    #[test]
+    fn focus_loss_drops_waiting_taps() {
+        let (mut b, mut s) = setup();
+        b.set(JOURNAL, Some(Binding::key(Key::LeftAlt)));
+        s.press(kb(Key::LeftAlt), &b);
+        s.release_all();
+        assert!(s.release(kb(Key::LeftAlt), &b).is_empty());
+        assert!(!s.was_pressed(JOURNAL));
     }
 
     #[test]

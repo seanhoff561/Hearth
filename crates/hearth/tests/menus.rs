@@ -4,7 +4,7 @@
 use hearth::interface::Interface;
 use hearth::menus::{MenuAction, MenuContext, Menus, Screen};
 use hearth_core::options::Options;
-use hearth_input::{ActionRegistry, KeyBindings, RebindCapture};
+use hearth_input::{ActionRegistry, KeyBindings};
 use hearth_render::GpuContext;
 use hearth_render::offscreen::{OFFSCREEN_FORMAT, OffscreenTarget, write_png};
 
@@ -97,13 +97,7 @@ fn the_screens_draw_and_answer() {
         ("options", Screen::Options),
         ("video", Screen::Video { tab: 0 }),
         ("sound", Screen::Sound),
-        (
-            "controls",
-            Screen::Controls {
-                capturing: None,
-                capture: RebindCapture::new(),
-            },
-        ),
+        ("controls", Screen::controls()),
         ("pause", Screen::Pause),
         ("death", Screen::Death),
     ];

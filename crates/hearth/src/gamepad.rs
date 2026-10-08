@@ -1,11 +1,12 @@
 //! Game controllers (v1 M11, V2-3), read each frame through gilrs. In the world the left stick
-//! walks (pushed all the way it jogs; clicked it sprints), the right stick looks, South jumps,
-//! climbs and swims up, East crouches and dives, West crawls, Start pauses and Select opens the
-//! globe. In the menus the D-pad and the left stick move the focus, South presses, East goes
-//! back and Start closes the pause screen.
+//! walks (pushed all the way it jogs) and the right stick looks; the buttons work the actions
+//! they are bound to on the Controls screen (by default South jumps, East crouches, the left
+//! stick's click runs, the right trigger uses the hand; E §3.1). In the menus the D-pad and the
+//! left stick move the focus, South presses, East goes back and Start closes the pause screen.
 
 use gilrs::{Axis, Button, EventType, Gilrs};
 use glam::DVec2;
+use hearth_input::PadButton;
 
 /// Stick travel ignored around the centre.
 const DEADZONE: f64 = 0.18;
@@ -13,35 +14,58 @@ const DEADZONE: f64 = 0.18;
 const NAV_LEAN: f64 = 0.6;
 const NAV_REPEAT_S: f64 = 0.22;
 
-/// A button pressed this frame.
+/// A menu step from the controller this frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Press {
-    South,
-    East,
-    West,
-    North,
-    Start,
-    Select,
     Up,
     Down,
     Left,
     Right,
-    LeftThumb,
+    /// South: press the focused widget.
+    Enter,
+    /// East or Start: back.
+    Back,
 }
 
-/// The controller's state for movement and looking.
+/// The sticks, for walking and looking.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Pad {
     /// Left stick after the deadzone: x right, y forward (0–1 lengths).
     pub stick: DVec2,
     /// Right stick after the deadzone and a squared response: x right, y down.
     pub look: DVec2,
-    pub jump: bool,
-    pub crouch: bool,
-    /// Toggled by West.
-    pub crawl: bool,
-    /// Toggled by the left stick's click; off when the stick is let go.
-    pub sprint: bool,
+}
+
+/// What the controllers did since the last frame: buttons pressed (true) and let go, and the
+/// menu steps (stick leans repeat while held).
+#[derive(Debug, Clone, Default)]
+pub struct Polled {
+    pub buttons: Vec<(PadButton, bool)>,
+    pub nav: Vec<Press>,
+}
+
+/// gilrs's name for a button, as the bindings know it.
+fn button(b: Button) -> Option<PadButton> {
+    Some(match b {
+        Button::South => PadButton::South,
+        Button::East => PadButton::East,
+        Button::West => PadButton::West,
+        Button::North => PadButton::North,
+        Button::LeftTrigger => PadButton::LeftBumper,
+        Button::RightTrigger => PadButton::RightBumper,
+        Button::LeftTrigger2 => PadButton::LeftTrigger,
+        Button::RightTrigger2 => PadButton::RightTrigger,
+        Button::Select => PadButton::Select,
+        Button::Start => PadButton::Start,
+        Button::Mode => PadButton::Guide,
+        Button::LeftThumb => PadButton::LeftStick,
+        Button::RightThumb => PadButton::RightStick,
+        Button::DPadUp => PadButton::DPadUp,
+        Button::DPadDown => PadButton::DPadDown,
+        Button::DPadLeft => PadButton::DPadLeft,
+        Button::DPadRight => PadButton::DPadRight,
+        _ => return None,
+    })
 }
 
 pub struct Gamepads {
@@ -77,44 +101,30 @@ impl Gamepads {
         }
     }
 
-    /// Reads what happened since the last frame; `now` is a clock in seconds. Returns the
-    /// presses (stick leans count as D-pad presses, repeating while held).
-    pub fn poll(&mut self, now: f64) -> Vec<Press> {
-        let mut out = Vec::new();
+    /// Reads what happened since the last frame; `now` is a clock in seconds.
+    pub fn poll(&mut self, now: f64) -> Polled {
+        let mut out = Polled::default();
         let Some(g) = &mut self.gilrs else {
             return out;
         };
         while let Some(ev) = g.next_event() {
             match ev.event {
                 EventType::ButtonPressed(b, _) => {
-                    let p = match b {
-                        Button::South => Some(Press::South),
-                        Button::East => Some(Press::East),
-                        Button::West => Some(Press::West),
-                        Button::North => Some(Press::North),
-                        Button::Start => Some(Press::Start),
-                        Button::Select => Some(Press::Select),
+                    let nav = match b {
+                        Button::South => Some(Press::Enter),
+                        Button::East | Button::Start => Some(Press::Back),
                         Button::DPadUp => Some(Press::Up),
                         Button::DPadDown => Some(Press::Down),
                         Button::DPadLeft => Some(Press::Left),
                         Button::DPadRight => Some(Press::Right),
-                        Button::LeftThumb => Some(Press::LeftThumb),
                         _ => None,
                     };
-                    match b {
-                        Button::South => self.pad.jump = true,
-                        Button::East => self.pad.crouch = true,
-                        Button::West => self.pad.crawl = !self.pad.crawl,
-                        Button::LeftThumb => self.pad.sprint = !self.pad.sprint,
-                        _ => {}
-                    }
-                    out.extend(p);
+                    out.nav.extend(nav);
+                    out.buttons.extend(button(b).map(|p| (p, true)));
                 }
-                EventType::ButtonReleased(b, _) => match b {
-                    Button::South => self.pad.jump = false,
-                    Button::East => self.pad.crouch = false,
-                    _ => {}
-                },
+                EventType::ButtonReleased(b, _) => {
+                    out.buttons.extend(button(b).map(|p| (p, false)));
+                }
                 EventType::AxisChanged(a, v, _) => {
                     let v = v as f64;
                     match a {
@@ -134,9 +144,6 @@ impl Gamepads {
             }
         }
         self.pad.stick = deadzone(self.raw_left);
-        if self.pad.stick == DVec2::ZERO {
-            self.pad.sprint = false;
-        }
         let look = deadzone(self.raw_right);
         // Squared response: fine aim near the centre, quick turns at the edge.
         self.pad.look = DVec2::new(look.x, -look.y) * look.length();
@@ -155,12 +162,12 @@ impl Gamepads {
         match (lean, self.nav) {
             (Some(d), Some((held, t))) if d == held => {
                 if now - t >= NAV_REPEAT_S {
-                    out.push(d);
+                    out.nav.push(d);
                     self.nav = Some((d, now));
                 }
             }
             (Some(d), _) => {
-                out.push(d);
+                out.nav.push(d);
                 self.nav = Some((d, now));
             }
             (None, _) => self.nav = None,
