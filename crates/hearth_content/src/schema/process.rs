@@ -302,7 +302,24 @@ entry! {
         /// How the body does it, stroke by stroke (E §7.2; P §6.1): the attended processes'.
         #[serde(default)]
         pub work: Option<WorkModel>,
+        /// How work left to itself goes on (E §7.4): the unattended processes'.
+        #[serde(default)]
+        pub state: Option<StateModel>,
     }
+}
+
+/// How work left to itself goes on (E §7.4), by the weather and the heat it gets.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum StateModel {
+    /// Drying in the air: moisture (kg of water a kg dry) falls from `from` toward the air's
+    /// equilibrium at `rate_per_h` of the difference an hour at 25 °C, half humidity, still air
+    /// and shade (faster warm, dry, in wind and sun; rain wets it again); done at `to`.
+    Drying { from: f32, to: f32, rate_per_h: f32 },
+    /// Soaking in water: its hours, each as long as the water's warmth makes it (`q10`: how
+    /// much faster ten degrees warmer, about 20 °C; 1 for no difference).
+    Soaking { q10: f32 },
+    /// Firing at a fire: judged by its heat (`firing`).
+    Firing,
 }
 
 /// How attended work is done (E §7.2): the body's pose, one stroke of the work (a scoop, a

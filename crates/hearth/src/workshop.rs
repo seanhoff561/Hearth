@@ -712,6 +712,97 @@ impl Workshop {
         }
     }
 
+    /// Looking closely at work left to itself (E §7.5): what has happened to it and how it looks
+    /// now, as the player can tell; what they know to expect, if they know the work; the
+    /// numbers too when asked (Creative, Developer mode).
+    pub fn inspect(&mut self, h: &mut Here, id: u64, numbers: bool) {
+        use hearth_content::schema::process::StateModel;
+        let Some(wi) = h.world_items.get(id) else {
+            return;
+        };
+        let (Some(work), Some(kind)) = (wi.work.clone(), h.items.get(&wi.stack.id)) else {
+            h.out
+                .push(acted("inspect", true, "It is just lying there."));
+            return;
+        };
+        let Some(r) = self.crafts.index_of(&work.process) else {
+            return;
+        };
+        let def = &self.crafts.recipes[r].def;
+        let knows = def
+            .knowledge
+            .as_ref()
+            .is_none_or(|k| h.player.knowledge.knows(k.as_str()));
+        let name = kind.name.to_lowercase();
+        let mut words = vec![format!(
+            "The {name} has been left to {} {}.",
+            def.action.split_whitespace().next().unwrap_or("work"),
+            about_hours(work.age_h)
+        )];
+        let pos = DVec3::from_array(wi.pos);
+        match def.state {
+            Some(StateModel::Drying { from, to, .. }) => {
+                let done = ((from - work.moisture.max(to)) / (from - to).max(1e-3)).clamp(0.0, 1.0);
+                words.push(
+                    match done {
+                        d if d < 0.2 => "It is still wet through.",
+                        d if d < 0.55 => {
+                            "The thin edges are drying; the thick parts are still soft."
+                        }
+                        d if d < 0.9 => "It is leathery and stiff, nearly dry.",
+                        _ => "It is dry through.",
+                    }
+                    .to_owned(),
+                );
+                if work.wet_hours > 0.5 {
+                    words.push(format!("Rain has wet it {}.", about_hours(work.wet_hours)));
+                }
+                if knows && done < 1.0 {
+                    let w = h.env.weather_at(&h.moment, pos);
+                    let sunny = h.env.sun_up(&h.moment, pos) && w.cloud_cover < 0.6;
+                    if let Some(StateModel::Drying { rate_per_h, .. }) = def.state {
+                        let k = rate_per_h * drying_pace(&w, sunny);
+                        let eq = to * 0.3 * (w.humidity as f32 / 0.5);
+                        let left = ((work.moisture - eq).max(1e-3) / (to - eq).max(1e-3)).ln() / k;
+                        words.push(format!(
+                            "In weather like this it would want {} more.",
+                            about_hours(left.max(0.5))
+                        ));
+                    }
+                }
+            }
+            Some(StateModel::Soaking { .. }) => {
+                let left = (def.duration.hours - work.hours).max(0.0);
+                words.push(if left > def.duration.hours * 0.5 {
+                    "It is soaking; little has changed yet.".to_owned()
+                } else {
+                    "It has softened in the water.".to_owned()
+                });
+                if knows {
+                    words.push(format!("About {} more would do it.", about_hours(left)));
+                }
+            }
+            Some(StateModel::Firing) => {
+                words.push(if work.peak_c >= 700.0 {
+                    "The fire has glowed red-hot about it.".to_owned()
+                } else if work.peak_c >= 400.0 {
+                    "The fire is hot about it, but not yet glowing.".to_owned()
+                } else {
+                    "The fire has barely warmed it.".to_owned()
+                });
+            }
+            None => {}
+        }
+        if numbers {
+            words.push(format!(
+                "[{:.1} of {:.1} h; moisture {:.2} kg/kg; peak {:.0} °C, hot {:.1} h; wet {:.1} h, sun {:.1} h]",
+                work.hours, def.duration.hours, work.moisture, work.peak_c, work.hot_h,
+                work.wet_hours, work.sun_h
+            ));
+        }
+        h.out.push(acted("inspect", true, words.join(" ")));
+    }
+
     /// What work is done to, as work left part done is kept (none: it is not kept: a blow at
     /// an animal, a catch).
     fn begun_key(aim: AimAt) -> Option<String> {
@@ -1650,6 +1741,9 @@ impl Workshop {
                     wet_hours: 0.0,
                     peak_c: 0.0,
                     hot_h: 0.0,
+                    moisture: 0.0,
+                    sun_h: 0.0,
+                    age_h: 0.0,
                 });
             }
             *h.items_changed = true;
@@ -2710,13 +2804,58 @@ impl Workshop {
                     }
                 }
             }
-            if ok {
-                work.hours += dt_h;
+            use hearth_content::schema::process::StateModel;
+            work.age_h += dt_h;
+            let w = h.env.weather_at(&h.moment, pos);
+            let sunny = !covered && h.env.sun_up(&h.moment, pos) && w.cloud_cover < 0.6;
+            if sunny {
+                work.sun_h += dt_h;
             }
             if raining {
                 work.wet_hours += dt_h;
             }
-            if work.hours >= def.duration.hours {
+            let finished = match def.state {
+                // Drying by the weather (E §7.4): toward the air's own moisture, faster warm,
+                // dry, windy and in sun; rain wets it again.
+                Some(StateModel::Drying {
+                    from,
+                    to,
+                    rate_per_h,
+                }) => {
+                    if work.moisture <= 0.0 {
+                        work.moisture = from;
+                    }
+                    if at_station {
+                        work.moisture = dry_step(
+                            work.moisture,
+                            (from, to, rate_per_h),
+                            &w,
+                            sunny,
+                            raining,
+                            dt_h,
+                        );
+                        if !raining {
+                            work.hours += dt_h;
+                        }
+                    }
+                    work.moisture <= to
+                }
+                // Soaking: hours as long as the water's warmth makes them.
+                Some(StateModel::Soaking { q10 }) => {
+                    if ok {
+                        let water_c = (air_c - 2.0).clamp(1.0, 30.0);
+                        work.hours += dt_h * q10.powf((water_c - 20.0) / 10.0);
+                    }
+                    work.hours >= def.duration.hours
+                }
+                Some(StateModel::Firing) | None => {
+                    if ok {
+                        work.hours += dt_h;
+                    }
+                    work.hours >= def.duration.hours
+                }
+            };
+            if finished {
                 done.push(wi.id);
             }
         }
@@ -3279,9 +3418,90 @@ fn made_words(items: &Items, made: &[Stack], name: &str) -> String {
     format!("{name}: {}.", parts.join(", "))
 }
 
+/// Moisture (kg a kg dry) after `dt_h` hours drying in weather `w` (E §7.4): toward the air's
+/// own at the model's pace in this weather; rain wets it again, up to where it began.
+fn dry_step(
+    moisture: f32,
+    (from, to, rate_per_h): (f32, f32, f32),
+    w: &hearth_env::WeatherState,
+    sunny: bool,
+    raining: bool,
+    dt_h: f32,
+) -> f32 {
+    if raining {
+        return (moisture + 0.04 * dt_h).min(from);
+    }
+    let k = rate_per_h * drying_pace(w, sunny);
+    let eq = to * 0.3 * (w.humidity as f32 / 0.5);
+    moisture - (moisture - eq).max(0.0) * (1.0 - (-k * dt_h).exp())
+}
+
+/// How much faster than the reference (25 °C, half humidity, still air, shade) things dry in
+/// this weather: twice for every ten degrees warmer, with the air's dryness, the wind and the
+/// sun on it.
+fn drying_pace(w: &hearth_env::WeatherState, sunny: bool) -> f32 {
+    let warmth = 2f32.powf((w.temperature_c as f32 - 25.0) / 10.0);
+    let dryness = ((1.0 - w.humidity as f32) / 0.5).clamp(0.05, 2.0);
+    let wind = 1.0 + 0.25 * (w.wind_speed_m_s as f32).min(10.0);
+    let sun = if sunny { 1.5 } else { 1.0 };
+    (warmth * dryness * wind * sun).clamp(0.02, 8.0)
+}
+
+/// Hours in rough words: "about an hour", "about five hours", "about two days".
+fn about_hours(h: f32) -> String {
+    if h < 1.5 {
+        "about an hour".into()
+    } else if h < 36.0 {
+        format!("about {} hours", h.round() as u32)
+    } else {
+        format!("about {} days", (h / 24.0).round() as u32)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Meat strips on a rack (E §7.4): dry in a day or two of warm, dry, breezy weather with
+    /// sun by day; still soft after as long in cool, damp, still air; set back by rain.
+    #[test]
+    fn meat_dries_by_the_weather() {
+        let model = (3.0, 0.35, 0.075);
+        let weather = |t: f64, rh: f64, wind: f64| hearth_env::WeatherState {
+            cloud_cover: 0.2,
+            precip_mm_h: 0.0,
+            precip: hearth_env::Precip::None,
+            thunder: 0.0,
+            temperature_c: t,
+            wind_dir: 0.0,
+            wind_speed_m_s: wind,
+            humidity: rh,
+        };
+        let days = |w: &hearth_env::WeatherState, rain_every: Option<u32>| {
+            let mut m = model.0;
+            for hour in 0..24 * 10 {
+                let sunny = (8..18).contains(&(hour % 24));
+                let raining = rain_every.is_some_and(|n| hour % n == 0);
+                m = dry_step(m, model, w, sunny, raining, 1.0);
+                if m <= model.1 {
+                    return hour as f32 / 24.0;
+                }
+            }
+            f32::INFINITY
+        };
+        let fair = days(&weather(24.0, 0.4, 3.0), None);
+        assert!((0.5..2.5).contains(&fair), "fair weather: {fair} days");
+        let damp = days(&weather(12.0, 0.85, 0.5), None);
+        assert!(
+            damp > 2.0 * fair,
+            "cool and damp: {damp} days against {fair}"
+        );
+        let showers = days(&weather(24.0, 0.4, 3.0), Some(6));
+        assert!(
+            showers > fair,
+            "showers set it back: {showers} against {fair}"
+        );
+    }
 
     #[test]
     fn food_left_to_rot_is_gone_and_a_tool_is_not() {

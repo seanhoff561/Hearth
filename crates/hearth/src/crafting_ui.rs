@@ -30,6 +30,8 @@ pub enum Do {
     Fill(Path),
     /// Lie down to rest or sleep (the Rest screen).
     Rest,
+    /// Look closely at work left to itself (E §7.5).
+    Inspect(u64),
 }
 
 /// One line of the list by the crosshair.
@@ -363,6 +365,19 @@ impl Crafting {
                 with: None,
             });
         }
+        // Work left to itself: look closely at it (E §7.5).
+        if let AimAt::Thing(id) = s.aim
+            && s.world_items.iter().any(|w| w.id == id && w.work.is_some())
+        {
+            out.push(Offer {
+                words: "look closely".into(),
+                act: Some(Do::Inspect(id)),
+                why: None,
+                play_s: None,
+                material: None,
+                with: None,
+            });
+        }
         // Looking at nothing (at oneself, or the open ground): rest or sleep (P §5.3).
         if aimed.is_none() {
             out.push(Offer {
@@ -657,11 +672,15 @@ impl Crafting {
                     } else {
                         Rgba([235, 170, 150, a])
                     };
-                    let lw = ui.font.width(words) as f32;
-                    ui.draw
-                        .rect(cx - lw / 2.0 - 3.0, ny - 2.0, lw + 6.0, lh + 3.0, shade);
-                    ui.label((cx - lw / 2.0).round(), ny, words, c);
-                    ny += lh + 4.0;
+                    // A long account (what a close look sees) wraps.
+                    for line in ui.font.wrap(words, (w * 0.6) as u32) {
+                        let lw = ui.font.width(&line) as f32;
+                        ui.draw
+                            .rect(cx - lw / 2.0 - 3.0, ny - 2.0, lw + 6.0, lh + 3.0, shade);
+                        ui.label((cx - lw / 2.0).round(), ny, &line, c);
+                        ny += lh + 1.0;
+                    }
+                    ny += 3.0;
                 }
             }
         }

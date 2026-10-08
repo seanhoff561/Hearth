@@ -99,6 +99,7 @@ impl Crafts {
                     treats: None,
                     places: None,
                     firing: None,
+                    state: None,
                     // A station is built a part at a time.
                     work: Some(hearth_content::schema::process::WorkModel {
                         pose: hearth_content::schema::process::WorkPose::Haul,

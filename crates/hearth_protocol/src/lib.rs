@@ -119,6 +119,9 @@ pub enum ToServer {
     },
     /// Stop the work in hand.
     StopWork,
+    /// Look closely at work left to itself (E §7.5): the thing lying there (its id), and
+    /// whether to tell the numbers too (Creative, Developer mode).
+    Inspect { id: u64, numbers: bool },
     /// What the player looks at now (for what sight teaches).
     Look(AimAt),
     /// Eat one of the carried food at a path.

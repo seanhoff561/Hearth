@@ -43,6 +43,15 @@ pub struct Batch {
     pub peak_c: f32,
     #[serde(default)]
     pub hot_h: f32,
+    /// Drying (E §7.4): its moisture, kg of water a kg dry (0: not yet begun), and the hours
+    /// in sun.
+    #[serde(default)]
+    pub moisture: f32,
+    #[serde(default)]
+    pub sun_h: f32,
+    /// Hours since it was left to its work.
+    #[serde(default)]
+    pub age_h: f32,
 }
 
 /// The things lying in a world.

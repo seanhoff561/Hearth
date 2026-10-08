@@ -446,6 +446,7 @@ fn work(
         treats: None,
         places: None,
         firing: None,
+        state: None,
         // Butchering is a cut at a time.
         work: Some(crate::schema::process::WorkModel {
             pose: crate::schema::process::WorkPose::KneelDig,

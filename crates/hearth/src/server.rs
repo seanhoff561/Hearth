@@ -1047,6 +1047,9 @@ fn run(
                 }
                 Ok(ToServer::Instant(on)) => instant = on,
                 Ok(ToServer::StopWork) => workshop.stop(&mut here!()),
+                Ok(ToServer::Inspect { id, numbers }) => {
+                    workshop.inspect(&mut here!(), id, numbers);
+                }
                 Ok(ToServer::Look(aim)) => workshop.look(&mut here!(), aim),
                 Ok(ToServer::Eat(path)) => workshop.eat(&mut here!(), &path),
                 Ok(ToServer::Drink(from)) => workshop.drink(&mut here!(), &from),

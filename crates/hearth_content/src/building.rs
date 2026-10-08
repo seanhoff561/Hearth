@@ -466,6 +466,7 @@ pub fn generate(
             treats: None,
             places: Some(IdRef(p.id().to_owned())),
             firing: None,
+            state: None,
             // Building is hauling and setting the pieces, a piece's move at a time.
             work: Some(crate::schema::process::WorkModel {
                 pose: crate::schema::process::WorkPose::Haul,
@@ -524,6 +525,7 @@ pub fn generate(
             treats: None,
             places: None,
             firing: None,
+            state: None,
             // Building is hauling and setting the pieces, a piece's move at a time.
             work: Some(crate::schema::process::WorkModel {
                 pose: crate::schema::process::WorkPose::Haul,

@@ -256,6 +256,9 @@ mod tests {
             wet_hours: 0.0,
             peak_c: 0.0,
             hot_h: 0.0,
+            moisture: 0.0,
+            sun_h: 0.0,
+            age_h: 0.0,
         });
         // Too far to wait on.
         let far = items.add(Stack::one("hearth:venison"), [40.0, 0.0, 0.0], 0.0);

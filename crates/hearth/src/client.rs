@@ -796,6 +796,10 @@ impl Client {
                 self.rest_request = true;
                 return;
             }
+            Do::Inspect(id) => ToServer::Inspect {
+                id,
+                numbers: self.creative() || self.developer,
+            },
         };
         self.server.send(m);
     }

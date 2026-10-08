@@ -411,6 +411,26 @@ fn work_models(c: &Content, report: &mut Report) {
             ),
             _ => {}
         }
+        // Work left to itself goes on by a state model (E §7.4), a firing by its heat.
+        use crate::schema::process::StateModel;
+        match (&p.state, p.attended, &p.firing) {
+            (None, false, _) => report.error(
+                "no-state-model",
+                Some(o.file.clone()),
+                o.line,
+                format!(
+                    "`{}` is left to itself but says not how it goes on (`state`)",
+                    p.id
+                ),
+            ),
+            (Some(StateModel::Firing), _, None) | (Some(_), true, _) => report.error(
+                "state-model",
+                Some(o.file.clone()),
+                o.line,
+                format!("`{}`: its state model does not fit it", p.id),
+            ),
+            _ => {}
+        }
     }
 }
 
