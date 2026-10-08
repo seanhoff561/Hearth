@@ -362,10 +362,11 @@ pub fn desert_shrubs(precip_mm: f32) -> f32 {
 }
 
 impl GenLand<'_> {
-    /// One column's contribution: (land, fresh, sea, forage per km², cover, ecosystems).
+    /// One column's contribution: (land, fresh, sea, forage per km², cover, ecosystems), read
+    /// at the scale of a habitat cell (the ~300 m refinement level on Earth, E4.1 §4.1).
     fn column(&self, x: i32, z: i32, roll: f32) -> Column {
         let wg = self.wg;
-        let s = wg.terrain.sample(x, z);
+        let s = wg.terrain.sample_at(x, z, CELL_M);
         let mut col = Column {
             temp_c: s.temperature,
             warm_c: s.t_warm,
@@ -622,6 +623,7 @@ fn smooth(x: f32, a: f32, b: f32) -> f32 {
 
 impl Land for GenLand<'_> {
     fn habitat(&self, (i, j): (i64, i64)) -> Habitat {
+        let _caller = hearth_core::prof::caller("fauna.habitat");
         let planet = self.wg.planet();
         let c = planet.circumference() as i64;
         let (x0, z0) = (i * CELL_M as i64, j * CELL_M as i64);

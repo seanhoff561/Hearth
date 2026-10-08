@@ -81,7 +81,8 @@ pub fn lat_lon(planet: &Planet, pos: DVec3) -> (f32, f32) {
 /// yearly temperature and rain.
 pub fn describe(terrain: &Terrain, lat: f32, lon: f32) -> String {
     let (x, z) = world_xz(terrain.planet(), lat, lon);
-    let s = terrain.sample(x, z);
+    // As the globe shows it: at the grid's own scale (E4.1 §4.1).
+    let s = terrain.sample_at(x, z, terrain.grid.geom.cell);
     let per_m = terrain.vertical_scale() as f64;
     let relief = if s.is_underwater() {
         format!("{:.0} m of water", (s.water - s.height) as f64 / per_m)

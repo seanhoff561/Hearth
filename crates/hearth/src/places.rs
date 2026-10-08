@@ -189,6 +189,7 @@ impl Finder {
     /// Three to five places for a first life at `when`, of different climates and lands, each
     /// verified (fewer only if the planet has no more).
     pub fn suggest(&self, when: When, seed: u64) -> Vec<Place> {
+        let search = hearth_core::prof::caller("places.search");
         let g = &*self.wg.terrain.grid;
         let n = g.n();
         let mut rng = hearth_math::hash::Rng::new(seed ^ 0x0051_ace5);
@@ -226,6 +227,7 @@ impl Finder {
                     + rng.next_f32() * 0.3;
             cands.push((score, class, x, z));
         }
+        drop(search);
         cands.sort_by(|a, b| b.0.total_cmp(&a.0));
         // One of each climate first, the best of each, far apart; then the next best.
         let mut out: Vec<Place> = Vec::new();
@@ -245,6 +247,8 @@ impl Finder {
                 if !far(&out, x, z) {
                     continue;
                 }
+                // Each candidate looked at closely where its life would begin.
+                let _local = hearth_core::prof::caller("places.verify");
                 let (sx, sz) = self.wg.terrain.spawn_near(x as i32, z as i32);
                 if let Some(p) = self.verify(sx, sz, when) {
                     if pass == 0 {

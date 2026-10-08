@@ -958,6 +958,20 @@ impl LodGen {
 
     /// Samples and meshes one tile as the vegetation has grown and the player has changed it.
     pub fn build_in(&self, wg: &WorldGenerator, world: &LodWorld, key: TileKey) -> TileMesh {
+        // For the profile and the guard of E4.1 §4.1: the near band's tiles grow the real trees
+        // (the blocks' detail), the middle distance's read the finest refinement level, the
+        // distant ones a coarser level (their columns are too far apart for the finest).
+        let coarse = wg
+            .terrain
+            .relief()
+            .is_some_and(|r| r.level_for(key.column() as f64) < r.levels().len());
+        let _caller = hearth_core::prof::caller(if key.level <= EXACT_TREES_MAX_LEVEL {
+            "lod.near"
+        } else if coarse {
+            "lod.far"
+        } else {
+            "lod.mid"
+        });
         let veg = &world.veg;
         let planet = wg.planet();
         let cs = key.column();

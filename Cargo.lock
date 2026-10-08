@@ -1058,6 +1058,7 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "hearth_content",
+ "hearth_core",
  "hearth_math",
  "hearth_texgen",
  "hearth_world",
@@ -1103,6 +1104,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "hearth_content",
+ "hearth_core",
  "hearth_env",
  "hearth_math",
  "hearth_texgen",

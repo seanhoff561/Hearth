@@ -46,6 +46,17 @@ pub const MIN_CELL: f64 = 24.0;
 pub const MIN_GRID_CELL: f64 = 1000.0;
 /// Tiles kept per level.
 const TILES_KEPT: usize = 512;
+/// The callers that work at a coarse scale (`hearth_core::prof::caller`) and must never make
+/// tiles of the finest level (E4.1 §4.1): the globe's map and its hovering, the places' search
+/// across the planet, the animals' habitats, the distant LOD tiles and the far field.
+pub const COARSE_CALLERS: [&str; 6] = [
+    "globe.map",
+    "globe.hover",
+    "places.search",
+    "fauna.habitat",
+    "lod.far",
+    "farfield",
+];
 /// The zones a tile's making is timed in, by level.
 const BUILD_ZONES: [&str; 4] = [
     "relief.build.L1",
@@ -526,7 +537,9 @@ impl Relief {
     }
 
     /// A tile, from the cache or made: each made counted by its level and the caller it was made
-    /// for (`relief.tile.L<level>.<caller>`, E4.1 §3), and timed.
+    /// for (`relief.tile.L<level>.<caller>`, E4.1 §3), and timed. A tile of the finest level
+    /// made for a caller that works at a coarse scale ([`COARSE_CALLERS`]) is counted again as
+    /// such (`relief.fine.<caller>`) and said once in the log: the guard of E4.1 §4.1.
     fn tile(&self, level: usize, tx: i64, tz: i64) -> Arc<Tile> {
         let key = TileKey {
             level: level as u8,
@@ -535,13 +548,15 @@ impl Relief {
         };
         self.tiles[level - 1].get_or_insert_with(key, || {
             let _zone = hearth_core::prof::Zone::new(BUILD_ZONES[(level - 1).min(3)]);
-            hearth_core::prof::count(
-                &format!(
-                    "relief.tile.L{level}.{}",
-                    hearth_core::prof::current_caller()
-                ),
-                1,
-            );
+            let caller = hearth_core::prof::current_caller();
+            hearth_core::prof::count(&format!("relief.tile.L{level}.{caller}"), 1);
+            if level == self.levels.len() && COARSE_CALLERS.contains(&caller) {
+                let name = format!("relief.fine.{caller}");
+                if hearth_core::prof::counter(&name) == 0 {
+                    log::warn!("{caller} built a tile of the finest refinement level");
+                }
+                hearth_core::prof::count(&name, 1);
+            }
             self.build(level, tx, tz)
         })
     }
@@ -575,6 +590,21 @@ impl Relief {
     /// The finest surface (blocks) at a point, or the grid's where there are no levels.
     pub fn finest_height(&self, x: f64, z: f64) -> f32 {
         self.height(self.levels.len(), x, z)
+    }
+
+    /// The level for a query standing for `footprint` blocks of ground (E4.1 §4.1): the
+    /// coarsest whose cells are no wider than about the footprint (a quarter more allowed, so
+    /// the ~300 m level answers for a 256 m ecology cell): the grid's for the globe and the
+    /// climate's summaries, the ~2.5 km and ~300 m levels for regional searches and ecology,
+    /// the finest for footprints of some tens of metres and less.
+    pub fn level_at(&self, footprint: f64) -> usize {
+        let fits = |cell: f64| cell <= 1.25 * footprint;
+        if fits(self.grid.geom.cell) {
+            return 0;
+        }
+        (1..=self.levels.len())
+            .find(|&l| fits(self.levels[l - 1].cell))
+            .unwrap_or(self.levels.len())
     }
 
     /// The level to read for columns `scale` blocks apart: the coarsest whose cells are at

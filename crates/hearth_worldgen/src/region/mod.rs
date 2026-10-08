@@ -169,13 +169,42 @@ pub struct Terrain {
     /// Neighbourhoods read for single samples on a refined planet, by square of
     /// [`NEAR_SQUARE`] blocks (trees and other features sample many columns close together).
     near: Arc<NearCache>,
+    /// Neighbourhoods read for samples at a coarser level (`sample_at`), by level and square
+    /// of [`COARSE_SQUARE_CELLS`] of its cells.
+    coarse: Arc<CoarseCache>,
 }
 
 /// Side (blocks) of the squares whose neighbourhoods single samples share.
 const NEAR_SQUARE: i32 = 64;
 
+/// The ground (blocks) a start-place search's samples stand for away from the spot: the ~300 m
+/// refinement level on Earth.
+const SPAWN_FOOTPRINT: f64 = 256.0;
+/// Steps (blocks) of the search for the coast at that level.
+const COARSE_STEP: f64 = 150.0;
+/// How far short of the coast found at that level (blocks) the search goes on block by block.
+const SHORE_FINE: f64 = 1000.0;
+/// Within this distance of the grid's coast (blocks: about a grid cell on Earth, as far as
+/// the refined coast strays from the grid's), the spot itself is read at the blocks' own detail
+/// to tell land from water.
+const COAST_CHECK: f64 = 20_000.0;
+
 /// Neighbourhoods kept for single samples.
 struct NearCache(crate::cubegen::cache::Cache<(i32, i32), Nearby>);
+
+/// Cells of a level along the side of the squares whose neighbourhoods coarse samples share.
+const COARSE_SQUARE_CELLS: f64 = 16.0;
+
+/// Neighbourhoods kept for coarse samples, by level and square.
+struct CoarseCache(crate::cubegen::cache::Cache<(u8, i32, i32), Nearby>);
+
+impl std::fmt::Debug for CoarseCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CoarseCache")
+            .field("len", &self.0.len())
+            .finish()
+    }
+}
 
 impl std::fmt::Debug for NearCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -249,6 +278,7 @@ impl Terrain {
             realms: Arc::new(crate::realms::Realms::new(&grid)),
             relief: (!relief.levels().is_empty()).then(|| Arc::new(relief)),
             near: Arc::new(NearCache(crate::cubegen::cache::Cache::new(1024))),
+            coarse: Arc::new(CoarseCache(crate::cubegen::cache::Cache::new(256))),
             grid,
         }
     }
@@ -366,6 +396,42 @@ impl Terrain {
         }
         let near = self.nearby(x, z, x, z);
         self.sample_with(x, z, &near)
+    }
+
+    /// A column as a query standing for `footprint` blocks of ground sees it (E4.1 §4.1): read
+    /// from the coarsest refinement level whose cells are no wider than about the footprint
+    /// (`Relief::level_at`): the grid's for the globe and the climate's summaries, the ~2.5 km
+    /// and ~300 m levels for regional searches and the animals' habitats, the finest (as
+    /// [`Self::sample`]) for some tens of metres and less. Only a footprint that fine makes tiles
+    /// of the finest level. The neighbourhoods are kept by level and square, so many queries
+    /// close together read their level once.
+    pub fn sample_at(&self, x: i32, z: i32, footprint: f64) -> ColumnSample {
+        let Some(relief) = &self.relief else {
+            return self.sample(x, z);
+        };
+        let level = relief.level_at(footprint);
+        if level == relief.levels().len() {
+            return self.sample(x, z);
+        }
+        let cell = if level == 0 {
+            self.grid.geom.cell
+        } else {
+            relief.levels()[level - 1].cell
+        };
+        let side = (COARSE_SQUARE_CELLS * cell) as i32;
+        let x = self.planet.wrap_x(x);
+        let key = (level as u8, x.div_euclid(side), z.div_euclid(side));
+        let near = self.coarse.0.get_or_insert_with(key, || {
+            let (x0, z0) = (key.1 * side, key.2 * side);
+            // Columns a quarter of the level's cell apart read that level.
+            self.nearby_scaled(x0, z0, x0 + side - 1, z0 + side - 1, cell / 4.0)
+        });
+        self.sample_with(x, z, &near)
+    }
+
+    /// The finest refinement level (0 where there are none: the grid's).
+    pub fn finest_level(&self) -> usize {
+        self.relief.as_ref().map_or(0, |r| r.levels().len())
     }
 
     /// Samples one column of a far tile, its columns `scale` blocks apart.
@@ -1093,12 +1159,27 @@ impl Terrain {
 
     /// A place to start at near (x, z) (v2 §16): there if it is dry, gentle land, else the
     /// nearest such column; from the sea or a lake, the nearest land on the planet (the coast).
+    /// Land is told from the sea, and the coast found, at the ~300 m level; only the spot itself
+    /// and the last kilometre to the shore are read at the blocks' own detail (E4.1 §4.1).
     pub fn spawn_near(&self, x: i32, z: i32) -> (i32, i32) {
-        if !self.sample(x, z).is_underwater() {
+        let g = &*self.grid;
+        let coarse = |x: i32, z: i32| self.sample_at(x, z, SPAWN_FOOTPRINT).is_underwater();
+        // Within a few kilometres of the coast the coarse level may miss a strip of land or an
+        // inlet: the spot itself decides there.
+        let (gx, gz) = g
+            .geom
+            .grid_coords(self.planet.wrap_xf(x as f64 + 0.5), z as f64 + 0.5);
+        let blocks_per_radian = self.planet.circumference_f64() / std::f64::consts::TAU;
+        let coast_blocks = g.coast.bilinear(gx, gz).abs() as f64 * blocks_per_radian;
+        let wet = if coast_blocks < COAST_CHECK {
+            self.sample(x, z).is_underwater()
+        } else {
+            coarse(x, z)
+        };
+        if !wet {
             return self.settle(x, z);
         }
         // The nearest land cell by distance on the sphere.
-        let g = &*self.grid;
         let n = g.n();
         let target = self.planet.sphere_point(x as f64, z as f64);
         let mut best: Option<(f64, usize, usize)> = None;
@@ -1119,18 +1200,31 @@ impl Terrain {
         let Some((_, i, j)) = best else {
             return (self.planet.wrap_x(x), z);
         };
-        // From the land cell's centre toward the clicked point, the last dry column before
-        // the water: the coast itself.
+        // From the land cell's centre toward the clicked point: the coast at the coarse level,
+        // then the last dry column before the water at the blocks' own detail, from a
+        // kilometre short of it.
         let (cx, cz) = g.geom.world_xz(i, j);
         let (cx, cz) = (cx as i32, cz as i32);
         let dx = self.planet.delta_block_x(cx, x) as f64;
         let dz = (z - cz) as f64;
-        let len = dx.hypot(dz);
-        let steps = (len / 8.0).ceil().max(1.0) as i32;
-        let mut shore = (cx, cz);
+        let len = dx.hypot(dz).max(1.0);
+        let at = |t: f64| (cx + (dx * t) as i32, cz + (dz * t) as i32);
+        let coarse_steps = (len / COARSE_STEP).ceil().max(1.0) as i32;
+        let mut t_land = 0.0;
+        for k in 1..=coarse_steps {
+            let t = k as f64 / coarse_steps as f64;
+            let (px, pz) = at(t);
+            if coarse(px, pz) {
+                break;
+            }
+            t_land = t;
+        }
+        let t0 = (t_land - SHORE_FINE / len).max(0.0);
+        let t1 = (t_land + 2.0 * COARSE_STEP / len).min(1.0);
+        let steps = ((t1 - t0) * len / 8.0).ceil().max(1.0) as i32;
+        let mut shore = at(t0);
         for k in 1..=steps {
-            let t = k as f64 / steps as f64;
-            let (px, pz) = (cx + (dx * t) as i32, cz + (dz * t) as i32);
+            let (px, pz) = at(t0 + (t1 - t0) * k as f64 / steps as f64);
             if self.sample(px, pz).is_underwater() {
                 break;
             }
