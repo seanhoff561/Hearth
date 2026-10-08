@@ -466,6 +466,13 @@ pub fn generate(
             treats: None,
             places: Some(IdRef(p.id().to_owned())),
             firing: None,
+            // Building is hauling and setting the pieces, a piece's move at a time.
+            work: Some(crate::schema::process::WorkModel {
+                pose: crate::schema::process::WorkPose::Haul,
+                stroke_s: 6.0,
+                stroke: "a part of the piece set in place".into(),
+                hands: crate::schema::process::Hands::Both,
+            }),
             status: p.status,
             notes: None,
             realism_source: None,
@@ -517,6 +524,13 @@ pub fn generate(
             treats: None,
             places: None,
             firing: None,
+            // Building is hauling and setting the pieces, a piece's move at a time.
+            work: Some(crate::schema::process::WorkModel {
+                pose: crate::schema::process::WorkPose::Haul,
+                stroke_s: 6.0,
+                stroke: "a part of the piece set in place".into(),
+                hands: crate::schema::process::Hands::Both,
+            }),
             status: p.status,
             notes: None,
             realism_source: None,

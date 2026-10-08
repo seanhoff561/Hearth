@@ -228,6 +228,8 @@ fn the_making_screens_draw() {
         action: "thin and shape both faces".into(),
         done: 0.4,
         play_s_left: 52.0,
+        work: None,
+        with: None,
     });
     let mut enc = ctx
         .device

@@ -198,3 +198,44 @@ fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Work stopped part way keeps what is done (E §7.2): digging a while, stopping and taking it up
+/// again goes on from where it was left.
+#[test]
+fn work_left_part_done_is_taken_up_where_it_was_left() {
+    let dir = temp("workshop-begun");
+    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 11);
+    let ground = w.ground();
+    let aim = AimAt::Block {
+        pos: ground,
+        top: true,
+    };
+    w.server.send(ToServer::Act {
+        process: "hearth:dig_by_hand".into(),
+        aim,
+        hand: None,
+        with: None,
+    });
+    // Some minutes of digging (of four hours' work).
+    w.run(20 * 60 * 10);
+    w.pump();
+    let before = w.work_done.expect("digging");
+    assert!(before > 0.02, "{before}");
+    // Let go: the work stops; what is done stays done.
+    w.server.send(ToServer::StopWork);
+    w.run(20);
+    w.pump();
+    assert!(!w.working);
+    w.server.send(ToServer::Act {
+        process: "hearth:dig_by_hand".into(),
+        aim,
+        hand: None,
+        with: None,
+    });
+    w.run(2);
+    w.pump();
+    let again = w.work_done.expect("digging again");
+    assert!(again >= before, "taken up at {again}, left at {before}");
+    drop(w);
+    let _ = std::fs::remove_dir_all(&dir);
+}

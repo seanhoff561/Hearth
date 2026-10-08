@@ -446,6 +446,13 @@ fn work(
         treats: None,
         places: None,
         firing: None,
+        // Butchering is a cut at a time.
+        work: Some(crate::schema::process::WorkModel {
+            pose: crate::schema::process::WorkPose::KneelDig,
+            stroke_s: 2.0,
+            stroke: "a cut".into(),
+            hands: crate::schema::process::Hands::Both,
+        }),
         status: a.status,
         notes: (!proper)
             .then(|| "Without knowing how, half the meat and the hide are wasted.".into()),

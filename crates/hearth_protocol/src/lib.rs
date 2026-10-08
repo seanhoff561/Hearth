@@ -278,6 +278,10 @@ pub struct WorkView {
     pub done: f32,
     /// Seconds of play left at the present pace.
     pub play_s_left: f64,
+    /// How the body does it (P §6.1, E §7.2): its pose, a stroke's seconds, and which hand
+    /// leads.
+    pub work: Option<hearth_content::schema::process::WorkModel>,
+    pub with: Option<hearth_items::Hand>,
 }
 
 /// What came of something done.

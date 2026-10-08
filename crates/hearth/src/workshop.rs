@@ -77,6 +77,9 @@ pub struct WorkshopSave {
     /// The fields' plots (V2-12).
     #[serde(default)]
     plots: Vec<crate::fields::Plot>,
+    /// Work left part done (E §7.2): the process, what it was done to, and the share done.
+    #[serde(default)]
+    begun: Vec<(String, String, f64)>,
 }
 
 /// Work in hand.
@@ -134,6 +137,8 @@ pub struct Workshop {
     pub wildfires: Vec<Station>,
     harvests: FxHashMap<(BlockPos, String), (i64, u8)>,
     depleted: FxHashMap<BlockPos, f32>,
+    /// Work left part done, by process and what it was done to: the share done (E §7.2).
+    begun: FxHashMap<(String, String), f64>,
     /// The crops there are, and the fields' plots by their tilled block (V2-12).
     pub crops: Arc<crate::fields::Crops>,
     pub plots: FxHashMap<BlockPos, crate::fields::Plot>,
@@ -308,6 +313,11 @@ impl Workshop {
                 .map(|h| ((h.pos, h.process), (h.year, h.count)))
                 .collect(),
             depleted: save.depleted.into_iter().collect(),
+            begun: save
+                .begun
+                .into_iter()
+                .map(|(p, k, d)| ((p, k), d))
+                .collect(),
             crops: Arc::new(crate::fields::Crops::from_content(content)),
             plots: save.plots.into_iter().map(|p| (p.pos, p)).collect(),
             work: None,
@@ -342,12 +352,19 @@ impl Workshop {
         depleted.sort_by_key(|(p, _)| *p);
         let mut plots: Vec<crate::fields::Plot> = self.plots.values().cloned().collect();
         plots.sort_by_key(|p| p.pos);
+        let mut begun: Vec<(String, String, f64)> = self
+            .begun
+            .iter()
+            .map(|((p, k), d)| (p.clone(), k.clone(), *d))
+            .collect();
+        begun.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
         WorkshopSave {
             stations: self.stations.clone(),
             wildfires: self.wildfires.clone(),
             harvests,
             depleted,
             plots,
+            begun,
         }
     }
 
@@ -656,10 +673,15 @@ impl Workshop {
             _ => {}
         }
         let needed = p.hours as f64 * 3600.0 * hearth_content::time::TICKS_PER_SECOND * section;
+        // Work left part done is taken up where it was left (E §7.2).
+        let done = Self::begun_key(aim)
+            .and_then(|k| self.begun.get(&(self.crafts.recipes[r].def.id.clone(), k)))
+            .copied()
+            .unwrap_or(0.0);
         self.work = Some(Work {
             recipe: r,
             aim,
-            ticks: 0.0,
+            ticks: done * needed.max(1.0),
             needed: needed.max(1.0),
             at: h.player.mover.pos,
             hand: hand.map(|q| q.clamp(0.0, 1.0)),
@@ -677,13 +699,40 @@ impl Workshop {
             action: def.action.clone(),
             done,
             play_s_left,
+            work: def.work.clone(),
+            with: self.work.as_ref().and_then(|w| w.with),
         }
     }
 
-    /// Stops the work in hand.
+    /// Stops the work in hand: what is done of it stays done, to be taken up again.
     pub fn stop(&mut self, h: &mut Here) {
-        if self.work.take().is_some() {
+        if let Some(w) = self.work.take() {
+            self.keep_begun(&w);
             h.out.push(ToClient::Work(None));
+        }
+    }
+
+    /// What work is done to, as work left part done is kept (none: it is not kept: a blow at
+    /// an animal, a catch).
+    fn begun_key(aim: AimAt) -> Option<String> {
+        match aim {
+            AimAt::Block { pos, .. } | AimAt::Beside { pos, .. } => {
+                Some(format!("block {} {} {}", pos.x, pos.y, pos.z))
+            }
+            AimAt::Thing(id) => Some(format!("thing {id}")),
+            AimAt::Nothing => Some("in hand".to_owned()),
+            AimAt::Animal(_) => None,
+        }
+    }
+
+    /// Keeps the share done of work stopped part way.
+    fn keep_begun(&mut self, w: &Work) {
+        let share = (w.ticks / w.needed.max(1.0)).clamp(0.0, 1.0);
+        if share > 0.0
+            && let Some(k) = Self::begun_key(w.aim)
+        {
+            let id = self.crafts.recipes[w.recipe].def.id.clone();
+            self.begun.insert((id, k), share);
         }
     }
 
@@ -700,16 +749,25 @@ impl Workshop {
         if let Some(w) = &mut self.work {
             let moved = (h.player.mover.pos - w.at).length() > 1.2;
             if h.player.body.dead.is_some() || h.player.asleep || h.player.lying || moved {
-                self.work = None;
+                if let Some(w) = self.work.take() {
+                    self.keep_begun(&w);
+                }
                 h.out.push(ToClient::Work(None));
                 if moved {
-                    h.out
-                        .push(acted("", false, "You leave the work unfinished."));
+                    h.out.push(acted(
+                        "",
+                        false,
+                        "You leave the work; what is done of it stays done.",
+                    ));
                 }
             } else {
                 w.ticks += advanced;
                 if w.ticks >= w.needed {
                     let w = self.work.take().expect("work");
+                    if let Some(k) = Self::begun_key(w.aim) {
+                        let id = self.crafts.recipes[w.recipe].def.id.clone();
+                        self.begun.remove(&(id, k));
+                    }
                     h.out.push(ToClient::Work(None));
                     self.tool_hand = w.with;
                     self.finish(h, w.recipe, w.aim, w.hand);

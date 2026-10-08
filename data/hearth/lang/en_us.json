@@ -688,5 +688,6 @@
   "rest.until_sleepy": "Rest until sleepy",
   "rest.not_sleepy.soon": "You are not quite sleepy; lying here, sleep would come within the hour.",
   "rest.not_sleepy.hours": "You are not sleepy yet. Lying here, you would probably fall asleep in about {hours} hours.",
-  "rest.not_sleepy.not_today": "You are wide awake; sleep would not come for a long while."
+  "rest.not_sleepy.not_today": "You are wide awake; sleep would not come for a long while.",
+  "menu.accessibility.toggle_work": "Click to start and stop work"
 }

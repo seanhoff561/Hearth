@@ -99,6 +99,13 @@ impl Crafts {
                     treats: None,
                     places: None,
                     firing: None,
+                    // A station is built a part at a time.
+                    work: Some(hearth_content::schema::process::WorkModel {
+                        pose: hearth_content::schema::process::WorkPose::Haul,
+                        stroke_s: 6.0,
+                        stroke: "a part set in place".into(),
+                        hands: hearth_content::schema::process::Hands::Both,
+                    }),
                     status: Status::Implemented,
                     notes: None,
                     realism_source: None,

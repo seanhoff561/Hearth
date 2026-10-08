@@ -35,6 +35,8 @@ pub struct World {
     pub acted: Vec<(String, bool, String)>,
     pub learned: Vec<String>,
     pub working: bool,
+    /// How much of the work in hand is done (0–1), while there is some.
+    pub work_done: Option<f32>,
     /// The body as the server last told it.
     pub body: Option<hearth_protocol::BodyView>,
     /// The world's terrain as the client has it (for the landscape seen from afar).
@@ -156,6 +158,7 @@ impl World {
             acted: Vec::new(),
             learned: Vec::new(),
             working: false,
+            work_done: None,
             body: None,
             generator: ready.generator.clone(),
             animals: Vec::new(),
@@ -187,7 +190,10 @@ impl World {
                 ToClient::Knowledge(k) => self.knowledge = *k,
                 ToClient::Clock(t) => self.ticks = t,
                 ToClient::Placed(m) => self.mover = m,
-                ToClient::Work(w) => self.working = w.is_some(),
+                ToClient::Work(w) => {
+                    self.working = w.is_some();
+                    self.work_done = w.map(|v| v.done);
+                }
                 ToClient::Body(b) => self.body = Some(*b),
                 ToClient::Animals(v) => self.animals = v,
                 ToClient::Census(c) => self.census = Some(c),

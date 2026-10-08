@@ -383,6 +383,37 @@ fn refs(c: &Content, report: &mut Report, ctx: &LintContext) {
     }
 }
 
+/// Every attended process is done stroke by stroke in a pose (E §7.2, P §6.1); work left to
+/// itself has neither.
+fn work_models(c: &Content, report: &mut Report) {
+    for (p, o) in c.processes.iter_with_origin() {
+        match (&p.work, p.attended) {
+            (None, true) => report.error(
+                "no-work-model",
+                Some(o.file.clone()),
+                o.line,
+                format!(
+                    "`{}` is attended but says not how the body does it (`work`)",
+                    p.id
+                ),
+            ),
+            (Some(w), true) if !(w.stroke_s > 0.1 && w.stroke_s < 60.0) => report.error(
+                "work-stroke",
+                Some(o.file.clone()),
+                o.line,
+                format!("`{}`: a stroke of {} s", p.id, w.stroke_s),
+            ),
+            (Some(_), false) => report.error(
+                "work-unattended",
+                Some(o.file.clone()),
+                o.line,
+                format!("`{}` is left to itself: it has no strokes", p.id),
+            ),
+            _ => {}
+        }
+    }
+}
+
 /// The hands' uses (Amendment P §5.2): each names a verb some process has or a process there
 /// is, and none is a default that is risky: no blow at nothing but an animal with an empty hand,
 /// no process that removes a built piece.
@@ -1397,6 +1428,7 @@ pub fn lint(c: &Content, ctx: &LintContext) -> Report {
     reference_report(c, &mut report);
     primary_report(c, &mut report);
     intents(c, &mut report);
+    work_models(c, &mut report);
     effort_report(&effort(c, &reach), &mut report);
     let uncertain = c.uncertain_entries();
     report.info(

@@ -299,7 +299,67 @@ entry! {
         /// what is fired (its material's `firing_c`).
         #[serde(default)]
         pub firing: Option<Firing>,
+        /// How the body does it, stroke by stroke (E §7.2; P §6.1): the attended processes'.
+        #[serde(default)]
+        pub work: Option<WorkModel>,
     }
+}
+
+/// How attended work is done (E §7.2): the body's pose, one stroke of the work (a scoop, a
+/// blow, a pass of the scraper, a twist of the drill) and how long it takes, and which hands.
+/// Holding the hand's button works stroke by stroke; letting go stops, the work done so far
+/// kept. The strokes a whole doing takes are its duration over the stroke's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkModel {
+    pub pose: WorkPose,
+    pub stroke_s: f32,
+    /// What one stroke does, in words ("a scoop of earth, about 0.7 L").
+    #[serde(default)]
+    pub stroke: String,
+    #[serde(default)]
+    pub hands: Hands,
+}
+
+/// The poses of work (P §6.1), shared by every body that works (the Actor rule).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorkPose {
+    /// Kneeling, digging or scooping with the hands.
+    KneelDig,
+    /// Standing, digging with a stick or a tool.
+    StandDig,
+    /// Squatting, striking a stone held low.
+    SquatKnap,
+    /// Sitting, working something in the lap (weaving, sewing, carving, scraping).
+    SitLap,
+    /// Kneeling at the water.
+    KneelWater,
+    /// Kneeling at a fire, tending it.
+    KneelFire,
+    /// Kneeling, drilling fire between the palms or with a bow.
+    DrillFire,
+    /// Standing, chopping with both arms.
+    StandChop,
+    /// Standing, reaching to pick.
+    ReachPick,
+    /// Bending to pluck or gather from the ground.
+    PluckLow,
+    /// Bending a branch with both hands until it snaps.
+    SnapBend,
+    /// Kneeling, hammering on an anvil stone.
+    HammerAnvil,
+    /// Kneeling at a quern, grinding.
+    GrindQuern,
+    /// Hauling: carrying, dragging or rolling something heavy.
+    Haul,
+}
+
+/// Which hands work does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Hands {
+    /// One hand (the one whose button began it), the other free or steadying.
+    #[default]
+    One,
+    Both,
 }
 
 /// How a firing is judged (v2 §11.4): hours at or above the bottom of the material's firing

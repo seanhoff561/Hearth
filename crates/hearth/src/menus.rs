@@ -1668,6 +1668,11 @@ impl Menus {
                         &ui.t("menu.accessibility.reduce_motion"),
                         &mut a.reduce_motion,
                     );
+                    changed |= ui.toggle(
+                        c.row(ROW),
+                        &ui.t("menu.accessibility.toggle_work"),
+                        &mut a.toggle_work,
+                    );
                 });
                 if changed {
                     out.push(MenuAction::OptionsChanged);

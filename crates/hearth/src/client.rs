@@ -235,6 +235,8 @@ pub struct Client {
     restore: Option<(hearth_items::Hand, String)>,
     /// Things put away to free a hand come back to it (Controls).
     pub return_to_hand: bool,
+    /// Work goes on from one click to the next instead of while the button is held.
+    toggle_work: bool,
     /// The action menu is open (P §5.3).
     pub action_menu: bool,
     /// Resting asked for from the action menu (the app opens the Rest screen).
@@ -463,6 +465,7 @@ impl Client {
             with_hand: None,
             restore: None,
             return_to_hand: true,
+            toggle_work: false,
             action_menu: false,
             rest_request: false,
             name_tags: Default::default(),
@@ -1113,6 +1116,10 @@ impl Client {
         }
         if let Some((action, hand, since)) = self.repeating {
             if !input.is_down(action) {
+                // Letting go stops the work (E §7.2), unless work goes on until clicked again.
+                if working && !self.toggle_work {
+                    self.server.send(ToServer::StopWork);
+                }
                 self.repeating = None;
             } else if !working
                 && self.clock_s - since > 0.5
@@ -2431,6 +2438,7 @@ impl Client {
     pub fn apply_options(&mut self, options: &Options) {
         self.captions = options.sound.subtitles;
         self.return_to_hand = options.controls.return_to_hand;
+        self.toggle_work = options.accessibility.toggle_work;
         self.name_tags = options.controls.name_tags;
         self.hand_hints = options.controls.hand_hints;
         self.developer = options.developer_mode;

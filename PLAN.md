@@ -94,7 +94,8 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
   defer it). Known: E4 (a)'s land share (0.3 → Earth's 0.29) redraws every test planet's coasts,
   so tests that rely on terrain about a spawn may need new places. Seen failing:
   `acceptance_v2_8::thatch_keeps_the_rain_off_and_a_flat_bark_covering_drips` ("no level
-  ground" about a beach spawn on the Tiny planet). Run `cargo test --profile dev-opt
+  ground" about a beach spawn on the Tiny planet); `felling::a_tree_is_felled_limbed_and_bucked`
+  (only one log of the fallen stem found lying, P4 (b); felling itself is untouched). Run `cargo test --profile dev-opt
   --workspace --no-fail-fast` at the end of E4 or at Audit 1 and fix what the new coasts broke.
   Verified so far: `hearth_worldgen`, `hearth_body`, `hearth_player`, `hearth_craft`,
   `hearth_math`, clippy, fmt, content lint.

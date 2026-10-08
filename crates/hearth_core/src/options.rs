@@ -547,6 +547,9 @@ pub struct AccessibilityOptions {
     /// Compact bars for food, water, warmth, rest, stamina and blood (v2 §9.9's "Guided" HUD)
     /// besides the body's sensations.
     pub guided_hud: bool,
+    /// Work goes on from one click of the hand's button to the next, instead of while it is
+    /// held (E §7.2).
+    pub toggle_work: bool,
 }
 
 impl Default for AccessibilityOptions {
@@ -555,6 +558,7 @@ impl Default for AccessibilityOptions {
             text_background_opacity: 0.5,
             reduce_motion: false,
             guided_hud: false,
+            toggle_work: false,
         }
     }
 }
