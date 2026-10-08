@@ -34,6 +34,8 @@ pub enum Activity {
     Fall,
     /// Lying on the back: asleep, unconscious or dead.
     Lie,
+    /// At work in a pose (P §6.1), a stroke at a time (E §7.2).
+    Work(hearth_content::schema::process::WorkPose),
 }
 
 impl Activity {
@@ -64,6 +66,7 @@ impl Activity {
                 | Activity::Crouch
                 | Activity::Crawl
                 | Activity::Lie
+                | Activity::Work(_)
         )
     }
 }
@@ -89,6 +92,9 @@ pub struct Drive {
     pub holding: Holding,
     /// A blow being struck, a bow drawn, a brand held up (E §3.2).
     pub doing: Option<Doing>,
+    /// At work: a stroke's seconds (E §7.2), and whether the right hand leads.
+    pub stroke_s: f32,
+    pub left_leads: bool,
 }
 
 /// What the arms (or a leg) do beyond holding (E §3.2).
@@ -548,6 +554,12 @@ impl Animator {
                     [rest_leg_with(25.0, 35.0), rest_leg_with(15.0, 30.0)],
                 )
             }
+            Activity::Work(p) => {
+                let (a, l, t, n) = work_pose(p, d, self.t, rest_leg);
+                trunk = t;
+                neck_lean = n;
+                (a, l)
+            }
             Activity::Lie => {
                 root = lean(-90.0);
                 (
@@ -667,6 +679,189 @@ impl Animator {
         };
         pose
     }
+}
+
+/// The arms, legs, trunk's lean and the head's bow of a body at work (P §6.1): its posture
+/// (kneeling, squatting, sitting, standing or bent) and a stroke of the work looping at its
+/// tempo (`Drive::stroke_s`), led by one hand. Joint angles as everywhere here (degrees).
+fn work_pose(
+    p: hearth_content::schema::process::WorkPose,
+    d: &Drive,
+    t: f32,
+    rest_leg: Leg,
+) -> ([Arm; 2], [Leg; 2], f32, f32) {
+    use hearth_content::schema::process::WorkPose as P;
+    let q = (t / d.stroke_s.max(0.2)).fract();
+    let s = (TAU * q).sin();
+    // A blow: drawn back slowly, brought down fast.
+    let blow = if q < 0.7 {
+        q / 0.7
+    } else {
+        1.0 - (q - 0.7) / 0.3
+    };
+    let kneel = Leg {
+        hip: 15.0,
+        abduct: 6.0,
+        knee: 105.0,
+        ankle: -20.0,
+    };
+    let squat = Leg {
+        hip: 105.0,
+        abduct: 10.0,
+        knee: 135.0,
+        ankle: 30.0,
+    };
+    let sit = Leg {
+        hip: 85.0,
+        abduct: 12.0,
+        knee: 35.0,
+        ankle: 0.0,
+    };
+    let stand = Leg {
+        abduct: 4.0,
+        knee: 6.0,
+        ..rest_leg
+    };
+    let arm = |flex: f32, abduct: f32, elbow: f32| Arm {
+        flex,
+        abduct,
+        elbow,
+    };
+    let (lead, other, legs, trunk, bow): (Arm, Arm, [Leg; 2], f32, f32) = match p {
+        P::KneelDig => (
+            arm(55.0 + 30.0 * s, 10.0, 25.0 - 10.0 * s),
+            arm(55.0 + 30.0 * s, 10.0, 25.0 - 10.0 * s),
+            [kneel; 2],
+            45.0 + 10.0 * s,
+            20.0,
+        ),
+        P::StandDig => (
+            arm(45.0 + 25.0 * s, 8.0, 40.0),
+            arm(30.0 + 20.0 * s, 8.0, 55.0),
+            [
+                stand,
+                Leg {
+                    hip: 20.0,
+                    knee: 25.0,
+                    ..stand
+                },
+            ],
+            20.0 + 12.0 * s,
+            15.0,
+        ),
+        P::SquatKnap => (
+            arm(40.0 + 45.0 * blow, 12.0, 95.0 - 45.0 * blow),
+            arm(45.0, 14.0, 85.0),
+            [squat; 2],
+            30.0,
+            30.0,
+        ),
+        P::SitLap => (
+            arm(35.0 + 6.0 * s, 10.0, 95.0 + 12.0 * s),
+            arm(35.0 - 4.0 * s, 10.0, 95.0 - 8.0 * s),
+            [sit; 2],
+            22.0,
+            30.0,
+        ),
+        P::KneelWater => (
+            arm(70.0 + 10.0 * s, 8.0, 20.0),
+            arm(70.0 + 10.0 * s, 8.0, 20.0),
+            [kneel; 2],
+            60.0,
+            20.0,
+        ),
+        P::KneelFire => (
+            arm(45.0 + 12.0 * s, 10.0, 50.0),
+            arm(30.0, 12.0, 60.0),
+            [kneel; 2],
+            35.0 + 5.0 * s,
+            20.0,
+        ),
+        P::DrillFire => (
+            arm(50.0 + 6.0 * s, 14.0, 75.0 + 18.0 * s),
+            arm(50.0 - 6.0 * s, 14.0, 75.0 - 18.0 * s),
+            [kneel; 2],
+            30.0,
+            35.0,
+        ),
+        P::StandChop => {
+            // Raised over the shoulder and brought down through the cut.
+            let f = 150.0 - 130.0 * (1.0 - blow).powi(2).min(1.0);
+            (
+                arm(f, 6.0, 20.0),
+                arm(f - 10.0, 6.0, 25.0),
+                [Leg {
+                    abduct: 9.0,
+                    ..stand
+                }; 2],
+                8.0 + 18.0 * (1.0 - blow),
+                5.0,
+            )
+        }
+        P::ReachPick => (
+            arm(105.0 + 12.0 * s, 12.0, 20.0 + 15.0 * s),
+            arm(35.0, 10.0, 70.0),
+            [stand; 2],
+            -4.0,
+            -15.0,
+        ),
+        P::PluckLow => (
+            arm(70.0 + 15.0 * s, 10.0, 20.0),
+            arm(50.0, 10.0, 40.0),
+            [Leg {
+                knee: 22.0,
+                ..stand
+            }; 2],
+            70.0,
+            10.0,
+        ),
+        P::SnapBend => (
+            arm(60.0, 18.0, 55.0 + 35.0 * s.max(0.0)),
+            arm(60.0, 18.0, 55.0 + 35.0 * s.max(0.0)),
+            [Leg {
+                abduct: 8.0,
+                ..stand
+            }; 2],
+            12.0,
+            10.0,
+        ),
+        P::HammerAnvil => (
+            arm(55.0 + 45.0 * (1.0 - blow), 10.0, 90.0 - 40.0 * (1.0 - blow)),
+            arm(45.0, 12.0, 70.0),
+            [kneel; 2],
+            40.0,
+            25.0,
+        ),
+        P::GrindQuern => (
+            arm(50.0 + 25.0 * s, 10.0, 30.0 - 10.0 * s),
+            arm(50.0 + 25.0 * s, 10.0, 30.0 - 10.0 * s),
+            [kneel; 2],
+            40.0 + 10.0 * s,
+            20.0,
+        ),
+        P::Haul => (
+            arm(40.0 + 6.0 * s, 12.0, 55.0),
+            arm(40.0 + 6.0 * s, 12.0, 55.0),
+            [
+                Leg {
+                    knee: 15.0,
+                    ..stand
+                },
+                Leg {
+                    knee: 10.0,
+                    ..stand
+                },
+            ],
+            22.0,
+            5.0,
+        ),
+    };
+    let arms = if d.left_leads {
+        [lead, other]
+    } else {
+        [other, lead]
+    };
+    (arms, legs, trunk, bow)
 }
 
 /// The arms (or a leg) through a gesture, from the pose they had: drawn back, struck, and

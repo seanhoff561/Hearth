@@ -239,3 +239,107 @@ fn dressed_for_winter() {
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
     write_png(&out.join("character_winter.png"), w, h, &px).expect("png");
 }
+
+/// Every work pose (P §6.1), a body mid-stroke in each (`bench-out/work_poses.png`, to look
+/// at): kneeling, squatting, sitting, standing and bent bodies all on the ground.
+#[test]
+fn every_work_pose_stands_on_the_ground() {
+    use hearth_content::schema::process::WorkPose as P;
+    let Ok(ctx) = GpuContext::headless(false) else {
+        eprintln!("skipped: no GPU adapter");
+        return;
+    };
+    let poses = [
+        P::KneelDig,
+        P::StandDig,
+        P::SquatKnap,
+        P::SitLap,
+        P::KneelWater,
+        P::KneelFire,
+        P::DrillFire,
+        P::StandChop,
+        P::ReachPick,
+        P::PluckLow,
+        P::SnapBend,
+        P::HammerAnvil,
+        P::GrindQuern,
+        P::Haul,
+    ];
+    let (cols, cw, ch) = (7u32, 200u32, 300u32);
+    let (w, h) = (cols * cw, 2 * ch);
+    let target = OffscreenTarget::new(&ctx, w, h);
+    let mut preview = FigurePreview::new(&ctx, OFFSCREEN_FORMAT);
+    for (k, p) in poses.iter().enumerate() {
+        let f = Figure::starting(Appearance::default());
+        let drive = Drive {
+            activity: Activity::Work(*p),
+            stroke_s: 1.0,
+            ..Drive::default()
+        };
+        let mut anim = f.animator;
+        // A third of the way through a stroke.
+        let mut pose = anim.update(&f.rig, &drive, 0.2);
+        for _ in 0..3 {
+            pose = anim.update(&f.rig, &drive, 0.11);
+        }
+        // On the ground: the lowest point at the feet's ground, not below it.
+        let low = pose.lowest(&f.rig);
+        assert!(
+            low.abs() < 0.05,
+            "{p:?}: lowest point {low} m off the ground"
+        );
+        let mut boxes = Vec::new();
+        let place = Affine3A::from_rotation_translation(Quat::from_rotation_y(1.2), Vec3::ZERO);
+        instances(
+            &f.rig,
+            &f.palette,
+            &pose,
+            place,
+            Show::default(),
+            &mut boxes,
+        );
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        if k == 0 {
+            let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target.color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.05,
+                            g: 0.06,
+                            b: 0.08,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+        }
+        let (x, y) = ((k as u32 % cols) * cw, (k as u32 / cols) * ch);
+        preview.render(
+            &ctx,
+            &mut enc,
+            &target.color_view,
+            (w, h),
+            [x, y, cw, ch],
+            &boxes,
+            1.9,
+            0.55,
+            PreviewLight::Overcast,
+        );
+        ctx.queue.submit(Some(enc.finish()));
+    }
+    let px = target.read_rgba(&ctx);
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
+    std::fs::create_dir_all(&out).ok();
+    write_png(&out.join("work_poses.png"), w, h, &px).expect("png");
+}

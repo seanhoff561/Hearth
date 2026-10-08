@@ -2267,8 +2267,18 @@ impl Client {
         let (sy, cy) = (self.body_yaw as f64).to_radians().sin_cos();
         let along = m.vel.x * -sy + m.vel.z * cy;
         let body = self.body.as_ref();
+        // At work, standing still: the work's pose, a stroke at a time (P §6.1, E §7.2).
+        let work = self
+            .crafting
+            .as_ref()
+            .and_then(|c| c.work.as_ref())
+            .and_then(|w| w.work.clone().map(|m| (m, w.with)));
         let activity = if limp {
             Activity::Lie
+        } else if let Some((wm, _)) = &work
+            && report.speed < 0.3
+        {
+            Activity::Work(wm.pose)
         } else if m.climb.is_some() {
             Activity::Climb
         } else {
@@ -2312,6 +2322,10 @@ impl Client {
                 dragging: self.carry.dragging.is_some(),
             },
             doing: self.doing(),
+            stroke_s: work.as_ref().map_or(1.0, |(wm, _)| wm.stroke_s),
+            left_leads: work
+                .as_ref()
+                .is_some_and(|(_, w)| *w == Some(hearth_items::Hand::Left)),
         };
         if let Some(fig) = &mut self.figure {
             self.pose = Some(fig.animator.update(&fig.rig, &drive, dt as f32));
