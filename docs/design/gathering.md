@@ -25,16 +25,18 @@ break rock. What is dug is real earth that has to go somewhere.
   berries thrice, a birch's bark once), kept per block.
 - **Useful plants** (stand-ins until the flora framework, V2-6): nettle patches, hazel bushes
   (two blocks tall) and brambles in the temperate woods and along rivers.
-- **Digging** (by hand 4 h a block, with a digging stick 2 h, snow 0.5 h): the block goes and
-  its loose earth (*spoil*) falls in a pile beside the hole, on the lowest side away from the
-  digger. Loose blocks (spoil, sand, gravel, ash) fall and slide down any step of two until
-  they rest: piles stand at a block's 45°, near the 35–40° of loose earth and gravel; digging
-  under or beside them brings them down.
+- **Digging** (a cubic metre by hand in 4 h, with a digging stick 2 h, snow 0.5 h; S1): each
+  stroke takes its share of the metre from the ground where the digger looks, as a bowl
+  (`smooth-terrain.md`, "Digging and slumping"). The loose earth (*spoil*) is thrown a stride
+  clear of the hole, away from the digger; snow is packed away. Loose ground (spoil, sand,
+  gravel, ash, snow) slumps until no slope of it stands steeper than its angle of repose, dry
+  or rain-wet (sand 34°, gravel 40°, loose earth 37°); intact earth stands in a pit's wall.
 - **Throwing** (hold R, let go): a stone flies from the hand at up to 20 m/s (slower for heavy
   things), falls ballistically and lies where it lands.
 
 ## Parameters
-Durations, yields, seasons and harvests per block in the data; spoil rests at 45°.
+Durations, yields, seasons and harvests per block in the data; the angles of repose per ground
+family in `materials/reference.ron`.
 
 ## Interactions
 Knowledge (gathering teaches: knocking stones, cutting, probing, seeing vines), carrying (what

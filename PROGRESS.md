@@ -36,19 +36,63 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6. V2-11 superseded.
 | P4 with E6 — work by the body, sleep | done 2026-10-08 (D255–D257) |
 | P5 | done 2026-10-08 (P6 removed, D258) |
 | Audit 1 | done 2026-10-08 |
-| S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
+| S1 — fill data and editing | done 2026-10-08 (D260–D262) |
+| S2 → E7 → S3 → S4, Audit 2 | next |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
 
 | Row | State |
 |---|---|
-| Smooth world (S) | S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
+| Smooth world (S) | S1 done: fill in every surface cube, generated and saved; ground families; dig, pile and settle conserving volume (sand to 34.3°). S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E6 done 2026-10-08; E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); next: Audit 2 after S4 |
 
-## Latest: Audit 1 (2026-10-08, `docs/review/audits/AUDIT-1.md`)
+## Latest: S1 — fill data and editing (2026-10-08, D260–D262)
+- **Fill in the world:**
+  - every cube the ground's surface passes through keeps each voxel's depth inside it, to
+    1.2 cm;
+  - generated from the terrain's continuous height across its slope, the cliffs' shaping and
+    the caves' walls;
+  - regenerated the same from the seed, the surface within 6 cm of the terrain's height;
+  - written with the cube to the client and to disk.
+  Blocks say what they are to it (natural, structure, fluid, foliage, empty).
+- **Ground families** (`materials/reference.ron`, linted for every natural block): sharpness,
+  angle of repose dry and wet, friction dry, wet and iced, and footsteps, with sources. Sand
+  rests at 34°, gravel at 40°, loose earth at 37°; wet clay at 20°.
+- **Editing** (`hearth_world::ground`):
+  - a look meets the ground to the millimetre;
+  - digging takes a volume as a bowl, in whole steps of the fill;
+  - piling fills the lowest voxels, burying low plants;
+  - loose ground slumps to its repose.
+  Volume is conserved through all of it. A heap of sand tipped at 76° settles to 34.3°, and a
+  pit's walls to 34.7°.
+- **In play:** a dig takes its cubic metre stroke by stroke where the digger looks. The spoil
+  is thrown clear of the hole and slumps if loose; intact earth stands in a pit's wall.
+- **Saves** (format 8): changed ground keeps its fill, and older changes blend into the
+  regenerated ground.
+- **Deferred** (`PLAN.md`):
+  - the client's aim and a dig preview from the field (S2);
+  - collision and Level ground on the field (S3);
+  - fresh cuts holding sharper;
+  - the bot suite.
+- **Real?** Repose angles and friction from measurements, with sources; the volume dug is the
+  volume moved.
+- **Lean?**
+  - one fill byte per voxel, only in surface cubes;
+  - one module for looking, digging, piling and slumping;
+  - the old block-level dig and slump code is removed.
+- **Fast?** A stroke's dig, heap and settle touch a few thousand voxels. Generation adds one
+  subtraction a voxel.
+- **Whole?**
+  - generation, saves, the wire, digging, the spoil and the hole after a reload agree (the
+    workshop test);
+  - the lint holds every natural block to a family.
+- **Organic?** Heaps run and pits' walls lean back by their material and by the rain, not by
+  a rule of blocks.
+
+## Audit 1 (2026-10-08, `docs/review/audits/AUDIT-1.md`)
 - Covers E1–E6 and P3–P5. An independent reviewer re-read the newest modules.
 - **Fixed:**
   - resuming part-done work showed it undone;

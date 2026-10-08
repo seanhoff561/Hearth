@@ -199,3 +199,26 @@ fn rock_stands_where_sand_runs() {
     let moves = ground::settle(&mut map, &reg, BlockPos::new(0, 0, 0), 4, &|_| None, 1000);
     assert_eq!(moves, 0, "rock does not flow");
 }
+
+#[test]
+fn a_changed_cube_crosses_the_wire_exactly() {
+    let (mut map, reg, s) = field("hearth:loam", 0.4);
+    ground::dig(
+        &mut map,
+        &reg,
+        DVec3::new(3.2, 0.4, 3.7),
+        DVec3::Y,
+        0.5,
+        0.3,
+        &|_| true,
+    );
+    ground::pile(&mut map, &reg, DVec3::new(6.5, 0.4, 3.5), 0.8, s, 0.3);
+    let c = map.cube(CubePos::new(0, 0, 0)).expect("the cube");
+    assert!(c.fill().is_some());
+    let mut bytes = Vec::new();
+    c.write_bytes(&mut bytes);
+    let (back, n) = Cube::read_bytes(&bytes, &|v| BlockStateId(v)).expect("read");
+    assert_eq!(n, bytes.len());
+    assert_eq!(back.fill(), c.fill());
+    assert!((0..hearth_math::CUBE_VOLUME).all(|i| back.get_index(i) == c.get_index(i)));
+}

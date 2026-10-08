@@ -1,16 +1,17 @@
 # Smooth terrain: fill, meshing and shading (Amendment S)
 
-*S0's prototypes and the decision they led to. The production mesher (S2) builds on
-`hearth_smooth`; this page grows with S1–S4. The look is set by `art-direction.md`; the plan of
-the change by `MIGRATION_SMOOTH.md`.*
+*S0's prototypes and the decision they led to; S1's fill in the world, its ground families and
+its editing. The production mesher (S2) builds on `hearth_smooth`; this page grows with S2–S4.
+The look is set by `art-direction.md`; the plan of the change by `MIGRATION_SMOOTH.md`.*
 
 ## The fill
 
 Every voxel of the 1 m grid keeps its material and gains a **fill**: the signed distance from
 its centre to the ground's surface, positive inside, clamped to ±1.5 voxels and stored in a
-signed byte (`hearth_smooth::field`). Values run −127..=127, so a step is 1.5 m / 127 ≈ 1.2 cm;
-−128 is never written. A voxel is ground exactly when its fill is positive; the surface is the
-fill's zero crossing.
+signed byte (`hearth_smooth::field`, and in the world `hearth_world::fill`). Values run
+−127..=127, so a step is 1.5 m / 127 ≈ 1.2 cm; −128 is never a depth (in the world it marks a
+voxel whose state changed and whose fill was not set since). The surface is the fill's zero
+crossing.
 
 The fill must be **distance-like**: its gradient about one long near the surface. A height field
 gives `height − y`, which overstates the distance on a slope by 1 / cos(slope) and, once
@@ -18,6 +19,82 @@ clamped, shifts the crossings of steep ground; the generator divides by the grad
 (as S0's scenes do, `tools/bench/src/smooth/scenes.rs`). Two samples straddling the surface are
 then never clamped, so a crossing is placed as exactly as the byte allows; samples a cell or two
 away may be, which matters only for normals (below).
+
+## The fill in the world (S1)
+
+- **Kinds** (S §2.1): each block says what it is to the smooth world (`kind` in
+  `blocks/_templates.json`: rock and soil natural, leaves and foliage, anything else from what
+  it is: a fluid fluid, a block without collision empty, the rest a structure). The registry
+  keeps it as the state flag `NATURAL`.
+- **Storage:** a cube keeps a fill array only where the surface passes through it; elsewhere a
+  voxel's fill is what its state says (natural ground full, anything else empty). Cubes write
+  it after their light, flagged in their first byte, so it travels with them to the client and
+  into region files.
+- **Generation** (S §2.2): the generator keeps each voxel's depth from its continuous tests:
+  the terrain's height, across the slope (`(height − y − ½) / √(1 + slope²)`, the distance to
+  an inclined plane); the cliffs' shaping; the caves' and caverns' walls, cut out to a voxel
+  and a half beyond them. Deposits, water and trees change states afterwards; the fill is made
+  to agree with what each voxel ended as. Unchanged cubes regenerate the same fill from the
+  seed; the surface it gives lies within 6 cm of the terrain's height
+  (`surface_cubes_carry_the_grounds_fill`).
+- **What it means:** anything but natural ground is outside the ground. Natural ground is
+  usually more than half full, but may be less, its surface below the voxel's centre (dug, or a
+  thin layer). A voxel's **occupancy**, the share of it that is ground, is ½ + its depth,
+  clamped: full half a voxel in, empty half a voxel out.
+- **Saves** (S §2.4, save format 8): the player's changes keep their fill (`blocks.json`'s
+  `fills`). A change saved before takes the regenerated ground's fill, at least half in (or
+  out), so its faces meet the ground about it.
+
+## Ground families (S §2.3)
+
+`materials/reference.ron`'s `ground` gives each family of natural ground its behaviour; the
+first family whose filter matches a material is its own, and the lint holds every natural
+block's material to one.
+
+| Family | Sharpness | Repose, dry / rain-wet | Friction, dry / wet / iced | Footsteps |
+|---|---:|---|---|---|
+| snow | 0.0 | 38° / 30° | 0.3 / 0.2 / 0.1 | snow |
+| ice | 0.6 | — | 0.1 / 0.05 / 0.05 | glass |
+| sand | 0.05 | 34° / 40° | 0.55 / 0.6 / 0.15 | sand |
+| gravel | 0.3 | 40° / 41° | 0.6 / 0.55 / 0.15 | gravel |
+| volcanic ash and loess | 0.2 | 35° / 25° | 0.55 / 0.35 / 0.1 | sand |
+| clay | 0.35 | 40° / 20° | 0.6 / 0.25 / 0.1 | mud |
+| peat | 0.15 | 40° / 30° | 0.5 / 0.35 / 0.1 | moss |
+| soil and loose earth | 0.2 | 37° / 42° | 0.6 / 0.4 / 0.1 | soil |
+| rock | 0.9 | — (stands) | 0.7 / 0.5 / 0.1 | stone |
+
+Moist grains hold steeper than dry by capillary cohesion; wet clay and loess lose their
+strength. The natural blocks' footsteps come from their family. Each family's sources are in
+the file; the clay, peat, ash and loess and soil values are marked uncertain.
+
+## Looking, digging and slumping (S §8.3–8.4)
+
+`hearth_world::ground` treats the ground as the fill's field: trilinear between the voxels'
+centres, unloaded ground outside.
+
+- **Looking:** a look marches the field a tenth of a metre at a time and bisects to the
+  crossing, to a millimetre; the normal is the field's gradient (`raycast`).
+- **Digging** takes a volume from a bowl sunk into the surface at the point looked at, the
+  voxels nearest its middle giving most (`dig`). It takes whole steps of the fill (some 12
+  litres of a 1 m voxel); a stroke smaller carries the rest to the next. A dig process moves a
+  cubic metre in all, stroke by stroke as the work goes (`workshop/ground.rs`); work taken up
+  again has its share dug already.
+- **Piling** puts a volume into the lowest open voxels about a point, each filled from below,
+  reaching further where something stands in the way; it buries grass and low plants (`pile`).
+  What is laid on top is what a voxel shows: a voxel is of one material.
+- **Slumping** (`settle`): over the columns about a change, ground passes from a column's top
+  to a lower neighbour's top while the step between them is steeper than the top's angle of
+  repose, half the excess at a time, until nothing moves. Only loose ground flows (spoil, sand,
+  gravel, ash, snow); intact earth stands in a pit's wall, rock never moves. In rain the wet
+  angles hold.
+- After an edit the fill about it is set again from the occupancies (`refill`): a part-full
+  voxel holds its surface where its share puts it, a full one is as deep as its emptiest
+  neighbour leaves it, an empty one as far out as its fullest neighbour.
+- **Volume is conserved:** dug is lost, piled is gained, slumped is moved. Measured
+  (`hearth_world/tests/ground.rs`): forty strokes of 6 litres dig 0.24 m³ and put back fill
+  the hole to within 2 litres; four cubic metres of sand tipped in one place stand at 76° and
+  settle to 34.3° in 18 moves; a 14 m³ pit dug straight down in sand slumps to 34.7° walls; a
+  look meets the ground within a centimetre.
 
 ## The meshers
 

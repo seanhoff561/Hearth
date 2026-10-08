@@ -114,9 +114,8 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
 - The action menu as a radial on the controller; sub-object picking with S5 and P7.
 
 ## From P4 and E6 (open)
-- Real effects per stroke (litres dug, notches cut) and work in progress shown in the world
-  (with S1's editable fill); rain filling a pit left part dug, a hide left part scraped
-  drying stiff.
+- Real effects per stroke beyond digging (done at S1: each stroke digs its share), notches cut
+  in a trunk; rain filling a pit left part dug, a hide left part scraped drying stiff.
 - Cooking by core temperature; smoking, salting, fermenting and tanning as state models.
 - The hands at work in first person.
 - Gathering one thing at a time, the loose-objects layer and harvests from living plants: P7
@@ -153,12 +152,13 @@ numbers live in `BENCHMARKS.md`; `docs/review/smooth-world.md` is the visual rev
 milestone: implement, design docs and data, tests, `scripts/check.sh`, `hearth content lint`,
 the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 
-## S1 — Fill data and editing core
-- Fill values in cubes and generation (S §2), material properties (sharpness, angle of repose,
-  friction, slump, walk sound, surface recipe), saves and migration, network delta format,
-  raycast with sub-voxel hits, mass-conserving dig and place brushes, settling (S §8.3–8.4).
-- *Accept:* S §13 data and editing tests pass; a dug pit and spoil pile settle realistically in
-  a headless test.
+## From S1 (open)
+- The client's aim and a soft preview of what a dig will take, from the ground's field: with
+  S2, when the surface is drawn smooth (until then the look picks blocks as drawn).
+- Building pieces, tilling and the structure check read the fill (S3's Level ground, a built
+  piece's buried skirt); collision against the field is S3's.
+- A fresh cut's faces holding sharper than soil's sharpness, weathering soft (S0's note).
+- The bot suite (it digs) with the full suite.
 
 ## S2 — Smooth terrain rendering
 - The production mesher (S §3.2), compact vertices, mid-range simplification, material blending,
