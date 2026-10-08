@@ -4,6 +4,7 @@
 pub mod alloc_count;
 pub mod app;
 pub mod bench;
+pub mod birthplace_ui;
 pub mod body_panel;
 pub mod building;
 pub mod character_ui;

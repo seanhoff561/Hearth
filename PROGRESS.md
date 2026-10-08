@@ -21,7 +21,7 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -31,8 +31,8 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4. V2-11 superseded.
 | E2 — controls | done 2026-10-08 (D237–D239) |
 | E3 — Earth's clock | done 2026-10-08 (D240–D243) |
 | E4 — Earth's size | done 2026-10-08 (D244–D248) |
-| E5 — Wild Earth start | next |
-| P3 → P4 with E6 → P5 → P6, Audit 1 | planned |
+| E5 — Wild Earth start | done 2026-10-08 (D249–D251) |
+| P3 → P4 with E6 → P5 → P6, Audit 1 | next |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
@@ -42,10 +42,48 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4. V2-11 superseded.
 |---|---|
 | Smooth world (S) | S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P2 done; open issues in `dev/PLAYTEST.md` |
-| Earth-True (E) | E0–E4 done 2026-10-08; E5–E7 planned |
+| Earth-True (E) | E0–E5 done 2026-10-08; E6–E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
 
-## Latest: E4 — Earth's size (2026-10-08, D244–D248)
+## Latest: E5 — the Wild Earth start (2026-10-08, D249–D251)
+- The character creator is back (Create World → "Who you are"; the death screen):
+  - saved profiles; body, height and build;
+  - skin tone, undertone and freckles; six face presets and seven feature sliders;
+  - eyes; eleven hair styles with length, natural colours and a fine picker; eyebrows; facial
+    hair; a name;
+  - Randomize drawing adults' variation with pigmentation correlated as it is;
+  - the person turning under daylight, overcast, dusk, firelight and moonlight
+    (`docs/review/e5/`).
+- Suggested places: three to five per new world, of different climates and far apart,
+  survivable at the date.
+  - Each card has a plain name, the climate and season now, the terrain and a difficulty.
+  - "What to look for": water, toolstone on the ground, wood, fibre, food in season, tinder,
+    each with distance and direction.
+  - "Watch out for": predators, venomous and defensive animals, cold nights, heat, thin air.
+  - Every claim is found by sampling the world made; a place without fresh water is passed over.
+  - Choose anywhere reads any spot's card. 5 places in 7.8 s on Earth's planet (≤ 15 s).
+- Eras: every era listed; the ones not yet playable are greyed, "Coming soon".
+- A life wakes twenty minutes before sunrise on a spring day, lying awake in the grass as the
+  eyes open and the birds sing; moving gets up.
+- The death screen offers:
+  - who begins the next life;
+  - a new life near where the last one lived, at a place suggested for the season, or anywhere;
+  - restarting the world.
+- Deferred (`PLAN.md`): the full suite (with E4's); cards on hover; Easy's hints at waking (P6);
+  Near a friend (Phase R).
+- **Real?** Heights about real adult means. Pigmentation correlated as the genes act. Places
+  judged by the climate normals of the day. Every card's claim found in the world (tested by
+  finding each again).
+- **Lean?** One places module serves new worlds, Choose anywhere and new lives. The profiles of
+  before load as they were.
+- **Fast?** 3 s on a test planet, 7.8 s on Earth's. A card on a click in some 0.3 s.
+- **Whole?** The creator, places, eras, waking and death fit together end to end:
+  Create World → who → places → dawn → death → a new life as chosen. The layout test lays out
+  the creator at every window size.
+- **Organic?** Places come from the world's own rivers, springs, stones, plants and animals.
+  None are authored.
+
+## E4 — Earth's size (2026-10-08, D244–D248)
 - Every world is Earth's: 40,075 km round, a block a metre up and down; the size, height,
   rarity, land-share and spawn-climate settings are gone (Developer mode keeps the test planets).
 - The grid takes Earth's heights at Earth's size (the test planets keep theirs): land 29 %, mean

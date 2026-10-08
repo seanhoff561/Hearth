@@ -215,3 +215,71 @@ fn the_birthplace_screen_shows_the_places() {
     std::fs::create_dir_all(&out).ok();
     write_png(&out.join("menu_birthplace_places.png"), w, h, &px).expect("png");
 }
+
+/// On an Earth-sized planet (seed 7's grid as `bench relief` caches it; run by hand with
+/// `--ignored`): suggesting adds at most some 15 s to making a world.
+#[test]
+#[ignore]
+fn places_on_earth_take_under_15_s() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../bench-out/planets/planet_7_earth_2048.bin.zst");
+    let Ok(grid) = PlanetGrid::load(&path) else {
+        eprintln!("skipped: no cached Earth grid at {}", path.display());
+        return;
+    };
+    let t0 = Instant::now();
+    let terrain = Arc::new(Terrain::new(Arc::new(grid)));
+    let reg = Arc::new(hearth_world::datapack::load_builtin_registry().expect("base pack"));
+    let content = Arc::new(hearth_content::Content::load_base());
+    let wg = Arc::new(WorldGenerator::new(terrain, &reg, &content).expect("generator"));
+    let f = Finder::new(wg, content, reg);
+    let made = t0.elapsed().as_secs_f64();
+    let places = f.suggest(When::Spring, 7);
+    let took = t0.elapsed().as_secs_f64();
+    let lang = hearth::interface::lang();
+    for p in &places {
+        println!(
+            "{} ({})",
+            hearth::places::words(&lang, &p.name),
+            lang.get(p.difficulty.key())
+        );
+        for c in &p.look_for {
+            println!("  + {}", hearth::places::claim_words(&lang, c));
+        }
+        for d in &p.watch_out {
+            println!("  ! {}", hearth::places::danger_words(&lang, d));
+        }
+    }
+    println!(
+        "generator {made:.1} s; {} places in {took:.1} s",
+        places.len()
+    );
+    assert!((3..=5).contains(&places.len()));
+    assert!(took < 15.0, "{took:.1} s");
+}
+
+/// Wild Earth has no people but players (Amendment E §6.1): no animal of the catalog is a
+/// human or another hominin, and no content names one.
+#[test]
+fn no_humans_live_in_the_world() {
+    let content = hearth_content::Content::load_base();
+    let catalog = hearth_fauna::Catalog::new(&content);
+    let human = |s: &str| {
+        let s = s.to_lowercase();
+        [
+            "human",
+            "homo ",
+            "homo_",
+            "hominin",
+            "neanderthal",
+            "erectus",
+            "person",
+            "people",
+        ]
+        .iter()
+        .any(|w| s.contains(w))
+    };
+    for sp in &catalog.species {
+        assert!(!human(&sp.id) && !human(&sp.name), "{}", sp.id);
+    }
+}

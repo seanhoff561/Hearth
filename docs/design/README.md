@@ -12,6 +12,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Saves, versioning and migrations | [saves.md](saves.md) | implemented (V2-0) |
 | Planet generation (tectonics, erosion, climate) | [planet.md](planet.md) | implemented (v1 M2) |
 | Terrain at Earth's scale (refinement levels, rivers and lakes through them) | [terrain.md](terrain.md) | implemented (E4) |
+| The Wild Earth start: the creator, suggested places, waking, new lives | [start.md](start.md) | implemented (E5) |
 | Rendering (terrain, sky, lighting, weather) | [rendering.md](rendering.md) | implemented (v1 M3, V2-1) |
 | Light | [light.md](light.md) | implemented (v1) |
 | Calendar, seasons and weather | [seasons.md](seasons.md) | implemented (V2-1) |

@@ -62,6 +62,8 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
   real, Rest the only way time goes faster (`docs/design/time.md`, D240–D243).
 - **E4** — the Earth-sized planet: Earth only, Earth's heights, refinement levels to 38 m,
   life at real heights (`docs/design/terrain.md`, `planet.md`, `physiology.md`, D244–D248).
+- **E5** — the Wild Earth start: the creator, suggested places verified in the world, eras
+  "Coming soon", waking at dawn, new lives as chosen (`docs/design/start.md`, D249–D251).
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -96,10 +98,11 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
 - The grid's middle heights (1–3 km) are short of Earth's (`planet.md`): more and longer ranges.
 - The Body panel's words for breathlessness and mountain sickness (P6's HUD).
 
-## E5 — Wild Earth start (E §6)
-- The character creator back; 3–5 suggested places with verified "what to look for" and "watch
-  out for"; other eras "Coming soon"; waking at dawn; death: a new life or restart.
-- *Accept:* E §11's start tests; title screen to waking at dawn; places add ≤ ~15 s.
+## From E5 (before Audit 1)
+- The waking life lies until it acts (D251): run the bot and acceptance suites (they act at
+  once, which gets up) with the full suite above.
+- A place's card on the globe's hover, not only on the click (E §6.3).
+- Easy's first-time hints at the first waking (E §6.5) come with P6.
 
 ## P3 — Looking and the hands
 - Highlighting and precise picking, name tags and hand hints (§5.1); the intent resolver

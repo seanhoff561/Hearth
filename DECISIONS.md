@@ -257,3 +257,6 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D246 (2026-10-08) The blocks read a level once per area; far tiles read coarse levels
 - D247 (2026-10-08) Earth's heights on an Earth-sized planet; the test planets keep theirs
 - D248 (2026-10-08) Heights act on the body and on boiling; clouds stand above the ground
+- D249 (2026-10-08) The creator returns on the box body; Randomize correlates pigmentation
+- D250 (2026-10-08) Suggested places are verified by sampling the world made
+- D251 (2026-10-08) A life wakes at dawn, lying in the grass, and gets up by acting
