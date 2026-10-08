@@ -24,7 +24,6 @@ fn generator() -> &'static WorldGenerator {
             seed: 11,
             planet_size: PlanetSize::Standard,
             grid_resolution: 512,
-            ..WorldGenSettings::default()
         };
         let terrain = Arc::new(Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {}))));
         let reg = hearth_world::datapack::load_builtin_registry().expect("base pack");

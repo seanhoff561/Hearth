@@ -4,6 +4,7 @@ mod deposits;
 mod r#gen;
 mod image;
 mod region;
+mod relief;
 mod smooth;
 mod textures;
 mod worldmap;
@@ -16,6 +17,9 @@ fn usage() {
   deposits [--seed N] [--model ID] [--near X,Z] [--max-depth N] [--limit 10] [--coverage] [--springs] [--find BIOME|coral]
       List a world's deposit bodies (and springs) nearest a point, and the resource coverage of its
       continents.
+  relief [--seed N] [--res 2048] [--at X,Z] [--px 512] [--out DIR]
+      Shaded relief maps of the Earth's refinement levels about a point (default: the highest
+      uplift), with each level's time.
   smooth [--out DIR] [--scenes a,b,...|shading] [--view 560x350] [--supersample 2] [--no-images]
       S0's smooth-terrain prototypes: the eight test scenes meshed by Surface Nets, Surface Nets
       with sharp features and Dual Contouring, measured and rendered; the shading prototype."
@@ -30,6 +34,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     };
     match cmd.as_str() {
+        "relief" => relief::run(&args[1..]),
         "worldmap" => worldmap::run(&args[1..]),
         "region" => region::run(&args[1..]),
         "gen" => r#gen::run(&args[1..]),

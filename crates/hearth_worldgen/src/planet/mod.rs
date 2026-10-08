@@ -69,6 +69,40 @@ pub struct Volcano {
     pub crater_lake: bool,
 }
 
+/// The eight neighbours a cell may drain to, as (Δi, Δj); `flow` codes index it.
+pub const FLOW_D8: [(i64, i64); 8] = [
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (-1, 1),
+    (-1, 0),
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+];
+/// The `flow` code of a cell that drains to no neighbour.
+pub const NO_FLOW: u8 = 8;
+
+/// The flow code from a cell to its receiver (wrapping in i).
+fn flow_code(geom: &GridGeom, idx: usize, receiver: usize) -> u8 {
+    if receiver == idx {
+        return NO_FLOW;
+    }
+    let n = geom.n as i64;
+    let (i, j) = ((idx % geom.n) as i64, (idx / geom.n) as i64);
+    let (ri, rj) = ((receiver % geom.n) as i64, (receiver / geom.n) as i64);
+    let mut di = ri - i;
+    if di > 1 {
+        di -= n;
+    } else if di < -1 {
+        di += n;
+    }
+    FLOW_D8
+        .iter()
+        .position(|&o| o == (di, rj - j))
+        .map_or(NO_FLOW, |c| c as u8)
+}
+
 /// A river cell of the drainage network.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RiverCell {
@@ -95,6 +129,11 @@ pub struct PlanetGrid {
     pub water: Field<f32>,
     /// River cells (cell index → receiver and discharge).
     pub rivers: rustc_hash::FxHashMap<u32, RiverCell>,
+    /// Every cell's drainage: the neighbour it flows to (a code into [`FLOW_D8`]; [`NO_FLOW`]
+    /// for the sea, a basin's floor or a lake that does not spill to a neighbour) and its
+    /// discharge (square degrees of catchment × metres of rain a year, as the rivers').
+    pub flow: Vec<u8>,
+    pub discharge: Vec<f32>,
     pub flags: Vec<u8>,
     pub plate: Vec<u8>,
     pub province: Vec<u8>,
@@ -566,6 +605,9 @@ impl PlanetGrid {
                 )
             })
             .collect();
+        let flow: Vec<u8> = (0..len)
+            .map(|idx| flow_code(&geom, idx, hydro.receiver[idx] as usize))
+            .collect();
         let half = |data: Vec<f32>| Field::from_vec(n, data).downsample2();
         PlanetGrid {
             geom,
@@ -575,6 +617,8 @@ impl PlanetGrid {
             elevation: Field::from_vec(n, elev),
             water: Field::from_vec(n, hydro.water),
             rivers,
+            flow,
+            discharge: hydro.discharge,
             flags,
             plate,
             province,
@@ -1097,7 +1141,6 @@ mod tests {
             seed,
             planet_size: PlanetSize::Standard,
             grid_resolution: 256,
-            ..WorldGenSettings::default()
         }
     }
 

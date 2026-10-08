@@ -47,7 +47,6 @@ fn a_year_of_seasons_by_latitude() {
         seed: 11,
         planet_size: PlanetSize::Small,
         grid_resolution: 256,
-        ..WorldGenSettings::default()
     };
     let grid = PlanetGrid::build(&settings, &|_, _| {});
     let places = land_places(&grid);

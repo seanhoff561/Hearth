@@ -15,7 +15,6 @@ fn planets() -> Vec<PlanetGrid> {
                 seed,
                 planet_size: PlanetSize::Standard,
                 grid_resolution: 256,
-                ..WorldGenSettings::default()
             };
             PlanetGrid::build(&s, &|_, _| {})
         })

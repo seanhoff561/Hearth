@@ -9,6 +9,7 @@ use hearth_math::{BlockPos, PlanetSize};
 use hearth_world::BlockRegistry;
 use hearth_worldgen::cubegen::features::{PlacedTree, Remains};
 use hearth_worldgen::region::biome::Biome;
+use hearth_worldgen::trees::PlaceClimate;
 use hearth_worldgen::vegetation::{Disturbance, DisturbanceKind, Vegetation, VegetationSave};
 use hearth_worldgen::{PlanetGrid, Terrain, WorldGenSettings, WorldGenerator};
 
@@ -24,7 +25,6 @@ fn generator() -> &'static WorldGenerator {
             seed: 7,
             planet_size: PlanetSize::Standard,
             grid_resolution: 256,
-            ..WorldGenSettings::default()
         };
         let terrain = Arc::new(Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {}))));
         let content = hearth_content::Content::load_base();
@@ -32,8 +32,10 @@ fn generator() -> &'static WorldGenerator {
     })
 }
 
-/// A place in a closed forest of real species near the spawn: the centre of a square of
-/// `2 x half` metres holding many canopy trees.
+/// A place in a closed forest of real species near the spawn whose opened ground the pioneers
+/// lead (the cool temperate forests; a warm mixed forest grows back as much from its oaks,
+/// chestnuts and cherries): the centre of a square of `2 x half` metres holding many canopy
+/// trees.
 fn forest(wg: &WorldGenerator, half: i32) -> (i32, i32) {
     static SPOT: OnceLock<(i32, i32)> = OnceLock::new();
     *SPOT.get_or_init(|| {
@@ -48,7 +50,28 @@ fn forest(wg: &WorldGenerator, half: i32) -> (i32, i32) {
                     s.biome,
                     Biome::BroadleafForest | Biome::MixedForest | Biome::BirchForest
                 );
-                if woods && s.tree_density > 0.6 && !s.is_underwater() {
+                if !woods || s.tree_density <= 0.6 || s.is_underwater() {
+                    continue;
+                }
+                let climate = PlaceClimate {
+                    mean_c: s.temperature,
+                    warm_c: s.t_warm,
+                    cold_c: 2.0 * s.temperature - s.t_warm,
+                    precip_mm: s.precipitation,
+                    class: s.climate,
+                    biome: s.biome,
+                    wet: s.biome == Biome::Wetland,
+                    realm: s.realm,
+                };
+                let draws = 200;
+                let pioneers = (0..draws)
+                    .filter_map(|k| {
+                        wg.forest
+                            .choose_open(&climate, (k as f32 + 0.5) / draws as f32)
+                    })
+                    .filter(|&sp| wg.forest.niches[sp].shade_tolerance < 0.3)
+                    .count();
+                if pioneers * 10 >= draws * 6 {
                     near.push((i * i + j * j, x, z));
                 }
             }

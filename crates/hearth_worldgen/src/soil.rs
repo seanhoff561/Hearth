@@ -465,7 +465,6 @@ mod tests {
                 seed: 4,
                 planet_size: PlanetSize::Tiny,
                 grid_resolution: 128,
-                ..WorldGenSettings::default()
             };
             let terrain = Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {})));
             let (x, z) = terrain.find_spawn(false);

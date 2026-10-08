@@ -57,7 +57,6 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         seed,
         planet_size: planet,
         grid_resolution: res,
-        ..WorldGenSettings::default()
     }
     .sanitized();
     let t0 = Instant::now();

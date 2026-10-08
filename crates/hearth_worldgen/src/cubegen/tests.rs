@@ -24,7 +24,6 @@ fn terrain() -> Arc<Terrain> {
             seed: 5,
             planet_size: PlanetSize::Standard,
             grid_resolution: 256,
-            ..WorldGenSettings::default()
         };
         Arc::new(Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {}))))
     })

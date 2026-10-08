@@ -1701,7 +1701,6 @@ mod tests {
             seed: 7,
             planet_size: hearth_math::PlanetSize::Tiny,
             grid_resolution: 256,
-            ..Default::default()
         }
         .sanitized();
         let grid = std::sync::Arc::new(hearth_worldgen::PlanetGrid::build(&settings, &|_, _| {}));

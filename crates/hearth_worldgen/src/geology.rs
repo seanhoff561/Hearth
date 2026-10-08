@@ -610,7 +610,6 @@ mod tests {
                 seed: 3,
                 planet_size: PlanetSize::Small,
                 grid_resolution: 256,
-                ..WorldGenSettings::default()
             };
             let grid = Arc::new(PlanetGrid::build(&s, &|_, _| {}));
             let content = Content::load_base();

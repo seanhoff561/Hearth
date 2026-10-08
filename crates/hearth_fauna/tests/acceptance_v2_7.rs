@@ -25,7 +25,6 @@ fn spawn_region() -> (Ecology, (i64, i64), [f64; 2]) {
         seed: 7,
         planet_size: PlanetSize::Standard,
         grid_resolution: 256,
-        ..WorldGenSettings::default()
     };
     let terrain = Arc::new(Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {}))));
     let reg = hearth_world::datapack::load_builtin_registry().expect("base pack");

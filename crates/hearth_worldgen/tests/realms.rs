@@ -12,7 +12,6 @@ fn terrain(seed: u64, size: PlanetSize) -> Terrain {
         seed,
         planet_size: size,
         grid_resolution: 256,
-        ..WorldGenSettings::default()
     };
     Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {})))
 }
@@ -141,7 +140,6 @@ fn each_realm_grows_its_own_trees() {
         seed: 7,
         planet_size: PlanetSize::Standard,
         grid_resolution: 256,
-        ..WorldGenSettings::default()
     };
     let terrain = Arc::new(Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {}))));
     let reg = hearth_world::datapack::load_builtin_registry().expect("base pack");
@@ -207,7 +205,6 @@ fn a_realm_without_plants_of_its_own_grows_the_stand_ins() {
         seed: 7,
         planet_size: PlanetSize::Tiny,
         grid_resolution: 128,
-        ..WorldGenSettings::default()
     };
     let terrain = Arc::new(Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {}))));
     let reg = hearth_world::datapack::load_builtin_registry().expect("base pack");

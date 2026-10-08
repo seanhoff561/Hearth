@@ -45,7 +45,6 @@ impl LocalWorld {
             seed,
             planet_size: size,
             grid_resolution: resolution,
-            ..WorldGenSettings::default()
         }
         .sanitized();
         Self::create_with(&settings, cache_dir, &|f, stage| {

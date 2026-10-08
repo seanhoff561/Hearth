@@ -51,7 +51,6 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         seed,
         planet_size: planet,
         grid_resolution: res,
-        ..WorldGenSettings::default()
     };
     let t0 = Instant::now();
     let grid = Arc::new(PlanetGrid::build(&settings, &|_, _| {}));

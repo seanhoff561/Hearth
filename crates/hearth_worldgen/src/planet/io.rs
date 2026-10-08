@@ -14,7 +14,7 @@ use super::{PlanetGrid, RiverCell, Volcano};
 use crate::settings::{LAND_FRACTION, WorldGenSettings};
 
 const MAGIC: &[u8; 4] = b"HPLN";
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 
 /// Errors reading or writing a planet file.
 #[derive(Debug, thiserror::Error)]
@@ -114,6 +114,8 @@ impl PlanetGrid {
         w.u8s(&self.province);
         w.u8s(&self.dry_season);
         w.u8s(&self.climate);
+        w.u8s(&self.flow);
+        w.f32s(&self.discharge);
         for f in [
             &self.uplift,
             &self.coast,
@@ -171,10 +173,15 @@ impl PlanetGrid {
         let province = r.bytes()?;
         let dry_season = r.bytes()?;
         let climate = r.bytes()?;
-        for v in [&flags, &plate, &province, &dry_season, &climate] {
+        let flow = r.bytes()?;
+        let discharge = r.f32s()?;
+        for v in [&flags, &plate, &province, &dry_season, &climate, &flow] {
             if v.len() != n * n {
                 return Err(PlanetIoError::Corrupt("cell array size".into()));
             }
+        }
+        if discharge.len() != n * n {
+            return Err(PlanetIoError::Corrupt("discharge size".into()));
         }
         let mut halves = Vec::with_capacity(9);
         for _ in 0..9 {
@@ -226,6 +233,8 @@ impl PlanetGrid {
             elevation,
             water,
             rivers,
+            flow,
+            discharge,
             flags,
             plate,
             province,
@@ -280,7 +289,6 @@ mod tests {
             seed: 77,
             planet_size: PlanetSize::Small,
             grid_resolution: 128,
-            ..WorldGenSettings::default()
         };
         let g = PlanetGrid::build(&s, &|_, _| {});
         let dir = std::env::temp_dir().join(format!("hearth-planet-{}", std::process::id()));

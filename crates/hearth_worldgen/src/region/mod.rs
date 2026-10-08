@@ -915,7 +915,6 @@ pub(crate) mod tests {
                 seed: 3,
                 planet_size: PlanetSize::Standard,
                 grid_resolution: 256,
-                ..WorldGenSettings::default()
             };
             Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {})))
         })
