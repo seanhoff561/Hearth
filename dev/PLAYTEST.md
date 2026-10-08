@@ -37,6 +37,6 @@ Statuses: **open**, **cause found**, **fixed** (with the test or screenshot that
 | 23 | Waiting processes (cooking, drying) cannot be looked at to see how they are going | Hang meat to dry, come back | *(owner)* no inspection of a waiting process's state or history | open | E6 |
 | 24 | Days, nights, seasons, weather and the sky are not at Earth's timing; the world is not Earth's size | Create a world | *(owner)* the compressed clock; planet-size presets (Standard recommended), scaled heights | open | E3, E4 |
 | 25 | Wild Earth should start as an adult, at one of a few places with what to look for, without hominins; other eras “Coming soon” | New world → Wild Earth | *(owner)* the start is a birth into a family; hominins live in Wild Earth | open | E5 |
-| 26 | Remove the talking options and the conversation backend for now | Talk to a person | *(owner)* Amendment E removes the simulated humans (E §2) | open | E0 |
+| 26 | Remove the talking options and the conversation backend for now | Talk to a person | *(owner)* Amendment E removes the simulated humans (E §2) | fixed: removed with the people (E0, D230) | E0 |
 | 27 | The character creator should be back, and hair and the whole body should look real to match the smooth world | New world | *(owner)* the creator went with births (Addendum A); bodies are cuboid rigs | open | E5, E7 |
 | 28 | Plan the future simulated humanity in depth, but do not build it yet | — | *(owner)* E §10 | open | E1 |

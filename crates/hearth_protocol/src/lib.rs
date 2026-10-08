@@ -25,26 +25,16 @@ use hearth_worldgen::{PlanetGrid, WorldGenerator};
 
 /// The version of the messages between the client and the server, raised with every change to
 /// them (D166); the network handshake checks it (Amendment R, R1).
-pub const PROTOCOL: u32 = 2;
+pub const PROTOCOL: u32 = 3;
 
 /// From the client.
 #[derive(Debug, Clone)]
 pub enum ToServer {
     /// Where the player's own movement took them, and what it did since the last report.
     Moved(Moved),
-    /// The person the developer's inspector looks at (F3), or none.
-    Inspect(Option<u64>),
-    /// The person the player looks at, near enough to speak with, or none (H9).
-    Regard(Option<u64>),
-    /// Watching the world (the Observer, V2.1 §15.4): from where the eye is, or none to stop. A
-    /// living player is put aside meanwhile — its body still, unharmed, unseen.
+    /// Watching the world (Creative's spectating, Amendment P §3.3): from where the eye is, or
+    /// none to stop. The player's body is put aside meanwhile — still, unharmed, unseen.
     Observe(Option<DVec3>),
-    /// The one the Observer follows (its life read), or none.
-    Follow(Option<u64>),
-    /// Asks for the chronicle: deep time's and the living world's notable events.
-    Chronicle,
-    /// Asks for a map overlay of the globe (none: no overlay).
-    Overlay(Option<OverlayKind>),
     /// Lie down to sleep (true) or get up.
     Sleep(bool),
     /// Put the player at a place (the globe's choice, a debug move): the server finds solid
@@ -58,20 +48,6 @@ pub enum ToServer {
     },
     /// Pick up a thing lying in the world (or take hold to drag it if it is too heavy).
     PickUp(u64),
-    /// Hand what the hands hold (the right first) to a person within reach: a gift (V2.1 §8.7).
-    GiveTo { person: u64 },
-    /// Say or do something to a person within speaking distance (V2.1 §16; H9): greet, tell
-    /// one's name, thank, ask to be taught, offer to teach, ask to stay, propose to pair …
-    Speak {
-        person: u64,
-        ask: hearth_people::player::Ask,
-    },
-    /// Words the player typed to a person within speaking distance (V2.1 §10.4; H10), read by
-    /// the conversation backend as one of the acts of [`ToServer::Speak`]; with no backend, not
-    /// heard.
-    SayText { person: u64, text: String },
-    /// The conversation backend as the player set it up (off by default).
-    Conversation(hearth_core::options::ConversationOptions),
     /// Put a carried thing (or `count` of a stack) down on the ground at a point.
     PutDown {
         from: hearth_items::Path,
@@ -120,20 +96,9 @@ pub enum ToServer {
     Give(hearth_items::Stack),
     /// Debug: move the clock on (or back) by game hours.
     SkipHours(f64),
-    /// The player's childhood: on to its next moment, or grown up now (Addendum A).
-    Childhood(Skip),
-    /// The player, dead, lives on as one of their people (Addendum B §2): that person's id.
-    Inhabit(u64),
-    /// Born into the household chosen of those offered (H8): its place in the list, a daughter
-    /// or a son or as chance has it.
-    BeBorn { choice: usize, female: Option<bool> },
-    /// The player, dead, is born again (Addendum B §2.2): about a place on the globe (none: where
-    /// they died), into a household of it offered by `Births` (in an era) or one of its families
-    /// (Wild Earth), with a daughter, a son or chance.
-    BornAgain {
-        at: Option<DVec3>,
-        female: Option<bool>,
-    },
+    /// The player, dead, begins a new life (Amendment E §6.6): a new adult about a place (none:
+    /// near where they last lived).
+    NewLife { at: Option<DVec3> },
     /// Debug: extra ticks per second of play (0 for none).
     TimeWarp(f64),
     /// Tests and bots: from now on the world ticks only when asked; run this many game ticks
@@ -249,24 +214,6 @@ pub struct WorkView {
     pub play_s_left: f64,
 }
 
-/// Something said near the player, as the player makes it out (V2.1 §10.3).
-#[derive(Debug, Clone, PartialEq)]
-pub struct HeardLine {
-    /// Its id (a phrasing of it comes as [`ToClient::Phrased`] with it).
-    pub id: u64,
-    /// Who said it (its name), and whether to the player.
-    pub speaker: String,
-    pub to_you: bool,
-    /// The words as they sound, and what the player makes of them (words known in the player's
-    /// own tongue, half-known ones doubted, the rest as dots).
-    pub spoken: String,
-    pub sense: String,
-    /// The share made out (0–1).
-    pub understood: f32,
-    /// The gesture with it, if any (in words).
-    pub gesture: Option<String>,
-}
-
 /// What came of something done.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Acted {
@@ -309,9 +256,8 @@ pub struct Ready {
     pub player: Mover,
     /// How the player looks.
     pub appearance: hearth_character::Appearance,
-    /// What death means in this world (Addendum B §2): whom one may live on as, what is kept of
-    /// what was known, and whether one may be born again.
-    pub death: hearth_save::Death,
+    /// What is kept of what was known when a new life begins (Amendment E §6.6).
+    pub after_death: hearth_save::AfterDeath,
     /// The kinds of things.
     pub items: Arc<hearth_items::Items>,
     /// The game data, and the processes and knowledge the client lists from it.
@@ -322,53 +268,8 @@ pub struct Ready {
     pub knowledge_mode: hearth_craft::Mode,
     /// The world's game mode (`balance/modes.ron`, Amendment P §2), none for a world of no mode.
     pub mode: Option<String>,
-    /// The world ended (permadeath), and the life it ended with.
-    pub ended: Option<LifeSummary>,
     /// Where the distant terrain's tiles of this world are kept on disk, if anywhere.
     pub lod_cache: Option<std::path::PathBuf>,
-}
-
-/// A life told after it ended (permadeath).
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct LifeSummary {
-    pub name: String,
-    /// Days of the world's calendar lived.
-    pub days: f64,
-    pub walked_km: f64,
-    pub farthest_km: f64,
-    pub cause: hearth_body::Death,
-    /// What they learned (the names of the techniques).
-    #[serde(default)]
-    pub discovered: Vec<String>,
-}
-
-/// What the player asks of a birth (V2.1 Addendum A): a name, to be born a daughter or a son
-/// or as chance has it, and the loincloth they first wear. Nothing of their looks: their
-/// parents' genes give those.
-#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
-pub struct Wish {
-    pub name: String,
-    /// A daughter (true) or a son (false); none, as the father's gamete falls.
-    pub female: Option<bool>,
-    pub loincloth: hearth_character::Loincloth,
-}
-
-/// A birth as the player is shown it (H1): the two parents of the place, and the child as their
-/// genes made them (grown, until childhood is lived: H3).
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Born {
-    pub mother: hearth_character::Appearance,
-    pub father: hearth_character::Appearance,
-    pub you: hearth_character::Appearance,
-    /// Where (degrees of latitude): its sun set the pool's colouring.
-    pub latitude_deg: f64,
-    /// The mother's, the player's and the father's ages (years) as the life begins.
-    #[serde(default)]
-    pub ages: [f32; 3],
-    /// Their other children, eldest first: their ages and how they look.
-    #[serde(default)]
-    pub siblings: Vec<(f32, hearth_character::Appearance)>,
 }
 
 /// The player's body as the client shows it and lets it move.
@@ -387,11 +288,6 @@ pub struct BodyView {
     pub illnesses: Vec<String>,
     /// The weather, water and shelter the body is in.
     pub exposure: Exposure,
-    /// Where the player is held, not moving of their own (a child carried, or the years of a
-    /// childhood passing): the client keeps them there.
-    pub held: Option<DVec3>,
-    /// How tall the body stands to a grown one (a child's less than 1): its box and eyes.
-    pub scale: f64,
 }
 
 /// Smoke rising from a fire in the vegetation.
@@ -424,39 +320,6 @@ pub enum ToClient {
     Smoke(Vec<Plume>),
     /// The animals near the player (ten times a second while there are any).
     Animals(Vec<hearth_fauna::live::AnimalView>),
-    /// The people near the player (ten times a second while there are any).
-    People(Vec<hearth_people::PersonView>),
-    /// The record of the person the developer's inspector looks at (F3), once a second.
-    Inspected(Option<Box<hearth_people::inspect::Report>>),
-    /// What the player knows of the person it looks at (H9: its name if learned, kinship, how
-    /// they seem to take the player, what it has heard of them).
-    Regarded(Option<(u64, Vec<String>)>),
-    /// A line heard (its id) as the conversation backend phrased it, the filter passing it
-    /// (V2.1 §10.4; H10): shown in place of the templated sense.
-    Phrased {
-        line: u64,
-        text: String,
-    },
-    /// The player's typed words were unclear: the acts they may be, each with its words, to
-    /// choose from (none: nothing could be made of them).
-    Clarify {
-        person: u64,
-        text: String,
-        options: Vec<(hearth_people::player::Ask, String)>,
-    },
-    /// Whether the conversation backend is asked, whether the player may type to people, and
-    /// why it is not when set up (no key, no model …).
-    Conversing {
-        on: bool,
-        free_text: bool,
-        trouble: Option<String>,
-    },
-    /// The life of the one the Observer follows.
-    LifeOf(Option<(u64, Vec<String>)>),
-    /// The chronicle, newest first.
-    Chronicle(Vec<ChronicleEntry>),
-    /// A map overlay of the globe.
-    Overlay(Option<OverlayMap>),
     /// Calls the animals made (those in the world and those about it).
     Calls(Vec<hearth_fauna::voices::Called>),
     /// The signs animals left near the player (tracks, blood, droppings), with the world's
@@ -483,24 +346,16 @@ pub enum ToClient {
     Failed(String),
     /// The player woke, and why.
     Woke(hearth_body::Wake),
-    /// The player is someone else now (Legacy) or again (Hardy).
-    Person(hearth_character::Appearance),
-    /// The player was born (a new world, or born again): their parents and themself.
-    Born(Box<Born>),
     /// What the player carries, when it changed.
     Carried(hearth_items::Carry),
     /// The things lying near the player, when they changed.
     Items(Vec<hearth_items::WorldItem>),
-    /// The world ended with its character's death (permadeath).
-    Ended(LifeSummary),
     /// What the player knows, when it changed.
     Knowledge(Box<hearth_craft::KnowledgeState>),
     /// The work in hand, each tick it goes on (none: stopped or done).
     Work(Option<WorkView>),
     /// What came of a process, a meal or a drink.
     Acted(Acted),
-    /// What the people near said, as the player makes it out.
-    Heard(Vec<HeardLine>),
     /// A tree falls: its blocks as they stood (gone from the world now), turning down about
     /// the edge `pivot` toward `toward` over `seconds`; where it comes to rest arrives as block
     /// changes when the fall is over.
@@ -522,96 +377,4 @@ pub enum ToClient {
         discovered: bool,
         text: String,
     },
-    /// The player's childhood as it goes: the moment being lived or the years passing (none:
-    /// grown, or never a child).
-    Childhood(Option<ChildhoodView>),
-    /// The player's life told at its end, and who of their people they could live on as.
-    Story(Box<Story>),
-    /// Who the player is now, having taken up another's life: the briefing's lines.
-    WhoYouAre(Vec<String>),
-    /// The households of the place the player may be born into (H8): who they are, never how
-    /// they look.
-    Births(Vec<BirthChoice>),
-}
-
-/// A household a player may be born into (H8, Addendum A), told by who its people are.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct BirthChoice {
-    pub title: String,
-    pub lines: Vec<String>,
-}
-
-/// A life told at its end (Addendum B §2).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Story {
-    pub lines: Vec<String>,
-    /// Those the dead one may live on as, as the world's scope allows: their kin first.
-    pub others: Vec<Other>,
-}
-
-/// One a dead player may live on as (Addendum B §2.2–2.3): their id, who they are to the dead
-/// (a stranger by their household; never how they look), and which of the choosing's filters
-/// they answer to — the dead one's family, their group, near where they died — and whether a
-/// child, whose childhood would be lived on from its age.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Other {
-    pub id: u64,
-    pub words: String,
-    pub family: bool,
-    pub group: bool,
-    pub near: bool,
-    pub child: bool,
-}
-
-/// Skipping ahead in a childhood.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Skip {
-    /// To the next moment (from a moment, the years passing to it).
-    Next,
-    /// Straight to coming of age, the years between lived at the household's pace.
-    GrownUp,
-}
-
-/// A childhood as the player is told it (Addendum A).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ChildhoodView {
-    /// The moment's name, and what is said of it (the years passing: empty).
-    pub name: String,
-    pub text: String,
-    /// The player's age (years).
-    pub age: f32,
-    /// The years passing quickly to the next moment.
-    pub passing: bool,
-}
-
-/// What a map overlay of the globe shows (V2.1 §15.4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum OverlayKind {
-    /// How many live where.
-    People,
-    /// Whose culture and language, each its own colour.
-    Cultures,
-    /// Where a technique is known (its index among the world's techniques followed).
-    Knowledge(usize),
-    /// The people's looks as their gene pools have them (skin, the darker the deeper).
-    Looks,
-}
-
-/// An overlay: a picture over the globe's map (equirectangular, west to east from longitude
-/// −180°, north to south), what it shows, and its key.
-#[derive(Debug, Clone, PartialEq)]
-pub struct OverlayMap {
-    pub kind: OverlayKind,
-    pub width: u32,
-    pub height: u32,
-    pub rgba: Vec<[u8; 4]>,
-    pub legend: String,
-}
-
-/// A line of the chronicle: when, what, and where (to go there).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ChronicleEntry {
-    pub when: String,
-    pub text: String,
-    pub at: Option<DVec3>,
 }

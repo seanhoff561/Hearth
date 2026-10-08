@@ -1,18 +1,9 @@
-//! Watching the world (the Observer, V2.1 §15.4; H9) on the client: the speed time is watched
-//! at, whom the eye follows and their life, the chronicle and the globe's overlays, and the
-//! line that tells what is being watched.
+//! Watching the world (Creative's spectating, Amendment P §3.3) on the client: the speed time is
+//! watched at, the animal the eye follows, and the line that tells what is being watched.
 
-use hearth_protocol::{ChronicleEntry, OverlayKind};
 use hearth_ui::{Rgba, Ui};
 
 use crate::observer::SPEEDS;
-
-/// What the eye follows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Followed {
-    Person(u64),
-    Animal(u64),
-}
 
 /// The Observer's state.
 #[derive(Debug, Clone, PartialEq)]
@@ -21,14 +12,8 @@ pub struct Watching {
     pub alive: bool,
     /// The speed (an index of [`SPEEDS`]).
     pub speed: usize,
-    pub follow: Option<Followed>,
-    /// The followed person's life, as the server tells it.
-    pub life: Option<(u64, Vec<String>)>,
-    /// The chronicle, as last told.
-    pub chronicle: Vec<ChronicleEntry>,
-    /// The overlay laid on the globe, and the technique the knowledge overlay shows.
-    pub overlay: Option<OverlayKind>,
-    pub technique: usize,
+    /// The animal the eye follows.
+    pub follow: Option<u64>,
     /// Seconds since the eye was last told to the server.
     pub told_s: f64,
 }
@@ -39,10 +24,6 @@ impl Watching {
             alive,
             speed: 1,
             follow: None,
-            life: None,
-            chronicle: Vec::new(),
-            overlay: None,
-            technique: 0,
             told_s: f64::INFINITY,
         }
     }
@@ -73,8 +54,8 @@ impl Watching {
         line
     }
 
-    /// Draws the headline, the keys, the followed life and the overlay's key.
-    pub fn draw(&self, ui: &mut Ui<'_>, followed: Option<String>, legend: Option<&str>) {
+    /// Draws the headline and the keys.
+    pub fn draw(&self, ui: &mut Ui<'_>, followed: Option<String>) {
         let (w, _h) = ui.size;
         let line = self.headline(followed);
         let lw = ui.font.width(&line) as f32;
@@ -91,11 +72,7 @@ impl Watching {
             &line,
             Rgba([235, 232, 220, 245]),
         );
-        let keys = if self.alive {
-            "[ ] time   E follow   J chronicle   M globe (1-4 overlays)   Esc step back in"
-        } else {
-            "[ ] time   E follow   J chronicle   M globe (1-4 overlays)   Esc the choices"
-        };
+        let keys = "[ ] time   E follow   M globe   F6 resume here   Esc back to the body";
         let kw = ui.font.width(keys) as f32;
         ui.label(
             ((w - kw) / 2.0).round(),
@@ -103,22 +80,5 @@ impl Watching {
             keys,
             Rgba([200, 200, 190, 200]),
         );
-        if let Some(l) = legend {
-            let lw = ui.font.width(l) as f32;
-            ui.label(
-                ((w - lw) / 2.0).round(),
-                36.0,
-                l,
-                Rgba([255, 200, 120, 230]),
-            );
-        }
-        if let Some((_, lines)) = &self.life {
-            let x = 8.0;
-            let mut y = 54.0;
-            for l in lines {
-                ui.label(x, y, l, Rgba([230, 228, 215, 230]));
-                y += 10.0;
-            }
-        }
     }
 }

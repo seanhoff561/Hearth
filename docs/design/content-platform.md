@@ -13,7 +13,7 @@ Rust implements mechanisms; data supplies parameters and content.
   and user packs load after it and override entries by id.
 - **Domains** and their Rust schema types (`hearth_content::schema`): `materials`,
   `geology/{rocks,minerals,provinces,deposits,soils}`, `flora`, `fauna`, `ecosystems`,
-  `hominins`, `items/{forms,items}`, `processes`, `knowledge`, `workstations`, `construction`,
+  `items/{forms,items}`, `processes`, `knowledge`, `workstations`, `construction`,
   `clothing`, `body/{injuries,illnesses}`, `eras`, `balance/{keys,presets}`, plus singletons
   `units.ron`, `time.ron`, `body/human.ron`.
 - **Files**: `(schema: N, entries: [ ... ])`. `schema` must match the domain's current version

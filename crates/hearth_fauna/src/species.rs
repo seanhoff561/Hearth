@@ -127,11 +127,6 @@ pub struct Species {
     pub aquatic: bool,
     /// Lives in the sea, its lands the sea's alone (its density is per km² of the sea).
     pub marine: bool,
-    /// The population of a species of person (`humans/species/`): its groups are drawn out near
-    /// the player as that species' persons, not as animals.
-    pub hominin: bool,
-    /// A people that lives the world over, not kept to the hominins' cradle (D164).
-    pub worldwide: bool,
     /// Lives by the water, its lands those of the waters alone (a beaver, an otter, a heron, a
     /// hippo): of a cell's land it has the share the water about it gives.
     pub waterside: bool,
@@ -443,24 +438,11 @@ impl Catalog {
                     })
             })
             .fold(0u32, |m, (i, _)| m | (1 << i));
-        let mut species: Vec<Species> = animals
+        let species: Vec<Species> = animals
             .iter()
             .enumerate()
             .map(|(i, a)| species_of(c, a, i, &by_id, &eco_bit, water, sea))
             .collect();
-        // The hominins' populations.
-        for h in c.species.iter() {
-            let Some(p) = &h.population else {
-                continue;
-            };
-            let at = by_id
-                .get(p.as_str())
-                .or_else(|| by_id.get(&format!("hearth:{}", p.as_str())));
-            if let Some(&i) = at {
-                species[i].hominin = true;
-                species[i].worldwide = h.worldwide;
-            }
-        }
         Self {
             species,
             ecosystems,
@@ -470,39 +452,6 @@ impl Catalog {
 
     pub fn get(&self, id: &str) -> Option<&Species> {
         self.index(id).map(|i| &self.species[i])
-    }
-
-    /// Only the peoples of a world's era live in it (H8): each present one's bands as large as
-    /// the era says, if it says (`(population, band size)`), the others' populations emptied.
-    pub fn peoples(&mut self, present: &[(String, Option<(u16, u16)>)]) {
-        let key = |s: &str| s.rsplit(':').next().unwrap_or(s).to_owned();
-        for sp in self.species.iter_mut().filter(|s| s.hominin) {
-            match present.iter().find(|(p, _)| key(p) == key(&sp.id)) {
-                Some((_, Some(size))) => {
-                    sp.group = (size.0.max(1), size.1.max(size.0.max(1)));
-                }
-                Some((_, None)) => {}
-                None => sp.density = 0.0,
-            }
-        }
-    }
-
-    /// Wild Earth's wandering families (D164) as many as the players a world expects (Addendum B
-    /// §3.5): so many times one player's, still far apart.
-    pub fn families_for(&mut self, players: u8) {
-        for sp in self.species.iter_mut().filter(|s| s.hominin && s.worldwide) {
-            sp.density *= players.max(1) as f32;
-        }
-    }
-
-    /// The hominins kept to their cradle, Africa: the Hominin range setting's single cradle
-    /// region (v2 §8.1); by default they live in suitable habitat the world over.
-    pub fn hominins_in_cradle(&mut self) {
-        for sp in &mut self.species {
-            if sp.hominin && !sp.worldwide {
-                sp.realms = hearth_worldgen::realms::Realm::Afrotropical.bit();
-            }
-        }
     }
 
     /// The index of a species by `namespace:path` or bare path.
@@ -667,8 +616,6 @@ fn species_of(
         cold_limit: a.min_coldest_month_c,
         aquatic,
         marine,
-        hominin: false,
-        worldwide: false,
         waterside: !aquatic && !marine && core != 0 && core & !water == 0,
         colony: matches!(a.social, Social::Colony { .. }),
         need_kg: need,

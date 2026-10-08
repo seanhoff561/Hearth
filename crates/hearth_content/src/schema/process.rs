@@ -1,5 +1,5 @@
 //! Processes (`processes/`): transformations of materials by actions, tools and conditions
-//! (v2 §11.3). The same data drives the player, hominins and future simulated humans.
+//! (v2 §11.3). The same data drives the player and, in Phase F, simulated humans.
 
 use serde::{Deserialize, Serialize};
 

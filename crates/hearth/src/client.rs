@@ -92,32 +92,6 @@ fn ray_box(from: DVec3, dir: DVec3, lo: DVec3, hi: DVec3) -> Option<f64> {
 
 /// How far a third-person camera stands from the eyes (m).
 const THIRD_PERSON_M: f64 = 3.5;
-/// How near a person must be to speak with them (m; the server's own).
-/// The heard lines kept for a phrasing to find (H10).
-const HEARD_SHOWN: usize = 16;
-const TALK_M: f64 = 8.0;
-/// The talk wheel (H9): what may be said or done to a person, clockwise from the top.
-const TALK: [(&str, hearth_people::player::Ask); 14] = {
-    use hearth_people::player::Ask;
-    use hearth_people::speech::Gesture;
-    [
-        ("talk.greet", Ask::Greet),
-        ("talk.introduce", Ask::Introduce),
-        ("talk.thank", Ask::Thank),
-        ("talk.praise", Ask::Praise),
-        ("talk.joke", Ask::Joke),
-        ("talk.apologise", Ask::Apologise),
-        ("talk.be_taught", Ask::BeTaught(None)),
-        ("talk.teach", Ask::Teach(None)),
-        ("talk.join", Ask::Join),
-        ("talk.pair", Ask::Pair),
-        ("talk.beckon", Ask::Gesture(Gesture::Beckon)),
-        ("talk.embrace", Ask::Gesture(Gesture::Embrace)),
-        ("talk.threaten", Ask::Gesture(Gesture::ThreatDisplay)),
-        ("talk.insult", Ask::Insult),
-    ]
-};
-
 /// Where the camera is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CameraMode {
@@ -152,8 +126,8 @@ pub struct Client {
     world: Option<World>,
     /// The planet as a globe to pick a place on (the world-map key).
     pub globe: GlobePicker,
-    /// Being born again about a place picked on the globe, with this wish of a daughter or a son.
-    birth_place: Option<Option<bool>>,
+    /// A new life about a place picked on the globe (Amendment E §6.6).
+    new_life_place: bool,
     pub camera: Camera,
     pub mode: CameraMode,
     /// The player's body as the server last told it, and the player's movement here.
@@ -215,14 +189,6 @@ pub struct Client {
     weather: (f32, f32),
     paused: bool,
     captions: bool,
-    /// The player's childhood as the server last told it (none: grown, or never a child).
-    childhood: Option<hearth_protocol::ChildhoodView>,
-    /// The player's life told at its death, and who they could live on as.
-    story: Option<hearth_protocol::Story>,
-    /// Who the player is now, having taken up another's life (for the app to show once).
-    pub who_you_are: Option<Vec<String>>,
-    /// Dead, and watching the world.
-    spectating: bool,
     /// The world as it was asked for (to begin it again).
     world_spec: WorldSpec,
     /// The player's person, their pose this frame, which way the body faces (degrees, as the
@@ -240,29 +206,8 @@ pub struct Client {
     /// The animals near the player as the server last told of them, and as drawn (eased
     /// toward that between the server's word); the species they are of.
     animals: rustc_hash::FxHashMap<u64, ShownAnimal>,
-    /// The people near the player, as drawn.
-    people: rustc_hash::FxHashMap<u64, ShownPerson>,
-    /// The person the developer's inspector looks at (F3), and their record.
-    inspecting: Option<u64>,
-    inspected: Option<Box<hearth_people::inspect::Report>>,
-    /// The person the player looks at, near enough to speak with, and what it knows of them
-    /// (H9).
-    regarding: Option<u64>,
-    regarded: Option<(u64, Vec<String>)>,
-    /// The talk wheel, open (TALK held) toward a person: whom, and where the pointer leans.
-    talk: Option<(u64, DVec2)>,
-    /// The conversation backend (V2.1 §10.4; H10): as last told the server; whether it is asked
-    /// and whether the player may type to people; the lines heard lately (id, the words before
-    /// their sense, the line shown) for a phrasing to take the sense's place; typed words read
-    /// unclearly (whom to, the words, the acts to choose from).
-    conversation_sent: Option<hearth_core::options::ConversationOptions>,
-    pub conversing: (bool, bool),
-    heard_shown: Vec<(u64, String, String)>,
-    pub clarify: Option<(u64, String, Vec<(hearth_people::player::Ask, String)>)>,
-    /// Watching the world (the Observer, H9), and whether to begin watching once the world is
-    /// ready (Watch from the worlds list).
+    /// Watching the world (Creative's spectating).
     pub watching: Option<crate::observer_ui::Watching>,
-    pub watch_on_ready: bool,
     /// The signs animals left about the player: the world's seconds they are timed by, how long
     /// a day is (s), and the signs.
     signs: (f64, f32, Vec<hearth_fauna::live::Sign>),
@@ -280,10 +225,6 @@ pub struct Client {
     eyes_shut: f32,
     /// Why the player last woke, and how long ago (s).
     woke: Option<(hearth_body::Wake, f64)>,
-    /// A birth to show the player (taken by the app for its screen).
-    pub born: Option<hearth_protocol::Born>,
-    /// The households offered for the player's birth, to choose from (H8).
-    pub births: Option<Vec<hearth_protocol::BirthChoice>>,
     /// Where the heart and the breath are in their cycles (for the pulse at the edges of
     /// sight and the breath's fog).
     heart_phase: f64,
@@ -293,11 +234,10 @@ pub struct Client {
     /// The Body panel (B) open, and the body's definitions it names injuries from.
     pub body_panel: bool,
     body_cfg: Option<Arc<hearth_body::BodyConfig>>,
-    /// What death means in this world, and the life's tale if it has ended.
-    pub death: hearth_save::Death,
+    /// What a new life keeps of what earlier lives knew.
+    pub after_death: hearth_save::AfterDeath,
     /// The world's game mode (Amendment P §2), none for a world of no mode.
     pub rules: Option<crate::modes::Rules>,
-    pub ended: Option<hearth_protocol::LifeSummary>,
     /// The kinds of things, and what the player carries (as the server last said).
     pub items: Option<Arc<hearth_items::Items>>,
     pub carry: hearth_items::Carry,
@@ -336,16 +276,6 @@ pub struct Client {
     pub knap_request: Option<crate::knapping_ui::KnapScreen>,
 }
 
-/// A person as the server last told of it, and as drawn: where, facing, and its figure (its
-/// species' frame at its size, in its coat) with its animation.
-struct ShownPerson {
-    target: hearth_people::PersonView,
-    pos: DVec3,
-    yaw: f32,
-    figure: Figure,
-}
-
-/// A tree on its way down.
 /// An animal as the server last told of it, and as drawn: where, facing, and its body's
 /// motion (posed at once the first time it is drawn).
 struct ShownAnimal {
@@ -422,7 +352,7 @@ impl Client {
             color_format,
             world: None,
             globe: GlobePicker::default(),
-            birth_place: None,
+            new_life_place: false,
             camera: Camera {
                 fov_y: options.video.fov,
                 ..Camera::default()
@@ -470,10 +400,6 @@ impl Client {
             weather: (0.0, 0.0),
             paused: false,
             captions: options.sound.subtitles,
-            childhood: None,
-            story: None,
-            who_you_are: None,
-            spectating: false,
             world_spec: world_spec.clone(),
             figure: None,
             pose: None,
@@ -484,18 +410,7 @@ impl Client {
             falling: Vec::new(),
             tumbling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
-            people: rustc_hash::FxHashMap::default(),
-            inspecting: None,
-            regarding: None,
-            regarded: None,
-            conversation_sent: None,
-            conversing: (false, false),
-            heard_shown: Vec::new(),
-            clarify: None,
-            talk: None,
             watching: None,
-            watch_on_ready: false,
-            inspected: None,
             signs: (0.0, 1200.0, Vec::new()),
             insects: (0.0, 15.0),
             fauna: None,
@@ -504,17 +419,14 @@ impl Client {
             hidden_looks: Vec::new(),
             eyes_shut: 0.0,
             woke: None,
-            born: None,
-            births: None,
             heart_phase: 0.0,
             breath_phase: 0.0,
             reduce_motion: options.accessibility.reduce_motion,
             guided_hud: options.accessibility.guided_hud,
             body_panel: false,
             body_cfg: None,
-            death: hearth_save::Death::default(),
+            after_death: hearth_save::AfterDeath::default(),
             rules: None,
-            ended: None,
             items: None,
             carry: hearth_items::Carry::default(),
             world_items: Vec::new(),
@@ -1006,15 +918,7 @@ impl Client {
                 self.act_chosen();
             }
         }
-        // A thing held out to one of the people within reach: a gift (V2.1 §8.7).
-        let give = self
-            .person_in_reach()
-            .filter(|_| self.busy_hand().is_some());
-        if input.was_pressed(builtin::INTERACT)
-            && let Some(person) = give
-        {
-            self.server.send(ToServer::GiveTo { person });
-        } else if input.was_pressed(builtin::INTERACT) {
+        if input.was_pressed(builtin::INTERACT) {
             match self.aim {
                 Some(Aim::Item(id)) => self.server.send(ToServer::PickUp(id)),
                 Some(Aim::Block { .. }) => {
@@ -1078,22 +982,6 @@ impl Client {
         } else {
             self.dragged_at = None;
         }
-    }
-
-    /// The person within reach the eye is on, if any (to hand a thing to).
-    fn person_in_reach(&self) -> Option<u64> {
-        let eye = self.camera.pos;
-        let ahead = self.camera.forward().as_dvec3();
-        self.people
-            .iter()
-            .filter_map(|(id, s)| {
-                let to = s.pos + DVec3::Y * (s.target.height_m as f64 * 0.6) - eye;
-                let d = to.length();
-                let cos = to.dot(ahead) / d.max(1e-6);
-                (d < 3.0 && cos > 0.9).then_some((*id, d))
-            })
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(id, _)| id)
     }
 
     /// Creative: does what its inventory asks, where the player looks.
@@ -1161,157 +1049,6 @@ impl Client {
             })?;
         let tab = Category::ALL.iter().position(|c| *c == e.category)?;
         Some((tab, e.name.clone()))
-    }
-
-    /// The developer's inspector (F3): the person looked at — the nearest within 40 m whose
-    /// middle lies within a few degrees of where the eye looks — told to the server when it
-    /// changes; none when the debug screen is shut.
-    fn inspect_target(&mut self) {
-        let target = if self.debug_overlay && self.debug_full() {
-            self.person_in_sight(40.0, 0.995)
-        } else {
-            None
-        };
-        if target != self.inspecting {
-            self.inspecting = target;
-            self.inspected = None;
-            self.server.send(ToServer::Inspect(target));
-        }
-    }
-
-    /// The person the player looks at near enough to speak with (H9): the nearest within
-    /// [`TALK_M`] whose middle lies near where the eye looks, told to the server when it changes.
-    fn regard_target(&mut self) {
-        let target = if self.mode == CameraMode::Body && !self.dead() {
-            self.talk
-                .map(|(id, _)| id)
-                .or_else(|| self.person_in_sight(TALK_M, 0.97))
-        } else {
-            None
-        };
-        if target != self.regarding {
-            self.regarding = target;
-            self.regarded = None;
-            self.server.send(ToServer::Regard(target));
-        }
-    }
-
-    /// The nearest person within `range` whose middle lies within the cone `cos` of the eye's
-    /// look.
-    fn person_in_sight(&self, range: f64, cos: f64) -> Option<u64> {
-        let eye = self.camera.pos;
-        let ahead = self.camera.forward().as_dvec3();
-        self.people
-            .iter()
-            .filter(|(_, s)| !s.target.dead)
-            .filter_map(|(id, s)| {
-                let to = s.pos + DVec3::Y * (s.target.height_m as f64 * 0.6) - eye;
-                let d = to.length();
-                (d < range && to.dot(ahead) / d.max(1e-6) > cos).then_some((*id, d))
-            })
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(id, _)| id)
-    }
-
-    /// The talk wheel's choice the pointer leans toward.
-    fn talk_choice(&self) -> Option<usize> {
-        let (_, v) = self.talk?;
-        if v.length() < 20.0 {
-            return None;
-        }
-        let n = TALK.len();
-        let angle = v.x.atan2(-v.y).rem_euclid(std::f64::consts::TAU);
-        Some(((angle / std::f64::consts::TAU * n as f64 + 0.5) as usize) % n)
-    }
-
-    /// Says or does to a person what the talk wheel chose (H9).
-    pub fn speak(&mut self, person: u64, ask: hearth_people::player::Ask) {
-        self.server.send(ToServer::Speak { person, ask });
-    }
-
-    /// Says typed words to a person, for the conversation backend to read (H10).
-    pub fn say_text(&mut self, person: u64, text: String) {
-        self.server.send(ToServer::SayText { person, text });
-    }
-
-    /// The person the player may type to now — the one it looks at, near enough to speak with,
-    /// a backend there to read the words — and how the player knows them.
-    pub fn say_to(&self) -> Option<(u64, String)> {
-        if !self.conversing.1 || self.dead() || self.watching.is_some() {
-            return None;
-        }
-        let person = self.regarding?;
-        let whom = self
-            .regarded
-            .as_ref()
-            .filter(|(id, _)| *id == person)
-            .and_then(|(_, lines)| lines.first().cloned())
-            .unwrap_or_default();
-        Some((person, whom))
-    }
-
-    fn draw_talk(&self, ui: &mut Ui<'_>) {
-        let (w, h) = ui.size;
-        let (cx, cy) = (w / 2.0, h / 2.0);
-        let chosen = self.talk_choice();
-        let r = 70.0;
-        for (k, (key, _)) in TALK.iter().enumerate() {
-            let a = k as f32 / TALK.len() as f32 * std::f32::consts::TAU;
-            let (x, y) = (cx + r * a.sin(), cy - r * a.cos());
-            let label = ui.t(key);
-            let lw = ui.font.width(&label) as f32;
-            let bg = if chosen == Some(k) {
-                Rgba([70, 80, 96, 230])
-            } else {
-                Rgba([10, 12, 16, 200])
-            };
-            ui.draw
-                .rect(x - lw / 2.0 - 3.0, y - 6.0, lw + 6.0, 12.0, bg);
-            ui.label(x - lw / 2.0, y - 4.0, &label, Rgba([235, 235, 230, 240]));
-        }
-    }
-
-    /// The people near the player, eased toward where the server has them, their figures
-    /// walking, climbing, crouched at their work, lying asleep in their nests.
-    fn people_boxes(&mut self, view: DVec3, dt: f32) {
-        let Some(w) = &self.world else {
-            return;
-        };
-        let k = 1.0 - (-dt * 12.0).exp();
-        for s in self.people.values_mut() {
-            s.pos += (s.target.pos - s.pos) * k as f64;
-            if (s.target.pos - s.pos).length() > 8.0 {
-                s.pos = s.target.pos;
-            }
-            let mut d = (s.target.yaw - s.yaw).rem_euclid(std::f32::consts::TAU);
-            if d > std::f32::consts::PI {
-                d -= std::f32::consts::TAU;
-            }
-            s.yaw += d * k;
-            if (s.pos - view).length() > 160.0 {
-                continue;
-            }
-            let drive = crate::people::drive(&s.target);
-            let pose = s.figure.animator.update(&s.figure.rig, &drive, dt);
-            let place = Affine3A::from_rotation_translation(
-                Quat::from_rotation_y(s.yaw),
-                (s.pos - view).as_vec3(),
-            );
-            let chest = hearth_math::BlockPos::containing(s.pos + DVec3::Y * 0.8);
-            let show = Show {
-                hide_head: false,
-                sky_light: w.mirror.sky_light(chest),
-                block_light: w.mirror.block_light(chest),
-            };
-            hearth_character::instances(
-                &s.figure.rig,
-                &s.figure.palette,
-                &pose,
-                place,
-                show,
-                &mut self.figure_boxes,
-            );
-        }
     }
 
     /// The animals near the player, eased toward where the server has them, posed on the
@@ -1924,32 +1661,12 @@ impl Client {
         self.server.send(ToServer::Shift { from, count, to });
     }
 
-    /// The death screen's words: how the player died, the world's rules, and the life's tale
-    /// if it ended the world.
+    /// The death screen's words: how the player died, and what a new life keeps.
     pub fn death_info(&self, l: &Lang) -> Option<crate::menus::DeathInfo> {
         let death = self.body.as_ref()?.dead.as_ref()?;
-        let summary = self.ended.as_ref().map(|s| {
-            let mut lines = Vec::new();
-            if !s.name.trim().is_empty() {
-                lines.push(s.name.clone());
-            }
-            lines.push(l.format("life.days", &[("n", &format!("{:.0}", s.days.floor()))]));
-            lines.push(l.format("life.walked", &[("km", &format!("{:.1}", s.walked_km))]));
-            lines.push(l.format("life.farthest", &[("km", &format!("{:.1}", s.farthest_km))]));
-            lines
-        });
         Some(crate::menus::DeathInfo {
             words: death_words(l, death),
-            death: self.death,
-            summary,
-            story: self
-                .story
-                .as_ref()
-                .map_or_else(Vec::new, |s| s.lines.clone()),
-            others: self
-                .story
-                .as_ref()
-                .map_or_else(Vec::new, |s| s.others.clone()),
+            after_death: self.after_death,
         })
     }
 
@@ -2256,15 +1973,10 @@ impl Client {
         )
     }
 
-    /// Takes changed options: the view, distances and detail; the conversation backend.
+    /// Takes changed options: the view, distances and detail.
     pub fn apply_options(&mut self, options: &Options) {
         self.captions = options.sound.subtitles;
         self.developer = options.developer_mode;
-        if self.conversation_sent.as_ref() != Some(&options.conversation) {
-            self.conversation_sent = Some(options.conversation.clone());
-            self.server
-                .send(ToServer::Conversation(options.conversation.clone()));
-        }
         self.reduce_motion = options.accessibility.reduce_motion;
         self.guided_hud = options.accessibility.guided_hud;
         let v = &options.video;
@@ -2300,8 +2012,7 @@ impl Client {
         seed: u64,
         cache_dir: Option<std::path::PathBuf>,
         saves_dir: Option<std::path::PathBuf>,
-        wish: hearth_protocol::Wish,
-        death: hearth_save::Death,
+        appearance: hearth_character::Appearance,
         knowledge: hearth_save::KnowledgeMode,
         era: &str,
     ) -> WorldSpec {
@@ -2311,21 +2022,13 @@ impl Client {
             planet: hearth_math::PlanetSize::Standard,
             cache_dir,
             saves_dir,
-            wish,
-            death,
+            appearance,
             knowledge,
-            childhood: true,
             era: era.to_owned(),
-            birth: None,
             shape: Default::default(),
             birthplace: None,
             mode: None,
         }
-    }
-
-    /// Born into the household chosen of those offered (H8).
-    pub fn be_born(&mut self, choice: usize, female: Option<bool>) {
-        self.server.send(ToServer::BeBorn { choice, female });
     }
 
     /// Whether watching the world, its time and its weather are open: in Creative, or in a world
@@ -2385,34 +2088,10 @@ impl Client {
         };
     }
 
-    /// After death: live on as one of the player's people (Addendum B §2).
-    pub fn inhabit(&mut self, id: u64) {
-        if self.dead() {
-            self.server.send(ToServer::Inhabit(id));
-        }
-    }
-
-    /// After death: watch the world with a free camera; the choices come back with Esc.
-    pub fn spectate(&mut self) {
-        if !self.may_watch() {
-            return;
-        }
-        self.spectating = true;
-        if self.mode == CameraMode::Body {
-            self.toggle_free_camera();
-        }
-        self.watching = Some(crate::observer_ui::Watching::new(false));
-        self.server.send(ToServer::Observe(Some(self.camera.pos)));
-    }
-
-    /// Watches the world while alive (the Observer, V2.1 §15.4): the player put aside, its
-    /// body still and safe, the eye free.
+    /// Spectates (Creative, Amendment P §3.3): the player's body put aside, still and safe,
+    /// the eye free.
     pub fn observe(&mut self) {
-        if !self.may_watch() {
-            return;
-        }
-        if self.dead() {
-            self.spectate();
+        if !self.may_watch() || self.dead() {
             return;
         }
         if self.mode == CameraMode::Body {
@@ -2442,10 +2121,8 @@ impl Client {
     pub fn step_in(&mut self) {
         if self.watching.take().is_some() {
             self.server.send(ToServer::Observe(None));
-            self.server.send(ToServer::Follow(None));
             self.server.send(ToServer::Pause(false));
             self.set_time_warp(0.0);
-            self.globe.set_overlay(None);
             if self.mode == CameraMode::Free && !self.dead() {
                 self.toggle_free_camera();
             }
@@ -2475,12 +2152,10 @@ impl Client {
         }
     }
 
-    /// Follows the one in sight (a person, else an animal), or stops following.
+    /// Follows the animal in sight, or stops following.
     pub fn watch_follow(&mut self) {
         let follow = if self.watching.as_ref().is_some_and(|w| w.follow.is_some()) {
             None
-        } else if let Some(id) = self.person_in_sight(80.0, 0.99) {
-            Some(crate::observer_ui::Followed::Person(id))
         } else {
             let eye = self.camera.pos;
             let ahead = self.camera.forward().as_dvec3();
@@ -2492,56 +2167,19 @@ impl Client {
                     (d < 80.0 && to.dot(ahead) / d.max(1e-6) > 0.99).then_some((*id, d))
                 })
                 .min_by(|a, b| a.1.total_cmp(&b.1))
-                .map(|(id, _)| crate::observer_ui::Followed::Animal(id))
+                .map(|(id, _)| id)
         };
         if let Some(w) = &mut self.watching {
             w.follow = follow;
-            w.life = None;
-        }
-        let person = match follow {
-            Some(crate::observer_ui::Followed::Person(id)) => Some(id),
-            _ => None,
-        };
-        self.server.send(ToServer::Follow(person));
-    }
-
-    /// Asks the server for the chronicle.
-    pub fn ask_chronicle(&mut self) {
-        if self.watching.is_some() {
-            self.server.send(ToServer::Chronicle);
         }
     }
 
-    /// The globe's overlay chosen (1 people, 2 cultures, 3 knowledge — again for the next
-    /// technique — 4 looks; 0 none).
-    pub fn watch_overlay(&mut self, n: usize) {
-        let Some(w) = &mut self.watching else {
-            return;
-        };
-        let kind = match n {
-            1 => Some(hearth_protocol::OverlayKind::People),
-            2 => Some(hearth_protocol::OverlayKind::Cultures),
-            3 => {
-                if matches!(w.overlay, Some(hearth_protocol::OverlayKind::Knowledge(_))) {
-                    w.technique += 1;
-                }
-                Some(hearth_protocol::OverlayKind::Knowledge(w.technique % 128))
-            }
-            4 => Some(hearth_protocol::OverlayKind::Looks),
-            _ => None,
-        };
-        w.overlay = kind;
-        self.server.send(ToServer::Overlay(kind));
-    }
-
-    /// Takes the eye to a place (a chronicle's event, a point on the globe).
+    /// Takes the eye to a place (a point on the globe).
     pub fn jump_to(&mut self, at: DVec3) {
         if let Some(w) = &mut self.watching {
             w.follow = None;
-            w.life = None;
             w.told_s = f64::INFINITY;
         }
-        self.server.send(ToServer::Follow(None));
         self.camera.pos = at + DVec3::new(0.0, 25.0, 0.0);
         self.camera.pitch = -35.0;
     }
@@ -2551,11 +2189,7 @@ impl Client {
         let Some(follow) = self.watching.as_ref().map(|w| w.follow) else {
             return;
         };
-        let target = match follow {
-            Some(crate::observer_ui::Followed::Person(id)) => self.people.get(&id).map(|s| s.pos),
-            Some(crate::observer_ui::Followed::Animal(id)) => self.animals.get(&id).map(|a| a.pos),
-            None => None,
-        };
+        let target = follow.and_then(|id| self.animals.get(&id).map(|a| a.pos));
         if let Some(t) = target {
             let back = self.camera.forward().as_dvec3();
             let want = t + DVec3::new(0.0, 1.2, 0.0) - back * 6.0;
@@ -2566,8 +2200,6 @@ impl Client {
         {
             // Gone from sight (dead, or out of reach): no longer followed.
             w.follow = None;
-            w.life = None;
-            self.server.send(ToServer::Follow(None));
         }
         let eye = self.camera.pos;
         if let Some(w) = &mut self.watching {
@@ -2581,23 +2213,14 @@ impl Client {
 
     /// Who the eye follows, as the headline names them.
     fn followed_name(&self) -> Option<String> {
-        let w = self.watching.as_ref()?;
-        match w.follow? {
-            crate::observer_ui::Followed::Person(_) => Some(
-                w.life
-                    .as_ref()
-                    .and_then(|(_, l)| l.first())
-                    .and_then(|l| l.split(',').next())
-                    .unwrap_or("someone")
-                    .to_owned(),
-            ),
-            crate::observer_ui::Followed::Animal(_) => Some("an animal".to_owned()),
-        }
-    }
-
-    /// Dead and watching the world.
-    pub fn spectating(&self) -> bool {
-        self.spectating && self.dead()
+        let id = self.watching.as_ref()?.follow?;
+        let a = self.animals.get(&id)?;
+        let sp = self
+            .fauna
+            .as_ref()?
+            .species
+            .get(a.target.species as usize)?;
+        Some(format!("a {}", sp.name.to_lowercase()))
     }
 
     /// The world as it was asked for.
@@ -2609,19 +2232,19 @@ impl Client {
         self.body.as_ref().is_some_and(|b| b.dead.is_some())
     }
 
-    /// After death: be born again (Addendum B §2.2) — about where the player died, or (with
+    /// After death: a new life (Amendment E §6.6) — near where the player last lived, or (with
     /// `elsewhere`) where they pick on the globe, which opens for it.
-    pub fn born_again(&mut self, elsewhere: bool, female: Option<bool>) {
+    pub fn new_life(&mut self, elsewhere: bool) {
         if !self.dead() {
             return;
         }
         if elsewhere {
-            self.birth_place = Some(female);
+            self.new_life_place = true;
             if !self.globe.open {
                 self.toggle_globe();
             }
         } else {
-            self.server.send(ToServer::BornAgain { at: None, female });
+            self.server.send(ToServer::NewLife { at: None });
         }
     }
 
@@ -2638,23 +2261,20 @@ impl Client {
     }
 
     /// The mouse button over the globe went down or up: a click puts the player at the place
-    /// under it (closing the globe) — or, the player being born again, is born about it.
+    /// under it (closing the globe) — or, dead, begins a new life about it.
     pub fn globe_button(&mut self, pressed: bool) {
         if let Some((lat, lon)) = self.globe.button(pressed)
             && let Some(w) = &self.world
         {
             let (x, z) = crate::globe::world_xz(&w.planet, lat, lon);
             let at = DVec3::new(x as f64, 0.0, z as f64);
-            match self.birth_place.take() {
-                Some(female) if self.dead() => {
+            match std::mem::take(&mut self.new_life_place) {
+                true if self.dead() => {
                     log::info!(
-                        "born again about {}",
+                        "a new life about {}",
                         crate::globe::describe(&w.terrain, lat, lon)
                     );
-                    self.server.send(ToServer::BornAgain {
-                        at: Some(at),
-                        female,
-                    });
+                    self.server.send(ToServer::NewLife { at: Some(at) });
                 }
                 _ if self.watching.is_some() => {
                     // Watching: the eye goes there.
@@ -2715,32 +2335,7 @@ impl Client {
         let r = self.hearing.rhythms;
         self.heart_phase += dt * r.heart_bpm as f64 / 60.0;
         self.breath_phase += dt * r.breaths_per_min as f64 / 60.0;
-        // Holding the talk key toward a person, the mouse leans the talk wheel (H9); let go, it
-        // says or does what it leans to.
-        let talking = self.mode == CameraMode::Body
-            && input.is_active(builtin::TALK)
-            && !self.dead()
-            && (self.talk.is_some() || self.regarding.is_some());
-        if talking {
-            let to = self.talk.map_or(self.regarding, |(id, _)| Some(id));
-            if let Some(id) = to {
-                let lean = self.talk.map_or(DVec2::ZERO, |(_, v)| v);
-                let mut v = lean;
-                if let Some((dx, dy)) = look {
-                    v += DVec2::new(dx, dy);
-                    if v.length() > 120.0 {
-                        v = v.normalize() * 120.0;
-                    }
-                }
-                self.talk = Some((id, v));
-            }
-        } else if let Some((id, _)) = self.talk {
-            if let Some(k) = self.talk_choice() {
-                self.speak(id, TALK[k].1.clone());
-            }
-            self.talk = None;
-        } else if self.mode == CameraMode::Body && input.is_active(builtin::RADIAL) && !self.dead()
-        {
+        if self.mode == CameraMode::Body && input.is_active(builtin::RADIAL) && !self.dead() {
             let v = self.radial.get_or_insert(DVec2::ZERO);
             if let Some((dx, dy)) = look {
                 *v += DVec2::new(dx, dy);
@@ -2826,16 +2421,6 @@ impl Client {
     }
 
     fn walk(&mut self, dt: f64, input: &mut InputState, wish: DVec2, pad: &crate::gamepad::Pad) {
-        // A growing body's size; held (a child carried, the years of a childhood passing), it
-        // is where the server holds it and does not move of its own.
-        if let Some(b) = &self.body {
-            self.mover.scale = b.scale;
-            if let Some(at) = b.held {
-                self.mover.pos = at;
-                self.mover.vel = DVec3::ZERO;
-                return;
-            }
-        }
         // The sprint key jogs; pressed twice quickly, it sprints until let go.
         let sprint_key = input.is_active(builtin::SPRINT);
         if sprint_key && !self.sprint_was {
@@ -3002,14 +2587,13 @@ impl Client {
                     self.camera.pos = self.mover.eye();
                     self.figure = Some(Figure::new(r.appearance));
                     self.body_cfg = Some(r.body);
-                    self.death = r.death;
+                    self.after_death = r.after_death;
                     self.rules = crate::server::mode_rules(&r.content, r.mode.as_deref());
                     self.catalog = if self.creative() {
                         crate::creative::catalog(&r.content)
                     } else {
                         Vec::new()
                     };
-                    self.ended = r.ended;
                     self.base_items = Some(r.items.clone());
                     self.items = Some(r.items);
                     let catalog = hearth_fauna::species::Catalog::new(&r.content);
@@ -3043,9 +2627,6 @@ impl Client {
                     self.scene = Some(scene);
                     self.env = Some(EnvSampler::new(r.grid, self.calendar));
                     self.status = "streaming".into();
-                    if std::mem::take(&mut self.watch_on_ready) {
-                        self.observe();
-                    }
                 }
                 ToClient::Cube(p, cube) => {
                     if let Some(w) = &mut self.world {
@@ -3091,89 +2672,6 @@ impl Client {
                         self.hearing.calls(&calls, cat, self.camera.pos, facing);
                     }
                 }
-                ToClient::Inspected(r) => self.inspected = r,
-                ToClient::LifeOf(r) => {
-                    if let Some(w) = &mut self.watching {
-                        w.life = r;
-                    }
-                }
-                ToClient::Chronicle(lines) => {
-                    if let Some(w) = &mut self.watching {
-                        w.chronicle = lines;
-                    }
-                }
-                ToClient::Overlay(m) => self.globe.set_overlay(m),
-                ToClient::Regarded(r) => {
-                    self.regarded = r.filter(|(id, _)| Some(*id) == self.regarding);
-                }
-                ToClient::Phrased { line, text } => {
-                    // A heard line phrased (H10): its sense given in natural words, in place of
-                    // the templated one if still shown, else anew.
-                    if let Some(k) = self.heard_shown.iter().position(|h| h.0 == line) {
-                        let new = format!("{} — {text}", self.heard_shown[k].1);
-                        let old = std::mem::replace(&mut self.heard_shown[k].2, new.clone());
-                        if let Some(c) = &mut self.crafting {
-                            match c.news.iter_mut().find(|n| n.0 == old) {
-                                Some(n) => {
-                                    n.0 = new;
-                                    n.1 = 0.0;
-                                }
-                                None => c.tell(new, News::Hunch),
-                            }
-                        }
-                    }
-                }
-                ToClient::Clarify {
-                    person,
-                    text,
-                    options,
-                } => {
-                    self.clarify = Some((person, text, options));
-                }
-                ToClient::Conversing {
-                    on,
-                    free_text,
-                    trouble,
-                } => {
-                    self.conversing = (on, free_text);
-                    if let (Some(t), Some(c)) = (trouble, &mut self.crafting) {
-                        c.tell(
-                            format!("The conversation backend is not asked: {t}."),
-                            News::Failed,
-                        );
-                    }
-                }
-                ToClient::People(views) => {
-                    self.people
-                        .retain(|id, _| views.iter().any(|v| v.id == *id));
-                    for v in views {
-                        match self.people.get_mut(&v.id) {
-                            // Grown since its figure was made: made again, its motion kept.
-                            Some(s)
-                                if (s.target.height_m - v.height_m).abs() >= 0.01
-                                    || (s.target.grown - v.grown).abs() >= 0.02 =>
-                            {
-                                let animator = s.figure.animator;
-                                s.figure = crate::people::figure(&v);
-                                s.figure.animator = animator;
-                                s.target = v;
-                            }
-                            Some(s) => s.target = v,
-                            None => {
-                                let figure = crate::people::figure(&v);
-                                self.people.insert(
-                                    v.id,
-                                    ShownPerson {
-                                        pos: v.pos,
-                                        yaw: v.yaw,
-                                        target: v,
-                                        figure,
-                                    },
-                                );
-                            }
-                        }
-                    }
-                }
                 ToClient::Animals(views) => {
                     // Those gone are gone; the rest ease toward where the server has them.
                     self.animals
@@ -3210,23 +2708,7 @@ impl Client {
                     self.tick_frac = 0.0;
                 }
                 ToClient::Body(b) => self.body = Some(*b),
-                ToClient::Childhood(v) => self.childhood = v,
-                ToClient::Story(s) => self.story = Some(*s),
-                ToClient::WhoYouAre(lines) => {
-                    self.story = None;
-                    self.spectating = false;
-                    self.who_you_are = Some(lines);
-                }
                 ToClient::Woke(why) => self.woke = Some((why, 0.0)),
-                ToClient::Person(a) => {
-                    self.figure = Some(Figure::new(a));
-                    self.redress();
-                    self.pose = None;
-                    self.hearing = crate::hearing::Hearing::default();
-                }
-                ToClient::Ended(s) => self.ended = Some(s),
-                ToClient::Born(b) => self.born = Some(*b),
-                ToClient::Births(choices) => self.births = Some(choices),
                 ToClient::Carried(c) => {
                     self.carry = c;
                     self.redress();
@@ -3367,28 +2849,6 @@ impl Client {
                         c.tell(a.words, kind);
                     }
                 }
-                ToClient::Heard(lines) => {
-                    // Speech near the player, as subtitles: the words as they sound and what
-                    // the player makes of them.
-                    if let Some(c) = &mut self.crafting {
-                        for l in lines {
-                            let to = if l.to_you { " to you" } else { "" };
-                            let with = l.gesture.map_or(String::new(), |g| format!(" ({g})"));
-                            let sense = if l.understood > 0.0 {
-                                format!(" — {}", l.sense)
-                            } else {
-                                String::new()
-                            };
-                            let said = format!("{}{to}{with}: “{}”", l.speaker, l.spoken);
-                            let line = format!("{said}{sense}");
-                            self.heard_shown.push((l.id, said, line.clone()));
-                            if self.heard_shown.len() > HEARD_SHOWN {
-                                self.heard_shown.remove(0);
-                            }
-                            c.tell(line, News::Hunch);
-                        }
-                    }
-                }
                 ToClient::Learned {
                     name,
                     discovered,
@@ -3485,9 +2945,6 @@ impl Client {
         self.figure_boxes.clear();
         self.thing_boxes(view.pos);
         self.animal_boxes(view.pos, dt);
-        self.people_boxes(view.pos, dt);
-        self.inspect_target();
-        self.regard_target();
         self.watch_frame(dt as f64);
         self.carcass_boxes(view.pos);
         self.sign_boxes(view.pos);
@@ -3602,24 +3059,7 @@ impl Client {
         }
         if let Some(watch) = &self.watching {
             let name = self.followed_name();
-            watch.draw(ui, name, self.globe.legend());
-        }
-        if self.talk.is_some() {
-            self.draw_talk(ui);
-        } else if let Some((_, lines)) = &self.regarded
-            && self.mode == CameraMode::Body
-            && !self.dead()
-        {
-            // What the player knows of the one it looks at, beneath where it looks.
-            for (k, l) in lines.iter().enumerate() {
-                let lw = ui.font.width(l) as f32;
-                ui.label(
-                    ((w - lw) / 2.0).round(),
-                    (h / 2.0 + 20.0 + k as f32 * 10.0).round(),
-                    l,
-                    Rgba([225, 225, 210, 220]),
-                );
-            }
+            watch.draw(ui, name);
         }
         if self.mode == CameraMode::Body
             && self.perspective == Perspective::First
@@ -3649,9 +3089,6 @@ impl Client {
             && let Some(c) = &self.crafting
         {
             c.draw(ui, veil);
-        }
-        if let Some(c) = &self.childhood {
-            self.draw_childhood(ui, c, veil);
         }
         // Eyelids: the world goes dark asleep or fainting.
         if self.eyes_shut > 0.01 {
@@ -3703,29 +3140,6 @@ impl Client {
             );
             for (k, line) in lines.iter().enumerate() {
                 ui.label(3.0, 3.0 + k as f32 * lh, line, Rgba::WHITE);
-            }
-        }
-        if self.debug_overlay
-            && let Some(r) = &self.inspected
-        {
-            // The inspected person's record, beside the debug lines on the right.
-            let mut lines = vec![r.title.clone()];
-            for sec in &r.sections {
-                lines.push(format!("— {}", sec.name));
-                lines.extend(sec.lines.iter().map(|l| format!("  {l}")));
-            }
-            let width = lines.iter().map(|l| ui.font.width(l)).max().unwrap_or(0) as f32;
-            let lh = hearth_ui::font::LINE as f32;
-            let x = ui.size.0 - width - 5.0;
-            ui.draw.rect(
-                x - 2.0,
-                1.0,
-                width + 4.0,
-                lines.len() as f32 * lh + 3.0,
-                Rgba([0, 0, 0, veil]),
-            );
-            for (k, line) in lines.iter().enumerate() {
-                ui.label(x, 3.0 + k as f32 * lh, line, Rgba::WHITE);
             }
         }
     }
@@ -3875,55 +3289,6 @@ impl Client {
                 .rect(50.0, y + 2.0, 52.0, 4.0, Rgba([40, 40, 46, 220]));
             ui.draw
                 .rect(50.0, y + 2.0, 52.0 * v.clamp(0.0, 1.0), 4.0, *color);
-        }
-    }
-
-    /// The sounds in words, lowest right, fading as they pass.
-    /// The childhood as it goes (V2.1 Addendum A): the moment's name and what is said of it, or
-    /// the years passing; the child's age; how to go on.
-    fn draw_childhood(&self, ui: &mut Ui<'_>, c: &hearth_protocol::ChildhoodView, veil: u8) {
-        let (w, _) = ui.size;
-        let lh = hearth_ui::font::LINE as f32;
-        let wide = (w - 40.0).min(460.0);
-        let title = if c.passing {
-            ui.t("childhood.passing")
-        } else {
-            c.name.clone()
-        };
-        let age = if c.age < 1.0 {
-            ui.t("childhood.newborn")
-        } else {
-            ui.lang.format(
-                "childhood.age",
-                &[("n", &format!("{}", c.age.floor() as u32))],
-            )
-        };
-        let mut lines: Vec<(String, Rgba)> = vec![(title, Rgba([245, 238, 220, 240]))];
-        for l in ui.font.wrap(&c.text, wide as u32) {
-            lines.push((l, Rgba([225, 222, 210, 230])));
-        }
-        lines.push((age, Rgba([200, 200, 205, 220])));
-        lines.push((ui.t("childhood.hint"), Rgba([170, 170, 180, 200])));
-        let tall = lines.len() as f32 * lh + 10.0;
-        let x0 = ((w - wide) / 2.0 - 8.0).round();
-        let shade = 150u8.saturating_sub(veil / 2);
-        ui.draw
-            .rect(x0, 8.0, wide + 16.0, tall, Rgba([12, 12, 16, shade]));
-        for (k, (line, colour)) in lines.iter().enumerate() {
-            let lw = ui.font.width(line) as f32;
-            ui.label(
-                ((w - lw) / 2.0).round(),
-                13.0 + k as f32 * lh,
-                line,
-                *colour,
-            );
-        }
-    }
-
-    /// Goes on in the childhood: to its next moment, or grown up now.
-    pub fn childhood_skip(&mut self, skip: hearth_protocol::Skip) {
-        if self.childhood.is_some() {
-            self.server.send(ToServer::Childhood(skip));
         }
     }
 

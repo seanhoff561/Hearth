@@ -2817,3 +2817,17 @@ summoning nor removing persons is built. A Creative thing is set where a body co
 (a plant gives way to it), never inside the player. Clear view is a filter on the frame's
 environment and senses, not a renderer mode: daylight, no haze, no weather, a plain image; caves
 stay as dark as their mesh light (a full-bright cave needs the smooth terrain's lighting, S2).
+
+## D230 — The human systems removed, not hidden; old worlds refused
+E0 removes V2.1's simulated humans outright (crates, modules, screens, protocol, data, schemas,
+tests) rather than leaving them behind a switch: unused code is the Lean test's first failure,
+and Phase F plans humanity anew from E1's documents. Everything is kept on the branch
+`archive/humans-v2.1` (the git proxy refuses tag pushes) and in `docs/archive/humans-v2.1/`.
+Saves move to format 6 and every older world is refused with Amendment E §2.4's message, because
+every older world had people in its saves and a migration that drops them would leave worlds
+whose meaning is gone (a player born into a family that no longer exists); the protocol is
+version 3. After death a new life begins about where the last ended, or elsewhere, keeping what
+the mode keeps; the appearance of a profile without the character creator comes from its seed
+until E5. The Observer's free eye stays only as Creative's spectating. Knowledge once reached
+only by watching hominins was already reachable otherwise; the lint's reachability, which no
+longer knows teaching, proves every implemented node reachable by a lone player.

@@ -192,10 +192,6 @@ pub struct ShotSpec {
     /// Animals on the ground in front of the camera: (species, stage, female, what it does,
     /// metres ahead, metres to the right, its facing in degrees from the camera's).
     pub animals: Vec<ShotAnimal>,
-    /// Hominins on the ground in front of the camera.
-    pub hominins: Vec<ShotHominin>,
-    /// A family of three generations standing before the camera (H1).
-    pub family: Option<ShotFamily>,
     /// Signs laid on the ground: whose, how many, what (prints, blood, droppings), from where
     /// (metres ahead, to the right) and going which way (degrees from the camera's).
     pub trails: Vec<(String, usize, hearth_fauna::live::SignKind, f64, f64, f32)>,
@@ -212,14 +208,6 @@ pub struct ShotSpec {
     pub lying: Vec<(DVec3, glam::Vec3, [u8; 3], f32)>,
     /// The camera to the nearest group of this species, looking at it from 30 m along `yaw`.
     pub seek: Option<String>,
-    /// A player's household set down where the camera stands (H3): the player's age, the
-    /// household's people living a while (`run`) as the game lives them.
-    pub born: Option<f64>,
-    /// An era's world (H8, `era=upper_paleolithic`): its deep past run, the recent past lived
-    /// where its peoples live about the camera's place, a player born into a household there
-    /// (`born=` years ago, else at coming of age), its bands living a while (`run`) and keeping
-    /// their camps, the camera at the household's camp.
-    pub era: Option<String>,
     /// Seconds the animals live on before the shot with the camera as a person among them
     /// (they see it, and flee it).
     pub run: Option<f64>,
@@ -230,35 +218,6 @@ pub struct ShotSpec {
     pub aim: bool,
     /// Whether `yaw` was given (a `near` place faces its sight otherwise).
     pub yaw_given: bool,
-}
-
-/// A hominin placed in a screenshot: its sex and age, what it does (`stand`, `walk`, `run`,
-/// `feed`, `work`, `groom`, `climb`, `sleep`), where (metres ahead, to the right, above the
-/// ground) and its facing in degrees from the camera's.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ShotHominin {
-    pub female: bool,
-    pub stage: hearth_fauna::live::Stage,
-    pub act: String,
-    pub ahead: f64,
-    pub right: f64,
-    pub yaw: f32,
-    pub up: f64,
-    /// What it shows it feels (`cower`, `bristle`, `slump`, `hang`, `bright`, `recoil`,
-    /// `warm`), if anything.
-    pub shows: Option<hearth_content::schema::psyche::Display>,
-}
-
-/// A family of three generations in a screenshot (H1): two pairs of grandparents of the human
-/// pool, one pair at the mother's latitude and one at the father's, a daughter of the one and a
-/// son of the other, and their three children, drawn from `seed`; standing in rows `ahead`
-/// metres before the camera, the grandparents behind.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ShotFamily {
-    pub seed: u64,
-    pub mother_lat: f64,
-    pub father_lat: f64,
-    pub ahead: f64,
 }
 
 /// An animal placed in a screenshot.
@@ -334,8 +293,6 @@ impl Default for ShotSpec {
             body: false,
             senses: None,
             animals: Vec::new(),
-            hominins: Vec::new(),
-            family: None,
             trails: Vec::new(),
             fauna: false,
             stress: false,
@@ -343,8 +300,6 @@ impl Default for ShotSpec {
             back: 0.0,
             lying: Vec::new(),
             seek: None,
-            born: None,
-            era: None,
             run: None,
             near_water: false,
             yaw_given: false,
@@ -494,16 +449,6 @@ impl ShotSpec {
                     spec.fauna = true;
                     spec.seek = Some(v.to_owned());
                 }
-                // `born=6`: the household of a player of six set down here, living a while.
-                "born" => {
-                    spec.fauna = true;
-                    spec.born = Some(v.parse()?);
-                }
-                // `era=middle_paleolithic`: the era's people about the place, as a life finds them.
-                "era" => {
-                    spec.fauna = true;
-                    spec.era = Some(v.to_owned());
-                }
                 // `animal=red_deer:adult:m:graze@20:-3:90` (species, stage, sex, what it does @
                 // metres ahead : to the right : facing in degrees from the camera's : above the
                 // ground), repeatable; `herd=red_deer:9@25:0` a herd about a point. What it
@@ -540,62 +485,6 @@ impl ShotSpec {
                         up,
                         medium,
                         fleece,
-                    });
-                }
-                // `hominin=f:adult:feed@6:-1:150` (sex, age, what it does @ metres ahead : to the
-                // right : facing in degrees from the camera's : above the ground), repeatable.
-                "hominin" => {
-                    use hearth_fauna::live::Stage;
-                    let (what, at) = v.split_once('@').unwrap_or((v, "6"));
-                    let mut w = what.split(':');
-                    let female = w.next().unwrap_or("f") != "m";
-                    let stage = match w.next().unwrap_or("adult") {
-                        "young" => Stage::Young,
-                        "juvenile" => Stage::Juvenile,
-                        _ => Stage::Adult,
-                    };
-                    let act = w.next().unwrap_or("stand").to_owned();
-                    let shows = {
-                        use hearth_content::schema::psyche::Display;
-                        match w.next() {
-                            Some("cower") => Some(Display::Cower),
-                            Some("bristle") => Some(Display::Bristle),
-                            Some("slump") => Some(Display::Slump),
-                            Some("hang") => Some(Display::Hang),
-                            Some("bright") => Some(Display::Bright),
-                            Some("recoil") => Some(Display::Recoil),
-                            Some("warm") => Some(Display::Warm),
-                            _ => None,
-                        }
-                    };
-                    let mut n = at.split(':');
-                    spec.hominins.push(ShotHominin {
-                        female,
-                        stage,
-                        act,
-                        ahead: n.next().unwrap_or("6").parse()?,
-                        right: n.next().unwrap_or("0").parse()?,
-                        yaw: n.next().unwrap_or("180").parse()?,
-                        up: n.next().unwrap_or("0").parse()?,
-                        shows,
-                    });
-                }
-                // `family=7:5:60@6`: a family of three generations drawn from seed 7, the
-                // mother's people of latitude 5, the father's of 60, standing 6 m ahead.
-                "family" => {
-                    let (what, at) = v.split_once('@').unwrap_or((v, "6"));
-                    let mut w = what.split(':');
-                    let seed = w.next().unwrap_or("1").parse()?;
-                    let mother_lat: f64 = w.next().unwrap_or("0").parse()?;
-                    let father_lat = match w.next() {
-                        Some(l) => l.parse()?,
-                        None => mother_lat,
-                    };
-                    spec.family = Some(ShotFamily {
-                        seed,
-                        mother_lat,
-                        father_lat,
-                        ahead: at.parse()?,
                     });
                 }
                 // `trail=red_deer:12:prints@4:-1:30` a trail of signs (prints, blood or droppings)
@@ -662,7 +551,7 @@ impl ShotSpec {
         }
         // Seeking a group, the camera stands a little above the ground, looking at it through
         // a longer lens.
-        if spec.seek.is_some() || spec.born.is_some() || spec.era.is_some() {
+        if spec.seek.is_some() {
             if !given.iter().any(|k| k == "above") {
                 spec.above = 4.0;
             }
@@ -919,143 +808,16 @@ pub fn render_shot(
     let mut herd = None;
     let mut sought = None;
     let mut fauna = None;
-    // A hominin group sought: where it is.
-    let mut hominins_at: Option<DVec3> = None;
-    // An era's people about the place, a life born among them (H8).
-    let mut era_people: Option<(crate::people::PeopleNear, f64)> = None;
-    'seek: {
+    {
         if spec.fauna {
             let made = std::time::Instant::now();
-            let content = lw.content.clone();
-            let era = spec
-                .era
-                .as_deref()
-                .and_then(|e| crate::eras::era_of(&content, e))
-                .filter(|e| !e.peoples.is_empty())
-                .cloned();
-            if spec.era.is_some() && era.is_none() {
-                anyhow::bail!("era={:?}: no era with peoples", spec.era);
-            }
-            let graph = hearth_craft::Graph::from_content(&content);
-            let history = era.as_ref().and_then(|e| {
-                crate::eras::history(lw, &content, &graph, e, spec.seed, None, &|_| {})
-            });
-            let peoples = crate::eras::peoples(
-                &content,
-                era.as_ref()
-                    .or_else(|| crate::eras::era_of(&content, crate::eras::WILD_EARTH)),
-            );
-            let mut f = crate::fauna::Fauna::new(
-                lw,
-                spec.seed,
-                0.0,
-                year_frac,
-                None,
-                false,
-                &peoples,
-                history
-                    .clone()
-                    .map(|h| h as std::sync::Arc<dyn hearth_fauna::ecology::Peopling>),
-                1,
-            );
-            if let (Some(e), Some(h)) = (&era, &history) {
-                // Where its peoples live well about the camera's place; the recent past lived
-                // there and a life born into one of its households, the camera to its camp.
-                let place = crate::eras::spawn_among(h, e, glam::DVec2::new(sx, sz));
-                f.ensure_about(lw, DVec3::new(place.x, 0.0, place.y));
-                let body = hearth_body::BodyConfig::with_rates(
-                    &content,
-                    hearth_body::Rates::authentic(),
-                    hearth_content::TimeScales::defaults(&content.time),
-                );
-                let items = hearth_items::Items::from_content(&content);
-                let genetics = hearth_people::Genetics::from_content(&content)
-                    .ok_or_else(|| anyhow::anyhow!("no genetics"))?;
-                let mut agents =
-                    crate::people::PeopleNear::new(&content, &graph, &body, spec.seed, None);
-                agents.live.history = Some(h.clone());
-                // The people's clock: the shot's season at day 200 years in.
-                let year_days = 32.0;
-                let day = 200.0 * year_days + spec.hour / 24.0;
-                let calendar = hearth_env::Calendar {
-                    year_offset: (year_frac - (day / year_days).fract()).rem_euclid(1.0),
-                    ..hearth_env::Calendar::new(1, 8, 23.44)
-                };
-                agents.live.era =
-                    crate::eras::ways(Some(e), &calendar, lw.generator.terrain.clone());
-                let age = spec
-                    .born
-                    .unwrap_or_else(|| crate::born::coming_of_age_of(&content, "homo_sapiens"));
-                let planet = *lw.map.planet();
-                let camp = agents
-                    .born_in_era(
-                        &mut f.eco,
-                        &graph,
-                        &items,
-                        &genetics,
-                        &|p: DVec3| planet.latitude_deg(p.z),
-                        place,
-                        age,
-                        hearth_people::Now {
-                            tick: 0,
-                            hour: spec.hour as f32,
-                            day,
-                            year_days,
-                        },
-                    )
-                    .ok_or_else(|| anyhow::anyhow!("era={:?}: no household", spec.era))?;
-                f.ensure_about(lw, camp);
-                // The people of the household's band, by species.
-                let kind = agents
-                    .live
-                    .bands
-                    .iter()
-                    .filter(|b| b.camp.is_some_and(|c| (c - camp).length() < 1.0))
-                    .map(|b| {
-                        b.species
-                            .rsplit(':')
-                            .next()
-                            .unwrap_or(&b.species)
-                            .to_owned()
-                    })
-                    .next()
-                    .unwrap_or_default();
-                log::info!(
-                    "{}: {} bands lived a century about the place; born among {kind} at {:.0}, \
-                     {:.0}",
-                    e.name,
-                    agents.live.bands.len(),
-                    camp.x,
-                    camp.z
-                );
-                let centre = DVec3::new(camp.x, lw.surface_y(camp.x, camp.z) + 0.8, camp.z);
-                let h = Herd::new(vec![centre]);
-                let (eye, yaw) = h.first_view(lw, spec.yaw, spec.above);
-                (sx, sz) = (eye.x, eye.z);
-                seen = Some((eye, yaw, h.mid));
-                hominins_at = Some(centre);
-                era_people = Some((agents, day));
-                fauna = Some(f);
-                break 'seek;
-            }
+            let mut f = crate::fauna::Fauna::new(lw, spec.seed, 0.0, year_frac, None);
             f.ensure_about(lw, DVec3::new(sx, 0.0, sz));
             log::info!(
                 "{} regions of populations made in {:.2}s",
                 f.eco.regions.len(),
                 made.elapsed().as_secs_f64()
             );
-            if spec.born.is_some() {
-                // A household set down where the camera stands, drawn out once the blocks are
-                // in: the camera on its place for now.
-                let centre = DVec3::new(sx, lw.surface_y(sx, sz) + 0.8, sz);
-                let h = Herd::new(vec![centre]);
-                let (eye, yaw) = h.first_view(lw, spec.yaw, spec.above);
-                (sx, sz) = (eye.x, eye.z);
-                seen = Some((eye, yaw, h.mid));
-                hominins_at = Some(centre);
-                fauna = Some(f);
-                break 'seek;
-            }
             if let Some(seek) = &spec.seek {
                 // `red_deer` or `red_deer:3` (the third nearest group).
                 let (name, nth) = match seek.split_once(':') {
@@ -1068,7 +830,6 @@ pub fn render_shot(
                     .index(name)
                     .ok_or_else(|| anyhow::anyhow!("seek={name}: no such species"))?;
                 sought = Some(s);
-                let hominin = f.eco.catalog.species[s].hominin;
                 let mut groups: Vec<_> = f
                     .census()
                     .into_iter()
@@ -1084,18 +845,6 @@ pub fn render_shot(
                     groups.len(),
                     d(at)
                 );
-                if hominin {
-                    // Hominins are agents, drawn out once the blocks are in: the camera on the
-                    // group's place for now.
-                    let centre = DVec3::new(at.x, lw.surface_y(at.x, at.y) + 0.8, at.y);
-                    let h = Herd::new(vec![centre]);
-                    let (eye, yaw) = h.first_view(lw, spec.yaw, spec.above);
-                    (sx, sz) = (eye.x, eye.z);
-                    seen = Some((eye, yaw, h.mid));
-                    hominins_at = Some(centre);
-                    fauna = Some(f);
-                    break 'seek;
-                }
                 // The group brought into the world (on the generated ground: the blocks are not
                 // loaded yet) a few seconds into their day; the camera where it sees most of them.
                 let ground = crate::fauna::MapGround {
@@ -1562,9 +1311,6 @@ pub fn render_shot(
         );
         scene.figures.set(ctx, &boxes);
     }
-    // The hominins: those placed and those of a group sought.
-    let mut hominin_views = placed_hominins(spec, lw, &camera);
-    hominin_views.extend(placed_family(spec, lw, &camera));
     // The animals: their bodies and coats, those placed and those of the populations.
     let mut drawn = Vec::new();
     let mut bodies = None;
@@ -1648,48 +1394,6 @@ pub fn render_shot(
                 }
             }
         }
-        if let Some(centre) = hominins_at {
-            // The group's agents drawn out as the game draws them, living their day a while.
-            let mut laid = Vec::new();
-            let (views, eye) = hominins_living(
-                spec,
-                lw,
-                f,
-                centre,
-                &camera,
-                year_frac as f32,
-                era_people.take(),
-                &mut laid,
-            );
-            // The cubes their camps were laid in (and those beside them), meshed again.
-            let mut cubes: Vec<hearth_math::CubePos> = laid
-                .iter()
-                .flat_map(|p| {
-                    let c = p.cube();
-                    (-1..=1).flat_map(move |dx| {
-                        (-1..=1).flat_map(move |dy| {
-                            (-1..=1).map(move |dz| {
-                                hearth_math::CubePos::new(c.x + dx, c.y + dy, c.z + dz)
-                            })
-                        })
-                    })
-                })
-                .filter(|c| positions.contains(c))
-                .collect();
-            cubes.sort();
-            cubes.dedup();
-            for m in lw.mesh(&models, &cubes, MeshOptions::default()) {
-                scene.terrain.upload(ctx, &m);
-            }
-            if let Some((eye, yaw, pitch)) = eye {
-                camera.pos = eye;
-                camera.yaw = yaw;
-                if spec.aim {
-                    camera.pitch = pitch;
-                }
-            }
-            hominin_views = views;
-        }
         let views = f.views();
         log::info!("{} animals about the camera", views.len());
         for v in &views {
@@ -1707,27 +1411,6 @@ pub fn render_shot(
         drawn.extend(drawn_views(&views));
     }
     let mut boxes = Vec::new();
-    for v in &hominin_views {
-        let figure = crate::people::figure(v);
-        let drive = crate::people::drive(v);
-        let pose = figure.animator.pose(&figure.rig, drive.activity, &drive);
-        let chest = hearth_math::BlockPos::containing(v.pos + DVec3::Y * 0.8);
-        hearth_character::instances(
-            &figure.rig,
-            &figure.palette,
-            &pose,
-            glam::Affine3A::from_rotation_translation(
-                glam::Quat::from_rotation_y(v.yaw),
-                (v.pos - camera.pos).as_vec3(),
-            ),
-            hearth_character::Show {
-                hide_head: false,
-                sky_light: lw.map.sky_light(chest),
-                block_light: lw.map.block_light(chest),
-            },
-            &mut boxes,
-        );
-    }
     if let Some((catalog, b)) = &bodies
         && (!drawn.is_empty() || !spec.trails.is_empty())
     {
@@ -2292,348 +1975,6 @@ fn placed_animals(
         });
     }
     Ok(out)
-}
-
-/// The standing height (m) of one of a species profile's sex and age class (a year old, six,
-/// grown), as `hearth_people::Species` reckons it.
-fn stature(
-    profile: &hearth_content::schema::humans::Species,
-    female: bool,
-    stage: hearth_fauna::live::Stage,
-) -> f32 {
-    use hearth_fauna::live::Stage;
-    let range = profile.body.height_m.of(female);
-    let maturity = profile.life.maturity_years.max(1.0);
-    let age = match stage {
-        Stage::Young => 0.5,
-        Stage::Juvenile => (maturity * 0.5).min(6.0),
-        Stage::Adult => maturity + 5.0,
-    };
-    let t = (age / maturity).min(1.0);
-    let growth = 0.05 + 0.95 * t.powf(1.1);
-    (range.0 + range.1) / 2.0 * growth.powf(0.4)
-}
-
-/// A family of three generations placed in a shot (see [`ShotFamily`]): their genomes by meiosis
-/// from the grandparents down, their looks from their phenotypes at their ages.
-fn placed_family(
-    spec: &ShotSpec,
-    lw: &LocalWorld,
-    camera: &hearth_render::camera::Camera,
-) -> Vec<hearth_people::PersonView> {
-    use hearth_fauna::live::{Medium, Stage};
-    use hearth_people::{Doing, Genetics, Genome};
-    let Some(fam) = &spec.family else {
-        return Vec::new();
-    };
-    let species = crate::born::PLAYER_SPECIES;
-    let (Some(g), Some(profile)) = (
-        Genetics::from_content(&lw.content),
-        lw.content.species.get(species),
-    ) else {
-        return Vec::new();
-    };
-    let Some(pool) = g.pool(species) else {
-        return Vec::new();
-    };
-    let mut rng = hearth_math::hash::Rng::new(hearth_math::hash::derive_seed(fam.seed, "family"));
-    let (sm, sf) = (g.sunlight(fam.mother_lat), g.sunlight(fam.father_lat));
-    let gm1 = g.founder(pool, sm, true, &mut rng);
-    let gf1 = g.founder(pool, sm, false, &mut rng);
-    let gm2 = g.founder(pool, sf, true, &mut rng);
-    let gf2 = g.founder(pool, sf, false, &mut rng);
-    let mother = g.child(&gm1, &gf1, Some(true), &mut rng);
-    let father = g.child(&gm2, &gf2, Some(false), &mut rng);
-    let [k1, k2, k3] = [true, false, true].map(|f| g.child(&mother, &father, Some(f), &mut rng));
-    // Who, how old, and where: metres further ahead (rows) and to the right.
-    let people: [(Genome, f32, f64, f64); 9] = [
-        (gm1, 66.0, 2.6, -2.7),
-        (gf1, 69.0, 2.6, -1.9),
-        (gm2, 64.0, 2.6, 1.9),
-        (gf2, 68.0, 2.6, 2.7),
-        (mother, 43.0, 1.3, -0.55),
-        (father, 46.0, 1.3, 0.55),
-        (k1, 19.0, 0.0, -1.1),
-        (k2, 16.0, 0.0, 0.0),
-        (k3, 9.0, -0.2, 1.0),
-    ];
-    let f = camera.forward().as_dvec3();
-    let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
-    let right = DVec3::new(-flat.z, 0.0, flat.x);
-    let cam_yaw = flat.x.atan2(flat.z) as f32;
-    let maturity = profile.life.maturity_years;
-    people
-        .into_iter()
-        .enumerate()
-        .map(|(i, (genome, age, ahead, side))| {
-            let female = genome.female;
-            let ph = g.phenotype(&genome, &mut rng);
-            let p = camera.pos + flat * (fam.ahead + ahead) + right * side;
-            let ground = crate::fauna::surface_in(
-                &lw.map,
-                &lw.reg,
-                p.x,
-                p.z,
-                lw.surface_y(p.x, p.z).floor() as i32 + 3,
-                10,
-            )
-            .map_or_else(|| lw.surface_y(p.x, p.z), |s| s.y);
-            let grown = hearth_people::grown_height_m(profile, female, ph.z("stature"));
-            hearth_people::PersonView {
-                id: 900 + i as u64,
-                plan: profile.body.plan,
-                female,
-                stage: if age >= maturity {
-                    Stage::Adult
-                } else {
-                    Stage::Juvenile
-                },
-                pos: DVec3::new(p.x, ground, p.z),
-                yaw: cam_yaw + std::f32::consts::PI,
-                speed: 0.0,
-                medium: Medium::Ground,
-                doing: Doing::Idle,
-                height_m: grown * profile.life.grown_share(age as f64).0,
-                grown: (age / maturity.max(1.0)).clamp(0.0, 1.0),
-                dead: false,
-                look: hearth_people::look(&ph, profile.body.plan, female, age, maturity),
-                shows: None,
-            }
-        })
-        .collect()
-}
-
-/// The hominins placed in a shot, on the ground in front of the camera.
-fn placed_hominins(
-    spec: &ShotSpec,
-    lw: &LocalWorld,
-    camera: &hearth_render::camera::Camera,
-) -> Vec<hearth_people::PersonView> {
-    use hearth_fauna::live::Medium;
-    use hearth_people::Doing;
-    if spec.hominins.is_empty() {
-        return Vec::new();
-    }
-    let Some(profile) = lw.content.species.iter().find(|h| h.population.is_some()) else {
-        return Vec::new();
-    };
-    let f = camera.forward().as_dvec3();
-    let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
-    let right = DVec3::new(-flat.z, 0.0, flat.x);
-    let cam_yaw = flat.x.atan2(flat.z) as f32;
-    spec.hominins
-        .iter()
-        .enumerate()
-        .map(|(i, h)| {
-            let p = camera.pos + flat * h.ahead + right * h.right;
-            let ground = crate::fauna::surface_in(
-                &lw.map,
-                &lw.reg,
-                p.x,
-                p.z,
-                lw.surface_y(p.x, p.z).floor() as i32 + 3,
-                10,
-            )
-            .map_or_else(|| lw.surface_y(p.x, p.z), |g| g.y);
-            let (doing, speed, medium) = match h.act.as_str() {
-                "walk" => (Doing::Idle, 1.1, Medium::Ground),
-                "run" => (Doing::Idle, 4.0, Medium::Ground),
-                "feed" => (Doing::Feeding, 0.0, Medium::Ground),
-                "work" => (Doing::Working { recipe: 0 }, 0.0, Medium::Ground),
-                "groom" => (Doing::Resting, 0.0, Medium::Ground),
-                "climb" => (Doing::Idle, 0.5, Medium::Tree),
-                "sleep" => (Doing::Sleeping, 0.0, Medium::Ground),
-                _ => (Doing::Idle, 0.0, Medium::Ground),
-            };
-            hearth_people::PersonView {
-                id: i as u64 + 1,
-                plan: profile.body.plan,
-                female: h.female,
-                stage: h.stage,
-                pos: DVec3::new(p.x, ground + h.up, p.z),
-                yaw: cam_yaw + h.yaw.to_radians(),
-                speed,
-                medium,
-                doing,
-                height_m: stature(profile, h.female, h.stage),
-                grown: match h.stage {
-                    hearth_fauna::live::Stage::Young => 0.05,
-                    hearth_fauna::live::Stage::Juvenile => 0.5,
-                    hearth_fauna::live::Stage::Adult => 1.0,
-                },
-                dead: false,
-                look: hearth_people::Look::default(),
-                shows: h.shows.map(|d| (d, 0.9)),
-            }
-        })
-        .collect()
-}
-
-/// What a hominin group sought comes to: its agents as drawn, and where to stand to see most
-/// of them (the eye, its yaw and its pitch).
-type Living = (Vec<hearth_people::PersonView>, Option<(DVec3, f32, f32)>);
-
-/// The agents of a hominin group sought, drawn out about its place as the game draws them and
-/// living a while of their day (`run` seconds, half a minute without) with no one about.
-#[allow(clippy::too_many_arguments)]
-fn hominins_living(
-    spec: &ShotSpec,
-    lw: &mut LocalWorld,
-    f: &mut crate::fauna::Fauna,
-    centre: DVec3,
-    camera: &hearth_render::camera::Camera,
-    year_frac: f32,
-    era: Option<(crate::people::PeopleNear, f64)>,
-    laid: &mut Vec<hearth_math::BlockPos>,
-) -> Living {
-    let content = lw.content.clone();
-    let items = hearth_items::Items::from_content(&content);
-    let crafts = hearth_craft::Crafts::from_content(&content, &items);
-    let graph = hearth_craft::Graph::from_content(&content);
-    let body = hearth_body::BodyConfig::with_rates(
-        &content,
-        hearth_body::Rates::authentic(),
-        hearth_content::TimeScales::defaults(&content.time),
-    );
-    // An era's people come with their recent past and the life born among them (H8).
-    let (mut agents, day0) = match era {
-        Some((a, day)) => (a, day),
-        None => (
-            crate::people::PeopleNear::new(&content, &graph, &body, spec.seed, None),
-            0.0,
-        ),
-    };
-    let mut lying = hearth_items::WorldItems::default();
-    let mut changed = Vec::new();
-    let hour = spec.hour as f32;
-    let day = (6.0..18.5).contains(&hour);
-    let mut exposure = hearth_body::Exposure::mild();
-    exposure.local_hour = hour;
-    exposure.air_c = if day { 27.0 } else { 19.0 };
-    let around = hearth_craft::Surroundings {
-        daylight: day,
-        air_c: exposure.air_c,
-        humidity: 0.5,
-        ..Default::default()
-    };
-    let seconds = spec.run.unwrap_or(30.0);
-    let steps = ((seconds / 0.05).round() as u64).max(41);
-    let started = std::time::Instant::now();
-    // A player's household set down here (`born=`): the birth of the place and its household.
-    let genetics = hearth_people::Genetics::from_content(&content);
-    let latitude = lw.map.planet().latitude_deg(centre.z);
-    let birth = spec
-        .born
-        .zip(genetics.as_ref())
-        .and_then(|(_, g)| crate::born::draw(g, latitude, None, spec.seed));
-    let household = spec
-        .born
-        .zip(genetics.as_ref())
-        .zip(birth.as_ref())
-        .map(|((age, g), b)| crate::born::household(g, b, age, spec.seed));
-    for t in 0..steps {
-        agents.tick(
-            lw,
-            f,
-            &mut lying,
-            &items,
-            &crafts,
-            &graph,
-            &mut changed,
-            exposure,
-            &|_| 0.0,
-            around.clone(),
-            year_frac,
-            &[centre],
-            &[],
-            birth.as_ref().zip(household.as_ref()),
-            hearth_people::Now {
-                tick: t,
-                hour,
-                day: day0 + t as f64 * 0.05 / 2880.0,
-                year_days: 32.0,
-            },
-            0.05,
-        );
-    }
-    // Their camps as the game keeps them: the fire burning, the beds about it.
-    let camps = agents.camps();
-    let mut fires: Vec<DVec3> = Vec::new();
-    if !camps.is_empty() {
-        let reg = lw.reg.clone();
-        let fire = reg.parse_state("hearth:campfire[fire=high]").ok();
-        let grass = reg.parse_state("hearth:grass_bed").ok();
-        let fur = reg.parse_state("hearth:fur_bed").ok();
-        for c in &camps {
-            let Some(layout) = crate::workshop::camp_layout(lw, c) else {
-                continue;
-            };
-            let f = layout.fire;
-            fires.push(DVec3::new(f.x as f64 + 0.5, f.y as f64, f.z as f64 + 0.5));
-            let bed = if c.fur { fur } else { grass };
-            let trodden = layout
-                .trodden
-                .into_iter()
-                .map(|p| (p, Some(hearth_world::BlockStateId::AIR)));
-            let layout_beds = layout.beds.len();
-            let blocks = trodden
-                .chain(std::iter::once((layout.fire, fire)))
-                .chain(layout.beds.into_iter().map(|p| (p, bed)));
-            for (p, state) in blocks {
-                if let Some(state) = state {
-                    lw.map.set_block(p, state, &reg);
-                    lw.light.block_changed(&mut lw.map, &reg, p);
-                    laid.push(p);
-                }
-            }
-            let d = DVec3::new(f.x as f64 + 0.5, f.y as f64, f.z as f64 + 0.5) - camera.pos;
-            log::info!(
-                "  a camp: its fire {:.0} m east, {:.0} m south, {:+.1} m up; {} beds",
-                d.x,
-                d.z,
-                d.y,
-                layout_beds
-            );
-        }
-        log::info!("  {} camps laid", camps.len());
-    }
-    let views = agents.views(centre);
-    log::info!(
-        "  {} hominins lived {seconds} s: {:.3} ms a step; {} things lying, {} nests",
-        views.len(),
-        started.elapsed().as_secs_f64() * 1000.0 / steps as f64,
-        lying.items.len(),
-        changed.len()
-    );
-    for v in &views {
-        let d = v.pos - camera.pos;
-        log::info!(
-            "    {} {:?} {:?} {:?}: {:.0} m east, {:.0} m south, {:+.1} m up ({:.1} m over the              ground)",
-            if v.female { "f" } else { "m" },
-            v.stage,
-            v.medium,
-            v.doing,
-            d.x,
-            d.z,
-            d.y,
-            v.pos.y - lw.surface_y(v.pos.x, v.pos.z)
-        );
-    }
-    if views.is_empty() {
-        return (views, None);
-    }
-    // The people, and their camp's fire where they keep one, framed together.
-    let mut backs: Vec<DVec3> = views.iter().map(|v| v.pos + DVec3::Y * 0.8).collect();
-    backs.extend(fires.iter().map(|f| *f + DVec3::Y * 0.4));
-    let h = Herd::new(backs);
-    let (mut eye, yaw, n) = h.best_view(lw, spec.yaw, spec.above);
-    // Nearer (or farther) along the way it looks, by `back`.
-    let flat = DVec3::new(h.mid.x - eye.x, 0.0, h.mid.z - eye.z).normalize_or(DVec3::Z);
-    eye -= flat * spec.back;
-    let off = (h.mid.x - eye.x).hypot(h.mid.z - eye.z);
-    let pitch = ((eye.y - h.mid.y) as f32).atan2(off as f32).to_degrees();
-    log::info!("  {n} of {} in sight", views.len());
-    (views, Some((eye, yaw, pitch)))
 }
 
 /// The signs a shot's trails lay on the ground: prints a stride apart either side of the way

@@ -1,7 +1,7 @@
-//! What the player wishes of a birth (V2.1 Addendum A): a name, whether to be born a daughter or
-//! a son or leave it to chance, and the loincloth they first wear — kept in `birth.json` for the
-//! next world. Nothing of their looks: those come from their parents' genes. (The character
-//! profiles of before, `characters.json`, give their chosen one's name, sex and loincloth once.)
+//! Who the player begins as (until Amendment E's character creator, E5): a name, a woman, a man
+//! or as chance has it, and the loincloth they first wear — kept in `birth.json` for the next
+//! world. (The character profiles of before, `characters.json`, give their chosen one's name,
+//! sex and loincloth once.)
 
 use std::path::Path;
 
@@ -104,13 +104,18 @@ impl Profiles {
         std::fs::rename(&tmp, path)
     }
 
-    /// The wish as the server takes it.
-    pub fn wish(&self) -> hearth_protocol::Wish {
-        hearth_protocol::Wish {
-            name: self.name.trim().to_owned(),
-            female: self.born.female(),
-            loincloth: self.loincloth,
-        }
+    /// The adult the player begins as: the profile's name, body and loincloth (chance decided by
+    /// `seed`), with the default looks of that body.
+    pub fn appearance(&self, seed: u64) -> Appearance {
+        let female = self.born.female().unwrap_or(seed.is_multiple_of(2));
+        let mut a = if female {
+            Appearance::female()
+        } else {
+            Appearance::default()
+        };
+        a.name = self.name.trim().to_owned();
+        a.loincloth = self.loincloth;
+        a.sanitized()
     }
 }
 
@@ -134,7 +139,7 @@ mod tests {
                 loincloth: Loincloth::PlantFibre,
             }
         );
-        assert_eq!(p.wish().female, Some(true));
+        assert_eq!(p.appearance(1).body, BodyType::Female);
         // Saved, they are what is loaded.
         let changed = Profiles {
             born: Born::Chance,
@@ -142,7 +147,7 @@ mod tests {
         };
         changed.save(&dir.join(FILE)).expect("save");
         assert_eq!(Profiles::load_or_migrate(&dir), changed);
-        assert_eq!(changed.wish().female, None);
+        assert_eq!(changed.appearance(2).name, "Ash");
         // Rubbish: chance, no name.
         std::fs::write(dir.join(FILE), "not json").expect("write");
         assert_eq!(Profiles::load_or_migrate(&dir), Profiles::default());

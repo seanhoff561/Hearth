@@ -6,27 +6,17 @@
 //! and `uncertain: true` for values a realism review should look at. Quantities are SI with the
 //! unit in the field name (`_kg`, `_m`, `_c`, `_mpa`, ...).
 
-pub mod ai;
 pub mod body;
 pub mod config;
-pub mod culture;
 pub mod ecosystem;
 pub mod era;
 pub mod fauna;
 pub mod flora;
 pub mod geology;
-pub mod history;
-pub mod humans;
 pub mod item;
 pub mod knowledge;
-pub mod language;
-pub mod learning;
-pub mod life;
 pub mod material;
-pub mod mind;
 pub mod process;
-pub mod psyche;
-pub mod social;
 pub mod station;
 
 use std::fmt;

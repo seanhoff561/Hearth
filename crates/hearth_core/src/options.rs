@@ -44,8 +44,6 @@ pub struct Options {
     pub advanced_tooltips: bool,
     /// Pause the game when the window loses focus.
     pub pause_on_lost_focus: bool,
-    /// The optional conversation backend (V2.1 §10.4): off unless the player sets one up.
-    pub conversation: ConversationOptions,
     /// Developer mode (Amendment P §2): the debug screen (F3) shows everything in every mode,
     /// not only how the game performs, and Creative's clear view is open.
     pub developer_mode: bool,
@@ -67,7 +65,6 @@ impl Default for Options {
             advanced_tooltips: false,
             pause_on_lost_focus: true,
             developer_mode: false,
-            conversation: ConversationOptions::default(),
         }
     }
 }
@@ -131,7 +128,6 @@ impl Options {
         self.sound.sanitize();
         self.chat.sanitize();
         self.accessibility.sanitize();
-        self.conversation.sanitize();
         if self.language.trim().is_empty() {
             self.language = "en_us".to_owned();
         }
@@ -810,80 +806,6 @@ impl AccessibilityOptions {
         self.text_background_opacity = finite_clamp(self.text_background_opacity, 0.0, 1.0, 0.5);
         self.darkness_pulsing = finite_clamp(self.darkness_pulsing, 0.0, 1.0, 1.0);
         self.damage_tilt = finite_clamp(self.damage_tilt, 0.0, 1.0, 1.0);
-    }
-}
-
-/// Where the people's words may be phrased and the player's typed words read (V2.1 §10.4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConversationBackend {
-    /// None: the speech-act wheel and templated lines only.
-    #[default]
-    Off,
-    /// A model served on this computer (Ollama, LM Studio, a llama.cpp server …).
-    Local,
-    /// A model served by a provider over the internet, with a key.
-    Remote,
-}
-
-/// The way a model server is asked.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConversationApi {
-    /// The chat-completions API most servers speak.
-    #[default]
-    OpenAiCompatible,
-    /// The Messages API.
-    Anthropic,
-}
-
-/// The optional conversation backend (V2.1 §10.4; H10): a language model that phrases the
-/// people's speech acts as natural lines and reads what the player types as a speech act. The
-/// game never needs it; nothing it says changes the world but through a speech act.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ConversationOptions {
-    pub backend: ConversationBackend,
-    pub api: ConversationApi,
-    /// The server's address, up to the API's version (`http://127.0.0.1:11434/v1` for Ollama's
-    /// chat completions, `https://api.anthropic.com/v1` for the Messages API).
-    pub url: String,
-    /// The model, as the server names it (chosen from its list; none is assumed).
-    pub model: String,
-    /// The environment variable holding the API key: the key itself is never written down.
-    pub key_env: String,
-    /// How long a phrased line may take and still be shown (ms); the templated line stands
-    /// meanwhile.
-    pub budget_ms: u32,
-    /// Let the player type what it says to someone (read as a speech act).
-    pub free_text: bool,
-}
-
-impl Default for ConversationOptions {
-    fn default() -> Self {
-        Self {
-            backend: ConversationBackend::Off,
-            api: ConversationApi::OpenAiCompatible,
-            url: "http://127.0.0.1:11434/v1".to_owned(),
-            model: String::new(),
-            key_env: String::new(),
-            budget_ms: 4000,
-            free_text: true,
-        }
-    }
-}
-
-impl ConversationOptions {
-    /// Whether a backend is set up to be asked.
-    pub fn on(&self) -> bool {
-        self.backend != ConversationBackend::Off
-    }
-
-    fn sanitize(&mut self) {
-        self.budget_ms = self.budget_ms.clamp(500, 30_000);
-        self.url = self.url.trim().trim_end_matches('/').to_owned();
-        self.model = self.model.trim().to_owned();
-        self.key_env = self.key_env.trim().to_owned();
     }
 }
 

@@ -17,15 +17,12 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
         planet: hearth_math::PlanetSize::Tiny,
         cache_dir: None,
         saves_dir: Some(dir.to_path_buf()),
-        wish: hearth_protocol::Wish {
-            female: Some(false),
-            ..Default::default()
+        appearance: hearth_character::Appearance {
+            name: "Ash".into(),
+            ..hearth_character::Appearance::female()
         },
-        death: hearth_save::Death::default(),
         knowledge: hearth_save::KnowledgeMode::default(),
-        childhood: false,
         era: hearth::eras::WILD_EARTH.to_owned(),
-        birth: None,
         shape: Default::default(),
         birthplace: None,
         mode: None,
@@ -71,14 +68,10 @@ fn a_world_lives_saves_and_comes_back() {
     let start = ready.player;
     let tick0 = ready.ticks;
     assert_eq!(tick0, 0, "a new world starts at tick 0");
-    // The player was born: a son (as the test asks) of two parents, shown.
-    let born = wait(&server, 10.0, |m| match m {
-        ToClient::Born(b) => Some(b),
-        _ => None,
-    });
-    assert_eq!(born.you, ready.appearance, "the one born is the player");
-    assert_eq!(born.you.body, hearth_character::BodyType::Male);
-    assert_eq!(born.father.body, hearth_character::BodyType::Male);
+    // The player is the adult asked for (Amendment E §6.1).
+    let you = ready.appearance.clone();
+    assert_eq!(you.name, "Ash");
+    assert_eq!(you.body, hearth_character::BodyType::Female);
     // Report a hard landing a little away from the spawn.
     let mut moved = start;
     moved.pos += DVec3::new(2.0, 0.0, 1.0);
@@ -133,10 +126,7 @@ fn a_world_lives_saves_and_comes_back() {
         "the injuries came back"
     );
     assert_eq!(again.dead, body.dead);
-    assert_eq!(
-        ready.appearance, born.you,
-        "the same person, looking the same"
-    );
+    assert_eq!(ready.appearance, you, "the same person, looking the same");
     drop(server);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -156,20 +146,19 @@ fn drown(server: &Server, at: hearth_physics::Mover) {
 }
 
 #[test]
-fn death_follows_the_world_settings() {
+fn after_death_a_new_life_begins_near_where_the_last_ended() {
     let view = View {
         radius: 2,
         vertical: 2,
     };
-    // By default (Authentic): born again, a baby about where the player died.
-    let dir = std::env::temp_dir().join(format!("hearth-death-reborn-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hearth-death-new-life-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let server = Server::start(spec(&dir), atlas(), view);
     let ready = wait(&server, 120.0, |m| match m {
         ToClient::Ready(r) => Some(r),
         _ => None,
     });
-    assert_eq!(ready.death.is(), Some(hearth_save::DeathPreset::Authentic));
+    assert_eq!(ready.after_death, hearth_save::AfterDeath::TheirsOnly);
     let mut there = ready.player;
     there.pos += DVec3::new(30.0, 0.0, 0.0);
     drown(&server, there);
@@ -177,22 +166,8 @@ fn death_follows_the_world_settings() {
         ToClient::Body(b) if b.dead.is_some() => Some(()),
         _ => None,
     });
-    // Born again: a daughter, as asked, of two parents of the region.
-    server.send(ToServer::BornAgain {
-        at: None,
-        female: Some(true),
-    });
-    let born = wait(&server, 10.0, |m| match m {
-        ToClient::Born(b) => Some(b),
-        _ => None,
-    });
-    assert_eq!(born.mother.body, hearth_character::BodyType::Female);
-    let who = wait(&server, 10.0, |m| match m {
-        ToClient::Person(a) => Some(a),
-        _ => None,
-    });
-    assert_eq!(who.body, hearth_character::BodyType::Female, "a daughter");
-    assert_eq!(born.you, who, "the birth shown is hers");
+    // A new life (Amendment E §6.6): a new adult near where the last one died, alive.
+    server.send(ToServer::NewLife { at: None });
     let placed = wait(&server, 10.0, |m| match m {
         ToClient::Placed(p) => Some(p),
         _ => None,
@@ -204,56 +179,14 @@ fn death_follows_the_world_settings() {
         _ => None,
     });
     assert!(alive.dead.is_none());
-    drop(server);
-    let _ = std::fs::remove_dir_all(&dir);
-
-    // Permadeath: the death ends the world with the life's tale, for good.
-    let dir = std::env::temp_dir().join(format!("hearth-death-perma-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let mut s = spec(&dir);
-    s.death = hearth_save::Death::preset(hearth_save::DeathPreset::Permadeath);
-    let server = Server::start(s.clone(), atlas(), view);
-    let ready = wait(&server, 120.0, |m| match m {
-        ToClient::Ready(r) => Some(r),
-        _ => None,
-    });
-    let mut walked = ready.player;
-    walked.pos += DVec3::new(5.0, 0.0, 0.0);
-    server.send(ToServer::Moved(Moved {
-        mover: walked,
-        landed: None,
-        motion: Motion::Walking,
-        speed: 1.4,
-        straining: false,
-        immersion: 0.0,
-        airless_s: 0.0,
-        yaw: 0.0,
-    }));
-    drown(&server, walked);
-    let tale = wait(&server, 10.0, |m| match m {
-        ToClient::Ended(t) => Some(t),
-        _ => None,
-    });
-    assert_eq!(tale.cause, hearth_body::Death::Drowning);
-    assert!((tale.walked_km - 0.005).abs() < 0.002, "{}", tale.walked_km);
-    // No living on: neither born again nor as another.
-    server.send(ToServer::BornAgain {
-        at: None,
-        female: None,
-    });
+    // Not while alive.
+    server.send(ToServer::NewLife { at: None });
     let t0 = Instant::now();
     while t0.elapsed() < Duration::from_millis(500) {
         if let Some(ToClient::Placed(_)) = server.poll() {
-            panic!("permadeath let the player live on");
+            panic!("a new life began while the player lived");
         }
     }
-    drop(server);
-    let server = Server::start(s, atlas(), view);
-    let again = wait(&server, 120.0, |m| match m {
-        ToClient::Ready(r) => Some(r),
-        _ => None,
-    });
-    assert!(again.ended.is_some(), "the world stays ended");
     drop(server);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -354,7 +287,7 @@ fn things_are_carried_put_down_picked_up_and_dragged() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A new world's player is born where the globe chose (Amendment P §4.3): a place across the
+/// A new world's player begins where the globe chose (Amendment P §4.3): a place across the
 /// planet from where the world would have put them, kept by the world when it is opened again.
 #[test]
 fn a_world_begins_where_its_birthplace_was_chosen() {
@@ -392,7 +325,7 @@ fn a_world_begins_where_its_birthplace_was_chosen() {
     // Land found near it (the point itself may be water or steep).
     assert!(
         near(at) < 1_500.0,
-        "born {:.0} m from the place chosen",
+        "begun {:.0} m from the place chosen",
         near(at)
     );
     assert!(

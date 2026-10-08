@@ -80,14 +80,8 @@ pub struct App {
     audio_devices: Vec<String>,
     audio_checked: Instant,
     ambience_sent: Instant,
-    /// The player's wishes for a birth, and the figures a screen shows as drawn.
+    /// Who the player begins as.
     profiles: Profiles,
-    people_preview: crate::preview::PeoplePreview,
-    /// The conversation backend tried or its models asked for (H10): what came of it, and the
-    /// answer still on its way.
-    conversation_probe: Option<String>,
-    conversation_models: Vec<String>,
-    probing: Option<std::sync::mpsc::Receiver<Probe>>,
     /// A new world's planet being made, and then its globe while the birthplace is chosen
     /// (Amendment P §4.3).
     making: Option<Making>,
@@ -126,12 +120,6 @@ struct Making {
 struct Choosing {
     terrain: Arc<hearth_worldgen::region::Terrain>,
     picker: crate::globe::GlobePicker,
-}
-
-/// What came of trying the conversation backend from the options screen.
-enum Probe {
-    Tried(Result<(String, std::time::Duration), hearth_ai::Error>),
-    Listed(Result<Vec<String>, hearth_ai::Error>),
 }
 
 impl App {
@@ -186,63 +174,9 @@ impl App {
             audio_checked: Instant::now(),
             ambience_sent: Instant::now(),
             profiles,
-            people_preview: crate::preview::PeoplePreview::new(),
-            conversation_probe: None,
-            conversation_models: Vec::new(),
-            probing: None,
             making: None,
             choosing: None,
         }
-    }
-
-    /// Tries the conversation backend, or asks its server for its models, off the main thread.
-    fn probe_conversation(&mut self, list: bool) {
-        let o = self.options.conversation.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let spawned = std::thread::Builder::new()
-            .name("conversation-probe".to_owned())
-            .spawn(move || {
-                let p = if list {
-                    Probe::Listed(hearth_ai::backend(&o).and_then(|mut b| b.models()))
-                } else {
-                    Probe::Tried(hearth_ai::test(&o))
-                };
-                let _ = tx.send(p);
-            });
-        if spawned.is_ok() {
-            self.probing = Some(rx);
-            self.conversation_probe = Some(if list {
-                "Asking the server for its models…".to_owned()
-            } else {
-                "Asking the model…".to_owned()
-            });
-        }
-    }
-
-    /// What has come of a probe.
-    fn probed(&mut self) {
-        let Some(rx) = &self.probing else {
-            return;
-        };
-        let Ok(p) = rx.try_recv() else {
-            return;
-        };
-        self.probing = None;
-        self.conversation_probe = Some(match p {
-            Probe::Tried(Ok((reply, took))) => {
-                format!("It answered in {:.1} s: “{reply}”", took.as_secs_f64())
-            }
-            Probe::Tried(Err(e)) => format!("No answer: {e}."),
-            Probe::Listed(Ok(models)) if models.is_empty() => {
-                "The server lists no models.".to_owned()
-            }
-            Probe::Listed(Ok(models)) => {
-                let n = models.len();
-                self.conversation_models = models;
-                format!("The server lists {n} models.")
-            }
-            Probe::Listed(Err(e)) => format!("No list: {e}."),
-        });
     }
 
     fn save_profiles(&self) {
@@ -511,10 +445,8 @@ impl App {
                     };
                     match &mut run.client {
                         Some(c) if c.globe.open => c.globe.close(),
-                        // Watching the world alive: back into the player's life.
+                        // Spectating: back to the body.
                         Some(c) if c.watching_alive() => c.step_in(),
-                        // Watching the world after death: the choices again.
-                        Some(c) if c.spectating() => run.menus.open(Screen::Death),
                         Some(c) => {
                             c.pause(true);
                             run.menus.open(Screen::Pause);
@@ -528,7 +460,6 @@ impl App {
                     && let Some(p) = &mut run.client
                 {
                     let watching = p.watching.is_some();
-                    let overlay_key = builtin::HOTBAR.iter().take(5).position(|k| *k == action);
                     if action == builtin::WORLD_MAP {
                         release_mouse |= p.toggle_globe();
                     } else if watching && action == builtin::WATCH_FASTER {
@@ -537,19 +468,6 @@ impl App {
                         p.watch_faster(-1);
                     } else if watching && action == builtin::INTERACT {
                         p.watch_follow();
-                    } else if watching
-                        && p.globe.open
-                        && let Some(n) = overlay_key
-                    {
-                        p.watch_overlay((n + 1) % 5);
-                    } else if watching && action == builtin::JOURNAL {
-                        p.ask_chronicle();
-                        run.menus.open(Screen::Chronicle { scroll: 0 });
-                        release_mouse = true;
-                    } else if action == builtin::CHILDHOOD_NEXT {
-                        p.childhood_skip(hearth_protocol::Skip::Next);
-                    } else if action == builtin::CHILDHOOD_GROW_UP {
-                        p.childhood_skip(hearth_protocol::Skip::GrownUp);
                     } else if action == builtin::DEBUG_TIME_FORWARD && p.may_watch() {
                         p.skip_hours(1.0);
                     } else if action == builtin::DEBUG_TIME_BACK && p.may_watch() {
@@ -615,17 +533,6 @@ impl App {
                     } else if action == builtin::JOURNAL && p.crafting.is_some() {
                         run.menus.open(Screen::Journal { tab: 0, scroll: 0 });
                         release_mouse = true;
-                    } else if action == builtin::CHAT
-                        && let Some((person, whom)) = p.say_to()
-                    {
-                        // Words typed to the one looked at (H10), with a backend to read them.
-                        run.menus.open(Screen::Say {
-                            person,
-                            whom,
-                            text: String::new(),
-                            options: Vec::new(),
-                        });
-                        release_mouse = true;
                     }
                 }
             }
@@ -663,15 +570,7 @@ impl App {
             c.eras.iter().filter(|e| e.available).collect();
         eras.sort_by_key(|e| e.order);
         eras.into_iter()
-            .map(|e| {
-                (
-                    e.id.clone(),
-                    e.name.clone(),
-                    e.way_of_life
-                        .clone()
-                        .unwrap_or_else(|| e.description.clone()),
-                )
-            })
+            .map(|e| (e.id.clone(), e.name.clone(), e.description.clone()))
             .collect()
     }
 
@@ -690,7 +589,6 @@ impl App {
         &mut self,
         folder: &str,
         seed: u64,
-        death: hearth_save::Death,
         knowledge: hearth_save::KnowledgeMode,
         era: &str,
         new: NewShape,
@@ -704,20 +602,13 @@ impl App {
             seed,
             Some(self.dirs.cache()),
             Some(self.dirs.saves()),
-            self.profiles.wish(),
-            death,
+            self.profiles.appearance(seed),
             knowledge,
             era,
         );
         spec.planet = new.size;
         spec.shape = new.shape;
         spec.birthplace = new.birthplace;
-        // A mode that does not begin with a birth (Creative) appears grown at the place.
-        if let Some(c) = self.content.content.as_deref()
-            && let Some(r) = crate::server::mode_rules(c, new.mode.as_deref())
-        {
-            spec.childhood &= r.born;
-        }
         spec.mode = new.mode;
         self.making = None;
         self.choosing = None;
@@ -839,7 +730,6 @@ impl App {
                 MenuAction::Play {
                     folder,
                     seed,
-                    death,
                     knowledge,
                     era,
                     size,
@@ -849,7 +739,6 @@ impl App {
                 } => self.play(
                     &folder,
                     seed,
-                    death,
                     knowledge,
                     &era,
                     NewShape {
@@ -890,19 +779,6 @@ impl App {
                     self.making = None;
                     self.choosing = None;
                 }
-                MenuAction::WatchWorld { folder } => {
-                    self.play(
-                        &folder,
-                        0,
-                        Default::default(),
-                        Default::default(),
-                        crate::eras::WILD_EARTH,
-                        NewShape::default(),
-                    );
-                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
-                        c.watch_on_ready = true;
-                    }
-                }
                 MenuAction::Creative(act) => {
                     if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
                         c.creative_act(act);
@@ -942,40 +818,9 @@ impl App {
                         }
                     }
                 }
-                MenuAction::SayText { person, text } => {
-                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
-                        c.say_text(person, text);
-                    }
-                    self.set_captured(true);
-                }
-                MenuAction::Speak { person, ask } => {
-                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
-                        c.speak(person, ask);
-                    }
-                    self.set_captured(true);
-                }
                 MenuAction::Save => {
                     if let Some(c) = self.running.as_ref().and_then(|r| r.client.as_ref()) {
                         c.save_now();
-                    }
-                }
-                MenuAction::TestConversation => self.probe_conversation(false),
-                MenuAction::ListModels => self.probe_conversation(true),
-                MenuAction::JumpTo(at) => {
-                    if let Some(run) = &mut self.running {
-                        run.menus.close_all();
-                        if let Some(c) = &mut run.client {
-                            c.jump_to(at);
-                        }
-                    }
-                    self.set_captured(true);
-                }
-                MenuAction::BeBorn { choice, female } => {
-                    if let Some(run) = &mut self.running {
-                        run.menus.close_all();
-                        if let Some(c) = &mut run.client {
-                            c.be_born(choice, female);
-                        }
                     }
                 }
                 MenuAction::Knapped { process, aim, hand } => {
@@ -1000,23 +845,6 @@ impl App {
                     if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
                         c.eat(from);
                     }
-                }
-                MenuAction::LiveAs(id) => {
-                    if let Some(run) = &mut self.running {
-                        run.menus.close_all();
-                        if let Some(c) = &mut run.client {
-                            c.inhabit(id);
-                        }
-                    }
-                }
-                MenuAction::Spectate => {
-                    if let Some(run) = &mut self.running {
-                        run.menus.close_all();
-                        if let Some(c) = &mut run.client {
-                            c.spectate();
-                        }
-                    }
-                    self.set_captured(true);
                 }
                 MenuAction::Restart => {
                     // The world begun again from its seed and settings, the old one archived.
@@ -1048,7 +876,6 @@ impl App {
                         self.play(
                             &spec.name,
                             spec.seed,
-                            spec.death,
                             spec.knowledge,
                             &spec.era,
                             NewShape {
@@ -1060,11 +887,11 @@ impl App {
                         );
                     }
                 }
-                MenuAction::BornAgain { elsewhere, female } => {
+                MenuAction::NewLife { elsewhere } => {
                     if let Some(run) = &mut self.running {
                         run.menus.close_all();
                         if let Some(c) = &mut run.client {
-                            c.born_again(elsewhere, female);
+                            c.new_life(elsewhere);
                         }
                     }
                 }
@@ -1190,7 +1017,6 @@ impl App {
     }
 
     fn frame(&mut self) {
-        self.probed();
         self.follow_making();
         let sensitivity = self.options.controls.mouse_sensitivity;
         let invert = self.options.controls.invert_y;
@@ -1216,60 +1042,7 @@ impl App {
             });
             if let Some(c) = &mut run.client {
                 c.pump(&run.renderer.ctx);
-                // Typed words read unclearly: the acts they may be, to choose from (H10).
-                if let Some((person, text, options)) = c.clarify.take() {
-                    run.menus.open(Screen::Say {
-                        person,
-                        whom: String::new(),
-                        text,
-                        options,
-                    });
-                    if run.captured {
-                        run.captured = false;
-                        let _ = run.window.set_cursor_grab(CursorGrabMode::None);
-                        run.window.set_cursor_visible(true);
-                    }
-                }
-                if let Some(b) = c.born.take() {
-                    run.menus.close_all();
-                    run.menus.open(Screen::Born {
-                        born: Box::new(b),
-                        sway: 0.0,
-                        light: 0,
-                    });
-                    c.pause(true);
-                    if run.captured {
-                        run.captured = false;
-                        let _ = run.window.set_cursor_grab(CursorGrabMode::None);
-                        run.window.set_cursor_visible(true);
-                    }
-                }
-                // Households to be born into (none: the place has none, as the player was told).
-                if let Some(choices) = c.births.take()
-                    && !choices.is_empty()
-                {
-                    run.menus.close_all();
-                    run.menus.open(Screen::Births {
-                        choices,
-                        selected: 0,
-                        born: crate::profiles::Born::Chance,
-                    });
-                    if run.captured {
-                        run.captured = false;
-                        let _ = run.window.set_cursor_grab(CursorGrabMode::None);
-                        run.window.set_cursor_visible(true);
-                    }
-                }
-                if let Some(lines) = c.who_you_are.take() {
-                    run.menus.close_all();
-                    run.menus.open(Screen::WhoYouAre { lines });
-                    if run.captured {
-                        run.captured = false;
-                        let _ = run.window.set_cursor_grab(CursorGrabMode::None);
-                        run.window.set_cursor_visible(true);
-                    }
-                }
-                if c.dead() && !c.spectating() && !run.menus.is_open() {
+                if c.dead() && !run.menus.is_open() {
                     run.menus.open(Screen::Death);
                     if run.captured {
                         run.captured = false;
@@ -1307,9 +1080,6 @@ impl App {
             let languages = &self.languages;
             let audio_devices = &self.audio_devices;
             let profiles = &mut self.profiles;
-            let people_preview = &mut self.people_preview;
-            let conversation_probe = self.conversation_probe.clone();
-            let conversation_models = self.conversation_models.clone();
             let format = run.renderer.color_format();
             if run.renderer.render_with(|ctx, enc, targets| {
                 match client.as_mut() {
@@ -1349,12 +1119,6 @@ impl App {
                         journal: client.as_ref().and_then(|c| c.journal_view()),
                         eras: eras.clone(),
                         modes: modes.clone(),
-                        chronicle: client
-                            .as_ref()
-                            .and_then(|c| c.watching.as_ref())
-                            .map_or_else(Vec::new, |w| w.chronicle.clone()),
-                        conversation_probe: conversation_probe.clone(),
-                        conversation_models: conversation_models.clone(),
                         time_words: client.as_ref().and_then(|c| c.time_words(ui.lang)),
                         may_watch: client.as_ref().is_none_or(|c| c.may_watch()),
                         creative: client.as_ref().is_some_and(|c| c.creative()),
@@ -1368,21 +1132,6 @@ impl App {
                     };
                     actions = menus.ui(ui, &mut cx);
                 });
-                // The people a screen shows (a birth's mother, child and father), side by side
-                // over its space in the interface.
-                if let Some(p) = menus.preview() {
-                    let scale = interface.scale as f32;
-                    people_preview.draw(
-                        ctx,
-                        enc,
-                        targets.color,
-                        format,
-                        targets.size,
-                        scale,
-                        p,
-                        dt as f32,
-                    );
-                }
             }) {
                 self.frames_rendered += 1;
                 run.title_frames += 1;
@@ -1482,7 +1231,6 @@ impl ApplicationHandler for App {
             self.play(
                 &world,
                 self.seed,
-                hearth_save::Death::default(),
                 hearth_save::KnowledgeMode::default(),
                 crate::eras::WILD_EARTH,
                 NewShape::default(),

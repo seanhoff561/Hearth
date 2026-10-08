@@ -50,9 +50,6 @@ fn main() {
     if all.first().map(String::as_str) == Some("content") {
         std::process::exit(hearth::content_cli::run(&all[1..]));
     }
-    if all.first().map(String::as_str) == Some("history") {
-        std::process::exit(hearth::history_cli::run(&all[1..]));
-    }
     if all.first().map(String::as_str) == Some("bench") {
         let dirs = hearth::resolve_dirs(None);
         std::process::exit(hearth::bench::run(&all[1..], Some(&dirs.cache())));

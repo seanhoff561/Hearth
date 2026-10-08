@@ -1,9 +1,10 @@
 //! Loading saves written by earlier formats (v2 §3.5, V2-0 acceptance).
 //!
-//! `fixtures/format2_world` is a world in save format 2 (the first v2 format, before the
-//! deliberate format change to 3). Its cubes use `hearth:coal_ore`, which V2-0 removed from
-//! the content: it must load as an "unknown" placeholder and be written back unchanged.
-//! `fixtures/format1_world` is a v1 world, which must be refused with a clear message.
+//! `fixtures/placeholders_world` is a world in the current format whose cubes use blocks since
+//! removed from the content (`hearth:coal_ore` in V2-0, the generic stone in V2-2): they must
+//! load as named placeholders and be written back unchanged. `fixtures/format1_world` is a v1
+//! world, which must be refused with a clear message (as is every world from before Amendment
+//! E, which had people in it).
 
 use std::path::{Path, PathBuf};
 
@@ -40,12 +41,12 @@ const ORE: LocalPos = LocalPos::new(1, 2, 3);
 const GRASS: LocalPos = LocalPos::new(4, 5, 6);
 const LOG: LocalPos = LocalPos::new(7, 8, 9);
 
-/// Regenerates the format-2 fixture's region file (the level.json is hand-written in the
-/// format-2 layout). Run with `cargo test -p hearth_save -- --ignored write_format2_fixture`.
+/// Regenerates the fixture's region file (the level.json is hand-written). Run with
+/// `cargo test -p hearth_save -- --ignored write_placeholders_fixture`.
 #[test]
 #[ignore]
-fn write_format2_fixture() {
-    let dir = fixtures().join("format2_world");
+fn write_placeholders_fixture() {
+    let dir = fixtures().join("placeholders_world");
     let mut store = hearth_save::RegionStore::new(dir.join("region"));
     // Saved ids index level.json's block_states: 0 air, 1 stone, 2 coal_ore, 3 grass, 4 log.
     let mut cube = Cube::filled(BlockStateId(1));
@@ -60,11 +61,11 @@ fn write_format2_fixture() {
 }
 
 #[test]
-fn v2_0_world_loads_after_the_format_change() {
-    let root = scratch("fmt2");
-    copy_dir(&fixtures().join("format2_world"), &root);
-    let (dir, meta, report) = WorldDir::open(&root).expect("format 2 opens");
-    assert_eq!((report.from, report.to), (2, FORMAT), "migrated");
+fn removed_content_loads_as_placeholders() {
+    let root = scratch("placeholders");
+    copy_dir(&fixtures().join("placeholders_world"), &root);
+    let (dir, meta, report) = WorldDir::open(&root).expect("it opens");
+    assert!(!report.migrated());
     assert_eq!(meta.format, FORMAT);
     assert_eq!(meta.settings.planet.seed, 42);
     assert_eq!(meta.clock.ticks, 123_456);
@@ -127,7 +128,7 @@ fn v1_world_is_refused_with_a_clear_message() {
     let err = WorldDir::open(&fixtures().join("format1_world")).unwrap_err();
     match err {
         SaveError::Incompatible(msg) => {
-            assert!(msg.contains("earlier, incompatible version"), "{msg}");
+            assert!(msg.contains("earlier version"), "{msg}");
             assert!(msg.contains("format 1"), "{msg}");
         }
         other => panic!("expected an incompatibility error, got {other}"),

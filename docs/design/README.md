@@ -28,7 +28,6 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Flora | [flora.md](flora.md) | planned (V2-6) |
 | Fauna and ecosystems | [fauna.md](fauna.md) | planned (V2-7) |
 | Building and structure | [building.md](building.md) | planned (V2-8) |
-| People: species, persons, *Australopithecus*, the player's birth (V2.1) | [humans/README.md](humans/README.md) | partial (H0) |
 | Smooth terrain: fill, meshing, shading (Amendment S) | [smooth-terrain.md](smooth-terrain.md) | prototype (S0); S1–S8 |
 | Art direction: stylized realism | [art-direction.md](art-direction.md) | living document (S0) |
 | Motion timing: what moves, by which clock, how fast | [motion-timing.md](motion-timing.md) | partial (P0); the audit and its check P5 |
@@ -36,4 +35,5 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Game modes and Creative | [modes-creative.md](modes-creative.md) | implemented (P2) |
 | Interaction matrix | [interactions.md](interactions.md) | living document |
 | Future systems (Eras 6–8) | [future-systems.md](future-systems.md) | design only |
-| Future humanity (eras, simulated humans) | [future-humanity.md](future-humanity.md) | design only |
+| Future humanity (eras, simulated humans) | [future-humanity.md](future-humanity.md) | design only (E1 rewrites) |
+| Simulated humans of V2.1 (removed by Amendment E) | [../archive/humans-v2.1/README.md](../archive/humans-v2.1/README.md) | archived (E0) |

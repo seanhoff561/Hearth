@@ -884,17 +884,6 @@ impl Workshop {
     }
 
     /// Hears a trigger of sight, once in a while.
-    /// Shown how by one who knows (V2.1 §11.2): insight toward a node (or what it rests on), and
-    /// what comes of it.
-    pub(crate) fn taught(&mut self, h: &mut Here, node: &str, insight: f32) {
-        let events = h
-            .player
-            .knowledge
-            .taught(&self.graph, node, insight, h.ticks);
-        self.tell(h, events);
-        self.knowledge_changed = true;
-    }
-
     pub(crate) fn hear_now_and_then(&mut self, h: &mut Here, trigger: String, every_ticks: u64) {
         let fresh = self
             .heard_at

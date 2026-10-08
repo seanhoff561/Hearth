@@ -128,11 +128,9 @@ pub struct GlobePicker {
     dragged: bool,
     /// The frame's size at the last draw.
     size: (u32, u32),
-    /// The planet's map as made, and the overlay laid over it (the Observer's, H9), to be
-    /// uploaded again when it changes.
+    /// The planet's map as made, to be uploaded when it is ready.
     base: Option<Vec<[u8; 4]>>,
-    overlay: Option<hearth_protocol::OverlayMap>,
-    overlay_changed: bool,
+    map_changed: bool,
 }
 
 impl Default for GlobePicker {
@@ -147,8 +145,7 @@ impl Default for GlobePicker {
             dragged: false,
             size: (1280, 720),
             base: None,
-            overlay: None,
-            overlay_changed: false,
+            map_changed: false,
         }
     }
 }
@@ -170,17 +167,6 @@ impl GlobePicker {
                 Err(e) => log::error!("could not start making the globe's map: {e}"),
             }
         }
-    }
-
-    /// Lays an overlay over the map (none: the bare map).
-    pub fn set_overlay(&mut self, overlay: Option<hearth_protocol::OverlayMap>) {
-        self.overlay = overlay;
-        self.overlay_changed = true;
-    }
-
-    /// The overlay's key, if one is laid.
-    pub fn legend(&self) -> Option<&str> {
-        self.overlay.as_ref().map(|o| o.legend.as_str())
     }
 
     pub fn close(&mut self) {
@@ -237,49 +223,20 @@ impl GlobePicker {
             match self.building.take().map(JoinHandle::join) {
                 Some(Ok(map)) => {
                     self.base = Some(map);
-                    self.overlay_changed = true;
+                    self.map_changed = true;
                 }
                 _ => log::error!("making the globe's map failed"),
             }
         }
-        if self.overlay_changed
+        if self.map_changed
             && let Some(base) = &self.base
         {
-            self.overlay_changed = false;
-            let map = match &self.overlay {
-                Some(o) => overlaid(base, o),
-                None => base.clone(),
-            };
-            renderer.set_map(ctx, MAP_WIDTH as u32, (MAP_WIDTH / 2) as u32, &map);
+            self.map_changed = false;
+            renderer.set_map(ctx, MAP_WIDTH as u32, (MAP_WIDTH / 2) as u32, base);
         }
         let hovered = self.cursor.and_then(|c| self.view.pick(c, size));
         renderer.render(ctx, enc, target, size, &self.view, Some(camera), hovered);
     }
-}
-
-/// The planet's map with an overlay laid over it, each texel blended by the overlay's alpha.
-fn overlaid(base: &[[u8; 4]], o: &hearth_protocol::OverlayMap) -> Vec<[u8; 4]> {
-    let (w, h) = (MAP_WIDTH, MAP_WIDTH / 2);
-    let (ow, oh) = (o.width.max(1) as usize, o.height.max(1) as usize);
-    let mut out = base.to_vec();
-    for y in 0..h {
-        let oy = (y * oh / h).min(oh - 1);
-        for x in 0..w {
-            let ox = (x * ow / w).min(ow - 1);
-            let Some(c) = o.rgba.get(oy * ow + ox) else {
-                continue;
-            };
-            let a = c[3] as f32 / 255.0;
-            if a <= 0.0 {
-                continue;
-            }
-            let t = &mut out[y * w + x];
-            for k in 0..3 {
-                t[k] = (t[k] as f32 * (1.0 - a) + c[k] as f32 * a) as u8;
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]

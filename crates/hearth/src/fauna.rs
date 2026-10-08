@@ -263,29 +263,15 @@ struct Saved {
 const FAST_YEARS: f64 = 1.0 / 48.0;
 
 impl Fauna {
-    /// The world's animals: as saved in `dir`, or new; the hominins in Africa alone when
-    /// `cradle` (the Hominin range setting); of the peoples, only the era's (H8) — those of
-    /// `peoples` (each population, and its bands' size where the era says), living where deep
-    /// time left them when `peopling` says.
-    #[allow(clippy::too_many_arguments)]
+    /// The world's animals: as saved in `dir`, or new.
     pub fn new(
         lw: &LocalWorld,
         seed: u64,
         year_offset: f64,
         years: f64,
         dir: Option<&Path>,
-        cradle: bool,
-        peoples: &[(String, Option<(u16, u16)>)],
-        peopling: Option<Arc<dyn hearth_fauna::ecology::Peopling>>,
-        players: u8,
     ) -> Self {
-        let mut catalog = Catalog::new(&lw.content);
-        if cradle {
-            catalog.hominins_in_cradle();
-        }
-        catalog.peoples(peoples);
-        catalog.families_for(players);
-        let catalog = Arc::new(catalog);
+        let catalog = Arc::new(Catalog::new(&lw.content));
         let yields = TreeYields::new(&lw.generator, &lw.content);
         let land = GenLand {
             wg: &lw.generator,
@@ -294,7 +280,6 @@ impl Fauna {
             trees: &yields,
         };
         let mut eco = Ecology::new(catalog.clone(), seed, year_offset, &land);
-        eco.peopling = peopling;
         let mut at = years;
         let mut live = Live::new(seed);
         if let Some(saved) = dir.and_then(|d| load(&d.join(FILE))) {
@@ -726,17 +711,10 @@ impl Fauna {
     /// Saves the populations into `dir` (the animals in the world folded back first, in a
     /// copy).
     pub fn save(&self, dir: &Path) {
-        self.save_with(dir, |_| {});
-    }
-
-    /// Saves the populations into `dir`, the animals in the world folded back first and then
-    /// whatever else lives on in the cells' numbers (the people's bands, by `fold`), in a copy.
-    pub fn save_with(&self, dir: &Path, fold: impl FnOnce(&mut Ecology)) {
         let mut eco = self.eco.clone();
         let mut live = self.live.clone();
         // Everything folds, as if the player were far away.
         live.fold(&mut eco, DVec3::new(f64::MAX / 4.0, 0.0, f64::MAX / 4.0));
-        fold(&mut eco);
         let mut regions: Vec<Region> = eco.regions.into_values().collect();
         regions.sort_by_key(|r| r.key);
         let saved = Saved {

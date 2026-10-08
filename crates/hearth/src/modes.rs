@@ -1,11 +1,11 @@
 //! The game modes (Amendment P §2): Realistic, Easy and Creative, each setting every world rule
-//! from `data/hearth/balance/modes.ron` — the realism preset, how knowledge is gained, what death
-//! means, predators' ways, hints, the clock, watching the world, Creative's powers and how a first
+//! from `data/hearth/balance/modes.ron` — the realism preset, how knowledge is gained, what a new
+//! life keeps, predators' ways, hints, the clock, watching the world, Creative's powers and how a first
 //! life starts. A world's mode may change only toward a less strict one.
 
 use hearth_content::Content;
 use hearth_content::schema::config::GameMode;
-use hearth_save::{AfterDeath, Death, InhabitScope, KnowledgeMode, LifeSettings, PredatorBehavior};
+use hearth_save::{AfterDeath, KnowledgeMode, LifeSettings, PredatorBehavior};
 use serde::de::DeserializeOwned;
 
 /// The mode a world is made in when none is named.
@@ -29,13 +29,13 @@ pub struct Rules {
     /// The realism preset; `None`: no needs and no harm (Creative).
     pub realism: Option<String>,
     pub knowledge: KnowledgeMode,
-    pub death: Death,
+    /// What a new life keeps of what earlier lives knew (Amendment E §6.6).
+    pub after_death: AfterDeath,
     pub predators: PredatorBehavior,
     pub hints: bool,
     pub clock: Clock,
     pub observer: bool,
     pub creative: bool,
-    pub born: bool,
     pub strictness: u32,
 }
 
@@ -49,11 +49,7 @@ pub fn rules(m: &GameMode) -> Rules {
         id: m.id.clone(),
         realism: (!m.realism.is_empty()).then(|| m.realism.clone()),
         knowledge: word(&m.knowledge).unwrap_or_default(),
-        death: Death {
-            inhabit: word::<InhabitScope>(&m.inhabit).unwrap_or_default(),
-            after: word::<AfterDeath>(&m.after_death).unwrap_or_default(),
-            born_again: m.born_again,
-        },
+        after_death: word::<AfterDeath>(&m.after_death).unwrap_or_default(),
         predators: word(&m.predators).unwrap_or_default(),
         hints: m.hints,
         clock: match m.clock.as_str() {
@@ -63,7 +59,6 @@ pub fn rules(m: &GameMode) -> Rules {
         },
         observer: m.observer,
         creative: m.creative,
-        born: m.born,
         strictness: m.strictness,
     }
 }
@@ -85,7 +80,7 @@ pub fn find<'a>(content: &'a Content, id: &str) -> Option<&'a GameMode> {
 pub fn apply(r: &Rules, life: &mut LifeSettings) {
     life.realism.preset = r.realism.clone().unwrap_or_else(|| "authentic".to_owned());
     life.knowledge_mode = r.knowledge;
-    life.set_death(r.death);
+    life.after_death = r.after_death;
     life.predator_behavior = r.predators;
 }
 
@@ -117,12 +112,11 @@ mod tests {
         assert!(!real.creative && !easy.creative && creative.creative);
         assert_eq!(easy.realism.as_deref(), Some("hardy"));
         assert_eq!(easy.knowledge, KnowledgeMode::Guided);
-        assert_eq!(easy.death.after, AfterDeath::KeepEverything);
+        assert_eq!(easy.after_death, AfterDeath::KeepEverything);
         assert!(easy.hints && !real.hints);
         assert_eq!(creative.realism, None);
         assert_eq!(creative.knowledge, KnowledgeMode::Open);
         assert_eq!(creative.clock, Clock::Exact);
-        assert!(real.born && !creative.born);
         // Only toward less strict.
         assert!(may_change(&real, &easy) && may_change(&easy, &creative));
         assert!(!may_change(&easy, &real) && !may_change(&creative, &real));

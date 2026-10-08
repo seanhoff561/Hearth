@@ -9,27 +9,17 @@ use serde::de::DeserializeOwned;
 use crate::diag::Report;
 use crate::generate::{ItemDef, generate_items};
 use crate::id::IdRef;
-use crate::schema::ai::{Cue, Prompt, WordList};
 use crate::schema::body::{BodyParams, Garment, Illness, Injury};
 use crate::schema::config::{BalanceKey, BalancePreset, GameMode, TimeConfig, Units};
-use crate::schema::culture::CultureGenerator;
 use crate::schema::ecosystem::Ecosystem;
 use crate::schema::era::Era;
 use crate::schema::fauna::Animal;
 use crate::schema::flora::Plant;
 use crate::schema::geology::{Deposit, Mineral, Province, Rock, Soil};
-use crate::schema::history::HistorySettings;
-use crate::schema::humans::{Chromosome, GenePool, GeneticsSettings, Locus, Species, Trait};
 use crate::schema::item::{Item, ItemForm};
 use crate::schema::knowledge::Knowledge;
-use crate::schema::language::{LanguageGenerator, Meaning};
-use crate::schema::learning::Transmission;
-use crate::schema::life::{LifeTable, Moment};
 use crate::schema::material::Material;
-use crate::schema::mind::Routine;
 use crate::schema::process::Process;
-use crate::schema::psyche::{Feeling, Tendency, Value};
-use crate::schema::social::{Norm, Ways};
 use crate::schema::station::{ConstructionPiece, Workstation};
 use crate::schema::{Entry, Status};
 use crate::source::{EntryFile, SourceFile, domain_files, find_id_line, parse, singleton_files};
@@ -144,30 +134,6 @@ pub struct Content {
     pub plants: Table<Plant>,
     pub animals: Table<Animal>,
     pub ecosystems: Table<Ecosystem>,
-    pub species: Table<Species>,
-    pub chromosomes: Table<Chromosome>,
-    pub traits: Table<Trait>,
-    pub loci: Table<Locus>,
-    pub gene_pools: Table<GenePool>,
-    pub genetics: Table<GeneticsSettings>,
-    pub tendencies: Table<Tendency>,
-    pub feelings: Table<Feeling>,
-    pub values: Table<Value>,
-    pub routines: Table<Routine>,
-    pub life_tables: Table<LifeTable>,
-    pub moments: Table<Moment>,
-    pub norms: Table<Norm>,
-    pub ways: Table<Ways>,
-    pub culture_generators: Table<CultureGenerator>,
-    pub languages: Table<LanguageGenerator>,
-    pub meanings: Table<Meaning>,
-    /// The conversation backend's words, prompts and cues (V2.1 §10.4; H10).
-    pub word_lists: Table<WordList>,
-    pub prompts: Table<Prompt>,
-    pub cues: Table<Cue>,
-    pub transmission: Table<Transmission>,
-    /// How deep time runs (V2.1 §15.1).
-    pub history: Table<HistorySettings>,
     pub forms: Table<ItemForm>,
     pub explicit_items: Table<Item>,
     /// Explicit items plus every form × material combination.
@@ -325,28 +291,6 @@ impl Content {
             plants: load_table(packs, &mut r),
             animals,
             ecosystems: load_table(packs, &mut r),
-            species: load_table(packs, &mut r),
-            chromosomes: load_table(packs, &mut r),
-            traits: load_table(packs, &mut r),
-            loci: load_table(packs, &mut r),
-            gene_pools: load_table(packs, &mut r),
-            genetics: load_table(packs, &mut r),
-            tendencies: load_table(packs, &mut r),
-            feelings: load_table(packs, &mut r),
-            values: load_table(packs, &mut r),
-            routines: load_table(packs, &mut r),
-            life_tables: load_table(packs, &mut r),
-            moments: load_table(packs, &mut r),
-            norms: load_table(packs, &mut r),
-            ways: load_table(packs, &mut r),
-            culture_generators: load_table(packs, &mut r),
-            languages: load_table(packs, &mut r),
-            meanings: load_table(packs, &mut r),
-            word_lists: load_table(packs, &mut r),
-            prompts: load_table(packs, &mut r),
-            cues: load_table(packs, &mut r),
-            transmission: load_table(packs, &mut r),
-            history: load_table(packs, &mut r),
             forms,
             explicit_items,
             items,
@@ -427,25 +371,6 @@ impl Content {
         u(&self.plants, &mut out);
         u(&self.animals, &mut out);
         u(&self.ecosystems, &mut out);
-        u(&self.species, &mut out);
-        u(&self.traits, &mut out);
-        u(&self.loci, &mut out);
-        u(&self.gene_pools, &mut out);
-        u(&self.tendencies, &mut out);
-        u(&self.feelings, &mut out);
-        u(&self.values, &mut out);
-        u(&self.routines, &mut out);
-        u(&self.life_tables, &mut out);
-        u(&self.moments, &mut out);
-        u(&self.norms, &mut out);
-        u(&self.ways, &mut out);
-        u(&self.culture_generators, &mut out);
-        u(&self.languages, &mut out);
-        u(&self.meanings, &mut out);
-        u(&self.word_lists, &mut out);
-        u(&self.prompts, &mut out);
-        u(&self.cues, &mut out);
-        u(&self.transmission, &mut out);
         u(&self.forms, &mut out);
         u(&self.processes, &mut out);
         u(&self.knowledge, &mut out);
@@ -473,25 +398,6 @@ impl Content {
             c("Plant species", &self.plants),
             c("Animal species", &self.animals),
             c("Ecosystems", &self.ecosystems),
-            c("Species of person", &self.species),
-            c("Heritable traits", &self.traits),
-            c("Named loci", &self.loci),
-            c("Gene pools", &self.gene_pools),
-            c("Behaviour tendencies", &self.tendencies),
-            c("Feelings", &self.feelings),
-            c("Values", &self.values),
-            c("Routines", &self.routines),
-            c("Life tables", &self.life_tables),
-            c("Moments of childhood", &self.moments),
-            c("Norms", &self.norms),
-            c("Ways with strangers and quarrels", &self.ways),
-            c("Culture generators", &self.culture_generators),
-            c("Language generators", &self.languages),
-            c("Meanings", &self.meanings),
-            c("Conversation word lists", &self.word_lists),
-            c("Conversation prompts", &self.prompts),
-            c("Conversation cues", &self.cues),
-            c("Ways of passing on knowledge", &self.transmission),
             c("Item forms", &self.forms),
             c("Processes", &self.processes),
             c("Knowledge nodes", &self.knowledge),

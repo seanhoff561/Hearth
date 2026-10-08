@@ -109,12 +109,9 @@ entry! {
         pub realism: String,
         /// Discovery, Guided or Open.
         pub knowledge: String,
-        /// After death: whom one may live on as (anyone, kin_group_region, kin_only, none), what
-        /// is kept of what was known (theirs_only, head_start, keep_everything), and whether one
-        /// may be born again.
-        pub inhabit: String,
+        /// What a new life keeps of what earlier lives knew (theirs_only, head_start,
+        /// keep_everything; Amendment E §6.6).
         pub after_death: String,
-        pub born_again: bool,
         /// Predators' ways (authentic, wild, tranquil).
         pub predators: String,
         /// First-time hints on unless turned off.
@@ -127,8 +124,6 @@ entry! {
         /// Creative's powers: needs always full and no harm, flight, the creative inventory,
         /// instant actions, clear view.
         pub creative: bool,
-        /// A first life is born (Addendum A), or appears grown at the place chosen.
-        pub born: bool,
     }
 }
 

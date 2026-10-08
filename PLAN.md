@@ -60,6 +60,10 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
   moving loads.
 - **S0** — Baseline-S and the smooth-terrain prototypes (D222).
 - **P0** — triage and quick fixes (D224, D225). **P1** — menus and world management (D226).
+- **P2** — game modes and Creative (D229). **E0** — the human systems removed (D230): two crates,
+  their modules, screens, protocol, data, schemas and tests, about 42,800 lines, because
+  Amendment E keeps the game to a lone player on a true Earth until Phase F plans people anew;
+  archived in `docs/archive/humans-v2.1/` and the branch `archive/humans-v2.1`.
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -69,26 +73,6 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
 `PROGRESS.md`. **Audit 0** (after E0) also sets the baseline: the restart files cut down (Q §5.4),
 a fluff inventory, the original-game-era leftovers with a plan each (Q §5.8),
 `data/hearth/materials/reference.ron` started, `docs/design/budgets.md`, `scripts/lean-check.sh`.
-
-## P2 — Game modes and Creative
-- `data/hearth/balance/modes.ron` and the three modes (§2); changing mode toward less strict; F3
-  and Developer mode; Creative's powers, inventory, pick and remove, time and weather panel,
-  clear view, spectating that streams the world about the camera and resumes there (§3).
-- *Amended by E §0.3, §9.1:* no People in the creative inventory, no summoning or removing people,
-  no inhabiting or being born again; every mode starts as an adult.
-- *Accept:* Realistic and Easy have no spectating, time control or Observer; Creative is
-  invulnerable and places and summons every (non-human) category; spectating far away loads
-  full-detail terrain, plants and animals about the camera, and resuming sets the body safely on
-  the ground there.
-
-## E0 — Remove the human systems (E §2)
-- Tag `archive/humans-v2.1`; the V2.1 docs, spec and `MIGRATION_HUMANS.md` to
-  `docs/archive/humans-v2.1/` with its README; remove `hearth_people`, `hearth_ai`, the human
-  modules, screens, protocol messages, data, schemas and tests; every knowledge node reachable by
-  a lone player (lint); saves with people refused clearly or migrated; the Actor rule (E §2.3)
-  for what the player's body does.
-- *Accept:* E §2.4's checks; the build and all remaining tests green; `PLAN.md` and
-  `PROGRESS.md` say what was removed and why.
 
 ## Q1 — Interface design (Q §6)
 - An OFL typeface rendered as SDF/MSDF text; quiet panels in natural low-saturation colours;

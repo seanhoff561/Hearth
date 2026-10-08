@@ -76,7 +76,6 @@ fn screens() -> Vec<(&'static str, Box<dyn Fn() -> Screen>)> {
             }),
         ),
         ("accessibility", Box::new(|| Screen::Accessibility)),
-        ("conversation", Box::new(|| Screen::Conversation)),
         ("pause", Box::new(|| Screen::Pause)),
         (
             "time_weather",
@@ -117,64 +116,7 @@ fn screens() -> Vec<(&'static str, Box<dyn Fn() -> Screen>)> {
             Box::new(|| Screen::Creative(Default::default())),
         ),
         ("death", Box::new(|| Screen::Death)),
-        (
-            "births",
-            Box::new(|| Screen::Births {
-                choices: (0..4)
-                    .map(|i| hearth_protocol::BirthChoice {
-                        title: format!("A family of the Kaanu ({i})"),
-                        lines: vec![
-                            "Your mother: Ama, 24 years old".into(),
-                            "Your father: Tek, 29 years old".into(),
-                            "Brothers and sisters: a sister of 4".into(),
-                            "A band of 31, living in the savanna of the Afrotropical".into(),
-                        ],
-                    })
-                    .collect(),
-                selected: 0,
-                born: hearth::profiles::Born::Chance,
-            }),
-        ),
-        (
-            "who_you_are",
-            Box::new(|| Screen::WhoYouAre {
-                lines: (0..12)
-                    .map(|i| format!("A line of who you are now, the {i}th of a long briefing."))
-                    .collect(),
-            }),
-        ),
-        (
-            "say",
-            Box::new(|| Screen::Say {
-                person: 1,
-                whom: "Ama".into(),
-                text: String::new(),
-                options: Vec::new(),
-            }),
-        ),
-        ("chronicle", Box::new(|| Screen::Chronicle { scroll: 0 })),
-        ("born", Box::new(born)),
     ]
-}
-
-/// The birth screen of a birth in the tropics: the family as their genes made them.
-fn born() -> Screen {
-    use std::sync::OnceLock;
-    static BORN: OnceLock<hearth_protocol::Born> = OnceLock::new();
-    let shown = BORN.get_or_init(|| {
-        let content = hearth_content::Content::load_base();
-        let g = hearth_people::Genetics::from_content(&content).expect("the genetics");
-        let b = hearth::born::draw(&g, 12.0, Some(true), 7).expect("a birth");
-        let age = hearth::born::coming_of_age(&content);
-        let you = hearth::born::player(&content, &b, "Ash", hearth_character::Loincloth::Hide, age);
-        let family = hearth::born::household(&g, &b, age, 7);
-        hearth::born::shown(&content, &b, &you, 12.0, Some(&family))
-    });
-    Screen::Born {
-        born: Box::new(shown.clone()),
-        sway: 0.0,
-        light: 0,
-    }
 }
 
 /// What a screen lays out at an interface size, after a frame to learn its scrolled areas.
@@ -205,46 +147,20 @@ fn lay_out(screen: &dyn Fn() -> Screen, size: (f32, f32)) -> Vec<Placed> {
             profiles: &mut profiles,
             death: Some(hearth::menus::DeathInfo {
                 words: "You froze to death.".into(),
-                death: hearth_save::Death::default(),
-                summary: None,
-                story: vec![
-                    "You lived 31 years.".into(),
-                    "Your mother lives. Your father died before you.".into(),
-                    "You had 2 children, 2 of them living.".into(),
-                    "5 of your people mourn you.".into(),
-                ],
-                others: (0..6)
-                    .map(|i| hearth_protocol::Other {
-                        id: 11 + i,
-                        words: format!("your kinsman, {} years", 20 + i),
-                        family: true,
-                        group: true,
-                        near: true,
-                        child: false,
-                    })
-                    .collect(),
+                after_death: hearth_save::AfterDeath::TheirsOnly,
             }),
             inventory: None,
             journal: None,
             eras: vec![(
-                "hearth:upper_paleolithic".into(),
-                "Upper Paleolithic".into(),
-                "Modern people in bands, with blades, needles and art.".into(),
+                "hearth:wild_earth".into(),
+                "Wild Earth".into(),
+                "A wild Earth without people. Survive, learn and build from nothing.".into(),
             )],
             modes: vec![
                 ("hearth:creative".into(), "Creative".into(), "Build, explore and experiment freely. You can't be hurt, can fly, can place or summon anything, and can control time and weather.".into()),
                 ("hearth:easy".into(), "Easy".into(), "The same world, more forgiving.".into()),
-                ("hearth:realistic".into(), "Realistic".into(), "Life as it really is. Real needs, real dangers, real time. You only know what you learn, and when you die, life goes on through someone else.".into()),
+                ("hearth:realistic".into(), "Realistic".into(), "Life as it really is. Real needs, real dangers, real time. You only know what you learn, and when you die, a new life begins knowing nothing.".into()),
             ],
-            chronicle: (0..30)
-                .map(|i| hearth_protocol::ChronicleEntry {
-                    when: format!("Year {i}"),
-                    text: "A band split in two".into(),
-                    at: None,
-                })
-                .collect(),
-            conversation_probe: None,
-            conversation_models: Vec::new(),
             globe: None,
             time_words: Some("Late afternoon, the third day of autumn".into()),
                 may_watch: true,

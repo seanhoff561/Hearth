@@ -14,7 +14,6 @@
             skill: "knapping",
             discovery: [
                 (route: Experiment, trigger: "strike:stone", insight: 0.34, hint: "Two stones knocked together crack loudly. One is harder than the other."),
-                (route: Observation, trigger: "watch:hominin_hammering", insight: 0.5),
             ],
             history: (summary: "The oldest known stone tools, from Lomekwi in Kenya, are hammers, anvils and battered cores.", date: "c. 3.3 million years ago", years_bp: 3300000),
         ),
@@ -22,7 +21,6 @@
             id: "anvil_use", status: Implemented, name: "Hammer and anvil", era: 0, requires: ["stone_as_hammer"],
             discovery: [
                 (route: Experiment, trigger: "strike:anvil_stone", insight: 0.34, hint: "Struck on the flat stone, the nut did not roll away."),
-                (route: Observation, trigger: "watch:hominin_anvil", insight: 0.5),
             ],
             history: (summary: "A flat stone steadies what is struck: nuts, bones and stones break where they are hit.", date: "c. 3.3 million years ago", years_bp: 3300000),
         ),
@@ -31,7 +29,6 @@
             enables: ["crack_nuts", "crack_marula_stones"],
             discovery: [
                 (route: Experiment, trigger: "strike:nut", insight: 0.5, hint: "The hazelnut shells are too hard for teeth."),
-                (route: Observation, trigger: "watch:hominin_nut_cracking", insight: 0.6),
             ],
             history: (summary: "Hammer-and-anvil nut cracking, practised by chimpanzees today, is thought to be as old as the first stone tools.", date: "c. 3.3 million years ago (inferred)", years_bp: 3300000),
             uncertain: true,
@@ -42,7 +39,6 @@
             skill: "knapping",
             discovery: [
                 (route: Experiment, trigger: "strike:knappable", insight: 0.25, hint: "A chip flew off the flint, and its edge is keen."),
-                (route: Observation, trigger: "watch:hominin_knapping", insight: 0.4),
                 (route: Evidence, trigger: "study:tool_scatter", insight: 0.2),
             ],
             history: (summary: "Striking one stone with another at the right angle detaches razor-sharp flakes: the Lomekwian and then the Oldowan toolkits.", date: "c. 3.3–2.6 million years ago", years_bp: 3300000),
@@ -51,7 +47,6 @@
             id: "flake_cutting", status: Implemented, name: "Cutting with flakes", era: 0, requires: ["sharp_flake"],
             discovery: [
                 (route: Experiment, trigger: "use:flake", insight: 0.25, hint: "The sharp chip slices where fingers only tear."),
-                (route: Observation, trigger: "watch:hominin_butchering", insight: 0.5),
             ],
             history: (summary: "Cut marks on animal bones show flakes slicing meat from carcasses.", date: "c. 2.6 million years ago", years_bp: 2600000),
         ),
@@ -60,7 +55,6 @@
             enables: ["sharpen_digging_stick"],
             discovery: [
                 (route: Experiment, trigger: "do:dig_with_stick", insight: 0.5, hint: "A stick loosens the earth far better than fingers."),
-                (route: Observation, trigger: "watch:hominin_digging", insight: 0.6),
             ],
             history: (summary: "Sticks for digging roots and tubers leave little trace, but living foragers and chimpanzees both use them.", date: "over 2 million years ago (inferred)", years_bp: 2000000),
             uncertain: true,
@@ -87,7 +81,6 @@
             id: "termite_probe", status: Implemented, name: "Probing for insects", era: 0,
             discovery: [
                 (route: Experiment, trigger: "use:twig", insight: 0.35, hint: "Poked into the rotten wood, the twig comes out with grubs on it."),
-                (route: Observation, trigger: "watch:hominin_termite_fishing", insight: 0.7),
             ],
             history: (summary: "Worn bone tools from Swartkrans were used to open termite mounds; chimpanzees fish for termites with twigs.", date: "c. 1.8 million years ago", years_bp: 1800000),
             uncertain: true,
@@ -138,7 +131,6 @@
             skill: "butchery",
             discovery: [
                 (route: Experiment, trigger: "cut:carcass", insight: 0.5, hint: "Hacked open, the carcass gives meat, but much is wasted."),
-                (route: Observation, trigger: "watch:hominin_butchering", insight: 0.5),
             ],
             history: (summary: "Systematic cut and percussion marks show carcasses skinned, dismembered and filleted.", date: "c. 2.6 million years ago", years_bp: 2600000),
         ),

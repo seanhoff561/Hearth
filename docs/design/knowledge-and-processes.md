@@ -108,9 +108,9 @@ V2-7), fletching (feathers, V2-7) and painting (marks on surfaces, V2-8).
 - Processes check their conditions when started and when finished, not between.
 - A legend is learned again by doing one of its processes once.
 - Inference is heard on learning and on doing related work, not on resting.
-- Observation of hominins and animals and found evidence wait for their systems (V2-7, V2-11).
+- Observation of animals and found evidence wait for their systems (V2-7). Being taught waits for Phase F; every node is reachable by a lone player (Amendment E §2.4).
 - The knapping game is a plan view; thickness and platform angles are not modelled.
 
 ## Future extensions
-- Minigames for whittling, hide scraping, weaving and sewing; hominins and later simulated
-  humans running the same processes and knowledge (V2-11).
+- Minigames for whittling, hide scraping, weaving and sewing; Phase F's simulated
+  humans running the same processes and knowledge.

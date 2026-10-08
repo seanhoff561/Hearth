@@ -263,7 +263,6 @@
             diet: (kind: Carnivore, daily_food_kg: 0.35, foods: [
                 (food: "mantled_guereza"), (food: "blue_duiker", preference: 0.7), (food: "emins_pouched_rat", preference: 0.3),
                 (food: "red_river_hog", preference: 0.03),
-                (food: "australopithecus", preference: 0.05),
             ]),
             social: Pair, activity: Diurnal,
             habitat: ["tropical_rainforest"],

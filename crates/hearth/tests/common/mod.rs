@@ -41,13 +41,6 @@ pub struct World {
     pub generator: Arc<hearth_worldgen::WorldGenerator>,
     /// The animals near the player as the server last told of them.
     pub animals: Vec<hearth_fauna::live::AnimalView>,
-    /// The people near the player as the server last told of them.
-    pub people: Vec<hearth_people::PersonView>,
-    /// What the people near said, as the player made it out.
-    pub heard: Vec<hearth_protocol::HeardLine>,
-    /// The childhood as last told, and the moments told of so far (their names).
-    pub childhood: Option<hearth_protocol::ChildhoodView>,
-    pub moments: Vec<String>,
     /// How the player looks, as last told.
     pub appearance: Option<hearth_character::Appearance>,
     /// The last census of the groups about the player.
@@ -58,22 +51,6 @@ pub struct World {
     pub calls: Vec<hearth_fauna::voices::Called>,
     /// Whether the server said it saved since asked.
     pub saved: bool,
-    /// The births offered, and the birth shown (H8).
-    pub births: Vec<hearth_protocol::BirthChoice>,
-    pub born: Option<hearth_protocol::Born>,
-    /// The developer's inspector's last record of the person it looks at.
-    pub inspected: Option<hearth_people::inspect::Report>,
-    /// Watching (H9): the followed life, the chronicle and the overlay as last told; what the
-    /// player knows of the one it looks at.
-    pub life_of: Option<(u64, Vec<String>)>,
-    pub chronicle: Option<Vec<hearth_protocol::ChronicleEntry>>,
-    pub overlay: Option<Option<hearth_protocol::OverlayMap>>,
-    pub regarded: Option<(u64, Vec<String>)>,
-    /// The conversation backend (H10): heard lines phrased (their ids and words), typed words to
-    /// choose an act for, and how the backend is.
-    pub phrased: Vec<(u64, String)>,
-    pub clarify: Option<(u64, String, Vec<(hearth_people::player::Ask, String)>)>,
-    pub conversing: Option<(bool, bool, Option<String>)>,
 }
 
 /// Copies a directory and all in it.
@@ -99,57 +76,15 @@ pub fn temp(name: &str) -> std::path::PathBuf {
 
 impl World {
     pub fn start(dir: &std::path::Path, knowledge: hearth_save::KnowledgeMode, seed: u64) -> Self {
-        Self::start_with(dir, knowledge, seed, false)
-    }
-
-    /// A world whose player lives their childhood (or begins grown).
-    pub fn start_with(
-        dir: &std::path::Path,
-        knowledge: hearth_save::KnowledgeMode,
-        seed: u64,
-        childhood: bool,
-    ) -> Self {
-        Self::start_in(
-            dir,
-            knowledge,
-            seed,
-            childhood,
-            hearth::eras::WILD_EARTH,
-            None,
-        )
-    }
-
-    /// A world of an era (H8), its player born into the household `birth` of those offered, or
-    /// left to choose.
-    pub fn start_in(
-        dir: &std::path::Path,
-        knowledge: hearth_save::KnowledgeMode,
-        seed: u64,
-        childhood: bool,
-        era: &str,
-        birth: Option<usize>,
-    ) -> Self {
         let spec = WorldSpec {
             name: "test".into(),
             seed,
-            // An era's world on the default planet: a Tiny one holds only a band or two of its
-            // peoples (D196). Wild Earth's tests keep the Tiny planet they were written on.
-            planet: if era == hearth::eras::WILD_EARTH {
-                hearth_math::PlanetSize::Tiny
-            } else {
-                hearth_math::PlanetSize::Standard
-            },
+            planet: hearth_math::PlanetSize::Tiny,
             cache_dir: None,
             saves_dir: Some(dir.to_path_buf()),
-            wish: hearth_protocol::Wish {
-                female: Some(false),
-                ..Default::default()
-            },
-            death: hearth_save::Death::default(),
+            appearance: hearth_character::Appearance::default(),
             knowledge,
-            childhood,
-            era: era.to_owned(),
-            birth,
+            era: hearth::eras::WILD_EARTH.to_owned(),
             shape: Default::default(),
             birthplace: None,
             mode: None,
@@ -166,15 +101,9 @@ impl World {
             planet: hearth_math::PlanetSize::Tiny,
             cache_dir: None,
             saves_dir: Some(dir.to_path_buf()),
-            wish: hearth_protocol::Wish {
-                female: Some(false),
-                ..Default::default()
-            },
-            death: hearth_save::Death::default(),
+            appearance: hearth_character::Appearance::default(),
             knowledge: hearth_save::KnowledgeMode::Discovery,
-            childhood: false,
             era: hearth::eras::WILD_EARTH.to_owned(),
-            birth: None,
             shape: Default::default(),
             birthplace: None,
             mode: Some(mode.to_owned()),
@@ -184,7 +113,6 @@ impl World {
 
     /// A world of a spec.
     pub fn start_spec(spec: WorldSpec) -> Self {
-        let era_birth = spec.era != hearth::eras::WILD_EARTH && spec.birth.is_some();
         let atlas = Arc::new(TextureArray::from_entries(&hearth_texgen::textures_for(
             None,
         )));
@@ -226,32 +154,12 @@ impl World {
             body: None,
             generator: ready.generator.clone(),
             animals: Vec::new(),
-            people: Vec::new(),
-            heard: Vec::new(),
-            childhood: None,
-            moments: Vec::new(),
             appearance: Some(ready.appearance.clone()),
             census: None,
             signs: Vec::new(),
             calls: Vec::new(),
             saved: false,
-            births: Vec::new(),
-            born: None,
-            inspected: None,
-            life_of: None,
-            chronicle: None,
-            overlay: None,
-            regarded: None,
-            phrased: Vec::new(),
-            clarify: None,
-            conversing: None,
         };
-        // A life born into an era's household begins where that household lives (H8).
-        if era_birth {
-            // The recent past is lived first: a century of the place's households (minutes in
-            // a debug build on a busy machine).
-            w.until(900.0, |w| w.born.is_some());
-        }
         let feet = w.mover.pos;
         w.until(60.0, |w| {
             w.mirror
@@ -277,40 +185,10 @@ impl World {
                 ToClient::Work(w) => self.working = w.is_some(),
                 ToClient::Body(b) => self.body = Some(*b),
                 ToClient::Animals(v) => self.animals = v,
-                ToClient::People(v) => self.people = v,
-                ToClient::Childhood(v) => {
-                    if let Some(c) = &v
-                        && !c.passing
-                        && self.moments.last() != Some(&c.name)
-                    {
-                        self.moments.push(c.name.clone());
-                    }
-                    self.childhood = v;
-                }
-                ToClient::Person(a) => self.appearance = Some(a),
                 ToClient::Census(c) => self.census = Some(c),
                 ToClient::Signs { signs, .. } => self.signs = signs,
                 ToClient::Calls(c) => self.calls.extend(c),
                 ToClient::Saved => self.saved = true,
-                ToClient::Births(b) => self.births = b,
-                ToClient::Heard(lines) => self.heard.extend(lines),
-                ToClient::Born(b) => self.born = Some(*b),
-                ToClient::Inspected(r) => self.inspected = r.map(|r| *r),
-                ToClient::LifeOf(l) => self.life_of = l,
-                ToClient::Chronicle(c) => self.chronicle = Some(c),
-                ToClient::Overlay(o) => self.overlay = Some(o),
-                ToClient::Regarded(r) => self.regarded = r,
-                ToClient::Phrased { line, text } => self.phrased.push((line, text)),
-                ToClient::Clarify {
-                    person,
-                    text,
-                    options,
-                } => self.clarify = Some((person, text, options)),
-                ToClient::Conversing {
-                    on,
-                    free_text,
-                    trouble,
-                } => self.conversing = Some((on, free_text, trouble)),
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {
                     name,

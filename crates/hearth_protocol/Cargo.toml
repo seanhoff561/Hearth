@@ -8,7 +8,6 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-hearth_core.workspace = true
 hearth_math.workspace = true
 hearth_world.workspace = true
 hearth_worldgen.workspace = true
@@ -23,7 +22,6 @@ hearth_physics.workspace = true
 hearth_env.workspace = true
 hearth_save.workspace = true
 hearth_fauna.workspace = true
-hearth_people.workspace = true
 serde.workspace = true
 glam.workspace = true
 

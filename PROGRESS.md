@@ -1,10 +1,9 @@
 # Progress
 
 Direction: **v2** (`docs/spec/v2-direction-change.md`) since 2026-09-30; see `MIGRATION.md`.
-Since 2026-10-03 with **V2.1** (`docs/spec/v2.1-realistic-humans.md`, and its Addenda: A, the
-player is born; B, births in multiplayer and life after death), which replaces V2-11 with
-milestones H0–H13; see `MIGRATION_HUMANS.md` (D162). Amendment R (`dev/AMENDMENT_R.md`) waits
-until V2-16 (D166).
+From 2026-10-03 to 2026-10-08 with **V2.1**'s simulated humans (H0–H10), removed by
+**Amendments E and Q** (`docs/spec/amendments-e-q.md`, D227) in E0 and archived in
+`docs/archive/humans-v2.1/` (D230). Amendment R (`dev/AMENDMENT_R.md`) waits until after V2-16.
 
 ## Status
 - [x] **M0 — Foundation** (2026-09-30)
@@ -667,6 +666,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] P0 — Triage and quick fixes (2026-10-08; D224, D225)
 - [x] P1 — Menus and world management (2026-10-08; D226)
 - [x] P2 — Game modes and Creative (2026-10-08; D229)
+- [x] E0 — Remove the human systems (2026-10-08; D230)
 - [ ] P3 — Looking, highlighting and the hands
 - [ ] P4 — Poses, animation and skipping waits; sleep and time
 - [ ] P5 — Motion audit
@@ -682,11 +682,8 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [ ] S7 — Water, snow, ice, caves and built-piece polish
 - [ ] S8 — Performance and cohesion pass
 - [ ] P8 — Playtest pass
-- [ ] H11 — Neolithic society
 - [ ] V2-13 — Metallurgy & mining
-- [ ] H12 — Bronze Age society
 - [ ] V2-14 — Late scope: Iron Age & Classical
-- [ ] H13 — Iron Age / Classical society
 - [ ] V2-15 — World creation & menus
 - [ ] V2-16 — Long-run balance, performance & cohesion QA
 
@@ -726,26 +723,12 @@ Amendments E and Q (`docs/spec/amendments-e-q.md`, D227, D228): the order of wor
 
 | Row | State |
 |---|---|
-| Earth-True | E0–E7 planned; the human systems (H0–H10) to be removed in E0 and archived |
+| Earth-True | E0 done 2026-10-08 (the human systems removed and archived, D230); E1–E7 planned |
 | Quality | no audit yet; Audit 0 after E0; open high-priority findings: none recorded yet |
 
 ## Humans Status
-What of V2.1's people is implemented (used by the simulation) and what is planned (data or
-design only). Updated with each H milestone.
-
-| Part | Implemented | Planned |
-|---|---|---|
-| Species profiles | *Australopithecus*; *H. sapiens* as Wild Earth's few wandering families (H3) and the Middle and Upper Paleolithic's peoples; *Homo erectus* and *H. neanderthalensis*: bodies, life tables, cultures, a proto-language and Neanderthal languages, their days (H8) | — |
-| Era profiles | Wild Earth (its *Australopithecus* bands, its wandering families as many as the players expected, H3/H8); Lower, Middle and Upper Paleolithic — their peoples, deep past and recent past, camps, seasonal rounds and gatherings, and the era selector (H8) | Neolithic (H11), Bronze Age (H12), Iron Age (H13); the ice-age world drawn (D195) |
-| Calibrated traits | 29 heritable traits on ~460 loci: appearance, health, metabolism, HEXACO temperament and its narrower dimensions, aptitudes (H1); temperament read by the psyche (H2) | health by the life course (H3), aptitudes by learning (H6) |
-| Routines | *Australopithecus*'s day, a forager's day (H2); *H. erectus*'s and the Neanderthals' days (H8) | cultures' own routines |
-| Life tables | foragers': deaths by age, fertility, nursing, pairing, crowding, bands splitting (H3); *H. erectus*'s and the Neanderthals' (H8, D198) | the eras' (Neolithic H11, later H12–H13) |
-| Norms | the foragers': another's things are theirs, food is shared with the hungry, with their sanctions; their ways with strangers and quarrels (H4) | cultures' own (H5) |
-| Speech acts | every exchange a structured act with its words and a gesture, heard and made out by the player (H5); *erectus*'s proto-language of nouns, kin, pronouns and particles (H8); the optional conversation backend — a local or a provider's model phrasing what is said to the player within a closed vocabulary of what the speaker may say, and reading the player's typed words as a wheel's act (H10) | the AI bridge's deliberation, voices and agent protocol (Amendment R, V2-16+) |
-| The player's birth | genome from two parents of the place, shown at birth; no appearance chosen (H1); born into a family of the place, its household shown, the childhood lived through its moments (H3); two to four households of an era's peoples offered, an *erectus* or a Neanderthal body and childhood where born among them (H8) | births in multiplayer (R3) |
-| The player among people | what the player knows of a person (its name once learned, kinship, a rough age, how they take it, the ledger, what it has heard); the talk wheel of speech acts and gestures; being taught and teaching; staying with a band; courting and pairing, children (H9) | trade, invitations to a plan (V2.1 §16) |
-| The Observer | watching alive or dead; following and lives; time from stopped to a century a second within its budget; the chronicle; the globe's overlays (H9) | in multiplayer: spectators without time controls (R3) |
-| Life after death | the death an event of the world, the life told, living on as a grown kinsman with the "Who you are" briefing, watching with a free camera, beginning the world again (H3); living on as anyone of the world lived in full or as a household, a child's childhood taken up at its age, by the death screen's filters and the world's scope; born again as a baby into a household offered about where one died or anywhere (H8) ; knowledge after death, being born again a setting, the presets Authentic, Legacy, Hardy and Permadeath; watching as the Observer, following and reading lives (H9) | in multiplayer (R3) |
+None: the simulated humans of V2.1 (H0–H10) were removed in E0 and archived
+(`docs/archive/humans-v2.1/README.md`); Phase F plans them anew (E1).
 
 ## Content Status
 Generated by `hearth content status` (Implemented = used by a game system; Planned = data only).
@@ -761,22 +744,6 @@ Generated by `hearth content status` (Implemented = used by a game system; Plann
 | Plant species | 219 | 3 |
 | Animal species | 362 | 0 |
 | Ecosystems | 20 | 0 |
-| Species of person | 4 | 0 |
-| Heritable traits | 29 | 0 |
-| Named loci | 10 | 0 |
-| Gene pools | 4 | 0 |
-| Behaviour tendencies | 13 | 0 |
-| Feelings | 10 | 0 |
-| Values | 8 | 0 |
-| Routines | 4 | 0 |
-| Life tables | 3 | 0 |
-| Moments of childhood | 27 | 0 |
-| Norms | 5 | 0 |
-| Ways with strangers and quarrels | 3 | 0 |
-| Culture generators | 3 | 0 |
-| Language generators | 3 | 0 |
-| Meanings | 0 | 103 |
-| Ways of passing on knowledge | 4 | 0 |
 | Item forms | 47 | 0 |
 | Processes | 1485 | 0 |
 | Knowledge nodes | 61 | 119 |
@@ -785,7 +752,7 @@ Generated by `hearth content status` (Implemented = used by a game system; Plann
 | Garments | 9 | 0 |
 | Injuries | 10 | 0 |
 | Illnesses | 7 | 0 |
-| Eras | 4 | 6 |
+| Eras | 1 | 9 |
 
 ## In progress
 V2-10 — Ecosystem expansion waves, in parts (PLAN.md; each wave: its flora and fauna as data,
@@ -1483,6 +1450,30 @@ P2 — Game modes and Creative (Amendment P §2–3 as amended by Amendment E §
   Known from P2: terrain and plant brushes (S1, P7G), favourites, item quality and outlines in
   clear view are not built; pick stays on the middle click until P3.
 
+E0 — Remove the human systems (Amendment E §2; D230), done 2026-10-08:
+- [x] Archived first: the branch `archive/humans-v2.1` (commit f244710; the proxy refuses tags,
+  so a branch) and `docs/archive/humans-v2.1/` (the V2.1 spec and design, `MIGRATION_HUMANS.md`,
+  the people's screenshot lists and era reviews, a README of what existed and what Phase F may
+  restore).
+- [x] Removed: the crates `hearth_people` and `hearth_ai`; the game's persons, births,
+  childhood, conversation, history CLI and birth preview; the Births, Born, Who-you-are, Say,
+  Conversation and Chronicle screens; the people's protocol (persons, speech, births, childhood,
+  chronicle, overlays, following lives; protocol 3); the people's data, schemas and lints; the
+  australopith figure and predators' taste for australopiths; the `watch:hominin_*` triggers;
+  their tests. About 40,000 lines of Rust and 2,600 of data.
+- [x] After death: "Begin a new life here" (or elsewhere), restart or quit; a new life knows
+  what the mode keeps (`after_death_a_new_life_begins_near_where_the_last_ended`). The era list
+  is Wild Earth, the others named and coming. Saves are format 6; older worlds, which had people,
+  are refused with E §2.4's message. Content lint: no unknown references, every implemented
+  knowledge node and process reachable by a lone player (0 errors).
+- Real? Nothing invented added; the removed people were the least Earth-true part. Lean? About
+  42,800 lines gone; no shims kept for the old saves or protocol. Fast? Server ticks no longer
+  run persons or history; the build is shorter by two crates. Whole? The death screen and the
+  era list pass the layout test; the Actor rule (E §2.3) stands for P3, P4 and E6. Organic?
+  Nothing generated changed.
+  Known from E0: the Observer's eye stays for Creative's spectating only; the character creator
+  that replaces the appearance from the seed is E5's (E §6.2).
+
 ## Next steps
 0. Every milestone ends with `scripts/perf-gate.sh` (≈10 min: builds the baseline commit in
    `perf/baseline` in `bench-out/gate`, three alternating rounds of the quick scenes); a fall
@@ -1491,45 +1482,11 @@ P2 — Game modes and Creative (Amendment P §2–3 as amended by Amendment E §
    one-off claims, A/B alternate builds as the gate does (or `--lod-error` / `--render-scale`
    / `--water` within one build); capture golden images with `hearth bench --golden DIR`
    before comparing looks.
-1. H9 — Observer mode and the player in society — is done (2026-10-06; D208–D212): life after
-   death in full with its settings and presets, the player among people (what it knows of a
-   person, the talk wheel, being taught and teaching, joining a band, courting and a family), and
-   the Observer with its chronicle, overlays and a fast-forward within its budget. H8 — History
-   simulation and Paleolithic eras — is done (2026-10-05; D191–D207); its reviews are
-   `docs/review/era-*.md`. The perf gate (`scripts/perf-gate.sh`) and the screenshots' looks
-   need the PC: the cloud machine renders only on a software device (llvmpipe), whose frame rates
-   say nothing. Amendment R (`dev/AMENDMENT_R.md`) waits until V2-16; only its multiplayer-ready
-   rule applies (D166). H10 — the optional conversation backend — is done (2026-10-07;
-   D213–D216): off by default; set up, a local or a provider's model phrases what is said to the
-   player within a closed vocabulary of what the speaker may say, and reads typed words as a
-   wheel's act. Then V2-12 — the Neolithic (PLAN.md).
-   Known from H10: no real model was asked (the cloud machine has none, and tests never call a
-   service): the adapters are tested against mock servers of each API, and how often a small
-   local model's lines pass the closed vocabulary is to be seen on the PC; the Options screen's
-   conversation rows and the typed line are drawn but not yet seen on a screen; the vocabulary is
-   English only.
-   Known from H9: the talk wheel, the regard and the Observer's headline, chronicle and overlays
-   are drawn but not yet seen on a screen (the cloud machine's shots draw no interface); trading
-   and inviting to a plan wait (V2.1 §16); a culture's rite of adoption is the guest's taking-in;
-   the living world's notable events are not saved; the Upper Paleolithic band of the
-   acceptance's seed shrank from 33 to 13 over twenty-five years of skipped time (H8's tables and
-   crowding to look into).
-   Known from H8 (the era reviews have the detail): the people are drawn bare (they wear what
-   they know against the cold, D202); the world is drawn at today's climate and sea level, not
-   the era's (D195); the people raise no shelters (H11) and make little in a week, their food the
-   day's take eaten at camp (D202) until hunting and gathering are lived in full; a band lived in
-   full moves camp only within a short walk (D203: long moves wait for paths found over the
-   land); *erectus*'s proto-language says little more than names, and in a quiet week nothing; deep time lets Neanderthals
-   live in the tropics; the recent past is not yet the same from run to run of a seed; the
-   recent past takes a minute or two in a debug build, and the finite water simulation about a
-   camp by water slows a debug build several times over; a first life's place picked on the
-   globe waits for V2-15.
-   Known from H4–H7: levelling among egalitarian foragers waits for the interaction of values;
-   the people do not yet give gifts to strangers themselves, nor raid (H11–H12); the household
-   tier has no coarse daily outcomes (food got, work done) beyond the life course's crowding; a
-   mother carrying her infant is not drawn holding it.
+1. Next: **Audit 0**, then its high-priority fixes, then Q1 and E1–E5 (`PLAN.md`'s order). The
+   perf gate (`scripts/perf-gate.sh`) and the screenshots' looks need the PC: the cloud machine
+   renders only on a software device (llvmpipe), whose frame rates say nothing.
 2. Carried forward from the slice review (`docs/review/slice-1.md`, "Left where they belong"): a
-   kill is more than one person can use in summer (sharing comes with others, H4); scavengers
+   kill is more than one person can use in summer; scavengers
    take a carcass within hours of play (the populations' year scale); joints are drawn, not
    built; a ridge piece for odd-span gables; drying racks spoil whole in the rain, unexplained to
    the player; dusk lights the land brighter than the sky; the year bot should sew furs for its

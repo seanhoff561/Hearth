@@ -47,7 +47,6 @@
                 (food: "blue_wildebeest", preference: 0.4), (food: "plains_zebra", preference: 0.3), (food: "warthog", preference: 0.3),
                 (food: "sitatunga", preference: 0.3), (food: "olive_baboon", preference: 0.1), (food: "hippopotamus", preference: 0.03),
                 (food: "meat", preference: 0.3),
-                (food: "australopithecus", preference: 0.05),
             ]),
             social: Solitary, activity: Cathemeral,
             habitat: ["tropical_freshwater"],

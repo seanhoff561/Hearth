@@ -7,16 +7,12 @@ use crate::settings::WorldSettings;
 /// Save format written by this build. Bump it (and add a step to `migrate`) whenever any
 /// persisted structure changes.
 ///
-/// * 1 — v1 of the game (never released with saves); refused.
-/// * 2 — first v2 format: flat seed/planet fields, `time.ticks`.
-/// * 3 — settings grouped into `settings.{planet,life,era}`, `clock` replaces `time`.
-/// * 4 — v2's death rules retired (D167, H9): `life.death_rules` becomes `life.after_death` and
-///   `life.born_again` (and Permadeath's scope).
-/// * 5 — the first life's birthplace chosen on the globe (`settings.birthplace`, Amendment P).
-pub const FORMAT: u32 = 5;
+/// * 1–5 — before Amendment E: worlds with people in them (V2.1); refused.
+/// * 6 — Amendment E: no simulated people; death means a new life (`life.after_death` only).
+pub const FORMAT: u32 = 6;
 
 /// Oldest format this build can migrate from.
-pub const OLDEST_SUPPORTED: u32 = 2;
+pub const OLDEST_SUPPORTED: u32 = 6;
 
 /// World time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

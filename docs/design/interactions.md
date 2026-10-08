@@ -20,7 +20,6 @@ milestones named; ✅ = implemented, ⏳ = planned (milestone).
 | **Herbivores** → predators | Prey density sets predator numbers; predators limit herbivores | ⏳ V2-7 |
 | **Predators** → player | Attacks for real causes; tracks, alarm calls and kills reveal them | ⏳ V2-7 |
 | **Player** → ecosystem | Hunting pressure, clearing, fire, farming, waste attract scavengers | ⏳ V2-7/V2-12 |
-| **Hominins** → player knowledge | Watching them grants observation insight | ⏳ V2-11 (routes in data V2-0) |
 | **Body** ↔ environment | Cold/wet drive clothing, shelter and fire; heat drives water carrying | ⏳ V2-3/V2-4/V2-8 |
 | **Knowledge** → processes | Nodes enable processes; processes need materials from geology and biology | ✅ data + lint (V2-0); ⏳ engine V2-5 |
 | **Materials** → everything | Density → mass and carrying; strength → tools and structures; fuel → fire; knapping → edge quality | ✅ items derive from materials (V2-0) |

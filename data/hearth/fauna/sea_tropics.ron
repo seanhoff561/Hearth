@@ -332,7 +332,6 @@
             diet: (kind: Carnivore, daily_food_kg: 3, foods: [
                 (food: "fiddler_crab", preference: 0.5), (food: "snakehead", preference: 0.5), (food: "proboscis_monkey", preference: 0.2),
                 (food: "wild_water_buffalo", preference: 0.1), (food: "meat", preference: 0.3),
-                (food: "australopithecus", preference: 0.05),
             ]),
             social: Solitary, activity: Cathemeral,
             habitat: ["mangrove_forest", "tropical_freshwater"],

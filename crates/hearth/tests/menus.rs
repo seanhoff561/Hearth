@@ -45,40 +45,12 @@ fn render(
                 profiles: &mut profiles,
                 death: Some(hearth::menus::DeathInfo {
                     words: "You froze to death.".into(),
-                    death: hearth_save::Death::default(),
-                    summary: None,
-                    story: vec![
-                        "You lived 31 years.".into(),
-                        "Your mother lives. Your father died before you.".into(),
-                        "You had 2 children, 2 of them living.".into(),
-                        "5 of your people mourn you.".into(),
-                    ],
-                    others: vec![
-                        hearth_protocol::Other {
-                            id: 11,
-                            words: "your partner, 33 years".into(),
-                            family: true,
-                            group: true,
-                            near: true,
-                            child: false,
-                        },
-                        hearth_protocol::Other {
-                            id: 12,
-                            words: "your daughter, 6 years".into(),
-                            family: true,
-                            group: true,
-                            near: true,
-                            child: true,
-                        },
-                    ],
+                    after_death: hearth_save::AfterDeath::TheirsOnly,
                 }),
                 inventory: None,
                 journal: None,
                 eras: Vec::new(),
                 modes: Vec::new(),
-                chronicle: Vec::new(),
-                conversation_probe: None,
-                conversation_models: Vec::new(),
                 globe: None,
                 time_words: Some("Late afternoon, the third day of autumn".into()),
                 may_watch: true,
@@ -90,47 +62,12 @@ fn render(
             actions = menus.ui(ui, &mut cx);
         },
     );
-    // The people a screen shows, as the app draws them.
-    if let Some(p) = menus.preview() {
-        let scale = iface.scale as f32;
-        hearth::preview::PeoplePreview::new().draw(
-            ctx,
-            &mut enc,
-            &target.color_view,
-            OFFSCREEN_FORMAT,
-            (w, h),
-            scale,
-            p,
-            0.0,
-        );
-    }
     ctx.queue.submit(Some(enc.finish()));
     let px = target.read_rgba(ctx);
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
     std::fs::create_dir_all(&out).ok();
     write_png(&out.join(format!("menu_{name}.png")), w, h, &px).expect("png");
     actions
-}
-
-/// The birth screen of a birth drawn at a latitude: the family, as their genes made them.
-fn born(latitude: f64, female: Option<bool>, name: &str) -> Screen {
-    let content = hearth_content::Content::load_base();
-    let g = hearth_people::Genetics::from_content(&content).expect("the genetics");
-    let b = hearth::born::draw(&g, latitude, female, 7).expect("a birth");
-    let age = hearth::born::coming_of_age(&content);
-    let you = hearth::born::player(&content, &b, name, hearth_character::Loincloth::Hide, age);
-    let family = hearth::born::household(&g, &b, age, 7);
-    Screen::Born {
-        born: Box::new(hearth::born::shown(
-            &content,
-            &b,
-            &you,
-            latitude,
-            Some(&family),
-        )),
-        sway: 0.0,
-        light: 0,
-    }
 }
 
 #[test]
@@ -157,33 +94,9 @@ fn the_screens_draw_and_answer() {
             },
         ),
         ("new_world", Screen::new_world()),
-        (
-            "births",
-            Screen::Births {
-                choices: vec![
-                    hearth_protocol::BirthChoice {
-                        title: "A family of the Kaanu (Human)".into(),
-                        lines: vec![
-                            "Your mother: Ama, 24 years old".into(),
-                            "Your father: Tek, 29 years old".into(),
-                            "Brothers and sisters: a sister of 4".into(),
-                            "A band of 31, living in the savanna of the Afrotropical".into(),
-                        ],
-                    },
-                    hearth_protocol::BirthChoice {
-                        title: "A family of the Hiro (Human)".into(),
-                        lines: vec!["Your mother: Yali, 31 years old".into()],
-                    },
-                ],
-                selected: 0,
-                born: hearth::profiles::Born::Chance,
-            },
-        ),
         ("options", Screen::Options),
         ("video", Screen::Video { tab: 0 }),
         ("sound", Screen::Sound),
-        ("born", born(12.0, Some(true), "Ash")),
-        ("born_north", born(58.0, Some(false), "")),
         (
             "controls",
             Screen::Controls {

@@ -257,30 +257,6 @@ impl Proportions {
         d
     }
 
-    /// An australopith's body at the appearance's stature (not a person's 1.55–1.95 m): arms long
-    /// for its height and legs short, the chest broad and funnel-shaped over a pot belly, the face
-    /// jutting forward from a small braincase.
-    pub fn hominin(a: &Appearance) -> Self {
-        let mut d = Self::of(a);
-        d.upper_arm *= 1.18;
-        d.forearm *= 1.18;
-        d.hand *= 1.1;
-        d.thigh *= 0.86;
-        d.shank *= 0.86;
-        d.hip = d.thigh + d.shank + d.ankle;
-        d.chest_w *= 1.12;
-        d.chest_d *= 1.1;
-        d.waist_w *= 1.18;
-        d.waist_d *= 1.2;
-        d.head_w *= 1.06;
-        d.head_d *= 1.28;
-        d.neck_w *= 1.15;
-        d.arm_t *= 1.12;
-        d.forearm_t *= 1.12;
-        d.bust_d = 0.0;
-        d
-    }
-
     /// Each joint's offset from its parent in the rest pose (the root's from the ground).
     pub fn rest_offsets(&self) -> [Vec3; JOINTS] {
         let h = self.torso_unit;
@@ -387,32 +363,6 @@ impl Rig {
         body(&dims, &mut parts);
         face(&a, &dims, &mut parts);
         hair(&a, &dims, &mut parts);
-        Self {
-            dims,
-            rest: dims.rest_offsets(),
-            parts,
-            clothes: Vec::new(),
-            hooded: false,
-        }
-    }
-
-    /// An australopith of the appearance's stature and colouring ([`Proportions::hominin`]): its
-    /// coat of hair over all of it but the face, the hands and the feet.
-    pub fn hominin(a: &Appearance) -> Self {
-        let dims = Proportions::hominin(a);
-        let mut parts = Vec::new();
-        body(&dims, &mut parts);
-        for p in &mut parts {
-            let bare = matches!(
-                p.joint,
-                Joint::Head | Joint::WristL | Joint::WristR | Joint::AnkleL | Joint::AnkleR
-            );
-            if p.stuff == Stuff::Skin && !bare {
-                p.stuff = Stuff::Hair;
-            }
-        }
-        face(a, &dims, &mut parts);
-        hair(a, &dims, &mut parts);
         Self {
             dims,
             rest: dims.rest_offsets(),

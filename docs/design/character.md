@@ -97,5 +97,5 @@ Gait tables (`WALK`, `JOG`, `SPRINT`, `WADE`) and poses are in `animate.rs`; pro
 - Hair does not grow yet (v2 §9.1's nice-to-have).
 
 ## Future extensions
-- Other people and hominins use the same rig with their own proportions (V2-7+).
+- Phase F's simulated humans will use the same rig with their own proportions.
 - Inverse kinematics for feet on uneven ground and hands on what they hold.

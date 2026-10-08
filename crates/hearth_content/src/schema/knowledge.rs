@@ -10,20 +10,18 @@ use crate::IdRef;
 pub enum Route {
     /// Doing related things with relevant materials.
     Experiment,
-    /// Watching hominins, animals or natural phenomena.
+    /// Watching animals or natural phenomena.
     Observation,
     /// Combining two known techniques.
     Inference,
     /// Studying found evidence (tool scatters, remains).
     Evidence,
-    /// Shown by one who knew it (V2.1 §11.2; never a discovery route in the data).
-    Taught,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Discovery {
     pub route: Route,
-    /// Event id the game emits (e.g. `strike:flint`, `watch:hominin_knapping`,
+    /// Event id the game emits (e.g. `strike:flint`, `watch:hyena_cracking_bones`,
     /// `heat:clay`) that grants insight.
     pub trigger: String,
     /// Insight granted per trigger (1.0 total discovers the node).

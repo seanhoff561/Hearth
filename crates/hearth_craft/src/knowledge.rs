@@ -390,7 +390,6 @@ impl KnowledgeState {
             (_, Some(Route::Observation)) => "Watching closely, I understood:",
             (_, Some(Route::Inference)) => "Thinking it over, it came to me:",
             (_, Some(Route::Evidence)) => "From what others left behind, I worked out:",
-            (_, Some(Route::Taught)) => "Shown by one who knew how, I learned:",
             (_, None) => "I know it:",
         };
         self.journal.push(Note {
@@ -410,37 +409,6 @@ impl KnowledgeState {
                 self.learn(graph, d, route, tick, events);
             }
         }
-    }
-
-    /// Taught a node by one who knows it (V2.1 §11.2): insight toward it — or, while what it
-    /// rests on is not yet known, toward the first of that — and the knowing of it when full.
-    pub fn taught(&mut self, graph: &Graph, node: &str, insight: f32, tick: u64) -> Vec<Event> {
-        let mut events = Vec::new();
-        let Some(mut i) = graph.index_of(node) else {
-            return events;
-        };
-        for _ in 0..32 {
-            match graph.nodes[i]
-                .requires
-                .iter()
-                .copied()
-                .find(|&r| !self.knows(&graph.nodes[r].id))
-            {
-                Some(r) => i = r,
-                None => break,
-            }
-        }
-        let n = &graph.nodes[i];
-        if !n.implemented || self.knows(&n.id) {
-            return events;
-        }
-        let before = self.insight.get(&n.id).copied().unwrap_or(0.0);
-        let now = (before + insight.max(0.0)).min(1.0);
-        self.insight.insert(n.id.clone(), now);
-        if now >= 1.0 {
-            self.learn(graph, i, Some(Route::Taught), tick, &mut events);
-        }
-        events
     }
 
     /// The inference triggers that thinking now would give: every node with an inference

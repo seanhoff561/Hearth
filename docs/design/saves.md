@@ -17,9 +17,10 @@ saves/<world>/
   blocks.json     the blocks the player has changed, by position and state name (V2-5, D73)
   region/         r.<x>.<y>.<z>.hrg, 8×8×8 cubes per file
 ```
-- **Format version** (`meta::FORMAT`, currently 3). Format 1 (v1) is refused with a clear
-  message; newer formats are refused; older supported formats are migrated step by step on the
-  raw JSON value (`migrate.rs`) and written in the current format on the next save.
+- **Format version** (`meta::FORMAT`, currently 6). Every world before format 6 had people in
+  it (V2.1) and is refused with a clear message (Amendment E §2.4: "This world was made with an
+  earlier version that had people in it; start a new world"); newer formats are refused. Later
+  formats will migrate step by step on the raw JSON value (`migrate.rs`).
 - **Region files**: 8-byte header, 512 index entries (sector offset, byte length), 4 KiB
   sectors. Records are zstd-compressed `[cube format][Cube::write_bytes]`. Rewrites reuse
   sectors when they fit, else the first free run.
@@ -30,12 +31,12 @@ saves/<world>/
   missing texture, and written back unchanged, so removing and restoring a mod loses nothing.
 - **World settings** (`settings.rs`): planet (world-gen settings), life & time (day length,
   days per season, starting season, axial tilt, realism preset + overrides, predator behavior,
-  knowledge mode, hominin range, death rules, full map knowledge) and the era.
+  knowledge mode, what death means, full map knowledge) and the era.
 
 ## Tests
-Fixture worlds in `crates/hearth_save/tests/fixtures`: a format-2 world (with `coal_ore`,
-removed in V2-0) that migrates to format 3 and keeps the ore as a placeholder through a
-save/reload cycle; a format-1 world that is refused.
+Fixture worlds in `crates/hearth_save/tests/fixtures`: a format-6 world (with `coal_ore`, no
+longer defined) that keeps the ore as a placeholder through a save/reload cycle; older worlds
+that are refused.
 
 - **JSON files of a world** (`WorldDir::write_json`, `read_json`): written atomically with a
   backup of the previous one; the server saves `level.json`, `player.json` and the rest every

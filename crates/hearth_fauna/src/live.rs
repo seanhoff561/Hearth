@@ -514,9 +514,6 @@ pub fn mover_of(sp: &Species) -> Mover {
 /// birds big enough to see as they forage and fly (crows, owls), the fish of the streams.
 pub fn drawn(sp: &Species) -> bool {
     use hearth_content::schema::fauna::BodyPlan as B;
-    if sp.hominin {
-        return false;
-    }
     match mover_of(sp) {
         Mover::Fish => sp.mass_kg >= 0.1,
         Mover::Bird => sp.mass_kg >= SMALL_MIN_KG,
@@ -593,10 +590,6 @@ impl Live {
                     continue;
                 }
                 let sp = &cat.species[g.species as usize];
-                // A hominin's groups are its agents' to draw out.
-                if sp.hominin {
-                    continue;
-                }
                 // Somewhere to stand for every member, or the group waits.
                 let Some(centre) = ground.top(g.pos[0], g.pos[1]) else {
                     continue;

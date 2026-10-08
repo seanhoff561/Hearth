@@ -6,10 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
-use hearth_character::Appearance;
 use hearth_core::options::{DisplayMode, GraphicsPreset, Options, Quality};
 use hearth_input::{ActionId, CaptureResult, InputKey, KeyBindings, RebindCapture};
-use hearth_render::figure::PreviewLight;
 use hearth_ui::widgets::theme;
 use hearth_ui::{Column, Rect, Ui};
 
@@ -136,20 +134,13 @@ pub enum Screen {
         stage: String,
         share: f32,
     },
-    /// Where to be born, chosen on the globe (Amendment P §4.3): the world asked for, and the
+    /// Where to begin, chosen on the globe (Amendment P §4.3): the world asked for, and the
     /// place chosen (latitude, longitude in radians).
     Birthplace {
         choice: NewWorldChoice,
         chosen: Option<(f32, f32)>,
     },
-    /// The households the player may be born into (H8): one chosen, and a daughter, a son or
-    /// as chance has it.
-    Births {
-        choices: Vec<hearth_protocol::BirthChoice>,
-        selected: usize,
-        born: Born,
-    },
-    /// After death: what the world's rules allow.
+    /// After death: a new life, or the world begun again.
     Death,
     /// The journal (J): the tab open and how far it is scrolled.
     Journal {
@@ -182,31 +173,6 @@ pub enum Screen {
         capture: RebindCapture,
     },
     Accessibility,
-    /// Watching the world: the chronicle (V2.1 §15.4), how far it is scrolled.
-    Chronicle {
-        scroll: usize,
-    },
-    /// Words typed to a person (V2.1 §10.4; H10): whom to, as the player knows them, the words
-    /// being typed — or, the words read unclearly, the acts they may be, to choose from.
-    Say {
-        person: u64,
-        whom: String,
-        text: String,
-        options: Vec<(hearth_people::player::Ask, String)>,
-    },
-    /// The optional conversation backend's settings.
-    Conversation,
-    /// Having taken up another's life: who the player is now (Addendum B §2).
-    WhoYouAre {
-        lines: Vec<String>,
-    },
-    /// The player was born (H1): their mother, they and their father side by side, turning a
-    /// little to and fro (its phase, radians), and the light on them.
-    Born {
-        born: Box<hearth_protocol::Born>,
-        sway: f32,
-        light: usize,
-    },
 }
 
 /// A new world as Create World asked for it.
@@ -259,36 +225,6 @@ impl Screen {
     }
 }
 
-/// The people a screen shows, side by side, for the app to draw.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Preview {
-    /// Where (interface pixels).
-    pub rect: Rect,
-    pub people: Vec<Appearance>,
-    pub yaw: f32,
-    pub light: PreviewLight,
-}
-
-/// How far apart the people a screen shows stand (m), and the height it frames.
-pub const PREVIEW_SPACING_M: f32 = 0.9;
-pub const PREVIEW_HEIGHT_M: f32 = 2.0;
-
-/// Half the width a preview frames for `n` people side by side (m).
-pub fn preview_half_width(n: usize) -> f32 {
-    n as f32 * PREVIEW_SPACING_M / 2.0 + 0.1
-}
-
-/// Where (interface x) the middle of a person `x_m` metres from the middle of a preview of `n`
-/// people stands: the preview's camera, framing its height and width (`FigurePreview::render`).
-fn preview_x(rect: &Rect, n: usize, x_m: f32) -> f32 {
-    let half = (28f32.to_radians() / 2.0).tan();
-    let aspect = rect.w / rect.h.max(1.0);
-    let fit =
-        (PREVIEW_HEIGHT_M * 0.58 / half).max(preview_half_width(n).max(0.55) / (half * aspect));
-    let seen = fit * half * aspect;
-    rect.x + rect.w / 2.0 + x_m / seen * rect.w / 2.0
-}
-
 /// What the player chose.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MenuAction {
@@ -296,20 +232,18 @@ pub enum MenuAction {
     Play {
         folder: String,
         seed: u64,
-        /// What death means there (Addendum B §2).
-        death: hearth_save::Death,
         knowledge: hearth_save::KnowledgeMode,
         /// A new world's era (its id).
         era: String,
         /// A new world's planet size and shape.
         size: hearth_math::PlanetSize,
         shape: crate::server::WorldShape,
-        /// Where a new world's first life is born (world x, z), chosen on the globe.
+        /// Where a new world's first life begins (world x, z), chosen on the globe.
         birthplace: Option<glam::DVec2>,
         /// A new world's game mode (a saved world keeps its own).
         mode: Option<String>,
     },
-    /// Make a new world's planet, then choose where to be born on it.
+    /// Make a new world's planet, then choose where to begin on it.
     CreateWorld(NewWorldChoice),
     /// Creative: a thing of the inventory taken, placed or summoned.
     Creative(crate::creative_ui::CreativeAct),
@@ -330,21 +264,11 @@ pub enum MenuAction {
     },
     /// Making the planet given up: back to Create World.
     CancelCreate,
-    /// Born into the household chosen of those offered (H8).
-    BeBorn {
-        choice: usize,
-        female: Option<bool>,
-    },
-    /// After death: live on as one of the world's people (their person's id).
-    LiveAs(u64),
-    /// After death: be born again about where the player died, or (`elsewhere`) a place picked
-    /// on the globe; a daughter, a son or as chance has it (Addendum B §2.2).
-    BornAgain {
+    /// After death: a new life near where the player last lived, or (`elsewhere`) about a place
+    /// picked on the globe (Amendment E §6.6).
+    NewLife {
         elsewhere: bool,
-        female: Option<bool>,
     },
-    /// After death: watch the world.
-    Spectate,
     /// After death: begin this world again (the old one archived).
     Restart,
     /// Knapping is over: do the process, by hand (with the quality reached) or as usual.
@@ -372,31 +296,12 @@ pub enum MenuAction {
     /// The options changed: save and apply them.
     OptionsChanged,
     LanguageChanged,
-    /// The wishes for a birth changed: save them.
+    /// Who the player begins as changed: save it.
     ProfilesChanged,
-    /// Watch the world (the Observer), the player put aside.
+    /// Spectate (Creative): the player's body put aside, the eye free.
     Watch,
-    /// Open a world to watch it.
-    WatchWorld {
-        folder: String,
-    },
-    /// Watching: take the eye to a place of the chronicle.
-    JumpTo(glam::DVec3),
-    /// Typed words said to a person (H10).
-    SayText {
-        person: u64,
-        text: String,
-    },
-    /// An act chosen of those typed words may have meant.
-    Speak {
-        person: u64,
-        ask: hearth_people::player::Ask,
-    },
     /// Save the world now (it goes on).
     Save,
-    /// Try the conversation backend with a harmless request, or ask it for its models.
-    TestConversation,
-    ListModels,
 }
 
 /// What the screens edit and need.
@@ -408,7 +313,7 @@ pub struct MenuContext<'a> {
     pub languages: &'a [String],
     /// The sound output devices there are.
     pub audio_devices: &'a [String],
-    /// What the player wishes of a birth.
+    /// Who the player begins as.
     pub profiles: &'a mut crate::profiles::Profiles,
     /// The player's death, when there is one to face.
     pub death: Option<DeathInfo>,
@@ -420,11 +325,6 @@ pub struct MenuContext<'a> {
     pub eras: Vec<(String, String, String)>,
     /// The game modes (id, name, summary) in Create World's order (Amendment P §2).
     pub modes: Vec<(String, String, String)>,
-    /// The chronicle, while watching the world.
-    pub chronicle: Vec<hearth_protocol::ChronicleEntry>,
-    /// What came of trying the conversation backend, and the models its server lists.
-    pub conversation_probe: Option<String>,
-    pub conversation_models: Vec<String>,
     /// The globe of a new world's planet, while its birthplace is chosen.
     pub globe: Option<GlobeContext<'a>>,
     /// The time of day and the year in words, in a world.
@@ -447,25 +347,16 @@ pub struct GlobeContext<'a> {
     pub terrain: std::sync::Arc<hearth_worldgen::region::Terrain>,
 }
 
-/// What the death screen says.
+/// What the death screen says: how the player died, and what a new life keeps.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeathInfo {
     pub words: String,
-    pub death: hearth_save::Death,
-    /// The life's tale, when it ended the world.
-    pub summary: Option<Vec<String>>,
-    /// The life told (Addendum B §2), and who the player could live on as.
-    pub story: Vec<String>,
-    pub others: Vec<hearth_protocol::Other>,
+    pub after_death: hearth_save::AfterDeath,
 }
 
 /// The open screens, the top one shown.
 pub struct Menus {
     stack: Vec<Screen>,
-    /// The people a screen shows this frame.
-    preview: Option<Preview>,
-    /// Whom the death screen lists to live on as: family, group, near, anywhere.
-    death_filter: usize,
 }
 
 const W: f32 = 220.0;
@@ -513,22 +404,11 @@ impl Menus {
     pub fn title() -> Self {
         Self {
             stack: vec![Screen::Title],
-            preview: None,
-            death_filter: 0,
         }
     }
 
     pub fn none() -> Self {
-        Self {
-            stack: Vec::new(),
-            preview: None,
-            death_filter: 0,
-        }
-    }
-
-    /// The people a screen shows this frame, if one does.
-    pub fn preview(&self) -> Option<&Preview> {
-        self.preview.as_ref()
+        Self { stack: Vec::new() }
     }
 
     /// The screen shown, to update.
@@ -551,8 +431,8 @@ impl Menus {
     /// Back one screen (Escape). Closing the pause screen resumes the game.
     pub fn back(&mut self) -> Option<MenuAction> {
         match self.stack.last() {
-            Some(Screen::Title) | Some(Screen::Death) | Some(Screen::Births { .. }) | None => None,
-            Some(Screen::Pause) | Some(Screen::Born { .. }) => {
+            Some(Screen::Title) | Some(Screen::Death) | None => None,
+            Some(Screen::Pause) => {
                 self.stack.pop();
                 Some(MenuAction::Resume)
             }
@@ -605,7 +485,6 @@ impl Menus {
     /// Draws the top screen and returns what was chosen.
     pub fn ui(&mut self, ui: &mut Ui<'_>, cx: &mut MenuContext<'_>) -> Vec<MenuAction> {
         let mut out = Vec::new();
-        self.preview = None;
         let Some(top) = self.stack.last_mut() else {
             return out;
         };
@@ -737,7 +616,6 @@ impl Menus {
                         out.push(MenuAction::Play {
                             folder: entries[i].folder.clone(),
                             seed: 0,
-                            death: Default::default(),
                             knowledge: Default::default(),
                             era: crate::eras::WILD_EARTH.to_owned(),
                             size: hearth_math::PlanetSize::Standard,
@@ -850,7 +728,6 @@ impl Menus {
                             out.push(MenuAction::Play {
                                 folder: w.folder.clone(),
                                 seed: 0,
-                                death: Default::default(),
                                 knowledge: Default::default(),
                                 era: crate::eras::WILD_EARTH.to_owned(),
                                 size: hearth_math::PlanetSize::Standard,
@@ -1045,14 +922,15 @@ impl Menus {
                         ui.label(x, c.y, &ui.t("menu.new_world.seed"), theme::DIM);
                         c.space(line);
                         ui.text_field(c.row(ROW), &ui.t("menu.new_world.seed_hint"), seed, 20);
-                        // The one born there: a name (or none); a daughter or a son is asked at the
-                        // birth, the looks come from the parents (V2.1 Addendum A).
+                        // Who the player begins as: a name (or none), a woman, a man or as chance
+                        // has it (Amendment E §6.1; the character creator comes with E5).
                         ui.text_field(
                             c.row(ROW),
                             &ui.t("menu.new_world.your_name"),
                             &mut wish.name,
                             32,
                         );
+                        born_choice(ui, c.row(ROW), &mut wish.born);
                         // When the world is: its era, and how its people live then (V2.1 §15.3).
                         if !eras.is_empty() {
                             let names: Vec<String> = eras.iter().map(|e| e.1.clone()).collect();
@@ -1208,43 +1086,6 @@ impl Menus {
             }
             Screen::Birthplace { choice, chosen } => {
                 birthplace_screen(ui, cx, choice, chosen, &mut out, &mut pop);
-            }
-            Screen::Chronicle { scroll } => {
-                ui.title(24.0, &ui.t("menu.chronicle.title"));
-                // Rows of the chronicle that fit above the buttons (each a row and its gap).
-                let rows = ((size.1 - 44.0 - 46.0) / (ROW + 2.0)).max(1.0) as usize;
-                let wide = (size.0 - 40.0).min(560.0);
-                let x0 = ((size.0 - wide) / 2.0).round();
-                let mut c = Column::new(x0, 44.0, wide);
-                if cx.chronicle.is_empty() {
-                    ui.label(x0, c.y, &ui.t("menu.chronicle.empty"), theme::DIM);
-                    c.space(ROW);
-                }
-                *scroll = (*scroll).min(cx.chronicle.len().saturating_sub(rows));
-                for e in cx.chronicle.iter().skip(*scroll).take(rows) {
-                    let words = format!("{} — {}", e.when, e.text);
-                    if ui.button(c.row(ROW - 2.0), &words)
-                        && let Some(at) = e.at
-                    {
-                        out.push(MenuAction::JumpTo(at));
-                    }
-                }
-                let row = Column::new(x0, size.1 - 40.0, wide).row(ROW);
-                let (a, rest) = row.split_left((wide - 8.0) / 3.0, 4.0);
-                let (b, d) = rest.split_left((wide - 8.0) / 3.0, 4.0);
-                if ui.button_enabled(a, &ui.t("menu.chronicle.newer"), *scroll > 0) {
-                    *scroll = scroll.saturating_sub(rows);
-                }
-                if ui.button_enabled(
-                    b,
-                    &ui.t("menu.chronicle.older"),
-                    *scroll + rows < cx.chronicle.len(),
-                ) {
-                    *scroll += rows;
-                }
-                if ui.button(d, &ui.t("menu.back")) {
-                    pop = true;
-                }
             }
             Screen::Pause => {
                 let title = ui.t("menu.pause.title");
@@ -1429,9 +1270,6 @@ impl Menus {
                     }
                     if ui.button(c.row(ROW), &ui.t("menu.options.accessibility")) {
                         push = Some(Screen::Accessibility);
-                    }
-                    if ui.button(c.row(ROW), &ui.t("menu.options.conversation")) {
-                        push = Some(Screen::Conversation);
                     }
                     let names: Vec<String> = cx
                         .languages
@@ -1827,25 +1665,20 @@ impl Menus {
                 }
             }
             Screen::Death => {
-                death_screen(ui, cx, &mut self.death_filter, &mut out);
+                death_screen(ui, cx, &mut out);
             }
-            Screen::WhoYouAre { lines } => {
-                ui.title((size_of(ui).1 * 0.18).round(), &ui.t("menu.who.title"));
-                let mut y = (size_of(ui).1 * 0.18 + 24.0).round();
-                let wide = (size_of(ui).0 - 40.0).min(480.0);
-                for line in lines.iter() {
-                    for l in ui.font.wrap(line, wide as u32) {
-                        let lw = ui.font.width(&l) as f32;
-                        ui.label(((size_of(ui).0 - lw) / 2.0).round(), y, &l, theme::TEXT);
-                        y += hearth_ui::font::LINE as f32;
-                    }
-                    y += 3.0;
+            Screen::Journal { tab, scroll } => match &cx.journal {
+                Some(view) => {
+                    pop |= crate::journal_ui::journal_screen(ui, view, tab, scroll);
                 }
-                let mut c = Column::new(x, y + 10.0, W);
-                if ui.button(c.row(ROW), &ui.t("menu.who.begin")) {
-                    out.push(MenuAction::Resume);
+                None => pop = true,
+            },
+            Screen::Inventory { lifted, turned } => match &cx.inventory {
+                Some(view) => {
+                    crate::inventory_ui::inventory_screen(ui, view, lifted, turned, &mut out);
                 }
-            }
+                None => pop = true,
+            },
             Screen::Knapping(k) => {
                 if let Some(done) = crate::knapping_ui::knapping_screen(ui, k) {
                     use crate::knapping_ui::KnapDone;
@@ -1861,255 +1694,6 @@ impl Menus {
                             hand,
                         });
                     }
-                    pop = true;
-                }
-            }
-            Screen::Journal { tab, scroll } => match &cx.journal {
-                Some(view) => {
-                    pop |= crate::journal_ui::journal_screen(ui, view, tab, scroll);
-                }
-                None => pop = true,
-            },
-            Screen::Inventory { lifted, turned } => match &cx.inventory {
-                Some(view) => {
-                    crate::inventory_ui::inventory_screen(ui, view, lifted, turned, &mut out);
-                }
-                None => pop = true,
-            },
-            Screen::Births {
-                choices,
-                selected,
-                born,
-            } => {
-                births_screen(ui, choices, selected, born, &mut out);
-            }
-            Screen::Born { born, sway, light } => {
-                let (preview, begin) = born_screen(ui, born, sway, light);
-                self.preview = Some(preview);
-                if begin {
-                    out.push(MenuAction::Resume);
-                }
-            }
-            Screen::Say {
-                person,
-                whom,
-                text,
-                options,
-            } => {
-                let person = *person;
-                let wide = W + 120.0;
-                let xw = ((size.0 - wide) / 2.0).round();
-                let mut c = Column::new(xw, 60.0, wide);
-                if options.is_empty() {
-                    ui.title(30.0, &format!("{} {whom}", ui.t("menu.say.to")));
-                    let r = c.row(ROW);
-                    let hint = ui.t("menu.say.hint");
-                    if ui.state.focus.is_none() {
-                        ui.state.focus = Some(hearth_ui::widgets::id_of(&hint, &r));
-                        ui.state.cursor = usize::MAX;
-                    }
-                    ui.text_field(r, &hint, text, 200);
-                    c.space(6.0);
-                    let enter = ui.input.key(hearth_ui::NavKey::Enter);
-                    if (ui.button(c.row(ROW), &ui.t("menu.say.say")) || enter)
-                        && !text.trim().is_empty()
-                    {
-                        out.push(MenuAction::SayText {
-                            person,
-                            text: text.trim().to_owned(),
-                        });
-                        pop = true;
-                    }
-                } else {
-                    ui.title(30.0, &ui.t("menu.say.unclear"));
-                    if !text.is_empty() {
-                        for l in ui.font.wrap(&format!("“{text}”"), wide as u32) {
-                            ui.label(xw, c.y, &l, theme::DIM);
-                            c.space(10.0);
-                        }
-                        c.space(6.0);
-                    }
-                    for (ask, words) in options.iter() {
-                        if ui.button(c.row(ROW), words) {
-                            out.push(MenuAction::Speak {
-                                person,
-                                ask: ask.clone(),
-                            });
-                            pop = true;
-                        }
-                    }
-                    if options.is_empty() {
-                        ui.label(xw, c.y, &ui.t("menu.say.none"), theme::DIM);
-                        c.space(12.0);
-                    }
-                }
-                c.space(8.0);
-                if ui.button(c.row(ROW), &ui.t("menu.say.never_mind")) {
-                    pop = true;
-                }
-            }
-            Screen::Conversation => {
-                use hearth_core::options::{ConversationApi, ConversationBackend};
-                let title = ui.t("menu.options.conversation");
-                let wide = W + 120.0;
-                let o = &mut cx.options.conversation;
-                let before = o.clone();
-                let probe = cx.conversation_probe.clone();
-                let models = cx.conversation_models.clone();
-                let footer = page(ui, &title, "conversation", wide, PAGE_TOP, 3.0, |ui, c| {
-                    let xw = c.x;
-                    let wide = c.w;
-                    let kinds = [
-                        ConversationBackend::Off,
-                        ConversationBackend::Local,
-                        ConversationBackend::Remote,
-                    ];
-                    let kind_names: Vec<String> = [
-                        "menu.conversation.off",
-                        "menu.conversation.local",
-                        "menu.conversation.remote",
-                    ]
-                    .iter()
-                    .map(|k| ui.t(k))
-                    .collect();
-                    let mut i = kinds.iter().position(|k| *k == o.backend).unwrap_or(0);
-                    if ui.cycle(
-                        c.row(ROW),
-                        &ui.t("menu.conversation.backend"),
-                        &kind_names,
-                        &mut i,
-                    ) {
-                        o.backend = kinds[i];
-                        // A provider over the internet: the Messages API's address and key, until
-                        // the player says otherwise; this computer's own server: Ollama's.
-                        match o.backend {
-                            ConversationBackend::Remote
-                                if before.backend != ConversationBackend::Remote =>
-                            {
-                                o.api = ConversationApi::Anthropic;
-                                o.url = "https://api.anthropic.com/v1".to_owned();
-                                o.key_env = "ANTHROPIC_API_KEY".to_owned();
-                                o.model.clear();
-                            }
-                            ConversationBackend::Local
-                                if before.backend != ConversationBackend::Local =>
-                            {
-                                o.api = ConversationApi::OpenAiCompatible;
-                                o.url = "http://127.0.0.1:11434/v1".to_owned();
-                                o.key_env.clear();
-                                o.model.clear();
-                            }
-                            _ => {}
-                        }
-                    }
-                    if o.backend != ConversationBackend::Off {
-                        let apis = [
-                            ConversationApi::OpenAiCompatible,
-                            ConversationApi::Anthropic,
-                        ];
-                        let api_names: Vec<String> =
-                            ["menu.conversation.openai", "menu.conversation.anthropic"]
-                                .iter()
-                                .map(|k| ui.t(k))
-                                .collect();
-                        let mut a = apis.iter().position(|k| *k == o.api).unwrap_or(0);
-                        if ui.cycle(
-                            c.row(ROW),
-                            &ui.t("menu.conversation.api"),
-                            &api_names,
-                            &mut a,
-                        ) {
-                            o.api = apis[a];
-                        }
-                        ui.label(xw, c.y, &ui.t("menu.conversation.url"), theme::DIM);
-                        c.space(10.0);
-                        ui.text_field(c.row(ROW), &ui.t("menu.conversation.url"), &mut o.url, 120);
-                        ui.label(xw, c.y, &ui.t("menu.conversation.model"), theme::DIM);
-                        c.space(10.0);
-                        ui.text_field(
-                            c.row(ROW),
-                            &ui.t("menu.conversation.model_hint"),
-                            &mut o.model,
-                            80,
-                        );
-                        if !models.is_empty() {
-                            let mut m = cx
-                                .conversation_models
-                                .iter()
-                                .position(|x| *x == o.model)
-                                .unwrap_or(0);
-                            if ui.cycle(
-                                c.row(ROW),
-                                &ui.t("menu.conversation.listed"),
-                                &models,
-                                &mut m,
-                            ) || o.model.is_empty()
-                            {
-                                o.model = models[m].clone();
-                            }
-                        } else if ui.button(c.row(ROW), &ui.t("menu.conversation.list")) {
-                            out.push(MenuAction::ListModels);
-                        }
-                        ui.label(xw, c.y, &ui.t("menu.conversation.key"), theme::DIM);
-                        c.space(10.0);
-                        ui.text_field(
-                            c.row(ROW),
-                            &ui.t("menu.conversation.key_hint"),
-                            &mut o.key_env,
-                            60,
-                        );
-                        ui.toggle(
-                            c.row(ROW),
-                            &ui.t("menu.conversation.free_text"),
-                            &mut o.free_text,
-                        );
-                        let budgets = [2000u32, 4000, 8000, 15000];
-                        let budget_names: Vec<String> =
-                            budgets.iter().map(|b| format!("{} s", b / 1000)).collect();
-                        let mut b = budgets
-                            .iter()
-                            .position(|x| *x >= o.budget_ms)
-                            .unwrap_or(budgets.len() - 1);
-                        if ui.cycle(
-                            c.row(ROW),
-                            &ui.t("menu.conversation.budget"),
-                            &budget_names,
-                            &mut b,
-                        ) {
-                            o.budget_ms = budgets[b];
-                        }
-                        if ui.button(c.row(ROW), &ui.t("menu.conversation.test")) {
-                            out.push(MenuAction::TestConversation);
-                        }
-                        if let Some(p) = &probe {
-                            for l in ui.font.wrap(p, wide as u32) {
-                                ui.label(xw, c.y, &l, theme::TEXT);
-                                c.space(10.0);
-                            }
-                        }
-                        let note = if o.backend == ConversationBackend::Remote {
-                            "menu.conversation.remote_note"
-                        } else {
-                            "menu.conversation.local_note"
-                        };
-                        for l in ui.font.wrap(&ui.t(note), wide as u32) {
-                            ui.label(xw, c.y, &l, theme::DIM);
-                            c.space(10.0);
-                        }
-                    } else {
-                        for l in ui
-                            .font
-                            .wrap(&ui.t("menu.conversation.off_note"), wide as u32)
-                        {
-                            ui.label(xw, c.y, &l, theme::DIM);
-                            c.space(10.0);
-                        }
-                    }
-                });
-                if *o != before {
-                    out.push(MenuAction::OptionsChanged);
-                }
-                if ui.button(footer, &ui.t("menu.done")) {
                     pop = true;
                 }
             }
@@ -2158,108 +1742,6 @@ impl Menus {
         }
         out
     }
-}
-
-/// The birth (H1): the mother, the child and the father side by side under their names, where it
-/// was and what it means, the light on them, and a button to begin. Returns the preview and
-/// whether the player begins.
-fn born_screen(
-    ui: &mut Ui<'_>,
-    born: &hearth_protocol::Born,
-    sway: &mut f32,
-    light: &mut usize,
-) -> (Preview, bool) {
-    let size = ui.size;
-    ui.title(10.0, &ui.t("menu.born.title"));
-    let mut y = 26.0;
-    let lat = born.latitude_deg;
-    let place = ui.lang.format(
-        "menu.born.place",
-        &[(
-            "lat",
-            &format!("{:.0}° {}", lat.abs(), if lat < 0.0 { "S" } else { "N" }),
-        )],
-    );
-    let words = ui.t("menu.born.words");
-    for (text, colour) in [(place, theme::TEXT), (words, theme::DIM)] {
-        for line in ui.font.wrap(&text, (size.0 - 40.0).min(440.0) as u32) {
-            let lw = ui.font.width(&line) as f32;
-            ui.label(((size.0 - lw) / 2.0).round(), y, &line, colour);
-            y += hearth_ui::font::LINE as f32;
-        }
-        y += 3.0;
-    }
-    // The family, under who each is and their age: the elder children, the mother, the player,
-    // the father, the younger children.
-    let top = y + 6.0;
-    let rect = Rect::new(8.0, top, size.0 - 16.0, (size.1 - top - 72.0).max(40.0));
-    let kin = |a: &hearth_character::Appearance| {
-        if a.body == hearth_character::BodyType::Female {
-            "menu.born.sister"
-        } else {
-            "menu.born.brother"
-        }
-    };
-    let you_age = born.ages[1];
-    let mut family: Vec<(String, f32, hearth_character::Appearance)> = Vec::new();
-    for (age, a) in born.siblings.iter().filter(|s| s.0 > you_age) {
-        family.push((ui.t(kin(a)), *age, a.clone()));
-    }
-    family.push((ui.t("menu.born.mother"), born.ages[0], born.mother.clone()));
-    let you = if born.you.name.trim().is_empty() {
-        ui.t("menu.born.you")
-    } else {
-        format!("{} ({})", ui.t("menu.born.you"), born.you.name.trim())
-    };
-    family.push((you, you_age, born.you.clone()));
-    family.push((ui.t("menu.born.father"), born.ages[2], born.father.clone()));
-    for (age, a) in born.siblings.iter().filter(|s| s.0 <= you_age) {
-        family.push((ui.t(kin(a)), *age, a.clone()));
-    }
-    let n = family.len();
-    for (k, (name, age, a)) in family.iter().enumerate() {
-        let cx = preview_x(
-            &rect,
-            n,
-            (k as f32 - (n as f32 - 1.0) / 2.0) * PREVIEW_SPACING_M,
-        );
-        let years = if *age < 1.0 {
-            ui.t("menu.born.newborn")
-        } else {
-            ui.lang.format(
-                "menu.born.years",
-                &[("n", &format!("{}", age.floor() as u32))],
-            )
-        };
-        let colour = if a == &born.you {
-            theme::TEXT
-        } else {
-            theme::DIM
-        };
-        for (line, text) in [name, &years].into_iter().enumerate() {
-            let lw = ui.font.width(text) as f32;
-            ui.label(
-                (cx - lw / 2.0).round(),
-                rect.y + rect.h + 2.0 + line as f32 * hearth_ui::font::LINE as f32,
-                text,
-                colour,
-            );
-        }
-    }
-    let people: Vec<hearth_character::Appearance> = family.into_iter().map(|(_, _, a)| a).collect();
-    let mut c = Column::new(((size.0 - W) / 2.0).round(), size.1 - 46.0, W);
-    let lights: Vec<String> = PreviewLight::ALL.iter().map(|l| ui.t(l.key())).collect();
-    ui.cycle(c.row(ROW), &ui.t("menu.character.light"), &lights, light);
-    let begin = ui.button(c.row(ROW), &ui.t("menu.born.begin"));
-    // Facing the viewer, turning slowly to and fro.
-    *sway = (*sway + 0.004).rem_euclid(std::f32::consts::TAU);
-    let preview = Preview {
-        rect,
-        people,
-        yaw: 0.35 * sway.sin(),
-        light: PreviewLight::ALL[(*light).min(PreviewLight::ALL.len() - 1)],
-    };
-    (preview, begin)
 }
 
 /// Where to be born (Amendment P §4.3): the planet's globe behind the screen (the app draws
@@ -2348,7 +1830,6 @@ fn birthplace_screen(
         out.push(MenuAction::Play {
             folder: choice.folder.clone(),
             seed: choice.seed,
-            death: Default::default(),
             knowledge: Default::default(),
             era: choice.era.clone(),
             size: choice.size,
@@ -2359,48 +1840,7 @@ fn birthplace_screen(
     }
 }
 
-/// A daughter, a son, or as chance has it.
-/// The households the player may be born into (H8): each told by who its people are, never how
-/// they look; one chosen, and a daughter, a son or as chance has it.
-fn births_screen(
-    ui: &mut Ui<'_>,
-    choices: &[hearth_protocol::BirthChoice],
-    selected: &mut usize,
-    born: &mut Born,
-    out: &mut Vec<MenuAction>,
-) {
-    let size = ui.size;
-    let wide = (W + 160.0).min(size.0 - 16.0);
-    let x = ((size.0 - wide) / 2.0).round();
-    ui.title(16.0, &ui.t("menu.births.title"));
-    let mut c = Column::new(x, 36.0, wide);
-    for (k, choice) in choices.iter().enumerate() {
-        let mark = if k == *selected { "> " } else { "" };
-        if ui.button(c.row(ROW), &format!("{mark}{}", choice.title)) {
-            *selected = k;
-        }
-        if k == *selected {
-            for line in &choice.lines {
-                for l in ui.font.wrap(line, wide as u32) {
-                    ui.label(x + 8.0, c.y, &l, theme::TEXT);
-                    c.space(hearth_ui::font::LINE as f32);
-                }
-            }
-            c.space(4.0);
-        }
-    }
-    c.space(6.0);
-    born_choice(ui, c.row(ROW), born);
-    ui.label(x, c.y, &ui.t("menu.births.looks"), theme::DIM);
-    c.space(hearth_ui::font::LINE as f32 + 4.0);
-    if !choices.is_empty() && ui.button(c.row(ROW), &ui.t("menu.births.born")) {
-        out.push(MenuAction::BeBorn {
-            choice: (*selected).min(choices.len() - 1),
-            female: born.female(),
-        });
-    }
-}
-
+/// A woman, a man, or as chance has it.
 fn born_choice(ui: &mut Ui<'_>, r: Rect, born: &mut Born) {
     let names: Vec<String> = Born::ALL.iter().map(|b| ui.t(b.key())).collect();
     let mut i = Born::ALL.iter().position(|b| b == born).unwrap_or(0);
@@ -2409,17 +1849,9 @@ fn born_choice(ui: &mut Ui<'_>, r: Rect, born: &mut Born) {
     }
 }
 
-/// After death: how it happened, the life told, and what the world's rules allow (Addendum B
-/// §2): live on as another — chosen among the dead one's family, group, those near where they
-/// died, or anyone, as the world's scope lets, told by who they are and never how they look —
-/// be born again here or elsewhere on the globe (Legacy), live again (Hardy), or the tale of the
-/// life that ended the world (permadeath); watch the world, or begin it again.
-fn death_screen(
-    ui: &mut Ui<'_>,
-    cx: &mut MenuContext<'_>,
-    filter: &mut usize,
-    out: &mut Vec<MenuAction>,
-) {
+/// After death (Amendment E §6.6): how it happened and what a new life keeps; begin a new life
+/// near where the player last lived or elsewhere on the globe, or begin the world again.
+fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAction>) {
     let size = ui.size;
     let Some(d) = cx.death.clone() else {
         // Alive again: nothing to face.
@@ -2427,58 +1859,11 @@ fn death_screen(
     };
     let wide = (W + 120.0).min(size.0 - 16.0);
     let footer = page_footed(ui, &d.words, "death", wide, PAGE_TOP, 4.0, 2, |ui, c| {
-        let x = c.x;
         let size = ui.size;
-        for line in &d.story {
-            for l in ui.font.wrap(line, c.w as u32) {
-                let lw = ui.font.width(&l) as f32;
-                ui.label(((size.0 - lw) / 2.0).round(), c.y, &l, theme::TEXT);
-                c.space(hearth_ui::font::LINE as f32);
-            }
-        }
-        if !d.story.is_empty() {
-            c.space(6.0);
-        }
-        // Who to live on as, by the filter chosen (those the world's scope allows were sent).
-        if d.death.inhabit != hearth_save::InhabitScope::None && !d.others.is_empty() {
-            let names: Vec<String> = DEATH_FILTERS.iter().map(|k| ui.t(k)).collect();
-            ui.cycle(c.row(ROW), &ui.t("menu.death.among"), &names, filter);
-            let shown: Vec<&hearth_protocol::Other> = d
-                .others
-                .iter()
-                .filter(|o| match *filter {
-                    0 => o.family,
-                    1 => o.group,
-                    2 => o.near,
-                    _ => true,
-                })
-                .collect();
-            if shown.is_empty() {
-                ui.label(x, c.y, &ui.t("menu.death.none"), theme::DIM);
-                c.space(hearth_ui::font::LINE as f32 + 2.0);
-            }
-            for o in shown {
-                let key = if o.child {
-                    "menu.death.live_as_child"
-                } else {
-                    "menu.death.live_as"
-                };
-                let words = ui.lang.format(key, &[("who", &o.words)]);
-                if ui.button(c.row(ROW), &words) {
-                    out.push(MenuAction::LiveAs(o.id));
-                }
-            }
-            c.space(6.0);
-        }
-        // What the world keeps of what was known; Permadeath ends it.
-        let said = if d.death.ends_the_world() {
-            "body.death.permadeath"
-        } else {
-            match d.death.after {
-                hearth_save::AfterDeath::TheirsOnly => "body.death.theirs_only",
-                hearth_save::AfterDeath::HeadStart => "body.death.head_start",
-                hearth_save::AfterDeath::KeepEverything => "body.death.keep_everything",
-            }
+        let said = match d.after_death {
+            hearth_save::AfterDeath::TheirsOnly => "body.death.theirs_only",
+            hearth_save::AfterDeath::HeadStart => "body.death.head_start",
+            hearth_save::AfterDeath::KeepEverything => "body.death.keep_everything",
         };
         for line in ui.font.wrap(&ui.t(said), c.w as u32) {
             let lw = ui.font.width(&line) as f32;
@@ -2486,68 +1871,20 @@ fn death_screen(
             c.space(hearth_ui::font::LINE as f32);
         }
         c.space(8.0);
-        if d.death.born_again {
-            // Born again as a baby (Addendum A's birth): here or elsewhere, a daughter or a son
-            // or as chance has it.
-            let before = cx.profiles.born;
-            born_choice(ui, c.row(ROW), &mut cx.profiles.born);
-            if cx.profiles.born != before {
-                out.push(MenuAction::ProfilesChanged);
-            }
-            let female = cx.profiles.born.female();
-            if ui.button(c.row(ROW), &ui.t("menu.death.born_again")) {
-                out.push(MenuAction::BornAgain {
-                    elsewhere: false,
-                    female,
-                });
-            }
-            if ui.button(c.row(ROW), &ui.t("menu.death.born_elsewhere")) {
-                out.push(MenuAction::BornAgain {
-                    elsewhere: true,
-                    female,
-                });
-            }
+        if ui.button(c.row(ROW), &ui.t("menu.death.new_life")) {
+            out.push(MenuAction::NewLife { elsewhere: false });
         }
-        if d.death.ends_the_world() {
-            for line in d.summary.iter().flatten() {
-                for l in ui.font.wrap(line, c.w as u32) {
-                    let lw = ui.font.width(&l) as f32;
-                    ui.label(((size.0 - lw) / 2.0).round(), c.y, &l, theme::TEXT);
-                    c.space(hearth_ui::font::LINE as f32 + 1.0);
-                }
-            }
+        if ui.button(c.row(ROW), &ui.t("menu.death.new_life_elsewhere")) {
+            out.push(MenuAction::NewLife { elsewhere: true });
         }
     });
-    // Watching the world after death is Creative's alone (Amendment P §2).
-    let b = if cx.may_watch {
-        let (a, b) = footer.split_left((footer.w - 4.0) / 2.0, 4.0);
-        if ui.button(a, &ui.t("menu.death.watch")) {
-            out.push(MenuAction::Spectate);
-        }
-        b
-    } else {
-        footer
-    };
-    if ui.button(b, &ui.t("menu.death.to_title")) {
+    if ui.button(footer, &ui.t("menu.death.to_title")) {
         out.push(MenuAction::QuitToTitle);
     }
     let again = Rect::new(footer.x, footer.y + ROW + 4.0, footer.w, ROW);
     if ui.button(again, &ui.t("menu.death.again")) {
         out.push(MenuAction::Restart);
     }
-}
-
-/// The death screen's filters of whom to live on as (Addendum B §2.2).
-const DEATH_FILTERS: [&str; 4] = [
-    "menu.death.family",
-    "menu.death.group",
-    "menu.death.near",
-    "menu.death.anywhere",
-];
-
-/// A screen's size.
-fn size_of(ui: &Ui<'_>) -> (f32, f32) {
-    ui.size
 }
 
 /// A world's folder from its name.
