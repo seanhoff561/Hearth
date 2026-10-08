@@ -342,6 +342,7 @@ mod tests {
             globe: None,
             time_words: None,
             waiting: None,
+            sleep_words: None,
             may_watch: true,
             creative: false,
             catalog: &[],

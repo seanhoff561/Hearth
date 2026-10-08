@@ -175,6 +175,7 @@ fn lay_out(screen: &dyn Fn() -> Screen, size: (f32, f32)) -> Vec<Placed> {
             globe: None,
             time_words: Some("Late afternoon, early autumn".into()),
             waiting: Some("Dry meat on a rack".into()),
+            sleep_words: Some("You are not sleepy yet. Lying here, you would probably fall asleep in about 4 hours.".into()),
                 may_watch: true,
                 creative: true,
                 catalog: &[],

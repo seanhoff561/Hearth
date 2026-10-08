@@ -200,6 +200,7 @@ fn the_birthplace_screen_shows_the_places() {
                 }),
                 time_words: None,
                 waiting: None,
+                sleep_words: None,
                 may_watch: false,
                 creative: false,
                 catalog: &[],

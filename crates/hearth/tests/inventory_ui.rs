@@ -139,6 +139,7 @@ fn the_inventory_moves_things_where_they_are_put() {
                     globe: None,
                     time_words: None,
                     waiting: None,
+                    sleep_words: None,
                     may_watch: true,
                     creative: true,
                     catalog: &[],

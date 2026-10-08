@@ -543,6 +543,11 @@ fn body_view(
             .filter(|i| i.active())
             .map(|i| i.id.clone())
             .collect(),
+        sleepy_in_h: p
+            .body
+            .sleep
+            .hours_until(exposure.local_hour as f64, hearth_player::SLEEPY)
+            .map(|h| h as f32),
         exposure,
     }
 }

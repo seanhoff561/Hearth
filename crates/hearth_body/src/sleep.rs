@@ -47,6 +47,20 @@ impl Sleep {
         let clock = (std::f64::consts::TAU * (hour - 4.0) / 24.0).cos();
         (self.pressure + 0.12 * clock).clamp(0.0, 1.0)
     }
+
+    /// Hours from `hour` (local solar time) until sleepiness reaches `sleepy`, staying awake
+    /// at rest (P §7.1: "you'll probably fall asleep around dusk"); none within a day.
+    pub fn hours_until(&self, hour: f64, sleepy: f64) -> Option<f64> {
+        let mut s = *self;
+        for q in 0..=96 {
+            let h = q as f64 * 0.25;
+            if s.sleepiness((hour + h).rem_euclid(24.0)) >= sleepy {
+                return Some(h);
+            }
+            s.step(false, 1.0, 0.0, 1.0, 900.0);
+        }
+        None
+    }
 }
 
 #[cfg(test)]
@@ -64,5 +78,19 @@ mod tests {
             s.step(true, 1.0, 0.0, 1.0, 60.0);
         }
         assert!(s.pressure < 0.15, "{}", s.pressure);
+    }
+
+    #[test]
+    fn the_evening_brings_sleep_a_noon_does_not() {
+        // Up at six: at noon not sleepy for hours; by the late evening, sleepy.
+        let mut s = Sleep::default();
+        for _ in 0..6 * 60 {
+            s.step(false, 1.0, 0.0, 1.0, 60.0);
+        }
+        let h = s.hours_until(12.0, 0.58).expect("sleepy within the day");
+        assert!((7.0..12.0).contains(&h), "sleepy {h} h after noon");
+        let mut tired = s;
+        tired.pressure = 0.75;
+        assert_eq!(tired.hours_until(12.0, 0.58), Some(0.0));
     }
 }

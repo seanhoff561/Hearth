@@ -16,8 +16,10 @@ pub const FAINT_S: f64 = 25.0;
 /// Seconds lying sleepy and at ease before sleep comes: a healthy adult's sleep latency, about a
 /// quarter of an hour (Ohayon et al. 2004, *Sleep* 27: 1255–1273).
 pub const DROP_OFF_S: f64 = 15.0 * 60.0;
-/// How sleepy (0–1) a body must be to drop off.
-pub const SLEEPY: f64 = 0.3;
+/// How sleepy (0–1) a body must be to drop off: the two-process model's upper threshold (some
+/// 0.6 of the homeostatic pressure, lowered by the body clock at night; Borbély 1982), reached
+/// at about ten at night after a day up from six, not at noon (P §7.1).
+pub const SLEEPY: f64 = 0.58;
 
 /// What a life has been: when it began, the ground it covered and the farthest it went from
 /// where it began (for the world's last words under permadeath).

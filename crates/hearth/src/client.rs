@@ -2137,6 +2137,24 @@ impl Client {
         }
     }
 
+    /// Whether sleep would come lying down now, in words (P §7.1): none when it would; else
+    /// when it probably would.
+    pub fn sleep_words(&self, l: &Lang) -> Option<String> {
+        let b = self.body.as_ref()?;
+        if b.asleep || b.dead.is_some() {
+            return None;
+        }
+        match b.sleepy_in_h {
+            Some(h) if h <= 0.25 => None,
+            Some(h) if h <= 1.0 => Some(l.get("rest.not_sleepy.soon").to_owned()),
+            Some(h) => Some(l.format(
+                "rest.not_sleepy.hours",
+                &[("hours", &format!("{}", h.round().max(2.0) as u32))],
+            )),
+            None => Some(l.get("rest.not_sleepy.not_today").to_owned()),
+        }
+    }
+
     /// The work left to itself nearest the player within a rest's reach, to wait on: its name.
     pub fn waiting_work(&self) -> Option<String> {
         let crafts = &self.crafting.as_ref()?.crafts;
@@ -4215,7 +4233,7 @@ pub fn rest_words(l: &Lang, r: &hearth_protocol::Rested) -> Option<String> {
             Rest::SleepUntilMorning => Some(l.get("rest.came.morning").to_owned()),
             Rest::UntilDusk => Some(l.get("rest.came.dusk").to_owned()),
             Rest::UntilDone => Some(l.get("rest.came.done").to_owned()),
-            Rest::SleepUntilRested | Rest::Hours(_) => None,
+            Rest::SleepUntilRested | Rest::Hours(_) | Rest::UntilSleepy => None,
         },
         RestEnd::Woke(why) => Some(l.get(why.key()).to_owned()),
         RestEnd::Needs(why) => Some(

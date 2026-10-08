@@ -93,6 +93,10 @@ impl Resting {
     ) -> Option<RestEnd> {
         if player.asleep {
             self.slept += advanced;
+            // Rested until sleep came: asleep now until rested.
+            if self.rest == Rest::UntilSleepy {
+                self.rest = Rest::SleepUntilRested;
+            }
         }
         let rose = seen.sun_up && !self.sun_up;
         let set = !seen.sun_up && self.sun_up;
@@ -121,6 +125,7 @@ impl Resting {
                 .waiting
                 .iter()
                 .all(|id| items.get(*id).is_none_or(|w| w.work.is_none())),
+            Rest::UntilSleepy => false,
         };
         (came || hours >= MOST_H).then_some(RestEnd::Came)
     }

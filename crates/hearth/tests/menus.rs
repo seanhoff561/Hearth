@@ -55,6 +55,7 @@ fn render(
                 globe: None,
                 time_words: Some("Late afternoon, early autumn".into()),
                 waiting: Some("Dry meat".into()),
+                sleep_words: Some("You are not sleepy yet. Lying here, you would probably fall asleep in about 4 hours.".into()),
                 may_watch: true,
                 creative: true,
                 catalog: &[],

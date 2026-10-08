@@ -339,6 +339,8 @@ pub struct MenuContext<'a> {
     pub time_words: Option<String>,
     /// The work left to itself near the player, to wait on (its name).
     pub waiting: Option<String>,
+    /// Why sleep would not come lying down now and when it would (none: it would).
+    pub sleep_words: Option<String>,
     /// Whether watching the world is open (Creative, or a world of no mode), and whether the
     /// world is in Creative (Amendment P §2).
     pub may_watch: bool,
@@ -1568,12 +1570,21 @@ impl Menus {
                 let title = ui.t("rest.title");
                 let when = cx.time_words.clone();
                 let waiting = cx.waiting.clone();
+                let sleepless = cx.sleep_words.clone();
                 let footer = page(ui, &title, "rest", W, PAGE_TOP, 4.0, |ui, c| {
                     if let Some(w) = &when {
                         ui.text_centred(&Rect::new(c.x, c.y, c.w, 10.0), w, theme::DIM);
                         c.space(14.0);
                     }
                     use hearth_protocol::Rest;
+                    // Not sleepy yet: why, and when sleep would come (P §7.1).
+                    if let Some(words) = &sleepless {
+                        for l in ui.font.wrap(words, c.w as u32) {
+                            ui.label(c.x, c.y, &l, theme::DIM);
+                            c.space(hearth_ui::font::LINE as f32);
+                        }
+                        c.space(4.0);
+                    }
                     let mut choices = vec![
                         (ui.t("rest.sleep_morning"), Rest::SleepUntilMorning),
                         (ui.t("rest.sleep_rested"), Rest::SleepUntilRested),
@@ -1582,6 +1593,9 @@ impl Menus {
                         (ui.t("rest.hours.4"), Rest::Hours(4.0)),
                         (ui.t("rest.dusk"), Rest::UntilDusk),
                     ];
+                    if sleepless.is_some() {
+                        choices.insert(0, (ui.t("rest.until_sleepy"), Rest::UntilSleepy));
+                    }
                     if let Some(what) = &waiting {
                         let words = ui.lang.format("rest.done", &[("what", what)]);
                         choices.push((words, Rest::UntilDone));

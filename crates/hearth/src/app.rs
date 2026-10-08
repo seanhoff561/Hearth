@@ -1230,6 +1230,7 @@ impl App {
                         modes: modes.clone(),
                         time_words: client.as_ref().and_then(|c| c.time_words(ui.lang)),
                         waiting: client.as_ref().and_then(|c| c.waiting_work()),
+                        sleep_words: client.as_ref().and_then(|c| c.sleep_words(ui.lang)),
                         may_watch: client.as_ref().is_none_or(|c| c.may_watch()),
                         creative: client.as_ref().is_some_and(|c| c.creative()),
                         catalog: client.as_ref().map_or(&[][..], |c| &c.catalog[..]),

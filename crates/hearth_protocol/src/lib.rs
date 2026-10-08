@@ -42,6 +42,8 @@ pub enum Rest {
     UntilDusk,
     /// Waiting until the work left to itself nearby is done (the meat dry, the pot fired).
     UntilDone,
+    /// Resting until sleep comes, then asleep until rested (P §7.1).
+    UntilSleepy,
 }
 
 /// How a rest ended: how long it lasted and how much of it asleep (hours), what it was for,
@@ -352,6 +354,8 @@ pub struct BodyView {
     pub illnesses: Vec<String>,
     /// The weather, water and shelter the body is in.
     pub exposure: Exposure,
+    /// Hours until sleepy enough to drop off lying down (0: now; none: not within a day).
+    pub sleepy_in_h: Option<f32>,
 }
 
 /// Smoke rising from a fire in the vegetation.
