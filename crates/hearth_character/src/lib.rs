@@ -3,6 +3,7 @@
 //! how it moves (`animate`: the gaits, crouching, crawling, swimming, climbing, falling and
 //! lying, procedurally), and the boxes the renderer draws (`instances`).
 
+pub mod anatomy;
 pub mod animate;
 pub mod appearance;
 pub mod instances;

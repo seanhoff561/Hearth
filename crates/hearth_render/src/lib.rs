@@ -4,6 +4,7 @@
 //! `ARCHITECTURE.md` for the frame graph.
 
 pub mod atlas;
+pub mod body;
 pub mod camera;
 mod cull;
 pub mod figure;

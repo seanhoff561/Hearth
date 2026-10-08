@@ -317,7 +317,7 @@ impl PreviewLight {
 
     /// Direction to the light (in front of the figure, which faces +Z), its illuminance and
     /// the sky's and the ground's (lux, RGB).
-    fn lighting(self) -> (Vec3, Vec3, Vec3, Vec3) {
+    pub(crate) fn lighting(self) -> (Vec3, Vec3, Vec3, Vec3) {
         match self {
             PreviewLight::Daylight => (
                 Vec3::new(0.45, 0.75, 0.5).normalize(),

@@ -981,6 +981,7 @@ dependencies = [
  "glam",
  "hearth_content",
  "hearth_math",
+ "hearth_smooth",
  "serde",
  "serde_json",
 ]
