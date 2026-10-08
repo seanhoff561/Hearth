@@ -8,11 +8,12 @@ use common::{World, temp};
 use hearth_math::BlockPos;
 use hearth_protocol::AimAt;
 
-/// The foot of a slim standing trunk near the player (a limb-thick stem on the ground with wood
-/// above it, so it is felled in under an hour with a stone axe), as thick for two blocks above
-/// the cut (what falls is a stem, not a whip).
+/// The foot of a slim standing tree near the player, where the generator placed it (trees stand
+/// turned and off their block's middle, so a stem's shape in blocks is no sign of its foot): a
+/// limb-thick stem on the ground, felled in under an hour with a stone axe, with stem that thick
+/// above the cut (what falls is a stem, not a whip), and all its wood standing in the world.
 fn trunk(w: &World) -> Option<BlockPos> {
-    let thick = |p: BlockPos| {
+    let slim = |p: BlockPos| {
         w.mirror.block(p).is_some_and(|s| {
             w.reg.block_of(s).name.path().ends_with("_branch")
                 && w.reg
@@ -20,33 +21,33 @@ fn trunk(w: &World) -> Option<BlockPos> {
                     .is_some_and(|t| t == "8" || t == "12")
         })
     };
-    // Upright and joined to nothing beside it: a stem's foot, not the upturned end of a low limb
-    // standing over the ground beside the stem it forks from (the stump is the tree's foot).
-    let stem = |p: BlockPos| {
-        thick(p)
-            && w.mirror.block(p).is_some_and(|s| {
-                w.reg.get(s, "up") == Some("true")
-                    && ["north", "south", "east", "west"]
-                        .iter()
-                        .all(|d| w.reg.get(s, d) != Some("true"))
-            })
-    };
     // On the ground itself: not the slim stem over a flared foot of log.
     let ground = |p: BlockPos| {
         w.solid(p)
             && w.block(p)
                 .is_some_and(|b| !b.ends_with("_log") && !b.ends_with("_branch"))
     };
-    w.find(40, |n, _| n.ends_with("_branch"))
+    let wg = &w.generator;
+    let veg = hearth_worldgen::vegetation::Vegetation::default();
+    let (x, z) = (w.mover.pos.x.floor() as i32, w.mover.pos.z.floor() as i32);
+    wg.features()
+        .trees_in(wg, &veg, (x - 40, z - 40), (x + 40, z + 40))
         .into_iter()
-        .filter(|p| stem(*p) && ground(p.down()))
-        .find(|p| {
-            (1..=4).all(|k| {
-                w.block(BlockPos::new(p.x, p.y + k, p.z))
-                    .is_some_and(|b| b.ends_with("_branch") || b.ends_with("_leaves"))
-            }) && thick(p.up())
-                && thick(p.up().up())
-                && w.stand_by(*p).is_some()
+        .filter(|t| t.remains == hearth_worldgen::cubegen::features::Remains::Living)
+        .find_map(|t| {
+            let foot = BlockPos::new(t.foot[0], t.foot[1], t.foot[2]);
+            let wood: Vec<BlockPos> = t
+                .blocks()
+                .filter(|(_, part)| !matches!(part, hearth_flora::Part::Leaves))
+                .map(|(p, _)| p)
+                .collect();
+            let standing = wood.iter().all(|p| {
+                w.block(*p)
+                    .is_some_and(|b| b.ends_with("_branch") || b.ends_with("_log"))
+            });
+            let stem = wood.iter().filter(|p| p.y > foot.y && slim(**p)).count() >= 2;
+            (slim(foot) && ground(foot.down()) && standing && stem && w.stand_by(foot).is_some())
+                .then_some(foot)
         })
 }
 
@@ -205,15 +206,19 @@ fn a_felled_tree_stays_felled_and_a_young_tree_takes_its_place() {
     w.server.send(hearth_protocol::ToServer::Run(1));
     assert!(w.until(60.0, |w| w.ticks >= want), "the clock moved on");
     w.run(30);
+    // Of the tree's own species, maybe: told from the stump by what grows over its foot.
+    let tree = |b: Option<String>| {
+        b.is_some_and(|b| b.ends_with("_branch") || b.ends_with("_log") || b.ends_with("_leaves"))
+    };
     let young = |w: &World| {
-        w.block(foot).is_some_and(|b| {
-            b != wood && (b.ends_with("_branch") || b.ends_with("_log") || b.ends_with("_leaves"))
-        })
+        tree(w.block(foot))
+            && (w.block(foot).as_deref() != Some(wood.as_str()) || tree(w.block(foot.up())))
     };
     assert!(
         w.until(10.0, young),
-        "a young tree at the stump's place: {:?}",
-        w.block(foot)
+        "a young tree at the stump's place: {:?} under {:?}",
+        w.block(foot),
+        w.block(foot.up())
     );
     drop(w);
     let _ = std::fs::remove_dir_all(&dir);

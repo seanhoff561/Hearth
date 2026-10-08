@@ -13,6 +13,18 @@ rustc-hash.workspace = true
 thiserror.workspace = true
 log.workspace = true
 toml.workspace = true
+tracy-client = { workspace = true, optional = true, features = ["enable"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_System_ProcessStatus",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }
+
+[features]
+# Every `zone!` also a zone of the Tracy profiler (`cargo run --features tracy`).
+tracy = ["dep:tracy-client"]
 
 [lints]
 workspace = true

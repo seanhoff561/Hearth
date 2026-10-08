@@ -24,6 +24,7 @@ pub mod smoke;
 pub mod smooth;
 pub mod taa;
 pub mod terrain;
+pub mod trees;
 pub mod ui;
 pub mod water;
 

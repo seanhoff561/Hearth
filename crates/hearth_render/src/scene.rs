@@ -144,6 +144,8 @@ pub struct SceneRenderer {
     pub figures: FigureRenderer,
     /// People as sculpted bodies (E7).
     pub people: crate::body::PeopleRenderer,
+    /// Trees and woody shrubs as meshes (S5).
+    pub trees: crate::trees::TreeRenderer,
     /// The player's body's senses on the image.
     pub senses: crate::post::Senses,
     pub post: PostProcess,
@@ -187,9 +189,12 @@ impl SceneRenderer {
         let lod = LodRenderer::new(ctx, &terrain, planet, crate::post::HDR_FORMAT);
         let figures = FigureRenderer::new(ctx, terrain.globals_bind().0);
         let people = crate::body::PeopleRenderer::new(ctx, terrain.globals_bind().0);
+        let trees =
+            crate::trees::TreeRenderer::new(ctx, terrain.globals_bind().0, crate::post::HDR_FORMAT);
         Self {
             figures,
             people,
+            trees,
             senses: crate::post::Senses::default(),
             post: PostProcess::new(ctx, output_format),
             precip: PrecipRenderer::new(ctx),
@@ -479,9 +484,10 @@ impl SceneRenderer {
             Some(wgpu::Color::BLACK),
             timer.as_mut(),
         );
-        if self.figures.count() > 0 || self.people.count() > 0 {
+        if self.figures.count() > 0 || self.people.count() > 0 || self.trees.stats.instances > 0 {
             let (_, bind0) = self.terrain.globals_bind();
             let mut pass = begin_pass(enc, &hdr, depth, None);
+            self.trees.draw(&mut pass, bind0);
             self.figures.draw(&mut pass, bind0);
             self.people.draw(&mut pass, bind0);
         }

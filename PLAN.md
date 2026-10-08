@@ -35,22 +35,43 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 7. **Audit 1** (done).
 8. **S1 → S2 → E7 → S3 → S4** (S4 as amended by E §9.2) (done).
 9. **Audit 2** (done).
-10. **S5 with P7 → P7G → S6** (animals and items) **→ S7 → S8 → P8.**
-11. **Audit 3.**
-12. **V2-13 → V2-14** (technology only).
-13. **Audit 4.**
-14. **V2-15 → V2-16** (as amended by E §9.4).
-15. **Audit 5.**
-16. **Phase R-A: R1 → R2 → R3 → R5** (as amended by E §9.3).
-17. **Audit 6.**
-18. **Phase R-B: R0 → R7 → R8 → R9.**
-19. **Audit 7.**
-20. **R10.**
-21. **Phase F**, an audit after every three milestones.
+10. **E4.1 — Earth-scale performance** (the owner's fix pass, ahead of everything else; S5
+    resumes where it stopped, `PROGRESS.md`).
+11. **S5 with P7 → P7G → S6** (animals and items) **→ S7 → S8 → P8.**
+12. **Audit 3** (with a check that no coarse-scale caller has crept into the fine generator).
+13. **V2-13 → V2-14** (technology only).
+14. **Audit 4.**
+15. **V2-15 → V2-16** (as amended by E §9.4).
+16. **Audit 5.**
+17. **Phase R-A: R1 → R2 → R3 → R5** (as amended by E §9.3).
+18. **Audit 6.**
+19. **Phase R-B: R0 → R7 → R8 → R9.**
+20. **Audit 7.**
+21. **R10.**
+22. **Phase F**, an audit after every three milestones.
+
+## E4.1 — Earth-scale performance (now; `docs/spec/e4.1-earth-scale-performance.md`)
+The owner's playtest of the Earth-sized world: the globe all blue and laggy, the creator slow,
+loading maxing the CPU and crashing. A "Fast" failure (Q §1, §7).
+- Diagnose first: tracy zones, counters (fine-tile builds by caller, cache sizes by level, peak
+  memory, CPU per thread, queue lengths), `hearth bench globe|creator|load` on the Earth-sized
+  planet, a panic hook to the log; findings in `dev/PLAYTEST.md` before code changes.
+- Every query at its scale (`sample` with a footprint), callers audited, a guard against fine
+  builds from coarse callers. The globe from the planet grid, cached with it; hover from coarse
+  fields; click details asynchronous and cancellable. The creator coalesced, incremental,
+  refined asynchronously. Loading progressive and staged, responsive, with Cancel; tiles cached
+  on disk. f64 and i64 at 40 M blocks, tested at the extremes. One job system with priorities,
+  bounded queues, cancellation and reserved cores. Memory caps (about 40 % of RAM, LRU),
+  memory by category; a 30-minute soak. Realism unchanged (`docs/review/
+  earth-scale-performance.md`). Perf-gate entries, `budgets.md`; hardware detection scaling
+  workers, caches, distances and the default preset.
+- *Accept:* the brief's §7.
+
 
 ## Completed
 M0–M3 (v1 engine); V2-0 – V2-10; V2-12 (the Neolithic); S0 (D222); P0–P2; E0 (the human
-systems archived, D230); Audit 0; Q1; E1–E6; P3–P5 (P6 removed, D258); Audit 1; S1; S2; E7; S3.
+systems archived, D230); Audit 0; Q1; E1–E6; P3–P5 (P6 removed, D258); Audit 1; S1; S2; E7; S3;
+S4; Audit 2.
 What each did: `PROGRESS.md`, `docs/history/` and the design docs. V2-11 and V2.1's H0–H10
 superseded.
 
@@ -61,69 +82,9 @@ realism and cohesion against the reference ranges and real references, the repet
 a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five lines in
 `PROGRESS.md`.
 
-## From Audit 0 (medium priority; each when its file is next touched)
-- Split the eight files over 2,000 lines along the cut lines in AUDIT-0 (`client.rs`,
-  `workshop.rs`, `server.rs`'s `run` into a `ServerWorld`, `ecology.rs`, `live.rs`,
-  `screenshot.rs`, `bench.rs`, the bot test).
-- One `smoothstep`; debug tools (F3+T, the counting allocator) behind Developer mode; material
-  statuses derived from use; planned knowledge cut to id, name and a line; Q §3's repetition
-  checks in the screenshot suite (with S2).
-
-## From E3 (open)
-- The year from a loincloth (`slice_year`) cannot run on Earth's clock as it stands: a real year
-  at rest's 100 times is some ninety hours of server ticks. Make it a season (spring to the first
-  frosts), or let it pass the quiet days at Creative's faster speeds with the animals on their
-  populations' tier; until then the soak suite skips it.
-
-## From E4 (open)
-- The full suite was not run after E4 (a)–(d) (it takes too long here; the owner asked to
-  defer it). Known: E4 (a)'s land share (0.3 → Earth's 0.29) redraws every test planet's coasts,
-  so tests that rely on terrain about a spawn may need new places. The two seen failing
-  (thatch's level ground, felling) were fixed at Audit 1. Run `cargo test --profile dev-opt
-  --workspace --no-fail-fast` when the owner allows the time.
-  Verified so far: `hearth_worldgen`, `hearth_body`, `hearth_player`, `hearth_craft`,
-  `hearth_math`, clippy, fmt, content lint.
-- The grid's middle heights (1–3 km) are short of Earth's (`planet.md`): more and longer ranges.
-- The Body panel's words for breathlessness and mountain sickness.
-
-## From E5 (open)
-- The waking life lies until it acts (D251): run the bot and acceptance suites (they act at
-  once, which gets up) with the full suite above.
-- A place's card on the globe's hover, not only on the click (E §6.3).
-
-## From P3 (open)
-- The bot and acceptance suites drive the server directly; a scripted playtest through the
-  client's buttons (the §5.2 examples end to end) wants a headless client (with the full suite).
-- The action menu as a radial on the controller; sub-object picking with S5 and P7.
-
-## From P4 and E6 (open)
-- Real effects per stroke beyond digging (done at S1: each stroke digs its share), notches cut
-  in a trunk; rain filling a pit left part dug, a hide left part scraped drying stiff.
-- Cooking by core temperature; smoking, salting, fermenting and tanning as state models.
-- The hands at work in first person.
-- Gathering one thing at a time, the loose-objects layer and harvests from living plants: P7
-  (E §9.1).
-
-## From P5 (open)
-- Rivers flowing at their current (their surfaces carry only the wind's waves), shallow water
-  slowing the waves near shore, waterfalls and splashes.
-- Fog banks that drift, lightning, flames that flicker (the fire's own model).
-- The timing check reads the shaders' speeds from their source; a check that renders short
-  sequences and measures the motion in the images would also catch a wrong scale in a
-  uniform.
-
-## From Audit 1 (medium; as each file is next touched)
-- Work kept part done (`begun`): forget it when its block or thing is gone; key work in hand by
-  the stack held, not one per process.
-- A learned hand preference on a thing is kept for that kind of thing, not every thing.
-- Duplicates: `places.rs`'s distance and x-wrap (the planet's own), the spring's day offset
-  (the calendar's), `When` from a start (Birthplace and `app.rs`), the animator's `support_y`
-  and `Pose::lowest`; one bench per refresh in the hands.
-- The hands' and action menu's words as language keys, with the vessel's own name.
-- The place card's cold and heat against the difficulty's thresholds, with a source.
-- Split `client.rs` (aim, hands, motion, HUD, debug) and `workshop.rs`; the animator's work
-  poses and gestures into a module.
-- Low: `intents.ron` in its run order; drop `Found::Sea`.
+## Older open items
+From Audit 0, E3–E5, P3–P5 and Audit 1, each when its file is next touched:
+`docs/history/plan-open-items-2026-10-08.md`.
 
 ## Amendment S — Smooth voxel world (S0–S8)
 Amendment S (`docs/spec/amendment-s-smooth-world.md`, 2026-10-07) makes natural terrain smooth

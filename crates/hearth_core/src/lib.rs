@@ -7,6 +7,7 @@
 
 pub mod options;
 pub mod paths;
+pub mod prof;
 pub mod registry;
 pub mod resource;
 

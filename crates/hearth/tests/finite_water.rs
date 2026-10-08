@@ -10,14 +10,16 @@ use hearth_world::water::{FULL, WaterSim};
 use hearth_world::{BlockStateId, StateFlags};
 
 /// River columns whose neighbour toward +X is a dry bank two to four blocks above the water, as
-/// the terrain's samples have it: (x, z) of the river's last column, in the order found.
+/// the terrain's samples have it: (x, z) of the river's last column, in the order found. (Rows
+/// some 14 blocks apart and columns some 85: most banks found do not hold a channel as their
+/// blocks lie, so enough are looked at for some that do.)
 fn river_banks(lw: &LocalWorld) -> Vec<(i32, i32)> {
     let terrain = lw.terrain();
     let c = lw.map.planet().circumference();
     let mut out = Vec::new();
-    for zi in -60..60 {
-        for xi in 0..96 {
-            let (x, z) = (c * xi / 96, zi * 41);
+    for zi in -175..175 {
+        for xi in 0..192 {
+            let (x, z) = (c * xi / 192, zi * 14);
             let s = terrain.sample(x, z);
             if s.river.is_none() || !s.is_underwater() || s.ocean || s.lake {
                 continue;

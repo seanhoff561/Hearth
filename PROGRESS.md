@@ -44,7 +44,8 @@ superseded.
 | S3 — moving on the smooth ground | done 2026-10-08 (D271–D273) |
 | S4 — the distant terrain smooth | done 2026-10-08 (D274–D278) |
 | Audit 2 | done 2026-10-08 |
-| S5 with P7 | next |
+| E4.1 — Earth-scale performance (the owner's fix pass) | now |
+| S5 with P7 | paused at (b) for E4.1; resumes after it |
 | P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
@@ -55,6 +56,28 @@ superseded.
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E7 done 2026-10-08 |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); Audit 2 done 2026-10-08 (`AUDIT-2.md`); next: Audit 3 after P8 |
+
+## S5 with P7 — paused for E4.1 (2026-10-08)
+Where it stands, to resume after E4.1 (`PLAN.md` S5, P7; tasks (a)–(f)):
+- **(a) done:** `hearth_flora::mesh` builds a tree's mesh from the skeleton its blocks come
+  from (wood tubes, leaf cards by leaf kind, three details: a mature oak 47k / 8.7k / 1.7k
+  triangles); each variant turned to its own angle and up to 0.4 m off its block's middle, voxels
+  and mesh alike (`template::variant_skeleton`, `Turn::apply_f`).
+- **(b) in progress:** `hearth_render::trees` (instanced meshes, wood and alpha-tested leaves,
+  wind sway, seasons, translucency; `shaders/tree.wgsl`) is built and wired into the scene's
+  opaque pass but nothing gives it trees yet; `hearth/tests/scene_shaders.rs` checks its
+  pipelines. Next: species silhouette sheets (three ages, four seasons) in the screenshot tool.
+- **Next:** (c) the client's tree instances for loaded columns (from `trees_in` with the
+  vegetation), the cube mesher hiding natural tree voxels (a per-cube mask from the templates),
+  the LOD band (levels 0–2) as instances or impostors instead of crown boxes, the felling
+  animation with the mesh; (d) woody shrubs as individuals, Poisson-like spacing, clustering,
+  clonal patches, herbs off the grid, P §11.4's statistics; (e) boulders and fallen logs as
+  smooth shapes, dipping strata and veins, the §11.3 evaluation, the screenshot set; (f) docs.
+- **The stopping point's check** (`scripts/check.sh`, the whole suite) found two tests to mend:
+  the felling tests looked for a slim tree by its blocks' shape, which trees off the grid no
+  longer have, and now take its foot from where the generator placed it; the finite-water test
+  found no river bank that holds a channel among the four it looked at, and now looks at some
+  twelve times as many.
 
 ## Audit 2 (2026-10-08, `docs/review/audits/AUDIT-2.md`)
 - Metrics: 131k lines in `src/` (+8k: people, smooth ground, LOD fields); files over 2,000
