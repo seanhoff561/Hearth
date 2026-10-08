@@ -662,7 +662,7 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H8 — History simulation and Paleolithic eras (birth options) (2026-10-05)
 - [x] H9 — Observer mode and the player in society (2026-10-06)
 - [x] H10 — Optional conversation backend (2026-10-07)
-- [ ] V2-12 — Neolithic
+- [x] V2-12 — Neolithic (2026-10-08)
 - [x] S0 — Baseline and prototype (2026-10-07; D222)
 - [x] P0 — Triage and quick fixes (2026-10-08; D224, D225)
 - [x] P1 — Menus and world management (2026-10-08; D226)
@@ -1327,6 +1327,7 @@ D213–D216), in parts:
   and every line phrased in the other, ending byte for byte the same (`hearth_ai/tests/
   conversations.rs`); through the server a greeting phrased, a leaking phrasing never sent, typed
   words answered or offered (`tests/conversation.rs`).
+
 V2-12 — Neolithic (PLAN.md, v2 Era 3; `docs/design/neolithic.md`; D217–D221), in parts:
 - [x] (a) Pottery and kilns (D217): a pot coiled, dried to greenware (rain slumps it back to
   clay), fired in a campfire, a firing pit or an updraft kiln; fired in its clay's range by the
@@ -1350,8 +1351,22 @@ V2-12 — Neolithic (PLAN.md, v2 Era 3; `docs/design/neolithic.md`; D217–D221)
 - [x] (g) The acceptance: a bot domesticates einkorn over twelve harvests and its yields rise
   (`tests/acceptance_v2_12.rs`, `--ignored`: tough ears 0.3 % → 99 %, grain 12 → 22 mg, dormancy
   50 % → 2 %, 0.03 → 0.105 kg a square metre); a herder's mouflon line becomes docile and woolly
-  (`tests/acceptance_v2_12_herd.rs`); under-fired pottery fails (`tests/pottery.rs`); the
-  screenshots (`tools/shots/v212_neolithic.shots`).
+  over sixteen years (`tests/acceptance_v2_12_herd.rs`, `--ignored`: the first born in the keeping tame 0.36, those born from year ten 0.45; wool 0.31 → 0.66 kg); under-fired
+  pottery fails (`tests/pottery.rs`); the screenshots (`tools/shots/v212_neolithic.shots`).
+  Found at the finish and fixed: a lamb born in the keeping shows its line's temper at its
+  mother's side, so a herder can choose among the young (they were all equally tame, and
+  breeding for temper went nowhere); the player and its partner share a hearth (a pair kept
+  in two households had no children); the one the player lives on as is told of its parents'
+  deaths; the sea turtles' hatchlings no longer crowd out the grown (a hundred eggs a clutch
+  counted as turtles against what the sea holds: they are on the population model of the fish
+  and the small, the young among themselves); a kill that ran past where its herd is folded
+  back into the numbers before it fell no longer vanishes; saplings no longer drawn with the
+  missing texture. The breeding is checked fast too: a dozen flocks bred sixteen years by the
+  herder's rules in a fraction of a second (`hearth_fauna/tests/herds.rs`), the world's run
+  taking an hour; some five generations make the grown line calmer by about a tenth.
+  Known from V2-12: `hearth content lint` warns that era 3 is cheaper from scratch than era 2 —
+  the Neolithic's crafts (a pot of clay, a field of seed, a tethered lamb) take few materials
+  but seasons of time, which the measure does not count.
 
 S0 — Baseline and prototype (Amendment S, `docs/spec/amendment-s-smooth-world.md`; PLAN.md;
 `docs/design/smooth-terrain.md`; D222), done 2026-10-07:
