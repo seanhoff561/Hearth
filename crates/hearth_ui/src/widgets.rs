@@ -179,20 +179,22 @@ impl UiState {
     }
 }
 
-/// Colours of the interface.
+/// Colours of the interface: quiet panels in natural, low-saturation colours (Amendment Q §6),
+/// umber for surfaces, a warm off-white for words (about 15:1 against a panel), ochre for the
+/// focus, moss for progress and rust for warnings.
 pub mod theme {
     use crate::draw::Rgba;
-    pub const PANEL: Rgba = Rgba([16, 18, 22, 210]);
-    pub const BUTTON: Rgba = Rgba([58, 62, 70, 235]);
-    pub const BUTTON_HOT: Rgba = Rgba([88, 96, 108, 245]);
-    pub const BUTTON_DOWN: Rgba = Rgba([44, 48, 54, 245]);
-    pub const EDGE: Rgba = Rgba([150, 158, 170, 255]);
-    pub const FOCUS: Rgba = Rgba([230, 200, 120, 255]);
-    pub const TEXT: Rgba = Rgba([236, 236, 230, 255]);
-    pub const DIM: Rgba = Rgba([160, 160, 156, 255]);
-    pub const FIELD: Rgba = Rgba([10, 10, 12, 230]);
-    pub const FILL: Rgba = Rgba([120, 150, 110, 255]);
-    pub const WARN: Rgba = Rgba([230, 120, 90, 255]);
+    pub const PANEL: Rgba = Rgba([24, 22, 19, 215]);
+    pub const BUTTON: Rgba = Rgba([60, 57, 51, 235]);
+    pub const BUTTON_HOT: Rgba = Rgba([88, 83, 74, 245]);
+    pub const BUTTON_DOWN: Rgba = Rgba([45, 43, 39, 245]);
+    pub const EDGE: Rgba = Rgba([160, 152, 138, 255]);
+    pub const FOCUS: Rgba = Rgba([214, 184, 116, 255]);
+    pub const TEXT: Rgba = Rgba([238, 234, 224, 255]);
+    pub const DIM: Rgba = Rgba([166, 160, 150, 255]);
+    pub const FIELD: Rgba = Rgba([14, 13, 11, 230]);
+    pub const FILL: Rgba = Rgba([118, 142, 104, 255]);
+    pub const WARN: Rgba = Rgba([214, 118, 90, 255]);
 }
 
 /// Widgets for one frame.
@@ -395,11 +397,9 @@ impl<'a> Ui<'a> {
         self.draw.set_clip(Some(clip));
         let outer_area = self.area.replace((area, ran));
         let outer_focus = self.focused_at.take();
-        let mut col = Column::new(
-            area.x,
-            area.y - off,
-            area.w - if max > 0.0 { BAR + 2.0 } else { 0.0 },
-        );
+        // Room for the bar is kept whether it shows or not, so text wraps the same either way
+        // and the rows' extent does not jump the frame the bar appears.
+        let mut col = Column::new(area.x, area.y - off, area.w - (BAR + 2.0));
         col.gap = gap;
         let top = col.y;
         body(self, &mut col);

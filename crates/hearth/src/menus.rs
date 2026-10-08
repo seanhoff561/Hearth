@@ -920,7 +920,7 @@ impl Menus {
                             32,
                         );
                         born_choice(ui, c.row(ROW), &mut wish.born);
-                        // When the world is: its era, and how its people live then (V2.1 §15.3).
+                        // The era: Wild Earth, the others coming (Amendment E §6.4).
                         if !eras.is_empty() {
                             let names: Vec<String> = eras.iter().map(|e| e.1.clone()).collect();
                             *era = (*era).min(names.len() - 1);

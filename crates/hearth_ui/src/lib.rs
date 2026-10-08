@@ -1,16 +1,15 @@
-//! The game's interface (v1 M11 framework, V2-3): its own pixel font ([`font`]), lists of
-//! rectangles and text to draw in interface pixels ([`draw`]), and the words of the interface in
-//! the player's language ([`lang`]). The renderer (`hearth_render::ui`) draws the lists on top of
-//! the frame; nothing here touches the GPU.
+//! The game's interface (v1 M11 framework, V2-3, Amendment Q §6): its typefaces as distance
+//! fields ([`font`]), lists of rectangles and text to draw in interface pixels ([`draw`]), and
+//! the words of the interface in the player's language ([`lang`]). The renderer
+//! (`hearth_render::ui`) draws the lists on top of the frame; nothing here touches the GPU.
 
 pub mod draw;
 pub mod font;
-mod glyphs;
 pub mod lang;
 pub mod widgets;
 
 pub use draw::{DrawList, Rgba, UiVertex};
-pub use font::Font;
+pub use font::{Face, Font};
 pub use lang::Lang;
 pub use widgets::{Column, NavKey, Rect, Ui, UiInput, UiState};
 

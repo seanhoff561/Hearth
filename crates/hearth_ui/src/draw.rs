@@ -3,7 +3,7 @@
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::font::{ATLAS, CELL, Font};
+use crate::font::{ATLAS, Face, Font};
 
 /// A colour (sRGB, straight alpha).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
@@ -119,65 +119,76 @@ impl DrawList {
 
     /// A filled rectangle (interface pixels).
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Rgba) {
-        let t = 0.5 / ATLAS as f32;
+        // The middle of the atlas's solid block.
+        let t = 2.0 / ATLAS as f32;
         self.quad(x, y, w, h, [t, t, t, t], color);
     }
 
-    /// A line of text with its top-left at (x, y) (interface pixels); returns its width.
-    pub fn text(&mut self, font: &Font, text: &str, x: f32, y: f32, color: Rgba) -> f32 {
+    /// The quads of a line of text in a typeface, `size` times its usual size, with the top of
+    /// its box at (x, y) (interface pixels); returns its width.
+    fn glyphs(
+        &mut self,
+        font: &Font,
+        face: Face,
+        text: &str,
+        x: f32,
+        y: f32,
+        size: f32,
+        color: Rgba,
+    ) -> f32 {
         let a = ATLAS as f32;
         let mut pen = x;
         for c in text.chars() {
-            if let Some(g) = font.glyph(c) {
+            if let Some(g) = font.glyph_in(face, c) {
                 let uv = [
                     g.x as f32 / a,
                     g.y as f32 / a,
-                    (g.x + g.width) as f32 / a,
-                    (g.y + CELL) as f32 / a,
+                    (g.x + g.w) as f32 / a,
+                    (g.y + g.h) as f32 / a,
                 ];
-                self.quad(pen, y, g.width as f32, CELL as f32, uv, color);
+                self.quad(
+                    pen + g.left * size,
+                    y + g.top * size,
+                    g.width * size,
+                    g.height * size,
+                    uv,
+                    color,
+                );
             }
-            pen += font.advance(c) as f32;
+            pen += font.advance_in(face, c) * size;
         }
-        (pen - x - 1.0).max(0.0)
+        pen - x
     }
 
-    /// Text `size` times as large (whole numbers keep the pixels crisp), with a shadow.
+    /// A line of text with the top of its box at (x, y) (interface pixels); returns its width.
+    pub fn text(&mut self, font: &Font, text: &str, x: f32, y: f32, color: Rgba) -> f32 {
+        self.glyphs(font, Face::Sans, text, x, y, 1.0, color)
+    }
+
+    /// A line of text in a typeface (the journal's serif), as [`DrawList::text`].
+    pub fn text_in(
+        &mut self,
+        font: &Font,
+        face: Face,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: Rgba,
+    ) -> f32 {
+        self.glyphs(font, face, text, x, y, 1.0, color)
+    }
+
+    /// Text `size` times as large, with a shadow.
     pub fn text_sized(&mut self, font: &Font, text: &str, x: f32, y: f32, size: f32, color: Rgba) {
-        let a = ATLAS as f32;
-        for (dx, c) in [(size, Rgba::SHADOW), (0.0, color)] {
-            let mut pen = x;
-            for ch in text.chars() {
-                if let Some(g) = font.glyph(ch) {
-                    let uv = [
-                        g.x as f32 / a,
-                        g.y as f32 / a,
-                        (g.x + g.width) as f32 / a,
-                        (g.y + CELL) as f32 / a,
-                    ];
-                    self.quad(
-                        pen + dx,
-                        y + dx,
-                        g.width as f32 * size,
-                        CELL as f32 * size,
-                        uv,
-                        c,
-                    );
-                }
-                pen += font.advance(ch) as f32 * size;
-            }
-        }
+        let off = 0.6 * size;
+        self.glyphs(font, Face::Sans, text, x + off, y + off, size, Rgba::SHADOW);
+        self.glyphs(font, Face::Sans, text, x, y, size, color);
     }
 
-    /// Text with a shadow one pixel down and right, readable over the world.
+    /// Text with a shadow down and right, readable over the world.
     pub fn text_shadowed(&mut self, font: &Font, text: &str, x: f32, y: f32, color: Rgba) -> f32 {
-        self.text(
-            font,
-            text,
-            x + 1.0,
-            y + 1.0,
-            Rgba::SHADOW.with_alpha(color.0[3].min(200)),
-        );
+        let shadow = Rgba::SHADOW.with_alpha(color.0[3].min(200));
+        self.glyphs(font, Face::Sans, text, x + 0.6, y + 0.6, 1.0, shadow);
         self.text(font, text, x, y, color)
     }
 }

@@ -1,5 +1,6 @@
 // The interface: rectangles and text in screen pixels over the finished frame. Colours arrive
-// in sRGB; they are made linear when the target encodes sRGB itself.
+// in sRGB; they are made linear when the target encodes sRGB itself. Text is drawn from signed
+// distance fields, so it stays crisp at any size.
 
 struct Screen {
     // xy: frame size (px); z: 1 when the target is sRGB.
@@ -40,7 +41,11 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let ink = textureSample(atlas, samp, in.uv).r;
+    // The atlas holds distance fields (0.5 on a glyph's outline) and a solid block for
+    // rectangles: coverage is the field's step, softened over one screen pixel.
+    let d = textureSample(atlas, samp, in.uv).r;
+    let w = max(fwidth(d) * 0.7, 1e-4);
+    let ink = smoothstep(0.5 - w, 0.5 + w, d);
     var rgb = in.color.rgb;
     if screen.size.z > 0.5 {
         rgb = srgb_to_linear(rgb);

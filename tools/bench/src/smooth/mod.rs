@@ -16,7 +16,7 @@ use std::time::Instant;
 
 use glam::{DVec3, IVec3, Vec3};
 use hearth_smooth::{APRON, Field, Mesh, Method, Region, mesh, quantize, solid};
-use hearth_ui::font::{ATLAS, CELL, Font};
+use hearth_ui::font::{ATLAS, Face, Font};
 use rayon::prelude::*;
 
 use crate::image::Image;
@@ -473,31 +473,30 @@ fn render_sheet(
     Ok(path)
 }
 
-/// Text in the pixel font, white over a dark shadow.
+/// Text in the interface's typeface (its distance fields, thresholded), white over a dark
+/// shadow.
 fn label(img: &mut Image, font: &Font, x: usize, y: usize, text: &str, scale: usize) {
-    for (off, color) in [(1usize, [16u8, 16, 16]), (0, [250, 250, 250])] {
-        let mut pen = x;
+    let s = scale as f32;
+    for (off, color) in [(1.0f32, [16u8, 16, 16]), (0.0, [250, 250, 250])] {
+        let mut pen = x as f32;
         for c in text.chars() {
             if let Some(g) = font.glyph(c) {
-                for gy in 0..CELL as usize {
-                    for gx in 0..g.width as usize {
-                        let i = (g.y as usize + gy) * ATLAS as usize + g.x as usize + gx;
-                        if font.pixels[i] == 0 {
-                            continue;
-                        }
-                        for sy in 0..scale {
-                            for sx in 0..scale {
-                                img.set(
-                                    pen + gx * scale + sx + off * scale,
-                                    y + gy * scale + sy + off * scale,
-                                    color,
-                                );
-                            }
+                let (qx, qy) = (pen + (g.left + off) * s, y as f32 + (g.top + off) * s);
+                let (qw, qh) = (
+                    (g.width * s).ceil() as usize,
+                    (g.height * s).ceil() as usize,
+                );
+                for py in 0..qh {
+                    for px in 0..qw {
+                        let tx = g.x as usize + px * g.w as usize / qw;
+                        let ty = g.y as usize + py * g.h as usize / qh;
+                        if font.pixels[ty * ATLAS as usize + tx] >= 128 {
+                            img.set((qx + px as f32) as usize, (qy + py as f32) as usize, color);
                         }
                     }
                 }
             }
-            pen += font.advance(c) as usize * scale;
+            pen += font.advance_in(Face::Sans, c) * s;
         }
     }
 }
