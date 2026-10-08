@@ -15,6 +15,7 @@ struct Body {
     skin: vec4<f32>,
     lips: vec4<f32>,
     nail: vec4<f32>,
+    hair: vec4<f32>,
     palette: array<mat4x4<f32>, 17>,
 };
 
@@ -32,7 +33,8 @@ struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) normal: vec3<f32>,
     @location(1) world: vec3<f32>,
-    @location(2) tissue: vec2<f32>,
+    @location(2) tissue: vec3<f32>,
+    @location(3) bind: vec3<f32>,
 };
 
 @vertex
@@ -47,7 +49,8 @@ fn vs_main(v: VsIn) -> VsOut {
     out.pos = u.view_proj * vec4<f32>(world, 1.0);
     out.normal = normalize((m * vec4<f32>(v.normal, 0.0)).xyz);
     out.world = world;
-    out.tissue = v.tissue.xy;
+    out.tissue = v.tissue.xyz;
+    out.bind = v.pos;
     return out;
 }
 
@@ -81,6 +84,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let lips = in.tissue.x;
     let nail = in.tissue.y;
     var albedo = mix(mix(u.skin.rgb, u.lips.rgb, lips), u.nail.rgb, nail);
+    // Short hair over the skin: the hair's colour in a fine stipple of hairs, as thick as the
+    // tissue's third weight says.
+    let cell = floor(in.bind * 1400.0);
+    let grain = fract(sin(dot(cell, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
+    let hairs = in.tissue.z * smoothstep(0.15, 0.6, grain + in.tissue.z * 0.35);
+    albedo = mix(albedo, u.hair.rgb * 0.8, clamp(hairs, 0.0, 1.0));
     let rough = mix(mix(vec2<f32>(0.48, 0.25), vec2<f32>(0.38, 0.18), lips), vec2<f32>(0.25, 0.12), nail);
     let f0 = mix(0.028, 0.04, nail);
     // Light under the skin: the terminator wrapped by how far each colour scatters.
@@ -91,7 +100,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // The ambient also scatters: a little more red in the shade.
     let ambient = hemi * vec3<f32>(1.05, 0.98, 0.96);
     var lit = albedo * (u.light.rgb * diffuse + ambient) / 3.14159265;
-    let spec = 0.85 * ggx(n, v, l, rough.x, f0) + 0.15 * ggx(n, v, l, rough.y, f0);
+    // Hair over the skin scatters the sheen away.
+    let spec = (0.85 * ggx(n, v, l, rough.x, f0) + 0.15 * ggx(n, v, l, rough.y, f0)) * (1.0 - 0.8 * hairs);
     lit += u.light.rgb * spec;
     // The sky's sheen at grazing angles.
     let fres = f0 + (1.0 - f0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);

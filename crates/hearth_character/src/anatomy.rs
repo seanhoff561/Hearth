@@ -13,7 +13,7 @@
 use glam::{Affine3A, IVec3, Quat, Vec3};
 use hearth_smooth::{Field, Method, Region};
 
-use crate::appearance::{Appearance, BodyType};
+use crate::appearance::{Appearance, BodyType, Face, FacialHair, HairStyle};
 use crate::rig::{JOINTS, Joint, Proportions};
 
 /// What a part of the skin is, for its colour and sheen.
@@ -150,8 +150,9 @@ pub struct Anatomy {
     /// The four joints a vertex follows most, and their weights (summing to one).
     pub joints: Vec<[u8; 4]>,
     pub weights: Vec<[f32; 4]>,
-    /// How much the skin there is lips and nail (0–1 each), blended over a cell at their edges.
-    pub tissue: Vec<[f32; 2]>,
+    /// How much the skin there is lips and nail (0–1 each), blended over a cell at their edges,
+    /// and how thick the short hair over it is (the scalp under the hair, a buzz cut, stubble).
+    pub tissue: Vec<[f32; 3]>,
     /// Counter-clockwise triangles seen from outside.
     pub indices: Vec<u32>,
     /// The joints in the pose the skin was sculpted in (`bind_pose`).
@@ -369,7 +370,7 @@ fn rest_forms(a: &Appearance, dims: &Proportions) -> Vec<Form> {
         0.018 * h,
         skin,
     );
-    face(&mut f, dims, head, female, build);
+    face(&mut f, dims, head, female, build, a.face);
     // --- The arms.
     for (s, sh, el, wr) in [
         (1.0, Joint::ShoulderL, Joint::ElbowL, Joint::WristL),
@@ -528,8 +529,18 @@ fn rest_forms(a: &Appearance, dims: &Proportions) -> Vec<Form> {
 
 /// The face on the head joint (`head` is its place): the cranium, the face's mass, brow,
 /// cheekbones, nose, lips, chin and jaw, ears, and the eye sockets cut in.
-fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: f32) {
+fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: f32, fc: Face) {
     let h = dims.stature;
+    // The creator's sliders (−1 to 1) as scales of the features.
+    let fc = Face {
+        jaw: 1.0 + 0.12 * fc.jaw.clamp(-1.0, 1.0),
+        cheekbones: 1.0 + 0.25 * fc.cheekbones.clamp(-1.0, 1.0),
+        brow: 1.0 + 0.35 * fc.brow.clamp(-1.0, 1.0),
+        nose: 1.0 + 0.18 * fc.nose.clamp(-1.0, 1.0),
+        eyes: 1.0 + 0.1 * fc.eyes.clamp(-1.0, 1.0),
+        lips: 1.0 + 0.3 * fc.lips.clamp(-1.0, 1.0),
+        ears: 1.0 + 0.2 * fc.ears.clamp(-1.0, 1.0),
+    };
     let v = |x: f32, y: f32, z: f32| Vec3::new(x, y, z) * h;
     let mut add = |shape: Shape, blend: f32, tissue: Tissue, cut: bool| {
         f.push(Form {
@@ -543,7 +554,7 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
     };
     let ell = |c: Vec3, r: Vec3| Shape::Ellipsoid { c, r };
     let skin = Tissue::Skin;
-    let jaw = if female { 0.9 } else { 1.0 };
+    let jaw = if female { 0.9 } else { 1.0 } * fc.jaw;
     // The cranium.
     add(
         ell(
@@ -580,8 +591,8 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
         // Cheekbones.
         add(
             ell(
-                head + v(s * 0.026, 0.045, 0.028),
-                Vec3::new(0.015 * h, 0.008 * h, 0.014 * h),
+                head + v(s * 0.026, 0.045, 0.028 + 0.004 * (fc.cheekbones - 1.0)),
+                Vec3::new(0.015, 0.008, 0.014) * h * fc.cheekbones,
             ),
             0.02 * h,
             skin,
@@ -591,7 +602,7 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
         add(
             ell(
                 head + v(s * dims.head_w / h * 0.49, 0.05, -0.004),
-                Vec3::new(0.006 * h, 0.018 * h, 0.011 * h),
+                Vec3::new(0.006, 0.018, 0.011) * h * fc.ears,
             ),
             0.004 * h,
             skin,
@@ -605,11 +616,11 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
         false,
     );
     // The brow ridge, heavier on a male face.
-    let brow = if female { 0.005 } else { 0.0075 };
+    let brow = if female { 0.005 } else { 0.0075 } * fc.brow;
     add(
         ell(
             head + v(0.0, 0.066, 0.043),
-            Vec3::new(0.034 * h, brow * h, 0.007 * h),
+            Vec3::new(0.034 * h, brow * h, 0.007 * h * fc.brow),
         ),
         0.02 * h,
         skin,
@@ -619,8 +630,8 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
     for s in [1.0, -1.0] {
         add(
             ell(
-                head + v(s * 0.017, 0.056, 0.057),
-                Vec3::new(0.01 * h, 0.007 * h, 0.005 * h),
+                head + v(s * 0.017 * fc.eyes, 0.056, 0.057),
+                Vec3::new(0.01, 0.007, 0.005) * h * fc.eyes,
             ),
             0.01 * h,
             skin,
@@ -631,9 +642,9 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
     add(
         Shape::Cone {
             a: head + v(0.0, 0.06, 0.05),
-            b: head + v(0.0, 0.034, 0.064),
+            b: head + v(0.0, 0.06 - 0.026 * fc.nose, 0.05 + 0.014 * fc.nose),
             ra: 0.0055 * h,
-            rb: 0.0075 * h,
+            rb: 0.0075 * h * fc.nose,
         },
         0.006 * h,
         skin,
@@ -642,7 +653,7 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
     for s in [1.0, -1.0] {
         add(
             ell(
-                head + v(s * 0.0075, 0.032, 0.056),
+                head + v(s * 0.0075 * fc.nose, 0.06 - 0.028 * fc.nose, 0.056),
                 Vec3::new(0.0062 * h, 0.0052 * h, 0.0062 * h),
             ),
             0.004 * h,
@@ -661,7 +672,7 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
         true,
     );
     // The lips, fuller with build a little.
-    let full = 1.0 + 0.15 * build;
+    let full = (1.0 + 0.15 * build) * fc.lips;
     add(
         ell(
             head + v(0.0, 0.0172, 0.058),
@@ -889,6 +900,76 @@ fn field_at(forms: &[Form], p: Vec3) -> (f32, usize) {
     (d, near.1)
 }
 
+/// The body's field, for what is placed on the skin (hair roots, garments): its distance and
+/// the nearest point of the skin.
+pub(crate) struct Skin {
+    forms: Vec<Form>,
+}
+
+impl Skin {
+    pub(crate) fn new(a: &Appearance) -> Self {
+        let a = a.clone().sanitized();
+        let dims = Proportions::of(&a);
+        Self {
+            forms: forms(&a, &dims),
+        }
+    }
+
+    /// The distance from the skin (negative inside).
+    pub(crate) fn distance(&self, p: Vec3) -> f32 {
+        field_at(&self.forms, p).0
+    }
+
+    /// The skin's outward normal near `p`.
+    pub(crate) fn normal(&self, p: Vec3) -> Vec3 {
+        let e = 0.001;
+        let g = Vec3::new(
+            self.distance(p + Vec3::X * e) - self.distance(p - Vec3::X * e),
+            self.distance(p + Vec3::Y * e) - self.distance(p - Vec3::Y * e),
+            self.distance(p + Vec3::Z * e) - self.distance(p - Vec3::Z * e),
+        );
+        g.normalize_or(Vec3::Y)
+    }
+
+    /// The point of the skin nearest `p`, and its normal there.
+    pub(crate) fn project(&self, p: Vec3) -> (Vec3, Vec3) {
+        let mut q = p;
+        let mut n = Vec3::Y;
+        for _ in 0..6 {
+            n = self.normal(q);
+            let d = self.distance(q);
+            q -= n * d;
+            if d.abs() < 1e-4 {
+                break;
+            }
+        }
+        (q, n)
+    }
+}
+
+/// How thick the short hair at a point of the skin is (0–1): the scalp within the hairline under
+/// any style but bald (a buzz cut thinner), and stubble or the skin under a beard.
+fn short_hair(a: &Appearance, dims: &Proportions, p: Vec3) -> f32 {
+    let scalp = match a.hair {
+        HairStyle::Bald => 0.0,
+        HairStyle::Buzzed => 0.75,
+        _ => 0.9,
+    };
+    let (center, radii) = crate::hair::cranium(dims);
+    let above = crate::hair::hairline((p - center) / radii);
+    let mut d = scalp * (above / 0.08).clamp(0.0, 1.0);
+    let beard = match a.facial_hair {
+        FacialHair::None => 0.0,
+        FacialHair::Stubble => 0.5,
+        _ => 0.65,
+    };
+    let rel = (p - rest_positions(dims)[Joint::Head.index()]) / dims.stature;
+    if beard > 0.0 && rel.z > -0.012 && crate::hair::beard_at(a.facial_hair, rel.x, rel.y) {
+        d = d.max(beard);
+    }
+    d
+}
+
 /// How much coarser the first look at the field is than the mesh's cells.
 const COARSE: usize = 4;
 
@@ -1020,7 +1101,8 @@ pub fn anatomy(a: &Appearance, cell: f32) -> Anatomy {
         let mut per = [0.0f32; JOINTS];
         // Lips and nails, thin as they are, are what the skin is wherever it lies within a
         // part of a cell of them.
-        let mut tissue = [0.0f32; 2];
+        let mut tissue = [0.0f32; 3];
+        tissue[2] = short_hair(&a, &dims, world);
         for form in forms.iter().filter(|f| !f.cut) {
             let d = form.distance(world);
             let k = match form.tissue {
@@ -1090,5 +1172,14 @@ mod tests {
         // Lips and nails are there.
         assert!(body.tissue.iter().any(|t| t[0] > 0.9));
         assert!(body.tissue.iter().any(|t| t[1] > 0.9));
+        // The scalp is covered; the face is not.
+        assert!(body.tissue.iter().any(|t| t[2] > 0.8));
+        let face = body
+            .positions
+            .iter()
+            .zip(&body.tissue)
+            .filter(|(p, _)| p.z > 0.09 && (p.y - 1.62).abs() < 0.02)
+            .all(|(_, t)| t[2] < 0.1);
+        assert!(face);
     }
 }
