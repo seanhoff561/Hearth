@@ -979,6 +979,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "hearth_content",
+ "hearth_math",
  "serde",
  "serde_json",
 ]
