@@ -377,3 +377,23 @@ After R10, the project is in maintenance and future-era mode: any new milestone 
 14. Resume protocol additions
 Keep all earlier protocols. Also keep current: `RELEASE_PLAN.md`, `BENCHMARKS.md`, `docs/`, `trailer/STORYBOARD.md` and `trailer/REVIEW.md`, and a Release Status table in `PROGRESS.md` (platform builds, multiplayer features, AI providers, voice features, docs coverage, trailer status). On restart, also run the bot-client multiplayer test and the docs checks.
 Begin with §0.2: if the game isn't finished yet, file this amendment and go back to building the game. The bar for this amendment: a stranger finds the GitHub page, watches the trailer, downloads it, plays within five minutes, invites a friend, talks to them by voice around a fire, and plugs in a model so the people of the valley talk back, all without ever opening a terminal.
+
+---
+
+## Notes from later amendments (for R1–R3)
+
+*Added when Amendment P (`docs/spec/amendment-p-playability.md`, 2026-10-07) came in; the
+amendment above is kept as received.*
+
+- **The game's mode is the server's** (P §2): Realistic, Easy or Creative is set by the host when
+  the world is made and binds every player. In a Creative world the host grants or withholds
+  Creative's powers player by player (flight, the creative inventory, instant actions, time and
+  weather, spectating).
+- **No one player fast-forwards a shared world** (P §6.2): skipping a long action (or sleeping)
+  shows that player a compact progress view while their character goes on working in real time;
+  they may look about, open menus and talk meanwhile. Sleep's fade and skip become, in
+  multiplayer, a progress view, unless every player present sleeps (then the world may hurry, as
+  the hosting rules decide).
+- **Spectating is a full interest centre** (P §3.3): a Creative spectator's camera loads and
+  simulates the world about it as a player's body does — the same code path R uses for many
+  players, first exercised by P2.

@@ -2730,3 +2730,16 @@ faces by sharpness in the shader. Shading maps materials **biplanar** with **hei
 triplanar's third sample changed the image by 0.56 levels of 255 on average. Open for S1–S2:
 cut soil's edges round under soil's sharpness (an edit's faces may get a sharpness that
 weathers away); the GPU frame times of Baseline-S need the owner's PC (`scripts/baseline-s.sh`).
+
+## D223 — The playability pass comes before the smooth world's production work
+Amendment P (`docs/spec/amendment-p-playability.md`, §0.1) orders the work: S0, already under
+way, finished and committed first; then P0–P6 (triage and quick fixes, menus and world
+management, the three modes and Creative, looking and the hands, poses and skipping with sleep
+and time, the motion audit, learning to play), before S1; P7 (natural generation without the
+grid) merged into S5, whose shapes it shares; P7G (grasses and ground cover as a living sward,
+superseding S §7.3's grass) right after S5; P8, the playability review, after S8 and before
+the H and V2 milestones resume (H11 and V2-13 on; V2-12 itself was finished first, as Amendment
+S asked); Amendment R last. P1 brings V2-15's
+world-creation flow (birthplace on the globe, the mode instead of the world-rule settings)
+forward. Two consequences recorded in `dev/AMENDMENT_R.md` for R: the mode is the server's, with
+Creative's powers granted per player, and no one player fast-forwards a shared world.

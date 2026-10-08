@@ -664,14 +664,24 @@ v1's remaining milestones (M4–M14) are folded into the v2 plan (see `MIGRATION
 - [x] H10 — Optional conversation backend (2026-10-07)
 - [ ] V2-12 — Neolithic
 - [x] S0 — Baseline and prototype (2026-10-07; D222)
+- [ ] P0 — Triage and quick fixes
+- [ ] P1 — Menus and world management
+- [ ] P2 — Game modes and Creative
+- [ ] P3 — Looking, highlighting and the hands
+- [ ] P4 — Poses, animation and skipping waits; sleep and time
+- [ ] P5 — Motion audit
+- [ ] P6 — Learning to play
 - [ ] S1 — Fill data and editing core
 - [ ] S2 — Smooth terrain rendering
 - [ ] S3 — Movement, collision and navigation
 - [ ] S4 — Distant terrain
 - [ ] S5 — Trees and foliage
+- [ ] P7 — Natural generation without the grid; plants that look like plants (with S5)
+- [ ] P7G — Grasses and ground cover
 - [ ] S6 — Bodies and objects
 - [ ] S7 — Water, snow, ice, caves and built-piece polish
 - [ ] S8 — Performance and cohesion pass
+- [ ] P8 — Playtest pass
 - [ ] H11 — Neolithic society
 - [ ] V2-13 — Metallurgy & mining
 - [ ] H12 — Bronze Age society
@@ -694,6 +704,22 @@ met or not. Kept with `MIGRATION_SMOOTH.md`, Baseline-S and the latest numbers i
 | S4 — Distant terrain | planned | v1 §8.4's LOD targets |
 | S5–S7 | planned | the forest and vista scenes' frame times |
 | S8 — Performance and cohesion pass | planned | every target met or recorded for the owner |
+
+## Playability Status
+Amendment P (`docs/spec/amendment-p-playability.md`): each P milestone and its acceptance, kept
+with `dev/PLAYTEST.md` (every reported issue, its cause and its state).
+
+| Milestone | State | Open issues in `dev/PLAYTEST.md` |
+|---|---|---|
+| P0 — Triage and quick fixes | planned | — |
+| P1 — Menus and world management | planned | — |
+| P2 — Game modes and Creative | planned | — |
+| P3 — Looking, highlighting and the hands | planned | — |
+| P4 — Poses, skipping waits, sleep and time | planned | — |
+| P5 — Motion audit | planned | — |
+| P6 — Learning to play | planned | — |
+| P7, P7G — Natural placement; grasses | planned (with S5) | — |
+| P8 — Playtest pass | planned (after S8) | — |
 
 ## Humans Status
 What of V2.1's people is implemented (used by the simulation) and what is planned (data or

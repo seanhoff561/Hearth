@@ -4,7 +4,10 @@ The game follows `docs/spec/v2-direction-change.md` (v2), which overrides the or
 spec `docs/spec/v1-build-prompt.md` (v1) where they conflict. `MIGRATION.md` maps every v1
 milestone and subsystem to its fate. Since 2026-10-07 Amendment S
 (`docs/spec/amendment-s-smooth-world.md`) makes natural terrain, trees, bodies and items smooth on
-the same voxel grid, as milestones S0–S8 after V2-12 (`MIGRATION_SMOOTH.md`). Since 2026-10-03 the amendment
+the same voxel grid, as milestones S0–S8 after V2-12 (`MIGRATION_SMOOTH.md`); and Amendment P
+(`docs/spec/amendment-p-playability.md`) makes the game easy to understand and pleasant to
+play, as milestones P0–P8: P0–P6 after S0 and before S1, P7 with S5, P7G after it, P8 after S8
+(D223; `dev/PLAYTEST.md` tracks every reported issue). Since 2026-10-03 the amendment
 `docs/spec/v2.1-realistic-humans.md` (V2.1, with its Addenda: A, the player is born; B, births
 in multiplayer and life after death) replaces
 v2 §8.4 and §17 and milestone V2-11 with milestones H0–H13 (simulated people, from genes to
@@ -278,6 +281,10 @@ content lint, the performance gate, `PROGRESS.md` with its **Humans Status** tab
   querns and bread, dairy, storage, boats and sledges, the wheel.
 - *Accept:* a bot domesticates a grain and sees yields rise; a sheep lineage becomes docile and
   woolly; under-fired pottery fails.
+- *Later (Amendment P §11.5.7):* the domesticated cereals are grasses, so with P7G the crops
+  (wheat, barley, rice, the millets, maize, sorghum) move onto the sward-and-blade system:
+  fields as a sward of the crop with ripening heads and weeds, hay meadows and mowing, pasture
+  and grazing managed.
 
 ## Amendment S — Smooth voxel world (S0–S8)
 Amendment S (`docs/spec/amendment-s-smooth-world.md`, 2026-10-07) makes natural terrain smooth
@@ -297,6 +304,72 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   materials; `docs/design/art-direction.md` (S §1.1).
 - *Accept:* `DECISIONS.md` has the algorithm choice with screenshots and numbers; Baseline-S
   recorded.
+
+## Amendment P — Playability pass (P0–P8)
+Amendment P (`docs/spec/amendment-p-playability.md`, 2026-10-07) makes the game easy to
+understand, pleasant to control and honest about how real life works, from the player's side:
+menus that fit and scroll and manage worlds, three modes (Realistic, Easy, Creative) in place of
+the many world-rule settings, Creative's powers and spectating, the one thing looked at
+highlighted and each hand doing its natural thing to it, the body doing the work, sleep and time
+that make sense, motion at real speeds, learning to play; then natural generation without the
+grid (P7, with S5) and grasses as a living layer (P7G, after S5). P0–P6 come here, after S0 and
+before S1 (P §0.1, D223); P8, the playability review, after S8. `dev/PLAYTEST.md` tracks every
+reported issue. Each P milestone: implement, design docs and data, tests, `scripts/check.sh`,
+`hearth content lint`, `PROGRESS.md` (with its Playability Status row) and `dev/PLAYTEST.md`,
+commit.
+
+## P0 — Triage and quick fixes
+- `dev/PLAYTEST.md`: every reported issue reproduced and its cause recorded. Plants slow a body by
+  how high they reach on it, how dense and stiff they are and how much of its path they fill,
+  not by the worst block in its box (P §10.1). Clouds, stars and water at real speeds in real
+  seconds (P §8; the full audit is P5).
+- *Accept:* a sprint through short grass at most 2 % slower than over bare ground; clouds, stars
+  and water move at real speeds at normal time; each issue has its cause recorded.
+
+## P1 — Menus and world management
+- Scrollable, responsive layouts and the automated layout test at every resolution, GUI scale
+  and display mode (P §4.1); the Worlds screen with delete (to a trash kept 30 days), rename,
+  duplicate, back up and the mode's edit (§4.2); the short Create World screen, the planet's
+  progress screen, the globe birthplace picker and the birth step (§4.3); the pause menu (§4.4).
+  It brings V2-15's world-creation flow forward.
+- *Accept:* the layout test passes at every resolution, scale and display mode; a world created
+  with a chosen birthplace, deleted and restored from the trash.
+
+## P2 — Game modes and Creative
+- `data/hearth/balance/modes.ron` and the three modes (§2); changing mode toward less strict; F3
+  and Developer mode; Creative's powers, inventory, pick and remove, time and weather panel,
+  clear view, spectating that streams the world about the camera and resumes there (§3).
+- *Accept:* Realistic and Easy have no spectating, time control or Observer; Creative is
+  invulnerable and places and summons every category; spectating far away loads full-detail
+  terrain, plants, animals and people about the camera, and resuming sets the body safely on the
+  ground there; children can be neither summoned nor removed.
+
+## P3 — Looking and the hands
+- Highlighting and precise picking, name tags and hand hints (§5.1); the intent resolver
+  (`data/hearth/interaction/intents.ron`) with safe defaults, learned preferences, stowing to free
+  a hand and hold-to-repeat (§5.2); the middle-click action menu (§5.3); feedback without
+  clutter, the crosshair's offer list removed (§5.4); controller mapping.
+- *Accept:* a scripted playtest covers every example of §5.2; nothing happens without a
+  highlighted target or an action on oneself; picking costs under 0.2 ms a frame.
+
+## P4 — Poses, animation and skipping; sleep and time
+- The work-pose library with IK; every process with its pose (lint); first- and third-person
+  views; people using the same poses; skipping a long action with the fade, interruptions,
+  cancelling with partial progress kept, queued repeats (§6). Sleep by the two-process model with
+  the lie-down menu; the time in words (§7).
+- *Accept:* every process animates; lying down at night leads to sleep within a realistic time;
+  every refusal explains itself; skipping gives what waiting gives.
+
+## P5 — Motion timing audit
+- `docs/design/motion-timing.md`: everything that moves, its clock (real or game) and its speed,
+  and the automated check, fast-forward included (§8).
+- *Accept:* every animated visual listed and passing the check.
+
+## P6 — Learn to play
+- The tutorial's chapters and the bot that completes them, first-time hints, the basic Field
+  Guide (§9).
+- *Accept:* the bot completes every chapter; a new player can learn sleeping, drinking, fire and
+  the hands unaided.
 
 ## S1 — Fill data and editing core
 - Fill values in cubes and generation (S §2), material properties (sharpness, angle of repose,
@@ -326,12 +399,32 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 - *Accept:* no visible seam or color jump at the near/far transition in the screenshot suite;
   v1 §8.4 targets still pass.
 
-## S5 — Trees and foliage
+## S5 — Trees and foliage (with P7)
 - Smooth trunks and branches, felling rigid bodies and log meshes, leaf clusters with
   translucency and wind, foliage occupancy and dappled light, seasons, the foliage LOD chain
   with impostors, ground cover seated and bendable (S §7).
 - *Accept:* each species' silhouette screenshot set at three ages and four seasons; forest
   benchmark targets met.
+
+## P7 — Natural generation without the grid (with S5)
+- Shrubs and bushes grown as individuals of their species' forms, berries, flowers and thorns on
+  their branches; every natural thing at real-valued positions and turns, spaced by
+  competition, clustered by dispersal, in clonal patches, crowns merging into hedges,
+  thickets and reed beds, foliage occupancy from the plants' real shapes; rocks, logs, trees,
+  landforms, veins and strata and people's places off the grid's axes (P §11.1–11.2); a
+  building grid of each structure's own origin and turn evaluated (§11.3).
+- *Accept:* §11.4's statistical tests (spacing, clustering, cover, no position quantized to
+  the grid, occupancy matching what is drawn) and screenshots (meadow, forest edge, thicket,
+  reed bed, talus, river cobbles); the §11.3 evaluation recorded or built.
+
+## P7G — Grasses and ground cover
+- The sward (P §11.5) in place of `grass_block` and the grass plant blocks: a living layer on
+  the soil, derived from climate, soil, light and season with only events' deviations stored;
+  real grass species and growth forms for every zone; grazing, trampling, fire and the
+  seasons; the GPU blade renderer and its distance chain; movement, hiding, forage and fuel from
+  it; Creative painting; the migration of worlds and of everything that used the old blocks.
+  It supersedes S §7.3 for grasses.
+- *Accept:* §11.5.9's tests, screenshots and budgets.
 
 ## S6 — Bodies and objects
 - Smooth procedural skinned bodies for every body plan, genetics-driven shape, expressive faces,
@@ -350,6 +443,14 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   (S §12.4); update docs, journal art and the Amendment R guide plan (S §11).
 - *Accept:* all S §12 targets met or honestly documented for owner decision; the review shows
   one coherent world.
+
+## P8 — Playability review
+- Play as the owner does, in all three modes: create a world, choose a birthplace, be born, grow
+  up, survive a season, sleep, make fire, hunt, build a shelter, die and go on; spectate and
+  build in Creative. A screenshot sequence (or video) a step; `docs/review/playability.md`
+  with what still confuses, drags or fiddles; the top items fixed.
+- *Accept:* every issue in `dev/PLAYTEST.md` resolved or explained; the review's top items
+  fixed.
 
 ## H11 — Neolithic society
 - Villages, farming and herding households, lineages, storage, feasting, early inequality, crowd
@@ -374,6 +475,8 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 - Kingdoms and city-states, coinage, law, cities; the era profile.
 
 ## V2-15 — World creation & menus
+- *Brought forward by P1:* the short Create World screen with the mode, the planet's progress,
+  the globe birthplace picker and the birth step; V2-15 keeps the rest.
 - Full §16 flow: planet settings, life & time settings, era selector with the deep-time
   progress, globe spawn picker with region info, the birth options (Addendum A; no appearance
   editor), the Observer's entry; map with exploration memory.
