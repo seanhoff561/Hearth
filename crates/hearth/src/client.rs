@@ -4327,6 +4327,10 @@ pub fn pick_block(
     dir: DVec3,
     reach: f64,
 ) -> Option<(f64, Aim)> {
+    // The smooth ground (Amendment S): where the look meets its surface, to the millimetre.
+    // Blocks are looked for only before it, and natural ground is not a block to them.
+    let ground = hearth_world::ground::raycast(mirror, reg, eye, dir, reach);
+    let reach = ground.map_or(reach, |g| g.distance);
     let mut t = 0.0;
     let mut prev = eye;
     while t <= reach {
@@ -4334,6 +4338,7 @@ pub fn pick_block(
         let bp = hearth_math::BlockPos::containing(p);
         if let Some(s) = mirror.block(bp)
             && !s.is_air()
+            && !reg.has(s, hearth_world::StateFlags::NATURAL)
         {
             let local = p - DVec3::new(bp.x as f64, bp.y as f64, bp.z as f64);
             let def = &reg.block_of(s).def;
@@ -4388,5 +4393,26 @@ pub fn pick_block(
         prev = p;
         t += 0.03;
     }
-    None
+    ground.map(|g| {
+        use hearth_math::Direction as D;
+        let n = g.normal;
+        let face = if n.y.abs() >= n.x.abs().max(n.z.abs()) {
+            if n.y > 0.0 { D::Up } else { D::Down }
+        } else if n.x.abs() >= n.z.abs() {
+            if n.x > 0.0 { D::East } else { D::West }
+        } else if n.z > 0.0 {
+            D::South
+        } else {
+            D::North
+        };
+        (
+            g.distance,
+            Aim::Block {
+                pos: g.voxel,
+                top: face == D::Up,
+                face,
+                at: g.at,
+            },
+        )
+    })
 }

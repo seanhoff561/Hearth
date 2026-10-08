@@ -375,12 +375,19 @@ pub fn ground_materials(
                 _ => (0.3, 0.35),
             };
             let grass = slot.block.ends_with("grass_block");
+            // Bedded rock shows its beds (S §4.2): sandstone and shale thin, limestone thicker.
+            let strata = match pattern {
+                Pattern::Layered => 0.25,
+                Pattern::Banded => 0.12,
+                _ => 0.0,
+            };
             hearth_render::terrain::GroundMaterial {
                 color: [a[0], a[1], a[2], rough],
                 color2: [b[0], b[1], b[2], grain],
                 tint: grass as u32,
                 relief,
-                _pad: [0.0; 2],
+                strata,
+                _pad: 0.0,
             }
         })
         .collect();

@@ -41,6 +41,30 @@ const WIND_TURN_S: f64 = 120.0;
 /// cumulus lives some ten or twenty minutes, so a cloud is another in about ten.
 pub const CLOUD_CHURN_M_S: f64 = 0.5;
 
+/// The water the ground's surface holds before it runs off (mm): it looks wet through at this.
+pub const WET_FILM_MM: f64 = 0.5;
+
+/// The film of rain on the ground after `secs` of weather `w`: rain adds to it, up to what the
+/// surface holds; it evaporates at some 0.25 mm an hour in mild, still, half-dry air, faster
+/// warm, dry and windy (twice for every ten degrees), not at all below freezing.
+pub fn wet_film(film: f64, w: &hearth_env::WeatherState, secs: f64) -> f64 {
+    let hours = secs / 3600.0;
+    let rain = if w.temperature_c > 0.0 {
+        w.precip_mm_h
+    } else {
+        0.0
+    };
+    let warmth = 2f64.powf((w.temperature_c - 20.0) / 10.0);
+    let dryness = ((1.0 - w.humidity) / 0.5).clamp(0.05, 2.0);
+    let wind = 1.0 + 0.25 * w.wind_speed_m_s.min(10.0);
+    let evap = if w.temperature_c > 0.0 {
+        0.25 * warmth * dryness * wind
+    } else {
+        0.0
+    };
+    (film + (rain - evap) * hours).clamp(0.0, WET_FILM_MM)
+}
+
 /// What moves in the sky at real speeds, carried from frame to frame (Amendment P §8).
 #[derive(Debug, Clone, Copy, Default)]
 struct Motion {
@@ -50,6 +74,9 @@ struct Motion {
     clouds: DVec2,
     /// How far the clouds' smaller shapes have slid against their larger (m).
     churn: f64,
+    /// The film of rain on the ground's surface (mm, up to `WET_FILM_MM`), and when it was.
+    film: f64,
+    film_at: Option<f64>,
     /// How far the air near the ground has carried falling rain and snow (m).
     air: DVec2,
     /// The way the wind blows, as the clouds and waves follow it (radians, eased).
@@ -220,7 +247,7 @@ impl EnvSampler {
         let ground =
             (self.grid.elevation.bilinear(gx, gz).max(0.0) as f64) * self.grid.vertical_scale;
         let cloud_base = ground + (2500.0 * (1.0 - w.humidity)).clamp(600.0, 3000.0);
-        let (cloud_offset, air, wind_dir, cloud_churn) = {
+        let (cloud_offset, air, wind_dir, cloud_churn, wetness) = {
             let mut mo = self.motion.borrow_mut();
             let dt = mo
                 .at
@@ -240,7 +267,20 @@ impl EnvSampler {
             mo.clouds += toward * wind_aloft(w.wind_speed_m_s, cloud_base) * dt;
             mo.air += toward * w.wind_speed_m_s * dt;
             mo.churn += CLOUD_CHURN_M_S * dt;
-            (mo.clouds.as_vec2(), mo.air, dir, mo.churn as f32)
+            // The ground wets with the rain and dries by the weather, over the whole time
+            // passed (not capped: a night's rain leaves the morning wet).
+            let passed = mo
+                .film_at
+                .map_or(0.0, |t| (real_s - t).clamp(0.0, 86_400.0));
+            mo.film_at = Some(real_s);
+            mo.film = wet_film(mo.film, &w, passed);
+            (
+                mo.clouds.as_vec2(),
+                mo.air,
+                dir,
+                mo.churn as f32,
+                (mo.film / WET_FILM_MM) as f32,
+            )
         };
         let toward = Vec2::new(wind_dir.sin() as f32, -(wind_dir.cos()) as f32);
         let env = Environment {
@@ -261,6 +301,7 @@ impl EnvSampler {
             cloud_base: cloud_base as f32,
             cloud_offset,
             cloud_churn,
+            wetness,
             haze: haze as f32,
             block_light_at_camera,
             aerial_perspective: true,
@@ -373,5 +414,48 @@ mod tests {
             assert!(churn <= CLOUD_CHURN_M_S * MOTION_STEP_S + 1e-3, "{churn}");
             last = e;
         }
+    }
+
+    /// The ground wets in rain and dries by the weather (S §4.2): a shower of a few millimetres
+    /// wets it through, a warm dry breezy afternoon dries it in about an hour, a cool damp
+    /// still day in many, and nothing dries in frost.
+    #[test]
+    fn the_ground_wets_in_rain_and_dries_by_the_weather() {
+        let w = |t: f64, rh: f64, wind: f64, rain: f64| hearth_env::WeatherState {
+            temperature_c: t,
+            humidity: rh,
+            wind_speed_m_s: wind,
+            precip_mm_h: rain,
+            cloud_cover: 0.5,
+            precip: hearth_env::weather::Precip::None,
+            thunder: 0.0,
+            wind_dir: 0.0,
+        };
+        let wet = wet_film(0.0, &w(15.0, 0.9, 1.0, 4.0), 600.0);
+        assert!(
+            (wet - WET_FILM_MM).abs() < 1e-9,
+            "ten minutes of rain: {wet}"
+        );
+        let hours_to_dry = |state: &hearth_env::WeatherState| {
+            let mut f = WET_FILM_MM;
+            let mut h = 0.0;
+            while f > 0.05 * WET_FILM_MM && h < 48.0 {
+                f = wet_film(f, state, 600.0);
+                h += 1.0 / 6.0;
+            }
+            h
+        };
+        let afternoon = hours_to_dry(&w(28.0, 0.35, 4.0, 0.0));
+        let damp = hours_to_dry(&w(8.0, 0.85, 0.5, 0.0));
+        assert!(
+            (0.3..2.0).contains(&afternoon),
+            "{afternoon} h on a warm dry afternoon"
+        );
+        assert!(damp > 6.0, "{damp} h on a cool damp still day");
+        assert_eq!(
+            wet_film(0.4, &w(-5.0, 0.5, 2.0, 0.0), 36_000.0),
+            0.4,
+            "frost holds it"
+        );
     }
 }

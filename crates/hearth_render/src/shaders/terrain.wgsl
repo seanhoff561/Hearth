@@ -18,7 +18,7 @@ struct Instance { origin: vec4<f32> };
 // 4 each), light, AO, sharpness, and the column's climate code.
 struct SmoothV { a: u32, b: u32, c: u32, d: u32, e: u32, f: u32 };
 // A ground material (`terrain::GroundMaterial`).
-struct GroundMat { color: vec4<f32>, color2: vec4<f32>, tint: u32, relief: f32, pad0: f32, pad1: f32 };
+struct GroundMat { color: vec4<f32>, color2: vec4<f32>, tint: u32, relief: f32, strata: f32, pad1: f32 };
 
 @group(1) @binding(0) var<storage, read> quads: array<PackedQuad>;
 @group(1) @binding(1) var<storage, read> gquads: array<GeneralQuad>;
@@ -416,7 +416,14 @@ fn fbm3(p: vec3<f32>, dist: f32, grain: f32) -> f32 {
 // A ground material at a point: its colour (linear) and its relief for height blending.
 fn ground_sample(slot: u32, p: vec3<f32>, dist: f32, climate: u32) -> vec4<f32> {
     let m = gmats[slot];
-    let n = fbm3(p, dist, m.color2.w);
+    var n = fbm3(p, dist, m.color2.w);
+    if m.strata > 0.0 {
+        // Bedded rock (S §4.2): beds of about this thickness across the face, wavering a
+        // little, finer than the 1 m voxels; they fade where they would only shimmer.
+        let bed = fract((p.y + (vnoise(p * 0.15) - 0.5) * 1.5) / m.strata);
+        let fade = 1.0 - smoothstep(20.0, 120.0, dist * 0.25 / m.strata);
+        n = mix(n, mix(n, smoothstep(0.35, 0.65, bed), 0.6), fade);
+    }
     var col = mix(m.color.rgb, m.color2.rgb, smoothstep(0.25, 0.75, n));
     if m.tint == 1u {
         // Grass: its colour by place and season, varied a little.
@@ -450,7 +457,8 @@ fn fs_smooth(in: VsOut) -> @location(0) vec4<f32> {
         sum += c[k] * a;
         total += a;
     }
-    let albedo = sum / max(total, 1e-4);
+    // Wet ground is darker (a film of water in its pores): about 0.6 of its dry albedo.
+    let albedo = sum / max(total, 1e-4) * mix(1.0, 0.6, g.block_light.w);
     // Crisp materials shade with their faces, soft ones with the smooth normal.
     var shaded = in;
     let face = normalize(cross(dpdx(in.world), dpdy(in.world)));

@@ -11,7 +11,7 @@ struct Globals {
     sun_light: vec4<f32>,
     // rgb: sky irradiance on an upward surface; a: floor ambient (starlight, airglow).
     sky_light: vec4<f32>,
-    // rgb: firelight illuminance at block-light level 15.
+    // rgb: firelight illuminance at block-light level 15; w: how wet the ground is from rain.
     block_light: vec4<f32>,
     // Aerial perspective. x: aerosol extinction at sea level per metre (haze and humidity),
     // y: grey extinction per metre of falling rain or snow, z: real metres per vertical block

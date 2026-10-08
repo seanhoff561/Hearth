@@ -55,6 +55,9 @@ pub struct Environment {
     /// How far the clouds' smaller shapes have slid against their larger (m): the clouds change
     /// shape as they go (`CLOUD_CHURN_M_S`).
     pub cloud_churn: f32,
+    /// How wet the ground's surface is from rain (0 dry … 1 wet through), drying by the
+    /// weather: darker ground after a shower (S §4.2).
+    pub wetness: f32,
     /// Aerosol density multiplier (1 = clear).
     pub haze: f32,
     /// Block-light level at the camera (0..1), for adaptation to firelight.
@@ -87,6 +90,7 @@ impl Default for Environment {
             cloud_base: 1500.0,
             cloud_offset: Vec2::ZERO,
             cloud_churn: 0.0,
+            wetness: 0.0,
             haze: 1.0,
             block_light_at_camera: 0.0,
             aerial_perspective: true,
@@ -334,6 +338,7 @@ impl SceneRenderer {
             wind: env.wind,
             year_frac: env.year_frac,
             overcast,
+            wetness: env.wetness,
         };
         let t0 = std::time::Instant::now();
         self.terrain.prepare(ctx, camera, size, &params);

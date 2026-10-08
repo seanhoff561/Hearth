@@ -260,7 +260,9 @@ pub struct GroundMaterial {
     pub tint: u32,
     /// How much its relief stands up in blending (0 flat … 1 coarse stones).
     pub relief: f32,
-    pub _pad: [f32; 2],
+    /// The thickness of its beds (m), for bedded rock; 0 none.
+    pub strata: f32,
+    pub _pad: f32,
 }
 
 impl Default for GroundMaterial {
@@ -270,7 +272,8 @@ impl Default for GroundMaterial {
             color2: [0.12, 0.10, 0.09, 0.5],
             tint: 0,
             relief: 0.3,
-            _pad: [0.0; 2],
+            strata: 0.0,
+            _pad: 0.0,
         }
     }
 }
@@ -308,6 +311,8 @@ pub struct FrameParams {
     /// Grey of an overcast sky (rgb) and how far haze and fog take it instead of the clear
     /// sky's colour (w, 0..1).
     pub overcast: glam::Vec4,
+    /// How wet the ground's surface is (0..1).
+    pub wetness: f32,
 }
 
 impl Default for FrameParams {
@@ -328,6 +333,7 @@ impl Default for FrameParams {
             wind: 1.0,
             year_frac: 0.3,
             overcast: glam::Vec4::ZERO,
+            wetness: 0.0,
         }
     }
 }
@@ -1145,7 +1151,7 @@ impl TerrainRenderer {
             view_proj: vp.to_cols_array_2d(),
             sun_light: v4(params.direct_light, 0.0),
             sky_light: v4(params.sky_light, params.ambient_floor),
-            block_light: v4(params.block_light, 0.0),
+            block_light: v4(params.block_light, params.wetness),
             fog: [
                 params.haze_extinction,
                 params.precip_extinction,
