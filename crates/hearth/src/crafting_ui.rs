@@ -607,26 +607,50 @@ impl Crafting {
                 Rgba([240, 220, 160, 230]),
             );
         }
-        // News, from the top.
+        // What came of things done: a short line under the top, fading. Discoveries and
+        // hunches: a quiet note at the top right by a small journal (P §5.4), one line each.
         let mut ny = (h * 0.16).round();
+        let mut ty = 8.0;
         for (words, age, kind) in &self.news {
             let a = ((1.0 - ((age - 4.5).max(0.0) / 1.5)) * 240.0).clamp(0.0, 240.0) as u8;
-            let c = match kind {
-                News::Learned => Rgba([250, 220, 120, a]),
-                News::Hunch => Rgba([200, 210, 240, a]),
-                News::Done => Rgba([225, 225, 220, a]),
-                News::Failed => Rgba([235, 170, 150, a]),
-            };
-            let lw = ui.font.width(words) as f32;
-            ui.draw.rect(
-                cx - lw / 2.0 - 3.0,
-                ny - 2.0,
-                lw + 6.0,
-                lh + 3.0,
-                Rgba([0, 0, 0, (veil as u32 * a as u32 / 255) as u8]),
-            );
-            ui.label((cx - lw / 2.0).round(), ny, words, c);
-            ny += lh + 4.0;
+            let shade = Rgba([0, 0, 0, (veil as u32 * a as u32 / 255) as u8]);
+            match kind {
+                News::Learned | News::Hunch => {
+                    let c = if *kind == News::Learned {
+                        Rgba([250, 220, 120, a])
+                    } else {
+                        Rgba([200, 210, 240, a])
+                    };
+                    let line = ui
+                        .font
+                        .wrap(words, (w * 0.35) as u32)
+                        .into_iter()
+                        .next()
+                        .unwrap_or_default();
+                    let lw = ui.font.width(&line) as f32;
+                    let x = (w - lw - 18.0).round();
+                    ui.draw.rect(x - 14.0, ty - 2.0, lw + 18.0, lh + 3.0, shade);
+                    // The journal: a closed book.
+                    ui.draw
+                        .rect(x - 11.0, ty + 1.0, 7.0, 9.0, Rgba([150, 110, 70, a]));
+                    ui.draw
+                        .rect(x - 10.0, ty + 2.0, 1.0, 7.0, Rgba([230, 215, 180, a]));
+                    ui.label(x, ty, &line, c);
+                    ty += lh + 4.0;
+                }
+                News::Done | News::Failed => {
+                    let c = if *kind == News::Done {
+                        Rgba([225, 225, 220, a])
+                    } else {
+                        Rgba([235, 170, 150, a])
+                    };
+                    let lw = ui.font.width(words) as f32;
+                    ui.draw
+                        .rect(cx - lw / 2.0 - 3.0, ny - 2.0, lw + 6.0, lh + 3.0, shade);
+                    ui.label((cx - lw / 2.0).round(), ny, words, c);
+                    ny += lh + 4.0;
+                }
+            }
         }
     }
 }

@@ -356,6 +356,19 @@ pub fn outline(
     edges(&[all], at, color, view, 0.03)
 }
 
+/// The edges of a box in the world (`lo`–`hi`), as bars `thin` thick: what is looked at,
+/// highlighted (P §5.1).
+pub fn box_edges(
+    lo: DVec3,
+    hi: DVec3,
+    color: [u8; 3],
+    view: DVec3,
+    thin: f32,
+) -> Vec<FigureInstance> {
+    let b = hearth_math::Aabb { min: lo, max: hi };
+    edges(&[b], BlockPos::new(0, 0, 0), color, view, thin)
+}
+
 /// The edges of boxes (block-local) at a place, as bars `thin` thick (m).
 fn edges(
     boxes: &[hearth_math::Aabb],

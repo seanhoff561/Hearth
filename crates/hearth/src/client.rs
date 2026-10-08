@@ -629,68 +629,10 @@ impl Client {
                 }
             }
         }
-        let mut t = 0.0;
-        let mut prev = eye;
-        while t <= REACH_M {
-            let p = eye + dir * t;
-            let bp = hearth_math::BlockPos::containing(p);
-            if let Some(s) = w.mirror.block(bp)
-                && !s.is_air()
-            {
-                let local = p - DVec3::new(bp.x as f64, bp.y as f64, bp.z as f64);
-                let def = &w.reg.block_of(s).def;
-                let shape = w.reg.outline_shape(s);
-                let hit_box = shape.boxes.iter().find(|b| {
-                    local.x >= b.min.x
-                        && local.x <= b.max.x
-                        && local.y >= b.min.y
-                        && local.y <= b.max.y
-                        && local.z >= b.min.z
-                        && local.z <= b.max.z
-                });
-                let top_y = match (def.fluid.is_some(), hit_box) {
-                    (true, _) => Some(0.85),
-                    (false, Some(b)) => Some(b.max.y),
-                    _ => None,
-                };
-                if let Some(top_y) = top_y {
-                    if best.as_ref().is_none_or(|b| t < b.0) {
-                        let top = prev.y >= bp.y as f64 + top_y - 1e-3;
-                        // The face the ray came in by: the side of the box the step before lay
-                        // furthest out of.
-                        let before = prev - DVec3::new(bp.x as f64, bp.y as f64, bp.z as f64);
-                        let (lo, hi) =
-                            hit_box.map_or((DVec3::ZERO, DVec3::ONE), |b| (b.min, b.max));
-                        let face = if top {
-                            hearth_math::Direction::Up
-                        } else {
-                            use hearth_math::Direction as D;
-                            [
-                                (lo.y - before.y, D::Down),
-                                (lo.x - before.x, D::West),
-                                (before.x - hi.x, D::East),
-                                (lo.z - before.z, D::North),
-                                (before.z - hi.z, D::South),
-                            ]
-                            .into_iter()
-                            .max_by(|a, b| a.0.total_cmp(&b.0))
-                            .map_or(D::Up, |(_, d)| d)
-                        };
-                        best = Some((
-                            t,
-                            Aim::Block {
-                                pos: bp,
-                                top,
-                                face,
-                                at: p,
-                            },
-                        ));
-                    }
-                    break;
-                }
-            }
-            prev = p;
-            t += 0.03;
+        if let Some((t, hit)) = pick_block(&w.mirror, &w.reg, eye, dir, REACH_M)
+            && best.as_ref().is_none_or(|b| t < b.0)
+        {
+            best = Some((t, hit));
         }
         best.map(|(_, a)| a)
     }
@@ -1441,6 +1383,79 @@ impl Client {
             }
         };
         Some((at, state, crate::building::ghost_color(rests, worst)))
+    }
+
+    /// The one thing looked at, softly outlined (P §5.1): the block (its shape's bounds), the
+    /// thing lying there, or the animal.
+    fn highlight_boxes(&mut self, view: DVec3) {
+        const SOFT: [u8; 3] = [255, 238, 182];
+        const THIN: f32 = 0.012;
+        if self.mode != CameraMode::Body || self.dead() {
+            return;
+        }
+        let (Some(aim), Some(w), Some(items)) = (self.aim, &self.world, &self.items) else {
+            return;
+        };
+        let boxes = match aim {
+            Aim::Block { pos, .. } => {
+                let Some(state) = w.mirror.block(pos) else {
+                    return;
+                };
+                let Some(all) = w
+                    .reg
+                    .outline_shape(state)
+                    .boxes
+                    .iter()
+                    .copied()
+                    .reduce(|a, b| hearth_math::Aabb {
+                        min: a.min.min(b.min),
+                        max: a.max.max(b.max),
+                    })
+                else {
+                    return;
+                };
+                let o = DVec3::new(pos.x as f64, pos.y as f64, pos.z as f64);
+                crate::building::box_edges(o + all.min, o + all.max, SOFT, view, THIN)
+            }
+            Aim::Item(id) => {
+                let Some(wi) = self.world_items.iter().find(|w| w.id == id) else {
+                    return;
+                };
+                let Some(k) = wi.stack.kind(items) else {
+                    return;
+                };
+                let p = DVec3::from_array(wi.pos);
+                let [x, y, z] = k.resting_m();
+                let r = (0.5 * x.max(z) as f64).max(0.08);
+                let h = (y as f64).max(0.06);
+                crate::building::box_edges(
+                    p - DVec3::new(r, 0.0, r),
+                    p + DVec3::new(r, h, r),
+                    SOFT,
+                    view,
+                    THIN,
+                )
+            }
+            Aim::Animal(id) => {
+                let (Some(a), Some(cat)) = (self.animals.get(&id), &self.fauna) else {
+                    return;
+                };
+                let Some(sp) = cat.species.get(a.target.species as usize) else {
+                    return;
+                };
+                // About the body: its length from its mass, its height a little over half.
+                let l = 0.45 * (sp.mass_kg as f64).max(0.05).cbrt();
+                let (r, h) = (0.5 * l, 0.6 * l);
+                crate::building::box_edges(
+                    a.pos - DVec3::new(r, 0.0, r),
+                    a.pos + DVec3::new(r, h, r),
+                    SOFT,
+                    view,
+                    THIN,
+                )
+            }
+        };
+        self.figure_boxes.extend(boxes);
     }
 
     /// The ghost of a piece where it will go: the one being put up while the work goes on,
@@ -3430,6 +3445,7 @@ impl Client {
         self.carcass_boxes(view.pos);
         self.sign_boxes(view.pos);
         self.ghost_boxes(view.pos);
+        self.highlight_boxes(view.pos);
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -4246,4 +4262,78 @@ fn hand_index(hand: hearth_items::Hand) -> usize {
         hearth_items::Hand::Left => 0,
         hearth_items::Hand::Right => 1,
     }
+}
+
+/// The first block a look meets within `reach` (m) of `eye` along `dir`, by the bounds of its
+/// shape (water at its surface): how far, and where (the face it was met by). A march of 3 cm
+/// steps: cheap enough to run every frame (P §5.1 asks under 0.2 ms; `tests/picking.rs`).
+pub fn pick_block(
+    mirror: &CubeMap,
+    reg: &BlockRegistry,
+    eye: DVec3,
+    dir: DVec3,
+    reach: f64,
+) -> Option<(f64, Aim)> {
+    let mut t = 0.0;
+    let mut prev = eye;
+    while t <= reach {
+        let p = eye + dir * t;
+        let bp = hearth_math::BlockPos::containing(p);
+        if let Some(s) = mirror.block(bp)
+            && !s.is_air()
+        {
+            let local = p - DVec3::new(bp.x as f64, bp.y as f64, bp.z as f64);
+            let def = &reg.block_of(s).def;
+            let shape = reg.outline_shape(s);
+            let hit_box = shape.boxes.iter().find(|b| {
+                local.x >= b.min.x
+                    && local.x <= b.max.x
+                    && local.y >= b.min.y
+                    && local.y <= b.max.y
+                    && local.z >= b.min.z
+                    && local.z <= b.max.z
+            });
+            let top_y = match (def.fluid.is_some(), hit_box) {
+                (true, _) => Some(0.85),
+                (false, Some(b)) => Some(b.max.y),
+                _ => None,
+            };
+            if let Some(top_y) = top_y {
+                {
+                    let top = prev.y >= bp.y as f64 + top_y - 1e-3;
+                    // The face the ray came in by: the side of the box the step before lay
+                    // furthest out of.
+                    let before = prev - DVec3::new(bp.x as f64, bp.y as f64, bp.z as f64);
+                    let (lo, hi) = hit_box.map_or((DVec3::ZERO, DVec3::ONE), |b| (b.min, b.max));
+                    let face = if top {
+                        hearth_math::Direction::Up
+                    } else {
+                        use hearth_math::Direction as D;
+                        [
+                            (lo.y - before.y, D::Down),
+                            (lo.x - before.x, D::West),
+                            (before.x - hi.x, D::East),
+                            (lo.z - before.z, D::North),
+                            (before.z - hi.z, D::South),
+                        ]
+                        .into_iter()
+                        .max_by(|a, b| a.0.total_cmp(&b.0))
+                        .map_or(D::Up, |(_, d)| d)
+                    };
+                    return Some((
+                        t,
+                        Aim::Block {
+                            pos: bp,
+                            top,
+                            face,
+                            at: p,
+                        },
+                    ));
+                }
+            }
+        }
+        prev = p;
+        t += 0.03;
+    }
+    None
 }
