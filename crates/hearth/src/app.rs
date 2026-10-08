@@ -929,11 +929,11 @@ impl App {
                         );
                     }
                 }
-                MenuAction::NewLife { elsewhere } => {
+                MenuAction::NewLife(at) => {
                     if let Some(run) = &mut self.running {
                         run.menus.close_all();
                         if let Some(c) = &mut run.client {
-                            c.new_life(elsewhere);
+                            c.new_life(at, self.profiles.current().clone());
                         }
                     }
                 }

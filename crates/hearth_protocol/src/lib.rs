@@ -150,8 +150,11 @@ pub enum ToServer {
     /// Debug: move the clock on (or back) by game hours.
     SkipHours(f64),
     /// The player, dead, begins a new life (Amendment E §6.6): a new adult about a place (none:
-    /// near where they last lived).
-    NewLife { at: Option<DVec3> },
+    /// near where they last lived), looking as chosen (none: as the last one did).
+    NewLife {
+        at: Option<DVec3>,
+        appearance: Option<hearth_character::Appearance>,
+    },
     /// Debug: extra ticks per second of play (0 for none).
     TimeWarp(f64),
     /// Tests and bots: from now on the world ticks only when asked; run this many game ticks
@@ -393,6 +396,8 @@ pub enum ToClient {
     Body(Box<BodyView>),
     /// The server put the player somewhere (a place chosen, a new life).
     Placed(Mover),
+    /// The player's person looks so now (a new life).
+    Looks(hearth_character::Appearance),
     /// The world was saved.
     Saved,
     Failed(String),

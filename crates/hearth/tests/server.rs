@@ -146,7 +146,7 @@ fn drown(server: &Server, at: hearth_physics::Mover) {
 }
 
 #[test]
-fn after_death_a_new_life_begins_near_where_the_last_ended() {
+fn after_death_a_new_life_begins_near_where_the_last_ended_as_chosen() {
     let view = View {
         radius: 2,
         vertical: 2,
@@ -166,8 +166,22 @@ fn after_death_a_new_life_begins_near_where_the_last_ended() {
         ToClient::Body(b) if b.dead.is_some() => Some(()),
         _ => None,
     });
-    // A new life (Amendment E §6.6): a new adult near where the last one died, alive.
-    server.send(ToServer::NewLife { at: None });
+    // A new life (Amendment E §6.6): a new adult, as the player chose them, near where the
+    // last one died, alive.
+    let someone = hearth_character::Appearance {
+        name: "Wren".into(),
+        freckles: 0.4,
+        ..hearth_character::Appearance::female()
+    };
+    server.send(ToServer::NewLife {
+        at: None,
+        appearance: Some(someone.clone()),
+    });
+    let looks = wait(&server, 10.0, |m| match m {
+        ToClient::Looks(a) => Some(a),
+        _ => None,
+    });
+    assert_eq!(looks, someone, "the new life looks as chosen");
     let placed = wait(&server, 10.0, |m| match m {
         ToClient::Placed(p) => Some(p),
         _ => None,
@@ -180,7 +194,10 @@ fn after_death_a_new_life_begins_near_where_the_last_ended() {
     });
     assert!(alive.dead.is_none());
     // Not while alive.
-    server.send(ToServer::NewLife { at: None });
+    server.send(ToServer::NewLife {
+        at: None,
+        appearance: None,
+    });
     let t0 = Instant::now();
     while t0.elapsed() < Duration::from_millis(500) {
         if let Some(ToClient::Placed(_)) = server.poll() {

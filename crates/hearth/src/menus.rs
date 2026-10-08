@@ -267,11 +267,8 @@ pub enum MenuAction {
     },
     /// Making the planet given up: back to Create World.
     CancelCreate,
-    /// After death: a new life near where the player last lived, or (`elsewhere`) about a place
-    /// picked on the globe (Amendment E §6.6).
-    NewLife {
-        elsewhere: bool,
-    },
+    /// After death: a new life (Amendment E §6.6), as the profile chosen, where chosen.
+    NewLife(crate::client::NewLifeAt),
     /// After death: begin this world again (the old one archived).
     Restart,
     /// Knapping is over: do the process, by hand (with the quality reached) or as usual.
@@ -1538,7 +1535,7 @@ impl Menus {
                 }
             }
             Screen::Death => {
-                death_screen(ui, cx, &mut out);
+                death_screen(ui, cx, &mut out, &mut push);
             }
             Screen::Character(st) => {
                 let o = crate::character_ui::character_screen(ui, cx.profiles, st);
@@ -1755,8 +1752,14 @@ fn birthplace_screen(
 
 /// After death (Amendment E §6.6): how it happened and what a new life keeps; begin a new life
 /// near where the player last lived or elsewhere on the globe, or begin the world again.
-fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAction>) {
+fn death_screen(
+    ui: &mut Ui<'_>,
+    cx: &mut MenuContext<'_>,
+    out: &mut Vec<MenuAction>,
+    push: &mut Option<Screen>,
+) {
     let size = ui.size;
+    let unnamed = ui.t("menu.character.unnamed");
     let Some(d) = cx.death.clone() else {
         // Alive again: nothing to face.
         return;
@@ -1775,11 +1778,20 @@ fn death_screen(ui: &mut Ui<'_>, cx: &mut MenuContext<'_>, out: &mut Vec<MenuAct
             c.space(hearth_ui::font::LINE as f32);
         }
         c.space(8.0);
+        // Who begins it: a profile chosen, or one made now.
+        let who = ui.lang.format(
+            "menu.new_world.who",
+            &[("name", &cx.profiles.name(cx.profiles.selected, &unnamed))],
+        );
+        if ui.button(c.row(ROW), &who) {
+            *push = Some(Screen::Character(Default::default()));
+        }
+        use crate::client::NewLifeAt;
         if ui.button(c.row(ROW), &ui.t("menu.death.new_life")) {
-            out.push(MenuAction::NewLife { elsewhere: false });
+            out.push(MenuAction::NewLife(NewLifeAt::Home));
         }
         if ui.button(c.row(ROW), &ui.t("menu.death.new_life_elsewhere")) {
-            out.push(MenuAction::NewLife { elsewhere: true });
+            out.push(MenuAction::NewLife(NewLifeAt::Globe));
         }
     });
     if ui.button(footer, &ui.t("menu.death.to_title")) {

@@ -126,8 +126,8 @@ pub struct Client {
     world: Option<World>,
     /// The planet as a globe to pick a place on (the world-map key).
     pub globe: GlobePicker,
-    /// A new life about a place picked on the globe (Amendment E §6.6).
-    new_life_place: bool,
+    /// A new life about a place picked on the globe (Amendment E §6.6), as they will look.
+    new_life_place: Option<hearth_character::Appearance>,
     pub camera: Camera,
     pub mode: CameraMode,
     /// The player's body as the server last told it, and the player's movement here.
@@ -330,6 +330,17 @@ fn hearth_lod_color(hex: &str) -> [u8; 3] {
     [(v >> 16) as u8, (v >> 8) as u8, v as u8]
 }
 
+/// Where a new life begins (Amendment E §6.6).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NewLifeAt {
+    /// Near where the player last lived.
+    Home,
+    /// About a place (world coordinates).
+    Place(DVec3),
+    /// Where the player picks on the globe.
+    Globe,
+}
+
 impl Client {
     /// Starts the world's server; `content` provides the generated blocks' textures.
     pub fn new(
@@ -355,7 +366,7 @@ impl Client {
             color_format,
             world: None,
             globe: GlobePicker::default(),
-            new_life_place: false,
+            new_life_place: None,
             camera: Camera {
                 fov_y: options.video.fov,
                 ..Camera::default()
@@ -2374,19 +2385,28 @@ impl Client {
         self.body.as_ref().is_some_and(|b| b.dead.is_some())
     }
 
-    /// After death: a new life (Amendment E §6.6) — near where the player last lived, or (with
-    /// `elsewhere`) where they pick on the globe, which opens for it.
-    pub fn new_life(&mut self, elsewhere: bool) {
+    /// After death: a new life (Amendment E §6.6) as `appearance` — near where the player last
+    /// lived, about a place given, or (with `elsewhere`) where they pick on the globe, which
+    /// opens for it.
+    pub fn new_life(&mut self, at: NewLifeAt, appearance: hearth_character::Appearance) {
         if !self.dead() {
             return;
         }
-        if elsewhere {
-            self.new_life_place = true;
-            if !self.globe.open {
-                self.toggle_globe();
+        match at {
+            NewLifeAt::Globe => {
+                self.new_life_place = Some(appearance);
+                if !self.globe.open {
+                    self.toggle_globe();
+                }
             }
-        } else {
-            self.server.send(ToServer::NewLife { at: None });
+            NewLifeAt::Home => self.server.send(ToServer::NewLife {
+                at: None,
+                appearance: Some(appearance),
+            }),
+            NewLifeAt::Place(at) => self.server.send(ToServer::NewLife {
+                at: Some(at),
+                appearance: Some(appearance),
+            }),
         }
     }
 
@@ -2410,13 +2430,16 @@ impl Client {
         {
             let (x, z) = crate::globe::world_xz(&w.planet, lat, lon);
             let at = DVec3::new(x as f64, 0.0, z as f64);
-            match std::mem::take(&mut self.new_life_place) {
-                true if self.dead() => {
+            match self.new_life_place.take() {
+                Some(looks) if self.dead() => {
                     log::info!(
                         "a new life about {}",
                         crate::globe::describe(&w.terrain, lat, lon)
                     );
-                    self.server.send(ToServer::NewLife { at: Some(at) });
+                    self.server.send(ToServer::NewLife {
+                        at: Some(at),
+                        appearance: Some(looks),
+                    });
                 }
                 _ if self.watching.is_some() => {
                     // Watching: the eye goes there.
@@ -3037,6 +3060,10 @@ impl Client {
                     self.eye_y = m.eye().y;
                     self.mode = CameraMode::Body;
                 }
+                ToClient::Looks(a) => match &mut self.figure {
+                    Some(f) => f.set_appearance(&a),
+                    None => self.figure = Some(Figure::new(a)),
+                },
                 ToClient::Saved => {}
                 ToClient::Failed(e) => {
                     log::error!("the world failed: {e}");

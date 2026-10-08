@@ -662,7 +662,7 @@ fn run(
                 }
             });
     // Who the player is: the adult they chose to be (Amendment E §6.1), or as saved.
-    let (mut player, appearance, mut past_lives) = match saved {
+    let (mut player, mut appearance, mut past_lives) = match saved {
         Some(p) => (p.player, p.appearance.sanitized(), p.past_lives),
         None => (
             Player::new(&cfg, first_spawn, seed ^ 0x5eed),
@@ -1096,7 +1096,10 @@ fn run(
                         }
                     }
                 }
-                Ok(ToServer::NewLife { at }) => {
+                Ok(ToServer::NewLife {
+                    at,
+                    appearance: looks,
+                }) => {
                     // A new life (Amendment E §6.6): a new adult about the place chosen (or near
                     // where the last one died); what the one who died carried lies where they
                     // fell. What it keeps of what earlier lives knew is the mode's.
@@ -1130,6 +1133,10 @@ fn run(
                         }
                         workshop.knowledge_changed = true;
                         player.life = hearth_player::Life::begin(place, ticks);
+                        if let Some(a) = looks {
+                            appearance = a.sanitized();
+                            let _ = tx.send(ToClient::Looks(appearance.clone()));
+                        }
                         player.carry = outfit(&appearance);
                         worn = dress_carry(&player.carry);
                         death_told = false;
