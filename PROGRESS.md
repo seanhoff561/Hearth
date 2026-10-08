@@ -21,7 +21,7 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -33,7 +33,8 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3. V2-11 superseded.
 | E4 — Earth's size | done 2026-10-08 (D244–D248) |
 | E5 — Wild Earth start | done 2026-10-08 (D249–D251) |
 | P3 — looking and the hands | done 2026-10-08 (D252–D254) |
-| P4 with E6 → P5 → P6, Audit 1 | next |
+| P4 with E6 — work by the body, sleep | done 2026-10-08 (D255–D257) |
+| P5 → P6, Audit 1 | next |
 | S1 → S2 → E7 → S3 → S4, Audit 2 | planned |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
@@ -42,11 +43,40 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3. V2-11 superseded.
 | Row | State |
 |---|---|
 | Smooth world (S) | S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
-| Playability (P) | P0–P3 done; open issues in `dev/PLAYTEST.md` |
-| Earth-True (E) | E0–E5 done 2026-10-08; E6–E7 planned |
+| Playability (P) | P0–P4 done; open issues in `dev/PLAYTEST.md` |
+| Earth-True (E) | E0–E6 done 2026-10-08; E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; next: Audit 1 after P6 |
 
-## Latest: P3 — looking and the hands (2026-10-08, D252–D254)
+## Latest: P4 with E6 — work by the body; sleep (2026-10-08, D255–D257)
+- **Stroke by stroke:** every attended process has a work model (pose, stroke, hands; linted).
+  Holding the hand's button works and letting go stops (or click to start and stop,
+  Accessibility). Work part done is kept, saved, and taken up where it was left.
+- **Poses:** the body works in fourteen poses (kneel and dig, squat and knap, sit and work in
+  the lap, chop, pick, pluck, drill fire, grind, haul…), a stroke looping at the work's tempo
+  (`docs/review/p4/work_poses.png`).
+- **Work left to itself:** every unattended process has a state model. Drying follows moisture
+  by warmth, dryness, wind and sun, and rain sets it back: meat dries in a day or two of fair
+  weather, more than twice as long in damp. Soaking goes by the water's warmth.
+- **Looking closely** tells how the work looks now, what rain did, and to one who knows, how long
+  more it would want; with the numbers in Creative.
+- **Sleep at night:** the drop-off threshold is the two-process model's. The Rest screen says
+  when sleep would come and offers resting until then.
+- **Deferred** (`PLAN.md`):
+  - real effects per stroke and work in progress shown in the world;
+  - cooking by core temperature, smoking and tanning;
+  - hands in first person;
+  - gathering one at a time and the loose-objects layer (P7).
+- **Real?** The two-process sleep model; drying by the vapour deficit, warmth, wind and sun;
+  strokes at their documented rates.
+- **Lean?** One work model and one state model per process, in data. Poses are shared by any
+  body.
+- **Fast?** Poses are a few trigonometric terms a joint. A batch's drying is a step a game
+  minute.
+- **Whole?** Hands, poses, strokes, kept work, waiting work, inspection and sleep fit
+  together. The lint holds every process to it.
+- **Organic?** Work's pace follows the weather and the body. Nothing jumps from a bar to done.
+
+## P3 — looking and the hands (2026-10-08, D252–D254)
 - **The two hands:** left click works the left hand and right click the right (E the right;
   the controller's triggers). Each does its natural use on what is looked at, with what it
   holds:

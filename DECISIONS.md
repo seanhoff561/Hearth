@@ -263,3 +263,6 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D252 (2026-10-08) Each hand its button and its natural use, from data
 - D253 (2026-10-08) The action menu holds the rest; what is chosen there twice becomes the default
 - D254 (2026-10-08) The crosshair shows a name and the hands, not a list
+- D255 (2026-10-08) Work is held, stroke by stroke, and what is done stays done
+- D256 (2026-10-08) Work left to itself follows the weather; its state can be looked at
+- D257 (2026-10-08) Sleep comes at night: the drop-off threshold is the two-process model's

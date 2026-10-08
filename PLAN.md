@@ -67,6 +67,9 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 - **P3** — looking and the hands: picking and highlight, names and hand hints, each hand its
   button and natural use from data, the action menu, learned preferences
   (`docs/design/hands.md`, D252–D254).
+- **P4 with E6** — work held stroke by stroke in fourteen poses, kept when left part done;
+  waiting work by the weather, looked at closely; sleep at night (`docs/design/work.md`,
+  D255–D257).
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -113,22 +116,14 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
   client's buttons (the §5.2 examples end to end) wants a headless client (with the full suite).
 - The action menu as a radial on the controller; sub-object picking with S5 and P7.
 
-## P4 — Poses, animation, sleep and time (with E6)
-- The work-pose library with IK; every process with its pose (lint); first- and third-person
-  views; skipping a long action with the fade, interruptions,
-  cancelling with partial progress kept, queued repeats (§6). Sleep by the two-process model with
-  the lie-down menu; the time in words (§7).
-- *Accept:* every process animates; lying down at night leads to sleep within a realistic time;
-  every refusal explains itself; skipping gives what waiting gives.
-- *Amended by E §9.1:* no skipping active work (Rest / Wait for waiting processes); sleep on
-  real 24-hour days. Poses are mind-agnostic actions (the Actor rule, E §2.3).
-
-## E6 — Work the way the body does it (with P4, E §7)
-- No timers or progress bars: active work stroke by stroke while the button is held, rates from
-  real sources, work in progress persistent; gathering one thing at a time from a loose-objects
-  layer and from living plants; waiting processes on real-rate state models, inspectable.
-- *Accept:* E §11's work tests; every active process animates stroke by stroke; every waiting
-  process can be inspected; no progress bars remain.
+## From P4 and E6 (before Audit 1)
+- Real effects per stroke (litres dug, notches cut) and work in progress shown in the world
+  (with S1's editable fill); rain filling a pit left part dug, a hide left part scraped
+  drying stiff.
+- Cooking by core temperature; smoking, salting, fermenting and tanning as state models.
+- The hands at work in first person.
+- Gathering one thing at a time, the loose-objects layer and harvests from living plants: P7
+  (E §9.1).
 
 ## P5 — Motion timing audit
 - `docs/design/motion-timing.md`: everything that moves, its clock (real or game) and its speed,
