@@ -664,7 +664,7 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
     // The mouth's line between the lips, cut in a little.
     add(
         ell(
-            head + v(0.0, 0.0138, 0.066),
+            head + v(0.0, 0.0138, 0.0645),
             Vec3::new(0.012 * h, 0.0005 * h, 0.0035 * h),
         ),
         0.002 * h,
@@ -675,7 +675,7 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
     let full = (1.0 + 0.15 * build) * fc.lips;
     add(
         ell(
-            head + v(0.0, 0.0172, 0.058),
+            head + v(0.0, 0.0172, 0.0565),
             Vec3::new(0.0145 * h, 0.0034 * h * full, 0.0058 * h),
         ),
         0.003 * h,
@@ -684,7 +684,7 @@ fn face(f: &mut Vec<Form>, dims: &Proportions, head: Vec3, female: bool, build: 
     );
     add(
         ell(
-            head + v(0.0, 0.0102, 0.056),
+            head + v(0.0, 0.0102, 0.0545),
             Vec3::new(0.0125 * h, 0.0042 * h * full, 0.006 * h),
         ),
         0.003 * h,

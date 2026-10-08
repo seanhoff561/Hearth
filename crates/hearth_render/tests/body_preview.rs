@@ -4,6 +4,7 @@
 
 use glam::{Affine3A, Quat, Vec3};
 use hearth_character::anatomy::anatomy;
+use hearth_character::eyes::{EyeMotion, eyes, transforms};
 use hearth_character::hair::{HairSim, hair};
 use hearth_character::rig::Joint;
 use hearth_character::{
@@ -11,7 +12,9 @@ use hearth_character::{
     Pose,
 };
 use hearth_render::GpuContext;
-use hearth_render::body::{BodyPreview, GpuBody, GpuHair, HairLook, Person, SkinLook};
+use hearth_render::body::{
+    BodyPreview, EyeLook, GpuBody, GpuEyes, GpuHair, HairLook, Person, SkinLook,
+};
 use hearth_render::figure::PreviewLight;
 use hearth_render::offscreen::{OFFSCREEN_FORMAT, OffscreenTarget, write_png};
 
@@ -50,6 +53,11 @@ struct Model {
     body: GpuBody,
     hair: GpuHair,
     sim: HairSim,
+    eye_mesh: hearth_character::eyes::EyeMesh,
+    eyes: GpuEyes,
+    motion: EyeMotion,
+    /// How closed the lids are (overriding the blinks), for the close-ups.
+    blink: Option<f32>,
 }
 
 impl Model {
@@ -62,6 +70,10 @@ impl Model {
             body: GpuBody::new(ctx, &body),
             hair: GpuHair::new(ctx, &mesh),
             sim: HairSim::new(&mesh, a),
+            eyes: GpuEyes::new(ctx, &eyes(a)),
+            eye_mesh: eyes(a),
+            motion: EyeMotion::new(3),
+            blink: None,
         }
     }
 
@@ -84,7 +96,10 @@ impl Model {
         let head = Affine3A::from_mat4(head);
         for _ in 0..60 {
             self.sim.step(head, 1.0 / 60.0, wind, 0.0);
+            self.motion.step(1.0 / 60.0, glam::Vec2::ZERO);
         }
+        let blink = self.blink.unwrap_or(self.motion.blink());
+        let parts = transforms(&self.eye_mesh, head, self.motion.gaze(), blink);
         let person = Person {
             body: &self.body,
             palette,
@@ -95,6 +110,14 @@ impl Model {
                     color: self.a.hair_linear(),
                     wet: 0.0,
                     guides: self.sim.offsets(head),
+                },
+            )),
+            eyes: Some((
+                &self.eyes,
+                EyeLook {
+                    parts,
+                    iris: hearth_character::appearance::srgb_to_linear(self.a.eyes.srgb()),
+                    pupil: 0.4,
                 },
             )),
         };

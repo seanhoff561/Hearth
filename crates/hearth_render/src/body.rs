@@ -6,6 +6,7 @@
 use bytemuck::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Vec3};
 use hearth_character::anatomy::Anatomy;
+use hearth_character::eyes::{EYE_PARTS, EyeMesh};
 use hearth_character::hair::{GUIDE_POINTS, GUIDES, HairMesh};
 use hearth_character::rig::JOINTS;
 use hearth_character::{Appearance, Pose, Rig};
@@ -166,12 +167,83 @@ struct HairUniform {
     guides: [[f32; 4]; GUIDES * GUIDE_POINTS],
 }
 
-/// A person to draw: the skin, its pose's palette and colours, and the hair.
+/// An eye vertex (48 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct EyeVertex {
+    pos: [f32; 3],
+    normal: [f32; 3],
+    local: [f32; 3],
+    uv: [f32; 2],
+    /// Part, surface, two spare.
+    part: [u8; 4],
+}
+
+/// One person's eyes on the GPU.
+pub struct GpuEyes {
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
+    count: u32,
+}
+
+impl GpuEyes {
+    pub fn new(ctx: &GpuContext, eyes: &EyeMesh) -> Self {
+        let verts: Vec<EyeVertex> = (0..eyes.positions.len())
+            .map(|i| EyeVertex {
+                pos: eyes.positions[i].to_array(),
+                normal: eyes.normals[i].to_array(),
+                local: eyes.local[i].to_array(),
+                uv: eyes.uv[i],
+                part: [eyes.part[i][0], eyes.part[i][1], 0, 0],
+            })
+            .collect();
+        let vertices = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("eye vertices"),
+            size: (verts.len().max(1) * std::mem::size_of::<EyeVertex>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        ctx.write_buffer(&vertices, 0, bytemuck::cast_slice(&verts));
+        let indices = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("eye indices"),
+            size: (eyes.indices.len().max(1) * 4) as u64,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        ctx.write_buffer(&indices, 0, bytemuck::cast_slice(&eyes.indices));
+        Self {
+            vertices,
+            indices,
+            count: eyes.indices.len() as u32,
+        }
+    }
+}
+
+/// The eyes' pose and colour for a frame.
+#[derive(Debug, Clone, Copy)]
+pub struct EyeLook {
+    /// Each part's transform (`eyes::transforms`).
+    pub parts: [Affine3A; EYE_PARTS],
+    /// The iris's linear colour.
+    pub iris: [f32; 3],
+    /// The pupil's size (0 small, bright light – 1 wide, dark).
+    pub pupil: f32,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct EyeUniform {
+    parts: [[[f32; 4]; 4]; EYE_PARTS],
+    iris: [f32; 4],
+}
+
+/// A person to draw: the skin, its pose's palette and colours, the hair and the eyes.
 pub struct Person<'a> {
     pub body: &'a GpuBody,
     pub palette: [[[f32; 4]; 4]; JOINTS],
     pub look: SkinLook,
     pub hair: Option<(&'a GpuHair, HairLook)>,
+    pub eyes: Option<(&'a GpuEyes, EyeLook)>,
 }
 
 /// How a person's skin is coloured (linear albedos).
@@ -225,8 +297,10 @@ struct BodyUniform {
 pub struct BodyPreview {
     skin: wgpu::RenderPipeline,
     hair: wgpu::RenderPipeline,
+    eye: wgpu::RenderPipeline,
     uniform: wgpu::Buffer,
     hair_uniform: wgpu::Buffer,
+    eye_uniform: wgpu::Buffer,
     bind: wgpu::BindGroup,
     depth: Option<crate::offscreen::DepthTarget>,
     srgb: bool,
@@ -311,7 +385,7 @@ impl BodyPreview {
             .device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("person"),
-                entries: &[uniform_entry(0), uniform_entry(1)],
+                entries: &[uniform_entry(0), uniform_entry(1), uniform_entry(2)],
             });
         let uniform = ctx.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("body"),
@@ -322,6 +396,12 @@ impl BodyPreview {
         let hair_uniform = ctx.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("hair"),
             size: std::mem::size_of::<HairUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let eye_uniform = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("eyes"),
+            size: std::mem::size_of::<EyeUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -336,6 +416,10 @@ impl BodyPreview {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: hair_uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: eye_uniform.as_entire_binding(),
                 },
             ],
         });
@@ -372,11 +456,26 @@ impl BodyPreview {
             None,
             format,
         );
+        let eye_attrs = wgpu::vertex_attr_array![
+            0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x2, 4 => Uint8x4
+        ];
+        let eye = person_pipeline(
+            ctx,
+            "eye.wgsl",
+            include_str!("shaders/eye.wgsl"),
+            &pipeline_layout,
+            std::mem::size_of::<EyeVertex>(),
+            &eye_attrs,
+            None,
+            format,
+        );
         Self {
             skin,
             hair,
+            eye,
             uniform,
             hair_uniform,
+            eye_uniform,
             bind,
             depth: None,
             srgb: format.is_srgb(),
@@ -448,6 +547,14 @@ impl BodyPreview {
             ctx.queue
                 .write_buffer(&self.hair_uniform, 0, bytemuck::bytes_of(&hu));
         }
+        if let Some((_, el)) = &person.eyes {
+            let eu = EyeUniform {
+                parts: el.parts.map(|m| Mat4::from(m).to_cols_array_2d()),
+                iris: [el.iris[0], el.iris[1], el.iris[2], el.pupil],
+            };
+            ctx.queue
+                .write_buffer(&self.eye_uniform, 0, bytemuck::bytes_of(&eu));
+        }
         let depth = &self.depth.as_ref().expect("depth").view;
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("body preview"),
@@ -487,6 +594,12 @@ impl BodyPreview {
             pass.set_vertex_buffer(0, hair.vertices.slice(..));
             pass.set_index_buffer(hair.indices.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..hair.count, 0, 0..1);
+        }
+        if let Some((eyes, _)) = &person.eyes {
+            pass.set_pipeline(&self.eye);
+            pass.set_vertex_buffer(0, eyes.vertices.slice(..));
+            pass.set_index_buffer(eyes.indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..eyes.count, 0, 0..1);
         }
     }
 }
