@@ -425,12 +425,15 @@ impl CaveGen {
         b: &GenBlocks,
     ) {
         let o = buf.origin;
-        let x0 = ((s.x - s.r).floor() as i32).max(o.x);
-        let x1 = ((s.x + s.r).ceil() as i32).min(o.x + 15);
-        let y0 = ((s.y - s.ry).floor() as i32).max(o.y);
-        let y1 = ((s.y + s.ry).ceil() as i32).min(o.y + 15);
-        let z0 = ((s.z - s.r).floor() as i32).max(o.z);
-        let z1 = ((s.z + s.r).ceil() as i32).min(o.z + 15);
+        // The walls' fill reaches a voxel and a half beyond the space.
+        let m = hearth_world::fill::RANGE;
+        let x0 = ((s.x - s.r - m).floor() as i32).max(o.x);
+        let x1 = ((s.x + s.r + m).ceil() as i32).min(o.x + 15);
+        let y0 = ((s.y - s.ry - m).floor() as i32).max(o.y);
+        let y1 = ((s.y + s.ry + m).ceil() as i32).min(o.y + 15);
+        let z0 = ((s.z - s.r - m).floor() as i32).max(o.z);
+        let z1 = ((s.z + s.r + m).ceil() as i32).min(o.z + 15);
+        let short = s.r.min(s.ry);
         if x0 > x1 || y0 > y1 || z0 > z1 {
             return;
         }
@@ -452,11 +455,20 @@ impl CaveGen {
                     let dx = x as f32 + 0.5 - s.x;
                     let dy = y as f32 + 0.5 - s.y;
                     let dz = z as f32 + 0.5 - s.z;
-                    if dx * dx * inv_r2 + dz * dz * inv_r2 + dy * dy * inv_ry2 >= 1.0 {
+                    let e = dx * dx * inv_r2 + dz * dz * inv_r2 + dy * dy * inv_ry2;
+                    // Out from the wall, in voxels (about: the ellipsoid's shorter radius).
+                    let outside = (e.sqrt() - 1.0) * short;
+                    if outside > m {
                         continue;
                     }
                     let i =
                         ((y - o.y) as usize) << 8 | ((z - o.z) as usize) << 4 | (x - o.x) as usize;
+                    if b.is_carvable(buf.states[i]) {
+                        buf.cut(i, outside);
+                    }
+                    if e >= 1.0 {
+                        continue;
+                    }
                     if b.is_carvable(buf.states[i]) {
                         buf.states[i] = if flood.is_some_and(|f| y < f) {
                             b.water
@@ -472,6 +484,7 @@ impl CaveGen {
     fn carve_cavern(&self, buf: &mut CubeBuf, c: &Cavern, col: &ColumnData, b: &GenBlocks) {
         let o = buf.origin;
         let pillar_seed = (c.seed >> 7) as f64 * 1e-6;
+        let short = c.rx.min(c.ry).min(c.rz);
         for lz in 0..16 {
             for lx in 0..16 {
                 let x = o.x + lx;
@@ -517,16 +530,36 @@ impl CaveGen {
                         d += n;
                         open = d < 1.0 && !pillar;
                     }
+                    // Out from the wall, in voxels (about: the cavern's shortest radius).
+                    let mut outside = if d < 1.4 && !pillar {
+                        (d - 1.0) * short
+                    } else {
+                        f32::INFINITY
+                    };
                     if !open && let Some((d2, r, top)) = sink {
                         // Shaft from the cavern roof up to the surface.
                         let wobble =
                             self.noise.noise2(y as f64 / 9.0, x as f64 / 9.0, 0) as f32 * 2.5;
-                        open = y as f32 > c.cy && y <= top && d2 < (r + wobble).powi(2);
+                        let shaft = y as f32 > c.cy && y <= top;
+                        open = shaft && d2 < (r + wobble).powi(2);
+                        if shaft {
+                            outside = outside.min(d2.sqrt() - (r + wobble));
+                        }
+                    }
+                    let i = (ly as usize) << 8 | (lz as usize) << 4 | lx as usize;
+                    if outside <= hearth_world::fill::RANGE && b.is_carvable(buf.states[i]) {
+                        buf.cut(
+                            i,
+                            if open {
+                                outside.min(-0.01)
+                            } else {
+                                outside.max(0.01)
+                            },
+                        );
                     }
                     if !open {
                         continue;
                     }
-                    let i = (ly as usize) << 8 | (lz as usize) << 4 | lx as usize;
                     if b.is_carvable(buf.states[i]) {
                         buf.states[i] = if y < c.lake_level { b.water } else { b.air };
                     }

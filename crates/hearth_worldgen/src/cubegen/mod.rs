@@ -17,7 +17,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use hearth_math::{CUBE_SIZE, CUBE_VOLUME, ColumnPos, CubePos, Planet};
-use hearth_world::{BlockRegistry, BlockStateId, Cube};
+use hearth_world::{BlockRegistry, BlockStateId, Cube, Fill};
 
 use crate::deposits::Deposits;
 use crate::geology::{Geology, RockColumn};
@@ -74,6 +74,9 @@ pub struct GenStats {
 pub struct CubeBuf {
     pub origin: hearth_math::BlockPos,
     pub states: [BlockStateId; CUBE_VOLUME],
+    /// Each voxel's depth inside the ground in voxels (Amendment S §2.2), where a continuous
+    /// test says it; NaN where the states alone say it.
+    pub depth: [f32; CUBE_VOLUME],
 }
 
 impl CubeBuf {
@@ -87,6 +90,19 @@ impl CubeBuf {
         } else {
             None
         }
+    }
+
+    /// Cuts the ground at voxel `i` by a space whose surface is `outside` voxels away (negative
+    /// inside the space): the ground's depth there is the lesser.
+    #[inline]
+    pub fn cut(&mut self, i: usize, outside: f32) {
+        let d = self.depth[i];
+        let d = if d.is_nan() {
+            hearth_world::fill::RANGE
+        } else {
+            d
+        };
+        self.depth[i] = d.min(outside);
     }
 
     #[inline]
@@ -106,6 +122,7 @@ thread_local! {
     static BUF: RefCell<Box<CubeBuf>> = RefCell::new(Box::new(CubeBuf {
         origin: hearth_math::BlockPos::ORIGIN,
         states: [BlockStateId::AIR; CUBE_VOLUME],
+        depth: [f32::NAN; CUBE_VOLUME],
     }));
 }
 
@@ -126,6 +143,8 @@ pub struct WorldGenerator {
     features: features::FeatureGen,
     planet: Planet,
     seed: u64,
+    /// Which states are natural ground (by state id), for the fill.
+    natural: Vec<bool>,
     pub stats: GenStats,
 }
 
@@ -163,7 +182,11 @@ impl WorldGenerator {
         let v = terrain.vertical_scale();
         let forest = Arc::new(crate::trees::Forest::new(reg, content));
         blocks.add_water_wood(forest.water_wood());
+        let natural = (0..reg.state_count())
+            .map(|i| reg.has(BlockStateId(i as u16), hearth_world::StateFlags::NATURAL))
+            .collect();
         Ok(Self {
+            natural,
             caves: caves::CaveGen::new(seed, v),
             features: features::FeatureGen::new(seed),
             planet: *terrain.planet(),
@@ -327,6 +350,7 @@ impl WorldGenerator {
         BUF.with(|cell| {
             let mut buf = cell.borrow_mut();
             buf.origin = pos.min_block();
+            buf.depth.fill(f32::NAN);
             let col = self.column(pos.column());
             let rocks = self.rock_columns(pos.column());
             match class {
@@ -343,8 +367,29 @@ impl WorldGenerator {
             } else {
                 f64::INFINITY
             };
-            (Cube::from_states(&buf.states), next)
+            (Cube::from_states_fill(&buf.states, self.fill(&buf)), next)
         })
+    }
+
+    /// The cube's fill: each voxel's depth where a continuous test gave it, made to agree with
+    /// what the voxel ended as (deposits, water and trees change states after the tests);
+    /// what the states say elsewhere.
+    fn fill(&self, buf: &CubeBuf) -> Fill {
+        let mut f = Box::new([hearth_world::fill::EMPTY; CUBE_VOLUME]);
+        for (i, q) in f.iter_mut().enumerate() {
+            let natural = self.natural[buf.states[i].0 as usize];
+            let d = buf.depth[i];
+            *q = if d.is_nan() {
+                if natural {
+                    hearth_world::fill::FULL
+                } else {
+                    hearth_world::fill::EMPTY
+                }
+            } else {
+                Fill::agree(Fill::quantize(d), natural)
+            };
+        }
+        Fill(f)
     }
 
     fn fill_deep(&self, buf: &mut CubeBuf, rocks: &[(RockColumn, Profile)]) {
@@ -370,6 +415,7 @@ impl WorldGenerator {
                 let (x, z) = (o.x + lx, o.z + lz);
                 let top = s.height_i();
                 let water_top = s.water_i();
+                let across = 1.0 / (1.0 + s.slope * s.slope).sqrt();
                 // Tide pools in the rock of stony shores, just above the sea.
                 let tide_pool = s.biome == crate::region::biome::Biome::StonyShore
                     && (0..=2).contains(&top)
@@ -384,14 +430,18 @@ impl WorldGenerator {
                 for ly in 0..16i32 {
                     let y = o.y + ly;
                     let i = ((ly as usize) << 8) | ((lz as usize) << 4) | lx as usize;
+                    // How far inside the ground: down from the surface's continuous height,
+                    // across the slope (the distance to an inclined plane).
+                    let mut depth = (s.height - y as f32 - 0.5) * across;
                     let mut ground = y < top;
                     if s.cliffiness > 0.0 && (y - top).abs() <= CLIFF_AMPLITUDE {
                         // 3D shaping on cliffs: overhangs and ledges.
                         let n = self.features.cliff_noise(x, y, z);
-                        ground = (top as f32 - y as f32 - 0.5)
-                            + n * s.cliffiness * CLIFF_AMPLITUDE as f32
-                            > 0.0;
+                        depth = (top as f32 - y as f32 - 0.5)
+                            + n * s.cliffiness * CLIFF_AMPLITUDE as f32;
+                        ground = depth > 0.0;
                     }
+                    buf.depth[i] = depth;
                     buf.states[i] = if ground {
                         // Depth below the top block (0 = the top block).
                         let depth = top - 1 - y;

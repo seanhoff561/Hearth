@@ -83,6 +83,19 @@ pub enum RenderKind {
     Fluid,
 }
 
+/// What a voxel is to the smooth world (Amendment S §2.1): natural ground is meshed through its
+/// fill; a built piece keeps its own crisp shape; fluid, foliage and empty space are not ground.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoxelKind {
+    Natural,
+    Structure,
+    Fluid,
+    /// A crown's leaves: they occupy the voxel for light and movement, not as ground.
+    Foliage,
+    Empty,
+}
+
 /// Render pass a block's faces belong to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -181,6 +194,22 @@ pub struct BlockDef {
     /// The physical material the block is made of (`materials/`), if any: its properties
     /// (density, strength, heat) apply to the block.
     pub material: Option<String>,
+    /// What the voxel is to the smooth world; unset: a fluid is fluid, a block without
+    /// collision is empty, anything else a structure.
+    pub kind: Option<VoxelKind>,
+}
+
+impl BlockDef {
+    /// What the voxel is to the smooth world: as the data says, else from what it is.
+    pub fn voxel_kind(&self) -> VoxelKind {
+        self.kind.unwrap_or(if self.fluid.is_some() {
+            VoxelKind::Fluid
+        } else if !self.collision {
+            VoxelKind::Empty
+        } else {
+            VoxelKind::Structure
+        })
+    }
 }
 
 impl Default for BlockDef {
@@ -218,6 +247,7 @@ impl Default for BlockDef {
             model: None,
             flammable: false,
             material: None,
+            kind: None,
         }
     }
 }
@@ -383,6 +413,8 @@ bitflags_lite! {
         const WATERLOGGED = 1 << 15;
         /// Blocks any sky light (opacity > 0): used by the column heightmap.
         const BLOCKS_SKY = 1 << 16;
+        /// Natural ground, meshed through its fill (`VoxelKind::Natural`).
+        const NATURAL = 1 << 17;
     }
 }
 
@@ -617,6 +649,10 @@ impl BlockRegistry {
                 def.layer == RenderLayer::Translucent,
             );
             flags.set(StateFlags::INVISIBLE, def.render == RenderKind::Invisible);
+            flags.set(
+                StateFlags::NATURAL,
+                id.0 != 0 && def.voxel_kind() == VoxelKind::Natural,
+            );
             let mut emission = def.emission;
             if let Some(cond) = &def.emission_when
                 && let Some(v) = props.value(&cond.property)
@@ -893,7 +929,13 @@ pub(crate) mod tests {
     pub fn test_registry() -> BlockRegistry {
         let rl = ResourceLocation::game;
         let defs = vec![
-            (rl("stone"), BlockDef::default()),
+            (
+                rl("stone"),
+                BlockDef {
+                    kind: Some(VoxelKind::Natural),
+                    ..BlockDef::default()
+                },
+            ),
             (
                 rl("glass"),
                 BlockDef {

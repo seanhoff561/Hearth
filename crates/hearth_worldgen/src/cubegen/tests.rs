@@ -198,3 +198,59 @@ fn giant_caverns_are_rare_but_present() {
     // Rare: roughly one per several square kilometres (a region is ~1 km²).
     assert!((0.18..=0.38).contains(&frac), "cavern fraction {frac:.2}");
 }
+
+/// Fill (Amendment S §2.2): surface cubes carry the ground's depth from the continuous terrain,
+/// regenerated the same each time; it agrees with every voxel's state; and the surface it
+/// gives lies at the terrain's continuous height to within a few centimetres.
+#[test]
+fn surface_cubes_carry_the_grounds_fill() {
+    use hearth_world::Fill;
+    let reg = registry();
+    let g = generator();
+    let t = terrain();
+    let mut with_fill = 0;
+    let mut checked = 0;
+    let mut worst = 0.0f32;
+    for pos in sample_cubes() {
+        let c = g.generate_cube(pos);
+        assert_eq!(c.fill(), g.generate_cube(pos).fill(), "regenerated alike");
+        let Some(_) = c.fill() else {
+            continue;
+        };
+        with_fill += 1;
+        for i in 0..CUBE_VOLUME {
+            let natural = reg.has(c.get_index(i), StateFlags::NATURAL);
+            assert_eq!(c.fill_at(reg, i) > 0, natural, "{pos:?} voxel {i}");
+        }
+        // Down each column: where the fill crosses zero against the terrain's height, on open
+        // gentle ground with natural ground at the top.
+        let o = pos.min_block();
+        for lz in 0..16 {
+            for lx in 0..16 {
+                let s = t.sample(o.x + lx, o.z + lz);
+                if s.slope > 0.3 || s.cliffiness > 0.0 {
+                    continue;
+                }
+                for ly in 0..15usize {
+                    let lo = LocalPos::new(lx as u8, ly as u8, lz as u8).index();
+                    let hi = LocalPos::new(lx as u8, ly as u8 + 1, lz as u8).index();
+                    let (a, b) = (c.fill_at(reg, lo), c.fill_at(reg, hi));
+                    let natural = reg.has(c.get_index(lo), StateFlags::NATURAL);
+                    if !(natural && a > 0 && b < 0 && a < 127 && b > -127) {
+                        continue;
+                    }
+                    let (da, db) = (Fill::depth(a), Fill::depth(b));
+                    let y = o.y as f32 + ly as f32 + 0.5 + da / (da - db);
+                    worst = worst.max((y - s.height).abs());
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(with_fill > 10, "{with_fill} cubes with fill");
+    assert!(checked > 100, "{checked} columns checked");
+    assert!(
+        worst < 0.06,
+        "the surface is {worst} m from the terrain's height"
+    );
+}
