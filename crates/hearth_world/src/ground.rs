@@ -290,7 +290,8 @@ pub fn dig(
 }
 
 /// Piles `volume` m³ of ground of state `s` about `at`: into the lowest open voxels within
-/// `radius` m, filling each from below. Returns the volume that found room.
+/// `radius` m, filling each from below, reaching further (up to four metres more) where
+/// something stands in the way. Returns the volume that found room.
 pub fn pile(
     map: &mut CubeMap,
     reg: &BlockRegistry,
@@ -299,12 +300,34 @@ pub fn pile(
     s: BlockStateId,
     volume: f32,
 ) -> f32 {
-    let r = radius.max(0.5);
-    let (lo, mut hi) = bounds(at, r + 1.0);
+    let mut left = volume;
+    let mut r = radius.max(0.5);
+    let (lo, mut hi) = bounds(at, r + 5.0);
     // A heap may stand as tall as what is piled.
     hi.y = at.y.floor() as i32 + 2 + volume.ceil() as i32;
+    for _ in 0..5 {
+        left -= pile_within(map, reg, at, r, (lo.y, hi.y), s, left);
+        if left <= 1e-5 {
+            break;
+        }
+        r += 1.0;
+    }
+    refill(map, reg, lo, hi);
+    volume - left
+}
+
+fn pile_within(
+    map: &mut CubeMap,
+    reg: &BlockRegistry,
+    at: DVec3,
+    r: f64,
+    (y0, y1): (i32, i32),
+    s: BlockStateId,
+    volume: f32,
+) -> f32 {
+    let (lo, hi) = bounds(at, r);
     let mut left = volume;
-    for _ in 0..64 {
+    for _ in 0..256 {
         if left <= 1e-5 {
             break;
         }
@@ -316,11 +339,11 @@ pub fn pile(
                 if d > r {
                     continue;
                 }
-                for y in lo.y..=hi.y {
+                for y in y0..=y1 {
                     let p = BlockPos::new(x, y, z);
                     let Some(here) = map.block(p) else { continue };
                     let occ = occupancy_at(map, reg, p);
-                    let open = here.is_air() || (reg.has(here, StateFlags::NATURAL) && occ < 1.0);
+                    let open = room(reg, here) || (reg.has(here, StateFlags::NATURAL) && occ < 1.0);
                     let on_ground = occupancy_at(map, reg, p.down()) >= 1.0;
                     if open && on_ground {
                         if best.is_none_or(|(by, bd, _)| (y, d) < (by, bd)) {
@@ -332,18 +355,16 @@ pub fn pile(
             }
         }
         let Some((_, _, p)) = best else { break };
-        let here = map.block(p).unwrap_or(BlockStateId::AIR);
         let before = occupancy_at(map, reg, p);
-        let into = if here.is_air() { s } else { here };
-        let after = (before + left).min(1.0);
-        set_occupancy(map, reg, p, after, into);
+        // Laid on top, it is what the voxel shows (a voxel is of one material: what lies
+        // beneath it within the voxel goes with it).
+        set_occupancy(map, reg, p, (before + left).min(1.0), s);
         let got = occupancy_at(map, reg, p) - before;
         if got <= 0.0 {
             break;
         }
         left -= got;
     }
-    refill(map, reg, lo, hi);
     volume - left
 }
 
@@ -417,11 +438,11 @@ pub fn settle(
                         }
                         let here = map.block(r).unwrap_or_default();
                         let before = occupancy_at(map, reg, r);
-                        let into = if here.is_air() { s } else { here };
-                        if !here.is_air() && !reg.has(here, StateFlags::NATURAL) {
+                        if !room(reg, here) && !reg.has(here, StateFlags::NATURAL) {
                             break;
                         }
-                        set_occupancy(map, reg, r, (before + left).min(1.0), into);
+                        // Laid on top, it is what the voxel shows.
+                        set_occupancy(map, reg, r, (before + left).min(1.0), s);
                         left -= occupancy_at(map, reg, r) - before;
                         r = r.up();
                     }
@@ -462,6 +483,15 @@ pub fn volume(map: &CubeMap, reg: &BlockRegistry, lo: BlockPos, hi: BlockPos) ->
         }
     }
     v
+}
+
+/// Whether ground can be put into a voxel holding `s`: air, or what gives way to it (grass and
+/// low plants, which it buries).
+fn room(reg: &BlockRegistry, s: BlockStateId) -> bool {
+    s.is_air()
+        || (reg.has(s, StateFlags::REPLACEABLE)
+            && !reg.has(s, StateFlags::FLUID)
+            && !reg.has(s, StateFlags::NATURAL))
 }
 
 fn add(t: &mut Taken, s: BlockStateId, v: f32) {

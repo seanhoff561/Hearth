@@ -6,6 +6,7 @@
 mod common;
 
 use common::{World, temp};
+use glam::DVec3;
 use hearth_math::BlockPos;
 use hearth_protocol::{AimAt, ToServer};
 
@@ -129,9 +130,20 @@ fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
         w.server.send(ToServer::Eat(path));
         assert!(w.until(10.0, |w| w.acted.iter().any(|(p, d, _)| p == "eat" && *d)));
     }
-    // Digging by hand: the earth goes, and a spoil pile rises beside the hole.
+    // Digging by hand: a cubic metre of earth goes, the ground's surface falls where it was
+    // dug (S §8.3), and a spoil pile rises beside the hole.
     let soil = w.ground();
     let before = w.block(soil);
+    let above = DVec3::new(
+        soil.x as f64 + 0.5,
+        soil.y as f64 + 3.0,
+        soil.z as f64 + 0.5,
+    );
+    let surface = |w: &World| {
+        hearth_world::ground::raycast(&w.mirror, &w.reg, above, DVec3::NEG_Y, 8.0)
+            .map_or(f64::NEG_INFINITY, |h| h.at.y)
+    };
+    let top = surface(&w);
     let (done, words) = w.act(
         "dig_by_hand",
         AimAt::Block {
@@ -141,8 +153,9 @@ fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
     );
     if done {
         assert!(
-            w.until(10.0, |w| w.block(soil).as_deref() != before.as_deref()),
-            "dug out"
+            w.until(10.0, |w| top - surface(w) > 0.7),
+            "dug down: the surface from {top} to {}",
+            surface(&w)
         );
         let spoil = w.until(10.0, |w| {
             (-2..=2).any(|dx: i32| {
@@ -163,6 +176,7 @@ fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
     // Going far away unloads the camp's terrain, and it is generated again on coming back: the
     // hearth, the hole and the spoil are still there.
     let dug = w.block(soil);
+    let floor = surface(&w);
     let spoil_at: Vec<BlockPos> = (-2..=2)
         .flat_map(|dx: i32| (-2..=2).flat_map(move |dz: i32| (-3..=3).map(move |dy| (dx, dy, dz))))
         .map(|(dx, dy, dz)| BlockPos::new(soil.x + dx, soil.y + dy, soil.z + dz))
@@ -179,6 +193,7 @@ fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
     let kept = |w: &World| {
         w.block(hearth).as_deref() == Some("campfire")
             && w.block(soil) == dug
+            && (surface(w) - floor).abs() < 0.02
             && spoil_at
                 .iter()
                 .all(|p| w.block(*p).as_deref() == Some("spoil"))

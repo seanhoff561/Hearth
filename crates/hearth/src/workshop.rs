@@ -156,6 +156,8 @@ pub struct Workshop {
     tasted_salt: Option<u64>,
     /// Trees falling: where they come to rest, and the tick they get there.
     falls: Vec<(u64, Vec<(BlockPos, BlockStateId)>)>,
+    /// The ground dug so far by the dig in hand (m³ of `ground::DIG_M3`).
+    dug: f64,
     /// Fire in the vegetation near the player, and far away.
     blaze: Wildfire,
     far_fire: FarFire,
@@ -193,6 +195,7 @@ impl FireWorld for HereFire<'_, '_> {
 
 /// An action's outcome in words, as the client is told it.
 mod creative;
+mod ground;
 
 fn acted(process: &str, done: bool, words: impl Into<String>) -> ToClient {
     ToClient::Acted(Acted {
@@ -334,6 +337,7 @@ impl Workshop {
             knowledge_changed: true,
             tasted_salt: None,
             falls: Vec::new(),
+            dug: 0.0,
             blaze: Wildfire::new(seed),
             far_fire: FarFire::new(seed),
             fuel: None,
@@ -684,6 +688,8 @@ impl Workshop {
             .and_then(|k| self.begun.get(&(self.crafts.recipes[r].def.id.clone(), k)))
             .copied()
             .unwrap_or(0.0);
+        // A dig taken up again has dug its share already.
+        self.dug = done * ground::DIG_M3;
         self.work = Some(Work {
             recipe: r,
             aim,
@@ -873,6 +879,21 @@ impl Workshop {
                 }
             } else {
                 w.ticks += advanced;
+                // A dig takes its earth stroke by stroke (S §8.3).
+                let digging = match (self.crafts.recipes[w.recipe].def.effect, w.aim) {
+                    (Effect::Excavate, AimAt::Block { pos, .. }) => Some(pos),
+                    _ => None,
+                };
+                let share = (w.ticks / w.needed.max(1.0)).min(1.0);
+                if let Some(pos) = digging {
+                    let want = share * ground::DIG_M3 - self.dug;
+                    if want >= hearth_world::ground::STEP as f64 {
+                        self.dug += self.dig_ground(h, pos, want);
+                    }
+                }
+                let Some(w) = self.work.as_mut() else {
+                    return;
+                };
                 if w.ticks >= w.needed {
                     let w = self.work.take().expect("work");
                     if let Some(k) = Self::begun_key(w.aim) {
@@ -1170,9 +1191,14 @@ impl Workshop {
         match (o.effect, aim) {
             (Effect::Remove, AimAt::Block { pos, .. }) => {
                 self.set_block(h, pos, BlockStateId::AIR);
-                self.slump_around(h, pos);
+                self.settle_ground(h, pos, 2);
             }
-            (Effect::Excavate, AimAt::Block { pos, .. }) => self.excavate(h, pos),
+            (Effect::Excavate, AimAt::Block { pos, .. }) => {
+                // What the strokes left (all of it, done at a stroke in Creative).
+                let rest = ground::DIG_M3 - self.dug;
+                self.dig_ground(h, pos, rest);
+                self.dug = 0.0;
+            }
             (Effect::Deplete, AimAt::Block { pos, .. }) => {
                 let made_kg: f32 = o.made.iter().map(|s| s.mass(h.items)).sum();
                 let kg = self.depleted.entry(pos).or_default();
@@ -1186,7 +1212,7 @@ impl Workshop {
                 if *kg >= block_kg {
                     self.depleted.remove(&pos);
                     self.set_block(h, pos, BlockStateId::AIR);
-                    self.slump_around(h, pos);
+                    self.settle_ground(h, pos, 2);
                 }
             }
             (Effect::Ignite, AimAt::Block { pos, .. }) => {
@@ -2087,123 +2113,6 @@ impl Workshop {
                 d.replaceable && d.fluid.is_none()
             }
         })
-    }
-
-    fn loose(h: &Here, p: BlockPos) -> bool {
-        h.lw.map.block(p).is_some_and(|s| {
-            let b = h.lw.reg.block_of(s);
-            b.name.path() == "spoil"
-                || b.def
-                    .material
-                    .as_deref()
-                    .and_then(|m| h.lw.content.materials.get(m))
-                    .is_some_and(|m| m.tags.iter().any(|t| t == "falls"))
-        })
-    }
-
-    /// Digs out a block: snow packs away, earth falls in a spoil pile beside the hole.
-    fn excavate(&mut self, h: &mut Here, pos: BlockPos) {
-        let Some(state) = h.lw.map.block(pos) else {
-            return;
-        };
-        let block = h.lw.reg.block_of(state);
-        let snow = block.def.material.as_deref().is_some_and(|m| {
-            h.lw.content.materials.get(m).is_some_and(|m| {
-                m.category == hearth_content::schema::material::MaterialCategory::Snow
-            })
-        });
-        let spoil = if Self::loose(h, pos) {
-            Some(state)
-        } else if snow {
-            None
-        } else {
-            h.lw.reg.parse_state("hearth:spoil").ok()
-        };
-        self.set_block(h, pos, BlockStateId::AIR);
-        if let Some(sp) = spoil {
-            // The lowest place beside the hole, away from where the player stands.
-            let feet = h.player.mover.pos;
-            let mut best: Option<(i32, f64, BlockPos)> = None;
-            for d in [[1, 0], [-1, 0], [0, 1], [0, -1]] {
-                let mut p = BlockPos::new(pos.x + d[0], pos.y, pos.z + d[1]);
-                let mut ok = false;
-                for _ in 0..6 {
-                    if Self::open(h, p) {
-                        if Self::open(h, p.down()) && p.down() != pos {
-                            p = p.down();
-                            continue;
-                        }
-                        ok = true;
-                        break;
-                    }
-                    p = p.up();
-                }
-                if !ok || p.down() == pos {
-                    continue;
-                }
-                let away = -(center(p) - feet).length();
-                if best.is_none_or(|(y, a, _)| (p.y, away) < (y, a)) {
-                    best = Some((p.y, away, p));
-                }
-            }
-            if let Some((_, _, p)) = best {
-                self.set_block(h, p, sp);
-                self.slump(h, p);
-            }
-        }
-        self.slump_around(h, pos);
-    }
-
-    /// Loose blocks next to and above an opened place slump into it.
-    fn slump_around(&mut self, h: &mut Here, pos: BlockPos) {
-        for p in [
-            pos.up(),
-            BlockPos::new(pos.x + 1, pos.y + 1, pos.z),
-            BlockPos::new(pos.x - 1, pos.y + 1, pos.z),
-            BlockPos::new(pos.x, pos.y + 1, pos.z + 1),
-            BlockPos::new(pos.x, pos.y + 1, pos.z - 1),
-        ] {
-            if Self::loose(h, p) {
-                self.slump(h, p);
-            }
-        }
-    }
-
-    /// A loose block falls and slides down any step of two until it rests: piles stand at
-    /// their angle of repose (a block's 45°, near the 35–40° of loose earth and gravel).
-    fn slump(&mut self, h: &mut Here, mut p: BlockPos) {
-        for _ in 0..24 {
-            let Some(state) = h.lw.map.block(p) else {
-                return;
-            };
-            if Self::open(h, p.down()) {
-                self.set_block(h, p, BlockStateId::AIR);
-                p = p.down();
-                self.set_block(h, p, state);
-                continue;
-            }
-            let start = (self.rng.next_u32() % 4) as usize;
-            let dirs = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-            let mut moved = false;
-            for k in 0..4 {
-                let d = dirs[(start + k) % 4];
-                let side = BlockPos::new(p.x + d[0], p.y, p.z + d[1]);
-                if Self::open(h, side) && Self::open(h, side.down()) {
-                    self.set_block(h, p, BlockStateId::AIR);
-                    let above = p.up();
-                    p = side.down();
-                    self.set_block(h, p, state);
-                    if Self::loose(h, above) {
-                        self.slump(h, above);
-                    }
-                    moved = true;
-                    break;
-                }
-            }
-            if !moved {
-                return;
-            }
-        }
     }
 
     /// Radiant heat from fires near a point, as a body there absorbs it averaged over its skin
