@@ -31,7 +31,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | Flora | [flora.md](flora.md) | implemented (V2-6, V2-10) |
 | Fauna and ecosystems | [fauna.md](fauna.md) | implemented (V2-7, V2-10) |
 | Building and structure | [building.md](building.md) | implemented (V2-8) |
-| Smooth terrain: fill, meshing, shading (Amendment S) | [smooth-terrain.md](smooth-terrain.md) | fill, ground families and editing implemented (S1); meshing prototype (S0); S2–S8 |
+| Smooth terrain: fill, meshing, shading, movement, distant ground (Amendment S) | [smooth-terrain.md](smooth-terrain.md) | implemented (S1–S4); S5–S8 planned |
 | Art direction: photographic plausibility | [art-direction.md](art-direction.md) | living document (S0, Q) |
 | Motion timing: what moves, by which clock, how fast | [motion-timing.md](motion-timing.md) | partial (P0); the audit and its check P5 |
 | The Neolithic (pottery, fields, herds, cloth, timber, moving loads) | [neolithic.md](neolithic.md) | implemented (V2-12) |
