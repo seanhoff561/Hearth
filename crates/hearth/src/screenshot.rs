@@ -163,6 +163,10 @@ pub struct ShotSpec {
     /// turned this many degrees to their left: `person=2.5:90` shows their right side).
     pub person: Option<f64>,
     pub person_turn: f32,
+    /// The person's skin's state (`skin=wet`: wet, muddy, sunburnt, tanned, hurt).
+    pub skin: Option<String>,
+    /// Who the person is (`who=female`, `who=coily`, …; see `who`).
+    pub who: Option<String>,
     /// What the person does: a blow, a drawn bow or a brand held up, at a phase
     /// (`doing=swing@1.2`; E §3.2).
     pub doing: Option<(hearth_character::Gesture, f32)>,
@@ -290,6 +294,8 @@ impl Default for ShotSpec {
             globe: None,
             person: None,
             person_turn: 0.0,
+            skin: None,
+            who: None,
             doing: None,
             place: Vec::new(),
             put: Vec::new(),
@@ -385,6 +391,8 @@ impl ShotSpec {
                     spec.person = Some(d.parse()?);
                     spec.person_turn = turn.parse()?;
                 }
+                "skin" => spec.skin = Some(v.to_owned()),
+                "who" => spec.who = Some(v.to_owned()),
                 "doing" => {
                     use hearth_character::Gesture as G;
                     let (g, phase) = v.split_once('@').unwrap_or((v, "1.5"));
@@ -1305,7 +1313,7 @@ pub fn render_shot(
     if spec.body {
         // The camera in the eyes of someone standing here, looking as the shot looks.
         let feet = DVec3::new(sx, lw.surface_y(sx, sz) + 1.0, sz);
-        let figure = hearth_character::Figure::starting(hearth_character::Appearance::default());
+        let figure = hearth_character::Figure::starting(who(spec.who.as_deref()));
         let pose = figure.animator.pose(
             &figure.rig,
             hearth_character::Activity::Stand,
@@ -1317,18 +1325,21 @@ pub fn render_shot(
         let turn = glam::Quat::from_rotation_y(-spec.yaw.to_radians());
         camera.pos = feet + (turn * figure.eye(&pose)).as_dvec3();
         let chest = hearth_math::BlockPos::containing(feet + DVec3::Y * 1.2);
-        let mut boxes = Vec::new();
-        hearth_character::instances(
-            &figure.rig,
-            &figure.palette,
+        let place = glam::Affine3A::from_rotation_translation(turn, (feet - camera.pos).as_vec3());
+        let show = hearth_character::Show {
+            hide_head: true,
+            sky_light: lw.map.sky_light(chest),
+            block_light: lw.map.block_light(chest),
+            clothes_only: false,
+        };
+        let boxes = draw_person(
+            ctx,
+            &mut scene,
+            &figure,
             &pose,
-            glam::Affine3A::from_rotation_translation(turn, (feet - camera.pos).as_vec3()),
-            hearth_character::Show {
-                hide_head: true,
-                sky_light: lw.map.sky_light(chest),
-                block_light: lw.map.block_light(chest),
-            },
-            &mut boxes,
+            place,
+            show,
+            spec.skin.as_deref(),
         );
         scene.figures.set(ctx, &boxes);
     }
@@ -1338,7 +1349,7 @@ pub fn render_shot(
         let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
         let (px, pz) = (camera.pos.x + flat.x * d, camera.pos.z + flat.z * d);
         let feet = DVec3::new(px, lw.surface_y(px, pz), pz);
-        let figure = hearth_character::Figure::starting(hearth_character::Appearance::default());
+        let figure = hearth_character::Figure::starting(who(spec.who.as_deref()));
         let doing = spec.doing.map(|(gesture, phase)| hearth_character::Doing {
             gesture,
             right: true,
@@ -1368,18 +1379,20 @@ pub fn render_shot(
             glam::Quat::from_rotation_y(-(spec.yaw + 180.0 + spec.person_turn).to_radians()),
             (feet - camera.pos).as_vec3(),
         );
-        let mut boxes = Vec::new();
-        hearth_character::instances(
-            &figure.rig,
-            &figure.palette,
+        let show = hearth_character::Show {
+            hide_head: false,
+            sky_light: lw.map.sky_light(chest),
+            block_light: lw.map.block_light(chest),
+            clothes_only: false,
+        };
+        let boxes = draw_person(
+            ctx,
+            &mut scene,
+            &figure,
             &pose,
             place,
-            hearth_character::Show {
-                hide_head: false,
-                sky_light: lw.map.sky_light(chest),
-                block_light: lw.map.block_light(chest),
-            },
-            &mut boxes,
+            show,
+            spec.skin.as_deref(),
         );
         scene.figures.set(ctx, &boxes);
     }
@@ -2192,6 +2205,115 @@ fn shoot_globe(
         crate::globe::describe(lw.terrain(), lat, lon)
     );
     Ok(())
+}
+
+/// A person drawn as a sculpted body (E7) in the scene, its hair settled; the boxes of the
+/// garments not fitted as meshes are returned. `skin` names a state to show: "wet", "muddy",
+/// "sunburnt", "tanned" or "hurt".
+fn draw_person(
+    ctx: &GpuContext,
+    scene: &mut SceneRenderer,
+    figure: &hearth_character::Figure,
+    pose: &hearth_character::Pose,
+    place: glam::Affine3A,
+    show: hearth_character::Show,
+    skin: Option<&str>,
+) -> Vec<hearth_character::FigureInstance> {
+    use hearth_body::skin::{Mark, Skin};
+    use hearth_content::schema::body::BodyRegion;
+    let mut person = crate::people::Person::new(7);
+    let detail = hearth_character::person::Detail::at(place.translation.length());
+    person.keep(ctx, figure, detail, true);
+    let mut body_skin = Skin::default();
+    let mut wet = 0.0;
+    match skin {
+        Some("wet") => wet = 1.0,
+        Some("muddy") => {
+            body_skin.dirt_legs = 1.0;
+            body_skin.dirt_hands = 0.8;
+        }
+        Some("sunburnt") => body_skin.burn = 0.9,
+        Some("tanned") => body_skin.tan = 0.8,
+        Some("hurt") => {
+            body_skin.blood.push(Mark {
+                region: BodyRegion::LowerArm,
+                side: hearth_body::harm::Side::Left,
+                amount: 0.9,
+            });
+            body_skin.scars.push(Mark {
+                region: BodyRegion::UpperLeg,
+                side: hearth_body::harm::Side::Right,
+                amount: 1.0,
+            });
+        }
+        _ => {}
+    }
+    let mut state = crate::people::skin_state(&body_skin, None, &figure.garbs);
+    state.wet = wet;
+    let light = [show.sky_light as f32 / 15.0, show.block_light as f32 / 15.0];
+    let mut drawn = None;
+    for _ in 0..60 {
+        drawn = person.frame(
+            figure,
+            pose,
+            place,
+            state,
+            1.0 / 60.0,
+            glam::Vec3::ZERO,
+            light,
+            show.hide_head,
+        );
+    }
+    let mut boxes = Vec::new();
+    if let Some(rig) = person.garment_rig() {
+        hearth_character::instances(
+            rig,
+            &figure.palette,
+            pose,
+            place,
+            hearth_character::Show {
+                clothes_only: true,
+                ..show
+            },
+            &mut boxes,
+        );
+    }
+    scene.people.set(ctx, drawn.into_iter().collect());
+    boxes
+}
+
+/// A person for the shots: the default man, or one named by `who`.
+fn who(name: Option<&str>) -> hearth_character::Appearance {
+    use hearth_character::{Appearance, FacialHair, HAIR_COLORS, HairStyle};
+    match name {
+        Some("female") => Appearance::female(),
+        Some("coily") => Appearance {
+            hair: HairStyle::Coily,
+            skin_tone: 0.85,
+            hair_color: HAIR_COLORS[0].1,
+            ..Appearance::default()
+        },
+        Some("braids") => Appearance {
+            hair: HairStyle::Braids,
+            skin_tone: 0.6,
+            ..Appearance::female()
+        },
+        Some("bearded") => Appearance {
+            facial_hair: FacialHair::FullBeard,
+            hair: HairStyle::ShoulderLength,
+            skin_tone: 0.3,
+            hair_color: HAIR_COLORS[3].1,
+            ..Appearance::default()
+        },
+        Some("fair") => Appearance {
+            skin_tone: 0.1,
+            undertone: -0.4,
+            hair: HairStyle::LongWavy,
+            hair_color: HAIR_COLORS[5].1,
+            ..Appearance::female()
+        },
+        _ => Appearance::default(),
+    }
 }
 
 #[cfg(test)]

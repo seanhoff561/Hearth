@@ -33,10 +33,10 @@ pub struct Skin {
     pub dose_sed: f64,
     /// Redness from sunburn, 0–1, and the redness still to come.
     pub burn: f32,
-    burn_coming: f32,
+    pub burn_coming: f32,
     /// Tan: melanin made by the sun, 0–1, and the melanin still to come.
     pub tan: f32,
-    tan_coming: f32,
+    pub tan_coming: f32,
     /// Dirt on the legs (feet to knees) and the hands, 0–1.
     pub dirt_legs: f32,
     pub dirt_hands: f32,

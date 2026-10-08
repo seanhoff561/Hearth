@@ -34,6 +34,7 @@ pub mod menus;
 pub mod modes;
 pub mod observer;
 pub mod observer_ui;
+pub mod people;
 pub mod places;
 pub mod profiles;
 pub mod rest;

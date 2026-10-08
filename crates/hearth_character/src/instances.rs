@@ -78,6 +78,8 @@ pub struct Show {
     /// Sky light and block light (0–15) where the body is.
     pub sky_light: u8,
     pub block_light: u8,
+    /// Only the garments' boxes (the body itself drawn as a sculpted mesh, E7).
+    pub clothes_only: bool,
 }
 
 /// Appends the boxes of a posed body placed by `place` (the figure's frame to camera-relative
@@ -92,7 +94,8 @@ pub fn instances(
 ) {
     let joints = pose.joints(rig);
     let light = [show.sky_light.min(15), show.block_light.min(15), 0, 0];
-    for p in rig.parts.iter().chain(&rig.clothes) {
+    let body: &[crate::rig::Part] = if show.clothes_only { &[] } else { &rig.parts };
+    for p in body.iter().chain(&rig.clothes) {
         if show.hide_head && p.region == Region::Head {
             continue;
         }

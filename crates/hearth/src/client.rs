@@ -201,6 +201,8 @@ pub struct Client {
     pub perspective: Perspective,
     view_bobbing: bool,
     figure_boxes: Vec<FigureInstance>,
+    /// The player's body as a sculpted mesh (E7).
+    person: crate::people::Person,
     /// Trees falling: drawn as boxes turning about their stump until they come to rest.
     falling: Vec<Falling>,
     /// Built pieces fallen: tumbling down to the ground in a cloud of dust (V2-8).
@@ -448,6 +450,7 @@ impl Client {
             perspective: Perspective::First,
             view_bobbing: options.video.view_bobbing,
             figure_boxes: Vec::new(),
+            person: crate::people::Person::new(7),
             falling: Vec::new(),
             tumbling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
@@ -3555,7 +3558,10 @@ impl Client {
             }
             _ => scene.near_area = None,
         }
-        // The player's body: in first person without the head (the eyes are in it).
+        // The player's body: in first person without the head (the eyes are in it). A
+        // sculpted body (E7) once its meshes are built; the boxes till then, and for the
+        // garments not fitted as meshes.
+        let mut people = Vec::new();
         if let (Some(f), Some(pose), Some(w)) = (&self.figure, &self.pose, &self.world) {
             let rel = (self.mover.pos - view.pos).as_vec3();
             let place = Affine3A::from_rotation_translation(
@@ -3563,20 +3569,54 @@ impl Client {
                 rel,
             );
             let chest = hearth_math::BlockPos::containing(self.mover.pos + DVec3::Y * 1.2);
+            let first = self.mode == CameraMode::Body && self.perspective == Perspective::First;
             let show = Show {
-                hide_head: self.mode == CameraMode::Body && self.perspective == Perspective::First,
+                hide_head: first,
                 sky_light: w.mirror.sky_light(chest),
                 block_light: w.mirror.block_light(chest),
+                clothes_only: false,
             };
-            hearth_character::instances(
-                &f.rig,
-                &f.palette,
-                pose,
-                place,
-                show,
-                &mut self.figure_boxes,
-            );
+            let detail = hearth_character::person::Detail::at(rel.length());
+            self.person.keep(ctx, f, detail, false);
+            let skin = self
+                .body
+                .as_ref()
+                .map(|b| b.skin.clone())
+                .unwrap_or_default();
+            let state = crate::people::skin_state(&skin, self.body.as_ref(), &f.garbs);
+            let wind = glam::Vec3::new(self.weather.0, 0.0, 0.0);
+            let light = [show.sky_light as f32 / 15.0, show.block_light as f32 / 15.0];
+            match self
+                .person
+                .frame(f, pose, place, state, dt, wind, light, first)
+            {
+                Some(drawn) => {
+                    people.push(drawn);
+                    if let Some(rig) = self.person.garment_rig() {
+                        hearth_character::instances(
+                            rig,
+                            &f.palette,
+                            pose,
+                            place,
+                            Show {
+                                clothes_only: true,
+                                ..show
+                            },
+                            &mut self.figure_boxes,
+                        );
+                    }
+                }
+                None => hearth_character::instances(
+                    &f.rig,
+                    &f.palette,
+                    pose,
+                    place,
+                    show,
+                    &mut self.figure_boxes,
+                ),
+            }
         }
+        scene.people.set(ctx, people);
         scene.figures.set(ctx, &self.figure_boxes);
         scene.senses = clear.senses(senses);
         scene.set_taa(ctx, self.taa);

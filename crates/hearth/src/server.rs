@@ -583,6 +583,7 @@ fn body_view(
             .sleep
             .hours_until(exposure.local_hour as f64, hearth_player::SLEEPY)
             .map(|h| h as f32),
+        skin: p.body.skin.clone(),
         exposure,
     }
 }
@@ -1558,6 +1559,8 @@ fn run(
             let report = last_moved.as_ref().map(report_of).unwrap_or_default();
             // Watching the world, a living player is put aside: its body still, unharmed.
             if player.body.dead.is_none() && observing.is_none() {
+                // The skin burns as the person's own does.
+                player.body.skin.tone = appearance.skin_tone;
                 let load = player.carry.load(&items, cfg.mass_kg as f32);
                 let mu = drag_friction(
                     &lw,

@@ -142,6 +142,8 @@ pub struct SceneRenderer {
     taa_frame: Option<(glam::Mat4, glam::Mat4, glam::DVec3)>,
     /// Bodies (the player's own, later people and animals), drawn with the opaque terrain.
     pub figures: FigureRenderer,
+    /// People as sculpted bodies (E7).
+    pub people: crate::body::PeopleRenderer,
     /// The player's body's senses on the image.
     pub senses: crate::post::Senses,
     pub post: PostProcess,
@@ -184,8 +186,10 @@ impl SceneRenderer {
         let terrain = TerrainRenderer::new(ctx, atlas, &sky, planet, mip_levels, anisotropy);
         let lod = LodRenderer::new(ctx, &terrain, planet, crate::post::HDR_FORMAT);
         let figures = FigureRenderer::new(ctx, terrain.globals_bind().0);
+        let people = crate::body::PeopleRenderer::new(ctx, terrain.globals_bind().0);
         Self {
             figures,
+            people,
             senses: crate::post::Senses::default(),
             post: PostProcess::new(ctx, output_format),
             precip: PrecipRenderer::new(ctx),
@@ -475,10 +479,11 @@ impl SceneRenderer {
             Some(wgpu::Color::BLACK),
             timer.as_mut(),
         );
-        if self.figures.count() > 0 {
+        if self.figures.count() > 0 || self.people.count() > 0 {
             let (_, bind0) = self.terrain.globals_bind();
             let mut pass = begin_pass(enc, &hdr, depth, None);
             self.figures.draw(&mut pass, bind0);
+            self.people.draw(&mut pass, bind0);
         }
         self.lod
             .cull(ctx, enc, self.terrain.hzb().map(|(view, _, _)| view));

@@ -1,0 +1,13 @@
+# E7 (Amendment E §8): people as sculpted, skinned bodies in the world, under sun, overcast,
+# firelight and night, in their skin's states; for docs/review/smooth-world.md.
+# `hearth --screenshot-list tools/shots/e7_people.shots`
+defaults: w=960, h=540, clouds=0.2, dry=true, seed=7, planet=huge, res=256, dist=6, biome=cold_desert, above=1.6, yaw=30, pitch=6, season=summer, lod=0
+hour=11, person=2.6:25, out=bench-out/e7/sun.png
+hour=11, person=2.6:-20, who=female, out=bench-out/e7/sun_female.png
+hour=11, clouds=1.0, person=2.6:25, who=coily, out=bench-out/e7/overcast.png
+hour=18.8, person=2.6:40, who=bearded, out=bench-out/e7/evening.png
+hour=23, person=2.6:25, who=braids, out=bench-out/e7/night.png
+hour=11, person=2.6:25, skin=wet, who=fair, out=bench-out/e7/wet.png
+hour=11, person=2.6:25, skin=muddy, out=bench-out/e7/muddy.png
+hour=11, person=2.6:25, skin=sunburnt, who=fair, out=bench-out/e7/sunburnt.png
+hour=11, body=true, pitch=55, out=bench-out/e7/first_person.png

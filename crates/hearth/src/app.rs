@@ -86,6 +86,9 @@ pub struct App {
     preview_figure: Option<hearth_character::Figure>,
     figure_preview: Option<hearth_render::figure::FigurePreview>,
     preview_boxes: Vec<hearth_character::FigureInstance>,
+    /// The creator's person as a sculpted body (E7), and what draws it.
+    preview_person: crate::people::Person,
+    body_preview: Option<hearth_render::body::BodyPreview>,
     /// A new world's planet being made, and then its globe while the birthplace is chosen
     /// (Amendment P §4.3).
     making: Option<Making>,
@@ -192,6 +195,8 @@ impl App {
             preview_figure: None,
             figure_preview: None,
             preview_boxes: Vec::new(),
+            preview_person: crate::people::Person::new(1),
+            body_preview: None,
             making: None,
             choosing: None,
         }
@@ -1189,6 +1194,8 @@ impl App {
             let preview_figure = &mut self.preview_figure;
             let figure_preview = &mut self.figure_preview;
             let preview_boxes = &mut self.preview_boxes;
+            let preview_person = &mut self.preview_person;
+            let body_preview = &mut self.body_preview;
             let format = run.renderer.color_format();
             if run.renderer.render_with(|ctx, enc, targets| {
                 match client.as_mut() {
@@ -1257,15 +1264,6 @@ impl App {
                         ..Default::default()
                     };
                     let pose = fig.animator.update(&fig.rig, &drive, dt as f32);
-                    preview_boxes.clear();
-                    hearth_character::instances(
-                        &fig.rig,
-                        &fig.palette,
-                        &pose,
-                        glam::Affine3A::from_rotation_y(p.yaw),
-                        hearth_character::Show::default(),
-                        preview_boxes,
-                    );
                     let s = interface.scale as f32;
                     let rect = [
                         (p.rect.x * s) as u32,
@@ -1273,21 +1271,68 @@ impl App {
                         (p.rect.w * s) as u32,
                         (p.rect.h * s) as u32,
                     ];
-                    let r = figure_preview.get_or_insert_with(|| {
-                        hearth_render::figure::FigurePreview::new(ctx, format)
-                    });
-                    // Framed for the tallest person, so heights compare.
-                    r.render(
-                        ctx,
-                        enc,
-                        targets.color,
-                        targets.size,
-                        rect,
-                        preview_boxes,
-                        2.0,
-                        0.55,
-                        p.light,
+                    // The sculpted body once built (on a worker thread); the boxes till then.
+                    preview_person.keep(ctx, fig, hearth_character::person::Detail::Close, false);
+                    let place = glam::Affine3A::from_rotation_y(p.yaw);
+                    let drawn = preview_person.frame(
+                        fig,
+                        &pose,
+                        place,
+                        hearth_render::body::SkinState::default(),
+                        dt as f32,
+                        glam::Vec3::ZERO,
+                        [1.0, 0.0],
+                        false,
                     );
+                    if let Some((meshes, frame)) = drawn {
+                        let r = body_preview.get_or_insert_with(|| {
+                            hearth_render::body::BodyPreview::new(ctx, format)
+                        });
+                        // Framed for the tallest person, so heights compare.
+                        let aspect = rect[2].max(1) as f32 / rect[3].max(1) as f32;
+                        let fov = 28.0f32;
+                        let fit = 1.1 / (fov.to_radians() / 2.0).tan() / aspect.clamp(0.45, 1.0);
+                        r.render(
+                            ctx,
+                            enc,
+                            targets.color,
+                            targets.size,
+                            rect,
+                            &meshes,
+                            &frame,
+                            (
+                                glam::Vec3::new(0.0, 1.05, fit.max(3.0)),
+                                glam::Vec3::new(0.0, 0.98, 0.0),
+                                fov,
+                            ),
+                            p.light,
+                        );
+                    } else {
+                        preview_boxes.clear();
+                        hearth_character::instances(
+                            &fig.rig,
+                            &fig.palette,
+                            &pose,
+                            place,
+                            hearth_character::Show::default(),
+                            preview_boxes,
+                        );
+                        let r = figure_preview.get_or_insert_with(|| {
+                            hearth_render::figure::FigurePreview::new(ctx, format)
+                        });
+                        // Framed for the tallest person, so heights compare.
+                        r.render(
+                            ctx,
+                            enc,
+                            targets.color,
+                            targets.size,
+                            rect,
+                            preview_boxes,
+                            2.0,
+                            0.55,
+                            p.light,
+                        );
+                    }
                 }
             }) {
                 self.frames_rendered += 1;

@@ -507,3 +507,68 @@ fn shaders_compile() {
     let err = pollster::block_on(scope.pop());
     assert!(err.is_none(), "{err:?}");
 }
+
+/// The body as first person draws it (head and neck collapsed into the chest), from outside
+/// and from the eye looking down.
+#[test]
+fn headless_for_first_person() {
+    let Ok(ctx) = GpuContext::headless(false) else {
+        return;
+    };
+    let a = Appearance::default();
+    let mut model = Model::new(&ctx, &a, 0.008);
+    let f = &model.figure;
+    let pose = f.animator.pose(
+        &f.rig,
+        Activity::Stand,
+        &Drive {
+            look_pitch: 70.0,
+            ..Drive::default()
+        },
+    );
+    let joints = pose.joints(&f.rig);
+    let at = joints[Joint::Chest.index()].transform_point3(Vec3::new(0.0, 0.08, -0.02));
+    let point = [[0.0; 4], [0.0; 4], [0.0; 4], [at.x, at.y, at.z, 1.0]];
+    let mut palette = model.meshes.body.palette(&f.rig, &pose, Affine3A::IDENTITY);
+    palette[Joint::Head.index()] = point;
+    palette[Joint::Neck.index()] = point;
+    let frame = hearth_render::body::PersonFrame {
+        palette,
+        look: SkinLook::of(&a),
+        hair: None,
+        eyes: None,
+        light: [1.0, 0.0],
+    };
+    let (w, h) = (640, 360);
+    let target = OffscreenTarget::new(&ctx, w, h);
+    let mut preview = BodyPreview::new(&ctx, OFFSCREEN_FORMAT);
+    clear(&ctx, &target.color_view);
+    let eye = f.eye(&pose);
+    for (k, (from, at)) in [
+        (Vec3::new(0.6, 1.9, 1.2), Vec3::new(0.0, 1.3, 0.0)),
+        (eye, eye + Vec3::new(0.0, -0.94, 0.34)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        preview.render(
+            &ctx,
+            &mut enc,
+            &target.color_view,
+            (w, h),
+            [k as u32 * 320, 0, 320, 360],
+            &model.meshes,
+            &frame,
+            (from, at, 70.0),
+            PreviewLight::Daylight,
+        );
+        ctx.queue.submit(Some(enc.finish()));
+    }
+    let _ = &mut model;
+    let px = target.read_rgba(&ctx);
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
+    write_png(&out.join("headless.png"), w, h, &px).expect("png");
+}

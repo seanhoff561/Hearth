@@ -363,6 +363,8 @@ pub struct BodyView {
     pub exposure: Exposure,
     /// Hours until sleepy enough to drop off lying down (0: now; none: not within a day).
     pub sleepy_in_h: Option<f32>,
+    /// What the sun, the ground and wounds have done to the skin (as the body is drawn).
+    pub skin: hearth_body::skin::Skin,
 }
 
 /// Smoke rising from a fire in the vegetation.
