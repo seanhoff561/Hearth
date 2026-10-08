@@ -175,7 +175,10 @@ Large animals live in **groups** that keep their members — young of the year, 
 females and males, a condition, a home and where they are today: a herd of red deer, a family of
 roe, a sow's sounder, a wolf pack, a lynx with her kittens. Small animals (hares, squirrels,
 voles, birds, frogs, fish, snakes, bee colonies) are **numbers per cell**: young and adults with
-a shared condition. A step of the simulation (an eleventh of a month by default):
+a shared condition, the adults crowded against what the cell holds and the young among
+themselves by what they eat. So too the large that lay their young by the hundred and lose all
+but a few, the sea turtles: counted as a group's members, a clutch's hatchlings crowded out the
+grown. A step of the simulation (an eleventh of a month by default):
 - **Hunting**: predators take prey by a functional response whose attack rate is calibrated so
   that each meets its need at its prey's usual numbers (a specialist at a fifth of them: a
   cold-blooded hunter, which lies in wait, or one with a prey or two of its realm and no plants,

@@ -126,11 +126,11 @@ fn pots_fire_in_their_range_and_under_fired_clay_stays_clay() {
     };
     for _ in 0..4 {
         w.give("hearth:stick/oak_wood", 1);
-        w.act("feed_fire", aim.clone());
+        w.act("feed_fire", aim);
     }
     for clay in ["earthenware_clay", "kaolin"] {
         w.give(&format!("hearth:greenware_pot/{clay}"), 1);
-        let (done, words) = w.act("fire_pot_open", aim.clone());
+        let (done, words) = w.act("fire_pot_open", aim);
         assert!(done, "set in the fire: {words}");
     }
     let n = w.acted.len();
@@ -144,7 +144,7 @@ fn pots_fire_in_their_range_and_under_fired_clay_stays_clay() {
         w.wait_hours(0.25);
         for _ in 0..2 {
             w.give("hearth:stick/oak_wood", 1);
-            w.act("feed_fire", aim.clone());
+            w.act("feed_fire", aim);
         }
         if fired(&w) >= 1
             && lying_near(&w, hearth)
@@ -179,13 +179,13 @@ fn pots_fire_in_their_range_and_under_fired_clay_stays_clay() {
             break;
         }
         w.give("hearth:greenware_pot/earthenware_clay", 1);
-        let (done, words) = w.act("fire_pot_open", aim.clone());
+        let (done, words) = w.act("fire_pot_open", aim);
         assert!(done, "{words}");
         for _ in 0..12 {
             w.wait_hours(0.25);
             for _ in 0..2 {
                 w.give("hearth:stick/oak_wood", 1);
-                w.act("feed_fire", aim.clone());
+                w.act("feed_fire", aim);
             }
         }
         pot = lying_near(&w, hearth)

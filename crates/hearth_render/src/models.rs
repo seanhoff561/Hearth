@@ -519,7 +519,7 @@ fn bake(block: &Block, s: BlockStateId, reg: &BlockRegistry, atlas: &TextureArra
             flow: ctx.tex_tint("water_flow", Tint::Water),
         },
         RenderKind::Cross => {
-            let tex = ctx.own(&cross_texture(name, s, reg));
+            let tex = ctx.own(&cross_texture(name, s, reg, ctx.atlas));
             StateModel::Quads(
                 cross(tex, block.def.tint != TintKind::None).into(),
                 RenderLayer::Cutout,
@@ -530,13 +530,17 @@ fn bake(block: &Block, s: BlockStateId, reg: &BlockRegistry, atlas: &TextureArra
     }
 }
 
-fn cross_texture(name: &str, s: BlockStateId, reg: &BlockRegistry) -> String {
+fn cross_texture(name: &str, s: BlockStateId, reg: &BlockRegistry, atlas: &TextureArray) -> String {
     if let Some(half) = prop(reg, s, "half") {
         return format!("{name}_{}", if half == "upper" { "top" } else { "bottom" });
     }
-    // A crop as it grows (V2-12): its texture by its stage.
+    // A crop as it grows (V2-12): its texture by its stage, where it has one (a sapling's stage
+    // is its growing toward a tree, drawn alike).
     if let Some(stage) = prop(reg, s, "stage") {
-        return format!("{name}_{stage}");
+        let staged = format!("{name}_{stage}");
+        if atlas.contains(&format!("block/{staged}")) {
+            return staged;
+        }
     }
     name.to_owned()
 }
@@ -985,7 +989,7 @@ fn bake_model(
             layer = RenderLayer::Cutout;
         }
         "sugar_cane" => {
-            let tex = ctx.own(&cross_texture(name, s, reg));
+            let tex = ctx.own(&cross_texture(name, s, reg, ctx.atlas));
             quads = cross(tex, true);
             layer = RenderLayer::Cutout;
         }

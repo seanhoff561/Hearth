@@ -130,3 +130,105 @@ fn a_wild_born_lamb_raised_by_hand_turns_wary_as_it_grows() {
         "the docile one stayed calm: {calm:?}"
     );
 }
+
+/// The herder's choosing, fast (V2-12): eight wild lambs raised by hand, bred sixteen years by the
+/// week with the acceptance's herder (`tests/acceptance_v2_12_herd.rs` in the game, which lives
+/// the same years in a whole world, in an hour): the calmest and woolliest ewes and ram kept, the
+/// most promising ram lambs and, once the flock has its ewes, the better half of the ewe lambs,
+/// the rest culled. Over a dozen flocks, the line grown in the last years is calmer than the first
+/// born in the keeping.
+#[test]
+fn choosing_the_calmest_lambs_breeds_a_calmer_line() {
+    let cat = catalog();
+    let mut gains = Vec::new();
+    for seed in 1..=12 {
+        let (t0, t1) = flock_bred(&cat, seed);
+        println!("seed {seed}: first born tame {t0:.2}, from year 10 {t1:.2}");
+        gains.push(t1 - t0);
+    }
+    gains.sort_by(f32::total_cmp);
+    let median = gains[gains.len() / 2];
+    // Some five generations in sixteen years: the grown line calmer by a tenth (its docility up
+    // by half again), as the first tame generations of a selected line were.
+    assert!(median > 0.08, "a docile lineage: median gain {median:.2} ({gains:.2?})");
+    assert!(gains.iter().filter(|g| **g > 0.0).count() >= 10, "{gains:.2?}");
+}
+
+/// One flock bred sixteen years: the first born's grown temper and the late ones'.
+fn flock_bred(cat: &Catalog, seed: u64) -> (f32, f32) {
+    let sheep = cat.index("hearth:mouflon").expect("mouflon") as u16;
+    let mut rng = hearth_math::hash::Rng::new(seed);
+    let mut live = Live::new(seed);
+    for i in 0..8 {
+        let id = live.place(sheep, Stage::Young, i % 3 != 0, DVec3::new(i as f64, 0.0, 0.0), 0.0);
+        let a = live.animals.iter_mut().find(|a| a.id == id).expect("placed");
+        let mut k = Kept::caught(Breed::wild(&mut rng), -0.2);
+        k.tether = Some((a.pos, 4.0));
+        a.kept = Some(k);
+    }
+    const EWES: usize = 8;
+    let score = |k: &Kept| 2.0 * k.tame + k.breed.wool;
+    let mut first_seen: std::collections::HashMap<u64, f64> = Default::default();
+    let mut grown_tame: std::collections::HashMap<u64, f32> = Default::default();
+    let mut years = 0.0;
+    live.tend(cat, years, frac(years), false);
+    let founders: Vec<u64> = live.animals.iter().map(|a| a.id).collect();
+    while years < 16.0 {
+        years += 1.0 / 52.0;
+        live.tend(cat, years, frac(years), false);
+        for a in live.animals.iter_mut().filter(|a| !a.dead && a.kept.is_some()) {
+            first_seen.entry(a.id).or_insert(years);
+            // Tethered by the camp, near the ram.
+            let k = a.kept.as_mut().expect("kept");
+            k.tether = Some((DVec3::new((a.id % 10) as f64, 0.0, 0.0), 4.0));
+            a.pos = DVec3::new((a.id % 10) as f64, 0.0, 0.0);
+            if a.stage == Stage::Adult {
+                grown_tame.insert(a.id, k.tame);
+            }
+        }
+        // Once a season, the choosing.
+        if (years * 52.0).round() as i64 % 13 != 0 {
+            continue;
+        }
+        let view: Vec<(u64, bool, Stage, f32, f64)> = live
+            .animals
+            .iter()
+            .filter(|a| !a.dead)
+            .filter_map(|a| a.kept.as_ref().map(|k| (a.id, a.female, a.stage, score(k), years - first_seen[&a.id])))
+            .collect();
+        let mut cull = Vec::new();
+        let pick = |female: bool, stage: Stage, old: f64| {
+            let mut v: Vec<_> = view
+                .iter()
+                .filter(|x| x.1 == female && x.2 == stage)
+                .cloned()
+                .collect();
+            let young = v.iter().filter(|x| x.4 <= old).count();
+            v.sort_by(|a, b| (a.4 > old && young > 0).cmp(&(b.4 > old && young > 0)).then(b.3.total_cmp(&a.3)));
+            v
+        };
+        let ewes = pick(true, Stage::Adult, 6.0);
+        let young_ewes = ewes.iter().filter(|x| x.4 <= 6.0).count();
+        cull.extend(ewes.iter().skip(EWES).map(|x| x.0));
+        if young_ewes >= EWES / 2 {
+            cull.extend(ewes.iter().take(EWES).filter(|x| x.4 > 6.0).map(|x| x.0));
+        }
+        cull.extend(pick(false, Stage::Adult, 4.0).iter().skip(1).map(|x| x.0));
+        cull.extend(pick(false, Stage::Juvenile, 99.0).iter().skip(3).map(|x| x.0));
+        let ewe_lambs = pick(true, Stage::Juvenile, 99.0);
+        let grown = ewes.len();
+        if grown >= EWES {
+            let keep = (ewe_lambs.len() / 2).max(1);
+            cull.extend(ewe_lambs.iter().skip(keep).map(|x| x.0));
+        }
+        live.animals.retain(|a| !cull.contains(&a.id));
+    }
+    let mean = |pick: &dyn Fn(u64) -> bool| {
+        let v: Vec<f32> = grown_tame.iter().filter(|(id, _)| pick(**id)).map(|(_, t)| *t).collect();
+        (v.iter().sum::<f32>() / v.len().max(1) as f32, v.len())
+    };
+    let (t0, n0) = mean(&|id| !founders.contains(&id) && first_seen[&id] < 4.0);
+    let (t1, n1) = mean(&|id| first_seen[&id] >= 10.0);
+    assert!(n0 > 0 && n1 > 0, "grown sheep of the first and the late years");
+    (t0, t1)
+}

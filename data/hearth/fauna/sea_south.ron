@@ -170,7 +170,7 @@
             seasonal: [Birthing(season: Summer)],
             growth_rate: 0.05, density_per_km2: 0.05, realms: ["Palearctic", "Nearctic", "Neotropical", "Afrotropical", "Indomalayan", "Australasian"], min_coldest_month_c: 8,
             life: (maturity_years: 25, lifespan_years: 70, litter: (80, 120), births_per_year: 0.4, birth_day: 200, adult_survival: 0.93, young_survival: 0.01, birth_mass_kg: 0.02),
-            ranging: (home_range_km2: 100, dispersal_km: 100, dispersers: Both, cover: 0.0),
+            ranging: (home_range_km2: 100, dispersal_km: 100, dispersers: Both, cover: 0.0, model: Density),
             coat: (base: "#8a5a2a", belly: "#e8c890", points: "#6a4a2a"),
             shape: (neck: 0.1, head: 0.2, snout: 0.3, tail: 0.06),
             yields: (meat: 0.3, fat: 0.05, organs: 0.05, bone: 0.25, hide: 0.03, sinew: 0.0,

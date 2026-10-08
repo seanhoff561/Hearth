@@ -452,10 +452,14 @@ impl People {
         self.persons[a].record(day, Event::Paired { with: to });
         self.persons[b].record(day, Event::Paired { with: me });
         self.persons[b].psyche.feel(Feeling::Joy, 0.6);
-        let bi = self.band_index_of(self.persons[b].social.band);
-        if let Some(bi) = bi {
-            self.settle_households(bi);
-        }
+        // A hearth of their own, as any pair keeps: kept apart in their parents'
+        // households, a band's split could part them.
+        let (w, m) = if self.persons[a].life.female {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        self.house_pair(w, m);
         self.say(
             to,
             Some(me),

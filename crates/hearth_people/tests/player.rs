@@ -236,6 +236,10 @@ fn a_pair_takes_two_willing_and_a_child_comes() {
     assert!(a.yes, "{}", a.words);
     assert_eq!(p.get(me).and_then(|q| q.social.bond), Some(her));
     assert_eq!(p.get(her).and_then(|q| q.social.bond), Some(me));
+    // A hearth of their own: a band's split takes them together.
+    let hearth = p.get(me).and_then(|q| q.social.household);
+    assert!(hearth.is_some());
+    assert_eq!(p.get(her).and_then(|q| q.social.household), hearth);
     // Years of the life course: a child of theirs.
     let start = now.day;
     let mut child = None;

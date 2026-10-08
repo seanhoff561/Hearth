@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use common::{World, temp};
 use hearth_env::weather::WeatherHold;
 use hearth_fauna::live::{AnimalView, Stage};
-use hearth_items::{Hand, Path, Root, Target};
+use hearth_items::{Hand, Path, Root, Stack, Target};
 use hearth_protocol::{AimAt, ToServer};
 
 const LAMBS: usize = 8;
@@ -44,6 +44,56 @@ fn tend(w: &mut World, process: &str, id: u64) -> (bool, String) {
         }
     }
     last
+}
+
+/// Puts down what is in the left hand and on the tie (the flake stays in the right).
+fn clear(w: &mut World) {
+    for root in [Root::Hand(Hand::Left), Root::Hung(0, 0)] {
+        if w.carry.get(&Path::at(root)).is_some() {
+            w.server.send(ToServer::PutDown {
+                from: Path::at(root),
+                count: None,
+                at: w.mover.pos + glam::DVec3::new(0.3, 0.5, 0.3),
+            });
+            w.run(2);
+        }
+    }
+}
+
+/// The herder eats and drinks: a skin of water and some cheese.
+fn sustain(w: &mut World) {
+    clear(w);
+    let mut skin = Stack::of("hearth:water_skin/scraped_hide", 1);
+    skin.liquid_l = 2.0;
+    w.server.send(ToServer::Give(skin));
+    w.run(2);
+    let roots = [Root::Hand(Hand::Left), Root::Hung(0, 0)];
+    if let Some(at) = roots.into_iter().find(|r| {
+        w.carry
+            .get(&Path::at(*r))
+            .is_some_and(|s| s.id == "hearth:water_skin/scraped_hide")
+    }) {
+        for _ in 0..6 {
+            w.server
+                .send(ToServer::Drink(hearth_protocol::DrinkFrom::Skin(Path::at(
+                    at,
+                ))));
+            w.run(2);
+        }
+    }
+    clear(w);
+    for _ in 0..2 {
+        w.give("hearth:cut/cheese", 1);
+        if let Some(at) = roots.into_iter().find(|r| {
+            w.carry
+                .get(&Path::at(*r))
+                .is_some_and(|s| s.id == "hearth:cut/cheese")
+        }) {
+            w.server.send(ToServer::Eat(Path::at(at)));
+            w.run(2);
+        }
+    }
+    clear(w);
 }
 
 /// A day's skip of the world.
@@ -147,9 +197,11 @@ fn a_herder_breeds_a_wild_sheep_into_a_docile_woolly_lineage() {
         for a in flock(&w) {
             first_seen.entry(a.id).or_insert(year);
         }
+        sustain(&mut w);
         // The young tethered as they grow (tame while young, they let the herder near).
         for a in flock(&w) {
             if a.stage != Stage::Young && !tethered.contains(&a.id) {
+                clear(&mut w);
                 w.give("hearth:cord/nettle_fibre", 1);
                 w.give("hearth:stick/oak_wood", 1);
                 let (done, words) = tend(&mut w, "tether_animal", a.id);
@@ -157,6 +209,9 @@ fn a_herder_breeds_a_wild_sheep_into_a_docile_woolly_lineage() {
                     tethered.insert(a.id);
                 } else {
                     println!("not tethered: {words}");
+                    if words.contains("cannot now") {
+                        println!("the herder: {:?}", w.body.as_ref().map(|b| &b.status));
+                    }
                 }
             }
         }
@@ -182,34 +237,72 @@ fn a_herder_breeds_a_wild_sheep_into_a_docile_woolly_lineage() {
                 }
             }
         }
-        // Only the calmest and woolliest kept to breed: the best eight ewes and the best ram,
-        // and the most promising ram lamb; the rest slaughtered.
+        // Only the calmest and woolliest kept to breed, calm first (a wild-tempered ewe is
+        // trouble every day; a thin fleece only once a year): the best eight ewes and the best
+        // ram, the three most promising ram lambs and the better half of the ewe lambs (a lamb
+        // shows its line's temper at its mother's side; the sire is chosen among the ram lambs
+        // when they are grown); the rest slaughtered.
         let score = |a: &AnimalView| {
             let wool = plucks
                 .get(&a.id)
                 .and_then(|p| p.last())
                 .map_or(a.fleece, |kg| (kg - 0.2) / 2.3);
-            a.tame + wool
+            2.0 * a.tame + wool
         };
+        // Ewes past their sixth year and rams past their fourth give way to the young, as a
+        // herder keeps young stock breeding: selection works only through the generations.
+        let age = |a: &AnimalView| year - first_seen.get(&a.id).copied().unwrap_or(year);
+        let old = |a: &AnimalView, limit: usize| age(a) > limit;
         let mut cull: Vec<u64> = Vec::new();
         let mut ewes: Vec<AnimalView> = flock(&w)
             .into_iter()
             .filter(|a| a.female && a.stage == Stage::Adult)
             .collect();
-        ewes.sort_by(|a, b| score(b).total_cmp(&score(a)));
+        let young_ewes = ewes.iter().filter(|a| !old(a, 6)).count();
+        ewes.sort_by(|a, b| {
+            (young_ewes >= EWES / 2 && old(a, 6))
+                .cmp(&(young_ewes >= EWES / 2 && old(b, 6)))
+                .then(score(b).total_cmp(&score(a)))
+        });
         cull.extend(ewes.iter().skip(EWES).map(|a| a.id));
+        cull.extend(
+            ewes.iter()
+                .take(EWES)
+                .filter(|a| young_ewes >= EWES / 2 && old(a, 6))
+                .map(|a| a.id),
+        );
         let mut rams: Vec<AnimalView> = flock(&w)
             .into_iter()
             .filter(|a| !a.female && a.stage == Stage::Adult)
             .collect();
-        rams.sort_by(|a, b| score(b).total_cmp(&score(a)));
+        let young_rams = rams.iter().filter(|a| !old(a, 4)).count();
+        rams.sort_by(|a, b| {
+            (young_rams > 0 && old(a, 4))
+                .cmp(&(young_rams > 0 && old(b, 4)))
+                .then(score(b).total_cmp(&score(a)))
+        });
         cull.extend(rams.iter().skip(1).map(|a| a.id));
         let mut ram_lambs: Vec<AnimalView> = flock(&w)
             .into_iter()
             .filter(|a| !a.female && a.stage == Stage::Juvenile)
             .collect();
-        ram_lambs.sort_by(|a, b| b.fleece.total_cmp(&a.fleece));
-        cull.extend(ram_lambs.iter().skip(1).map(|a| a.id));
+        ram_lambs.sort_by(|a, b| score(b).total_cmp(&score(a)));
+        cull.extend(ram_lambs.iter().skip(3).map(|a| a.id));
+        // The ewe lambs too, once the flock has its ewes: the calmer half kept to breed, the
+        // rest for meat, as a herder chooses the young that will be the flock.
+        let grown_ewes = flock(&w)
+            .iter()
+            .filter(|a| a.female && a.stage == Stage::Adult)
+            .count();
+        let mut ewe_lambs: Vec<AnimalView> = flock(&w)
+            .into_iter()
+            .filter(|a| a.female && a.stage == Stage::Juvenile)
+            .collect();
+        if grown_ewes >= EWES {
+            ewe_lambs.sort_by(|a, b| score(b).total_cmp(&score(a)));
+            let keep = (ewe_lambs.len() / 2).max(1);
+            cull.extend(ewe_lambs.iter().skip(keep).map(|a| a.id));
+        }
         for id in cull {
             let (done, words) = tend(&mut w, "slaughter_animal", id);
             if !done {
@@ -234,7 +327,9 @@ fn a_herder_breeds_a_wild_sheep_into_a_docile_woolly_lineage() {
                 / f.iter().filter(|a| a.stage == Stage::Adult).count().max(1) as f32
         );
     }
-    // The founders, wild-born, against the flock's grown sheep born in its last years.
+    // The line's first generation born in the keeping against its grown sheep born in the last
+    // years, for temper (the founders, wild lambs raised by hand, were tamed a little by their
+    // rearing as no lamb of the flock is); the founders against the late ones for wool.
     let late = years * 2 / 3;
     let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len().max(1) as f32;
     let tame_of = |pick: &dyn Fn(u64) -> bool| -> Vec<f32> {
@@ -252,18 +347,26 @@ fn a_herder_breeds_a_wild_sheep_into_a_docile_woolly_lineage() {
             .collect()
     };
     let is_founder = |id: u64| founders.contains(&id);
+    let is_first = |id: u64| {
+        !founders.contains(&id) && first_seen.get(&id).is_some_and(|y| (1..=4).contains(y))
+    };
     let is_late = |id: u64| first_seen.get(&id).is_some_and(|y| *y >= late);
-    let (t0, t1) = (mean(&tame_of(&is_founder)), mean(&tame_of(&is_late)));
+    let tf = mean(&tame_of(&is_founder));
+    let (t0, t1) = (mean(&tame_of(&is_first)), mean(&tame_of(&is_late)));
     let (w0, w1) = (mean(&wool_of(&is_founder)), mean(&wool_of(&is_late)));
     println!(
-        "founders: tame {t0:.2}, wool {w0:.2} kg; born from year {late}: tame {t1:.2} ({} grown), wool {w1:.2} kg",
+        "founders: tame {tf:.2}, wool {w0:.2} kg; first born in the keeping (years 1–4): tame \
+         {t0:.2} ({} grown); born from year {late}: tame {t1:.2} ({} grown), wool {w1:.2} kg",
+        tame_of(&is_first).len(),
         tame_of(&is_late).len()
     );
     assert!(born >= 10, "lambs born in the keeping: {born}");
     assert!(
-        !tame_of(&is_late).is_empty(),
-        "grown sheep of the late years"
+        !tame_of(&is_first).is_empty() && !tame_of(&is_late).is_empty(),
+        "grown sheep of the first and the late years"
     );
-    assert!(t1 > t0 + 0.15, "a docile lineage: {t0:.2} → {t1:.2}");
+    // Some five generations: calmer by a twentieth at least (`hearth_fauna`'s fast flocks gain
+    // a tenth in the median, the world's herder the same rules).
+    assert!(t1 > t0 + 0.05, "a docile lineage: {t0:.2} → {t1:.2}");
     assert!(w1 > w0 * 1.8, "a woolly lineage: {w0:.2} → {w1:.2} kg");
 }

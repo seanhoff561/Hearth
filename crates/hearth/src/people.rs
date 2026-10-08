@@ -1667,6 +1667,23 @@ impl PeopleNear {
             let words: Vec<String> = kin.into_iter().map(|(_, w)| w).collect();
             lines.push(format!("Your kin: {}.", words.join("; ")));
         }
+        // Its parents who have died (the living are among the kin above).
+        for (parent, word) in [(p.life.mother, "mother"), (p.life.father, "father")] {
+            let Some(q) = parent.and_then(|q| self.live.get(q)) else {
+                continue;
+            };
+            if q.alive() {
+                continue;
+            }
+            lines.push(match &q.life.died {
+                Some(d) if now.day - d.day < 1.0 => format!("Your {word} has just died."),
+                Some(d) => match ((d.day - p.life.born) / now.year_days.max(1.0)).floor() {
+                    at if at < 1.0 => format!("Your {word} died in your first year."),
+                    at => format!("Your {word} died when you were {at:.0}."),
+                },
+                None => format!("Your {word} has died."),
+            });
+        }
         let lost = p
             .life
             .events

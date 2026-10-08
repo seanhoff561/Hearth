@@ -821,7 +821,7 @@ impl Live {
     }
 
     /// Folds the groups and small animals far from `player` back into their numbers: the
-    /// living into their group (by age and sex) or cell, the dead not at all.
+    /// living into their group (by age and sex) or cell; the dead are left to be taken as bodies.
     pub fn fold(&mut self, eco: &mut Ecology, player: DVec3) {
         let wrap = eco.cells_around as f64 * CELL_M;
         // Groups whose animals are all far (or gone).
@@ -856,10 +856,12 @@ impl Live {
                 let (mut cx, mut cz, mut n) = (0.0f64, 0.0f64, 0.0f64);
                 for &k in members {
                     let a = &self.animals[k];
-                    remove[k] = true;
+                    // The dead stay to be taken as bodies (a hunter's kill that ran far before
+                    // it fell still lies where it fell).
                     if a.dead {
                         continue;
                     }
+                    remove[k] = true;
                     match (a.stage, a.female) {
                         (Stage::Young, _) => young += 1,
                         (Stage::Juvenile, _) => juv += 1,
@@ -1108,7 +1110,12 @@ impl Live {
                     let rut = !a.female
                         && a.stage == Stage::Adult
                         && sp.rut.is_some_and(|s| s as usize == season);
-                    let cornered = a.act == Act::Flee && a.repath > 0.0 && a.way.is_empty();
+                    // Brought up short by its tether, a kept one strains and stamps; it is not
+                    // cornered by the keeper it knows.
+                    let cornered = a.kept.is_none()
+                        && a.act == Act::Flee
+                        && a.repath > 0.0
+                        && a.way.is_empty();
                     // A kept one knows its keeper and is the calmer the tamer it is; a young one
                     // does not turn on a person.
                     let calm = match &a.kept {

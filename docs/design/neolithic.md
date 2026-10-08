@@ -71,8 +71,10 @@ is saved apart from the populations' numbers. It has:
   bred form at its fullest). A wild animal's are low and vary a little; a young one's lie
   between its parents' with a spread either way, so breeding only from the calmest and the
   woolliest moves a lineage along each generation.
-- **How tame it is now**, learned: a young one handled from birth is tame whatever its makeup
-  and grows into what its makeup lets it be — a wild-born lamb raised by hand turns wary as it
+- **How tame it is now**, learned: a young one raised by hand is tame whatever its makeup
+  (0.85–0.95); one born in the keeping, at its mother's side, shows its line's temper from the
+  first (0.6 for the wild's, 0.95 for the bred form's), so a herder can choose among the young;
+  each grows into what its makeup lets it be — a wild-born lamb raised by hand turns wary as it
   grows, one of a docile line stays calm. Its flight from a person is its kind's times the
   square of what it is not tame; its readiness to turn on one, times the same.
 - **A tether** (a stake and four metres of cord) or a keeper it follows, as a young one follows

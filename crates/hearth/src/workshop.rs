@@ -1139,7 +1139,7 @@ impl Workshop {
         }
         // Seed keeps its lot through what is made of it (V2-12); an animal gives what it has.
         let made = match animal_kg {
-            Some(kg) => self.from_animal(h, &def, kg),
+            Some(kg) => self.animal_gives(h, &def, kg),
             None => self.lots(h, &def, &taken, o.made.clone()),
         };
         // Firsts go in the journal.
@@ -1437,7 +1437,7 @@ impl Workshop {
     }
 
     /// What an animal gives (`kg` of the process's first output's material), in its bulk form.
-    fn from_animal(&self, h: &Here, def: &Process, kg: f32) -> Vec<Stack> {
+    fn animal_gives(&self, h: &Here, def: &Process, kg: f32) -> Vec<Stack> {
         let Some(m) = def.outputs.first().and_then(|o| match &o.item {
             hearth_content::schema::process::Match::Material(m) => Some(m.as_str().to_owned()),
             _ => None,

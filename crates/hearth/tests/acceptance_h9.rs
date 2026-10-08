@@ -137,7 +137,96 @@ fn children_of(w: &mut World, mother: u64) -> Vec<u64> {
         .collect()
 }
 
+/// Whether a person has died, by the inspector's record of its life.
+fn died(w: &mut World, id: u64) -> bool {
+    w.inspected = None;
+    w.server.send(ToServer::Inspect(Some(id)));
+    w.run(40);
+    w.until(10.0, |w| w.inspected.as_ref().is_some_and(|r| r.id == id));
+    w.server.send(ToServer::Inspect(None));
+    w.inspected.as_ref().is_some_and(|r| {
+        r.sections
+            .iter()
+            .filter(|s| s.name == "Life")
+            .any(|s| s.lines.iter().any(|l| l.contains("died day")))
+    })
+}
+
+/// A girl or woman of the band, not kin and not paired (young ones first; once widowed, any
+/// grown one unpaired), courted with kind words each season until she is willing and pairs with
+/// the player: up to three of them, as one living in the band would — ties left untended fade
+/// back a fifth a season.
+fn court_until_paired(w: &mut World, band: &[(u64, Vec<String>)], before: &[u64]) -> Option<u64> {
+    // Among the band, where its camp is now.
+    for (id, _) in band {
+        if !w.people.is_empty() && w.people.iter().any(|v| v.id == *id) {
+            break;
+        }
+        go_to_band_of(w, *id);
+    }
+    let mut girls: Vec<(u64, Vec<String>, bool)> = Vec::new();
+    let females: Vec<(u64, bool)> = w
+        .people
+        .iter()
+        .filter(|v| !v.dead && v.female && !before.contains(&v.id))
+        .map(|v| (v.id, format!("{:?}", v.stage) == "Adult"))
+        .collect();
+    for (id, grown) in females {
+        let lines = regard(w, id);
+        // A girl, or a young woman (a widowed player too courts none past her youth: she would
+        // bear no child of theirs).
+        if lines.first().is_some_and(|l| l.ends_with("of your band"))
+            && !lines.iter().any(|l| l.contains("Paired"))
+            && (!grown || lines.iter().any(|l| l == "Young."))
+        {
+            girls.push((id, lines, grown));
+        }
+    }
+    println!("those the player might court: {girls:?}");
+    girls.sort_by_key(|g| !g.2);
+    let courted: Vec<u64> = girls.iter().take(3).map(|g| g.0).collect();
+    assert!(
+        !courted.is_empty(),
+        "a girl or young woman of the band, not kin"
+    );
+    let court = |w: &mut World, who: u64, rounds: usize| {
+        for round in 0..rounds {
+            let kind = if round % 2 == 0 {
+                Ask::Praise
+            } else {
+                Ask::Thank
+            };
+            ask(w, who, kind);
+            w.run(100);
+        }
+    };
+    for &g in &courted {
+        court(w, g, 12);
+    }
+    for season in 1..=40 {
+        w.server.send(ToServer::SkipHours(8.0 * 24.0));
+        w.run(40);
+        for &g in &courted {
+            court(w, g, 8);
+        }
+        // Asked each season: "too young yet", "not yet willing" — the player's intent known,
+        // the girl it courts waits for it — until the player is of an age (twenty) and she
+        // willing.
+        for &g in &courted {
+            let (yes, words) = ask(w, g, Ask::Pair);
+            println!("season {season}, asked #{g} to pair: {words}");
+            if yes {
+                return Some(g);
+            }
+        }
+    }
+    None
+}
+
+/// A lifetime of the world, its years let pass a month at a time: up to an hour and more on the
+/// cloud machine, so run with `--ignored` at a milestone's end, as the other acceptances are.
 #[test]
+#[ignore]
 fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grown_child() {
     let dir = temp("acceptance-h9");
     let mut w = World::start_in(
@@ -195,94 +284,49 @@ fn a_player_born_into_a_band_is_taught_forms_a_family_and_lives_on_as_their_grow
         w.knowledge.known.keys().collect::<Vec<_>>()
     );
 
-    // 2. A family. A girl or young woman of the band, not kin and not paired: courted now, and
-    // the years let pass until both are of an age to pair (men of the player's people pair from
-    // twenty, women from seventeen) — she, grown fond of the player, waiting for it.
-    let mut girls: Vec<(u64, Vec<String>, bool)> = Vec::new();
-    let females: Vec<(u64, bool)> = w
-        .people
-        .iter()
-        .filter(|v| !v.dead && v.female)
-        .map(|v| (v.id, format!("{:?}", v.stage) == "Adult"))
-        .collect();
-    for (id, grown) in females {
-        let lines = regard(&mut w, id);
-        if lines.first().is_some_and(|l| l.ends_with("of your band"))
-            && !lines.iter().any(|l| l.contains("Paired"))
-            && (!grown || lines.iter().any(|l| l == "Young."))
-        {
-            girls.push((id, lines, grown));
-        }
-    }
-    println!("those the player might court: {girls:?}");
-    // Young women first, then girls: three of them courted, kind words often each season, as one
-    // living in the band would — ties left untended fade back a fifth a season.
-    girls.sort_by_key(|g| !g.2);
-    let courted: Vec<u64> = girls.iter().take(3).map(|g| g.0).collect();
-    assert!(
-        !courted.is_empty(),
-        "a girl or young woman of the band, not kin"
-    );
-    let court = |w: &mut World, who: u64, rounds: usize| {
-        for round in 0..rounds {
-            let kind = if round % 2 == 0 {
-                Ask::Praise
-            } else {
-                Ask::Thank
-            };
-            ask(w, who, kind);
-            w.run(100);
-        }
-    };
-    for &g in &courted {
-        court(&mut w, g, 12);
-    }
-    let mut woman = None;
-    'seasons: for season in 1..=40 {
-        w.server.send(ToServer::SkipHours(8.0 * 24.0));
-        w.run(40);
-        for &g in &courted {
-            court(&mut w, g, 8);
-        }
-        // Asked each season: "too young yet", "not yet willing" — the player's intent known,
-        // the girl it courts waits for it — until the player is of an age (twenty) and she
-        // willing.
-        for &g in &courted {
-            let (yes, words) = ask(&mut w, g, Ask::Pair);
-            println!("season {season}, asked #{g} to pair: {words}");
-            if yes {
-                woman = Some(g);
-                break 'seasons;
-            }
-        }
-    }
-    let paired = woman.is_some();
-    let woman = woman.unwrap_or(courted[0]);
-    assert!(paired, "she comes to be willing");
-    let lines = regard(&mut w, woman);
-    assert!(
-        lines.iter().any(|l| l.contains("Your partner")),
-        "{lines:?}"
-    );
-
-    // 3. The years pass: their children, until one of them is grown (eighteen; many die young,
-    // as foragers' children do).
+    // 2–3. A family: a girl or young woman of the band courted until she is willing and pairs
+    // with the player; the years let pass until a child of theirs is grown (eighteen; many die
+    // young, as foragers' children do). A partner may die young too, of what no one could cure:
+    // widowed before a child of theirs is born, the player courts again.
+    let mut partners: Vec<u64> = Vec::new();
     let mut children: Vec<u64> = Vec::new();
     let mut grown = None;
-    for year in 1..=35 {
-        w.server.send(ToServer::SkipHours(32.0 * 24.0));
-        w.run(40);
-        for c in children_of(&mut w, woman) {
-            if !children.contains(&c) {
-                children.push(c);
+    'family: for _ in 0..3 {
+        let Some(woman) = court_until_paired(&mut w, &band, &partners) else {
+            break;
+        };
+        partners.push(woman);
+        let lines = regard(&mut w, woman);
+        assert!(
+            lines.iter().any(|l| l.contains("Your partner")),
+            "{lines:?}"
+        );
+        let mut theirs: Vec<u64> = Vec::new();
+        for year in 1..=35 {
+            w.server.send(ToServer::SkipHours(32.0 * 24.0));
+            w.run(40);
+            for c in children_of(&mut w, woman) {
+                if !theirs.contains(&c) {
+                    theirs.push(c);
+                }
+                if !children.contains(&c) {
+                    children.push(c);
+                }
+            }
+            grown = children.iter().copied().find(|&c| grown_up(&mut w, c));
+            println!("year {year}: their children {theirs:?}, grown {grown:?}");
+            if grown.is_some() {
+                break 'family;
+            }
+            if theirs.is_empty() && died(&mut w, woman) {
+                println!(
+                    "#{woman} died before a child of theirs was born: the player courts again"
+                );
+                continue 'family;
             }
         }
-        grown = children.iter().copied().find(|&c| grown_up(&mut w, c));
-        println!("year {year}: their children {children:?}, grown {grown:?}");
-        if grown.is_some() {
-            break;
-        }
     }
+    assert!(!partners.is_empty(), "she comes to be willing");
     assert!(!children.is_empty(), "children of theirs");
     let grown = grown.expect("a child of theirs grown");
 

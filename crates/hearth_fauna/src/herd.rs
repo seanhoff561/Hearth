@@ -8,10 +8,13 @@
 //! its parents' with the spread their mixing gives, so breeding only from the calmest and the
 //! woolliest moves a lineage along a little each generation, as it did in the first herds.
 //!
-//! How easy it is with people now ([`Kept::tame`]) is learned: a young one handled from birth is
-//! tame whatever its makeup, and grows into what its makeup lets it be — a wild-born lamb raised
-//! by hand turns wary as it grows, one of a docile line stays calm. What it fears is in its
-//! flight: the distance it runs from a person shrinks with the square of what it is not tame.
+//! How easy it is with people now ([`Kept::tame`]) is learned: a young one raised by hand is tame
+//! whatever its makeup; one born in the keeping, at its mother's side, shows its line's temper
+//! from the first (a calm line's lambs come to hand, a wild one's keep their distance), so a
+//! herder can choose among the young; and each grows into what its makeup lets it be — a
+//! wild-born lamb raised by hand turns wary as it grows, one of a docile line stays calm. What
+//! it fears is in its flight: the distance it runs from a person shrinks with the square of
+//! what it is not tame.
 //!
 //! Breeding is abstracted (V2.1 ground rules): a kept female near a kept male of her kind in
 //! the rut is in young or not, the likelier the more settled she is; her young are born in the
@@ -30,8 +33,8 @@ pub const SPREAD: f32 = 0.09;
 pub const TETHER_M: f64 = 4.0;
 /// How long a mother is in milk after she gives birth (years).
 pub const IN_MILK_YEARS: f64 = 0.4;
-/// How quickly what it is used to settles to what it can be (a year's share).
-const SETTLE_PER_YEAR: f32 = 2.5;
+/// How quickly what it is used to settles to what it can be (a year's share: some weeks).
+const SETTLE_PER_YEAR: f32 = 8.0;
 /// A kept male fathers young on females within this distance in the rut (m).
 const RUT_M: f64 = 60.0;
 
@@ -139,11 +142,13 @@ impl Kept {
         }
     }
 
-    /// How easy with people it settles to at its age: handled young, tame; grown, what its
-    /// makeup lets it be (a little more for one raised by hand).
+    /// How easy with people it settles to at its age: young and raised by hand, tame; young at
+    /// its mother's side, as its line's temper lets it be; grown, what its makeup lets it be (a
+    /// little more for one raised by hand).
     pub fn settles_to(&self, stage: Stage) -> f32 {
         match stage {
-            Stage::Young | Stage::Juvenile => 0.85,
+            Stage::Young | Stage::Juvenile if self.hand_reared => 0.85 + 0.1 * self.breed.docile,
+            Stage::Young | Stage::Juvenile => 0.6 + 0.35 * self.breed.docile,
             Stage::Adult => {
                 (0.3 + 0.65 * self.breed.docile + if self.hand_reared { 0.05 } else { 0.0 })
                     .min(0.97)
