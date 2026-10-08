@@ -167,6 +167,7 @@ fn the_birthplace_screen_shows_the_places() {
     });
     let (w, h) = (1280, 720);
     let target = OffscreenTarget::new(&ctx, w, h);
+    let mut details = hearth::globe::Details::default();
     let languages = vec!["en_us".to_owned()];
     let mut enc = ctx
         .device
@@ -197,6 +198,7 @@ fn the_birthplace_screen_shows_the_places() {
                     terrain: f.wg.terrain.clone(),
                     finder: Some(f.clone()),
                     places: &places,
+                    details: &mut details,
                 }),
                 time_words: None,
                 waiting: None,

@@ -2,9 +2,16 @@
 //! the world-map key opens the planet as a globe; dragging turns it, the wheel zooms, the place
 //! under the cursor is described in the window title, and a click goes there — from the sea or
 //! a lake, to the nearest coast.
+//!
+//! All of it at the scale it is seen at (E4.1 §4.2): the map and the line about the place
+//! under the cursor come from the planet grid alone (`Terrain::grid_column`), the map made with
+//! the planet and kept beside its cache; a click's details are looked for on a thread of their
+//! own ([`Details`]), the globe turning on meanwhile.
 
 use std::f64::consts::{FRAC_PI_2, PI};
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
 
 use glam::{DVec3, Vec2};
@@ -17,11 +24,17 @@ use hearth_worldgen::Terrain;
 /// planet.
 pub const MAP_WIDTH: usize = 2048;
 
-/// An equirectangular map of the planet for the globe: the biome at each texel's point, land
-/// shaded by its relief (lit from the north-west); rows from the north pole to the south,
-/// columns eastward from longitude 0. Past the world's pole edges (about 85°) the edge goes on.
+/// The map's file format (its first bytes: `HGLB` and this), bumped when the map is drawn
+/// otherwise.
+const MAP_FORMAT: u32 = 1;
+
+/// An equirectangular map of the planet for the globe, from the planet grid alone: the biome at
+/// each texel's point, land shaded by its relief (lit from the north-west); rows from the north
+/// pole to the south, columns eastward from longitude 0. Past the world's pole edges (about
+/// 85°) the edge goes on. Well under a second on the reference machine (E4.1 §4.2).
 pub fn planet_map(terrain: &Terrain, width: usize) -> Vec<[u8; 4]> {
     use rayon::prelude::*;
+    let _zone = hearth_core::prof::Zone::new("globe.map");
     let planet = terrain.planet();
     let height = width / 2;
     let edge = planet.latitude(-planet.pole_edge_z() + 1.0);
@@ -31,10 +44,10 @@ pub fn planet_map(terrain: &Terrain, width: usize) -> Vec<[u8; 4]> {
         .into_par_iter()
         .map(|y| {
             let _c = hearth_core::prof::caller("globe.map");
-            let z = planet.z_for_latitude(lat_of(y)) as i32;
+            let z = planet.z_for_latitude(lat_of(y)) + 0.5;
             (0..width)
                 .map(|x| {
-                    let s = terrain.sample(((x as f64 + 0.5) / width as f64 * c) as i32, z);
+                    let s = terrain.grid_column((x as f64 + 0.5) / width as f64 * c, z);
                     (s.height, s.biome.color(), s.is_underwater())
                 })
                 .collect()
@@ -62,6 +75,50 @@ pub fn planet_map(terrain: &Terrain, width: usize) -> Vec<[u8; 4]> {
     out
 }
 
+/// The planet's map as kept at `path` (beside the planet's cache), or made from the grid and
+/// kept there: the same map for the same planet every time it is asked for.
+pub fn cached_map(terrain: &Terrain, width: usize, path: Option<&Path>) -> Vec<[u8; 4]> {
+    if let Some(map) = path.and_then(|p| load_map(p, width)) {
+        return map;
+    }
+    let map = planet_map(terrain, width);
+    if let Some(p) = path
+        && let Err(e) = save_map(p, width, &map)
+    {
+        log::warn!("could not keep the globe's map: {e}");
+    }
+    map
+}
+
+fn load_map(path: &Path, width: usize) -> Option<Vec<[u8; 4]>> {
+    let bytes = zstd::decode_all(std::fs::File::open(path).ok()?).ok()?;
+    let (head, px) = bytes.split_at_checked(16)?;
+    let word = |i: usize| u32::from_le_bytes([head[i], head[i + 1], head[i + 2], head[i + 3]]);
+    let fits = &head[..4] == b"HGLB"
+        && word(4) == MAP_FORMAT
+        && word(8) as usize == width
+        && word(12) as usize == width / 2
+        && px.len() == width * (width / 2) * 4;
+    fits.then(|| {
+        px.chunks_exact(4)
+            .map(|c| [c[0], c[1], c[2], c[3]])
+            .collect()
+    })
+}
+
+fn save_map(path: &Path, width: usize, map: &[[u8; 4]]) -> std::io::Result<()> {
+    let mut bytes = Vec::with_capacity(16 + map.len() * 4);
+    bytes.extend_from_slice(b"HGLB");
+    for v in [MAP_FORMAT, width as u32, (width / 2) as u32] {
+        bytes.extend_from_slice(&v.to_le_bytes());
+    }
+    bytes.extend(map.iter().flatten());
+    if let Some(d) = path.parent() {
+        std::fs::create_dir_all(d)?;
+    }
+    std::fs::write(path, zstd::encode_all(&bytes[..], 3)?)
+}
+
 /// The world column at a latitude and longitude (radians), within the pole edges.
 pub fn world_xz(planet: &Planet, lat: f32, lon: f32) -> (i32, i32) {
     let edge = planet.pole_edge_z() - 1.0;
@@ -81,8 +138,8 @@ pub fn lat_lon(planet: &Planet, pos: DVec3) -> (f32, f32) {
 /// yearly temperature and rain.
 pub fn describe(terrain: &Terrain, lat: f32, lon: f32) -> String {
     let (x, z) = world_xz(terrain.planet(), lat, lon);
-    // As the globe shows it: at the grid's own scale (E4.1 §4.1).
-    let s = terrain.sample_at(x, z, terrain.grid.geom.cell);
+    // As the globe shows it: from the planet grid (E4.1 §4.2).
+    let s = terrain.grid_column(x as f64 + 0.5, z as f64 + 0.5);
     let per_m = terrain.vertical_scale() as f64;
     let relief = if s.is_underwater() {
         format!("{:.0} m of water", (s.water - s.height) as f64 / per_m)
@@ -114,6 +171,90 @@ pub fn start_at(terrain: &Terrain, lat: f32, lon: f32) -> DVec3 {
         s.height.max(s.water) as f64 + 12.0,
         z as f64 + 0.5,
     )
+}
+
+/// What a click on the globe found: the place's card, or none where it has no fresh water near.
+pub type Found = Option<crate::places::Place>;
+
+/// The details of the place last clicked on the globe (E4.1 §4.2), looked for on a thread of
+/// their own while the globe turns on: the start spot, then the place's card. Only the last
+/// click's are wanted (an earlier search gives up at its next step and its answer is thrown
+/// away), and each answer is kept for its place (about a kilometre), so a place clicked again is
+/// answered at once.
+#[derive(Default)]
+pub struct Details {
+    /// The click being looked into, and the way its answer comes back.
+    pending: Option<((f32, f32), mpsc::Receiver<Found>)>,
+    /// Counts the clicks: a search that is not the last click's gives up.
+    asked: Arc<AtomicU64>,
+    /// The answers found, by place.
+    kept: rustc_hash::FxHashMap<(i32, i32), Found>,
+}
+
+impl Details {
+    /// Looks into the place at `at` (latitude, longitude in radians): the answer at once if it
+    /// was found before, else none until [`Self::poll`] gives it.
+    pub fn ask(
+        &mut self,
+        finder: &Arc<crate::places::Finder>,
+        at: (f32, f32),
+        when: crate::places::When,
+    ) -> Option<Found> {
+        let n = self.asked.fetch_add(1, Ordering::Relaxed) + 1;
+        if let Some(found) = self.kept.get(&Self::key(at)) {
+            self.pending = None;
+            return Some(found.clone());
+        }
+        let (tx, rx) = mpsc::channel();
+        let (finder, asked) = (finder.clone(), self.asked.clone());
+        let spawned = std::thread::Builder::new()
+            .name("place details".into())
+            .spawn(move || {
+                let _c = hearth_core::prof::caller("globe.click");
+                let wg = &finder.wg;
+                let (x, z) = world_xz(wg.planet(), at.0, at.1);
+                let (x, z) = wg.terrain.spawn_near(x, z);
+                if asked.load(Ordering::Relaxed) == n {
+                    let _ = tx.send(finder.verify(x, z, when));
+                }
+            });
+        match spawned {
+            Ok(_) => self.pending = Some((at, rx)),
+            Err(e) => log::error!("could not look into the place: {e}"),
+        }
+        None
+    }
+
+    /// The answer, once it has come: the place clicked and what was found there.
+    pub fn poll(&mut self) -> Option<((f32, f32), Found)> {
+        let (at, rx) = self.pending.as_ref()?;
+        match rx.try_recv() {
+            Ok(found) => {
+                let at = *at;
+                self.pending = None;
+                self.kept.insert(Self::key(at), found.clone());
+                Some((at, found))
+            }
+            Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.pending = None;
+                None
+            }
+        }
+    }
+
+    /// Whether a click is being looked into.
+    pub fn looking(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// A place's key: its latitude and longitude to a hundredth of a degree.
+    fn key((lat, lon): (f32, f32)) -> (i32, i32) {
+        (
+            (lat.to_degrees() * 100.0).round() as i32,
+            (lon.to_degrees() * 100.0).round() as i32,
+        )
+    }
 }
 
 /// The globe's state in the preview.
@@ -158,7 +299,8 @@ impl GlobePicker {
         self.open = true;
         self.view.lat = lat;
         self.view.lon = lon;
-        let has_map = self.renderer.as_ref().is_some_and(GlobeRenderer::has_map);
+        let has_map =
+            self.base.is_some() || self.renderer.as_ref().is_some_and(GlobeRenderer::has_map);
         if !has_map && self.building.is_none() {
             let terrain = terrain.clone();
             match std::thread::Builder::new()
@@ -174,6 +316,14 @@ impl GlobePicker {
     pub fn close(&mut self) {
         self.open = false;
         self.press = None;
+    }
+
+    /// The planet's map, made already (with the planet): no map is made when the globe opens.
+    pub fn set_map(&mut self, map: Vec<[u8; 4]>) {
+        if map.len() == MAP_WIDTH * MAP_WIDTH / 2 {
+            self.base = Some(map);
+            self.map_changed = true;
+        }
     }
 
     /// The cursor moved to `px`; turns the globe while the button is held.

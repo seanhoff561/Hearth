@@ -667,6 +667,7 @@
   "menu.birthplace.look_for": "What to look for",
   "menu.birthplace.watch_out": "Watch out for",
   "menu.birthplace.unverified": "No fresh water was found within a walk of here. You may still begin here.",
+  "menu.birthplace.looking": "Looking closer…",
   "menu.birthplace.click": "Click the globe to choose a place.",
   "menu.death.finding": "Finding places to begin…",
   "menu.death.new_life_at": "{difficulty}: {place}",

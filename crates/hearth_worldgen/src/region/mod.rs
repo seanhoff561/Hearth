@@ -222,6 +222,37 @@ pub struct Nearby {
     patch: Option<Patch>,
 }
 
+/// The climate at a column (`Terrain::local_climate`).
+struct LocalClimate {
+    sea_t: f32,
+    precip: f32,
+    temperature: f32,
+    t_warm: f32,
+    tree_line: f32,
+    snow_line: f32,
+    climate: ClimateClass,
+}
+
+/// A column as the planet grid alone has it (`Terrain::grid_column`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GridColumn {
+    /// The surface (blocks).
+    pub height: f32,
+    /// The water's surface (blocks), −∞ where dry.
+    pub water: f32,
+    pub biome: Biome,
+    pub climate: ClimateClass,
+    /// Mean yearly temperature (°C) and rain (mm a year).
+    pub temperature: f32,
+    pub precipitation: f32,
+}
+
+impl GridColumn {
+    pub fn is_underwater(&self) -> bool {
+        self.water > self.height
+    }
+}
+
 /// The surface of a column before the climate and the living things: its ground, its water
 /// and the river by it.
 struct Shape {
@@ -646,6 +677,130 @@ impl Terrain {
         Some(RiverHit { plain, ..hit })
     }
 
+    /// The climate at a column at height `h` (blocks): the grid's, its borders wandering a
+    /// little with gentle regional noise.
+    fn local_climate(&self, xf: f64, zf: f64, gx: f64, gz: f64, h: f32) -> LocalClimate {
+        let g = &*self.grid;
+        let wobble = self.noise.variation.sample2(xf * 0.37, zf * 0.37) as f32;
+        let wobble2 = self.noise.variation2.sample2(zf * 0.41, xf * 0.41) as f32;
+        let sea_t = g.sea_level_temperature.bilinear(gx, gz) + wobble * 1.4;
+        let range = g.temp_range.bilinear(gx, gz);
+        let precip = g.precipitation.bilinear(gx, gz) * (1.0 + wobble2 * 0.18);
+        let alt_m = (h.max(0.0) / self.v) as f64;
+        let temperature = sea_t - (LAPSE_RATE * alt_m) as f32;
+        let t_warm = temperature + range * 0.5;
+        let t_warm_sl = sea_t + range * 0.5;
+        // Tree line where the warmest month reaches ~10.5 °C; permanent snow where it stays
+        // below ~0.5 °C, lower on wet slopes.
+        let tree_line = ((t_warm_sl - 10.5) / LAPSE_RATE as f32) * self.v;
+        let wet = ((precip - 900.0) / 2500.0).clamp(0.0, 0.35);
+        let snow_line = ((t_warm_sl - 0.5) / LAPSE_RATE as f32) * self.v * (1.0 - wet);
+        let climate = crate::planet::climate::classify(
+            temperature as f64,
+            range as f64,
+            precip as f64,
+            crate::planet::climate::dry_season::from_strengths(
+                g.winter_dry.bilinear(gx, gz),
+                g.summer_dry.bilinear(gx, gz),
+            ),
+        );
+        LocalClimate {
+            sea_t,
+            precip,
+            temperature,
+            t_warm,
+            tree_line,
+            snow_line,
+            climate,
+        }
+    }
+
+    /// A column as the planet grid alone has it (the globe's map and the line about the place
+    /// under the cursor, E4.1 §4.2): the grid's surface, its sea and lakes, the climate there and
+    /// the biome they make. No refinement level is read and no river narrower than the grid's
+    /// cells shows; some microseconds a column.
+    pub fn grid_column(&self, xf: f64, zf: f64) -> GridColumn {
+        let g = &*self.grid;
+        let wx = self.planet.wrap_xf(xf);
+        let (gx, gz) = g.geom.grid_coords(wx, zf);
+        let cell_flags = g.flags[g.cell_at(wx, zf)];
+        let lat = self.planet.latitude_deg(zf);
+        let polar = ((lat.abs() - POLAR_BLEND_START) / 2.5).clamp(0.0, 1.0) as f32;
+        let mut h = g.elevation.bicubic(gx, gz) * self.v;
+        if polar > 0.0 {
+            let cap = g.elevation.bilinear(gx, gz) * self.v;
+            h += (cap - h) * polar;
+        }
+        // The slope across the grid's cells (blocks a block).
+        let e = |dx: f64, dz: f64| g.elevation.bilinear(gx + dx, gz + dz) * self.v;
+        let span = 2.0 * g.geom.cell as f32;
+        let slope = (((e(1.0, 0.0) - e(-1.0, 0.0)) / span).powi(2)
+            + ((e(0.0, 1.0) - e(0.0, -1.0)) / span).powi(2))
+        .sqrt();
+        let (ocean_frac, lake_frac, lake_level) = self.nearby_water(gx, gz);
+        let ocean_near = ocean_frac > FLOOD_FRACTION;
+        let mut water = f32::NEG_INFINITY;
+        let mut lake = false;
+        if ocean_near && h < 0.0 {
+            water = 0.0;
+        }
+        if let Some(level) = lake_level
+            && lake_frac > FLOOD_FRACTION
+            && h < level
+        {
+            water = water.max(level);
+            lake = true;
+        }
+        let c = self.local_climate(xf, zf, gx, gz, h);
+        let biome = if polar > 0.5 {
+            if h < 1.0 {
+                Biome::PolarSea
+            } else {
+                Biome::IceSheet
+            }
+        } else {
+            let variation =
+                (self.noise.variation.sample2(xf, zf) as f32 * 0.5 + 0.5).clamp(0.0, 1.0);
+            let variation2 =
+                (self.noise.variation2.sample2(xf, zf) as f32 * 0.5 + 0.5).clamp(0.0, 1.0);
+            biome::select(&BiomeInputs {
+                climate: c.climate,
+                temperature: c.temperature,
+                t_warm: c.t_warm,
+                precipitation: c.precip,
+                height: h,
+                water,
+                slope,
+                above_tree_line: h - c.tree_line,
+                above_snow_line: h - c.snow_line,
+                ocean: ocean_near && water.is_finite() && h < 0.0 && !lake,
+                sea_temperature: c.sea_t,
+                near_ocean: ocean_near && h < 6.0,
+                river: false,
+                lake,
+                salt_flat: cell_flags & flags::SALT_FLAT != 0,
+                volcanic: cell_flags & flags::VOLCANIC != 0,
+                variation,
+                variation2,
+                vertical_scale: self.v,
+                shelter: 0.0,
+                bank: false,
+            })
+        };
+        if polar > 0.9 && h < 0.5 {
+            // Sea ice over the polar sea.
+            water = water.max(0.0);
+        }
+        GridColumn {
+            height: h,
+            water,
+            biome,
+            climate: c.climate,
+            temperature: c.temperature,
+            precipitation: c.precip,
+        }
+    }
+
     /// Samples one column with what was read about its neighbourhood.
     pub fn sample_with(&self, x: i32, z: i32, near: &Nearby) -> ColumnSample {
         let g = &*self.grid;
@@ -674,31 +829,15 @@ impl Terrain {
             h += (cap - h) * polar;
         }
 
-        // ------------------------------------------------------------ climate at the column
-        // Gentle regional perturbations so climate borders wander naturally.
-        let wobble = self.noise.variation.sample2(xf * 0.37, zf * 0.37) as f32;
-        let wobble2 = self.noise.variation2.sample2(zf * 0.41, xf * 0.41) as f32;
-        let sea_t = g.sea_level_temperature.bilinear(gx, gz) + wobble * 1.4;
-        let range = g.temp_range.bilinear(gx, gz);
-        let precip = g.precipitation.bilinear(gx, gz) * (1.0 + wobble2 * 0.18);
-        let alt_m = (h.max(0.0) / self.v) as f64;
-        let temperature = sea_t - (LAPSE_RATE * alt_m) as f32;
-        let t_warm = temperature + range * 0.5;
-        let t_warm_sl = sea_t + range * 0.5;
-        // Tree line where the warmest month reaches ~10.5 °C; permanent snow where it stays
-        // below ~0.5 °C, lower on wet slopes.
-        let tree_line = ((t_warm_sl - 10.5) / LAPSE_RATE as f32) * self.v;
-        let wet = ((precip - 900.0) / 2500.0).clamp(0.0, 0.35);
-        let snow_line = ((t_warm_sl - 0.5) / LAPSE_RATE as f32) * self.v * (1.0 - wet);
-        let climate = crate::planet::climate::classify(
-            temperature as f64,
-            range as f64,
-            precip as f64,
-            crate::planet::climate::dry_season::from_strengths(
-                g.winter_dry.bilinear(gx, gz),
-                g.summer_dry.bilinear(gx, gz),
-            ),
-        );
+        let LocalClimate {
+            sea_t,
+            precip,
+            temperature,
+            t_warm,
+            tree_line,
+            snow_line,
+            climate,
+        } = self.local_climate(xf, zf, gx, gz, h);
 
         // ------------------------------------------------------------ coasts
         // Sheltered stretches of coast (bays, estuaries, lagoons): long, slow noise, and every
@@ -1170,11 +1309,14 @@ impl Terrain {
             .geom
             .grid_coords(self.planet.wrap_xf(x as f64 + 0.5), z as f64 + 0.5);
         let blocks_per_radian = self.planet.circumference_f64() / std::f64::consts::TAU;
-        let coast_blocks = g.coast.bilinear(gx, gz).abs() as f64 * blocks_per_radian;
-        let wet = if coast_blocks < COAST_CHECK {
+        let coast = g.coast.bilinear(gx, gz);
+        let lake = g.flags[g.cell_at(self.planet.wrap_xf(x as f64), z as f64)] & flags::LAKE != 0;
+        // Far from any coast the grid's own coast (positive on land) says which; a lake's
+        // shores are looked at closely.
+        let wet = if lake || (coast.abs() as f64 * blocks_per_radian) < COAST_CHECK {
             self.sample(x, z).is_underwater()
         } else {
-            coarse(x, z)
+            coast < 0.0
         };
         if !wet {
             return self.settle(x, z);

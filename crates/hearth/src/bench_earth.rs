@@ -21,7 +21,6 @@ use hearth_core::prof;
 use hearth_math::PlanetSize;
 use hearth_render::GpuContext;
 use hearth_worldgen::{PlanetGrid, Terrain, WorldGenSettings};
-use rayon::prelude::*;
 
 pub const HELP: &str = "\
 hearth bench globe|creator|load — the Earth-scale benchmarks (E4.1)
@@ -361,6 +360,34 @@ fn finder(terrain: &Arc<Terrain>) -> anyhow::Result<Arc<crate::places::Finder>> 
     )))
 }
 
+/// The share of a globe map's area that is land (water is drawn in its biome's colour,
+/// unshaded; a texel's area goes with the cosine of its latitude).
+fn land_share(map: &[[u8; 4]], terrain: &Terrain) -> f64 {
+    let water: Vec<[u8; 3]> = hearth_worldgen::region::biome::Biome::ALL
+        .iter()
+        .filter(|b| b.is_water())
+        .map(|b| b.color())
+        .collect();
+    let w = crate::globe::MAP_WIDTH;
+    let h = w / 2;
+    let planet = terrain.planet();
+    let edge = planet.latitude(-planet.pole_edge_z() + 1.0);
+    let (mut land, mut all) = (0.0, 0.0);
+    for (y, row) in map.chunks_exact(w).enumerate().take(h) {
+        let lat = std::f64::consts::FRAC_PI_2 - (y as f64 + 0.5) / h as f64 * std::f64::consts::PI;
+        if lat.abs() > edge {
+            continue;
+        }
+        for px in row {
+            all += lat.cos();
+            if !water.contains(&[px[0], px[1], px[2]]) {
+                land += lat.cos();
+            }
+        }
+    }
+    land / all.max(1e-9)
+}
+
 /// A point on the sphere, evenly over its area: (latitude, longitude) in radians.
 fn random_point(rng: &mut hearth_math::hash::Rng) -> (f32, f32) {
     let u = rng.next_f32() * 2.0 - 1.0;
@@ -384,54 +411,30 @@ fn globe(o: &Opts, cache_dir: Option<&Path>) -> anyhow::Result<Report> {
         "s",
     );
 
-    // The map as `globe::planet_map` makes it: the full surface sampled at every texel. Rows
-    // spread evenly from pole to pole, until the budget is spent; the whole map projected.
-    r.section("The globe's map (globe::planet_map, sampled the same way)");
-    let width = crate::globe::MAP_WIDTH;
-    let height = width / 2;
-    let planet = *terrain.planet();
-    let edge = planet.latitude(-planet.pole_edge_z() + 1.0);
-    let c = planet.circumference_f64();
-    let spread = 32;
+    // The map as the menus make it with the planet (`globe::cached_map`): from the grid, then
+    // read back from where it is kept.
+    r.section("The globe's map (globe::planet_map, from the planet grid)");
     let before = tile_counts();
     let cpu0 = cpu_by_group();
+    let kept = std::env::temp_dir().join(format!("hearth-bench-globe-{}.zst", std::process::id()));
+    let _ = std::fs::remove_file(&kept);
     let t = Instant::now();
-    let mut rows = 0;
-    let mut land = 0usize;
-    for k in 0..spread {
-        let y = k * height / spread + height / (2 * spread);
-        let lat = (std::f64::consts::FRAC_PI_2
-            - (y as f64 + 0.5) / height as f64 * std::f64::consts::PI)
-            .clamp(-edge, edge);
-        let z = planet.z_for_latitude(lat) as i32;
-        let terrain = &terrain;
-        land += (0..width)
-            .into_par_iter()
-            .filter(|&x| {
-                let _c = prof::caller("globe.map");
-                let s = terrain.sample(((x as f64 + 0.5) / width as f64 * c) as i32, z);
-                let _ = s.biome.color();
-                !s.is_underwater()
-            })
-            .count();
-        rows += 1;
-        if t.elapsed().as_secs_f64() > o.budget {
-            break;
-        }
-    }
-    let took = t.elapsed().as_secs_f64();
-    r.add("map: rows made in the budget", rows as f64, "rows");
-    r.add("map: seconds a row (2048 samples)", took / rows as f64, "s");
+    let map = crate::globe::cached_map(&terrain, crate::globe::MAP_WIDTH, Some(&kept));
     r.add(
-        "map: whole map projected (1024 rows)",
-        took / rows as f64 * height as f64,
+        "map: made from the grid (and kept)",
+        t.elapsed().as_secs_f64(),
         "s",
     );
+    let t = Instant::now();
+    let again = crate::globe::cached_map(&terrain, crate::globe::MAP_WIDTH, Some(&kept));
     r.add(
-        "map: land in the rows made",
-        100.0 * land as f64 / (rows * width) as f64,
-        "%",
+        "map: read back from where it is kept",
+        t.elapsed().as_secs_f64(),
+        "s",
     );
+    let _ = std::fs::remove_file(&kept);
+    anyhow::ensure!(again == map, "the map kept is the map made");
+    r.add("map: land by area", 100.0 * land_share(&map, &terrain), "%");
     r.tiles("map", &before);
     for (g, s) in cpu_since(&cpu0) {
         r.add(&format!("map: CPU of {g}"), s, "s");
@@ -475,7 +478,7 @@ fn globe(o: &Opts, cache_dir: Option<&Path>) -> anyhow::Result<Report> {
     let t = Instant::now();
     for _ in 0..o.clicks {
         let (lat, lon) = random_point(&mut rng);
-        let (x, z) = crate::globe::world_xz(&planet, lat, lon);
+        let (x, z) = crate::globe::world_xz(terrain.planet(), lat, lon);
         let t0 = Instant::now();
         let (x, z) = {
             let _c = prof::caller("globe.click.spot");
@@ -500,6 +503,18 @@ fn globe(o: &Opts, cache_dir: Option<&Path>) -> anyhow::Result<Report> {
     r.add("click: start spot, slowest", quantile_ms(&spot, 1.0), "ms");
     r.add("click: the card, median", quantile_ms(&card, 0.5), "ms");
     r.add("click: the card, slowest", quantile_ms(&card, 1.0), "ms");
+    let mut total: Vec<f64> = spot.iter().zip(&card).map(|(a, b)| a + b).collect();
+    total.sort_by(f64::total_cmp);
+    r.add(
+        "click: to the details, median",
+        quantile_ms(&total, 0.5),
+        "ms",
+    );
+    r.add(
+        "click: to the details, slowest",
+        quantile_ms(&total, 1.0),
+        "ms",
+    );
     r.tiles("click", &before);
 
     r.section("The places suggested (Finder::suggest)");

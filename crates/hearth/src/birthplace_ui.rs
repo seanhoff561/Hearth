@@ -95,6 +95,7 @@ pub fn birthplace_screen(
     // The globe between: clicked anywhere, the place under the click.
     let card_x = size.0 - card_w - 8.0;
     let mut said: Option<String> = None;
+    let mut looking = false;
     let when = match choice.shape.start {
         Some(hearth_save::Start::Now) => {
             let now = std::time::SystemTime::now()
@@ -117,24 +118,28 @@ pub fn birthplace_screen(
             if ui.input.released
                 && let Some(ll) = g.picker.button(false)
             {
-                // A click on the globe chooses there.
+                // A click on the globe chooses there at once; what is there is read from the
+                // world on a thread of its own (a place without fresh water near has no card).
                 *b.anywhere = true;
                 *b.chosen = Some(ll);
-                // What is there, read from the world (a place without fresh water near has
-                // no card).
-                let _c = hearth_core::prof::caller("globe.click");
-                let (x, z) = crate::globe::world_xz(g.terrain.planet(), ll.0, ll.1);
-                let (x, z) = g.terrain.spawn_near(x, z);
-                *b.card = g
-                    .finder
-                    .as_ref()
-                    .and_then(|f| f.verify(x, z, when))
-                    .map(Box::new);
+                *b.card = None;
+                if let Some(f) = &g.finder
+                    && let Some(found) = g.details.ask(f, ll, when)
+                {
+                    *b.card = found.map(Box::new);
+                }
             }
             if ui.input.scroll != 0.0 {
                 g.picker.view.zoom_by(ui.input.scroll.round() as i32);
             }
         }
+        // The last click's details, when they come.
+        if let Some((at, found)) = g.details.poll()
+            && *b.chosen == Some(at)
+        {
+            *b.card = found.map(Box::new);
+        }
+        looking = g.details.looking();
         if *b.anywhere {
             let shown = g.picker.hovered().or(*b.chosen);
             let _c = hearth_core::prof::caller("globe.hover");
@@ -191,6 +196,9 @@ pub fn birthplace_screen(
                         para(ui, c, &places::danger_words(lang, d), theme::TEXT);
                     }
                 }
+            }
+            None if *b.anywhere && looking => {
+                para(ui, c, lang.get("menu.birthplace.looking"), theme::DIM);
             }
             None if *b.anywhere && b.chosen.is_some() => {
                 para(ui, c, lang.get("menu.birthplace.unverified"), theme::DIM);

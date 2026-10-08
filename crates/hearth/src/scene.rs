@@ -416,6 +416,16 @@ pub fn data_pack_dir() -> std::path::PathBuf {
 }
 
 /// The planet cache's file for world-generation settings: its seed, size and resolution.
+/// The file the globe's map of a planet is kept in, beside the planet's cache (E4.1 §4.2).
+pub fn globe_cache_name(settings: &WorldGenSettings) -> String {
+    format!(
+        "globe_{}_{}_{}.bin.zst",
+        settings.seed,
+        settings.planet_size.name(),
+        settings.grid_resolution
+    )
+}
+
 pub fn planet_cache_name(settings: &WorldGenSettings) -> String {
     format!(
         "planet_{}_{}_{}.bin.zst",

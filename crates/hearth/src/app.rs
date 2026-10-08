@@ -129,6 +129,8 @@ struct Made {
     terrain: Arc<hearth_worldgen::region::Terrain>,
     finder: Option<Arc<crate::places::Finder>>,
     places: Vec<crate::places::Place>,
+    /// The globe's map, made with the planet (E4.1 §4.2).
+    map: Vec<[u8; 4]>,
 }
 
 /// A new world's globe, its birthplace being chosen.
@@ -137,6 +139,8 @@ struct Choosing {
     picker: crate::globe::GlobePicker,
     finder: Option<Arc<crate::places::Finder>>,
     places: Vec<crate::places::Place>,
+    /// The details of the place last clicked on the globe.
+    details: crate::globe::Details,
 }
 
 impl App {
@@ -684,6 +688,10 @@ impl App {
             .dirs
             .cache()
             .join(crate::scene::planet_cache_name(&settings));
+        let map_cache = self
+            .dirs
+            .cache()
+            .join(crate::scene::globe_cache_name(&settings));
         let told = progress.clone();
         let content = self.content.content.clone();
         let when = match choice.shape.start {
@@ -720,6 +728,10 @@ impl App {
                     }
                 };
                 let terrain = Arc::new(hearth_worldgen::region::Terrain::new(Arc::new(grid)));
+                // The globe's map from the grid, kept beside it: never blank once the planet is.
+                tell(1.0, "Drawing the globe");
+                let map =
+                    crate::globe::cached_map(&terrain, crate::globe::MAP_WIDTH, Some(&map_cache));
                 // The places to suggest (Amendment E §6.3), each verified in the world made.
                 tell(1.0, "Finding places to begin");
                 let finder = content.and_then(|content| {
@@ -749,6 +761,7 @@ impl App {
                     terrain,
                     finder,
                     places,
+                    map,
                 })
             });
         match handle {
@@ -797,6 +810,7 @@ impl App {
                 terrain,
                 finder,
                 places,
+                map,
             })) => {
                 // The globe opens on the first place suggested (or the place the world finds).
                 let (x, z) = places
@@ -807,6 +821,7 @@ impl App {
                     glam::DVec3::new(x as f64, 0.0, z as f64),
                 );
                 let mut picker = crate::globe::GlobePicker::default();
+                picker.set_map(map);
                 picker.open(&terrain, lat, lon);
                 if matches!(run.menus.top_mut(), Some(Screen::Making { .. })) {
                     run.menus.back();
@@ -822,6 +837,7 @@ impl App {
                         picker,
                         finder,
                         places,
+                        details: Default::default(),
                     });
                 }
             }
@@ -1249,6 +1265,7 @@ impl App {
                             terrain: ch.terrain.clone(),
                             finder: ch.finder.clone(),
                             places: &ch.places,
+                            details: &mut ch.details,
                         }),
                     };
                     actions = menus.ui(ui, &mut cx);

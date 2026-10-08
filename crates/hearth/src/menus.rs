@@ -360,6 +360,8 @@ pub struct GlobeContext<'a> {
     pub terrain: std::sync::Arc<hearth_worldgen::region::Terrain>,
     pub finder: Option<std::sync::Arc<crate::places::Finder>>,
     pub places: &'a [crate::places::Place],
+    /// The details of the place last clicked, being looked for.
+    pub details: &'a mut crate::globe::Details,
 }
 
 /// What the death screen says: how the player died, and what a new life keeps.
