@@ -159,6 +159,17 @@ fn after_death_a_new_life_begins_near_where_the_last_ended_as_chosen() {
         _ => None,
     });
     assert_eq!(ready.after_death, hearth_save::AfterDeath::TheirsOnly);
+    // The first life wakes lying in the grass (Amendment E §6.5), and gets up when asked.
+    let first = wait(&server, 10.0, |m| match m {
+        ToClient::Body(b) => Some(*b),
+        _ => None,
+    });
+    assert!(first.lying && !first.asleep, "waking, lying awake");
+    server.send(ToServer::Rest(None));
+    wait(&server, 10.0, |m| match m {
+        ToClient::Body(b) if !b.lying => Some(()),
+        _ => None,
+    });
     let mut there = ready.player;
     there.pos += DVec3::new(30.0, 0.0, 0.0);
     drown(&server, there);
@@ -193,6 +204,7 @@ fn after_death_a_new_life_begins_near_where_the_last_ended_as_chosen() {
         _ => None,
     });
     assert!(alive.dead.is_none());
+    assert!(alive.lying, "a new life wakes lying too");
     // Not while alive.
     server.send(ToServer::NewLife {
         at: None,

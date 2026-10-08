@@ -223,6 +223,8 @@ pub struct Client {
     hidden_looks: Vec<(String, Vec<String>)>,
     /// The eyelids (0 open, 1 shut): shut asleep or unconscious, slow to open on waking.
     eyes_shut: f32,
+    /// When the player last asked to get up (s of the client's clock).
+    got_up_s: f64,
     /// How the player's last rest ended, and how long ago (s).
     rested: Option<(hearth_protocol::Rested, f64)>,
     /// Where the heart and the breath are in their cycles (for the pulse at the edges of
@@ -431,7 +433,9 @@ impl Client {
             bodies: None,
             base_items: None,
             hidden_looks: Vec::new(),
-            eyes_shut: 0.0,
+            // A life opens with the eyes opening (Amendment E §6.5).
+            eyes_shut: 1.0,
+            got_up_s: f64::NEG_INFINITY,
             rested: None,
             heart_phase: 0.0,
             breath_phase: 0.0,
@@ -2560,6 +2564,16 @@ impl Client {
             wish -= right;
         }
         wish += forward * pad.stick.y + right * pad.stick.x;
+        // Lying awake (a life just begun, or resting), setting off gets up.
+        let awake_lying = self.body.as_ref().is_some_and(|b| b.lying && !b.asleep);
+        if self.mode == CameraMode::Body
+            && awake_lying
+            && (wish != DVec2::ZERO || input.is_active(builtin::JUMP))
+            && self.clock_s - self.got_up_s > 1.0
+        {
+            self.got_up_s = self.clock_s;
+            self.rest(None);
+        }
         match self.mode {
             CameraMode::Free => self.fly(dt, input, wish),
             CameraMode::Body => self.walk(dt, input, wish, pad),

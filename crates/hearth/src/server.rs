@@ -362,9 +362,9 @@ pub fn calendar_of(
                 .map_or(0.0, |d| d.as_secs_f64());
             Calendar::from_unix(now)
         }),
-        hearth_save::Start::SpringMorning => Calendar::spring_morning(
+        hearth_save::Start::SpringMorning => Calendar::spring_dawn(
             made.map_or(hearth_env::calendar::UNDATED_YEAR, |c| c.at(0).year),
-            planet.latitude(first_spawn.z) < 0.0,
+            planet.latitude_deg(first_spawn.z),
             planet.solar_time_offset(first_spawn.x),
         ),
     }
@@ -662,6 +662,8 @@ fn run(
                 }
             });
     // Who the player is: the adult they chose to be (Amendment E §6.1), or as saved.
+    // A life begun now wakes lying in the grass (Amendment E §6.5) and lies until it gets up.
+    let mut waking = saved.is_none();
     let (mut player, mut appearance, mut past_lives) = match saved {
         Some(p) => (p.player, p.appearance.sanitized(), p.past_lives),
         None => (
@@ -689,6 +691,7 @@ fn run(
             .collect();
         hearth_items::Carry::dressed(&items, stacks)
     };
+    player.lying |= waking;
     // Saves from before carrying wore nothing: dress them.
     if player.carry.worn.is_empty() {
         player.carry = outfit(&appearance);
@@ -862,7 +865,20 @@ fn run(
     loop {
         // Messages from the client.
         loop {
-            match inbox.try_recv() {
+            let msg = inbox.try_recv();
+            // Waking, the player gets up to do anything, or to go anywhere.
+            if waking && let Ok(m) = &msg {
+                let up = match m {
+                    ToServer::Moved(m) => (m.mover.pos - player.mover.pos).length() > 0.25,
+                    ToServer::Rest(_) | ToServer::NewLife { .. } => false,
+                    _ => true,
+                };
+                if up {
+                    waking = false;
+                    player.lying = false;
+                }
+            }
+            match msg {
                 Ok(ToServer::Moved(m)) => {
                     if player.body.dead.is_none() {
                         player.life.moved(player.mover.pos, m.mover.pos);
@@ -921,6 +937,7 @@ fn run(
                                 .map(|r| r.rested(&seen, hearth_protocol::RestEnd::GotUp));
                             player.lying = false;
                             player.asleep = false;
+                            waking = false;
                         }
                     }
                     if let Some(ended) = ended {
@@ -1133,6 +1150,8 @@ fn run(
                         }
                         workshop.knowledge_changed = true;
                         player.life = hearth_player::Life::begin(place, ticks);
+                        waking = true;
+                        player.lying = true;
                         if let Some(a) = looks {
                             appearance = a.sanitized();
                             let _ = tx.send(ToClient::Looks(appearance.clone()));
@@ -1545,7 +1564,7 @@ fn run(
                 }
             } else {
                 player.asleep = false;
-                player.lying = false;
+                player.lying = waking;
                 resting = None;
             }
             // Resting, the world speeds up smoothly; up, it slows back.

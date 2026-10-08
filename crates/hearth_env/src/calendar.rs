@@ -27,6 +27,8 @@ pub const YEAR_DAYS: f64 = 365.242_2;
 pub const MONTH_DAYS: f64 = 29.530_589;
 /// The local solar time a spring morning begins at (seven o'clock).
 const MORNING: f64 = 7.0 / 24.0;
+/// A new life wakes this long before sunrise (minutes): in the dawn's light.
+const DAWN_BEFORE_SUNRISE_MIN: f64 = 20.0;
 /// How far into spring a spring morning falls: twenty days after the equinox that begins it (a
 /// share of the year).
 const INTO_SPRING: f64 = 20.0 / YEAR_DAYS;
@@ -60,6 +62,23 @@ impl Calendar {
     pub fn spring_morning(year: i64, southern: bool, solar_offset: f64) -> Self {
         let spring = if southern { 0.5 } else { 0.0 };
         Self::when(year, spring + INTO_SPRING, MORNING, solar_offset)
+    }
+
+    /// Dawn of a spring day where the first life is (Amendment E §6.5): the spring morning's
+    /// day, twenty minutes before the sun rises at `lat_deg` (the sky light, the sun not yet
+    /// up); seven by the sun where it neither rises nor sets that day.
+    pub fn spring_dawn(year: i64, lat_deg: f64, solar_offset: f64) -> Self {
+        let day = Self::spring_morning(year, lat_deg < 0.0, solar_offset);
+        match astro::sunrise_sunset(day.epoch, lat_deg, solar_offset) {
+            Some((rise, _)) => {
+                // The sunrise of the morning's own day (the UTC day may be the one beside it).
+                let rise = rise + (day.epoch - rise).round();
+                Self {
+                    epoch: rise - DAWN_BEFORE_SUNRISE_MIN / 1440.0,
+                }
+            }
+            None => day,
+        }
     }
 
     /// The moment of the year that begins at `year`'s March equinox when the sun stands
@@ -255,6 +274,20 @@ impl Moment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_spring_dawn_comes_just_before_the_sun() {
+        for (lat, lon) in [(51.5, 0.0), (-33.9, 0.05), (0.0, 0.3), (60.0, -0.2)] {
+            let c = Calendar::spring_dawn(2026, lat, lon);
+            let (rise, _) = astro::sunrise_sunset(c.epoch + 0.02, lat, lon).expect("a sunrise");
+            let rise = rise + (c.epoch - rise).round();
+            let before = (rise - c.epoch) * 1440.0;
+            assert!((before - 20.0).abs() < 1.0, "{lat}: {before:.1} min before");
+            // The spring morning's own day.
+            let morning = Calendar::spring_morning(2026, lat < 0.0, lon);
+            assert!((morning.epoch - c.epoch).abs() < 0.5, "{lat}");
+        }
+    }
 
     #[test]
     fn a_day_is_a_real_day_and_the_year_a_real_year() {

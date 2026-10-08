@@ -43,8 +43,9 @@ pub enum AfterDeath {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Start {
-    /// The morning of a spring day where the first life begins (three weeks after the equinox
-    /// that begins spring in its hemisphere) in the year the world was made.
+    /// The dawn of a spring day where the first life begins (three weeks after the equinox
+    /// that begins spring in its hemisphere, twenty minutes before sunrise) in the year the
+    /// world was made.
     #[default]
     SpringMorning,
     /// The real date and time the world was made.
