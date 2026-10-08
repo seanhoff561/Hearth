@@ -274,3 +274,8 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D263 (2026-10-08) Ground materials are noise in the shader, not baked texture sets
 - D264 (2026-10-08) A triangle's corners share its materials; corners are duplicated only where materials change
 - D265 (2026-10-08) The smooth ground is drawn first, frustum and cave culled, its depth culling the rest
+- D266 (2026-10-08) The body is a sculpture of anatomical forms, meshed in an A-pose; the sliders re-sculpt it
+- D267 (2026-10-08) Hair is cards grown on the body's field, swung by guide strands, painted with strands
+- D268 (2026-10-08) Eyes turn about their centres under lid shells; saccades and blinks have their own clock
+- D269 (2026-10-08) The skin's state is the body's: the sun's dose, dirt, blood and scars are simulated and saved
+- D270 (2026-10-08) People's shaders share one data block and take their view from a prefix; fitted garments are meshes, the rest stay boxes

@@ -22,6 +22,7 @@ system. Status: *implemented*, *partial* or *planned* (the milestone that builds
 | The world loop (server, client, protocol) | [world-loop.md](world-loop.md) | implemented in process (V2-3c) |
 | Sound (procedural sounds, mixer, what the player hears) | [audio.md](audio.md) | implemented (V2-3d) |
 | The player's person (appearance, rig, movement, views) | [character.md](character.md) | implemented (V2-3e) |
+| People drawn: the sculpted body, skin and its state, garments, hair, eyes | [people.md](people.md) | implemented (E7) |
 | What the body tells the player (senses, Body panel, Guided HUD) | [hud.md](hud.md) | implemented (V2-3f) |
 | Inventory, carrying, clothing | [inventory.md](inventory.md) | implemented (V2-4) |
 | Processes and the knowledge graph (crafting, discovery, skills, journal, knapping) | [knowledge-and-processes.md](knowledge-and-processes.md) | implemented for Eras 0–2 (V2-5) |

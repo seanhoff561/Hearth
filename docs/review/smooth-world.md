@@ -40,3 +40,23 @@ replaces.
 sharp features, Dual Contouring; rows: the scene, a close look, its triangles) and
 `s0/shading.jpg` (turf and limestone: linear against height blending, biplanar against
 triplanar). The chosen mesher and why: D222 and `docs/design/smooth-terrain.md`.
+
+## E7: people (2026-10-08)
+Made by `cargo test -p hearth_render --test body_preview` (preview light) and
+`hearth --screenshot-list tools/shots/e7_people.shots` (in the world), on the software device.
+
+- Bodies standing and mid-stride, four people (`e7/anatomy.jpg`); close-ups of face, chest,
+  hand and foot (`e7/anatomy_close.jpg`).
+- Every hair style with brows and beards, the last in wind from behind (`e7/hair_styles.jpg`).
+- The skin's states: plain, wet, muddy, sunburnt (not under the loincloth), tanned, pale with a
+  bleeding forearm (`e7/skin_states.jpg`).
+- In the world: sun (`e7/world_sun.jpg`, `world_sun_female.jpg`), overcast
+  (`world_overcast.jpg`), evening against the sun (`world_evening.jpg`), night with no fire
+  (`world_night.jpg`), wet, muddy and sunburnt (`world_wet.jpg`, `world_muddy.jpg`,
+  `world_sunburnt.jpg`), and first person looking down (`world_first_person.jpg`).
+
+Seen: bodies read as people, male and female, across skin tones; hands and feet have fingers
+and toes; the lighting matches the world's. Still plain: the faces' finer forms (they read as
+sculpted, not alive: no expressions yet), the hair's coverage (alpha-tested cards show their
+edges close up; coily hair lacks volume), firelight shots wait for a fire in the scene, and
+everything wants the PC's look and frame times (PLAN, From E7).

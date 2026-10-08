@@ -1,7 +1,8 @@
 # The player's person: appearance, rig and movement
 
-*Status: implemented (V2-3 part e, D70); the character creator returns with E5 (Amendment E
-§6.2) and the realistic body with E7. Code: `crates/hearth_character` (appearance, rig,
+*Status: implemented (V2-3 part e, D70); the character creator returned with E5 (Amendment E
+§6.2). Since E7 the body is drawn as a sculpted, skinned person (`people.md`); the boxes here
+remain the rig's parts, the fallback while a body is meshed, and the garments not yet fitted. Code: `crates/hearth_character` (appearance, rig,
 animation, boxes), `crates/hearth_render/src/figure.rs` (drawing), `crates/hearth/src/client.rs`
 (the body in the world), `profiles.rs` (who the player begins as).*
 

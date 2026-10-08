@@ -49,27 +49,10 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 21. **Phase F**, an audit after every three milestones.
 
 ## Completed
-- **M0–M3** (v1 engine); **V2-0 – V2-10** (content platform to ecosystem waves); **V2-12** (the
-  Neolithic); **S0** (D222); **P0–P2** (D224–D226, D229). V2-11 and V2.1's H0–H10 superseded.
-- **E0** — the human systems removed and archived (D230): Amendment E keeps the game to a lone
-  player on a true Earth until Phase F plans people anew.
-- **Audit 0** — the baseline (`docs/review/audits/AUDIT-0.md`, D231–D234).
-- **Q1** — the interface's typefaces, panels and journal (`docs/design/interface.md`, D236).
-- **E1** — simulated humanity designed for Phase F (`docs/design/future/humanity/`).
-- **E2** — any key alone, the controller's own column, a click at nothing uses or strikes,
-  blows by the body (`docs/design/controls.md`, D237–D239).
-- **E3** — one clock, Earth's: real dates, the sun, moon and stars where they stand, every rate
-  real, Rest the only way time goes faster (`docs/design/time.md`, D240–D243).
-- **E4** — the Earth-sized planet: Earth only, Earth's heights, refinement levels to 38 m,
-  life at real heights (`docs/design/terrain.md`, `planet.md`, `physiology.md`, D244–D248).
-- **E5** — the Wild Earth start: the creator, suggested places verified in the world, eras
-  "Coming soon", waking at dawn, new lives as chosen (`docs/design/start.md`, D249–D251).
-- **P3** — looking and the hands: picking and highlight, names and hand hints, each hand its
-  button and natural use from data, the action menu, learned preferences
-  (`docs/design/hands.md`, D252–D254).
-- **P4 with E6** — work held stroke by stroke in fourteen poses, kept when left part done;
-  waiting work by the weather, looked at closely; sleep at night (`docs/design/work.md`,
-  D255–D257).
+M0–M3 (v1 engine); V2-0 – V2-10; V2-12 (the Neolithic); S0 (D222); P0–P2; E0 (the human
+systems archived, D230); Audit 0; Q1; E1–E6; P3–P5 (P6 removed, D258); Audit 1; S1; S2; E7.
+What each did: `PROGRESS.md`, `docs/history/` and the design docs. V2-11 and V2.1's H0–H10
+superseded.
 
 ## Audits (Amendment Q §8.2)
 Each bounded to about a tenth of the work it covers: metrics and trend (Q §9),
@@ -153,8 +136,6 @@ milestone: implement, design docs and data, tests, `scripts/check.sh`, `hearth c
 the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 
 ## From S1 (open)
-- The client's aim and a soft preview of what a dig will take, from the ground's field: with
-  S2, when the surface is drawn smooth (until then the look picks blocks as drawn).
 - Building pieces, tilling and the structure check read the fill (S3's Level ground, a built
   piece's buried skirt); collision against the field is S3's.
 - A fresh cut's faces holding sharper than soil's sharpness, weathering soft (S0's note).
@@ -174,11 +155,23 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   camera stands in the ground there.
 - Snow as fill (S7); the distant terrain smooth (S4); plants, trees and loose stones (S5–S6).
 
-## E7 — Realistic human body, face and hair (after S2, E §8)
-- Anatomically realistic skinned bodies with morphs, skin with subsurface scattering and state
-  from the body simulation, faces and eyes, card hair with anisotropic shading and physics and
-  real growth, the loincloth fitted, first-person arms; the creator updated.
-- *Accept:* the E7 review screenshots; a close-up character within about 1 ms of GPU at High.
+## From E7 (open; E7 done 2026-10-08, D266–D270, `docs/design/people.md`)
+- Faces: morph targets (same topology frame to frame) for expressions driven by the body (pain,
+  cold, exertion, exhaustion, fear) and for lip sync (R §5.1); teeth and tongue.
+- Skin: detail normals (pores, creases at joints, lines with age); the sculpture's finer forms
+  (collarbones, ribs, tendons, knuckles) checked close up; breathing and weight shifts.
+- Hair: alpha-to-coverage or dithered coverage under TAA, self-shadowing, translucency by
+  thickness; wet hair clumping; growth in real time (about 1 cm a month, stubble in days) and
+  cutting or tying back as an action; fine body hair; the coily styles' volume.
+- Garments: light cloth simulation for the flaps; the other garments as fitted meshes with S6's
+  items; mud and blood on garments.
+- Feet: IK on uneven ground with S3's collision; first-person arms doing the work closer (P §6,
+  §7) and motion-matched locomotion.
+- Far away: impostors beyond some 60 m (the 24 mm mesh is drawn to any distance now); other
+  players' bodies with multiplayer (R).
+- The GPU budget, a close-up person within about 1 ms at High (some 135,000 skinned triangles,
+  10,000 hair-card vertices and the eyes), measured on the owner's PC; meshing a body in about
+  0.7 s (dev-opt build) on a worker thread.
 
 ## S3 — Movement, collision and navigation
 - Field-based capsule collision on server and client, slope walking, sliding and footing,

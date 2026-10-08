@@ -21,7 +21,7 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6. V2-11 superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -38,7 +38,8 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6. V2-11 superseded.
 | Audit 1 | done 2026-10-08 |
 | S1 — fill data and editing | done 2026-10-08 (D260–D262) |
 | S2 — smooth terrain drawn | done 2026-10-08 (D263–D265) |
-| E7 → S3 → S4, Audit 2 | next |
+| E7 — realistic people | done 2026-10-08 (D266–D270) |
+| S3 → S4, Audit 2 | next |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
@@ -47,10 +48,51 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6. V2-11 superseded.
 |---|---|
 | Smooth world (S) | S2 done: natural ground meshed smooth on the server and drawn with blended procedural materials, wet and snow overlays (0.28–0.87 ms a surface cube, as the blocks); frame targets need the PC. S1 done: fill in every surface cube, generated and saved; ground families; dig, pile and settle conserving volume (sand to 34.3°). S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
-| Earth-True (E) | E0–E6 done 2026-10-08; E7 planned |
+| Earth-True (E) | E0–E7 done 2026-10-08 |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); next: Audit 2 after S4 |
 
-## Latest: S2 — the smooth ground drawn (2026-10-08, D263–D265)
+## Latest: E7 — realistic people (2026-10-08, D266–D270, `docs/design/people.md`)
+- **The body** is a signed distance field of some 150 anatomical forms on the rig's joints
+  (trunk, girdle and muscles, hands with fingers and nails, feet with toes, a face with sockets
+  and lips), sized by the creator's proportions, build and face sliders.
+  - It is sculpted in an A-pose and meshed by Surface Nets at 6, 12 or 24 mm by distance.
+  - Vertices are projected onto the field, with its gradient for normals.
+  - Four joint weights a vertex, from the nearness of each joint's forms.
+  - At 6 mm: about 68,000 vertices and 135,000 triangles, meshed in about 0.7 s on a worker
+    thread (dev-opt).
+- **Skin** scatters light under it (red wrapped widest) with two GGX lobes. Its state comes
+  from the body simulation (`hearth_body::skin`, saved, in `BodyView`):
+  - sunburn and tan from the UV index against a minimal erythema dose by tone;
+  - dirt from soil underfoot and in the hands, blood where wounds bleed, both washed off;
+  - scars where injuries healed;
+  - drawn with wetness, pallor, flush and goosebumps.
+- **Garments:** the loincloth (a cord and draped flaps that swing with the thighs) and the
+  chest band are fitted meshes; other garments stay boxes over the body.
+- **Hair:** 400–1,000 procedural cards a head for all eleven styles, brows and facial hair.
+  - Strands are painted in the shader, with two shifted highlights and backlight.
+  - Up to 32 guide strands swing the cards with the head and the wind.
+  - The scalp, buzz cuts and stubble are short hair on the skin.
+- **Eyes:** balls with iris, pupil and wet cornea under blinking lid shells with lashes;
+  saccades and blinks on their own clock.
+- **In the game:** the player's body (the head folded away in first person), the creator's
+  preview and the screenshots (`who=`, `skin=`) draw the sculpted people, lit as the world is.
+  Review: `docs/review/e7/` (`tools/shots/e7_people.shots`, `hearth_render/tests/body_preview.rs`).
+- **Deferred** (PLAN, From E7): face morphs for expressions and lip sync, teeth; detail normals;
+  hair coverage, self-shadowing, growth and cutting; cloth simulation; foot IK; impostors; the
+  GPU budget on the PC.
+- **Five tests:**
+  - *Real?* Proportions from adult surveys; UV dose, MED and the burn's and tan's timing from
+    photobiology; skin's scattering and specular values from measurements.
+  - *Lean?* One mesher (the terrain's) for bodies and garments; one shader body for preview and
+    world; hair and skin painted in the shader with no textures; the box figure kept only as
+    fallback and for unfitted garments.
+  - *Fast?* Meshing off the main thread, one build at a time; three levels of detail; the GPU
+    cost still to measure on the PC.
+  - *Whole?* The body sim's skin reaches the screen; the creator, the world and screenshots
+    share the code. Expressions, hair growth and cloth wait (PLAN).
+  - *Organic?* The person's looks come from what they lived: sun, mud, wounds, water.
+
+## S2 — the smooth ground drawn (2026-10-08, D263–D265)
 - **Meshes:** the server meshes each cube's natural ground through its fill with sharp nets.
   - Each cube has two voxels of apron, so neighbouring cubes meet without a crack or a fold (27
     generated cubes checked).
