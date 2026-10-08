@@ -386,6 +386,13 @@ impl Binding {
         }
     }
 
+    pub const fn mouse_with(b: MouseButton, modifiers: Modifiers) -> Binding {
+        Binding {
+            key: InputKey::Mouse(b),
+            modifiers,
+        }
+    }
+
     pub const fn pad(b: PadButton) -> Binding {
         Binding {
             key: InputKey::Pad(b),

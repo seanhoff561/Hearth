@@ -91,6 +91,8 @@ pub struct Work {
     pub at: DVec3,
     /// The quality the player's own hands reached, when they did it by hand.
     pub hand: Option<f32>,
+    /// The hand doing it (P §5.2), whose tools are used.
+    pub with: Option<hearth_items::Hand>,
 }
 
 /// The world the workshop acts in, for one call.
@@ -136,6 +138,8 @@ pub struct Workshop {
     pub crops: Arc<crate::fields::Crops>,
     pub plots: FxHashMap<BlockPos, crate::fields::Plot>,
     pub work: Option<Work>,
+    /// The hand doing the work being planned (its tools are that hand's), if one is.
+    tool_hand: Option<hearth_items::Hand>,
     rng: Rng,
     /// Triggers of sight lately heard, and when (they are not heard again for a while).
     heard_at: FxHashMap<String, u64>,
@@ -307,6 +311,7 @@ impl Workshop {
             crops: Arc::new(crate::fields::Crops::from_content(content)),
             plots: save.plots.into_iter().map(|p| (p.pos, p)).collect(),
             work: None,
+            tool_hand: None,
             rng: Rng::new(seed ^ 0xc4af7),
             heard_at: FxHashMap::default(),
             last_update: ticks,
@@ -532,7 +537,8 @@ impl Workshop {
             lying.map(|w| (w.id, &w.stack)),
             aimed,
             around,
-        );
+        )
+        .by_hand(self.tool_hand);
         let (_, skill) = self.skill_of(h, r);
         plan(&self.crafts, r, &bench, skill)
     }
@@ -546,10 +552,18 @@ impl Workshop {
     }
 
     /// Starts the player doing a process.
-    pub fn act(&mut self, h: &mut Here, process: &str, aim: AimAt, hand: Option<f32>) {
+    pub fn act(
+        &mut self,
+        h: &mut Here,
+        process: &str,
+        aim: AimAt,
+        hand: Option<f32>,
+        with: Option<hearth_items::Hand>,
+    ) {
         let Some(r) = self.crafts.index_of(process) else {
             return;
         };
+        self.tool_hand = with;
         if !h.player.can_act(h.cfg) || h.player.asleep {
             h.out.push(acted(process, false, "You cannot now."));
             return;
@@ -649,6 +663,7 @@ impl Workshop {
             needed: needed.max(1.0),
             at: h.player.mover.pos,
             hand: hand.map(|q| q.clamp(0.0, 1.0)),
+            with,
         });
         h.out
             .push(ToClient::Work(Some(self.work_view(0.0, needed / 20.0))));
@@ -696,6 +711,7 @@ impl Workshop {
                 if w.ticks >= w.needed {
                     let w = self.work.take().expect("work");
                     h.out.push(ToClient::Work(None));
+                    self.tool_hand = w.with;
                     self.finish(h, w.recipe, w.aim, w.hand);
                 } else {
                     let (done, left) = (w.ticks / w.needed, (w.needed - w.ticks) / 20.0);

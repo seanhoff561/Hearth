@@ -174,6 +174,7 @@ fn the_making_screens_draw() {
             why: None,
             play_s: Some(4.0),
             material: Some("hearth:flint".into()),
+            with: Some("granite cobble".into()),
         },
         Offer {
             words: "strike to test".into(),
@@ -181,6 +182,7 @@ fn the_making_screens_draw() {
             why: None,
             play_s: Some(3.0),
             material: Some("hearth:flint".into()),
+            with: Some("granite cobble".into()),
         },
         Offer {
             words: "shape a hand axe".into(),
@@ -188,6 +190,7 @@ fn the_making_screens_draw() {
             why: Some("needs core".into()),
             play_s: None,
             material: None,
+            with: None,
         },
     ];
     c.tell("Learned: Sharp flakes".into(), News::Learned);
@@ -213,7 +216,7 @@ fn the_making_screens_draw() {
                 ui.size.1,
                 hearth_ui::Rgba([60, 80, 70, 255]),
             );
-            c.draw(ui, 160)
+            c.draw(ui, 160, true)
         },
     );
     ctx.queue.submit(Some(enc.finish()));
@@ -243,7 +246,7 @@ fn the_making_screens_draw() {
                 ui.size.1,
                 hearth_ui::Rgba([60, 80, 70, 255]),
             );
-            c.draw(ui, 160)
+            c.draw(ui, 160, true)
         },
     );
     ctx.queue.submit(Some(enc.finish()));

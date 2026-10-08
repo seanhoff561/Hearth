@@ -20,7 +20,7 @@ use hearth_render::{FrameTargets, GpuContext};
 use hearth_ui::{Lang, Rgba, Ui};
 use hearth_world::{BlockRegistry, CubeMap};
 
-use crate::crafting_ui::{Crafting, Do, News, Seen};
+use crate::crafting_ui::{Crafting, Do, News, Offer, Seen};
 use crate::environment::{EnvOverrides, EnvSampler};
 use crate::globe::GlobePicker;
 use crate::lod_stream::LodStream;
@@ -227,6 +227,24 @@ pub struct Client {
     eyes_shut: f32,
     /// When the player last asked to get up (s of the client's clock).
     got_up_s: f64,
+    /// A hand's button held to do its use again (the action, the hand, when last done).
+    repeating: Option<(hearth_input::ActionId, hearth_items::Hand, f64)>,
+    /// The hand doing the work about to be asked for.
+    with_hand: Option<hearth_items::Hand>,
+    /// A thing put away to free a hand, to come back to it when the work is done.
+    restore: Option<(hearth_items::Hand, String)>,
+    /// Things put away to free a hand come back to it (Controls).
+    pub return_to_hand: bool,
+    /// The action menu is open (P §5.3).
+    pub action_menu: bool,
+    /// The name of what is looked at, and what each hand would do, by the crosshair.
+    name_tags: hearth_core::options::NameTags,
+    hand_hints: bool,
+    /// Picks from the action menu not the hand's own use, by what was looked at and held: the
+    /// process picked and how many times running.
+    menu_picks: std::collections::BTreeMap<String, (String, u8)>,
+    /// The hands' learned uses changed and are to be saved.
+    prefs_changed: bool,
     /// How the player's last rest ended, and how long ago (s).
     rested: Option<(hearth_protocol::Rested, f64)>,
     /// Where the heart and the breath are in their cycles (for the pulse at the edges of
@@ -439,6 +457,15 @@ impl Client {
             // A life opens with the eyes opening (Amendment E §6.5).
             eyes_shut: 1.0,
             got_up_s: f64::NEG_INFINITY,
+            repeating: None,
+            with_hand: None,
+            restore: None,
+            return_to_hand: true,
+            action_menu: false,
+            name_tags: Default::default(),
+            hand_hints: true,
+            menu_picks: Default::default(),
+            prefs_changed: false,
             rested: None,
             heart_phase: 0.0,
             breath_phase: 0.0,
@@ -678,23 +705,6 @@ impl Client {
         }
     }
 
-    /// Whether the work chosen is done to the animal looked at (a catch, a milking) rather
-    /// than a blow at it (V2-12).
-    fn animal_work_chosen(&self) -> bool {
-        let Some(c) = &self.crafting else {
-            return false;
-        };
-        let Some(Do::Process(id)) = c.chosen().and_then(|o| o.act.clone()) else {
-            return false;
-        };
-        c.crafts.index_of(&id).is_some_and(|r| {
-            matches!(
-                c.crafts.recipes[r].def.target,
-                Some(hearth_content::schema::process::Target::Animal(_))
-            )
-        })
-    }
-
     /// The animal looked at, as a process sees it.
     fn animal_aimed(&self) -> Option<hearth_craft::Aimed> {
         let Some(Aim::Animal(id)) = self.aim else {
@@ -828,6 +838,7 @@ impl Client {
                     process,
                     aim,
                     hand: None,
+                    with: self.with_hand.take(),
                 }
             }
             Do::Eat(p) => ToServer::Eat(p),
@@ -839,15 +850,149 @@ impl Client {
 
     /// Knapping done by hand (or left to habit) does its process.
     pub fn act_by_hand(&mut self, process: String, aim: AimAt, hand: Option<f32>) {
-        self.server.send(ToServer::Act { process, aim, hand });
+        let with = self.with_hand.take();
+        self.server.send(ToServer::Act {
+            process,
+            aim,
+            hand,
+            with,
+        });
     }
 
-    /// The chosen offer, done: knapping a shape opens the stone to knap by hand.
-    fn act_chosen(&mut self) {
+    /// What a hand does now (P §5.2): its use on what is looked at, the thing it holds put
+    /// away first when the use wants it empty (and brought back after, unless that is turned
+    /// off); with no use, nothing.
+    fn use_hand(&mut self, hand: hearth_items::Hand) {
+        use crate::crafting_ui::HandDo;
         let Some(c) = &self.crafting else {
             return;
         };
+        let Some(choice) = c.hand(hand_index(hand)).cloned() else {
+            return;
+        };
+        let offer = match &choice.act {
+            HandDo::Do(Do::Process(id)) => Some(
+                c.offers
+                    .iter()
+                    .find(|o| o.act.as_ref() == Some(&Do::Process(id.clone())))
+                    .cloned()
+                    .unwrap_or(Offer {
+                        words: String::new(),
+                        act: Some(Do::Process(id.clone())),
+                        why: None,
+                        play_s: None,
+                        material: None,
+                        with: None,
+                    }),
+            ),
+            _ => None,
+        };
+        let held = match hand {
+            hearth_items::Hand::Left => self.carry.left.as_ref(),
+            hearth_items::Hand::Right => self.carry.right.as_ref(),
+        }
+        .map(|s| s.id.clone());
+        if choice.stow
+            && let Some(id) = held
+        {
+            let from = hearth_items::Path::at(hearth_items::Root::Hand(hand));
+            self.shift(from, None, hearth_items::Target::Stow);
+            if self.return_to_hand {
+                self.restore = Some((hand, id));
+            }
+        }
+        match choice.act {
+            HandDo::Do(Do::Process(_)) => {
+                self.with_hand = Some(hand);
+                if let Some(o) = offer {
+                    self.do_offer(o);
+                }
+            }
+            HandDo::Do(d) => self.act(d),
+            HandDo::PickUp(id) => self.server.send(ToServer::PickUp(id)),
+            HandDo::Blow => self.blow(false, Some(hand)),
+            HandDo::Use => self.use_in_hand(Some(hand)),
+        }
+    }
+
+    /// A thing put away to free a hand comes back to it once the hand is free again.
+    fn return_to_hand(&mut self, working: bool) {
+        let Some((hand, id)) = &self.restore else {
+            return;
+        };
+        if working {
+            return;
+        }
+        let empty = match hand {
+            hearth_items::Hand::Left => self.carry.left.is_none(),
+            hearth_items::Hand::Right => self.carry.right.is_none(),
+        };
+        let found = self.carry.find(&|s| s.id == *id);
+        let (hand, id) = (*hand, id.clone());
+        self.restore = None;
+        if empty && let Some(path) = found {
+            let _ = id;
+            self.shift(
+                path,
+                None,
+                hearth_items::Target::Root(hearth_items::Root::Hand(hand)),
+            );
+        }
+    }
+
+    /// Where the hands' learned uses are kept: the world's folder (none: a world not saved).
+    fn hands_file(&self) -> Option<std::path::PathBuf> {
+        let w = &self.world_spec;
+        w.saves_dir
+            .as_ref()
+            .map(|d| d.join(&w.name).join("hands.json"))
+    }
+
+    /// Forgets the uses the hands learned from the action menu (Controls).
+    pub fn forget_hand_uses(&mut self) {
+        if let Some(c) = &mut self.crafting {
+            c.prefer.clear();
+        }
+        self.menu_picks.clear();
+        self.prefs_changed = true;
+    }
+
+    /// The action menu's choice, done with `hand` (P §5.3). Picked twice running over the
+    /// hand's own use for the same thing looked at and held, it becomes that hand's use there.
+    fn do_from_menu(&mut self, hand: hearth_items::Hand) {
+        let Some(c) = &mut self.crafting else {
+            return;
+        };
         let Some(offer) = c.chosen().cloned() else {
+            return;
+        };
+        if let Some(Do::Process(id)) = &offer.act {
+            let own = c.hand(hand_index(hand)).map(|h| h.act.clone());
+            let differs = own != Some(crate::crafting_ui::HandDo::Do(Do::Process(id.clone())));
+            let held = match hand {
+                hearth_items::Hand::Left => self.carry.left.as_ref(),
+                hearth_items::Hand::Right => self.carry.right.as_ref(),
+            };
+            let key = crate::crafting_ui::prefer_key(&c.aimed_now, held);
+            if differs {
+                let n = match self.menu_picks.get(&key) {
+                    Some((p, n)) if p == id => n + 1,
+                    _ => 1,
+                };
+                self.menu_picks.insert(key.clone(), (id.clone(), n));
+                if n >= 2 {
+                    c.prefer.insert(key, id.clone());
+                    self.prefs_changed = true;
+                }
+            }
+            self.with_hand = Some(hand);
+        }
+        self.do_offer(offer);
+    }
+
+    /// An offer done: knapping a shape opens the stone to knap by hand.
+    fn do_offer(&mut self, offer: Offer) {
+        let Some(c) = &self.crafting else {
             return;
         };
         let Some(Do::Process(id)) = offer.act.clone() else {
@@ -908,12 +1053,18 @@ impl Client {
     /// What the thing in hand is for, with nothing aimed at (E §3.2): food eaten, a water skin
     /// drunk from, a wound treated with it, a brand held up (or lowered), a bow drawn; anything
     /// else is a blow (the fist, if nothing is held or what is held has no blow of its own).
-    fn use_in_hand(&mut self) {
+    fn use_in_hand(&mut self, hand: Option<hearth_items::Hand>) {
         use crate::strikes::InHand;
         let (Some(items), Some(c)) = (self.items.clone(), &self.crafting) else {
             return;
         };
-        match crate::strikes::use_of(&self.carry, &items, &c.content, &|k| c.treating_with(k)) {
+        match crate::strikes::use_of(
+            &self.carry,
+            &items,
+            &c.content,
+            &|k| c.treating_with(k),
+            hand,
+        ) {
             InHand::Eat(path) => self.act(Do::Eat(path)),
             InHand::Drink(path) => self.act(Do::Drink(hearth_protocol::DrinkFrom::Skin(path))),
             InHand::Treat(id) => self.act(Do::Process(id)),
@@ -932,13 +1083,13 @@ impl Client {
                     c.tell("There is no arrow to nock.".into(), News::Failed);
                 }
             }
-            InHand::Blow => self.blow(false),
+            InHand::Blow => self.blow(false, hand),
         }
     }
 
     /// A blow along the look (`kick`, or with what is in hand): the body shows it at once, and
     /// the world says what it met.
-    fn blow(&mut self, kick: bool) {
+    fn blow(&mut self, kick: bool, with: Option<hearth_items::Hand>) {
         let Some(items) = self.items.clone() else {
             return;
         };
@@ -946,12 +1097,12 @@ impl Client {
             return;
         }
         let dir = self.camera.forward().as_dvec3();
-        let (attack, weapon, right) = crate::strikes::chosen(&self.carry, &items, kick);
+        let (attack, weapon, right) = crate::strikes::chosen(&self.carry, &items, kick, with);
         let stamina = self.body.as_ref().map_or(1.0, |b| b.status.stamina as f64);
         self.striking = Some(hearth_player::strike::Striking::new(
             attack, weapon, right, dir, stamina,
         ));
-        self.server.send(ToServer::Blow { dir, kick });
+        self.server.send(ToServer::Blow { dir, kick, with });
     }
 
     /// The things the hands do this frame: pick up, gather, put down, drag and let go.
@@ -971,29 +1122,64 @@ impl Client {
                 c.told_look = aim;
                 self.server.send(ToServer::Look(aim));
             }
+            // The wheel chooses in the action menu.
             let steps = input.take_scroll_steps(1.0, true);
-            if steps != 0 && !working {
+            if steps != 0 && self.action_menu {
                 c.choose(steps);
             }
         }
-        // The primary action does what is chosen, or stops the work under way; at an animal it
-        // is a blow; at nothing, what the thing in hand is for (E §3.2).
-        if input.was_pressed(builtin::ATTACK) && self.radial.is_none() {
-            if working {
-                self.server.send(ToServer::StopWork);
-            } else if let Some(Aim::Animal(_)) = self.aim
-                && !self.animal_work_chosen()
-            {
-                self.blow(false);
-            } else if self.aim.is_none() {
-                self.use_in_hand();
-            } else {
-                self.act_chosen();
+        if self.action_menu {
+            for (action, hand) in [
+                (builtin::HAND_LEFT, hearth_items::Hand::Left),
+                (builtin::HAND_RIGHT, hearth_items::Hand::Right),
+            ] {
+                if input.was_pressed(action) {
+                    self.do_from_menu(hand);
+                    self.action_menu = false;
+                    return;
+                }
+            }
+            // While it is open the hands do nothing else.
+            return;
+        }
+        // Each hand's button does that hand's natural use on what is looked at (P §5.2), or
+        // stops the work under way; held, it does it again as each is done. E does the right
+        // hand's.
+        use hearth_items::Hand;
+        let buttons = [
+            (builtin::HAND_LEFT, Hand::Left),
+            (builtin::HAND_RIGHT, Hand::Right),
+            (builtin::INTERACT, Hand::Right),
+        ];
+        for (action, hand) in buttons {
+            if input.was_pressed(action) && self.radial.is_none() {
+                if working {
+                    self.server.send(ToServer::StopWork);
+                    self.repeating = None;
+                } else {
+                    self.use_hand(hand);
+                    self.repeating = Some((action, hand, self.clock_s));
+                }
             }
         }
-        // A bow drawn while the button is held, loosed as it is let go.
+        if let Some((action, hand, since)) = self.repeating {
+            if !input.is_down(action) {
+                self.repeating = None;
+            } else if !working
+                && self.clock_s - since > 0.5
+                && self.crafting.as_ref().is_some_and(|c| {
+                    c.hand(hand_index(hand)).is_some_and(|h| {
+                        matches!(h.act, crate::crafting_ui::HandDo::Do(Do::Process(_)))
+                    })
+                })
+            {
+                self.use_hand(hand);
+                self.repeating = Some((action, hand, self.clock_s));
+            }
+        }
+        // A bow drawn while its hand's button is held, loosed as it is let go.
         if let Some(t) = &mut self.bow_drawn {
-            if input.is_down(builtin::ATTACK) {
+            if input.is_down(builtin::HAND_LEFT) || input.is_down(builtin::HAND_RIGHT) {
                 *t += dt;
             } else {
                 let drawn_s = *t as f32;
@@ -1005,21 +1191,9 @@ impl Client {
             }
         }
         if input.was_pressed(builtin::KICK) && self.radial.is_none() && !working {
-            self.blow(true);
+            self.blow(true, None);
         }
-        if input.was_pressed(builtin::INTERACT) {
-            match self.aim {
-                Some(Aim::Item(id)) => self.server.send(ToServer::PickUp(id)),
-                Some(Aim::Block { .. }) => {
-                    if let Some(d) = self.crafting.as_ref().and_then(|c| c.first_act()) {
-                        self.act(d);
-                    }
-                }
-                // At nothing: what is chosen of what the hands can make or do.
-                None => self.act_chosen(),
-                Some(Aim::Animal(_)) => {}
-            }
-        }
+        self.return_to_hand(working);
         // A throw: wound up while the key is held, let fly when it is let go.
         if let Some(c) = &mut self.crafting {
             if input.is_active(builtin::THROW) && self.carry.right.is_some() {
@@ -1666,7 +1840,54 @@ impl Client {
         self.items.is_some() && !self.dead() && !self.lying() && self.mode == CameraMode::Body
     }
 
-    /// What the crosshair says: what is aimed at and what can be done with it.
+    /// By the crosshair (P §5.1): the name of what is looked at, as the player knows it (by
+    /// the setting: a moment after the look rests on it, fading; always; or never), and what
+    /// each hand would do with it ("L: pick · R: —").
+    fn draw_hands(&self, ui: &mut hearth_ui::Ui<'_>) {
+        use hearth_core::options::NameTags;
+        let (w, h) = ui.size;
+        let lh = hearth_ui::font::LINE as f32;
+        let mut y = (h / 2.0 + 8.0).round();
+        let rested = self.crafting.as_ref().map_or(0.0, |c| c.looked_s());
+        let alpha = match self.name_tags {
+            NameTags::Off => 0.0,
+            NameTags::Always => 1.0,
+            // In after a fifth of a second, out after three.
+            NameTags::Brief => {
+                ((rested - 0.2) / 0.2).clamp(0.0, 1.0)
+                    * (1.0 - ((rested - 3.0) / 0.6).clamp(0.0, 1.0))
+            }
+        };
+        if alpha > 0.01
+            && let Some(name) = self.aim_words(ui.lang)
+        {
+            let lw = ui.font.width(&name) as f32;
+            ui.label(
+                ((w - lw) / 2.0).round(),
+                y,
+                &name,
+                Rgba([235, 235, 230, (220.0 * alpha) as u8]),
+            );
+            y += lh;
+        }
+        if self.hand_hints
+            && let Some(c) = &self.crafting
+        {
+            let hint = |i: usize| c.hand(i).map_or_else(|| "—".to_owned(), |h| h.hint.clone());
+            let words = ui
+                .lang
+                .format("hands.hint", &[("left", &hint(0)), ("right", &hint(1))]);
+            let lw = ui.font.width(&words) as f32;
+            ui.label(
+                ((w - lw) / 2.0).round(),
+                y,
+                &words,
+                Rgba([210, 205, 190, 170]),
+            );
+        }
+    }
+
+    /// The name of what is looked at, as the player knows it.
     pub fn aim_words(&self, l: &Lang) -> Option<String> {
         let items = self.items.as_ref()?;
         if self.carry.dragging.is_some() {
@@ -1688,13 +1909,11 @@ impl Client {
                 {
                     name = format!("{name} ({})", l.get(key).to_lowercase());
                 }
-                let key = if wi.stack.mass(items) > hearth_items::carry::BOTH_HANDS_SHARE * body_kg
-                {
-                    "aim.drag"
-                } else {
-                    "aim.pick_up"
-                };
-                Some(l.format(key, &[("name", &name)]))
+                // Too heavy to lift, it is dragged (F).
+                if wi.stack.mass(items) > hearth_items::carry::BOTH_HANDS_SHARE * body_kg {
+                    return Some(l.format("aim.drag", &[("name", &name)]));
+                }
+                Some(name)
             }
             Aim::Animal(id) => {
                 let s = self.animals.get(&id)?;
@@ -1720,18 +1939,14 @@ impl Client {
                 if b.def.fluid.is_some() {
                     return Some(l.get("aim.water").to_owned());
                 }
-                // Plain ground says nothing; what can be worked says what it is.
-                let offers = self
-                    .crafting
-                    .as_ref()
-                    .is_some_and(|c| c.offers.iter().any(|o| o.act.is_some()));
+                // A plant not yet told apart from its look-alikes by what it looks like.
                 let hidden = b.def.material.as_deref().and_then(|m| {
                     self.hidden_looks
                         .iter()
                         .find(|(_, mats)| mats.iter().any(|x| x == m))
                         .map(|(g, _)| l.get(&format!("lookalike.{g}")).to_owned())
                 });
-                offers.then(|| hidden.unwrap_or_else(|| b.name.path().replace('_', " ")))
+                Some(hidden.unwrap_or_else(|| b.name.path().replace('_', " ")))
             }
         }
     }
@@ -2175,6 +2390,9 @@ impl Client {
     /// Takes changed options: the view, distances and detail.
     pub fn apply_options(&mut self, options: &Options) {
         self.captions = options.sound.subtitles;
+        self.return_to_hand = options.controls.return_to_hand;
+        self.name_tags = options.controls.name_tags;
+        self.hand_hints = options.controls.hand_hints;
         self.developer = options.developer_mode;
         self.reduce_motion = options.accessibility.reduce_motion;
         self.guided_hud = options.accessibility.guided_hud;
@@ -2522,6 +2740,11 @@ impl Client {
     ) {
         self.clock_s += dt;
         self.find_places();
+        if std::mem::take(&mut self.prefs_changed)
+            && let (Some(c), Some(path)) = (&self.crafting, self.hands_file())
+        {
+            crate::crafting_ui::save_prefer(&path, &c.prefer);
+        }
         if let Some(s) = &mut self.striking {
             s.advance(dt);
             if s.done() {
@@ -2850,6 +3073,10 @@ impl Client {
                         r.graph,
                         r.knowledge_mode,
                     ));
+                    let hands = self.hands_file();
+                    if let (Some(c), Some(path)) = (&mut self.crafting, hands) {
+                        c.prefer = crate::crafting_ui::load_prefer(&path);
+                    }
                     self.pose = None;
                     self.world = Some(World {
                         planet,
@@ -3327,14 +3554,8 @@ impl Client {
                 2.0,
                 Rgba([235, 235, 235, 180]),
             );
-            if let Some(words) = self.aim_words(ui.lang) {
-                let lw = ui.font.width(&words) as f32;
-                ui.label(
-                    ((w - lw) / 2.0).round(),
-                    (h / 2.0 + 8.0).round(),
-                    &words,
-                    Rgba([235, 235, 230, 220]),
-                );
+            if !self.action_menu {
+                self.draw_hands(ui);
             }
         }
         if self.mode == CameraMode::Body
@@ -3342,7 +3563,7 @@ impl Client {
             && !self.body_panel
             && let Some(c) = &self.crafting
         {
-            c.draw(ui, veil);
+            c.draw(ui, veil, self.action_menu);
         }
         // Eyelids: the world goes dark asleep or fainting.
         if self.eyes_shut > 0.01 {
@@ -4017,4 +4238,12 @@ fn span_words(l: &Lang, hours: f64) -> String {
 fn hhmm(t: f64) -> String {
     let minutes = (t.rem_euclid(1.0) * 1440.0) as u32;
     format!("{:02}:{:02}", minutes / 60, minutes % 60)
+}
+
+/// The index of a hand in the hands' choices: the left 0, the right 1.
+fn hand_index(hand: hearth_items::Hand) -> usize {
+    match hand {
+        hearth_items::Hand::Left => 0,
+        hearth_items::Hand::Right => 1,
+    }
 }

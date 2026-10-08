@@ -116,6 +116,32 @@ impl ControlsScreen {
             ctl.toggle_sprint = tr;
             changed = true;
         }
+        // The hands (P §5.1–5.2): things put away come back, the name and the hands' hints by
+        // the crosshair, and forgetting what the hands learned from the action menu.
+        let row = c.row(ROW);
+        let (a, b) = row.split_left((wide - 4.0) / 2.0, 4.0);
+        changed |= ui.toggle(
+            a,
+            &ui.t("menu.controls.return_to_hand"),
+            &mut ctl.return_to_hand,
+        );
+        changed |= ui.toggle(b, &ui.t("menu.controls.hand_hints"), &mut ctl.hand_hints);
+        let row = c.row(ROW);
+        let (a, b) = row.split_left((wide - 4.0) / 2.0, 4.0);
+        use hearth_core::options::NameTags;
+        let tags = [NameTags::Off, NameTags::Brief, NameTags::Always];
+        let names: Vec<String> = ["off", "brief", "always"]
+            .iter()
+            .map(|k| ui.t(&format!("menu.controls.name_tags.{k}")))
+            .collect();
+        let mut i = tags.iter().position(|t| *t == ctl.name_tags).unwrap_or(1);
+        if ui.cycle(a, &ui.t("menu.controls.name_tags"), &names, &mut i) {
+            ctl.name_tags = tags[i];
+            changed = true;
+        }
+        if ui.button_enabled(b, &ui.t("menu.controls.forget_hands"), cx.in_game) {
+            out.push(MenuAction::ForgetHandUses);
+        }
         // The key bindings, and under them a note on the one pointed at.
         let ids: Vec<ActionId> = cx.bindings.registry().ids().collect();
         let line = hearth_ui::font::LINE as f32;
@@ -550,7 +576,8 @@ mod tests {
         assert!(!bindings.is_conflicting(builtin::SNEAK));
         assert_eq!(
             note(builtin::SNEAK),
-            "Left Control alone: Crouch, dive from the press, held through Ctrl + G (Drop all)."
+            "Left Control alone: Crouch, dive from the press, held through Ctrl + G (Drop all), \
+             Ctrl + Middle Button (Pick (Creative))."
         );
         assert_eq!(
             note(builtin::DROP_STACK),

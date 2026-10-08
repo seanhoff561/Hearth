@@ -382,6 +382,25 @@ mod tests {
         // E §3.2: the kick on T, apart from the F3 + T chord.
         assert_eq!(b.get(builtin::KICK), Some(Binding::key(Key::T)));
         assert!(!b.is_conflicting(builtin::KICK));
+        // P §5.2–5.3: each hand its mouse button, the wheel's click the action menu, Creative's
+        // pick on Ctrl + the wheel's click.
+        assert_eq!(
+            b.get(builtin::HAND_LEFT),
+            Some(Binding::mouse(MouseButton::Left))
+        );
+        assert_eq!(
+            b.get(builtin::HAND_RIGHT),
+            Some(Binding::mouse(MouseButton::Right))
+        );
+        assert_eq!(
+            b.get(builtin::ACTION_MENU),
+            Some(Binding::mouse(MouseButton::Middle))
+        );
+        assert!(!b.is_conflicting(builtin::PICK_BLOCK));
+        // The names of before keep their keys.
+        let old = [("key.attack".to_owned(), Binding::key(Key::F).to_string())].into();
+        let b = KeyBindings::from_map(ActionRegistry::with_builtins(), &old);
+        assert_eq!(b.get(builtin::HAND_LEFT), Some(Binding::key(Key::F)));
     }
 
     #[test]
@@ -417,11 +436,12 @@ mod tests {
         let mut b = KeyBindings::builtin_defaults();
         b.set(builtin::JOURNAL, Some(Binding::key(Key::LeftControl)));
         assert!(!b.is_conflicting(builtin::JOURNAL));
-        assert_eq!(b.overlaps_of(builtin::JOURNAL), vec![builtin::DROP_STACK]);
+        let ctrl = vec![builtin::DROP_STACK, builtin::PICK_BLOCK];
+        assert_eq!(b.overlaps_of(builtin::JOURNAL), ctrl);
         assert_eq!(b.overlaps_of(builtin::DROP_STACK), vec![builtin::JOURNAL]);
         // The other side's Ctrl makes the same combinations.
         b.set(builtin::JOURNAL, Some(Binding::key(Key::RightControl)));
-        assert_eq!(b.overlaps_of(builtin::JOURNAL), vec![builtin::DROP_STACK]);
+        assert_eq!(b.overlaps_of(builtin::JOURNAL), ctrl);
         // Alt makes none of them; a plain key overlaps nothing.
         b.set(builtin::JOURNAL, Some(Binding::key(Key::LeftAlt)));
         assert!(b.overlaps_of(builtin::JOURNAL).is_empty());
@@ -448,7 +468,7 @@ mod tests {
     fn unbinding_and_reset_all() {
         let mut b = KeyBindings::builtin_defaults();
         b.set(builtin::SHOUT, None);
-        b.set(builtin::ATTACK, Some(Binding::key(Key::F)));
+        b.set(builtin::HAND_LEFT, Some(Binding::key(Key::F)));
         assert!(!b.all_default());
         assert!(!b.is_conflicting(builtin::SHOUT));
         b.reset_all();

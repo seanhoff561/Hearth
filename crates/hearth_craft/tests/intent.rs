@@ -105,7 +105,7 @@ fn every_example_of_the_hands_resolves_as_the_amendment_says() {
         block("hearth:oak_branch", Some("hearth:oak_wood"), false),
     );
     assert_eq!(
-        u.as_ref().map(|u| u.rule.hint.as_str()),
+        u.as_ref().map(|u| u.hint.as_str()),
         Some("snap off"),
         "{u:?}"
     );
@@ -151,7 +151,7 @@ fn every_example_of_the_hands_resolves_as_the_amendment_says() {
         p == "hearth:test_nodule" || p == "hearth:strike_flake" || p == "hearth:knock_stones",
         "{p}"
     );
-    assert_eq!(u.map(|u| u.rule.hint.as_str()), Some("strike"));
+    assert_eq!(u.map(|u| u.hint).as_deref(), Some("strike"));
     // A stone axe + a tree: chop.
     let axe = carry(&w, Some("hearth:hand_axe/flint"), None);
     let u = use_of(
@@ -180,7 +180,7 @@ fn every_example_of_the_hands_resolves_as_the_amendment_says() {
     });
     let u = use_of(&w, &spear, Hand::Right, deer.clone());
     assert!(matches!(u.as_ref().map(|u| &u.act), Some(HandAct::Blow)));
-    assert_eq!(u.map(|u| u.rule.hint.as_str()), Some("thrust"));
+    assert_eq!(u.map(|u| u.hint).as_deref(), Some("thrust"));
     // A water skin + water: fill it.
     let skin = carry(&w, Some("hearth:water_skin/scraped_hide"), None);
     let u = use_of(&w, &skin, Hand::Right, Some(Aimed::Water));

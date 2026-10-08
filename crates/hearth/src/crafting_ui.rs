@@ -42,6 +42,29 @@ pub struct Offer {
     pub play_s: Option<f64>,
     /// What it works (the material in play).
     pub material: Option<String>,
+    /// The tools it is done with, in words.
+    pub with: Option<String>,
+}
+
+/// What a hand does when its button is pressed (Amendment P §5.2).
+#[derive(Debug, Clone, PartialEq)]
+pub enum HandDo {
+    Do(Do),
+    /// Lift the thing looked at.
+    PickUp(u64),
+    /// A blow at what is looked at.
+    Blow,
+    /// With nothing looked at, the thing held's own use (E §3.2).
+    Use,
+}
+
+/// A hand's use now: its hint's words, what it does, and whether it puts away what it holds
+/// first.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HandChoice {
+    pub hint: String,
+    pub act: HandDo,
+    pub stow: bool,
 }
 
 /// Kinds of news.
@@ -78,6 +101,12 @@ pub struct Crafting {
     pub knowledge: KnowledgeState,
     pub offers: Vec<Offer>,
     pub chosen: usize,
+    /// What the left and the right hand would do now.
+    pub hands: [Option<HandChoice>; 2],
+    /// The process preferred for a target and a thing held (learned from the action menu).
+    pub prefer: std::collections::BTreeMap<String, String>,
+    /// What is looked at, as the last list was drawn up for it.
+    pub aimed_now: Option<Aimed>,
     pub work: Option<WorkView>,
     /// News and its age (s).
     pub news: Vec<(String, f64, News)>,
@@ -100,6 +129,9 @@ impl Crafting {
             knowledge: KnowledgeState::default(),
             offers: Vec::new(),
             chosen: 0,
+            hands: [None, None],
+            prefer: Default::default(),
+            aimed_now: None,
             work: None,
             news: Vec::new(),
             refresh_in: 0.0,
@@ -134,6 +166,11 @@ impl Crafting {
             self.looking = (aim, 0.0);
         }
         self.looking.1 > 0.4 && self.told_look != aim && aim != AimAt::Nothing
+    }
+
+    /// How long the look has rested on what it is on (s).
+    pub fn looked_s(&self) -> f64 {
+        self.looking.1
     }
 
     /// Whether the list is due to be drawn up again (it is, a few times a second).
@@ -230,6 +267,7 @@ impl Crafting {
     /// Draws up the list of what can be done now.
     pub fn refresh(&mut self, s: &Seen) {
         let aimed = self.aimed(s);
+        self.aimed_now = aimed.clone();
         let at = match s.aim {
             AimAt::Block { pos, .. } | AimAt::Beside { pos, .. } => {
                 DVec3::new(pos.x as f64 + 0.5, pos.y as f64 + 0.5, pos.z as f64 + 0.5)
@@ -285,6 +323,7 @@ impl Crafting {
                     why: None,
                     play_s: None,
                     material: None,
+                    with: None,
                 });
             }
             if let Some(c) = kind.container
@@ -297,6 +336,7 @@ impl Crafting {
                         why: None,
                         play_s: None,
                         material: None,
+                        with: None,
                     });
                 }
                 if matches!(aimed, Some(Aimed::Water)) && stack.liquid_l < c.liquid_l {
@@ -306,6 +346,7 @@ impl Crafting {
                         why: None,
                         play_s: None,
                         material: None,
+                        with: None,
                     });
                 }
             }
@@ -317,6 +358,7 @@ impl Crafting {
                 why: None,
                 play_s: None,
                 material: None,
+                with: None,
             });
         }
         let mut lacking = 0;
@@ -325,15 +367,26 @@ impl Crafting {
             match p {
                 Ok(plan) => {
                     let play_s = plan.hours as f64 * 3600.0;
+                    let tools: Vec<String> = plan
+                        .tools
+                        .iter()
+                        .filter_map(|(src, _)| match src {
+                            hearth_craft::engine::Source::Carried(p) => s.carry.get(p),
+                            hearth_craft::engine::Source::Lying(_) => None,
+                        })
+                        .filter_map(|st| s.items.get(&st.id))
+                        .map(|k| k.name.to_lowercase())
+                        .collect();
                     out.push(Offer {
                         words: def.action.clone(),
                         act: Some(Do::Process(def.id.clone())),
                         why: None,
                         play_s: def.attended.then_some(play_s),
                         material: plan.material.clone(),
+                        with: (!tools.is_empty()).then(|| tools.join(", ")),
                     })
                 }
-                Err(l) if lacking < 3 => {
+                Err(l) if lacking < 12 => {
                     lacking += 1;
                     out.push(Offer {
                         words: def.action.clone(),
@@ -341,10 +394,76 @@ impl Crafting {
                         why: Some(lack_words(&l)),
                         play_s: None,
                         material: None,
+                        with: None,
                     });
                 }
                 Err(_) => {}
             }
+        }
+        // Each hand's use, with its own tools.
+        let hidden: Vec<String> = hearth_craft::knowledge::hidden_looks(&self.content, k)
+            .into_iter()
+            .flat_map(|(_, m)| m)
+            .collect();
+        for (i, hand) in [Hand::Left, Hand::Right].into_iter().enumerate() {
+            let lying = s.world_items.iter().filter(|w| {
+                let p = DVec3::from_array(w.pos);
+                w.work.is_none() && ((p - s.feet).length() < 2.5 || (p - at).length() < 1.5)
+            });
+            let bench = Bench::new(
+                &self.content,
+                s.items,
+                s.carry,
+                lying.map(|w| (w.id, &w.stack)),
+                aimed.clone(),
+                s.around.clone(),
+            )
+            .by_hand(Some(hand));
+            let held = match hand {
+                Hand::Left => s.carry.left.as_ref(),
+                Hand::Right => s.carry.right.as_ref(),
+            };
+            let content = &self.content;
+            let known_food = |kind: &hearth_items::ItemKind, stack: &hearth_items::Stack| {
+                bite_of(content, kind, stack).is_some()
+                    && kind.material.as_ref().is_none_or(|m| !hidden.contains(m))
+            };
+            let prefer_key = prefer_key(&aimed, held);
+            let ask = hearth_craft::intent::Ask {
+                may: &may,
+                skill: &skill,
+                known_food: &known_food,
+                prefer: self.prefer.get(&prefer_key).map(|s| s.as_str()),
+            };
+            let path = Path::at(Root::Hand(hand));
+            self.hands[i] =
+                hearth_craft::intent::resolve(content, &self.crafts, &bench, held, &ask).and_then(
+                    |u| {
+                        use hearth_craft::intent::HandAct;
+                        let act = match u.act {
+                            HandAct::Process(r) => {
+                                HandDo::Do(Do::Process(self.crafts.recipes[r].def.id.clone()))
+                            }
+                            HandAct::PickUp => match s.aim {
+                                AimAt::Thing(id) => HandDo::PickUp(id),
+                                _ => return None,
+                            },
+                            HandAct::Drink if matches!(aimed, Some(Aimed::Water)) => {
+                                HandDo::Do(Do::Drink(DrinkFrom::Water(s.aim)))
+                            }
+                            HandAct::Drink => HandDo::Do(Do::Drink(DrinkFrom::Skin(path.clone()))),
+                            HandAct::Fill => HandDo::Do(Do::Fill(path.clone())),
+                            HandAct::Eat => HandDo::Do(Do::Eat(path.clone())),
+                            HandAct::Blow if aimed.is_none() => HandDo::Use,
+                            HandAct::Blow => HandDo::Blow,
+                        };
+                        Some(HandChoice {
+                            hint: u.hint,
+                            act,
+                            stow: u.stow,
+                        })
+                    },
+                );
         }
         if self.offers.len() != out.len() {
             self.chosen = 0;
@@ -353,6 +472,11 @@ impl Crafting {
         if self.chosen >= self.offers.len() {
             self.chosen = 0;
         }
+    }
+
+    /// The use of the left (`0`) or right (`1`) hand now.
+    pub fn hand(&self, i: usize) -> Option<&HandChoice> {
+        self.hands.get(i).and_then(|h| h.as_ref())
     }
 
     /// The chosen offer, if it can be done.
@@ -390,21 +514,22 @@ impl Crafting {
         }
     }
 
-    /// The list, the work under way, a throw's wind-up and the news, drawn about the
-    /// crosshair.
-    pub fn draw(&self, ui: &mut Ui<'_>, veil: u8) {
+    /// The work under way, the action menu when it is open (P §5.3), a throw's wind-up and the
+    /// news, drawn about the crosshair.
+    pub fn draw(&self, ui: &mut Ui<'_>, veil: u8, menu: bool) {
         let (w, h) = ui.size;
         let lh = hearth_ui::font::LINE as f32;
         let cx = w / 2.0;
         let mut y = (h / 2.0 + 20.0).round();
         if let Some(work) = &self.work {
+            // What is being done, and how long it has left (no bar: E §9.1).
             let words = format!("{} — {}", work.action, seconds(work.play_s_left));
             let lw = ui.font.width(&words) as f32;
             ui.draw.rect(
                 cx - lw / 2.0 - 3.0,
                 y - 2.0,
                 lw + 6.0,
-                lh + 8.0,
+                lh + 3.0,
                 Rgba([0, 0, 0, veil]),
             );
             ui.label(
@@ -413,57 +538,52 @@ impl Crafting {
                 &words,
                 Rgba([235, 230, 210, 235]),
             );
-            let bw = lw.max(60.0);
-            ui.draw.rect(
-                cx - bw / 2.0,
-                y + lh + 1.0,
-                bw,
-                3.0,
-                Rgba([60, 60, 60, 200]),
-            );
-            ui.draw.rect(
-                cx - bw / 2.0,
-                y + lh + 1.0,
-                bw * work.done.clamp(0.0, 1.0),
-                3.0,
-                Rgba([230, 200, 120, 230]),
-            );
-        } else if !self.offers.is_empty() {
-            let lines: Vec<(String, Rgba)> = self
-                .offers
-                .iter()
-                .enumerate()
-                .take(7)
-                .map(|(i, o)| {
-                    let chosen = i == self.chosen;
-                    let mut text = format!("{} {}", if chosen { ">" } else { " " }, o.words);
-                    if let Some(t) = o.play_s
-                        && t >= 1.0
-                    {
-                        text.push_str(&format!("  ({})", seconds(t)));
-                    }
-                    if let Some(why) = &o.why {
-                        text.push_str(&format!(" — {why}"));
-                    }
-                    let c = match (o.act.is_some(), chosen) {
-                        (true, true) => Rgba([250, 240, 200, 245]),
-                        (true, false) => Rgba([220, 220, 215, 220]),
-                        (false, _) => Rgba([150, 150, 150, 200]),
-                    };
-                    (text, c)
-                })
-                .collect();
+        } else if menu {
+            // Every action for what is looked at: what it is, with what, about how long; greyed
+            // with what it lacks. The wheel chooses; each hand's button does it with that hand.
+            let mut lines: Vec<(String, Rgba)> = vec![(
+                ui.lang.get("menu.actions.how").to_owned(),
+                Rgba([200, 190, 160, 230]),
+            )];
+            if self.offers.is_empty() {
+                lines.push((
+                    ui.lang.get("menu.actions.none").to_owned(),
+                    Rgba([170, 170, 165, 220]),
+                ));
+            }
+            let first = self.chosen.saturating_sub(5);
+            for (i, o) in self.offers.iter().enumerate().skip(first).take(11) {
+                let chosen = i == self.chosen;
+                let mut text = format!("{} {}", if chosen { ">" } else { " " }, o.words);
+                if let Some(with) = &o.with {
+                    text.push_str(&format!(" ({with})"));
+                }
+                if let Some(t) = o.play_s
+                    && t >= 1.0
+                {
+                    text.push_str(&format!(" — {}", about(t)));
+                }
+                if let Some(why) = &o.why {
+                    text.push_str(&format!(" — {why}"));
+                }
+                let c = match (o.act.is_some(), chosen) {
+                    (true, true) => Rgba([250, 240, 200, 245]),
+                    (true, false) => Rgba([220, 220, 215, 220]),
+                    (false, _) => Rgba([150, 150, 150, 200]),
+                };
+                lines.push((text, c));
+            }
             let width = lines
                 .iter()
                 .map(|(t, _)| ui.font.width(t))
                 .max()
                 .unwrap_or(0) as f32;
             ui.draw.rect(
-                cx - width / 2.0 - 3.0,
-                y - 2.0,
-                width + 6.0,
-                lines.len() as f32 * lh + 3.0,
-                Rgba([0, 0, 0, veil / 2]),
+                cx - width / 2.0 - 4.0,
+                y - 3.0,
+                width + 8.0,
+                lines.len() as f32 * lh + 5.0,
+                Rgba([0, 0, 0, veil.max(150)]),
             );
             for (t, c) in lines {
                 ui.label((cx - width / 2.0).round(), y, &t, c);
@@ -527,5 +647,52 @@ fn seconds(s: f64) -> String {
         format!("{:.0} s", s.max(1.0))
     } else {
         format!("{:.0} min", s / 60.0)
+    }
+}
+
+/// The key a preferred rule is kept under: what is looked at and what the hand holds.
+pub fn prefer_key(aimed: &Option<Aimed>, held: Option<&hearth_items::Stack>) -> String {
+    let target = match aimed {
+        None => "nothing".to_owned(),
+        Some(Aimed::Block { name, .. }) => name.clone(),
+        Some(Aimed::Water) => "water".to_owned(),
+        Some(Aimed::Thing(_)) => "thing".to_owned(),
+        Some(Aimed::Station { id, .. }) => id.clone(),
+        Some(Aimed::Fire(_)) => "fire".to_owned(),
+        Some(Aimed::Animal { species, .. }) => species.clone(),
+    };
+    format!("{target}|{}", held.map_or("", |s| s.id.as_str()))
+}
+
+/// The hands' learned uses kept at `path` (none yet: none).
+pub fn load_prefer(path: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+/// Keeps the hands' learned uses at `path`.
+pub fn save_prefer(path: &std::path::Path, prefer: &std::collections::BTreeMap<String, String>) {
+    let text = serde_json::to_string_pretty(prefer).unwrap_or_default();
+    if let Err(e) = std::fs::write(path, text) {
+        log::warn!("could not keep the hands' uses: {e}");
+    }
+}
+
+/// A duration in rough words: "about 10 minutes".
+fn about(s: f64) -> String {
+    let m = s / 60.0;
+    if m < 1.5 {
+        "about a minute".into()
+    } else if m < 55.0 {
+        format!(
+            "about {} minutes",
+            ((m / 5.0).round() * 5.0).max(2.0) as u32
+        )
+    } else if m < 90.0 {
+        "about an hour".into()
+    } else {
+        format!("about {} hours", (m / 60.0).round() as u32)
     }
 }

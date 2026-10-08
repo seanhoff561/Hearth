@@ -111,7 +111,7 @@ pub mod builtin {
     }
     ids! {
         FORWARD = 0; LEFT = 1; BACK = 2; RIGHT = 3; JUMP = 4; SNEAK = 5; SPRINT = 6;
-        ATTACK = 7; PICK_BLOCK = 8;
+        HAND_LEFT = 7; ACTION_MENU = 8;
         INVENTORY = 9; DROP = 10; DROP_STACK = 11;
         HOTBAR_1 = 12; HOTBAR_2 = 13; HOTBAR_3 = 14; HOTBAR_4 = 15; HOTBAR_5 = 16; HOTBAR_6 = 17;
         DEBUG = 18; TOGGLE_PERSPECTIVE = 19; WORLD_MAP = 20; FULLSCREEN = 21; PAUSE = 22;
@@ -122,10 +122,10 @@ pub mod builtin {
         THROW = 35; JOURNAL = 36; SHOUT = 37; BUILDER_VIEW = 38;
         WATCH_FASTER = 39; WATCH_SLOWER = 40;
         CLEAR_VIEW = 41; SPECTATE = 42; CREATIVE_REMOVE = 43; NO_CLIP = 44;
-        KICK = 45;
+        KICK = 45; HAND_RIGHT = 46; PICK_BLOCK = 47;
     }
     /// Number of built-in actions.
-    pub const COUNT: usize = 46;
+    pub const COUNT: usize = 48;
 
     /// The quick slots' actions in slot order.
     pub const HOTBAR: [ActionId; 6] = [HOTBAR_1, HOTBAR_2, HOTBAR_3, HOTBAR_4, HOTBAR_5, HOTBAR_6];
@@ -166,9 +166,11 @@ impl ActionRegistry {
         add("key.jump", C::Movement, g, k(Key::Space), H);
         add("key.sneak", C::Movement, g, k(Key::C), T);
         add("key.sprint", C::Movement, g, k(Key::LeftShift), T);
-        add("key.attack", C::Gameplay, g, m(MouseButton::Left), H);
+        // Each hand's button (Amendment P §5.2): left click the left hand, right click the
+        // right; the wheel's click the action menu.
+        add("key.hand_left", C::Gameplay, g, m(MouseButton::Left), H);
         add(
-            "key.pick_block",
+            "key.action_menu",
             C::Gameplay,
             g,
             m(MouseButton::Middle),
@@ -243,6 +245,15 @@ impl ActionRegistry {
         // A kick (E §3.2): T lies by the movement keys and holds nothing else in play (F3 + T
         // is a debug chord, apart).
         add("key.kick", C::Gameplay, g, k(Key::T), H);
+        add("key.hand_right", C::Gameplay, g, m(MouseButton::Right), H);
+        // Creative's pick moves to Ctrl + the wheel's click (P §5.3).
+        add(
+            "key.creative.pick",
+            C::Creative,
+            g,
+            Some(Binding::mouse_with(MouseButton::Middle, Modifiers::CTRL)),
+            Tap,
+        );
         // The controller (v1 M11, V2-3): the sticks walk and look; every button can be rebound.
         use PadButton as P;
         for (id, b) in [
@@ -251,9 +262,9 @@ impl ActionRegistry {
             (builtin::CRAWL, P::West),
             (builtin::INVENTORY, P::North),
             (builtin::SPRINT, P::LeftStick),
-            (builtin::TOGGLE_PERSPECTIVE, P::DPadRight),
-            (builtin::ATTACK, P::RightTrigger),
-            (builtin::INTERACT, P::LeftTrigger),
+            (builtin::ACTION_MENU, P::DPadRight),
+            (builtin::HAND_LEFT, P::LeftTrigger),
+            (builtin::HAND_RIGHT, P::RightTrigger),
             (builtin::THROW, P::RightBumper),
             (builtin::RADIAL, P::LeftBumper),
             (builtin::PAUSE, P::Start),
@@ -293,6 +304,13 @@ impl ActionRegistry {
     }
 
     pub fn find(&self, id: &str) -> Option<ActionId> {
+        // The names of before keep their keys (P3: the primary action became the left hand's,
+        // the pick the action menu's).
+        let id = match id {
+            "key.attack" => "key.hand_left",
+            "key.pick_block" => "key.action_menu",
+            other => other,
+        };
         self.defs
             .iter()
             .position(|d| d.id == id)

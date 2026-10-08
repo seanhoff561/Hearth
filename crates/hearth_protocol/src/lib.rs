@@ -110,7 +110,10 @@ pub enum ToServer {
     Act {
         process: String,
         aim: AimAt,
+        /// The quality reached knapping by hand, when it was.
         hand: Option<f32>,
+        /// The hand doing it (P §5.2): its tools are used (none: either hand's).
+        with: Option<hearth_items::Hand>,
     },
     /// Stop the work in hand.
     StopWork,
@@ -131,7 +134,12 @@ pub enum ToServer {
     /// left's) as its use says (a thrust, a swing, a slash, a stab, a strike), with the fist
     /// that holds a thing with no blow of its own or an empty one, or (`kick`) with the foot.
     /// It lands after its wind-up, on whatever is along its path then.
-    Blow { dir: DVec3, kick: bool },
+    Blow {
+        dir: DVec3,
+        kick: bool,
+        /// The hand that strikes (P §5.2; none: the right, else the left).
+        with: Option<hearth_items::Hand>,
+    },
     /// A bow drawn for `drawn_s` seconds, loosed along a direction: an arrow carried flies.
     Loose { dir: DVec3, drawn_s: f32 },
     /// A burning brand in hand held up high (or lowered): it lights the way and keeps hungry

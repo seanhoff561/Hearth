@@ -266,6 +266,7 @@ impl World {
             process: id.clone(),
             aim,
             hand: None,
+            with: None,
         });
         // The work goes on as the clock runs, hurried: up to a day of it.
         let mut ok = false;

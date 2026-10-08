@@ -384,6 +384,23 @@ pub struct ControlOptions {
     pub key_bindings: BTreeMap<String, String>,
     /// Action id → controller button, e.g. `"key.jump" = "pad.south"`, beside the keys.
     pub pad_bindings: BTreeMap<String, String>,
+    /// A thing put away to free a hand comes back to it afterwards (P §5.2).
+    pub return_to_hand: bool,
+    /// The name of what is looked at by the crosshair (P §5.1).
+    pub name_tags: NameTags,
+    /// What each hand would do, by the crosshair.
+    pub hand_hints: bool,
+}
+
+/// When the name of what is looked at shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NameTags {
+    Off,
+    /// A moment after the look comes to rest on something, then it fades.
+    #[default]
+    Brief,
+    Always,
 }
 
 impl Default for ControlOptions {
@@ -396,6 +413,9 @@ impl Default for ControlOptions {
             controller_sensitivity: 0.5,
             key_bindings: BTreeMap::new(),
             pad_bindings: BTreeMap::new(),
+            return_to_hand: true,
+            name_tags: NameTags::Brief,
+            hand_hints: true,
         }
     }
 }

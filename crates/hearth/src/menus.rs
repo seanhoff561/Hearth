@@ -307,6 +307,8 @@ pub enum MenuAction {
     Watch,
     /// Save the world now (it goes on).
     Save,
+    /// Forget the uses the hands learned from the action menu (P §5.2).
+    ForgetHandUses,
 }
 
 /// What the screens edit and need.

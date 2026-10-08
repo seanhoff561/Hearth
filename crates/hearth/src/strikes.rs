@@ -15,23 +15,35 @@ use hearth_player::strike::{Attack, EYE_SHARE, Striking, Weapon};
 
 use crate::workshop::Flight;
 
-/// The thing in the hand a blow or a use is made with: the right's, else the left's (none:
-/// the right hand, empty). Whether it is the right.
-pub fn in_hand<'a>(carry: &'a Carry, items: &'a Items) -> (Option<&'a ItemKind>, bool) {
-    match (&carry.right, &carry.left) {
-        (Some(s), _) => (items.get(&s.id), true),
-        (None, Some(s)) => (items.get(&s.id), false),
+/// The thing in the hand a blow or a use is made with: that `hand`'s (P §5.2), or with none
+/// given the right's, else the left's (none: the right hand, empty). Whether it is the right.
+pub fn in_hand<'a>(
+    carry: &'a Carry,
+    items: &'a Items,
+    hand: Option<hearth_items::Hand>,
+) -> (Option<&'a ItemKind>, bool) {
+    use hearth_items::Hand;
+    match (hand, &carry.right, &carry.left) {
+        (Some(Hand::Right), r, _) => (r.as_ref().and_then(|s| items.get(&s.id)), true),
+        (Some(Hand::Left), _, l) => (l.as_ref().and_then(|s| items.get(&s.id)), false),
+        (None, Some(s), _) => (items.get(&s.id), true),
+        (None, None, Some(s)) => (items.get(&s.id), false),
         _ => (None, true),
     }
 }
 
 /// The blow a click (or `kick`) makes with what is carried: what, with what, and whether with
 /// the right hand (or foot).
-pub fn chosen(carry: &Carry, items: &Items, kick: bool) -> (Attack, Weapon, bool) {
+pub fn chosen(
+    carry: &Carry,
+    items: &Items,
+    kick: bool,
+    hand: Option<hearth_items::Hand>,
+) -> (Attack, Weapon, bool) {
     if kick {
         return (Attack::Kick, Weapon::default(), true);
     }
-    let (kind, right) = in_hand(carry, items);
+    let (kind, right) = in_hand(carry, items, hand);
     match kind.and_then(|k| Attack::of(k.primary).map(|a| (a, k))) {
         Some((a, k)) if a != Attack::Punch => (a, Weapon::of(k), right),
         // The fist, empty or holding a thing with no blow of its own.
@@ -64,8 +76,9 @@ pub fn use_of(
     items: &Items,
     content: &hearth_content::Content,
     treats: &dyn Fn(&ItemKind) -> Option<String>,
+    hand: Option<hearth_items::Hand>,
 ) -> InHand {
-    let (kind, right) = in_hand(carry, items);
+    let (kind, right) = in_hand(carry, items, hand);
     let hand = if right {
         hearth_items::Hand::Right
     } else {
@@ -93,11 +106,18 @@ pub fn use_of(
 
 /// Begins a blow along `dir` (`kick`, or with what is in the hand), if the body can act and
 /// isn't striking already; it spends its stamina. Whether it began.
-pub fn begin(player: &mut Player, items: &Items, cfg: &BodyConfig, dir: DVec3, kick: bool) -> bool {
+pub fn begin(
+    player: &mut Player,
+    items: &Items,
+    cfg: &BodyConfig,
+    dir: DVec3,
+    kick: bool,
+    hand: Option<hearth_items::Hand>,
+) -> bool {
     if player.striking.is_some() || !player.can_act(cfg) {
         return false;
     }
-    let (attack, weapon, right) = chosen(&player.carry, items, kick);
+    let (attack, weapon, right) = chosen(&player.carry, items, kick, hand);
     let all_out = (cfg.params.stamina.all_out_s as f64).max(1.0);
     let striking = Striking::new(attack, weapon, right, dir, player.body.stamina);
     player.body.stamina = (player.body.stamina - attack.effort_s(&weapon) / all_out).max(0.0);
@@ -133,9 +153,16 @@ pub fn land(
     let what = match s.attack {
         Attack::Kick => "kick".to_owned(),
         Attack::Punch => "fist".to_owned(),
-        _ => in_hand(&player.carry, items)
-            .0
-            .map_or_else(|| "blow".to_owned(), |k| k.name.clone()),
+        _ => {
+            let hand = if s.right {
+                hearth_items::Hand::Right
+            } else {
+                hearth_items::Hand::Left
+            };
+            in_hand(&player.carry, items, Some(hand))
+                .0
+                .map_or_else(|| "blow".to_owned(), |k| k.name.clone())
+        }
     };
     live.strike(cat, &hit, &blow, &what, player.mover.pos, year_frac)
         .map(|s| s.words)
@@ -330,7 +357,7 @@ mod tests {
             .id
             .clone();
         assert!(matches!(
-            use_of(&holding(&food), &items, &content, &none),
+            use_of(&holding(&food), &items, &content, &none, None),
             InHand::Eat(_)
         ));
         let skin = items
@@ -340,7 +367,7 @@ mod tests {
             .id
             .clone();
         assert!(matches!(
-            use_of(&holding(&skin), &items, &content, &none),
+            use_of(&holding(&skin), &items, &content, &none, None),
             InHand::Drink(_)
         ));
         // Empty, it is no drink: a blow with the fist that holds it.
@@ -348,7 +375,7 @@ mod tests {
         if let Some(s) = dry.right.as_mut() {
             s.liquid_l = 0.0;
         }
-        assert_eq!(use_of(&dry, &items, &content, &none), InHand::Blow);
+        assert_eq!(use_of(&dry, &items, &content, &none, None), InHand::Blow);
         let yarrow = |k: &ItemKind| {
             (k.material.as_deref() == Some("hearth:yarrow"))
                 .then(|| "hearth:poultice_wound".to_owned())
@@ -360,11 +387,11 @@ mod tests {
             .id
             .clone();
         assert_eq!(
-            use_of(&holding(&handful), &items, &content, &yarrow),
+            use_of(&holding(&handful), &items, &content, &yarrow, None),
             InHand::Treat("hearth:poultice_wound".into())
         );
         assert_eq!(
-            use_of(&holding("hearth:firebrand"), &items, &content, &none),
+            use_of(&holding("hearth:firebrand"), &items, &content, &none, None),
             InHand::HoldUp
         );
         let bow = items
@@ -374,11 +401,11 @@ mod tests {
             .id
             .clone();
         assert_eq!(
-            use_of(&holding(&bow), &items, &content, &none),
+            use_of(&holding(&bow), &items, &content, &none, None),
             InHand::Draw
         );
         assert_eq!(
-            use_of(&Carry::default(), &items, &content, &none),
+            use_of(&Carry::default(), &items, &content, &none, None),
             InHand::Blow
         );
         // The blows things make.
@@ -389,7 +416,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{form}"))
                 .id
                 .clone();
-            chosen(&holding(&id), &items, false).0
+            chosen(&holding(&id), &items, false, None).0
         };
         assert_eq!(blow("hearth:stone_tipped_spear"), Attack::Thrust);
         assert_eq!(blow("hearth:stick"), Attack::Swing);
@@ -402,8 +429,11 @@ mod tests {
             Attack::Punch,
             "no blow of its own: the fist"
         );
-        assert_eq!(chosen(&Carry::default(), &items, false).0, Attack::Punch);
-        assert_eq!(chosen(&holding(&bow), &items, true).0, Attack::Kick);
+        assert_eq!(
+            chosen(&Carry::default(), &items, false, None).0,
+            Attack::Punch
+        );
+        assert_eq!(chosen(&holding(&bow), &items, true, None).0, Attack::Kick);
         // In the left hand when the right is empty.
         let stick = items
             .iter()
@@ -415,8 +445,11 @@ mod tests {
             left: Some(Stack::one(&stick)),
             ..Carry::default()
         };
-        let (a, _, right) = chosen(&left, &items, false);
+        let (a, _, right) = chosen(&left, &items, false, None);
         assert!(a == Attack::Swing && !right);
+        // Each hand its own (P §5.2): the empty right hand punches.
+        let (a, _, right) = chosen(&left, &items, false, Some(hearth_items::Hand::Right));
+        assert!(a == Attack::Punch && right);
     }
 
     /// A blow wounds as its kind does and shoves as its momentum does: a kick sends a hare

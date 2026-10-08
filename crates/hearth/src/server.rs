@@ -1020,8 +1020,13 @@ fn run(
                         items_changed = true;
                     }
                 }
-                Ok(ToServer::Act { process, aim, hand }) => {
-                    workshop.act(&mut here!(), &process, aim, hand);
+                Ok(ToServer::Act {
+                    process,
+                    aim,
+                    hand,
+                    with,
+                }) => {
+                    workshop.act(&mut here!(), &process, aim, hand, with);
                     // Creative's instant actions: the work is done as soon as it is begun.
                     if creative
                         && instant
@@ -1088,8 +1093,8 @@ fn run(
                         items_changed = true;
                     }
                 }
-                Ok(ToServer::Blow { dir, kick }) => {
-                    crate::strikes::begin(&mut player, &items, &cfg, dir, kick);
+                Ok(ToServer::Blow { dir, kick, with }) => {
+                    crate::strikes::begin(&mut player, &items, &cfg, dir, kick, with);
                 }
                 Ok(ToServer::HoldUp(up)) => player.held_up = up,
                 Ok(ToServer::Give(stack)) => {

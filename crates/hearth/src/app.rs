@@ -493,6 +493,7 @@ impl App {
                 };
                 match &mut run.client {
                     Some(c) if c.globe.open => c.globe.close(),
+                    Some(c) if c.action_menu => c.action_menu = false,
                     // Spectating: back to the body.
                     Some(c) if c.watching_alive() => c.step_in(),
                     Some(c) => {
@@ -558,6 +559,9 @@ impl App {
                     // Creative's inventory first; its Carried button the things carried.
                     run.menus.open(Screen::Creative(Default::default()));
                     release_mouse = true;
+                } else if action == builtin::ACTION_MENU && !p.dead() {
+                    // The action menu (P §5.3): every action for what is looked at.
+                    p.action_menu = !p.action_menu;
                 } else if action == builtin::PICK_BLOCK && p.creative() {
                     if let Some((tab, query)) = p.pick() {
                         run.menus
@@ -991,6 +995,11 @@ impl App {
                                 mode: spec.mode.clone(),
                             },
                         );
+                    }
+                }
+                MenuAction::ForgetHandUses => {
+                    if let Some(c) = self.running.as_mut().and_then(|r| r.client.as_mut()) {
+                        c.forget_hand_uses();
                     }
                 }
                 MenuAction::NewLife(at) => {

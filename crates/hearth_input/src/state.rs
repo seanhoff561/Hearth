@@ -481,11 +481,11 @@ mod tests {
     #[test]
     fn rebound_action_follows_new_key() {
         let (mut b, mut s) = setup();
-        b.set(ATTACK, Some(Binding::key(Key::F)));
+        b.set(HAND_LEFT, Some(Binding::key(Key::F)));
         s.press(InputKey::Mouse(MouseButton::Left), &b);
-        assert!(!s.is_down(ATTACK));
+        assert!(!s.is_down(HAND_LEFT));
         s.press(kb(Key::F), &b);
-        assert!(s.is_down(ATTACK));
+        assert!(s.is_down(HAND_LEFT));
     }
 
     #[test]
@@ -603,7 +603,7 @@ mod tests {
         // A held keyboard modifier doesn't change what a button does.
         s.press(kb(Key::LeftControl), &b);
         s.press(pad(PadButton::RightTrigger), &b);
-        assert!(s.is_down(ATTACK));
+        assert!(s.is_down(HAND_RIGHT));
     }
 
     #[test]

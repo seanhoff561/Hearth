@@ -270,6 +270,7 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
         w.server.send(ToServer::Blow {
             dir: chest - (w.mover.pos + DVec3::new(0.0, 1.5, 0.0)),
             kick: false,
+            with: None,
         });
         w.run(1);
         if attempt == 0 {

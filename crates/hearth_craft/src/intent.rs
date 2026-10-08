@@ -23,18 +23,19 @@ pub enum HandAct {
     Blow,
 }
 
-/// A hand's use now: the rule followed, what it does, and whether the hand must first put
-/// away what it holds (its rule wants an empty hand).
+/// A hand's use now: the rule followed (none: the process preferred), its hint's words, what it
+/// does, and whether the hand must first put away what it holds (its rule wants an empty hand).
 #[derive(Debug, Clone)]
 pub struct HandUse<'a> {
-    pub rule: &'a Intent,
+    pub rule: Option<&'a Intent>,
+    pub hint: String,
     pub act: HandAct,
     pub stow: bool,
 }
 
 /// What the resolver asks of the one acting: whether they may try a recipe, their skill in it,
 /// whether a thing is food they know to be food (an unknown plant is not eaten by default), and
-/// a rule they prefer for this target and thing held (learned from the action menu).
+/// a process they prefer for this target and thing held (learned from the action menu).
 pub struct Ask<'a> {
     pub may: &'a dyn Fn(&Recipe) -> bool,
     pub skill: &'a dyn Fn(&Recipe) -> f32,
@@ -70,7 +71,8 @@ pub fn resolve<'a>(
         }
         let act = act_of(r, crafts, bench, holding, ask)?;
         Some(HandUse {
-            rule: r,
+            rule: Some(r),
+            hint: r.hint.clone(),
             act,
             stow: empty && held.is_some(),
         })
@@ -80,13 +82,22 @@ pub fn resolve<'a>(
     } else {
         &[true]
     };
+    // The process preferred here, if it can be done with this hand.
     if let Some(p) = ask.prefer
-        && let Some(r) = rules.iter().find(|r| r.id == p)
+        && let Some(i) = crafts.index_of(p)
     {
-        for &empty in passes {
-            if let Some(u) = try_rule(r, empty) {
-                return Some(u);
-            }
+        let recipe = &crafts.recipes[i];
+        if (ask.may)(recipe) && plan(crafts, i, bench, (ask.skill)(recipe)).is_ok() {
+            return Some(HandUse {
+                rule: None,
+                hint: recipe
+                    .def
+                    .verb
+                    .clone()
+                    .unwrap_or_else(|| recipe.def.action.clone()),
+                act: HandAct::Process(i),
+                stow: false,
+            });
         }
     }
     for &empty in passes {
