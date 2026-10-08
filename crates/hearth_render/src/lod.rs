@@ -3,7 +3,7 @@
 //! tints, the near ground's materials — and a dithered handoff at the edge of the full-detail
 //! area.
 //!
-//! A tile's ground is a smooth height field (S §5): its 33 × 33 corners (16-byte
+//! A tile's ground is a smooth height field (S §5): its 33 × 33 corners (20-byte
 //! `hearth_lod::GroundVertex`) in one pooled storage buffer, every tile drawn with the same
 //! triangles (and skirts along its edges) as an instance of one draw. Its crowns and trunks are
 //! quads: 16-byte records (`hearth_lod::LodQuad`) in another pool that the vertex shader
@@ -25,7 +25,7 @@ use crate::terrain::{Arena, DEPTH_FORMAT, EARTH_RADIUS_M, TerrainRenderer};
 /// Bytes per LOD quad record (`hearth_lod::LodQuad`).
 pub const QUAD_BYTES: u64 = 16;
 /// Bytes per ground corner (`hearth_lod::GroundVertex`), and corners along a tile side.
-pub const GROUND_BYTES: u64 = 16;
+pub const GROUND_BYTES: u64 = 20;
 pub const GROUND_SIDE: u32 = 33;
 /// Corners of a tile's ground.
 const GROUND_CORNERS: u32 = GROUND_SIDE * GROUND_SIDE;
@@ -57,15 +57,17 @@ fn ground_indices() -> Vec<u32> {
     v
 }
 
-/// A tile's ground as the shader reads it (`GroundTile` in `lod.wgsl`).
+/// A tile's ground or canopy as the shader reads it (`GroundTile` in `lod.wgsl`).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct GroundTile {
-    /// Camera-relative origin, and the column size.
+    /// Camera-relative origin of the first vertex, and the column size.
     origin: [f32; 4],
     base: u32,
     skirt: f32,
-    pad: [u32; 2],
+    /// 1 for a canopy.
+    canopy: u32,
+    pad: u32,
 }
 
 /// The faces of a tile's quad groups, in storage order (as `hearth_lod::GROUP_FACES`): down,
@@ -76,9 +78,11 @@ struct GpuTile {
     /// First quad in the pool, and how many; how many in each group (`GROUP_FACES`).
     off: u32,
     quads: u32,
-    /// First ground corner in its pool (`u32::MAX`: none), and the skirts' depth.
+    /// First ground corner in its pool (`u32::MAX`: none), and the skirts' depth; first canopy
+    /// vertex (`u32::MAX`: none).
     ground: u32,
     skirt: f32,
+    canopy: u32,
     groups: [u32; 6],
     origin: [i32; 2],
     size: i32,
@@ -251,11 +255,11 @@ impl LodCuller {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LodStats {
     pub tiles: usize,
-    /// Tiles inside the frustum (before occlusion culling on the GPU), and their draws (runs of
-    /// quad groups facing the camera).
+    /// Tiles inside the frustum, and the draws of their quads (runs of quad groups facing the
+    /// camera; before occlusion culling on the GPU).
     pub drawn: usize,
     pub draws: usize,
-    /// Tiles whose ground is drawn (in the frustum).
+    /// Grounds and canopies drawn (of the tiles in the frustum).
     pub grounds: usize,
     /// Quads of the groups facing the camera, in the frustum.
     pub quads: u64,
@@ -530,8 +534,8 @@ impl LodRenderer {
 
     /// Uploads (or replaces) a tile: its id, minimum corner in world blocks (X canonical), side,
     /// height range, ground (`GROUND_SIDE`² corners of `GROUND_BYTES`, or none) with its skirts'
-    /// depth, and quad records (`QUAD_BYTES` each), grouped by the way they face, with the
-    /// number in each group (`GROUP_FACES`).
+    /// depth, canopy (as many vertices, or none), and quad records (`QUAD_BYTES` each), grouped
+    /// by the way they face, with the number in each group (`GROUP_FACES`).
     #[allow(clippy::too_many_arguments)]
     pub fn upload(
         &mut self,
@@ -542,50 +546,55 @@ impl LodRenderer {
         y: (i32, i32),
         ground: &[u8],
         skirt: f32,
+        canopy: &[u8],
         quads: &[u8],
         groups: [u32; 6],
     ) {
         self.remove(id);
         let n = (quads.len() as u64 / QUAD_BYTES) as u32;
         debug_assert_eq!(groups.iter().sum::<u32>(), n, "groups cover the quads");
-        let has_ground = ground.len() as u64 == GROUND_CORNERS as u64 * GROUND_BYTES;
-        if n == 0 && !has_ground {
-            return;
-        }
-        let mut ground_off = u32::MAX;
-        if has_ground {
+        let field = GROUND_CORNERS as u64 * GROUND_BYTES;
+        let mut t = GpuTile {
+            off: 0,
+            quads: 0,
+            ground: u32::MAX,
+            skirt,
+            canopy: u32::MAX,
+            groups,
+            origin,
+            size,
+            y,
+        };
+        for (k, bytes) in [ground, canopy].into_iter().enumerate() {
+            if bytes.len() as u64 != field {
+                continue;
+            }
             let (off, grew) = self.ground_pool.alloc(ctx, GROUND_CORNERS);
             if off == u32::MAX {
+                Self::free(&mut self.pool, &mut self.ground_pool, &t);
                 return;
             }
             self.bind_dirty |= grew;
-            ctx.write_buffer(&self.ground_pool.buffer, off as u64 * GROUND_BYTES, ground);
-            ground_off = off;
+            ctx.write_buffer(&self.ground_pool.buffer, off as u64 * GROUND_BYTES, bytes);
+            if k == 0 {
+                t.ground = off;
+            } else {
+                t.canopy = off;
+            }
         }
-        let mut off = 0;
         if n > 0 {
-            off = self.alloc_quads(ctx, n);
+            let off = self.alloc_quads(ctx, n);
             if off == u32::MAX {
-                if ground_off != u32::MAX {
-                    self.ground_pool.alloc.free(ground_off, GROUND_CORNERS);
-                }
+                Self::free(&mut self.pool, &mut self.ground_pool, &t);
                 return;
             }
             ctx.write_buffer(&self.pool.buffer, off as u64 * QUAD_BYTES, quads);
+            (t.off, t.quads) = (off, n);
         }
-        self.tiles.insert(
-            id,
-            GpuTile {
-                off,
-                quads: n,
-                ground: ground_off,
-                skirt,
-                groups,
-                origin,
-                size,
-                y,
-            },
-        );
+        if t.quads == 0 && t.ground == u32::MAX && t.canopy == u32::MAX {
+            return;
+        }
+        self.tiles.insert(id, t);
     }
 
     /// Room for `n` quads (`u32::MAX`: none), the index buffer long enough to draw them.
@@ -623,8 +632,10 @@ impl LodRenderer {
         if t.quads > 0 {
             pool.alloc.free(t.off, t.quads);
         }
-        if t.ground != u32::MAX {
-            ground_pool.alloc.free(t.ground, GROUND_CORNERS);
+        for off in [t.ground, t.canopy] {
+            if off != u32::MAX {
+                ground_pool.alloc.free(off, GROUND_CORNERS);
+            }
         }
     }
 
@@ -693,12 +704,25 @@ impl LodRenderer {
             if !frustum.intersects_aabb(min, max) {
                 continue;
             }
+            drawn += 1;
+            let cs = (t.size / 32) as f32;
             if t.ground != u32::MAX {
                 self.grounds.push(GroundTile {
-                    origin: [ox, -(cam.y as f32), oz, (t.size / 32) as f32],
+                    origin: [ox, -(cam.y as f32), oz, cs],
                     base: t.ground,
                     skirt: t.skirt,
-                    pad: [0; 2],
+                    canopy: 0,
+                    pad: 0,
+                });
+            }
+            if t.canopy != u32::MAX {
+                // Its first vertex at the middle of the column before the tile's first.
+                self.grounds.push(GroundTile {
+                    origin: [ox - cs * 0.5, -(cam.y as f32), oz - cs * 0.5, cs],
+                    base: t.canopy,
+                    skirt: 0.0,
+                    canopy: 1,
+                    pad: 0,
                 });
             }
             // The groups that can face the camera (`GROUP_FACES`): a side group faces away when
@@ -760,7 +784,6 @@ impl LodRenderer {
                 quads += n as u64;
             }
             origins.push([ox, -(cam.y as f32), oz, 0.0]);
-            drawn += 1;
         }
         if origins.len() > self.origins_capacity {
             self.origins_capacity = origins.len().next_power_of_two();

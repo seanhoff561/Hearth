@@ -469,6 +469,7 @@ pub fn upload(ctx: &GpuContext, renderer: &mut LodRenderer, mesh: &TileMesh) {
         (mesh.min_y, mesh.max_y),
         bytemuck::cast_slice(&mesh.ground),
         mesh.skirt,
+        bytemuck::cast_slice(&mesh.canopy),
         bytemuck::cast_slice(&mesh.quads),
         mesh.groups,
     );

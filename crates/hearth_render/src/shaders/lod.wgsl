@@ -5,11 +5,11 @@
 struct Tile { origin: vec4<f32> };
 // A quad record (`hearth_lod::LodQuad`): see there for the packing.
 struct Quad { a: u32, b: u32, c: u32, d: u32 };
-// A tile's ground: its origin (camera-relative) and column size, its first corner in the pool
-// and its skirts' depth.
-struct GroundTile { origin: vec4<f32>, base: u32, skirt: f32, pad0: u32, pad1: u32 };
+// A tile's ground or canopy: its first vertex's place (camera-relative) and the column size, its
+// first vertex in the pool, its skirts' depth, and whether it is a canopy.
+struct GroundTile { origin: vec4<f32>, base: u32, skirt: f32, canopy: u32, pad: u32 };
 // A corner of the ground (`hearth_lod::GroundVertex`): see there for the packing.
-struct GroundVert { y: i32, n: u32, c: u32, m: u32 };
+struct GroundVert { y: i32, n: u32, c: u32, m: u32, s: u32 };
 // A ground material, as the smooth near ground's (`terrain.wgsl`).
 struct GroundMat { color: vec4<f32>, color2: vec4<f32>, tint: u32, relief: f32, strata: f32, pad1: f32 };
 
@@ -147,6 +147,8 @@ struct GroundOut {
     // Share of open water, and of the ground under a crown.
     @location(3) water: f32,
     @location(4) shade: f32,
+    // A canopy's crown cover (cut below a half); 2 on the ground.
+    @location(5) cover: f32,
 };
 
 // Corners along a tile side, and the vertices of its height field (skirts' come after).
@@ -165,6 +167,21 @@ fn ground_mean(slot: u32, climate: u32) -> vec3<f32> {
     }
     // Wet ground is darker.
     return col * mix(1.0, 0.6, g.block_light.w);
+}
+
+// How far into a season (`hearth_lod::Seasons`: its first and last 256ths of the year) the
+// year is: 0 outside it, rising to 1 over a few days at either end.
+fn in_season(on: u32, off: u32) -> f32 {
+    if on == 0u && off == 0u {
+        return 0.0;
+    }
+    if on == 0u && off == 255u {
+        return 1.0;
+    }
+    let since = fract(g.camera.w - f32(on) / 256.0);
+    let len = fract((f32(off) - f32(on)) / 256.0);
+    let days = 4.0 / 365.0;
+    return select(0.0, smoothstep(0.0, days, since) * smoothstep(0.0, days, len - since), since < len);
 }
 
 @vertex
@@ -194,7 +211,9 @@ fn vs_ground(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
     let kind = v.n >> 24u;
     let slot = v.c >> 24u;
     let climate = v.m & 0xffffffu;
-    let water = f32((v.m >> 24u) & 15u) / 4.0;
+    let canopy = t.canopy == 1u;
+    let share = f32((v.m >> 24u) & 15u) / 4.0;
+    let water = select(share, 0.0, canopy);
     var albedo: vec3<f32>;
     if slot != 255u {
         albedo = ground_mean(slot, climate);
@@ -203,14 +222,14 @@ fn vs_ground(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
         if (kind & 3u) != 0u {
             albedo = albedo * resolve_tint(kind, climate);
         }
+        // Deciduous canopies stand bare in winter and in the dry season.
+        albedo = mix(BARE, albedo, tint_leaf(kind, climate));
     }
-    // Snow lies through the cold months, less on steep ground; the sea freezes in hard
-    // winters.
-    let c = decode_climate(climate);
-    let temp = season_temp(c, g.camera.w);
-    let snow = (1.0 - smoothstep(-3.0, 0.0, temp)) * smoothstep(100.0, 400.0, c.precip)
-        * smoothstep(0.55, 0.85, n.y);
-    let ice = 1.0 - smoothstep(-6.0, -3.0, temp);
+    // Snow and ice through their seasons, as the near terrain's cover lays them; less snow on
+    // steep ground and in the crowns.
+    let snow = in_season(v.s & 255u, (v.s >> 8u) & 255u) * smoothstep(0.55, 0.85, n.y)
+        * select(1.0, 0.6, (kind & 3u) >= 2u);
+    let ice = in_season((v.s >> 16u) & 255u, v.s >> 24u);
     albedo = mix(albedo, SNOW, snow * (1.0 - water));
     albedo = mix(albedo, SEA_ICE, ice * water);
     var out: GroundOut;
@@ -222,6 +241,7 @@ fn vs_ground(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
     out.normal = n;
     out.water = water * (1.0 - ice);
     out.shade = f32(v.m >> 28u) / 4.0;
+    out.cover = select(2.0, share, canopy);
     return out;
 }
 
@@ -229,15 +249,17 @@ fn vs_ground(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
 fn fs_ground(in: GroundOut) -> @location(0) vec4<f32> {
     let gx = dpdx(in.world);
     let gy = dpdy(in.world);
-    if near_weight(in.world.xz) >= 0.999 {
+    if near_weight(in.world.xz) >= 0.999 || in.cover < 0.5 {
         discard;
     }
     let n = normalize(in.normal);
     var c = lod_light(in.albedo, n, in.world, in.water, gx, gy);
-    if in.shade > 0.0 {
-        // Under the crowns: the sky's light from below them, no sun.
+    // Under the crowns, or a canopy seen from below: the sky's light from below them, no sun.
+    let below = select(0.0, 1.0, in.cover <= 1.0 && dot(n, in.world) > 0.0);
+    let shade = max(in.shade, below);
+    if shade > 0.0 {
         let under = lod_light(in.albedo, vec3<f32>(0.0, -1.0, 0.0), in.world, 0.0, gx, gy);
-        c = mix(c, under, in.shade);
+        c = mix(c, under, shade);
     }
     return vec4<f32>(aerial(c, in.world), 1.0);
 }

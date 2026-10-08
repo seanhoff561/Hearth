@@ -14,7 +14,7 @@ use rustc_hash::FxHasher;
 
 use crate::{GroundVertex, LodGen, LodQuad, LodWorld, TileKey, TileMesh};
 
-const MAGIC: &[u8; 4] = b"HLT2";
+const MAGIC: &[u8; 4] = b"HLT4";
 
 /// Tiles on disk.
 pub struct TileCache {
@@ -30,8 +30,8 @@ fn hash_mesh(h: &mut FxHasher, m: &TileMesh) {
         (q.a, q.b, q.c, q.d).hash(h);
     }
     m.skirt.to_bits().hash(h);
-    for g in &m.ground {
-        (g.y, g.n, g.c, g.m).hash(h);
+    for g in m.ground.iter().chain(&m.canopy) {
+        (g.y, g.n, g.c, g.m, g.s).hash(h);
     }
 }
 
@@ -130,20 +130,15 @@ impl TileCache {
             });
         }
         let skirt = f32::from_bits(r.u32()?);
-        let mut ground = Vec::with_capacity(crate::GROUND_SIDE * crate::GROUND_SIDE);
-        for _ in 0..crate::GROUND_SIDE * crate::GROUND_SIDE {
-            ground.push(GroundVertex {
-                y: r.i32()?,
-                n: r.u32()?,
-                c: r.u32()?,
-                m: r.u32()?,
-            });
-        }
+        let ground = r.field(crate::GROUND_SIDE * crate::GROUND_SIDE)?;
+        let n = r.u32()? as usize;
+        let canopy = r.field(n)?;
         Some(TileMesh {
             key,
             origin,
             ground,
             skirt,
+            canopy,
             quads,
             groups,
             min_y,
@@ -175,12 +170,17 @@ impl TileCache {
             }
         }
         data.extend_from_slice(&mesh.skirt.to_bits().to_le_bytes());
-        for g in &mesh.ground {
-            data.extend_from_slice(&g.y.to_le_bytes());
-            for v in [g.n, g.c, g.m] {
-                data.extend_from_slice(&v.to_le_bytes());
+        let field = |data: &mut Vec<u8>, vs: &[GroundVertex]| {
+            for g in vs {
+                data.extend_from_slice(&g.y.to_le_bytes());
+                for v in [g.n, g.c, g.m, g.s] {
+                    data.extend_from_slice(&v.to_le_bytes());
+                }
             }
-        }
+        };
+        field(&mut data, &mesh.ground);
+        data.extend_from_slice(&(mesh.canopy.len() as u32).to_le_bytes());
+        field(&mut data, &mesh.canopy);
         let write = || -> std::io::Result<()> {
             if let Some(d) = path.parent() {
                 std::fs::create_dir_all(d)?;
@@ -218,6 +218,20 @@ impl Reader<'_> {
         Some(i32::from_le_bytes(self.take(4)?.try_into().ok()?))
     }
 
+    fn field(&mut self, n: usize) -> Option<Vec<GroundVertex>> {
+        (0..n)
+            .map(|_| {
+                Some(GroundVertex {
+                    y: self.i32()?,
+                    n: self.u32()?,
+                    c: self.u32()?,
+                    m: self.u32()?,
+                    s: self.u32()?,
+                })
+            })
+            .collect()
+    }
+
     fn u64(&mut self) -> Option<u64> {
         Some(u64::from_le_bytes(self.take(8)?.try_into().ok()?))
     }
@@ -233,10 +247,11 @@ mod tests {
         let (wg, reg, tex) = crate::tests::tiny_world();
         let lod = LodGen::new(&reg, &tex);
         let (x, z) = crate::tests::forest(&wg);
+        // A level whose crowns are a canopy surface.
         let key = TileKey {
-            level: 1,
-            x: x.div_euclid(crate::TILE << 1),
-            z: z.div_euclid(crate::TILE << 1),
+            level: 3,
+            x: x.div_euclid(crate::TILE << 3),
+            z: z.div_euclid(crate::TILE << 3),
         };
         let dir = std::env::temp_dir().join(format!("hearth-lodcache-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -256,6 +271,8 @@ mod tests {
         );
         assert_eq!((back.origin, back.groups), (built.origin, built.groups));
         assert_eq!((back.ground, back.skirt), (built.ground, built.skirt));
+        assert!(!built.canopy.is_empty(), "a forest's canopy");
+        assert_eq!(back.canopy, built.canopy);
         assert!(cache.load(key, stamp ^ 1).is_none(), "another stamp");
         // A fire that burned the tile changes its stamp; one far off does not.
         let burn = |x: i32, z: i32| Disturbance {
