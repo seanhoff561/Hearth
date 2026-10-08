@@ -151,8 +151,9 @@ pub struct Anatomy {
     pub joints: Vec<[u8; 4]>,
     pub weights: Vec<[f32; 4]>,
     /// How much the skin there is lips and nail (0–1 each), blended over a cell at their edges,
-    /// and how thick the short hair over it is (the scalp under the hair, a buzz cut, stubble).
-    pub tissue: Vec<[f32; 3]>,
+    /// how thick the short hair over it is (the scalp under the hair, a buzz cut, stubble), and
+    /// whether it is not skin but a garment's (1: `garment`).
+    pub tissue: Vec<[f32; 4]>,
     /// Counter-clockwise triangles seen from outside.
     pub indices: Vec<u32>,
     /// The joints in the pose the skin was sculpted in (`bind_pose`).
@@ -162,6 +163,17 @@ pub struct Anatomy {
 impl Anatomy {
     pub fn triangle_count(&self) -> usize {
         self.indices.len() / 3
+    }
+
+    /// Adds another mesh in the same bind pose (a garment) to this one.
+    pub fn merge(&mut self, other: &Anatomy) {
+        let base = self.positions.len() as u32;
+        self.positions.extend_from_slice(&other.positions);
+        self.normals.extend_from_slice(&other.normals);
+        self.joints.extend_from_slice(&other.joints);
+        self.weights.extend_from_slice(&other.weights);
+        self.tissue.extend_from_slice(&other.tissue);
+        self.indices.extend(other.indices.iter().map(|i| i + base));
     }
 }
 
@@ -1101,7 +1113,7 @@ pub fn anatomy(a: &Appearance, cell: f32) -> Anatomy {
         let mut per = [0.0f32; JOINTS];
         // Lips and nails, thin as they are, are what the skin is wherever it lies within a
         // part of a cell of them.
-        let mut tissue = [0.0f32; 3];
+        let mut tissue = [0.0f32; 4];
         tissue[2] = short_hair(&a, &dims, world);
         for form in forms.iter().filter(|f| !f.cut) {
             let d = form.distance(world);

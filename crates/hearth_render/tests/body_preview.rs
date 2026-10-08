@@ -72,7 +72,8 @@ struct Model {
 
 impl Model {
     fn new(ctx: &GpuContext, a: &Appearance, cell: f32) -> Self {
-        let body = anatomy(a, cell);
+        let mut body = anatomy(a, cell);
+        body.merge(&hearth_character::garment::loincloth(a));
         let mesh = hair(a);
         Self {
             a: a.clone(),

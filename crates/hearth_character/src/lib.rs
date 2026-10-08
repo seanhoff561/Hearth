@@ -7,6 +7,7 @@ pub mod anatomy;
 pub mod animate;
 pub mod appearance;
 pub mod eyes;
+pub mod garment;
 pub mod hair;
 pub mod instances;
 pub mod rig;

@@ -25,7 +25,7 @@ struct BodyVertex {
     joints: u32,
     /// Their weights, unorm8 × 4.
     weights: u32,
-    /// How much the skin is lips, nail and short hair there, unorm8 (and a byte spare).
+    /// How much the skin is lips, nail and short hair there, and whether a garment's, unorm8.
     tissue: u32,
 }
 
@@ -59,7 +59,7 @@ impl GpuBody {
                         (body.tissue[i][0] * 255.0).round() as u8,
                         (body.tissue[i][1] * 255.0).round() as u8,
                         (body.tissue[i][2] * 255.0).round() as u8,
-                        0,
+                        (body.tissue[i][3] * 255.0).round() as u8,
                     ]),
                 }
             })
@@ -256,6 +256,8 @@ pub struct SkinLook {
     pub hair: [f32; 3],
     /// What the body's life has done to the skin.
     pub state: SkinState,
+    /// The garment's colour (linear) and kind (0 hide, 1 plant fibre).
+    pub cloth: [f32; 4],
 }
 
 /// The skin's state as drawn (from the body simulation's `hearth_body::skin`).
@@ -290,6 +292,7 @@ impl SkinLook {
             nail,
             hair: a.hair_linear(),
             state: SkinState::default(),
+            cloth: hearth_character::garment::loincloth_look(a).to_array(),
         }
     }
 }
@@ -313,6 +316,7 @@ struct BodyUniform {
     state: [f32; 4],
     state2: [f32; 4],
     marks: [[f32; 4]; JOINTS],
+    cloth: [f32; 4],
 }
 
 /// Bodies on their own (the creator's preview and the review), under a preview light.
@@ -566,6 +570,7 @@ impl BodyPreview {
             ],
             state2: [look.state.flush, look.state.goosebumps, 0.0, 0.0],
             marks: look.state.marks,
+            cloth: look.cloth,
         };
         ctx.queue
             .write_buffer(&self.uniform, 0, bytemuck::bytes_of(&u));

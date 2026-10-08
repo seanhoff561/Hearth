@@ -22,6 +22,8 @@ struct Body {
     state2: vec4<f32>,
     // Per joint: dirt, blood, scar, and how covered (no sun there).
     marks: array<vec4<f32>, 17>,
+    // The garment's colour (linear); w: 0 hide, 1 plant fibre.
+    cloth: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Body;
@@ -38,7 +40,7 @@ struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) normal: vec3<f32>,
     @location(1) world: vec3<f32>,
-    @location(2) tissue: vec3<f32>,
+    @location(2) tissue: vec4<f32>,
     @location(3) bind: vec3<f32>,
     @location(4) marks: vec4<f32>,
     @location(5) @interpolate(flat) head: f32,
@@ -58,7 +60,7 @@ fn vs_main(v: VsIn) -> VsOut {
     out.pos = u.view_proj * vec4<f32>(world, 1.0);
     out.normal = normalize((m * vec4<f32>(v.normal, 0.0)).xyz);
     out.world = world;
-    out.tissue = v.tissue.xyz;
+    out.tissue = v.tissue;
     out.bind = v.pos;
     out.marks = marks;
     out.head = select(0.0, 1.0, (v.joints & 255u) == 4u);
@@ -101,11 +103,38 @@ fn ggx(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, rough: f32, f0: f32) -> f32 {
     return ndf * f * vis * 0.25 * nl;
 }
 
+// A garment: tanned hide (mottled, a little sheen at grazing angles) or plant fibre (twisted
+// strands, matte).
+fn garment(in: VsOut, n: vec3<f32>, v: vec3<f32>, l: vec3<f32>) -> vec4<f32> {
+    var albedo = u.cloth.rgb;
+    var rough = 0.7;
+    if u.cloth.w < 0.5 {
+        let mottle = noise(in.bind * 35.0) * 0.6 + noise(in.bind * 140.0) * 0.4;
+        albedo *= 0.75 + 0.45 * mottle;
+    } else {
+        let twist = in.bind.y * 700.0 + noise(in.bind * 30.0) * 8.0 + in.bind.x * 120.0;
+        albedo *= 0.65 + 0.4 * abs(sin(twist));
+        rough = 0.9;
+    }
+    let hemi = mix(u.ground.rgb, u.sky.rgb, 0.5 + 0.5 * n.y);
+    let diffuse = max((dot(n, l) + 0.1) / 1.1, 0.0);
+    var lit = albedo * (u.light.rgb * diffuse + hemi) / 3.14159265;
+    lit += u.light.rgb * ggx(n, v, l, rough, 0.03);
+    var shown = tonemap(lit * u.exposure.x);
+    if u.exposure.y > 0.5 {
+        shown = pow(shown, vec3<f32>(1.0 / 2.2));
+    }
+    return vec4<f32>(shown, 1.0);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let n = normalize(in.normal);
     let v = normalize(u.eye.xyz - in.world);
     let l = u.light_dir.xyz;
+    if in.tissue.w > 0.5 {
+        return garment(in, n, v, l);
+    }
     // Skin's two lobes (rough 0.48 and 0.25, mixed 0.85 : 0.15), its Fresnel at normal
     // incidence some 0.028 (index 1.4); lips a little glossier, nails smooth.
     let lips = in.tissue.x;
