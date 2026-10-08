@@ -12,9 +12,12 @@ use glam::DVec3;
 use hearth_math::Planet;
 use hearth_math::hash::derive_seed;
 
+use smallvec::SmallVec;
+
 use crate::noise::BlockFbm;
 use crate::planet::climate::{ClimateClass, LAPSE_RATE};
 use crate::planet::{PlanetGrid, flags, province};
+use crate::relief::{Patch, Reach, Relief};
 use biome::{Biome, BiomeInputs};
 use rivers::{BANK_HEIGHT, RiverHit, RiverNet, Segment, bank_width};
 
@@ -125,6 +128,8 @@ struct DetailNoise {
     soil: BlockFbm,
     patch: BlockFbm,
     cliff: BlockFbm,
+    /// Relief below a refinement level's cells (wavelengths of 96 blocks and less).
+    detail: BlockFbm,
 }
 
 impl DetailNoise {
@@ -141,6 +146,7 @@ impl DetailNoise {
             soil: BlockFbm::new(d("soil"), c, 48.0, 2, 0.5),
             patch: BlockFbm::new(d("patch"), c, 40.0, 2, 0.5),
             cliff: BlockFbm::new(d("cliff"), c, 300.0, 2, 0.5),
+            detail: BlockFbm::new(d("detail"), c, DETAIL_M, 4, 0.5),
         }
     }
 }
@@ -157,7 +163,49 @@ pub struct Terrain {
     rivers: RiverNet,
     noise: DetailNoise,
     seed: u64,
+    /// The refinement levels between the grid and the blocks (an Earth-sized planet's; a small
+    /// test planet's grid is fine enough without them).
+    relief: Option<Arc<Relief>>,
+    /// Neighbourhoods read for single samples on a refined planet, by square of
+    /// [`NEAR_SQUARE`] blocks (trees and other features sample many columns close together).
+    near: Arc<NearCache>,
 }
+
+/// Side (blocks) of the squares whose neighbourhoods single samples share.
+const NEAR_SQUARE: i32 = 64;
+
+/// Neighbourhoods kept for single samples.
+struct NearCache(crate::cubegen::cache::Cache<(i32, i32), Nearby>);
+
+impl std::fmt::Debug for NearCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NearCache")
+            .field("len", &self.0.len())
+            .finish()
+    }
+}
+
+/// What the sampler reads about a rectangle of columns, once for all of them: the rivers near
+/// it and, on a planet with refinement levels, one level's cells over it.
+#[derive(Debug, Clone, Default)]
+pub struct Nearby {
+    pub segments: SmallVec<[Segment; 16]>,
+    patch: Option<Patch>,
+}
+
+/// The surface of a column before the climate and the living things: its ground, its water
+/// and the river by it.
+struct Shape {
+    h: f32,
+    slope: f32,
+    water: f32,
+    lake: bool,
+    ocean_near: bool,
+    river: Option<RiverHit>,
+}
+
+/// The longest wavelength (m) of the relief the blocks add below a refinement level's cells.
+const DETAIL_M: f64 = 96.0;
 
 /// Latitude where the flat polar ice plateau starts blending in.
 const POLAR_BLEND_START: f64 = 80.5;
@@ -165,11 +213,33 @@ const POLAR_BLEND_START: f64 = 80.5;
 /// Minimum local water fraction for sea/lake water to fill low ground.
 const FLOOD_FRACTION: f32 = 0.08;
 
+/// Cells of a refinement level read beyond a rectangle for its rivers: a river is taken from
+/// the finest level whose margin holds its banks, a wider one from the level above.
+const RIVER_MARGIN: i64 = 6;
+
+/// A river's width (m) from its discharge (m³/s): w = 4 Q^0.5 (Leopold and Maddock 1953's
+/// hydraulic geometry; a brook of a cubic metre a second some 4 m across, the lower
+/// Mississippi's 17,000 about half a kilometre).
+pub fn river_width_m(q: f32) -> f32 {
+    4.0 * q.max(0.0).sqrt()
+}
+
+/// A river's mean depth (m) from its discharge (m³/s): d = 0.27 Q^0.39 (the same).
+pub fn river_depth_m(q: f32) -> f32 {
+    0.27 * q.max(0.0).powf(0.39)
+}
+
+/// The discharge (m³/s) of a river `w` metres wide.
+fn river_q_for_width(w: f32) -> f32 {
+    (w.max(0.0) / 4.0).powi(2)
+}
+
 impl Terrain {
     pub fn new(grid: Arc<PlanetGrid>) -> Self {
         let planet = *grid.planet();
         let rivers = RiverNet::build(&grid);
         let noise = DetailNoise::new(grid.seed, planet.circumference() as i64);
+        let relief = Relief::new(grid.clone());
         Self {
             v: grid.vertical_scale as f32,
             planet,
@@ -177,8 +247,15 @@ impl Terrain {
             noise,
             seed: grid.seed,
             realms: Arc::new(crate::realms::Realms::new(&grid)),
+            relief: (!relief.levels().is_empty()).then(|| Arc::new(relief)),
+            near: Arc::new(NearCache(crate::cubegen::cache::Cache::new(1024))),
             grid,
         }
+    }
+
+    /// The refinement levels, if the planet has them.
+    pub fn relief(&self) -> Option<&Relief> {
+        self.relief.as_deref()
     }
 
     pub fn planet(&self) -> &Planet {
@@ -198,27 +275,114 @@ impl Terrain {
         self.v
     }
 
-    /// Segments relevant to a rectangle of columns (for batch sampling).
-    pub fn river_segments(
-        &self,
-        x0: i32,
-        z0: i32,
-        x1: i32,
-        z1: i32,
-    ) -> smallvec::SmallVec<[Segment; 16]> {
-        self.rivers
-            .segments_near(x0 as f64, z0 as f64, x1 as f64, z1 as f64, 90.0)
+    /// What the sampler reads about a rectangle of block columns (for batch sampling).
+    pub fn nearby(&self, x0: i32, z0: i32, x1: i32, z1: i32) -> Nearby {
+        self.nearby_scaled(x0, z0, x1, z1, 1.0)
     }
 
-    /// Samples one column (convenience; batch callers should pass precomputed segments).
+    /// As [`Self::nearby`], for columns `scale` blocks apart (a far tile's): the refinement
+    /// level whose cells suit them, and the rivers wide enough to show at that spacing.
+    pub fn nearby_scaled(&self, x0: i32, z0: i32, x1: i32, z1: i32, scale: f64) -> Nearby {
+        let Some(relief) = &self.relief else {
+            return Nearby {
+                segments: self
+                    .rivers
+                    .segments_near(x0 as f64, z0 as f64, x1 as f64, z1 as f64, 90.0),
+                patch: None,
+            };
+        };
+        let (lo, hi) = ((x0 as f64, z0 as f64), (x1 as f64 + 1.0, z1 as f64 + 1.0));
+        let finest = relief.level_for(scale);
+        let patch = relief.patch(finest, lo, hi, RIVER_MARGIN);
+        // The narrowest river that shows between columns this far apart (and no brook
+        // narrower than a metre and a half).
+        let mut min_q = river_q_for_width((0.5 * scale as f32 / self.v).max(1.5));
+        let mut segments = SmallVec::new();
+        // Each level gives the rivers whose banks its margin holds; wider ones come from the
+        // level above, down to the grid's.
+        let mut level = finest;
+        let mut above: Option<Patch> = None;
+        loop {
+            let cells = above.as_ref().unwrap_or(&patch);
+            let reach = (RIVER_MARGIN as f64 * cells.cell_size()) as f32 / self.v;
+            // A river's banks reach 1.4 widths and 3 m from its middle.
+            let max_q = if level == 0 {
+                f32::INFINITY
+            } else {
+                river_q_for_width((reach - 3.0) / 1.4)
+            };
+            if max_q > min_q {
+                for r in relief.reaches(cells, min_q) {
+                    if r.q_a < max_q {
+                        segments.push(self.segment(&r));
+                    }
+                }
+            }
+            if level == 0 || max_q.is_infinite() {
+                break;
+            }
+            min_q = min_q.max(max_q);
+            level -= 1;
+            above = Some(relief.patch(level, lo, hi, RIVER_MARGIN));
+        }
+        Nearby {
+            segments,
+            patch: Some(patch),
+        }
+    }
+
+    /// A refinement level's reach as a channel the sampler carves.
+    fn segment(&self, r: &Reach) -> Segment {
+        let v = self.v;
+        Segment {
+            cell: r.grid,
+            ax: r.a.0,
+            az: r.a.1,
+            bx: r.b.0,
+            bz: r.b.1,
+            level_a: r.level_a,
+            level_b: r.level_b,
+            width_a: river_width_m(r.q_a) * v,
+            width_b: river_width_m(r.q_b) * v,
+            depth_a: river_depth_m(r.q_a) * v,
+            depth_b: river_depth_m(r.q_b) * v,
+        }
+    }
+
+    /// Samples one column (convenience; batch callers should read the neighbourhood once). On
+    /// a refined planet the neighbourhood is its square's, kept for the columns about it.
     pub fn sample(&self, x: i32, z: i32) -> ColumnSample {
-        let segs = self.river_segments(x, z, x, z);
-        self.sample_with(x, z, &segs)
+        if self.relief.is_some() {
+            let key = (x.div_euclid(NEAR_SQUARE), z.div_euclid(NEAR_SQUARE));
+            let near = self.near.0.get_or_insert_with(key, || {
+                let (x0, z0) = (key.0 * NEAR_SQUARE, key.1 * NEAR_SQUARE);
+                self.nearby(x0, z0, x0 + NEAR_SQUARE - 1, z0 + NEAR_SQUARE - 1)
+            });
+            return self.sample_with(x, z, &near);
+        }
+        let near = self.nearby(x, z, x, z);
+        self.sample_with(x, z, &near)
+    }
+
+    /// Samples one column of a far tile, its columns `scale` blocks apart.
+    pub fn sample_scaled(&self, x: i32, z: i32, scale: f64) -> ColumnSample {
+        let near = self.nearby_scaled(x, z, x, z, scale);
+        self.sample_with(x, z, &near)
     }
 
     /// Water level at a column (NEG_INFINITY when dry).
     pub fn water_level(&self, x: i32, z: i32) -> f32 {
         self.sample(x, z).water
+    }
+
+    /// A column as a survey of the whole planet sees it: on a refined planet, at the grid's
+    /// own scale (so a search across the world reads no finer cells), else as it is.
+    pub fn survey(&self, x: i32, z: i32) -> ColumnSample {
+        if self.relief.is_some() {
+            self.sample_scaled(x, z, self.grid.geom.cell)
+        } else {
+            self.sample(x, z)
+        }
     }
 
     /// Macro height (grid bicubic + large detail) without rivers or fine detail: used for
@@ -241,16 +405,10 @@ impl Terrain {
         (h, mtn)
     }
 
-    /// Samples one column with precomputed river segments.
-    pub fn sample_with(&self, x: i32, z: i32, segs: &[Segment]) -> ColumnSample {
+    /// The column's surface from the grid and the block-scale noises (a planet without
+    /// refinement levels).
+    fn grid_shape(&self, xf: f64, zf: f64, gx: f64, gz: f64, segs: &[Segment]) -> Shape {
         let g = &*self.grid;
-        let xf = x as f64 + 0.5;
-        let zf = z as f64 + 0.5;
-        let (gx, gz) = g.geom.grid_coords(self.planet.wrap_xf(xf), zf);
-        let lat = self.planet.latitude_deg(zf);
-        let polar = ((lat.abs() - POLAR_BLEND_START) / 2.5).clamp(0.0, 1.0) as f32;
-
-        // ------------------------------------------------------------ height
         let (mut h, mtn) = self.base_height(xf, zf, gx, gz);
         // Slope from a small finite difference of the macro surface.
         let step = 4.0;
@@ -258,32 +416,8 @@ impl Terrain {
         let (hz, _) = self.base_height(xf, zf + step, gx, gz + step / g.geom.cell);
         let slope = (((hx - h) / step as f32).powi(2) + ((hz - h) / step as f32).powi(2)).sqrt();
         h += self.noise.rough.sample2(xf, zf) as f32 * (0.35 + 1.2 * mtn);
+        let crater_lake = self.craters(xf, zf, &mut h);
 
-        // Volcano craters: a bowl carved into the summit, sometimes holding a crater lake.
-        let mut crater_lake = f32::NEG_INFINITY;
-        for vol in &g.volcanoes {
-            let dx = self.planet.delta_x(vol.x, xf) as f32;
-            let dz = (zf - vol.z) as f32;
-            let r = vol.crater_radius * 1.4;
-            if dx.abs() >= r || dz.abs() >= r {
-                continue;
-            }
-            let d = (dx * dx + dz * dz).sqrt() / vol.crater_radius;
-            let rim = vol.summit * self.v;
-            if d >= 1.4 || h < rim - vol.crater_depth * 3.0 {
-                continue;
-            }
-            let bowl = rim - vol.crater_depth * (1.0 - d.min(1.0).powi(2));
-            let t = smoothstep(1.4, 0.9, d);
-            h += (h.min(bowl) - h) * t;
-            if vol.crater_lake && d < 0.8 {
-                crater_lake = crater_lake.max(rim - vol.crater_depth * 0.45);
-            }
-        }
-
-        // ------------------------------------------------------------ water
-        let idx = g.cell_at(self.planet.wrap_xf(xf), zf);
-        let cell_flags = g.flags[idx];
         let (ocean_frac, lake_frac, lake_level) = self.nearby_water(gx, gz);
         let ocean_near = ocean_frac > FLOOD_FRACTION;
         let mut water = f32::NEG_INFINITY;
@@ -310,33 +444,159 @@ impl Terrain {
             water = water.max(crater_lake);
             lake = true;
         }
-        // Rivers: carve the channel and shape a floodplain.
-        let mut river_hit = None;
-        let plain = h;
-        if !segs.is_empty() {
-            let wx = xf + self.noise.warp_x.sample2(xf, zf) * g.geom.cell * 0.35;
-            let wz = zf + self.noise.warp_z.sample2(xf, zf) * g.geom.cell * 0.35;
-            let seg_cx = (segs[0].ax + segs[0].bx) * 0.5;
-            let wx = seg_cx + self.planet.delta_x(seg_cx, wx);
-            if let Some(hit) = RiverNet::closest(wx, wz, segs) {
-                let half = hit.width * 0.5;
-                let bank_w = bank_width(hit.width);
-                if hit.distance < half + bank_w {
-                    let bank = hit.level + BANK_HEIGHT;
-                    if hit.distance < half {
-                        let t = hit.distance / half;
-                        let bed = hit.level - hit.depth * (1.0 - t * t) - 0.3;
-                        h = h.min(bed);
-                        water = water.max(hit.level);
-                    } else {
-                        let t = (hit.distance - half) / bank_w;
-                        let w = 1.0 - smoothstep(0.0, 1.0, t);
-                        h += (bank - h) * w;
-                    }
-                    river_hit = Some(RiverHit { plain, ..hit });
-                }
+        let river = self.carve_river(xf, zf, g.geom.cell * 0.35, segs, &mut h, &mut water);
+        Shape {
+            h,
+            slope,
+            water,
+            lake,
+            ocean_near,
+            river,
+        }
+    }
+
+    /// The column's surface from a refinement level's cells: their surface with the blocks'
+    /// own roughness on it, the level's sea and lakes, and its rivers carved at their width.
+    fn refined_shape(
+        &self,
+        xf: f64,
+        zf: f64,
+        gx: f64,
+        gz: f64,
+        patch: &Patch,
+        segs: &[Segment],
+    ) -> Shape {
+        let g = &*self.grid;
+        // Below the level's cells, the blocks' own relief, as rough as the place is.
+        let rough = self.relief.as_deref().map_or(0.0, |r| r.relief_at(gx, gz));
+        let amp = (crate::relief::amplitude(DETAIL_M) * rough) as f32 * self.v;
+        let surface =
+            |x: f64, z: f64| patch.height(x, z) + self.noise.detail.sample2(x, z) as f32 * amp;
+        let mut h = surface(xf, zf);
+        let step = 4.0;
+        let hx = surface(xf + step, zf);
+        let hz = surface(xf, zf + step);
+        let slope = (((hx - h) / step as f32).powi(2) + ((hz - h) / step as f32).powi(2)).sqrt();
+        let mtn = smoothstep(150.0, 1400.0, g.uplift.bilinear(gx, gz).max(0.0));
+        h += self.noise.rough.sample2(xf, zf) as f32 * (0.35 + 1.2 * mtn);
+        let crater_lake = self.craters(xf, zf, &mut h);
+
+        // The sea over low ground about the level's sea; a lake to its surface about its cells.
+        let (sea, lakes, lake_level) = patch.water(xf, zf);
+        let ocean_near = sea > 0.0;
+        let mut water = f32::NEG_INFINITY;
+        let mut lake = false;
+        if ocean_near && h < 0.0 {
+            water = 0.0;
+        }
+        if lakes > 0.0
+            && let Some(level) = lake_level
+            && h < level
+        {
+            water = water.max(level);
+            lake = true;
+        }
+        if h < crater_lake {
+            water = water.max(crater_lake);
+            lake = true;
+        }
+        let river = self.carve_river(xf, zf, patch.cell_size() * 0.35, segs, &mut h, &mut water);
+        Shape {
+            h,
+            slope,
+            water,
+            lake,
+            ocean_near,
+            river,
+        }
+    }
+
+    /// Volcano craters: a bowl carved into the summit about a point; the surface of the crater
+    /// lake there, if one stands in it (else −∞).
+    fn craters(&self, xf: f64, zf: f64, h: &mut f32) -> f32 {
+        let mut crater_lake = f32::NEG_INFINITY;
+        for vol in &self.grid.volcanoes {
+            let dx = self.planet.delta_x(vol.x, xf) as f32;
+            let dz = (zf - vol.z) as f32;
+            let r = vol.crater_radius * 1.4;
+            if dx.abs() >= r || dz.abs() >= r {
+                continue;
+            }
+            let d = (dx * dx + dz * dz).sqrt() / vol.crater_radius;
+            let rim = vol.summit * self.v;
+            if d >= 1.4 || *h < rim - vol.crater_depth * 3.0 {
+                continue;
+            }
+            let bowl = rim - vol.crater_depth * (1.0 - d.min(1.0).powi(2));
+            let t = smoothstep(1.4, 0.9, d);
+            *h += (h.min(bowl) - *h) * t;
+            if vol.crater_lake && d < 0.8 {
+                crater_lake = crater_lake.max(rim - vol.crater_depth * 0.45);
             }
         }
+        crater_lake
+    }
+
+    /// Rivers: the channel nearest a point (warped by up to `warp` blocks, so channels wander
+    /// between their nodes) carved to its depth, its banks and floodplain shaped about it.
+    fn carve_river(
+        &self,
+        xf: f64,
+        zf: f64,
+        warp: f64,
+        segs: &[Segment],
+        h: &mut f32,
+        water: &mut f32,
+    ) -> Option<RiverHit> {
+        if segs.is_empty() {
+            return None;
+        }
+        let plain = *h;
+        let wx = xf + self.noise.warp_x.sample2(xf, zf) * warp;
+        let wz = zf + self.noise.warp_z.sample2(xf, zf) * warp;
+        let seg_cx = (segs[0].ax + segs[0].bx) * 0.5;
+        let wx = seg_cx + self.planet.delta_x(seg_cx, wx);
+        let hit = RiverNet::closest(wx, wz, segs)?;
+        let half = hit.width * 0.5;
+        let bank_w = bank_width(hit.width);
+        if hit.distance >= half + bank_w {
+            return None;
+        }
+        let bank = hit.level + BANK_HEIGHT;
+        if hit.distance < half {
+            let t = hit.distance / half;
+            let bed = hit.level - hit.depth * (1.0 - t * t) - 0.3;
+            *h = h.min(bed);
+            *water = water.max(hit.level);
+        } else {
+            let t = (hit.distance - half) / bank_w;
+            let w = 1.0 - smoothstep(0.0, 1.0, t);
+            *h += (bank - *h) * w;
+        }
+        Some(RiverHit { plain, ..hit })
+    }
+
+    /// Samples one column with what was read about its neighbourhood.
+    pub fn sample_with(&self, x: i32, z: i32, near: &Nearby) -> ColumnSample {
+        let g = &*self.grid;
+        let xf = x as f64 + 0.5;
+        let zf = z as f64 + 0.5;
+        let (gx, gz) = g.geom.grid_coords(self.planet.wrap_xf(xf), zf);
+        let lat = self.planet.latitude_deg(zf);
+        let polar = ((lat.abs() - POLAR_BLEND_START) / 2.5).clamp(0.0, 1.0) as f32;
+        let idx = g.cell_at(self.planet.wrap_xf(xf), zf);
+        let cell_flags = g.flags[idx];
+        let Shape {
+            mut h,
+            slope,
+            mut water,
+            lake,
+            ocean_near,
+            river: river_hit,
+        } = match &near.patch {
+            Some(patch) => self.refined_shape(xf, zf, gx, gz, patch, &near.segments),
+            None => self.grid_shape(xf, zf, gx, gz, &near.segments),
+        };
 
         // Polar plateau: flat and featureless.
         if polar > 0.0 {
@@ -805,7 +1065,7 @@ impl Terrain {
             .par_iter()
             .flat_map_iter(|&z| (0..c).step_by(step as usize).map(move |x| (x, z)))
             .filter_map(|(x, z)| {
-                let s = self.sample(x, z);
+                let s = self.survey(x, z);
                 if s.biome != biome || !also(&s) {
                     return None;
                 }
@@ -816,7 +1076,7 @@ impl Terrain {
                     for a in 0..8 {
                         let t = a as f64 * std::f64::consts::FRAC_PI_4 + k as f64 * 0.3;
                         let (dx, dz) = ((t.cos() * r) as i32, (t.sin() * r) as i32);
-                        if self.sample(x + dx, z + dz).biome == biome {
+                        if self.survey(x + dx, z + dz).biome == biome {
                             same += 1;
                         }
                     }
@@ -878,8 +1138,16 @@ impl Terrain {
     /// The nearest dry, gentle column to (x, z), searched on widening rings (up to 256
     /// blocks away; (x, z) itself if none is).
     fn settle(&self, x: i32, z: i32) -> (i32, i32) {
+        // On a refined planet the neighbourhood is read once for the whole search.
+        let near = self
+            .relief
+            .is_some()
+            .then(|| self.nearby(x - 260, z - 260, x + 260, z + 260));
         let good = |x: i32, z: i32| {
-            let s = self.sample(x, z);
+            let s = match &near {
+                Some(near) => self.sample_with(x, z, near),
+                None => self.sample(x, z),
+            };
             !s.is_underwater() && s.height > 1.0 && s.slope < 0.6
         };
         if good(x, z) {
@@ -918,6 +1186,79 @@ pub(crate) mod tests {
             };
             Terrain::new(Arc::new(PlanetGrid::build(&s, &|_, _| {})))
         })
+    }
+
+    /// An Earth-sized planet on a coarse grid: refinement levels down to tens of metres.
+    fn earth_terrain() -> &'static Terrain {
+        static T: OnceLock<Terrain> = OnceLock::new();
+        T.get_or_init(|| {
+            let s = WorldGenSettings {
+                seed: 5,
+                planet_size: PlanetSize::Earth,
+                grid_resolution: 256,
+            };
+            Terrain::new(Arc::new(PlanetGrid::build(&s.sanitized(), &|_, _| {})))
+        })
+    }
+
+    /// Land columns of a planet away from the poles, one per `step` grid cells.
+    fn land_columns(t: &Terrain, step: usize) -> Vec<(i32, i32)> {
+        let g = &*t.grid;
+        let n = g.n();
+        (n / 4..n * 3 / 4)
+            .step_by(step)
+            .flat_map(|j| (0..n).step_by(step).map(move |i| (i, j)))
+            .filter(|&(i, j)| g.elevation.data[g.geom.idx(i, j)] > 20.0)
+            .map(|(i, j)| {
+                let (x, z) = g.geom.world_xz(i, j);
+                (x as i32, z as i32)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_refined_planet_reads_the_same_however_it_is_sampled() {
+        let t = earth_terrain();
+        assert!(t.relief().is_some(), "an Earth-sized planet is refined");
+        let c = t.planet().circumference();
+        for (x, z) in land_columns(t, 37).into_iter().take(12) {
+            let one = t.sample(x, z);
+            // In a batch of columns about it, across the planet's seam, and again.
+            let near = t.nearby(x - 9, z - 5, x + 6, z + 10);
+            let batch = t.sample_with(x, z, &near);
+            let round = t.sample(x + c, z);
+            for other in [batch, round, t.sample(x, z)] {
+                assert_eq!(one.height, other.height, "height at {x},{z}");
+                assert_eq!(one.water, other.water, "water at {x},{z}");
+                assert_eq!(one.biome, other.biome, "biome at {x},{z}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_blocks_rivers_run_down_and_far_tiles_read_coarse_cells() {
+        let t = earth_terrain();
+        let relief = t.relief().expect("refined");
+        let finest = relief.levels().len();
+        assert_eq!(relief.level_for(1.0), finest);
+        assert_eq!(relief.level_for(8.0), finest);
+        assert!(relief.level_for(512.0) < finest);
+        assert_eq!(relief.level_for(1.0e6), 0);
+        let mut reaches = 0;
+        for (x, z) in land_columns(t, 11) {
+            let near = t.nearby(x, z, x + 63, z + 63);
+            for s in &near.segments {
+                assert!(
+                    s.level_b <= s.level_a + 1e-3,
+                    "a reach by {x},{z} runs up from {} to {}",
+                    s.level_a,
+                    s.level_b
+                );
+                assert!(s.width_a > 0.0 && s.depth_a > 0.0);
+                reaches += 1;
+            }
+        }
+        assert!(reaches > 50, "rivers about the land: {reaches}");
     }
 
     #[test]

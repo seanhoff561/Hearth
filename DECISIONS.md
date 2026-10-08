@@ -252,3 +252,6 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D241 (2026-10-08) Every rate is real; what assumed a short day is reckoned in time, not ticks
 - D242 (2026-10-08) Time goes faster only at rest, and never skips
 - D243 (2026-10-08) Save format 7 and protocol 5
+- D244 (2026-10-08) New worlds are Earth; the test planets stay for Developer mode
+- D245 (2026-10-08) Terrain refinement: nested levels, made a tile at a time, the same whichever tile
+- D246 (2026-10-08) The blocks read a level once per area; far tiles read coarse levels

@@ -82,6 +82,15 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
   frosts), or let it pass the quiet days at Creative's faster speeds with the animals on their
   populations' tier; until then the soak suite skips it.
 
+## From E4 (before Audit 1): the full suite, deferred
+- The full suite was not run after E4 (a) and (c) (it takes too long here; the owner asked to
+  defer it). Known: E4 (a)'s land share (0.3 → Earth's 0.29) redraws every test planet's coasts,
+  so tests that rely on terrain about a spawn may need new places. Seen failing:
+  `acceptance_v2_8::thatch_keeps_the_rain_off_and_a_flat_bark_covering_drips` ("no level
+  ground" about a beach spawn on the Tiny planet). Run `cargo test --profile dev-opt
+  --workspace --no-fail-fast` at the end of E4 or at Audit 1 and fix what the new coasts broke.
+  Verified so far: all of `hearth_worldgen` (incl. relief, region, succession), clippy, fmt.
+
 ## E4 — Real Earth size (E §5)
 - `PlanetSize::Earth` only (test planets in Developer mode); the generator recalibrated with
   nested refinement levels; real heights, lapse rate, tree and snow lines, altitude physiology;

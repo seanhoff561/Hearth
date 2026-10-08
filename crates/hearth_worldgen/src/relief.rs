@@ -112,6 +112,116 @@ pub struct Cell {
     pub channel: bool,
 }
 
+/// A rectangle of one level's cells, read once for the many columns sampled over it.
+#[derive(Debug, Clone)]
+pub struct Patch {
+    /// The level (0 is the grid's).
+    pub level: usize,
+    cell: f64,
+    half_c: f64,
+    c: f64,
+    /// The level's cells around the planet.
+    count: i64,
+    i0: i64,
+    j0: i64,
+    w: i64,
+    h: i64,
+    cells: Vec<Cell>,
+}
+
+/// A river's reach at a level, between two cells' nodes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Reach {
+    /// World (x, z) of its ends, upstream first.
+    pub a: (f64, f64),
+    pub b: (f64, f64),
+    /// Its water's level at either end (blocks).
+    pub level_a: f32,
+    pub level_b: f32,
+    /// Discharge (m³/s) at either end.
+    pub q_a: f32,
+    pub q_b: f32,
+    /// The grid cell it starts in.
+    pub grid: u32,
+}
+
+/// `d` (blocks along x) taken the short way round a planet of circumference `c`.
+fn wrap_delta(d: f64, c: f64) -> f64 {
+    let d = d.rem_euclid(c);
+    if d > c * 0.5 { d - c } else { d }
+}
+
+impl Patch {
+    /// The level's cell size (blocks).
+    pub fn cell_size(&self) -> f64 {
+        self.cell
+    }
+
+    /// The cell at a level's indices, if the patch holds it (wrapping in x).
+    fn get(&self, i: i64, j: i64) -> Option<&Cell> {
+        let u = (i - self.i0).rem_euclid(self.count);
+        let v = j - self.j0;
+        (u < self.w && (0..self.h).contains(&v)).then(|| &self.cells[(v * self.w + u) as usize])
+    }
+
+    /// The cell at a level's indices, or the patch's nearest edge cell.
+    fn at(&self, i: i64, j: i64) -> &Cell {
+        let mut u = (i - self.i0).rem_euclid(self.count);
+        if u >= self.w {
+            u = if u > self.count / 2 { 0 } else { self.w - 1 };
+        }
+        let v = (j - self.j0).clamp(0, self.h - 1);
+        &self.cells[(v * self.w + u) as usize]
+    }
+
+    /// Cell-centre coordinates of a world point.
+    fn coords(&self, x: f64, z: f64) -> (f64, f64) {
+        (x / self.cell - 0.5, (z + self.half_c) / self.cell - 0.5)
+    }
+
+    /// The surface (blocks) at a point, interpolated bicubically between the cells.
+    pub fn height(&self, x: f64, z: f64) -> f32 {
+        let (gx, gz) = self.coords(x.rem_euclid(self.c), z);
+        let (i0, j0) = (gx.floor() as i64, gz.floor() as i64);
+        let (fx, fz) = (gx - i0 as f64, gz - j0 as f64);
+        let mut rows = [0.0f64; 4];
+        for (r, row) in rows.iter_mut().enumerate() {
+            let j = j0 - 1 + r as i64;
+            let p = [
+                self.at(i0 - 1, j).h as f64,
+                self.at(i0, j).h as f64,
+                self.at(i0 + 1, j).h as f64,
+                self.at(i0 + 2, j).h as f64,
+            ];
+            *row = catmull(p, fx);
+        }
+        catmull(rows, fz) as f32
+    }
+
+    /// The water about a point: the sea's share and the lakes' share of the four cells about
+    /// it (weighted by nearness), and the highest of their lake surfaces (blocks).
+    pub fn water(&self, x: f64, z: f64) -> (f32, f32, Option<f32>) {
+        let (gx, gz) = self.coords(x.rem_euclid(self.c), z);
+        let (i0, j0) = (gx.floor() as i64, gz.floor() as i64);
+        let (fx, fz) = ((gx - i0 as f64) as f32, (gz - j0 as f64) as f32);
+        let (mut sea, mut lakes) = (0.0f32, 0.0f32);
+        let mut level: Option<f32> = None;
+        for (dj, wz) in [(0, 1.0 - fz), (1, fz)] {
+            for (di, wx) in [(0, 1.0 - fx), (1, fx)] {
+                let c = self.at(i0 + di, j0 + dj);
+                if c.sea {
+                    sea += wx * wz;
+                }
+                if c.lake.is_finite() {
+                    lakes += wx * wz;
+                    level = Some(level.map_or(c.lake, |l| l.max(c.lake)));
+                }
+            }
+        }
+        (sea, lakes, level)
+    }
+}
+
 /// Noise for one level: an octave per wavelength, with its amplitude in metres at full relief.
 #[derive(Debug, Clone)]
 struct LevelNoise {
@@ -149,7 +259,7 @@ impl std::fmt::Debug for Relief {
 
 /// Relief amplitude (metres, ±) at full relief for a wavelength: rough as mountain ranges are,
 /// some 300 m at 2.5 km and 70 m at 300 m (amplitude ∝ λ^0.7).
-fn amplitude(wavelength_m: f64) -> f64 {
+pub fn amplitude(wavelength_m: f64) -> f64 {
     160.0 * (wavelength_m / 1000.0).powf(0.7)
 }
 
@@ -178,11 +288,13 @@ impl Relief {
             .map(|(l, lv)| {
                 // Wavelengths from the parent's cell (twice the grid's, below the first level,
                 // as finer than that the grid's surface holds nothing) down to twice the
-                // level's own.
+                // level's own; the finest level's to four times, as the blocks interpolate it
+                // and add their own below (relief at its cells' own size would show their grid).
                 let mut octaves = Vec::new();
                 let mut wl = lv.cell * RATIO as f64 * if l == 0 { 2.0 } else { 1.0 };
+                let shortest = if l + 1 == levels.len() { 4.0 } else { 2.0 } * lv.cell;
                 let mut k = 0u64;
-                while wl >= 2.0 * lv.cell - 1e-6 {
+                while wl >= shortest - 1e-6 {
                     let s = hash2(seed, (l as u64) << 8 | k);
                     octaves.push((BlockFbm::new(s, c as i64, wl, 1, 0.5), amplitude(wl)));
                     wl *= 0.5;
@@ -216,6 +328,11 @@ impl Relief {
     /// The refinement levels, coarsest first (none on a small test planet).
     pub fn levels(&self) -> &[Level] {
         &self.levels
+    }
+
+    /// Tiles made so far at each level, coarsest first.
+    pub fn tiles_made(&self) -> Vec<u64> {
+        self.tiles.iter().map(|t| t.stats().1).collect()
     }
 
     /// Cell size of a level (0 is the grid's).
@@ -434,8 +551,103 @@ impl Relief {
         self.height(self.levels.len(), x, z)
     }
 
-    /// How much relief a place takes (0 flat … 1 the roughest mountains), from the grid.
-    fn relief_at(&self, gx: f64, gz: f64) -> f64 {
+    /// The level to read for columns `scale` blocks apart: the coarsest whose cells are at
+    /// most four columns wide (finer relief would not show between them), the finest for the
+    /// blocks themselves, the grid's for the widest. A far tile so reads coarse cells and makes
+    /// few tiles.
+    pub fn level_for(&self, scale: f64) -> usize {
+        let span = 4.0 * scale;
+        if span >= self.grid.geom.cell {
+            return 0;
+        }
+        (1..=self.levels.len())
+            .find(|&l| self.levels[l - 1].cell <= span)
+            .unwrap_or(self.levels.len())
+    }
+
+    /// The cells of `level` over a rectangle of world (x, z), `margin` cells more on every side
+    /// (and enough for a bicubic surface over all of it).
+    pub fn patch(
+        &self,
+        level: usize,
+        (x0, z0): (f64, f64),
+        (x1, z1): (f64, f64),
+        margin: i64,
+    ) -> Patch {
+        let s = self.cell_size(level);
+        let half = self.c * 0.5;
+        let i0 = (x0 / s - 0.5).floor() as i64 - 1 - margin;
+        let i1 = (x1 / s - 0.5).floor() as i64 + 2 + margin;
+        let j0 = ((z0 + half) / s - 0.5).floor() as i64 - 1 - margin;
+        let j1 = ((z1 + half) / s - 0.5).floor() as i64 + 2 + margin;
+        let mut cells = Vec::with_capacity(((i1 - i0 + 1) * (j1 - j0 + 1)) as usize);
+        for j in j0..=j1 {
+            for i in i0..=i1 {
+                cells.push(self.cell(level, i, j));
+            }
+        }
+        Patch {
+            level,
+            cell: s,
+            half_c: half,
+            c: self.c,
+            count: self.count(level),
+            i0,
+            j0,
+            w: i1 - i0 + 1,
+            h: j1 - j0 + 1,
+            cells,
+        }
+    }
+
+    /// The rivers of a patch: a reach from each cell carrying at least `min_q` (m³/s), not the
+    /// sea's or a lake's, to the cell it drains to, between their nodes. Positions are unwrapped
+    /// about the patch.
+    pub fn reaches(&self, patch: &Patch, min_q: f32) -> Vec<Reach> {
+        let level = patch.level;
+        let centre = (patch.i0 as f64 + patch.w as f64 * 0.5) * patch.cell;
+        let unwrap = |x: f64| centre + wrap_delta(x - centre, self.c);
+        let mut out = Vec::new();
+        for v in 0..patch.h {
+            for u in 0..patch.w {
+                let c = &patch.cells[(v * patch.w + u) as usize];
+                if c.q < min_q || c.sea || c.lake.is_finite() {
+                    continue;
+                }
+                let Some((ri, rj)) = c.receiver else {
+                    continue;
+                };
+                let (i, j) = (patch.i0 + u, patch.j0 + v);
+                let r = patch
+                    .get(ri, rj)
+                    .copied()
+                    .unwrap_or_else(|| self.cell(level, ri, rj));
+                let a = self.node(level, i, j);
+                let b = self.node(level, ri, rj);
+                let to = if r.sea {
+                    0.0
+                } else if r.lake.is_finite() {
+                    r.lake
+                } else {
+                    r.h
+                };
+                out.push(Reach {
+                    a: (unwrap(a.0), a.1),
+                    b: (unwrap(b.0), b.1),
+                    level_a: c.h,
+                    level_b: to.min(c.h),
+                    q_a: c.q,
+                    q_b: r.q.max(c.q),
+                    grid: self.grid.cell_at(a.0.rem_euclid(self.c), a.1) as u32,
+                });
+            }
+        }
+        out
+    }
+
+    /// How much relief a place takes (0 flat … 1 the roughest mountains), from the grid (at
+    /// grid coordinates).
+    pub fn relief_at(&self, gx: f64, gz: f64) -> f64 {
         let g = &*self.grid;
         let e = g.elevation.bilinear(gx, gz) as f64;
         let uplift = g.uplift.bilinear(gx, gz).max(0.0) as f64;
@@ -1241,21 +1453,37 @@ fn target(k: usize, code: u8, n: usize) -> Option<usize> {
 /// Outlets first, then every cell after the cell it drains to.
 fn stack(rec: &[u8], n: usize) -> Vec<u32> {
     let len = rec.len();
-    let mut donors: Vec<Vec<u32>> = vec![Vec::new(); len];
-    let mut roots = Vec::new();
-    for (k, &code) in rec.iter().enumerate() {
-        match target(k, code, n) {
-            Some(r) => donors[r].push(k as u32),
-            None => roots.push(k as u32),
+    // Each cell's donors, packed: those of cell r at donors[first[r]..first[r + 1]].
+    let recv: Vec<Option<usize>> = rec
+        .iter()
+        .enumerate()
+        .map(|(k, &code)| target(k, code, n))
+        .collect();
+    let mut first = vec![0u32; len + 1];
+    for r in recv.iter().flatten() {
+        first[r + 1] += 1;
+    }
+    for k in 0..len {
+        first[k + 1] += first[k];
+    }
+    let mut fill = first.clone();
+    let mut donors = vec![0u32; first[len] as usize];
+    for (k, r) in recv.iter().enumerate() {
+        if let Some(r) = *r {
+            donors[fill[r] as usize] = k as u32;
+            fill[r] += 1;
         }
     }
-    let mut order = Vec::with_capacity(len);
-    let mut queue: VecDeque<u32> = roots.into();
-    while let Some(c) = queue.pop_front() {
-        order.push(c);
-        for &d in &donors[c as usize] {
-            queue.push_back(d);
-        }
+    // Breadth first from the outlets: the order is the queue itself.
+    let mut order: Vec<u32> = (0..len as u32)
+        .filter(|&k| recv[k as usize].is_none())
+        .collect();
+    order.reserve(len - order.len());
+    let mut head = 0;
+    while head < order.len() {
+        let c = order[head] as usize;
+        head += 1;
+        order.extend_from_slice(&donors[first[c] as usize..first[c + 1] as usize]);
     }
     order
 }

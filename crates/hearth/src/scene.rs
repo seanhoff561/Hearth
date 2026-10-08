@@ -75,14 +75,20 @@ impl LocalWorld {
         let reg = Arc::new(BlockRegistry::build(defs)?);
         let t0 = Instant::now();
         let cache = cache_dir.map(|d| d.join(planet_cache_name(settings)));
-        let grid = match cache.as_ref().filter(|p| p.exists()) {
-            Some(p) => match PlanetGrid::load(p) {
-                Ok(g) => g,
-                Err(e) => {
-                    log::warn!("planet cache unreadable ({e}); rebuilding");
-                    PlanetGrid::build(settings, progress)
-                }
-            },
+        let cached =
+            cache
+                .as_ref()
+                .filter(|p| p.exists())
+                .and_then(|p| match PlanetGrid::load(p) {
+                    Ok(g) => Some(g),
+                    Err(e) => {
+                        log::warn!("planet cache unreadable ({e}); rebuilding");
+                        None
+                    }
+                });
+        let grid = match cached {
+            Some(g) => g,
+            // Built afresh, and cached (over an unreadable file, an older format's).
             None => {
                 let g = PlanetGrid::build(settings, progress);
                 if let Some(p) = &cache {

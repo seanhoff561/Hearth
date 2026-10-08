@@ -24,6 +24,8 @@ struct Args {
     out: PathBuf,
     /// A level and a pixel of its map whose cells to print.
     probe: Option<(usize, usize, usize)>,
+    /// Time tiles made cold at each level instead of drawing maps.
+    timing: bool,
 }
 
 fn parse(args: &[String]) -> anyhow::Result<Args> {
@@ -35,6 +37,7 @@ fn parse(args: &[String]) -> anyhow::Result<Args> {
         px: 512,
         out: PathBuf::from("bench-out/relief"),
         probe: None,
+        timing: false,
     };
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -49,6 +52,7 @@ fn parse(args: &[String]) -> anyhow::Result<Args> {
             "--px" => a.px = val()?.parse()?,
             "--site" => a.site = Some(val()?),
             "--out" => a.out = PathBuf::from(val()?),
+            "--timing" => a.timing = true,
             "--probe" => {
                 let v = val()?;
                 let p: Vec<usize> = v.split(',').map(str::parse).collect::<Result<_, _>>()?;
@@ -70,24 +74,24 @@ fn parse(args: &[String]) -> anyhow::Result<Args> {
     Ok(a)
 }
 
-/// The grid for a seed and resolution, built once and kept in `out`.
-fn grid(a: &Args) -> anyhow::Result<PlanetGrid> {
-    let path = a
-        .out
-        .join(format!("planet_{}_earth_{}.bin.zst", a.seed, a.res));
+/// A planet's grid, built once per seed, size and resolution and kept under
+/// `bench-out/planets`.
+pub fn cached_grid(seed: u64, size: PlanetSize, res: usize) -> anyhow::Result<PlanetGrid> {
+    let dir = PathBuf::from("bench-out/planets");
+    let path = dir.join(format!("planet_{seed}_{}_{res}.bin.zst", size.name()));
     if let Ok(g) = PlanetGrid::load(&path) {
         return Ok(g);
     }
     let s = WorldGenSettings {
-        seed: a.seed,
-        planet_size: PlanetSize::Earth,
-        grid_resolution: a.res,
+        seed,
+        planet_size: size,
+        grid_resolution: res,
     }
     .sanitized();
     let t0 = Instant::now();
     let g = PlanetGrid::build(&s, &|_, _| {});
     println!("grid built in {:.1}s", t0.elapsed().as_secs_f64());
-    std::fs::create_dir_all(&a.out)?;
+    std::fs::create_dir_all(&dir)?;
     g.save(&path)?;
     Ok(g)
 }
@@ -247,7 +251,7 @@ fn river_q(level: usize) -> f32 {
 
 pub fn run(args: &[String]) -> anyhow::Result<()> {
     let a = parse(args)?;
-    let g = Arc::new(grid(&a)?);
+    let g = Arc::new(cached_grid(a.seed, PlanetSize::Earth, a.res)?);
     let at = match (a.at, a.site.as_deref()) {
         (Some(at), _) => at,
         (None, Some("coast")) => coast(&g),
@@ -269,6 +273,29 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     let widths: Vec<f64> = std::iter::once(g.geom.cell * 30.0)
         .chain(levels.iter().map(|l| l.cell * 200.0))
         .collect();
+    if a.timing {
+        // Tiles made cold along a line at each level, finest first (each pulls in the coarser
+        // ones it needs): the time per tile and how many of each level it took.
+        for level in (1..=levels.len()).rev() {
+            let cell = levels[level - 1].cell;
+            let i0 = (at.0 / cell).floor() as i64 + 64 * 40;
+            let j0 = ((at.1 + g.geom.c * 0.5) / cell).floor() as i64;
+            let before = relief.tiles_made();
+            let t0 = Instant::now();
+            for k in 0..6 {
+                relief.cell(level, i0 + k * 64, j0);
+            }
+            let after = relief.tiles_made();
+            let made: Vec<u64> = after.iter().zip(&before).map(|(a, b)| a - b).collect();
+            println!(
+                "level {level}: six tiles in a row in {:.0} ms ({:.1} ms each), tiles made by \
+                 level {made:?}",
+                t0.elapsed().as_secs_f64() * 1e3,
+                t0.elapsed().as_secs_f64() * 1e3 / 6.0
+            );
+        }
+        return Ok(());
+    }
     if let Some((level, px, py)) = a.probe {
         // The cells about a pixel of a level's map: a row across it and a column down it.
         let cell = levels[level - 1].cell;

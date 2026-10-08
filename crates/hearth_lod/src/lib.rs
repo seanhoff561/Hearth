@@ -938,15 +938,20 @@ impl LodGen {
             wg.features().grow_trees(&mut map, wg, veg);
             map
         });
-        // Columns with a ring of neighbours around the tile.
+        // Columns with a ring of neighbours around the tile, their neighbourhood read once at
+        // the tile's own scale (a far tile reads a coarser refinement level).
         let n = (TILE + 2) as usize;
         let mut cols = Vec::with_capacity(n * n);
+        let size = key.size();
+        let near =
+            wg.terrain
+                .nearby_scaled(mx - cs, mz - cs, mx + size + cs, mz + size + cs, cs as f64);
         for j in -1..=TILE {
             for i in -1..=TILE {
                 let (bx, bz) = (mx + i * cs, mz + j * cs);
                 let x = planet.wrap_x(bx + cs / 2);
                 let z = bz + cs / 2;
-                let s = wg.terrain.sample(x, z);
+                let s = wg.terrain.sample_with(x, z, &near);
                 let mut col = self.column(wg, veg, &s, x, z, &normals, southern);
                 // The player's changes standing above the ground.
                 if let Some((y, state)) = world.edits.get(&(x, z))

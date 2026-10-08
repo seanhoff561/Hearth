@@ -231,14 +231,14 @@ impl WorldGenerator {
 
     fn compute_column(&self, pos: ColumnPos) -> ColumnData {
         let (x0, z0) = pos.min_block_xz();
-        let segs = self.terrain.river_segments(x0, z0, x0 + 15, z0 + 15);
+        let near = self.terrain.nearby(x0, z0, x0 + 15, z0 + 15);
         let mut samples = Vec::with_capacity(256);
         let (mut h_min, mut h_max, mut water_max) = (i32::MAX, i32::MIN, i32::MIN);
         let mut cliffy = false;
         let mut any_trees = false;
         for lz in 0..16 {
             for lx in 0..16 {
-                let s = self.terrain.sample_with(x0 + lx, z0 + lz, &segs);
+                let s = self.terrain.sample_with(x0 + lx, z0 + lz, &near);
                 h_min = h_min.min(s.height_i());
                 h_max = h_max.max(s.height_i());
                 water_max = water_max.max(s.water_i());

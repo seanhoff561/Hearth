@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use hearth_math::PlanetSize;
 use hearth_worldgen::region::biome::{foliage_color, grass_color, water_color};
-use hearth_worldgen::{ColumnSample, PlanetGrid, Surface, Terrain, WorldGenSettings};
+use hearth_worldgen::{ColumnSample, Surface, Terrain};
 use rayon::prelude::*;
 
 use crate::image::{Image, lerp_color, shade};
@@ -47,13 +47,8 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
             other => anyhow::bail!("unknown argument {other}"),
         }
     }
-    let settings = WorldGenSettings {
-        seed,
-        planet_size: planet,
-        grid_resolution: res,
-    };
     let t0 = Instant::now();
-    let grid = Arc::new(PlanetGrid::build(&settings, &|_, _| {}));
+    let grid = Arc::new(crate::relief::cached_grid(seed, planet, res)?);
     let terrain = Terrain::new(grid);
     println!(
         "planet + terrain ready in {:.2}s",
@@ -76,16 +71,17 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     let half = size as f64 * scale * 0.5;
     let x0 = cx as f64 - half;
     let z0 = cz as f64 - half;
-    // Sample in 16×16 tiles with shared river segments, like cube generation does.
+    // Sample a row at a time with its neighbourhood read once, like cube generation does.
     let rows: Vec<Vec<ColumnSample>> = (0..size)
         .into_par_iter()
         .map(|py| {
             let wz = (z0 + py as f64 * scale) as i32;
-            let segs = terrain.river_segments(x0 as i32, wz, (x0 + size as f64 * scale) as i32, wz);
+            let x1 = (x0 + size as f64 * scale) as i32;
+            let near = terrain.nearby_scaled(x0 as i32, wz, x1, wz, scale);
             (0..size)
                 .map(|px| {
                     let wx = (x0 + px as f64 * scale) as i32;
-                    terrain.sample_with(wx, wz, &segs)
+                    terrain.sample_with(wx, wz, &near)
                 })
                 .collect()
         })

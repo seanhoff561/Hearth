@@ -15,8 +15,12 @@ wrapping east–west on a Mercator grid with poles.
   balance.
 - **Climate**: currents per ocean basin, upwind continentality, zonal moisture advection with
   orographic lift and rain shadows, dry-season belts, Köppen classes, lapse-rate temperature.
-- **Regional sampler**: block-resolution height (bicubic grid + detail noise), meandering rivers
-  with floodplains, lakes, coasts, 36 biomes from climate + altitude + local conditions.
+- **Refinement levels** (an Earth-sized planet; E4): 2.4 km, 306 m and 38 m cells between the
+  grid and the blocks, each made from the one above with its own relief, rivers, lakes and coasts
+  ([terrain.md](terrain.md)).
+- **Regional sampler**: block-resolution height (the finest level's surface and the blocks' own
+  relief; on a small test planet, bicubic grid + detail noise), meandering rivers with
+  floodplains, lakes, coasts, 36 biomes from climate + altitude + local conditions.
 - **Cube generation**: pure and order-independent (priority lattice, 27-neighbour seeding):
   rock by depth, caves, rock-variety veins, trees and plants.
 
