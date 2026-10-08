@@ -1,0 +1,12 @@
+# S2 (Amendment S): the smooth ground at Baseline-S's places, at places
+# like S0's test scenes in the generated worlds (grassland, a stony shore, a river, alpine rock,
+# montane forest slopes, a cold desert), kept to set beside the smooth world's in
+# docs/review/smooth-world.md (S §12.4).
+# `hearth --screenshot-list tools/shots/s2_smooth.shots`
+defaults: w=960, h=540, hour=11, clouds=0.3, dry=true
+seed=4, planet=huge, res=256, dist=8, x=32768, z=-20480, above=2.5, yaw=200, pitch=2, season=summer, out=bench-out/s2/shots/grassland.png
+seed=7, x=144, z=-4520, y=12, dist=6, yaw=0, pitch=28, season=summer, out=bench-out/s2/shots/stony_shore.png
+seed=7, x=12252, z=-9316, y=22, dist=6, yaw=180, pitch=24, yf=0.45, out=bench-out/s2/shots/river.png
+seed=7, planet=huge, res=256, dist=8, x=171008, z=-45056, above=3, yaw=30, pitch=8, season=summer@0.6, out=bench-out/s2/shots/alpine_rock.png
+seed=7, planet=huge, res=256, dist=8, x=14336, z=-43008, above=4, yaw=30, pitch=8, season=summer@0.5, out=bench-out/s2/shots/montane.png
+seed=7, planet=huge, res=256, dist=8, biome=cold_desert, above=3, yaw=30, pitch=5, season=summer, out=bench-out/s2/shots/cold_desert.png

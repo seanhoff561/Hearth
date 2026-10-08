@@ -369,6 +369,8 @@ pub struct TerrainStats {
     pub quads_drawn: u64,
     pub packed_bytes: u64,
     pub general_bytes: u64,
+    /// The smooth ground's vertices and indices (bytes).
+    pub smooth_bytes: u64,
     pub gpu_culling: bool,
     pub resorted: usize,
     /// Translucent quads drawn (always from CPU draw lists).
@@ -1193,6 +1195,8 @@ impl TerrainRenderer {
             quads_drawn,
             packed_bytes: self.packed.alloc.used() as u64 * 16,
             general_bytes: self.general.alloc.used() as u64 * 64,
+            smooth_bytes: self.smooth_v.alloc.used() as u64 * 24
+                + self.smooth_i.alloc.used() as u64 * 4,
             gpu_culling: gpu,
             resorted,
             translucent_quads,

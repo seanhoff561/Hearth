@@ -160,13 +160,19 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 - A fresh cut's faces holding sharper than soil's sharpness, weathering soft (S0's note).
 - The bot suite (it digs) with the full suite.
 
-## S2 — Smooth terrain rendering
-- The production mesher (S §3.2), compact vertices, mid-range simplification, material blending,
-  procedural PBR materials and compression (S §4.2), biplanar shading with height blending and
-  anti-tiling, shader overlays (wetness, snow, moss, litter, scorch), sub-metre stratigraphy,
-  voxel AO and trilinear light, material packs.
-- *Accept:* S §13 meshing tests; the screenshot suite shows smooth terrain everywhere; frame
-  targets met for terrain-only scenes.
+## From S2 (open)
+- The client's soft preview of what a dig will take.
+- The smooth ground occlusion-culled on the GPU (it is frustum and cave culled, and drawn first
+  so its depth culls what lies behind it); `meshopt` vertex-cache ordering; mid-range cubes
+  meshed from a field at half resolution.
+- Materials: a normal and roughness from the noise (the surface shades with the mesh's normal
+  only), specular for wet and icy ground, and moss, leaf litter, scorch and frost overlays.
+  Material packs are data packs overriding `materials/` (no hot reload yet).
+- The debug views (wireframe, normals, weights, fill slices, the developer's blocky view).
+- Frame times for terrain-only scenes on the PC (`scripts/baseline-s.sh`).
+- The stony shore's shot place (`tools/shots/s0_baseline.shots`): E4 moved the coast; the
+  camera stands in the ground there.
+- Snow as fill (S7); the distant terrain smooth (S4); plants, trees and loose stones (S5–S6).
 
 ## E7 — Realistic human body, face and hair (after S2, E §8)
 - Anatomically realistic skinned bodies with morphs, skin with subsurface scattering and state

@@ -37,19 +37,55 @@ P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6. V2-11 superseded.
 | P5 | done 2026-10-08 (P6 removed, D258) |
 | Audit 1 | done 2026-10-08 |
 | S1 — fill data and editing | done 2026-10-08 (D260–D262) |
-| S2 → E7 → S3 → S4, Audit 2 | next |
+| S2 — smooth terrain drawn | done 2026-10-08 (D263–D265) |
+| E7 → S3 → S4, Audit 2 | next |
 | S5 with P7 → P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
 
 | Row | State |
 |---|---|
-| Smooth world (S) | S1 done: fill in every surface cube, generated and saved; ground families; dig, pile and settle conserving volume (sand to 34.3°). S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
+| Smooth world (S) | S2 done: natural ground meshed smooth on the server and drawn with blended procedural materials, wet and snow overlays (0.28–0.87 ms a surface cube, as the blocks); frame targets need the PC. S1 done: fill in every surface cube, generated and saved; ground families; dig, pile and settle conserving volume (sand to 34.3°). S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E6 done 2026-10-08; E7 planned |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); next: Audit 2 after S4 |
 
-## Latest: S1 — fill data and editing (2026-10-08, D260–D262)
+## Latest: S2 — the smooth ground drawn (2026-10-08, D263–D265)
+- **Meshes:** the server meshes each cube's natural ground through its fill with sharp nets.
+  - Each cube has two voxels of apron, so neighbouring cubes meet without a crack or a fold (27
+    generated cubes checked).
+  - Vertices are 24 bytes, about 25 bytes a triangle, with light, ambient occlusion from the
+    fill, and the column's climate for grass.
+  - The blocks no longer draw natural ground.
+- **Shading:** each of the 105 ground materials is 3D noise in world space at its grain, in its
+  material's colours, so nothing tiles.
+  - Materials meet by height blending, and bedded rock shows its beds.
+  - Crisp rock shades toward its faces.
+  - Grass takes its place's and season's colour at a sward's albedo, with thinner places where
+    the soil shows.
+  - Wet ground darkens after rain and dries by the weather.
+  - Snow lying on the ground covers it (snow layers there are no longer drawn as blocks).
+- **In play:** the look meets the smooth surface (12 µs a pick). Smooth meshes are drawn from
+  their own arenas, first in the GPU-culled path.
+- **Measured:** a surface cube meshes in 0.28–0.87 ms on one thread, as before. Mesh memory falls
+  in the mountains and grows on coasts. Shots are in `docs/review/s2/`.
+- **Deferred** (`PLAN.md`):
+  - occlusion culling of the smooth ground;
+  - `meshopt`;
+  - mid-range simplification;
+  - normals, specular and further overlays from the materials;
+  - debug views;
+  - frame times on the PC.
+- **Real?** Albedos from the materials' measured colours; wet ground at 0.6 of dry; fresh snow at
+  0.8; grass at a sward's half of a blade's colour.
+- **Lean?** No texture sets: the 105 materials are a 48-byte record each and a few lines of
+  noise. One mesher serves the server and the tests.
+- **Fast?** Meshing costs as the blocks did; a pick costs 12 µs.
+- **Whole?** The look, the dig, the saves and the mesh read the same fill, and GPU and CPU
+  culling draw the same image.
+- **Organic?** Sand runs into turf by height, and beds waver across a face. Nothing repeats.
+
+## S1 — fill data and editing (2026-10-08, D260–D262)
 - **Fill in the world:**
   - every cube the ground's surface passes through keeps each voxel's depth inside it, to
     1.2 cm;

@@ -419,6 +419,11 @@ impl Mesher<'_> {
         (lights, aos)
     }
 
+    /// Whether a state is a layer of snow.
+    fn snow_layer(&self, s: BlockStateId) -> bool {
+        !s.is_air() && self.reg.block_of(s).name.path() == "snow"
+    }
+
     /// Meshes one cube.
     pub fn mesh(&self, inp: &MeshInput) -> CubeMesh {
         let mut out = CubeMesh {
@@ -556,6 +561,15 @@ impl Mesher<'_> {
             for z in 0..16 {
                 for x in 0..16 {
                     let s = inp.at(x, y, z);
+                    // Snow lying on the smooth ground is drawn on it (its cover), not as a
+                    // layer of blocks (until S7 makes it fill).
+                    if inp.ground.is_some()
+                        && self.snow_layer(s)
+                        && self.reg.has(inp.at(x, y - 1, z), StateFlags::NATURAL)
+                    {
+                        all_air = false;
+                        continue;
+                    }
                     match self.models.get(s) {
                         StateModel::Quads(quads, layer) => {
                             all_air = false;
@@ -646,7 +660,13 @@ impl Mesher<'_> {
                 )
             };
             let climate = |x: usize, z: usize| inp.tints.climate[z * 16 + x];
-            out.smooth = crate::smooth::mesh_cube(field, ground, &light, &climate);
+            let snow = |p: glam::IVec3| self.snow_layer(inp.at(p.x, p.y, p.z));
+            let about = crate::smooth::Surroundings {
+                light: &light,
+                climate: &climate,
+                snow: &snow,
+            };
+            out.smooth = crate::smooth::mesh_cube(field, ground, &about);
         }
         out
     }

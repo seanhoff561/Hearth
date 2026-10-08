@@ -680,3 +680,52 @@ vertex, 2 B an index):
 Shading prototype (turf and limestone on the rolling hills, height blending): biplanar mapping
 takes 3.05 texture samples a pixel, triplanar 4.57; their images differ by 0.56 levels of 255 on
 average, 2 % of pixels by more than 4.
+
+## Baseline-S — near terrain on the CPU (`hearth bench --terrain-only`), commit 2fb8df5, 4 threads, preset Medium
+
+| Scene | Cubes loaded | With a surface | Cubes meshed/s | Surface cubes/s | One surface cube, 1 thread (ms) | Triangles | Mesh bytes per surface cube | Cube memory per surface cube | per cube | Surface cube serialized (raw / zstd) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| lowland_forest | 13689 | 3019 | 7168 | 1581 | 0.43 | 5254062 | 43520 | 7684 | 1776 | 7596 / 854 |
+| peak_lod512 | 13750 | 1326 | 8269 | 797 | 0.42 | 158032 | 25494 | 8498 | 930 | 8410 / 954 |
+| peak_lod1024 | 13750 | 1326 | 8113 | 782 | 0.37 | 158032 | 25494 | 8498 | 930 | 8410 / 954 |
+| coast_sunset | 67375 | 3990 | 8027 | 475 | 0.31 | 615388 | 21563 | 5883 | 503 | 5796 / 656 |
+| underwater | 56628 | 3636 | 8302 | 533 | 0.32 | 548760 | 21240 | 5730 | 528 | 5642 / 625 |
+| cave_torches | 16337 | 1629 | 8188 | 816 | 0.30 | 803898 | 33484 | 8449 | 949 | 8361 / 1024 |
+| thunderstorm | 13689 | 3019 | 7058 | 1557 | 0.40 | 5254062 | 43520 | 7684 | 1776 | 7596 / 854 |
+| flythrough | 91809 | 23150 | 6056 | 1527 | 0.87 | 44474278 | 45888 | 7479 | 1978 | 7391 / 836 |
+
+An edit today: the dug block adds 78 bytes to `blocks.json` (generated terrain is never saved: an explored, unedited area costs nothing), and the server sends the whole changed cube to the client (the serialized size above).
+
+
+## S2 smooth ground — near terrain on the CPU (`hearth bench --terrain-only`), commit 2fb8df5, 4 threads, preset Medium
+
+| Scene | Cubes loaded | With a surface | Cubes meshed/s | Surface cubes/s | One surface cube, 1 thread (ms) | Triangles | Mesh bytes per surface cube | Cube memory per surface cube | per cube | Surface cube serialized (raw / zstd) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| lowland_forest | 13689 | 3019 | 7255 | 1600 | 0.48 | 6075792 | 43520 | 7684 | 1776 | 7596 / 854 |
+| peak_lod512 | 13750 | 1326 | 8207 | 791 | 0.37 | 879000 | 25494 | 8498 | 930 | 8410 / 954 |
+| peak_lod1024 | 13750 | 1326 | 7924 | 764 | 0.43 | 879000 | 25494 | 8498 | 930 | 8410 / 954 |
+| coast_sunset | 67375 | 3990 | 8379 | 496 | 0.28 | 2347178 | 21563 | 5883 | 503 | 5796 / 656 |
+| underwater | 56628 | 3636 | 8093 | 520 | 0.30 | 2115948 | 21240 | 5730 | 528 | 5642 / 625 |
+| cave_torches | 16337 | 1629 | 8180 | 816 | 0.32 | 1596736 | 33484 | 8449 | 949 | 8361 / 1024 |
+| thunderstorm | 13689 | 3019 | 7120 | 1570 | 0.39 | 6075792 | 43520 | 7684 | 1776 | 7596 / 854 |
+| flythrough | 91809 | 23150 | 5790 | 1460 | 0.83 | 50050736 | 45888 | 7479 | 1978 | 7391 / 836 |
+
+An edit today: the dug block adds 78 bytes to `blocks.json` (generated terrain is never saved: an explored, unedited area costs nothing), and the server sends the whole changed cube to the client (the serialized size above).
+
+
+## S2 smooth ground — near terrain on the CPU (`hearth bench --terrain-only`), 4 threads, preset Medium
+
+| Scene | Cubes loaded | With a surface | Cubes meshed/s | Surface cubes/s | One surface cube, 1 thread (ms) | Triangles | Mesh bytes per surface cube | Cube memory per surface cube | per cube | Surface cube serialized (raw / zstd) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| lowland_forest | 13689 | 3019 | 7255 | 1600 | 0.48 | 6075792 | 43520 | 7684 | 1776 | 7596 / 854 |
+| peak_lod512 | 13750 | 1326 | 8207 | 791 | 0.37 | 879000 | 25494 | 8498 | 930 | 8410 / 954 |
+| peak_lod1024 | 13750 | 1326 | 7924 | 764 | 0.43 | 879000 | 25494 | 8498 | 930 | 8410 / 954 |
+| coast_sunset | 67375 | 3990 | 8379 | 496 | 0.28 | 2347178 | 21563 | 5883 | 503 | 5796 / 656 |
+| underwater | 56628 | 3636 | 8093 | 520 | 0.30 | 2115948 | 21240 | 5730 | 528 | 5642 / 625 |
+| cave_torches | 16337 | 1629 | 8180 | 816 | 0.32 | 1596736 | 33484 | 8449 | 949 | 8361 / 1024 |
+| thunderstorm | 13689 | 3019 | 7120 | 1570 | 0.39 | 6075792 | 43520 | 7684 | 1776 | 7596 / 854 |
+| flythrough | 91809 | 23150 | 5790 | 1460 | 0.83 | 50050736 | 45888 | 7479 | 1978 | 7391 / 836 |
+
+An edit today: the dug block adds 78 bytes to `blocks.json` (generated terrain is never saved: an explored, unedited area costs nothing), and the server sends the whole changed cube to the client (the serialized size above).
+
+Against Baseline-S above (whose rows were taken on two threads, these on four; the places moved with E4, so compare a scene's own columns): one surface cube costs as before on one thread (0.28–0.87 ms); cube memory per surface cube grows by the fill array where the surface passes (+4 KiB, 5.5 → 7.7 KiB in the forest); mesh bytes per surface cube fall in the mountains (33.8 → 25.5 KiB) and grow on coasts (8.9 → 21.6 KiB), where smooth slopes replace few large greedy quads. Triangles count the smooth ground's with the quads'.

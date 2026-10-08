@@ -722,7 +722,10 @@ fn terrain_only(opts: &BenchOptions, cache_dir: Option<&Path>) -> anyhow::Result
             one_ms,
             triangles: meshes
                 .iter()
-                .map(|m| 2 * (m.quads.len() + m.models.len() + m.translucent.len()))
+                .map(|m| {
+                    2 * (m.quads.len() + m.models.len() + m.translucent.len())
+                        + m.smooth.indices.len() / 3
+                })
                 .sum(),
             mesh_bytes: surface.iter().map(|s| s.1.gpu_bytes()).sum::<usize>() as f64 / n,
             cube_bytes: surface.iter().map(|s| cube_bytes(&s.0)).sum::<usize>() as f64 / n,
@@ -912,6 +915,9 @@ fn run_scene(
         hearth_render::scene::MIP_LEVELS,
         hearth_render::scene::ANISOTROPY,
     );
+    scene
+        .terrain
+        .set_ground_materials(ctx, &crate::scene::ground_materials(&lw.reg, &lw.content).1);
     scene.terrain.render_distance = rd;
     scene.terrain.vertical_distance = video.vertical_render_distance as i32;
     scene.render_scale = opts.render_scale;

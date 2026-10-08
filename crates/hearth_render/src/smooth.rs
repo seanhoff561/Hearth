@@ -96,7 +96,8 @@ pub struct SmoothVertex {
     pub ao: u8,
     /// How far shading follows the faces (crisp rock) rather than the smooth normal, unorm.
     pub sharpness: u8,
-    pub _pad: u8,
+    /// How much of the ground about it lies under snow, unorm (until S7 makes snow fill).
+    pub snow: u8,
     /// The column's climate code (`mesh::ColumnTints::climate`): grass's colour by place and
     /// season.
     pub climate: u32,
@@ -154,15 +155,18 @@ pub fn window(map: &CubeMap, reg: &BlockRegistry, ground: &GroundMaterials, pos:
     Field::from_parts(IVec3::ZERO, [WINDOW; 3], fill, material).expect("a window's arrays")
 }
 
-/// Meshes a cube's smooth ground from its window. `light(p)` gives `sky << 4 | block` at a
-/// voxel in the cube's coordinates (−1..=16) and whether it is open (not solid ground);
-/// `climate(x, z)` a column's climate code (0..16 each).
-pub fn mesh_cube(
-    field: &Field,
-    ground: &GroundMaterials,
-    light: &dyn Fn(IVec3) -> (u8, bool),
-    climate: &dyn Fn(usize, usize) -> u32,
-) -> SmoothMesh {
+/// What the mesher reads of the cube about it, in the cube's coordinates (−1..=16).
+pub struct Surroundings<'a> {
+    /// `sky << 4 | block` at a voxel, and whether it is open (not solid ground).
+    pub light: &'a dyn Fn(IVec3) -> (u8, bool),
+    /// A column's climate code (0..16 each).
+    pub climate: &'a dyn Fn(usize, usize) -> u32,
+    /// Whether snow lies in a voxel (a layer of it, or snowy ground).
+    pub snow: &'a dyn Fn(IVec3) -> bool,
+}
+
+/// Meshes a cube's smooth ground from its window.
+pub fn mesh_cube(field: &Field, ground: &GroundMaterials, about: &Surroundings) -> SmoothMesh {
     let region = Region {
         lo: [APRON; 3],
         hi: [APRON + 16; 3],
@@ -212,11 +216,11 @@ pub fn mesh_cube(
             normal: octahedral(n),
             materials,
             weights,
-            light: light_at(local, n, light),
+            light: light_at(local, n, about.light),
             ao: (occlusion(field, *p, n) * 255.0).round() as u8,
             sharpness: (mesh.sharpness[k] * 255.0).round() as u8,
-            _pad: 0,
-            climate: climate(
+            snow: (snow_at(local, n, about.snow) * 255.0).round() as u8,
+            climate: (about.climate)(
                 local.x.floor().clamp(0.0, 15.0) as usize,
                 local.z.floor().clamp(0.0, 15.0) as usize,
             ),
@@ -341,6 +345,19 @@ fn light_at(local: Vec3, n: Vec3, light: &dyn Fn(IVec3) -> (u8, bool)) -> u8 {
     let sky = (sky / w).round().min(15.0) as u8;
     let blk = (blk / w).round().min(15.0) as u8;
     (sky << 4) | blk
+}
+
+/// The share of the voxels about a point of the surface (and just above it) that hold snow.
+fn snow_at(local: Vec3, n: Vec3, snow: &dyn Fn(IVec3) -> bool) -> f32 {
+    let p = local + n * 0.3 - Vec3::splat(0.5);
+    let b = p.floor().as_ivec3();
+    let mut hits = 0;
+    for k in 0..8 {
+        let v = (b + IVec3::new(k & 1, (k >> 1) & 1, (k >> 2) & 1))
+            .clamp(IVec3::splat(-1), IVec3::splat(16));
+        hits += snow(v) as u32;
+    }
+    hits as f32 / 8.0
 }
 
 /// Ambient occlusion from the fill (S §4.3): the ground found along a few short rays into the

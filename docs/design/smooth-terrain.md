@@ -1,7 +1,7 @@
 # Smooth terrain: fill, meshing and shading (Amendment S)
 
 *S0's prototypes and the decision they led to; S1's fill in the world, its ground families and
-its editing. The production mesher (S2) builds on `hearth_smooth`; this page grows with S2–S4.
+its editing; S2's meshes and shading in the game. This page grows with S3–S4.
 The look is set by `art-direction.md`; the plan of the change by `MIGRATION_SMOOTH.md`.*
 
 ## The fill
@@ -95,6 +95,45 @@ centres, unloaded ground outside.
   the hole to within 2 litres; four cubic metres of sand tipped in one place stand at 76° and
   settle to 34.3° in 18 moves; a 14 m³ pit dug straight down in sand slumps to 34.7° walls; a
   look meets the ground within a centimetre.
+
+## The smooth ground in the game (S2)
+
+- **Meshing** (`hearth_render::smooth`): the server meshes each cube's natural ground from a
+  window of its fill and two voxels of apron (`window`) with sharp nets, alongside the blocks'
+  faces and models, which no longer draw natural ground. The window is in its own coordinates
+  and each vertex's place is its cell's integer corner plus its place in the cell, rounded
+  apart, so a vertex meshed in two cubes comes out the same far from the world's origin.
+- **Vertices** (24 bytes): position to half a millimetre in the cube, an octahedral normal, four
+  material slots and their weights, light, ambient occlusion, sharpness, snow cover and the
+  column's climate (for grass's colour). A triangle whose corners name different materials gets
+  corners of its own carrying their union, so the shader can take the materials from one corner
+  and blend by the three's weights; slivers under 8 % are dropped. About 25 bytes a triangle.
+- **Light** is the open voxels about a vertex by nearness, taken half a voxel out along its
+  normal; **ambient occlusion** the ground found along five short rays into the hemisphere about
+  it.
+- **Materials** (`scene::ground_materials`): one slot per natural block (105), coloured by its
+  material's two colours, roughness and pattern (the grain's size and how its relief stands up in
+  blending); a block that names no material by its map colour. Grass is its place's and season's
+  colour at a sward's albedo, broken by thinner places where the soil shows.
+- **Shading** (`terrain.wgsl`, `fs_smooth`): each material is 3D value noise at its grain in
+  world space (three octaves, the finer fading out with distance before they would shimmer), so
+  there is no projection to choose and nothing tiles. Materials meet by height blending: each
+  weight raised by its material's relief there, the highest winning within a narrow band.
+  Bedded rock (layered and banded patterns) shows beds of 12–25 cm across its faces, wavering
+  and fading with distance. Crisp materials shade toward their faces' normals, soft ones with the
+  smooth normal. **Overlays:** wet ground after rain at 0.6 of its dry albedo (the environment's
+  `wetness`, a film of rain that dries by warmth, dryness and wind); snow cover, where snow
+  layers lie on the ground, its edge broken by the ground's relief (snow layers on natural
+  ground are no longer drawn as blocks; S7 makes snow fill).
+- **Drawing:** smooth meshes live in their own arenas (vertices, and indices as `u16` in pairs)
+  and are drawn by indexed indirect draws from the CPU's list of visible cubes (frustum and cave
+  culled), first in the GPU-culled path's first phase, so their depth feeds the occlusion
+  pyramid; they are not yet occlusion-culled themselves.
+- **Looking at it:** the client's look meets the smooth surface by the field (12 µs a pick).
+- **Measured** (`hearth bench --terrain-only`, `BENCHMARKS.md`): a surface cube meshes in
+  0.28–0.87 ms on one thread, as the blocks did; cube memory grows by the fill array where the
+  surface passes (+4 KiB); mesh bytes fall in the mountains (33.8 → 25.5 KiB a surface cube) and
+  grow on coasts (8.9 → 21.6 KiB). The look on the software device: `docs/review/s2/`.
 
 ## The meshers
 

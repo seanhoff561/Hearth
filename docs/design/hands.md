@@ -14,9 +14,10 @@ happens without a highlighted target or a use of one's own. Nothing risky is a d
 - **Picking:** the one thing looked at within reach is picked, and the nearest wins:
   - a thing lying there (its resting box);
   - an animal (its rig's parts, within the reach of the arm and what the right hand holds);
-  - a block, by the boxes of its shape (`pick_block`: 3 cm steps along the look, water at its
-    surface).
-  - It costs some 2.5 µs (`tests/picking.rs`; P asks under 0.2 ms).
+  - the smooth ground, where the look meets its surface (S2, `hearth_world::ground::raycast`);
+  - any other block, by the boxes of its shape (`pick_block`: 3 cm steps along the look, water at
+    its surface).
+  - It costs some 12 µs (`tests/picking.rs`; P asks under 0.2 ms).
 - **Highlight:** what is looked at is softly outlined:
   - a block by its shape's bounds;
   - a thing by its box;

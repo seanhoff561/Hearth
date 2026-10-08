@@ -55,10 +55,15 @@ fn the_ground_meshes_whole_and_alike_cube_by_cube() {
                     (0xF0u8, !reg.has(s, StateFlags::NATURAL))
                 };
                 let f = window(map, &reg, &ground, p);
-                let m = mesh_cube(&f, &ground, &light, &|_, _| 0);
+                let about = hearth_render::smooth::Surroundings {
+                    light: &light,
+                    climate: &|_, _| 0,
+                    snow: &|_| false,
+                };
+                let m = mesh_cube(&f, &ground, &about);
                 meshed += 1;
                 // Alike every time.
-                assert_eq!(m, mesh_cube(&f, &ground, &light, &|_, _| 0));
+                assert_eq!(m, mesh_cube(&f, &ground, &about));
                 for v in &m.vertices {
                     let w: u32 = v.weights.iter().map(|&w| w as u32).sum();
                     assert!((250..=258).contains(&w), "weights sum to {w}");

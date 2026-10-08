@@ -15,7 +15,7 @@ struct GeneralQuad {
 struct Instance { origin: vec4<f32> };
 // The smooth ground's vertex (24 bytes, `smooth::SmoothVertex`): position (u16 × 3, (m + 1) ×
 // 2048 in the cube), octahedral normal (i8 × 2), four material slots and their weights (u8 ×
-// 4 each), light, AO, sharpness, and the column's climate code.
+// 4 each), light, AO, sharpness, snow cover, and the column's climate code.
 struct SmoothV { a: u32, b: u32, c: u32, d: u32, e: u32, f: u32 };
 // A ground material (`terrain::GroundMaterial`).
 struct GroundMat { color: vec4<f32>, color2: vec4<f32>, tint: u32, relief: f32, strata: f32, pad1: f32 };
@@ -49,6 +49,7 @@ struct VsOut {
     @location(11) weights: vec4<f32>,
     @location(12) @interpolate(flat) climate: u32,
     @location(13) sharp: f32,
+    @location(14) snow: f32,
 };
 
 fn face_normal(face: u32) -> vec3<f32> {
@@ -368,6 +369,7 @@ fn vs_smooth(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
     out.light = vec2<f32>(f32(l >> 4u), f32(l & 15u)) / 15.0;
     out.ao = f32((v.e >> 8u) & 255u) / 255.0;
     out.sharp = f32((v.e >> 16u) & 255u) / 255.0;
+    out.snow = f32(v.e >> 24u) / 255.0;
     out.climate = v.f;
     out.world = world;
     out.water_depth = water_depth;
@@ -426,8 +428,12 @@ fn ground_sample(slot: u32, p: vec3<f32>, dist: f32, climate: u32) -> vec4<f32> 
     }
     var col = mix(m.color.rgb, m.color2.rgb, smoothstep(0.25, 0.75, n));
     if m.tint == 1u {
-        // Grass: its colour by place and season, varied a little.
-        col = resolve_tint(1u, climate) * mix(0.8, 1.15, n);
+        // Grass: its colour by place and season at a sward's albedo (the tint is a blade's
+        // colour; a sward of blades, stems and shade reflects about half of it), in tussocks
+        // and thinner places where the soil shows.
+        let sward = resolve_tint(1u, climate) * mix(0.32, 0.55, n);
+        let bare = smoothstep(0.62, 0.85, fbm3(p + vec3<f32>(31.0), dist, 0.7));
+        col = mix(sward, m.color2.rgb * 0.8, bare * 0.6);
     }
     return vec4<f32>(col, n * m.relief);
 }
@@ -458,7 +464,13 @@ fn fs_smooth(in: VsOut) -> @location(0) vec4<f32> {
         total += a;
     }
     // Wet ground is darker (a film of water in its pores): about 0.6 of its dry albedo.
-    let albedo = sum / max(total, 1e-4) * mix(1.0, 0.6, g.block_light.w);
+    var albedo = sum / max(total, 1e-4) * mix(1.0, 0.6, g.block_light.w);
+    // Snow lying on it (S §4.2's overlay), its edge broken by the ground's relief; fresh
+    // snow's albedo is some 0.8 (`materials/reference.ron`).
+    if in.snow > 0.0 {
+        let edge = in.snow + (fbm3(p, dist, 0.3) - 0.5) * 0.5;
+        albedo = mix(albedo, vec3<f32>(0.80, 0.82, 0.86), smoothstep(0.25, 0.55, edge));
+    }
     // Crisp materials shade with their faces, soft ones with the smooth normal.
     var shaded = in;
     let face = normalize(cross(dpdx(in.world), dpdy(in.world)));

@@ -375,6 +375,11 @@ pub fn ground_materials(
                 _ => (0.3, 0.35),
             };
             let grass = slot.block.ends_with("grass_block");
+            // Under the grass, the soil that shows where it is thin.
+            let b = match (grass, content.materials.get("hearth:loam")) {
+                (true, Some(loam)) => lin(loam.appearance.color.0),
+                _ => b,
+            };
             // Bedded rock shows its beds (S §4.2): sandstone and shale thin, limestone thicker.
             let strata = match pattern {
                 Pattern::Layered => 0.25,

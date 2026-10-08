@@ -1161,6 +1161,9 @@ pub fn render_shot(
         hearth_render::scene::MIP_LEVELS,
         hearth_render::scene::ANISOTROPY,
     );
+    scene
+        .terrain
+        .set_ground_materials(ctx, &crate::scene::ground_materials(&lw.reg, &lw.content).1);
     scene.smoke.set_plumes(plumes);
     scene.terrain.render_distance = spec.distance;
     scene.terrain.vertical_distance = 64;
@@ -2140,7 +2143,7 @@ fn shoot(
         s.visible_cubes,
         s.draws,
         s.quads_drawn,
-        (s.packed_bytes + s.general_bytes) as f64 / (1 << 20) as f64,
+        (s.packed_bytes + s.general_bytes + s.smooth_bytes) as f64 / (1 << 20) as f64,
         shot.lod.drawn,
         shot.lod.quads,
         shot.lod.bytes as f64 / (1 << 20) as f64

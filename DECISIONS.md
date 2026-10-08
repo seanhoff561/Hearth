@@ -271,3 +271,6 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D260 (2026-10-08) The fill in the world: one byte a voxel in surface cubes, generated across the slope, reset when a state changes
 - D261 (2026-10-08) Ground as occupancy: dig, pile and settle move volume in whole fill steps, conserved; a voxel shows what lies on top
 - D262 (2026-10-08) Only loose ground slumps, to its family's repose (dry or wet); intact earth stands
+- D263 (2026-10-08) Ground materials are noise in the shader, not baked texture sets
+- D264 (2026-10-08) A triangle's corners share its materials; corners are duplicated only where materials change
+- D265 (2026-10-08) The smooth ground is drawn first, frustum and cave culled, its depth culling the rest
