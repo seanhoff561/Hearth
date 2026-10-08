@@ -251,8 +251,6 @@ impl Finder {
                         tried_classes.push(class);
                     }
                     out.push(p);
-                } else if pass == 0 {
-                    // Passed over: another of its climate may do.
                 }
             }
         }

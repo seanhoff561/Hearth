@@ -25,8 +25,28 @@ use hearth_protocol::{AimAt, ToServer};
 use hearth_world::{BlockRegistry, BlockStateId, Cube, CubeMap};
 
 /// Level open ground near the player, gone to: `wide` blocks east by two south level, with
-/// four blocks of air over each, the player standing just west of it.
+/// four blocks of air over each, the player standing just west of it. A beach or a slope has
+/// none near; then it is looked for a little way off, inland.
 fn level_ground(w: &mut World, wide: i32) -> BlockPos {
+    let start = w.mover.pos;
+    for (dx, dz) in [
+        (0.0, 0.0),
+        (60.0, 0.0),
+        (-60.0, 0.0),
+        (0.0, 60.0),
+        (0.0, -60.0),
+    ] {
+        if dx != 0.0 || dz != 0.0 {
+            w.go(start.x + dx, start.z + dz);
+        }
+        if let Some(g) = level_ground_here(w, wide) {
+            return g;
+        }
+    }
+    panic!("no level ground about {start}");
+}
+
+fn level_ground_here(w: &mut World, wide: i32) -> Option<BlockPos> {
     let feet = w.mover.pos;
     let here = BlockPos::containing(feet);
     let site = {
@@ -62,15 +82,13 @@ fn level_ground(w: &mut World, wide: i32) -> BlockPos {
         }
         found
     };
-    let Some(g) = site else {
-        panic!("no level ground about {feet}");
-    };
+    let g = site?;
     w.go_exact(DVec3::new(
         g.x as f64 - 0.5,
         g.y as f64 + 1.0,
         g.z as f64 + 1.5,
     ));
-    g
+    Some(g)
 }
 
 /// Stands south of the column `x` blocks east of `ground`, a block off, facing east.

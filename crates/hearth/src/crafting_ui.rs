@@ -409,7 +409,11 @@ impl Crafting {
                         words: def.action.clone(),
                         act: Some(Do::Process(def.id.clone())),
                         why: None,
-                        play_s: def.attended.then_some(play_s),
+                        // Felling goes by the trunk's girth, which only the tree knows: no
+                        // guess here; the work's own line says how long once begun.
+                        play_s: (def.attended
+                            && def.effect != hearth_content::schema::process::Effect::Fell)
+                            .then_some(play_s),
                         material: plan.material.clone(),
                         with: (!tools.is_empty()).then(|| tools.join(", ")),
                     })
@@ -529,11 +533,6 @@ impl Crafting {
         })
     }
 
-    /// The first offer that can be done.
-    pub fn first_act(&self) -> Option<Do> {
-        self.offers.iter().find_map(|o| o.act.clone())
-    }
-
     /// Moves the choice by whole steps of the wheel.
     pub fn choose(&mut self, steps: i32) {
         let n = self.offers.len() as i32;
@@ -619,7 +618,7 @@ impl Crafting {
             }
         }
         if let Some(c) = self.charge {
-            let f = (c / 1.0).clamp(0.0, 1.0) as f32;
+            let f = c.clamp(0.0, 1.0) as f32;
             ui.draw.rect(
                 cx - 20.0,
                 h / 2.0 - 12.0,
@@ -739,7 +738,12 @@ pub fn save_prefer(path: &std::path::Path, prefer: &std::collections::BTreeMap<S
 /// A duration in rough words: "about 10 minutes".
 fn about(s: f64) -> String {
     let m = s / 60.0;
-    if m < 1.5 {
+    if s < 45.0 {
+        format!(
+            "about {} seconds",
+            ((s / 5.0).round() * 5.0).max(5.0) as u32
+        )
+    } else if m < 1.5 {
         "about a minute".into()
     } else if m < 55.0 {
         format!(

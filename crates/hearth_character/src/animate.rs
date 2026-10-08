@@ -1,7 +1,8 @@
 //! Moving the frame: a pose for each thing a body does (standing, walking, jogging,
 //! sprinting, wading, crouching, crawling, swimming, treading water, climbing, falling,
-//! lying), the gaits driven by distance so the feet keep pace with the ground, cross-faded
-//! when the activity changes.
+//! lying), the gaits driven by distance so the feet keep pace with the ground, the fourteen
+//! work poses with their strokes, and the gestures (blows, a bow drawn, a brand held up),
+//! cross-faded when the activity changes.
 //!
 //! Joint angles are in degrees: flexion swings a limb forward (the knee's bends the shank
 //! back), abduction takes a limb out to the side, lean tips the trunk or head forward.
@@ -92,7 +93,7 @@ pub struct Drive {
     pub holding: Holding,
     /// A blow being struck, a bow drawn, a brand held up (E §3.2).
     pub doing: Option<Doing>,
-    /// At work: a stroke's seconds (E §7.2), and whether the right hand leads.
+    /// At work: a stroke's seconds (E §7.2), and whether the left hand leads.
     pub stroke_s: f32,
     pub left_leads: bool,
 }

@@ -56,12 +56,7 @@ fn block(name: &str, material: Option<&str>, ground: bool) -> Option<Aimed> {
 }
 
 /// What `hand` does, holding what `carry` puts in it, on `aimed`.
-fn use_of<'a>(
-    w: &'a World,
-    carry: &Carry,
-    hand: Hand,
-    aimed: Option<Aimed>,
-) -> Option<HandUse<'a>> {
+fn use_of(w: &World, carry: &Carry, hand: Hand, aimed: Option<Aimed>) -> Option<HandUse> {
     let lying = [(9u64, Stack::one("hearth:cobble/flint"))];
     let bench = Bench::new(
         &w.content,

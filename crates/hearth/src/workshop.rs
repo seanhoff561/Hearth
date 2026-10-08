@@ -213,7 +213,7 @@ fn lack_words(l: &Lack) -> String {
 }
 
 /// A tree turned a quarter about its stump to lie toward `toward`: each block's place, its state
-/// turned with it (logs lie along the fall, limbs' joins turn), and whether it is a log.
+/// turned with it (logs lie along the fall, limbs' joins turn), and whether it is of the stem.
 fn fallen_tree(
     standing: &[(BlockPos, BlockStateId, hearth_flora::Part)],
     foot: BlockPos,
@@ -279,7 +279,13 @@ fn fallen_tree(
                 },
                 Part::Leaves => Part::Leaves,
             };
-            (q, blocks.state(turned), matches!(turned, Part::Log { .. }))
+            // The stem: logs, or a slim tree's thick limbs (8 or 12 px through).
+            let stem = match turned {
+                Part::Log { .. } => true,
+                Part::Branch { thickness, .. } => thickness >= 8,
+                Part::Leaves => false,
+            };
+            (q, blocks.state(turned), stem)
         })
         .collect()
 }
@@ -687,8 +693,9 @@ impl Workshop {
             hand: hand.map(|q| q.clamp(0.0, 1.0)),
             with,
         });
+        let left_s = needed * (1.0 - done) / hearth_content::time::TICKS_PER_SECOND;
         h.out
-            .push(ToClient::Work(Some(self.work_view(0.0, needed / 20.0))));
+            .push(ToClient::Work(Some(self.work_view(done as f32, left_s))));
     }
 
     fn work_view(&self, done: f32, play_s_left: f64) -> WorkView {
@@ -741,8 +748,18 @@ impl Workshop {
         )];
         let pos = DVec3::from_array(wi.pos);
         match def.state {
-            Some(StateModel::Drying { from, to, .. }) => {
-                let done = ((from - work.moisture.max(to)) / (from - to).max(1e-3)).clamp(0.0, 1.0);
+            Some(StateModel::Drying {
+                from,
+                to,
+                rate_per_h,
+            }) => {
+                // Not yet weathered a minute: as wet as it began.
+                let moisture = if work.moisture > 0.0 {
+                    work.moisture
+                } else {
+                    from
+                };
+                let done = ((from - moisture.max(to)) / (from - to).max(1e-3)).clamp(0.0, 1.0);
                 words.push(
                     match done {
                         d if d < 0.2 => "It is still wet through.",
@@ -759,16 +776,19 @@ impl Workshop {
                 }
                 if knows && done < 1.0 {
                     let w = h.env.weather_at(&h.moment, pos);
-                    let sunny = h.env.sun_up(&h.moment, pos) && w.cloud_cover < 0.6;
-                    if let Some(StateModel::Drying { rate_per_h, .. }) = def.state {
-                        let k = rate_per_h * drying_pace(&w, sunny);
-                        let eq = to * 0.3 * (w.humidity as f32 / 0.5);
-                        let left = ((work.moisture - eq).max(1e-3) / (to - eq).max(1e-3)).ln() / k;
-                        words.push(format!(
+                    let sunny = !covered_at(&h.lw.map, BlockPos::containing(pos))
+                        && sun_on(h.env, &h.moment, pos, &w);
+                    let k = rate_per_h * drying_pace(&w, sunny);
+                    let eq = equilibrium(to, &w);
+                    words.push(if eq >= to {
+                        "In air this damp it will dry no further.".to_owned()
+                    } else {
+                        let left = ((moisture - eq).max(1e-3) / (to - eq)).ln() / k;
+                        format!(
                             "In weather like this it would want {} more.",
                             about_hours(left.max(0.5))
-                        ));
-                    }
+                        )
+                    });
                 }
             }
             Some(StateModel::Soaking { .. }) => {
@@ -1910,7 +1930,7 @@ impl Workshop {
         };
         let logs: Vec<BlockPos> = fallen
             .iter()
-            .filter(|(_, _, log)| *log)
+            .filter(|(_, _, stem)| *stem)
             .map(|(p, _, _)| *p)
             .collect();
         let fits = |k: i32| {
@@ -2764,10 +2784,7 @@ impl Workshop {
             let def = &self.crafts.recipes[r].def;
             let pos = DVec3::from_array(wi.pos);
             let block = BlockPos::containing(pos);
-            let covered =
-                h.lw.map
-                    .sky_top(block.x, block.z)
-                    .is_some_and(|top| top > block.y + 1);
+            let covered = covered_at(&h.lw.map, block);
             let raining = !covered && h.env.weather_at(&h.moment, pos).precip_mm_h > 0.1;
             let in_water =
                 h.lw.map
@@ -2807,7 +2824,7 @@ impl Workshop {
             use hearth_content::schema::process::StateModel;
             work.age_h += dt_h;
             let w = h.env.weather_at(&h.moment, pos);
-            let sunny = !covered && h.env.sun_up(&h.moment, pos) && w.cloud_cover < 0.6;
+            let sunny = !covered && sun_on(h.env, &h.moment, pos, &w);
             if sunny {
                 work.sun_h += dt_h;
             }
@@ -3432,8 +3449,25 @@ fn dry_step(
         return (moisture + 0.04 * dt_h).min(from);
     }
     let k = rate_per_h * drying_pace(w, sunny);
-    let eq = to * 0.3 * (w.humidity as f32 / 0.5);
+    let eq = equilibrium(to, w);
     moisture - (moisture - eq).max(0.0) * (1.0 - (-k * dt_h).exp())
+}
+
+/// The moisture a thing comes to in the air of `w` (kg a kg dry): its water activity meets the
+/// air's relative humidity. `to`, dry through, is reached at three-quarters (the water activity
+/// below which moulds and most spoilage stop); in damper air it stays moister.
+fn equilibrium(to: f32, w: &hearth_env::WeatherState) -> f32 {
+    to * w.humidity as f32 / 0.75
+}
+
+/// Whether a place is under a roof or a canopy (something solid above its head).
+fn covered_at(map: &hearth_world::CubeMap, b: BlockPos) -> bool {
+    map.sky_top(b.x, b.z).is_some_and(|top| top > b.y + 1)
+}
+
+/// Whether the sun shines on a place in the open now.
+fn sun_on(env: &EnvSampler, moment: &Moment, pos: DVec3, w: &hearth_env::WeatherState) -> bool {
+    env.sun_up(moment, pos) && w.cloud_cover < 0.6
 }
 
 /// How much faster than the reference (25 °C, half humidity, still air, shade) things dry in

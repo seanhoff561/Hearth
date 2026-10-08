@@ -95,8 +95,8 @@ fn a_tree_is_felled_limbed_and_bucked() {
         "the trunk above the stump is gone: {:?}",
         w.block(foot.up())
     );
-    // It comes to rest: the stem lying along the ground near the stump (joined east–west or
-    // north–south rather than up and down).
+    // It comes to rest: the stem lying along the ground near the stump (joined to its neighbours
+    // along the ground rather than up and down; the stem's end is joined on one side only).
     w.run(200);
     let lying = |w: &World| {
         w.find(30, |n, _| n == wood)
@@ -107,8 +107,9 @@ fn a_tree_is_felled_limbed_and_bucked() {
                         .get(s, "thickness")
                         .is_some_and(|t| t == "8" || t == "12")
                         && w.reg.get(s, "up") != Some("true")
-                        && (w.reg.get(s, "east") == Some("true")
-                            || w.reg.get(s, "north") == Some("true"))
+                        && ["east", "west", "north", "south"]
+                            .iter()
+                            .any(|d| w.reg.get(s, d) == Some("true"))
                 })
             })
             .collect::<Vec<_>>()

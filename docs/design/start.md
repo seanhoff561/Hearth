@@ -2,8 +2,9 @@
 
 *Amendment E §6 (E5). Status: implemented. Code: `hearth_character::appearance` (how a person
 looks, Randomize), `crates/hearth/src/character_ui.rs` (the creator), `profiles.rs` (saved
-people), `places.rs` (suggested places), `menus.rs` (the Birthplace and death screens),
-`server.rs` (waking, new lives), `hearth_env::calendar` (`spring_dawn`).*
+people), `places.rs` (suggested places), `birthplace_ui.rs` (the Birthplace screen),
+`menus.rs` (the death screen), `server.rs` (waking, new lives), `hearth_env::calendar`
+(`spring_dawn`).*
 
 ## Purpose
 A new life in Wild Earth begins as an adult the player designs, at a place worth beginning in,
@@ -50,7 +51,7 @@ five places (`Finder::suggest`).
 - **Variety:** the best place of each climate class first, at least 1,500 km apart, then the
   next best. A place whose verification fails is passed over.
 - **Verification** (`Finder::verify`) reads the generated world about the spot:
-  - the terrain on 8 rings of 16 points out to 1.5 km (rivers, lakes, the sea, the land's
+  - the terrain at the spot and on 7 rings of 16 points out to 1.5 km (rivers, lakes, the sea, the land's
     relief and cliffs);
   - the springs of fresh water within some 750 m;
   - the surface cubes at 25 points out to 600 m, block by block: loose stones of a knappable

@@ -23,11 +23,10 @@ pub enum HandAct {
     Blow,
 }
 
-/// A hand's use now: the rule followed (none: the process preferred), its hint's words, what it
-/// does, and whether the hand must first put away what it holds (its rule wants an empty hand).
+/// A hand's use now: its hint's words, what it does, and whether the hand must first put away
+/// what it holds (its rule wants an empty hand).
 #[derive(Debug, Clone)]
-pub struct HandUse<'a> {
-    pub rule: Option<&'a Intent>,
+pub struct HandUse {
     pub hint: String,
     pub act: HandAct,
     pub stow: bool,
@@ -44,7 +43,7 @@ pub struct Ask<'a> {
 }
 
 /// The rules in their order.
-pub fn rules(content: &Content) -> Vec<&Intent> {
+fn rules(content: &Content) -> Vec<&Intent> {
     let mut v: Vec<&Intent> = content.intents.iter().collect();
     v.sort_by_key(|r| r.order);
     v
@@ -54,24 +53,23 @@ pub fn rules(content: &Content) -> Vec<&Intent> {
 /// `hand`, so the tools are that hand's): the preferred rule if it can be done, else the first
 /// rule that can be; a hand that holds something tries, after its own rules, an empty hand's
 /// (putting the thing away first).
-pub fn resolve<'a>(
-    content: &'a Content,
+pub fn resolve(
+    content: &Content,
     crafts: &Crafts,
     bench: &Bench,
     held: Option<&Stack>,
     ask: &Ask,
-) -> Option<HandUse<'a>> {
+) -> Option<HandUse> {
     debug_assert!(bench.tool_hand.is_some());
     let rules = rules(content);
     let kind = held.and_then(|s| bench.items.get(&s.id).map(|k| (k, s)));
-    let try_rule = |r: &'a Intent, empty: bool| -> Option<HandUse<'a>> {
+    let try_rule = |r: &Intent, empty: bool| -> Option<HandUse> {
         let holding = if empty { None } else { kind };
         if !holds(&r.holding, holding, bench.items, ask) || !targets(&r.target, bench) {
             return None;
         }
         let act = act_of(r, crafts, bench, holding, ask)?;
         Some(HandUse {
-            rule: Some(r),
             hint: r.hint.clone(),
             act,
             stow: empty && held.is_some(),
@@ -89,7 +87,6 @@ pub fn resolve<'a>(
         let recipe = &crafts.recipes[i];
         if (ask.may)(recipe) && plan(crafts, i, bench, (ask.skill)(recipe)).is_ok() {
             return Some(HandUse {
-                rule: None,
                 hint: recipe
                     .def
                     .verb
