@@ -50,7 +50,7 @@ E4.1. V2-11 superseded.
 | Audit 2 | done 2026-10-08 |
 | E4.1 — Earth-scale performance (the owner's fix pass) | done 2026-10-09 (D279–D289) |
 | T0 — S5/P7 stopped at (b) | done 2026-10-09 (D290, D291) |
-| T1 — quick wins (ravens, skin, highlight, globe) | under way: T1.1 done (D292) |
+| T1 — quick wins (ravens, skin, highlight, globe) | under way: T1.1, T1.2 done (D292, D293) |
 | T2 — the realism gap analysis | planned |
 | S5/P7 (c)–(f) with G1 → W1 → L1 → P7G → S6 with H1 → R1 → S7 → S8 → P8 | planned (T2 may revise) |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
@@ -78,8 +78,12 @@ Pictures and runs that need the owner (T §7), newest first:
   leaving, server and client alike), `hearth/tests/fauna.rs` (crows over a hind 300 m off; the
   spear test reads the world). Far birds drawn as specks; pictures `docs/review/t1/`
   (`tools/shots/t1_birds.shots`). Owner check: a carcass by day seen from a rise.
-- Next: T1.2 skin, T1.3 the thing aimed at, T1.4 the globe in relief; then T1's acceptance and
-  `main`.
+- **T1.2 skin as measured** (D293, PLAYTEST 35): roughness by region, pores and lines (normals
+  or roughness by the pixel), creases, the sky reflected, scattering pre-integrated by
+  curvature (`hearth_render::skin_lut`), a water film, measured skin's albedo. Sheet:
+  `skin_under_four_lights`; pictures `docs/review/t1/skin_*`. Owner check: the creator and a
+  hand in sunlight on the PC.
+- Next: T1.3 the thing aimed at, T1.4 the globe in relief; then T1's acceptance and `main`.
 
 ## E4.1 — Earth-scale performance (2026-10-09, D279–D289, `docs/spec/e4.1-earth-scale-performance.md`)
 The owner's playtest of the Earth-sized world (PLAYTEST 29–31): the globe all blue and laggy, the

@@ -19,6 +19,7 @@ pub mod post;
 pub mod precip;
 pub mod profiler;
 pub mod scene;
+pub mod skin_lut;
 pub mod sky;
 pub mod smoke;
 pub mod smooth;

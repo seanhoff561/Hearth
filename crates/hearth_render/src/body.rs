@@ -1,7 +1,8 @@
 //! People's bodies as smooth skinned meshes (Amendment E §8, E7): the anatomy of
 //! `hearth_character::anatomy` uploaded once per person, each vertex carried by up to four
 //! joints of the 17-joint palette of its pose, and shaded as skin, lips and nails (light that
-//! scatters under the skin, two specular lobes).
+//! scatters under the skin, pre-integrated (`skin_lut`); a surface by region with its pores
+//! and fine lines: Amendment T §2.2).
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Vec3};
@@ -15,7 +16,7 @@ use crate::figure::PreviewLight;
 use crate::gpu::GpuContext;
 use crate::terrain::DEPTH_FORMAT;
 
-/// A skin vertex (36 bytes).
+/// A skin vertex (40 bytes).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct BodyVertex {
@@ -27,6 +28,14 @@ struct BodyVertex {
     weights: u32,
     /// How much the skin is lips, nail and short hair there, and whether a garment's, unorm8.
     tissue: u32,
+    /// The skin's surface: how oily, how shut in, how curved, how deep its fine lines (unorm8,
+    /// `Anatomy::surface`).
+    surface: u32,
+}
+
+/// Four channels of 0–1 as unorm8 bytes.
+fn unorm4(c: [f32; 4]) -> u32 {
+    u32::from_le_bytes(c.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8))
 }
 
 /// One person's skin on the GPU.
@@ -55,12 +64,8 @@ impl GpuBody {
                     normal: body.normals[i].to_array(),
                     joints: u32::from_le_bytes(j),
                     weights: u32::from_le_bytes(w),
-                    tissue: u32::from_le_bytes([
-                        (body.tissue[i][0] * 255.0).round() as u8,
-                        (body.tissue[i][1] * 255.0).round() as u8,
-                        (body.tissue[i][2] * 255.0).round() as u8,
-                        (body.tissue[i][3] * 255.0).round() as u8,
-                    ]),
+                    tissue: unorm4(body.tissue[i]),
+                    surface: unorm4(body.surface.get(i).copied().unwrap_or_default()),
                 }
             })
             .collect();
@@ -418,7 +423,8 @@ struct PersonSlot {
 }
 
 impl PersonSlot {
-    fn new(ctx: &GpuContext, layout: &wgpu::BindGroupLayout) -> Self {
+    fn new(ctx: &GpuContext, pipelines: &Pipelines) -> Self {
+        let layout = &pipelines.person_layout;
         let buffer = |label: &str, size: usize| {
             ctx.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
@@ -445,6 +451,14 @@ impl PersonSlot {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: eyes.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&pipelines.lut.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&pipelines.lut.sampler),
                 },
             ],
         });
@@ -492,12 +506,13 @@ fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
 }
 
 /// The people's three pipelines (skin, hair, eyes) for a view: its shader prefix and its
-/// group 0 layout.
+/// group 0 layout; the skin's scattering table they share.
 struct Pipelines {
     person_layout: wgpu::BindGroupLayout,
     skin: wgpu::RenderPipeline,
     hair: wgpu::RenderPipeline,
     eye: wgpu::RenderPipeline,
+    lut: crate::skin_lut::SkinLut,
 }
 
 impl Pipelines {
@@ -511,7 +526,27 @@ impl Pipelines {
             .device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("person"),
-                entries: &[uniform_entry(0), uniform_entry(1), uniform_entry(2)],
+                entries: &[
+                    uniform_entry(0),
+                    uniform_entry(1),
+                    uniform_entry(2),
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
             });
         let layout = ctx
             .device
@@ -575,7 +610,8 @@ impl Pipelines {
                 })
         };
         let skin_attrs = wgpu::vertex_attr_array![
-            0 => Float32x3, 1 => Float32x3, 2 => Uint32, 3 => Unorm8x4, 4 => Unorm8x4
+            0 => Float32x3, 1 => Float32x3, 2 => Uint32, 3 => Unorm8x4, 4 => Unorm8x4,
+            5 => Unorm8x4
         ];
         let hair_attrs = wgpu::vertex_attr_array![
             0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x2, 4 => Uint8x4
@@ -609,6 +645,7 @@ impl Pipelines {
             skin,
             hair,
             eye,
+            lut: crate::skin_lut::SkinLut::new(ctx),
         }
     }
 
@@ -685,7 +722,7 @@ impl BodyPreview {
             include_str!("shaders/person_preview.wgsl"),
             format,
         );
-        let slot = PersonSlot::new(ctx, &pipelines.person_layout);
+        let slot = PersonSlot::new(ctx, &pipelines);
         Self {
             pipelines,
             scene,
@@ -810,8 +847,7 @@ impl PeopleRenderer {
         people: Vec<(std::sync::Arc<PersonMeshes>, PersonFrame)>,
     ) {
         while self.slots.len() < people.len() {
-            self.slots
-                .push(PersonSlot::new(ctx, &self.pipelines.person_layout));
+            self.slots.push(PersonSlot::new(ctx, &self.pipelines));
         }
         for (slot, (_, frame)) in self.slots.iter().zip(&people) {
             slot.write(ctx, frame);

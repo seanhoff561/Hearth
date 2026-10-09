@@ -208,6 +208,39 @@ fn skin_tones_run_light_to_dark() {
 }
 
 #[test]
+fn skin_is_as_red_as_measured_skin() {
+    // Every tone reflects red most and blue least, green some 0.5–0.8 of red and blue 0.3–0.7
+    // of it (the blood under the skin takes green and blue, melanin blue most; the dark-skin
+    // patch below has blue at 0.34 of red), not a palette's near-greys.
+    for i in 0..=20 {
+        let tone = i as f32 / 20.0;
+        let [r, g, b] = skin_linear(tone, 0.0);
+        assert!(r > g && g > b, "tone {tone}: {r} {g} {b}");
+        assert!(
+            (0.5..0.8).contains(&(g / r)),
+            "tone {tone}: green {:.2} of red",
+            g / r
+        );
+        assert!(
+            (0.3..0.7).contains(&(b / r)),
+            "tone {tone}: blue {:.2} of red",
+            b / r
+        );
+    }
+    // The ColorChecker's skin patches, made to match skin's spectra.
+    let near = |c: [f32; 3], m: [f32; 3]| {
+        c.iter()
+            .zip(m)
+            .all(|(c, m)| (c - m).abs() < 0.12 * m + 0.01)
+    };
+    assert!(near(skin_linear(4.0 / 9.0, 0.0), [0.54, 0.305, 0.223]));
+    assert!(near(skin_linear(7.0 / 9.0, 0.0), [0.171, 0.0844, 0.0578]));
+    // The fairest reflects about 0.64 of red light, the deepest about 0.05.
+    assert!((skin_linear(0.0, 0.0)[0] - 0.64).abs() < 0.02);
+    assert!((skin_linear(1.0, 0.0)[0] - 0.05).abs() < 0.01);
+}
+
+#[test]
 fn profiles_keep() {
     for a in [Appearance::default(), Appearance::female()] {
         let json = serde_json::to_string(&a).expect("json");

@@ -60,6 +60,7 @@ struct Model {
     /// How closed the lids are (overriding the blinks), for the close-ups.
     blink: Option<f32>,
     state: SkinState,
+    light: PreviewLight,
 }
 
 impl Model {
@@ -79,6 +80,7 @@ impl Model {
             figure,
             blink: None,
             state: SkinState::default(),
+            light: PreviewLight::Daylight,
         }
     }
 
@@ -127,7 +129,7 @@ impl Model {
             &self.meshes,
             &frame,
             view,
-            PreviewLight::Daylight,
+            self.light,
         );
         ctx.queue.submit(Some(enc.finish()));
     }
@@ -271,6 +273,76 @@ fn close_up_face_hand_and_foot() {
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
     std::fs::create_dir_all(&out).ok();
     write_png(&out.join("anatomy_close.png"), w, h, &px).expect("png");
+}
+
+/// Skin close-ups under the four lights (Amendment T §2.2), to judge against photographs: a face
+/// from the front and three-quarters, a darker one, a hand and a wet face, in daylight, overcast,
+/// at dusk and by firelight (`bench-out/skin_lights.png`, a row a light).
+#[test]
+fn skin_under_four_lights() {
+    let Ok(ctx) = GpuContext::headless(false) else {
+        eprintln!("skipped: no GPU adapter");
+        return;
+    };
+    let fair = Appearance {
+        skin_tone: 0.3,
+        ..Appearance::default()
+    };
+    let dark = Appearance {
+        skin_tone: 0.85,
+        ..Appearance::default()
+    };
+    let mut models = [
+        Model::new(&ctx, &fair, 0.006),
+        Model::new(&ctx, &dark, 0.006),
+    ];
+    let f = &models[0].figure;
+    let pose = f.animator.pose(&f.rig, Activity::Stand, &Drive::default());
+    let joints = pose.joints(&f.rig);
+    let at = |j: Joint| Vec3::from(joints[j.index()].translation);
+    let head = at(Joint::Head) + Vec3::new(0.0, 0.08, 0.0);
+    let hand = at(Joint::WristL) + Vec3::new(0.0, -0.09, 0.0);
+    // (which model, eye, looking at, wet)
+    let views = [
+        (0, head + Vec3::new(0.0, 0.02, 0.55), head, false),
+        (0, head + Vec3::new(0.4, 0.06, 0.38), head, false),
+        (1, head + Vec3::new(0.4, 0.06, 0.38), head, false),
+        (0, hand + Vec3::new(0.42, 0.08, 0.2), hand, false),
+        (0, head + Vec3::new(0.4, 0.06, 0.38), head, true),
+    ];
+    let lights = [
+        PreviewLight::Daylight,
+        PreviewLight::Overcast,
+        PreviewLight::Dusk,
+        PreviewLight::Firelight,
+    ];
+    let (cw, ch) = (320u32, 360u32);
+    let (w, h) = (cw * views.len() as u32, ch * lights.len() as u32);
+    let target = OffscreenTarget::new(&ctx, w, h);
+    let mut preview = BodyPreview::new(&ctx, OFFSCREEN_FORMAT);
+    clear(&ctx, &target.color_view);
+    for (row, light) in lights.into_iter().enumerate() {
+        for (k, (m, eye, look, wet)) in views.into_iter().enumerate() {
+            let model = &mut models[m];
+            model.light = light;
+            model.state.wet = if wet { 1.0 } else { 0.0 };
+            model.draw(
+                &ctx,
+                &mut preview,
+                &target,
+                (w, h),
+                [k as u32 * cw, row as u32 * ch, cw, ch],
+                &pose,
+                Affine3A::IDENTITY,
+                (eye, look, 30.0),
+                Vec3::ZERO,
+            );
+        }
+    }
+    let px = target.read_rgba(&ctx);
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bench-out");
+    std::fs::create_dir_all(&out).ok();
+    write_png(&out.join("skin_lights.png"), w, h, &px).expect("png");
 }
 
 #[test]

@@ -16,3 +16,17 @@ tools/shots/t1_birds.shots`); how they look on a real GPU is the owner's check.
   under a pixel's 6.7′ here (720 lines over 70°); drawn as its figure it fell between the pixels
   and vanished, so far birds are drawn as specks no smaller than a pixel and a half across
   (`fauna::speck`).
+
+## T1.2 Skin
+- `skin_lights_before.jpg`, `skin_lights_after.jpg` — the creator's preview: a face from the
+  front and three-quarters, a darker face, a hand and a wet face (columns) in daylight,
+  overcast, at dusk and by firelight (rows); `cargo test -p hearth_render --test body_preview
+  skin_under_four_lights` makes it (`bench-out/skin_lights.png`). Before: a vinyl sheen over
+  every face (plainest on the darker one), pale, greyish colours, wet skin a few hard glints.
+  After: matte skin with soft highlights, the colours of measured skin (warm on the fair face,
+  a deep warm brown on the darker), the hand's creases and knuckles, wet skin under a film that
+  mirrors the light.
+- `skin_world_sun.jpg`, `skin_world_evening.jpg`, `skin_world_wet.jpg` — people in the world
+  (`tools/shots/e7_people.shots`' views).
+- Not judged here: photographs of real skin under the same lights (they are the owner's to put
+  side by side, and stay out of the repository); how a real GPU draws the pores up close.

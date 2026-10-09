@@ -341,19 +341,23 @@ pub const HAIR_COLORS: [(&str, [u8; 3]); 11] = [
     ("character.hair_color.white", [230, 228, 224]),
 ];
 
-/// Skin tones across the natural human range, lightest to darkest (sRGB swatches of a ten-step
-/// scale, ordered by lightness); the tone slider moves continuously between them.
-const SKIN: [[u8; 3]; 10] = [
-    [246, 237, 228],
-    [247, 234, 208],
-    [243, 231, 219],
-    [234, 218, 186],
-    [215, 189, 150],
-    [160, 126, 86],
-    [130, 92, 67],
-    [96, 65, 52],
-    [58, 49, 42],
-    [41, 36, 32],
+/// Skin across the natural human range, lightest to darkest: its diffuse albedo in linear sRGB
+/// (Amendment T §2.2), ten steps the tone slider moves continuously between. Measured skin is
+/// redder than a palette's swatches: the blood under it takes green and blue, melanin blue most.
+/// Anchored on measured reflectance: some 0.64 of red light at the fairest and 0.05 at the
+/// deepest; the ColorChecker's skin patches (made to match skin's spectra), "light skin"
+/// (0.54, 0.31, 0.22) at the fifth step and "dark skin" (0.17, 0.085, 0.058) at the eighth.
+const SKIN: [[f32; 3]; 10] = [
+    [0.64, 0.48, 0.41],
+    [0.62, 0.45, 0.37],
+    [0.60, 0.42, 0.33],
+    [0.57, 0.37, 0.27],
+    [0.53, 0.31, 0.215],
+    [0.38, 0.22, 0.14],
+    [0.26, 0.14, 0.09],
+    [0.17, 0.085, 0.058],
+    [0.09, 0.052, 0.038],
+    [0.05, 0.033, 0.025],
 ];
 
 /// The tone of each of the ten swatches, as presets.
@@ -603,17 +607,13 @@ pub fn luminance(c: [f32; 3]) -> f32 {
 }
 
 /// The skin's linear albedo for a tone (0 lightest – 1 darkest) and an undertone (−1 cool –
-/// 1 warm): between the scale's swatches in linear light, the undertone tilting the hue at the
-/// same luminance.
+/// 1 warm): between the measured steps (`SKIN`) in linear light, the undertone tilting the hue
+/// at the same luminance.
 pub fn skin_linear(tone: f32, undertone: f32) -> [f32; 3] {
     let t = tone.clamp(0.0, 1.0) * 9.0;
     let i = (t.floor() as usize).min(8);
     let f = t - i as f32;
-    // The swatches are colours as seen; skin reflects about 0.6 of red light at the lightest
-    // and 0.04 at the darkest.
-    let albedo = |c: [u8; 3]| srgb_to_linear(c).map(|v| 0.025 + 0.63 * v);
-    let a = albedo(SKIN[i]);
-    let b = albedo(SKIN[i + 1]);
+    let (a, b) = (SKIN[i], SKIN[i + 1]);
     let c: [f32; 3] = std::array::from_fn(|k| a[k] + (b[k] - a[k]) * f);
     let u = undertone.clamp(-1.0, 1.0);
     let tilt = if u < 0.0 {

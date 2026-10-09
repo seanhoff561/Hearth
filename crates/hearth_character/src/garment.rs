@@ -31,6 +31,7 @@ impl Builder {
         self.out.joints.push(j);
         self.out.weights.push(w);
         self.out.tissue.push([0.0, 0.0, 0.0, 1.0]);
+        self.out.surface.push([0.0; 4]);
         self.out.positions.len() as u32 - 1
     }
 

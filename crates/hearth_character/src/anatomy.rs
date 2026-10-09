@@ -155,6 +155,12 @@ pub struct Anatomy {
     /// how thick the short hair over it is (the scalp under the hair, a buzz cut, stubble), and
     /// whether it is not skin but a garment's (1: `garment`).
     pub tissue: Vec<[f32; 4]>,
+    /// The skin's surface there (Amendment T §2.2), each 0–1: how oily (the sebaceous glands'
+    /// density: the face's T-zone most, the palms and soles not at all), how shut in (creases,
+    /// the ear's folds, between the fingers: the light of the sky reaching it less), how sharply
+    /// it curves (`curvature_unit`, for the light scattering under it) and how deep its fine
+    /// lines run. A garment's all nought.
+    pub surface: Vec<[f32; 4]>,
     /// Counter-clockwise triangles seen from outside.
     pub indices: Vec<u32>,
     /// The joints in the pose the skin was sculpted in (`bind_pose`).
@@ -174,7 +180,114 @@ impl Anatomy {
         self.joints.extend_from_slice(&other.joints);
         self.weights.extend_from_slice(&other.weights);
         self.tissue.extend_from_slice(&other.tissue);
+        self.surface.extend_from_slice(&other.surface);
         self.indices.extend(other.indices.iter().map(|i| i + base));
+    }
+}
+
+/// The curvature (1/m) a surface's third channel stores as one: a radius of 2 mm, the sharpest
+/// the light under the skin tells apart (the ear's rim, a fingertip's edge).
+pub const CURVATURE_FULL: f32 = 500.0;
+
+/// The surface channel for a curvature of `k` per metre (either sign): the square root of its
+/// share of `CURVATURE_FULL`, so that the gentle curves of a cheek or a shoulder (radii of
+/// 2–20 cm) take most of the range.
+pub fn curvature_unit(k: f32) -> f32 {
+    (k.abs() / CURVATURE_FULL).sqrt().min(1.0)
+}
+
+/// How sharply the skin curves at each vertex (1/m, convex positive): the mean of its edges'
+/// normal curvatures, (n_i − n_j)·(p_i − p_j) / |p_i − p_j|², over its neighbours (one over the
+/// radius on a sphere), smoothed once with theirs.
+pub fn curvatures(positions: &[Vec3], normals: &[Vec3], indices: &[u32]) -> Vec<f32> {
+    let n = positions.len();
+    let mut sum = vec![0.0f32; n];
+    let mut count = vec![0u32; n];
+    let mut edge = |i: usize, j: usize| {
+        let d = positions[i] - positions[j];
+        let l2 = d.length_squared();
+        if l2 > 1e-12 {
+            let k = (normals[i] - normals[j]).dot(d) / l2;
+            sum[i] += k;
+            sum[j] += k;
+            count[i] += 1;
+            count[j] += 1;
+        }
+    };
+    for t in indices.chunks_exact(3) {
+        let (a, b, c) = (t[0] as usize, t[1] as usize, t[2] as usize);
+        edge(a, b);
+        edge(b, c);
+        edge(c, a);
+    }
+    let raw: Vec<f32> = (0..n).map(|i| sum[i] / count[i].max(1) as f32).collect();
+    // Once over the neighbours, against the mesh's own unevenness.
+    let mut acc = raw.clone();
+    let mut w = vec![1.0f32; n];
+    for t in indices.chunks_exact(3) {
+        for (i, j) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            let (i, j) = (i as usize, j as usize);
+            acc[i] += raw[j];
+            acc[j] += raw[i];
+            w[i] += 1.0;
+            w[j] += 1.0;
+        }
+    }
+    acc.iter().zip(&w).map(|(a, w)| a / w).collect()
+}
+
+/// A soft band: one between `lo` and `hi`, falling to nought over `soft` outside them.
+fn band(x: f32, lo: f32, hi: f32, soft: f32) -> f32 {
+    let up = ((x - (lo - soft)) / soft).clamp(0.0, 1.0);
+    let down = (((hi + soft) - x) / soft).clamp(0.0, 1.0);
+    up * up * (3.0 - 2.0 * up) * down * down * (3.0 - 2.0 * down)
+}
+
+/// How oily the skin is at `p` (0–1), facing `n`, on the body whose head joint is at `head`
+/// (`h` its stature) and whose nearest joint there is `joint`: the sebaceous glands' density,
+/// greatest in the face's T-zone (forehead, nose and chin), less over the rest of the face, the
+/// scalp, the upper chest and back, little on the limbs, none on the palms and soles.
+fn oil(p: Vec3, n: Vec3, head: Vec3, h: f32, joint: Joint) -> f32 {
+    match joint {
+        Joint::Head => {
+            let q = (p - head) / h;
+            let front =
+                ((n.z - 0.1) / 0.4).clamp(0.0, 1.0) * ((q.z + 0.005) / 0.02).clamp(0.0, 1.0);
+            let forehead = band(q.x.abs(), 0.0, 0.034, 0.012) * band(q.y, 0.068, 0.108, 0.01);
+            let nose = band(q.x.abs(), 0.0, 0.011, 0.006)
+                * band(q.y, 0.028, 0.068, 0.006)
+                * band(q.z, 0.045, 0.1, 0.006);
+            let chin = band(q.x.abs(), 0.0, 0.016, 0.008) * band(q.y, -0.022, 0.004, 0.008);
+            let t_zone = forehead.max(nose).max(chin) * front;
+            // The rest of the face, below the hairline; the scalp and ears.
+            let face = front * band(q.y, -0.03, 0.105, 0.01);
+            (0.45 + 0.12 * face).max(t_zone)
+        }
+        Joint::Neck => 0.35,
+        Joint::Chest => 0.4,
+        Joint::Waist | Joint::Root => 0.25,
+        Joint::ShoulderL | Joint::ShoulderR | Joint::ElbowL | Joint::ElbowR => 0.15,
+        Joint::HipL | Joint::HipR | Joint::KneeL | Joint::KneeR => 0.12,
+        Joint::WristL | Joint::WristR | Joint::AnkleL | Joint::AnkleR => 0.02,
+    }
+}
+
+/// How deep the skin's fine lines run at `p` (0–1), as `oil` places it: every skin's fine
+/// furrows, deeper across the forehead and at the eyes' outer corners, on the neck, and deepest
+/// on the hands (the knuckles' and the palm's creases).
+fn lines(p: Vec3, n: Vec3, head: Vec3, h: f32, joint: Joint) -> f32 {
+    match joint {
+        Joint::Head => {
+            let q = (p - head) / h;
+            let front = ((n.z - 0.1) / 0.4).clamp(0.0, 1.0);
+            let forehead = band(q.x.abs(), 0.0, 0.034, 0.01) * band(q.y, 0.072, 0.105, 0.008);
+            let corners = band(q.x.abs(), 0.026, 0.038, 0.006) * band(q.y, 0.046, 0.064, 0.006);
+            (0.25 + 0.35 * forehead.max(corners) * front).min(1.0)
+        }
+        Joint::Neck => 0.4,
+        Joint::WristL | Joint::WristR => 0.75,
+        Joint::AnkleL | Joint::AnkleR => 0.5,
+        _ => 0.25,
     }
 }
 
@@ -1103,27 +1216,37 @@ pub fn anatomy(a: &Appearance, cell: f32) -> Anatomy {
     // Each vertex follows the joints of the forms nearest it, by nearness (each vertex on its
     // own, over every core).
     let sigma = 0.012 * dims.stature;
+    let head = out.bind[Joint::Head.index()].translation.into();
     let vertices: Vec<_> = mesh
         .positions
         .par_iter()
         .map_init(
             || Vec::with_capacity(forms.len()),
-            |local, p| skin_vertex(*p, lo, cell, sigma, &a, &dims, &forms, &sample, local),
+            |local, p| skin_vertex(*p, lo, cell, sigma, &a, &dims, head, &forms, &sample, local),
         )
         .collect();
-    for (world, normal, joints, weights, tissue) in vertices {
+    for (world, normal, joints, weights, tissue, surface) in vertices {
         out.positions.push(world);
         out.normals.push(normal);
         out.joints.push(joints);
         out.weights.push(weights);
         out.tissue.push(tissue);
+        out.surface.push(surface);
+    }
+    for (s, k) in out
+        .surface
+        .iter_mut()
+        .zip(curvatures(&out.positions, &out.normals, &out.indices))
+    {
+        s[2] = curvature_unit(k);
     }
     out
 }
 
 /// A skin vertex as the mesh placed it (`p`, in cells from `lo`): set onto the field's zero by
 /// Newton steps, its normal the field's gradient, its joints and weights those of the forms
-/// nearest it, its tissue (lips, nails, short hair).
+/// nearest it, its tissue (lips, nails, short hair) and its surface (`Anatomy::surface`, the
+/// curvature left for the mesh's own measure).
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn skin_vertex(
     p: Vec3,
@@ -1132,16 +1255,20 @@ fn skin_vertex(
     sigma: f32,
     a: &Appearance,
     dims: &Proportions,
+    head: Vec3,
     forms: &[Form],
     sample: &(dyn Fn(Vec3, &mut Vec<Form>) -> Option<f32> + Sync),
     local: &mut Vec<Form>,
-) -> (Vec3, Vec3, [u8; 4], [f32; 4], [f32; 4]) {
+) -> (Vec3, Vec3, [u8; 4], [f32; 4], [f32; 4], [f32; 4]) {
     {
         // The mesh's place and slope come from the quantized field, which flattens where two
         // surfaces near each other (the creases between forms); the field itself sets both
         // right: two Newton steps onto its zero, and its gradient for the normal.
         let mut world = lo + p * cell;
         let mut normal = Vec3::Y;
+        // How fast the field grows along its normal there (the blended forms' distances are
+        // approximate: some grow slower than distance does).
+        let mut rate = 1.0f32;
         for _ in 0..3 {
             let Some(d) = sample(world, local) else {
                 break;
@@ -1160,6 +1287,7 @@ fn skin_vertex(
                 break;
             }
             normal = g / len;
+            rate = len;
             if (d / len).abs() > cell {
                 break;
             }
@@ -1193,7 +1321,23 @@ fn skin_vertex(
             joints[i] = *jn as u8;
             weights[i] = w / sum;
         }
-        (world, normal, joints, weights, tissue)
+        // How shut in it is: the field stepped out along the normal grows slower than it does at
+        // the skin where other skin is near (a crease, the ear's folds, between the fingers).
+        let mut shut = 0.0;
+        for (d, w) in [(0.004, 0.4), (0.01, 0.3), (0.02, 0.2), (0.035, 0.1)] {
+            let open = rate * d;
+            let s = sample(world + normal * d, local).unwrap_or(open);
+            shut += w * ((open - s) / open).clamp(0.0, 1.0);
+        }
+        let joint = Joint::ALL[joints[0] as usize];
+        let h = dims.stature;
+        let surface = [
+            oil(world, normal, head, h, joint),
+            (shut * 1.6).min(1.0),
+            0.0,
+            lines(world, normal, head, h, joint),
+        ];
+        (world, normal, joints, weights, tissue, surface)
     }
 }
 
@@ -1243,5 +1387,57 @@ mod tests {
             .filter(|(p, _)| p.z > 0.09 && (p.y - 1.62).abs() < 0.02)
             .all(|(_, t)| t[2] < 0.1);
         assert!(face);
+    }
+
+    #[test]
+    fn the_skin_is_oily_in_the_t_zone_shut_in_its_creases_and_curved_at_the_tips() {
+        let a = Appearance::default();
+        let body = anatomy(&a, 0.006);
+        let dims = Proportions::of(&a.clone().sanitized());
+        let head: Vec3 = body.bind[Joint::Head.index()].translation.into();
+        let h = dims.stature;
+        let mean = |pick: &dyn Fn(usize) -> bool, ch: usize| {
+            let (sum, n) = (0..body.positions.len())
+                .filter(|&i| pick(i))
+                .fold((0.0, 0), |(s, n), i| (s + body.surface[i][ch], n + 1));
+            assert!(n > 0, "none picked");
+            sum / n as f32
+        };
+        let rel = |i: usize| (body.positions[i] - head) / h;
+        let joint = |i: usize| Joint::ALL[body.joints[i][0] as usize];
+        let skin = |i: usize| body.tissue[i][0] < 0.1 && body.tissue[i][1] < 0.1;
+        // The nose's bridge against a cheek, against the hands.
+        let nose = |i: usize| {
+            let q = rel(i);
+            joint(i) == Joint::Head
+                && q.x.abs() < 0.006
+                && (0.04..0.06).contains(&q.y)
+                && q.z > 0.05
+        };
+        let cheek = |i: usize| {
+            let q = rel(i);
+            joint(i) == Joint::Head
+                && (0.03..0.04).contains(&q.x.abs())
+                && (0.02..0.04).contains(&q.y)
+                && q.z > 0.02
+        };
+        let hand = |i: usize| matches!(joint(i), Joint::WristL | Joint::WristR) && skin(i);
+        let nail = |i: usize| body.tissue[i][1] > 0.5;
+        let back = |i: usize| joint(i) == Joint::Chest && body.normals[i].z < -0.7;
+        let (o_nose, o_cheek, o_hand) = (mean(&nose, 0), mean(&cheek, 0), mean(&hand, 0));
+        eprintln!("oil: nose {o_nose:.2}, cheek {o_cheek:.2}, hand {o_hand:.2}");
+        assert!(o_nose > 0.8 && o_cheek > 0.45 && o_cheek < o_nose && o_hand < 0.1);
+        // Shut in: between the fingers and in the ear's folds more than on the back.
+        let (s_hand, s_back, s_nail) = (mean(&hand, 1), mean(&back, 1), mean(&nail, 1));
+        eprintln!("shut: hand {s_hand:.2}, back {s_back:.2}, nails {s_nail:.2}");
+        assert!(s_back < 0.1, "the back is open: {s_back}");
+        assert!(s_hand > s_back);
+        // Curved: the fingers' tips far more than the back.
+        let (c_hand, c_back) = (mean(&hand, 2), mean(&back, 2));
+        eprintln!(
+            "curvature: hand {c_hand:.2}, back {c_back:.2}, nails {:.2}",
+            mean(&nail, 2)
+        );
+        assert!(c_hand > 2.0 * c_back);
     }
 }

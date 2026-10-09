@@ -47,10 +47,38 @@ body's field (their lower parts carried partly by the thighs); the **chest band*
 wrapped round the chest on the trunk's skin, spanning the cleavage. Other garments are drawn
 as the rig's boxes over the body (`Show::clothes_only`) until S6's item meshes.
 
-## Skin (`body.wgsl`, `hearth_body::skin`)
-- **Shading:** light scattered under the skin (the terminator wrapped wider for red than green
-  and blue), two GGX lobes (roughness 0.48 and 0.25, mixed 0.85 : 0.15, F0 0.028), lips a
-  little glossier, nails smooth, the sky's sheen at grazing angles.
+## Skin (`body.wgsl`, `skin_lut.rs`, `hearth_body::skin`; Amendment T §2.2, D293)
+- **Colour:** the diffuse albedo of measured skin, ten steps from the fairest (some 0.64 of red
+  light reflected) to the deepest (0.05), redder than a palette's swatches (green 0.5–0.8 of
+  red, blue 0.3–0.7: the blood under the skin takes green and blue, melanin blue most),
+  anchored on the ColorChecker's skin patches; the undertone tilts the hue at the same
+  luminance.
+- **The light under it:** pre-integrated through skin's diffusion profile (d'Eon and Luebke's
+  six Gaussians) on a ring of the surface's curvature (Penner and Borshukov), a 128 × 64 table
+  made at start: Lambert's law on a cheek's curve, red light carried round past the terminator
+  on an ear's rim, a nostril's wing, a fingertip. Each vertex's curvature is the mean of its
+  edges' normal curvatures, smoothed once.
+- **Its surface by region** (`Anatomy::surface`, per vertex): oil from the sebaceous glands'
+  density (the T-zone of forehead, nose and chin most, the rest of the face, scalp, upper chest
+  and back less, the limbs little, palms and soles none); how shut in (the body's field stepped
+  out along the normal against its own rate of growth: creases, the ear's folds, between the
+  fingers); fine-line depth (forehead, the eyes' outer corners, neck, hands most).
+- **Highlights:** two GGX lobes, the main at α 0.26 (oily) to 0.47 (dry) and a weaker, broader
+  sheen (α 0.64–0.81), mixed 0.85 : 0.15, F0 0.026–0.034 (keratin's 0.04 on nails); widened by
+  the relief finer than the pixel so that, seen from a few metres, the face's highlights match
+  the roughness Weyrich et al. measured (Beckmann 0.3–0.5). The diffuse is given only what the
+  surface does not reflect.
+- **Relief:** pores (a cell of 0.8 mm, larger and deeper where oily), the micro-relief's
+  furrows (0.7 mm), fine lines (3–5 mm) and goosebumps, in the bind pose's frame so they move
+  with the skin; drawn as tilted normals where a pixel resolves them and folded into the
+  highlights' roughness and the light's occlusion where it does not (no shimmer, no vanishing).
+- **The sky:** its light in the mirror direction by the lobes' directional albedo, and the
+  ambient, both shut out in creases (the reflection more).
+- **Wet:** a smooth film of water (F0 0.02, α 0.014) over the skin; the skin's own sheen drowned
+  under it (water against skin hardly reflects), darker beneath.
+- Lips moister and a little glossier; nails smooth keratin, lit without scattering, never shut
+  in. Review: `docs/review/t1/skin_lights_*.jpg` (before and after, four lights) and
+  `skin_world_*.jpg`; `hearth_render/tests/body_preview.rs` `skin_under_four_lights`.
 - **State, from the body simulation** (`hearth_body::skin`, saved with the body, sent in
   `BodyView`):
   - *Sun:* the erythemal dose from the UV index (1 UVI = 25 mW/m² weighted; an SED is
@@ -62,7 +90,7 @@ as the rig's boxes over the body (`Show::clothes_only`) until S6's item meshes.
   - *Dirt* on the legs from walking on soil (mud most) and on the hands from handling it;
     *blood* where wounds bleed; both washed off by water (seconds in it, minutes in rain) and
     worn off over a day or two. *Scars* where injuries of severity 0.3 or more healed.
-  - Drawn: wet (darker, glossy), tan, sunburn (not under the fitted garments), pallor (cold,
+  - Drawn: wet (a film of water), tan, sunburn (not under the fitted garments), pallor (cold,
     blood lost; lips bluish), flush (heat, effort), goosebumps, and per joint dirt in
     patches, blood in streaks, scars as pale lines.
 
