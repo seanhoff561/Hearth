@@ -231,11 +231,14 @@ fn shade_color(albedo: vec3<f32>, in: VsOut) -> vec3<f32> {
     // Sky light on a face: full on top, less on the sides, least underneath.
     let sky_dir = select(0.62 + 0.38 * n.y + 0.1 * (1.0 - abs(n.y)), 0.75, omni);
     var ambient = g.sky_light.rgb * sky_vis * max(sky_dir, 0.2) + vec3<f32>(g.sky_light.a);
-    // Direct light only on faces fully open to the sky (no shadow maps yet).
-    let open = smoothstep(0.8, 1.0, in.light.x);
     let lambert = select(max(dot(n, g.sun.xyz), 0.0), 0.5 * max(g.sun.y, 0.0) + 0.25, omni);
-    var direct = g.sun_light.rgb * lambert * open;
     let depth = in.water_depth;
+    // The sun where its light gets through (`sun_open`): faces turned from it have none to
+    // look up.
+    var direct = vec3<f32>(0.0);
+    if lambert > 0.0 {
+        direct = g.sun_light.rgb * lambert * sun_open(in.world, n, in.light.x);
+    }
     if depth > 0.0 && in.light.x > 0.0 {
         // Under water open to the sky: the light that reaches this depth, falling off
         // exponentially (red first, blue deepest), the sun's refracted toward the vertical and
@@ -247,8 +250,10 @@ fn shade_color(albedo: vec3<f32>, in: VsOut) -> vec3<f32> {
         let sun_w = vec3<f32>(h.x, sqrt(max(1.0 - dot(h, h), 0.0)), h.y);
         let lam = select(max(dot(n, sun_w), 0.0), 0.5 * sun_w.y + 0.25, omni);
         let p = in.world.xz + g.camera.xz;
+        // What shades the water above shades the floor (the maps' light unbent: near enough).
+        let s = sun_shadow(in.world, n);
         direct = g.sun_light.rgb * lam * reach * select(0.0, 1.0, g.sun.y > 0.0)
-            * caustic_light(p, length(in.world), depth_m);
+            * caustic_light(p, length(in.world), depth_m) * select(1.0, s, s >= 0.0);
     }
     let fire = g.block_light.rgb * light_curve(in.light.y);
     let ao = mix(0.45, 1.0, in.ao);
@@ -302,6 +307,18 @@ fn fs_cutout(in: VsOut) -> @location(0) vec4<f32> {
         default: {}
     }
     return vec4<f32>(shade_color(albedo, in), 1.0);
+}
+
+// Leaves, plants and other cutouts cast the shape of their texels into the sun's shadow maps
+// (the texture's mip as the map's texels see it), and none where their leaves have fallen.
+@fragment
+fn fs_shadow_cutout(in: VsOut) {
+    if textureSample(tex, samp, in.uv, in.layers.x).a < 0.5 {
+        discard;
+    }
+    if leaf_fall(in.world, in.normal, in.leaf) == 2u {
+        discard;
+    }
 }
 
 // ---------------------------------------------------------------- the smooth ground (Amendment S)
@@ -463,12 +480,11 @@ fn fs_smooth(in: VsOut) -> @location(0) vec4<f32> {
 @group(2) @binding(1) var scene_color: texture_2d<f32>;
 @group(2) @binding(2) var scene_depth: texture_depth_2d;
 
-// The light reaching water at a block: the sky by its sky-light level, the sun where it is open
-// to the sky, firelight.
-fn water_light(in: VsOut) -> vec3<f32> {
-    let open = smoothstep(0.8, 1.0, in.light.x);
+// The light reaching water at a block: the sky by its sky-light level, the sun where it gets
+// through (`sun`, `sun_open`), firelight.
+fn water_light(in: VsOut, sun: f32) -> vec3<f32> {
     return g.sky_light.rgb * light_curve(in.light.x) + vec3<f32>(g.sky_light.a)
-        + g.sun_light.rgb * max(g.sun.y, 0.0) * open
+        + g.sun_light.rgb * max(g.sun.y, 0.0) * sun
         + g.block_light.rgb * light_curve(in.light.y);
 }
 
@@ -550,7 +566,8 @@ fn water_shade(in: VsOut, gx: vec3<f32>, gy: vec3<f32>) -> vec4<f32> {
     }
     let ndv = clamp(dot(n, view), 0.0, 1.0);
     let fresnel = water_fresnel(ndv);
-    let light = water_light(in);
+    let sun = sun_open(world, vec3<f32>(0.0, 1.0, 0.0), in.light.x);
+    let light = water_light(in, sun);
     // The water's own colour: light scattered back from inside it (dark, the water's tint).
     let deep = in.tint * light * 0.06 / 3.14159265;
     // Clear blue water lets light far; green and brown water (silt, algae, peat) less.
@@ -582,7 +599,7 @@ fn water_shade(in: VsOut, gx: vec3<f32>, gy: vec3<f32>) -> vec4<f32> {
         let found = water_ssr(world, rc, 20u);
         sky = mix(sky, found.rgb, found.a);
     }
-    let spec = water_glitter(n, view, dist, smoothstep(0.8, 1.0, in.light.x));
+    let spec = water_glitter(n, view, dist, sun);
     if tier == 0u {
         let alpha = clamp(0.65 + 0.35 * fresnel + dist * 0.002, 0.65, 0.95);
         return vec4<f32>(aerial(mix(deep, sky, fresnel) + spec, world), alpha);
@@ -632,7 +649,7 @@ fn fs_translucent(in: VsOut) -> @location(0) vec4<f32> {
     let n = select(in.normal, vec3<f32>(0.0, 1.0, 0.0), dot(in.normal, in.normal) < 0.5);
     let ndv = abs(dot(n, view));
     let f = 0.018 + 0.982 * pow(1.0 - ndv, 5.0);
-    let open = smoothstep(0.8, 1.0, in.light.x);
+    let open = sun_open(in.world, n, in.light.x);
     let rn = select(n, -n, dot(n, view) < 0.0);
     var sky = water_sky(reflect(-view, rn)) * mix(0.35, 1.0, open);
     let rough = 0.06;

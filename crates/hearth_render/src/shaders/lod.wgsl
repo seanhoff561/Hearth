@@ -83,20 +83,30 @@ fn vs_lod(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> L
     }
     var out: LodOut;
     out.pos = g.view_proj * vec4<f32>(world, 1.0);
-    // A hair farther than it is, so the full-detail terrain wins where both lie.
-    out.pos.z *= 0.9998;
+    // A hair farther than it is, so the full-detail terrain wins where both lie (not as it casts
+    // the sun's shadow).
+    if g.shadow.w < 0.5 {
+        out.pos.z *= 0.9998;
+    }
     out.world = world;
     out.albedo = albedo;
     out.normal = lod_normal(face);
     return out;
 }
 
-// Lit like an open full-detail face: sky light by orientation, direct light by angle; water as
-// near water looks, `water` its share of open water.
+// Lit like an open full-detail face: sky light by orientation, direct light by angle where it
+// gets through (the shadow maps: the distant terrain's own and what the near world casts);
+// water as near water looks, `water` its share of open water.
 fn lod_light(albedo: vec3<f32>, n: vec3<f32>, world: vec3<f32>, water: f32, gx: vec3<f32>, gy: vec3<f32>) -> vec3<f32> {
     let ambient = g.sky_light.rgb * max(0.62 + 0.38 * n.y + 0.1 * (1.0 - abs(n.y)), 0.2)
         + vec3<f32>(g.sky_light.a);
-    let direct = g.sun_light.rgb * max(dot(n, g.sun.xyz), 0.0);
+    let lambert = max(dot(n, g.sun.xyz), 0.0);
+    var sun = 1.0;
+    if lambert > 0.0 || water > 0.0 {
+        let s = sun_shadow_at(world, n, true);
+        sun = select(1.0, s, s >= 0.0);
+    }
+    let direct = g.sun_light.rgb * lambert * sun;
     var c = albedo * (ambient + direct) / 3.14159265;
     if water > 0.0 {
         // Open water: the colour the column was given (the bed through the water and the light
@@ -107,7 +117,7 @@ fn lod_light(albedo: vec3<f32>, n: vec3<f32>, world: vec3<f32>, water: f32, gx: 
         let slope = wave_slope_far(world.xz + g.camera.xz, gx.xz, gy.xz);
         let wn = normalize(vec3<f32>(-slope.x, 1.0, -slope.y));
         let f = water_fresnel(dot(wn, view));
-        let w = mix(c, water_sky(reflect(-view, wn)), f) + water_glitter(wn, view, dist, 1.0);
+        let w = mix(c, water_sky(reflect(-view, wn)), f) + water_glitter(wn, view, dist, sun);
         c = mix(c, w, water);
     }
     return c;
@@ -223,8 +233,11 @@ fn vs_ground(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
     albedo = mix(albedo, SEA_ICE, ice * water);
     var out: GroundOut;
     out.pos = g.view_proj * vec4<f32>(world, 1.0);
-    // A hair farther than it is, so the full-detail terrain wins where both lie.
-    out.pos.z *= 0.9998;
+    // A hair farther than it is, so the full-detail terrain wins where both lie (not as it casts
+    // the sun's shadow).
+    if g.shadow.w < 0.5 {
+        out.pos.z *= 0.9998;
+    }
     out.world = world;
     out.albedo = albedo;
     out.normal = n;
@@ -251,4 +264,14 @@ fn fs_ground(in: GroundOut) -> @location(0) vec4<f32> {
         c = mix(c, under, shade);
     }
     return vec4<f32>(aerial(c, in.world), 1.0);
+}
+
+// The distant ground and its canopies cast into the far shadow cascade (`LodRenderer::
+// draw_shadow`): the ground the faces turned from the sun (culled in the pipeline), the
+// canopies both sides where crowns stand.
+@fragment
+fn fs_ground_shadow(in: GroundOut) {
+    if in.cover < 0.5 {
+        discard;
+    }
 }

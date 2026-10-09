@@ -14,8 +14,17 @@ fn sun_dir() -> vec3<f32> {
     return g.sun.xyz;
 }
 
+// The share of the sun reaching the point being shaded (`shade_sun`).
+var<private> sun_share: f32 = 1.0;
+
+// Looks up how much of the sun reaches a point of the person (before `sun_rgb`): by the shadow
+// maps, or where the sky is open where the person stands.
+fn shade_sun(world: vec3<f32>, n: vec3<f32>) {
+    sun_share = sun_open(curve(world), n, u.light.x);
+}
+
 fn sun_rgb() -> vec3<f32> {
-    return g.sun_light.rgb * smoothstep(0.8, 1.0, u.light.x);
+    return g.sun_light.rgb * sun_share;
 }
 
 fn level_curve(l: f32) -> f32 {

@@ -1440,6 +1440,20 @@ impl Menus {
                                 v.refresh_preset();
                                 changed = true;
                             }
+                            let shadows =
+                                [Quality::Off, Quality::Low, Quality::Medium, Quality::High];
+                            let snames: Vec<String> = std::iter::once(ui.t("ui.off"))
+                                .chain(qnames.iter().cloned())
+                                .collect();
+                            let mut hi = shadows
+                                .iter()
+                                .position(|q| *q == v.shader.shadows)
+                                .unwrap_or(2);
+                            if ui.cycle(c.row(ROW), &ui.t("menu.video.shadows"), &snames, &mut hi) {
+                                v.shader.shadows = shadows[hi];
+                                v.refresh_preset();
+                                changed = true;
+                            }
                         }
                         _ => {
                             let mut rd = v.render_distance as f32;

@@ -62,6 +62,9 @@ pub struct TreeStats {
 pub struct TreeRenderer {
     wood: wgpu::RenderPipeline,
     leaves: wgpu::RenderPipeline,
+    /// The trees drawn into the sun's shadow maps: depth alone, the leaves cut to their shapes.
+    shadow_wood: wgpu::RenderPipeline,
+    shadow_leaves: wgpu::RenderPipeline,
     frame_buf: wgpu::Buffer,
     bind: wgpu::BindGroup,
     meshes: FxHashMap<u64, GpuMesh>,
@@ -179,10 +182,39 @@ impl TreeRenderer {
                 cache: None,
             })
         };
+        let shadow_pipe = |label: &str, fs: Option<&str>| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs_tree"),
+                    compilation_options: Default::default(),
+                    buffers: &buffers,
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(crate::terrain::shadow_depth_state()),
+                multisample: Default::default(),
+                fragment: fs.map(|fs| wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(fs),
+                    compilation_options: Default::default(),
+                    targets: &[],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
         let capacity = 1024;
         Self {
             wood: pipe("trees: wood", "fs_wood"),
             leaves: pipe("trees: leaves", "fs_leaf"),
+            shadow_wood: shadow_pipe("trees: wood's shadow", None),
+            shadow_leaves: shadow_pipe("trees: leaves' shadow", Some("fs_leaf_shadow")),
             frame_buf,
             bind,
             meshes: FxHashMap::default(),
@@ -300,13 +332,31 @@ impl TreeRenderer {
 
     /// Draws this frame's trees (after the terrain, in its pass).
     pub fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, globals: &'a wgpu::BindGroup) {
+        self.draw_with(pass, globals, [&self.wood, &self.leaves]);
+    }
+
+    /// Draws this frame's trees into a shadow cascade (in its pass, `globals` the cascade's).
+    pub fn draw_shadow<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        globals: &'a wgpu::BindGroup,
+    ) {
+        self.draw_with(pass, globals, [&self.shadow_wood, &self.shadow_leaves]);
+    }
+
+    fn draw_with<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        globals: &'a wgpu::BindGroup,
+        pipes: [&'a wgpu::RenderPipeline; 2],
+    ) {
         if self.batches.is_empty() {
             return;
         }
         pass.set_bind_group(0, globals, &[]);
         pass.set_bind_group(1, &self.bind, &[]);
         pass.set_vertex_buffer(1, self.instances.slice(..));
-        for (pipeline, leaves) in [(&self.wood, false), (&self.leaves, true)] {
+        for (pipeline, leaves) in [(pipes[0], false), (pipes[1], true)] {
             pass.set_pipeline(pipeline);
             for &(key, first, count) in &self.batches {
                 let m = &self.meshes[&key];

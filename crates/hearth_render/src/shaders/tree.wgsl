@@ -139,13 +139,13 @@ fn level_curve(l: f32) -> f32 {
 }
 
 // Lit as the terrain is: the sky's light by the level where the tree stands and by the way it
-// faces, the sun where the sky is open, firelight; aerial perspective on the way to the eye.
-fn tree_light(albedo: vec3<f32>, n: vec3<f32>, light: vec3<f32>, through: f32) -> vec3<f32> {
+// faces, the sun where it gets through (`sun_open`), firelight; aerial perspective on the way to
+// the eye.
+fn tree_light(albedo: vec3<f32>, n: vec3<f32>, light: vec3<f32>, through: f32, world: vec3<f32>) -> vec3<f32> {
     let sky_dir = 0.62 + 0.38 * n.y + 0.1 * (1.0 - abs(n.y));
     let ambient = g.sky_light.rgb * level_curve(light.x) * max(sky_dir, 0.2)
         + vec3<f32>(g.sky_light.a) + g.block_light.rgb * level_curve(light.y);
-    let open = smoothstep(0.8, 1.0, light.x);
-    let sun = g.sun_light.rgb * open;
+    let sun = g.sun_light.rgb * sun_open(curve(world), n, light.x);
     var c = albedo * (ambient + sun * max(dot(n, g.sun.xyz), 0.0)) / 3.14159265;
     // Light through thin leaves from behind them: yellower, about a third of what falls on them.
     c += albedo * vec3<f32>(1.1, 1.15, 0.6) * sun * max(-dot(n, g.sun.xyz), 0.0) * through
@@ -224,7 +224,7 @@ fn fs_wood(in: TreeOut) -> @location(0) vec4<f32> {
         albedo = albedo * bark(in.uv, in.info.y, in.light.z);
     }
     albedo = snowed(albedo, n, in.info.w);
-    return vec4<f32>(aerial(tree_light(albedo, n, in.light, 0.0), in.world), 1.0);
+    return vec4<f32>(aerial(tree_light(albedo, n, in.light, 0.0, in.world), in.world), 1.0);
 }
 
 // Snow lying on what faces up.
@@ -296,6 +296,14 @@ fn leaf_shape(uv: vec2<f32>, kind: u32, id: f32) -> f32 {
     }
 }
 
+// A card casts the shape of its leaves into the sun's shadow maps.
+@fragment
+fn fs_leaf_shadow(in: TreeOut) {
+    if leaf_shape(in.uv, in.info.y, f32(in.info.z) / 255.0) < 0.5 {
+        discard;
+    }
+}
+
 @fragment
 fn fs_leaf(in: TreeOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let id = f32(in.info.z) / 255.0;
@@ -306,6 +314,6 @@ fn fs_leaf(in: TreeOut, @builtin(front_facing) front: bool) -> @location(0) vec4
     // Lighter at the crown's outside, darker within (the card's light is the crown's).
     let albedo = snowed(in.albedo, n, in.info.w);
     let inside = 0.75 + 0.25 * smoothstep(-0.3, 0.6, n.y);
-    let c = tree_light(albedo, n, in.light, 0.35) * inside;
+    let c = tree_light(albedo, n, in.light, 0.35, in.world) * inside;
     return vec4<f32>(aerial(c, in.world), 1.0);
 }

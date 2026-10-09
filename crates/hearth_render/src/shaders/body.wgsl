@@ -60,6 +60,22 @@ fn vs_main(v: VsIn) -> VsOut {
     return out;
 }
 
+// The body as it casts the sun's shadow: whole, its neck and head where they are posed even when
+// the frame draws them elsewhere (in first person the eye is in the head).
+@vertex
+fn vs_shadow(v: VsIn) -> @builtin(position) vec4<f32> {
+    var m = mat4x4<f32>(vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0));
+    for (var k = 0u; k < 4u; k++) {
+        let j = (v.joints >> (8u * k)) & 255u;
+        var p = u.palette[j];
+        if u.light.z > 0.5 && (j == 3u || j == 4u) {
+            p = u.shadow_joints[j - 3u];
+        }
+        m += p * v.weights[k];
+    }
+    return clip((m * vec4<f32>(v.pos, 1.0)).xyz);
+}
+
 fn hash3(p: vec3<f32>) -> f32 {
     return fract(sin(dot(p, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
 }
@@ -259,6 +275,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let foot = max(length(fwidth(in.bind)), 1e-5);
     // The surface's own normal: the light under the skin follows it, not the pores.
     let ng = normalize(in.normal);
+    shade_sun(in.world, ng);
     let v = normalize(eye_pos() - in.world);
     let l = sun_dir();
     if in.tissue.w > 0.5 {

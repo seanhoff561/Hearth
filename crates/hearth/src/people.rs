@@ -309,6 +309,7 @@ impl Person {
             let chest = place * pose.joints(&figure.rig)[Joint::Chest.index()];
             let at = chest.transform_point3(Vec3::new(0.0, 0.08, -0.02));
             let point = [[0.0; 4], [0.0; 4], [0.0; 4], [at.x, at.y, at.z, 1.0]];
+            frame.cast = Some([palette[Joint::Neck.index()], palette[Joint::Head.index()]]);
             palette[Joint::Head.index()] = point;
             palette[Joint::Neck.index()] = point;
             frame.palette = palette;

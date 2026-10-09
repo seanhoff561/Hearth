@@ -130,10 +130,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sky_dir = 0.62 + 0.38 * n.y + 0.1 * (1.0 - abs(n.y));
     let ambient = g.sky_light.rgb * figure_light_curve(sky) * max(sky_dir, 0.2)
         + vec3<f32>(g.sky_light.a);
-    // Direct light where the sky is open; wrapped a little, as skin and hide scatter it.
-    let open = smoothstep(0.8, 1.0, sky);
+    // Direct light where it gets through (`sun_open`); wrapped a little, as skin and hide
+    // scatter it.
     let wrap = max((dot(n, g.sun.xyz) + 0.15) / 1.15, 0.0);
-    let direct = g.sun_light.rgb * wrap * open;
+    var direct = vec3<f32>(0.0);
+    if wrap > 0.0 {
+        direct = g.sun_light.rgb * wrap * sun_open(curve(in.world), n, sky);
+    }
     let fire = g.block_light.rgb * figure_light_curve(block);
     let c = albedo * ((ambient + fire) * in.shade + direct) / 3.14159265;
     return vec4<f32>(aerial(c, in.world), 1.0);

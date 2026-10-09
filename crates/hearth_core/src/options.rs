@@ -61,6 +61,30 @@ impl Options {
     /// Parses options from TOML text and sanitizes the result.
     pub fn from_toml_str(text: &str) -> Result<Self, OptionsError> {
         let mut opts: Options = toml_parse(text).map_err(|e| OptionsError::Parse(e.to_string()))?;
+        // A file from before the shadows were a setting takes them from the preset its other
+        // values make.
+        let has_shadows = toml_parse::<toml::Value>(text).ok().is_some_and(|v| {
+            v.get("video")
+                .and_then(|v| v.get("shader"))
+                .and_then(|v| v.get("shadows"))
+                .is_some()
+        });
+        if !has_shadows {
+            let v = &mut opts.video;
+            let mut others = PresetValues::of(v);
+            if let Some(p) = [
+                GraphicsPreset::Low,
+                GraphicsPreset::Medium,
+                GraphicsPreset::High,
+            ]
+            .into_iter()
+            .find(|p| {
+                others.shadows = PresetValues::for_preset(*p).shadows;
+                PresetValues::for_preset(*p) == others
+            }) {
+                v.shader.shadows = PresetValues::for_preset(p).shadows;
+            }
+        }
         opts.sanitize();
         Ok(opts)
     }
@@ -186,12 +210,16 @@ pub enum Quality {
 #[serde(default)]
 pub struct ShaderOptions {
     pub water: Quality,
+    /// The sun's cast shadows: off, or their maps' sharpness and how often the far ones are
+    /// redrawn (`hearth_render::shadow`).
+    pub shadows: Quality,
 }
 
 impl Default for ShaderOptions {
     fn default() -> Self {
         Self {
             water: Quality::Medium,
+            shadows: Quality::Medium,
         }
     }
 }
@@ -283,6 +311,7 @@ struct PresetValues {
     lod_detail: Quality,
     anti_aliasing: AntiAliasing,
     water: Quality,
+    shadows: Quality,
 }
 
 impl PresetValues {
@@ -298,6 +327,8 @@ impl PresetValues {
             lod_detail,
             anti_aliasing,
             water,
+            // Shadows at each preset's own level, as the water's.
+            shadows: water,
         }
     }
 
@@ -306,6 +337,7 @@ impl PresetValues {
             lod_detail: v.lod_detail,
             anti_aliasing: v.anti_aliasing,
             water: v.shader.water,
+            shadows: v.shader.shadows,
         }
     }
 }
@@ -321,6 +353,7 @@ impl VideoOptions {
         self.lod_detail = p.lod_detail;
         self.anti_aliasing = p.anti_aliasing;
         self.shader.water = p.water;
+        self.shader.shadows = p.shadows;
     }
 
     /// Returns the preset whose sub-settings exactly match the current values, or `Custom`.
@@ -690,6 +723,8 @@ mod tests {
             "[video]\ngraphics = \"fast\"\nlod_detail = \"low\"\n[video.shader]\nwater = \"low\"\n";
         let o = Options::from_toml_str(fast).unwrap();
         assert_eq!(o.video.graphics, GraphicsPreset::Low);
+        // Written before the shadows were a setting: they follow the preset the values make.
+        assert_eq!(o.video.shader.shadows, Quality::Low);
     }
 
     #[test]

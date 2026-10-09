@@ -2,6 +2,8 @@
 //! vertex pulling. Each frame the CPU finds candidate cubes (cave culling + frustum); then either
 //! the GPU culls them further (two-phase Hi-Z occlusion, see `cull.rs`) and writes the indirect
 //! draws itself, or (on adapters without indirect-count draws) the CPU builds the draw lists.
+//! The cubes within each of the sun's near shadow cascades are drawn into it first, depth only
+//! (`terrain/casters.rs`, `shadow.rs`).
 
 use std::collections::VecDeque;
 
@@ -16,6 +18,14 @@ use crate::cull::{GpuCuller, SlotRecord};
 use crate::gpu::GpuContext;
 use crate::mesh::{CubeMesh, GeneralQuad, PackedQuad};
 use crate::profiler::GpuTimer;
+use crate::shadow::{CASCADES, NEAR_CASCADES, ShadowMaps, ShadowQuality};
+
+pub(crate) use crate::arena::Arena;
+pub use crate::arena::RangeAllocator;
+pub use casters::shadow_depth_state;
+use casters::{ShadowPipelines, make_shadow_pipelines};
+
+mod casters;
 
 /// Translucent quads of cubes within this many cubes of the camera are re-sorted back to front
 /// whenever the camera enters another block.
@@ -24,177 +34,6 @@ const RESORT_RADIUS: i32 = 2;
 /// Quads per draw call are limited by the shared index buffer.
 const MAX_QUADS_PER_DRAW: u32 = 16_384;
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-
-/// First-fit free-list allocator over `[0, capacity)`.
-#[derive(Debug, Clone)]
-pub struct RangeAllocator {
-    capacity: u32,
-    /// Free ranges sorted by offset: (offset, len).
-    free: Vec<(u32, u32)>,
-    used: u32,
-}
-
-impl RangeAllocator {
-    pub fn new(capacity: u32) -> Self {
-        Self {
-            capacity,
-            free: vec![(0, capacity)],
-            used: 0,
-        }
-    }
-
-    pub fn alloc(&mut self, len: u32) -> Option<u32> {
-        if len == 0 {
-            return Some(0);
-        }
-        let i = self.free.iter().position(|(_, l)| *l >= len)?;
-        let (off, l) = self.free[i];
-        if l == len {
-            self.free.remove(i);
-        } else {
-            self.free[i] = (off + len, l - len);
-        }
-        self.used += len;
-        Some(off)
-    }
-
-    pub fn free(&mut self, off: u32, len: u32) {
-        if len == 0 {
-            return;
-        }
-        self.used -= len;
-        let i = self.free.partition_point(|(o, _)| *o < off);
-        self.free.insert(i, (off, len));
-        // Coalesce with neighbours.
-        if i + 1 < self.free.len() && self.free[i].0 + self.free[i].1 == self.free[i + 1].0 {
-            self.free[i].1 += self.free[i + 1].1;
-            self.free.remove(i + 1);
-        }
-        if i > 0 && self.free[i - 1].0 + self.free[i - 1].1 == self.free[i].0 {
-            self.free[i - 1].1 += self.free[i].1;
-            self.free.remove(i);
-        }
-    }
-
-    /// Extends the capacity (after the backing buffer grew).
-    pub fn grow(&mut self, new_capacity: u32) {
-        let extra = new_capacity - self.capacity;
-        let old = self.capacity;
-        self.capacity = new_capacity;
-        self.used += extra;
-        self.free(old, extra);
-    }
-
-    pub fn used(&self) -> u32 {
-        self.used
-    }
-
-    pub fn capacity(&self) -> u32 {
-        self.capacity
-    }
-}
-
-/// A storage buffer of fixed-size elements with a range allocator; grows by doubling.
-pub(crate) struct Arena {
-    pub(crate) buffer: wgpu::Buffer,
-    pub(crate) alloc: RangeAllocator,
-    stride: u64,
-    label: &'static str,
-    /// Uses beyond storage (an index buffer's).
-    extra: wgpu::BufferUsages,
-}
-
-impl Arena {
-    /// Video memory the arena's buffer takes (bytes).
-    pub(crate) fn bytes(&self) -> u64 {
-        self.stride * self.alloc.capacity() as u64
-    }
-
-    pub(crate) fn new(
-        device: &wgpu::Device,
-        label: &'static str,
-        stride: u64,
-        capacity: u32,
-    ) -> Self {
-        Self::with_usage(device, label, stride, capacity, wgpu::BufferUsages::empty())
-    }
-
-    pub(crate) fn with_usage(
-        device: &wgpu::Device,
-        label: &'static str,
-        stride: u64,
-        capacity: u32,
-        extra: wgpu::BufferUsages,
-    ) -> Self {
-        Self {
-            buffer: Self::make(device, label, stride, capacity, extra),
-            alloc: RangeAllocator::new(capacity),
-            stride,
-            label,
-            extra,
-        }
-    }
-
-    fn make(
-        device: &wgpu::Device,
-        label: &str,
-        stride: u64,
-        capacity: u32,
-        extra: wgpu::BufferUsages,
-    ) -> wgpu::Buffer {
-        device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(label),
-            size: stride * capacity as u64,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC
-                | extra,
-            mapped_at_creation: false,
-        })
-    }
-
-    /// Allocates `len` elements, growing the buffer if needed. Returns (offset, grew).
-    pub(crate) fn alloc(&mut self, ctx: &GpuContext, len: u32) -> (u32, bool) {
-        if let Some(off) = self.alloc.alloc(len) {
-            return (off, false);
-        }
-        let max_elems = (ctx.device.limits().max_storage_buffer_binding_size / self.stride) as u32;
-        let mut cap = self.alloc.capacity();
-        while cap < max_elems
-            && self.alloc.capacity() - self.alloc.used() + (cap - self.alloc.capacity()) < len
-        {
-            cap = (cap * 2).min(max_elems);
-        }
-        cap = (cap.max(self.alloc.capacity() * 2)).min(max_elems);
-        if cap <= self.alloc.capacity() {
-            log::error!("{} arena is full ({} elements)", self.label, cap);
-            return (u32::MAX, false);
-        }
-        let new_buf = Self::make(&ctx.device, self.label, self.stride, cap, self.extra);
-        let mut enc = ctx
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("arena grow"),
-            });
-        enc.copy_buffer_to_buffer(
-            &self.buffer,
-            0,
-            &new_buf,
-            0,
-            self.stride * self.alloc.capacity() as u64,
-        );
-        ctx.queue.submit(Some(enc.finish()));
-        self.buffer = new_buf;
-        self.alloc.grow(cap);
-        log::info!(
-            "{} arena grew to {} MiB",
-            self.label,
-            (self.stride * cap as u64) >> 20
-        );
-        let off = self.alloc.alloc(len).unwrap_or(u32::MAX);
-        (off, true)
-    }
-}
 
 /// Where a cube's mesh lives on the GPU.
 #[derive(Debug, Clone)]
@@ -360,6 +199,18 @@ struct Globals {
     overcast: [f32; 4],
     near: [f32; 4],
     water_map: [f32; 4],
+    /// The sun's shadow maps (`shadow.rs`): each cascade's view-projection from points relative
+    /// to the camera now, into the map as it was drawn.
+    shadow_vp: [[[f32; 4]; 4]; CASCADES],
+    /// x: 1 when the maps hold the sun's shadows this frame; y: their size (texels); z: how far
+    /// toward the sun the far cascade takes its casters; w: 1 while a cascade is drawn.
+    shadow: [f32; 4],
+    /// Each cascade's texel (blocks): the near ones, then the far one in the second's x.
+    shadow_texel: [[f32; 4]; 2],
+    /// The direction toward the light the maps are drawn for.
+    shadow_light: [f32; 4],
+    /// How far toward the sun each near cascade takes its casters (blocks).
+    shadow_reach: [f32; 4],
 }
 
 /// Earth's mean radius (m): with the vertical scale, the radius of the planet's curvature.
@@ -386,6 +237,9 @@ pub struct TerrainStats {
     /// The part of the screen (0–1, y down: min x, min y, max x, max y) the cubes with
     /// translucent quads cover, for copying no more of the scene than the water reads.
     pub translucent_rect: Option<[f32; 4]>,
+    /// Draws and triangles of the near terrain cast into the shadow maps this frame.
+    pub shadow_draws: usize,
+    pub shadow_triangles: u64,
 }
 
 struct Pass {
@@ -475,6 +329,21 @@ pub struct TerrainRenderer {
     pub fade_in_s: f32,
     /// What the water surfaces read (the scene behind them, waves, wind).
     pub water: crate::water::WaterRenderer,
+    /// The sun's shadows (R1a): the maps, and each cascade's globals and bind group 0 (the
+    /// frame's with the light's view-projection; the maps themselves left out while drawn into).
+    pub shadows: ShadowMaps,
+    shadow_globals: Vec<wgpu::Buffer>,
+    shadow_binds: Vec<wgpu::BindGroup>,
+    /// The near cascades' casters: packed opaque and cutout, general opaque and cutout, the
+    /// smooth ground.
+    shadow_passes: Vec<[Pass; 5]>,
+    shadow_pipes: ShadowPipelines,
+    /// What bind group 0 is made of besides the globals and the shadow maps.
+    bind0_parts: Bind0Parts,
+    /// Each cube's instance this frame by its slot (`u32::MAX`: none yet; scratch).
+    slot_instance: Vec<u32>,
+    /// Redraw every cascade each frame (pictures: nothing kept from another frame).
+    pub redraw_shadows: bool,
 }
 
 struct Pipelines {
@@ -484,6 +353,73 @@ struct Pipelines {
     general_opaque: wgpu::RenderPipeline,
     general_cutout: wgpu::RenderPipeline,
     translucent: wgpu::RenderPipeline,
+}
+
+/// The textures and samplers of bind group 0 besides the globals and the shadow maps.
+struct Bind0Parts {
+    blocks: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+    skyview: wgpu::TextureView,
+    sky_sampler: wgpu::Sampler,
+}
+
+/// Bind group 0: the globals, block textures, sky-view table, water and the shadow maps.
+fn make_bind0(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    globals: &wgpu::Buffer,
+    parts: &Bind0Parts,
+    water: &crate::water::WaterRenderer,
+    shadows: &ShadowMaps,
+    shadow: &wgpu::TextureView,
+) -> wgpu::BindGroup {
+    let view = wgpu::BindingResource::TextureView;
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("terrain bind 0"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: view(&parts.blocks),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(&parts.sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: view(&parts.skyview),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::Sampler(&parts.sky_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: view(water.heights_view()),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: view(water.caustics_view()),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: view(shadow),
+            },
+            wgpu::BindGroupEntry {
+                binding: 8,
+                resource: wgpu::BindingResource::Sampler(&shadows.sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 9,
+                resource: wgpu::BindingResource::Sampler(&shadows.depth_sampler),
+            },
+        ],
+    })
 }
 
 impl TerrainRenderer {
@@ -593,6 +529,29 @@ impl TerrainRenderer {
                     },
                     count: None,
                 },
+                // The sun's shadow maps and their comparison sampler.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
             ],
         });
         let storage = |binding: u32| wgpu::BindGroupLayoutEntry {
@@ -618,40 +577,57 @@ impl TerrainRenderer {
                 },
             ],
         });
-        let bind0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("terrain bind 0"),
-            layout: &layout0,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: globals.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&sky.skyview_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Sampler(sky.sampler()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(water.heights_view()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::TextureView(water.caustics_view()),
-                },
-            ],
-        });
+        let bind0_parts = Bind0Parts {
+            blocks: view,
+            sampler,
+            skyview: sky.skyview_view.clone(),
+            sky_sampler: sky.sampler().clone(),
+        };
+        let shadows = ShadowMaps::new(ctx, ShadowQuality::Off);
+        let bind0 = make_bind0(
+            device,
+            &layout0,
+            &globals,
+            &bind0_parts,
+            &water,
+            &shadows,
+            &shadows.array_view,
+        );
+        let shadow_globals: Vec<wgpu::Buffer> = (0..CASCADES)
+            .map(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("shadow cascade globals"),
+                    size: std::mem::size_of::<Globals>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            })
+            .collect();
+        let shadow_binds = shadow_globals
+            .iter()
+            .map(|b| {
+                make_bind0(
+                    device,
+                    &layout0,
+                    b,
+                    &bind0_parts,
+                    &water,
+                    &shadows,
+                    &shadows.dummy_view,
+                )
+            })
+            .collect();
+        let shadow_passes = (0..NEAR_CASCADES)
+            .map(|_| {
+                [
+                    Pass::new(device, "shadow packed"),
+                    Pass::new(device, "shadow packed cutout"),
+                    Pass::new(device, "shadow general"),
+                    Pass::new(device, "shadow general cutout"),
+                    Pass::new(device, "shadow smooth ground"),
+                ]
+            })
+            .collect();
         let packed = Arena::new(device, "packed quads", 16, 1 << 20);
         let general = Arena::new(device, "general quads", 64, 1 << 17);
         let smooth_v = Arena::new(device, "smooth ground vertices", 24, 1 << 19);
@@ -704,7 +680,16 @@ impl TerrainRenderer {
             mapped_at_creation: false,
         });
         ctx.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
-        let pipes = make_pipelines(device, &layout0, &layout1, water.layout(), color_format);
+        let module = terrain_module(device);
+        let pipes = make_pipelines(
+            device,
+            &module,
+            &layout0,
+            &layout1,
+            water.layout(),
+            color_format,
+        );
+        let shadow_pipes = make_shadow_pipelines(device, &module, &layout0, &layout1);
         let passes = [
             Pass::new(device, "draws packed opaque"),
             Pass::new(device, "draws packed cutout"),
@@ -756,6 +741,14 @@ impl TerrainRenderer {
             gpu_culling: true,
             fade_in_s: 0.0,
             water,
+            shadows,
+            shadow_globals,
+            shadow_binds,
+            shadow_passes,
+            shadow_pipes,
+            bind0_parts,
+            slot_instance: Vec::new(),
+            redraw_shadows: false,
         }
     }
 
@@ -1114,6 +1107,10 @@ impl TerrainRenderer {
                 translucent_quads += m.trans_len as u64;
             }
         }
+        // The sun's shadows: the cascades due this frame and what casts into them.
+        self.shadows
+            .plan(camera.pos, params.light_dir, self.redraw_shadows);
+        self.shadow_casters(camera.pos, &visible);
         // Upload instances.
         if self.instance_data.len() > self.instance_capacity {
             self.instance_capacity = self.instance_data.len().next_power_of_two();
@@ -1161,6 +1158,11 @@ impl TerrainRenderer {
                     "smooth ground",
                 ][i],
             );
+        }
+        for passes in &mut self.shadow_passes {
+            for p in passes.iter_mut() {
+                p.upload(ctx, "shadow casters");
+            }
         }
         if gpu && let Some(c) = &mut self.culler {
             c.prepare(ctx, &self.cand_slots, vp, camera.near, size);
@@ -1215,8 +1217,33 @@ impl TerrainRenderer {
                 ],
                 None => [0.0; 4],
             },
+            shadow_vp: self
+                .shadows
+                .sample_matrices(cam)
+                .map(|m| m.to_cols_array_2d()),
+            shadow: [
+                if self.shadows.active { 1.0 } else { 0.0 },
+                self.shadows.size as f32,
+                crate::shadow::REACH_UP[NEAR_CASCADES],
+                0.0,
+            ],
+            shadow_texel: [
+                std::array::from_fn(|i| self.shadows.texel(i)),
+                [self.shadows.texel(NEAR_CASCADES), 0.0, 0.0, 0.0],
+            ],
+            shadow_light: v4(self.shadows.light().unwrap_or(params.light_dir), 0.0),
+            shadow_reach: std::array::from_fn(|i| crate::shadow::REACH_UP[i]),
         };
         ctx.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
+        // Each cascade drawn this frame: the frame's globals seen from the light.
+        for i in self.shadows.due() {
+            let cascade = Globals {
+                view_proj: self.shadows.cascades[i].view_proj.to_cols_array_2d(),
+                shadow: [globals.shadow[0], globals.shadow[1], globals.shadow[2], 1.0],
+                ..globals
+            };
+            ctx.write_buffer(&self.shadow_globals[i], 0, bytemuck::bytes_of(&cascade));
+        }
         self.stats = TerrainStats {
             meshes: self.meshes.len(),
             visible_cubes: visible.len(),
@@ -1230,6 +1257,19 @@ impl TerrainRenderer {
             resorted,
             translucent_quads,
             translucent_rect,
+            shadow_draws: self
+                .shadow_passes
+                .iter()
+                .flatten()
+                .map(|p| p.draws.len())
+                .sum(),
+            shadow_triangles: self
+                .shadow_passes
+                .iter()
+                .flatten()
+                .flat_map(|p| &p.draws)
+                .map(|d| d.index_count as u64 / 3)
+                .sum(),
         };
         self.visible = visible;
     }
@@ -1460,7 +1500,15 @@ impl TerrainRenderer {
         pipe: &'a wgpu::RenderPipeline,
         i: usize,
     ) {
-        let p = &self.passes[i];
+        self.draw_list(pass, pipe, &self.passes[i]);
+    }
+
+    fn draw_list<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        pipe: &'a wgpu::RenderPipeline,
+        p: &'a Pass,
+    ) {
         if p.draws.is_empty() {
             return;
         }
@@ -1626,14 +1674,9 @@ fn make_bind1(
     })
 }
 
-fn make_pipelines(
-    device: &wgpu::Device,
-    layout0: &wgpu::BindGroupLayout,
-    layout1: &wgpu::BindGroupLayout,
-    water: &wgpu::BindGroupLayout,
-    color_format: wgpu::TextureFormat,
-) -> Pipelines {
-    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+/// The terrain's shaders (`common.wgsl` and `water.wgsl` before them).
+fn terrain_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("terrain.wgsl"),
         source: wgpu::ShaderSource::Wgsl(
             concat!(
@@ -1643,7 +1686,17 @@ fn make_pipelines(
             )
             .into(),
         ),
-    });
+    })
+}
+
+fn make_pipelines(
+    device: &wgpu::Device,
+    module: &wgpu::ShaderModule,
+    layout0: &wgpu::BindGroupLayout,
+    layout1: &wgpu::BindGroupLayout,
+    water: &wgpu::BindGroupLayout,
+    color_format: wgpu::TextureFormat,
+) -> Pipelines {
     let opaque_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("terrain pipeline layout"),
         bind_group_layouts: &[Some(layout0), Some(layout1)],
@@ -1670,7 +1723,7 @@ fn make_pipelines(
             label: Some(label),
             layout: Some(layout),
             vertex: wgpu::VertexState {
-                module: &module,
+                module,
                 entry_point: Some(vs),
                 compilation_options: Default::default(),
                 buffers: &[],
@@ -1690,7 +1743,7 @@ fn make_pipelines(
             }),
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
-                module: &module,
+                module,
                 entry_point: Some(fs),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
@@ -1846,25 +1899,5 @@ mod tests {
         assert!(
             screen_rect(vp, Vec3::new(-4.0, -3.0, -30.0), Vec3::new(4.0, 3.0, -20.0)).is_none()
         );
-    }
-
-    #[test]
-    fn allocator_reuses_and_coalesces() {
-        let mut a = RangeAllocator::new(100);
-        let x = a.alloc(30).unwrap();
-        let y = a.alloc(30).unwrap();
-        let z = a.alloc(30).unwrap();
-        assert_eq!((x, y, z), (0, 30, 60));
-        assert!(a.alloc(20).is_none());
-        a.free(y, 30);
-        assert_eq!(a.alloc(20), Some(30));
-        a.free(30, 20);
-        a.free(x, 30);
-        a.free(z, 30);
-        assert_eq!(a.used(), 0);
-        assert_eq!(a.alloc(100), Some(0), "fully coalesced");
-        a.free(0, 100);
-        a.grow(200);
-        assert_eq!(a.alloc(200), Some(0));
     }
 }

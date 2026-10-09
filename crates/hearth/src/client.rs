@@ -157,6 +157,7 @@ pub struct Client {
     taa: bool,
     render_scale: f32,
     water_quality: hearth_render::water::WaterQuality,
+    shadow_quality: hearth_render::shadow::ShadowQuality,
     vertical_scale: f32,
     /// World clock (from the server, advanced locally between its messages) and calendar.
     pub ticks: u64,
@@ -449,6 +450,7 @@ impl Client {
             taa: options.video.anti_aliasing == hearth_core::options::AntiAliasing::Taa,
             render_scale: options.video.render_scale,
             water_quality: options.video.shader.water.into(),
+            shadow_quality: options.video.shader.shadows.into(),
             vertical_scale: 1.0,
             ticks: 0,
             tick_frac: 0.0,
@@ -2587,6 +2589,7 @@ impl Client {
         self.camera.fov_y = v.fov;
         self.render_scale = v.render_scale;
         self.water_quality = v.shader.water.into();
+        self.shadow_quality = v.shader.shadows.into();
         self.lod_distance = v.lod_distance;
         self.lod_error_px = v.lod_error_px();
         self.lod_budget_mb = v.lod_vram_budget_mb;
@@ -3848,6 +3851,11 @@ impl Client {
             }
             _ => scene.near_area = None,
         }
+        // The sun's shadows, the far cascade as wide as the distant terrain is drawn.
+        scene.terrain.set_shadow_quality(ctx, self.shadow_quality);
+        scene.terrain.shadows.far_radius =
+            hearth_lod::draw_distance(self.lod_distance, view.pos.y, self.vertical_scale as f64)
+                as f32;
         // The player's body: in first person without the head (the eyes are in it). A
         // sculpted body (E7) once its meshes are built; the boxes till then, and for the
         // garments not fitted as meshes.
@@ -4485,6 +4493,8 @@ impl Client {
             &[
                 ("cubes", &st.meshes.to_string()),
                 ("visible", &st.visible_cubes.to_string()),
+                ("shadow_draws", &st.shadow_draws.to_string()),
+                ("shadow_k", &(st.shadow_triangles / 1000).to_string()),
                 ("lod_drawn", &s.lod.stats.drawn.to_string()),
                 ("lod_queued", &pending.to_string()),
             ],

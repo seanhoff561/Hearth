@@ -20,7 +20,8 @@ use rustc_hash::FxHashMap;
 
 use crate::camera::{Camera, Frustum};
 use crate::gpu::GpuContext;
-use crate::terrain::{Arena, DEPTH_FORMAT, EARTH_RADIUS_M, TerrainRenderer};
+use crate::shadow::{NEAR_CASCADES, ShadowMaps};
+use crate::terrain::{Arena, DEPTH_FORMAT, EARTH_RADIUS_M, TerrainRenderer, shadow_depth_state};
 
 /// Bytes per LOD quad record (`hearth_lod::LodQuad`).
 pub const QUAD_BYTES: u64 = 16;
@@ -304,6 +305,15 @@ pub struct LodRenderer {
     bind_dirty: bool,
     planet: Planet,
     pub stats: LodStats,
+    /// The far shadow cascade's casters (`shadow.rs`): the grounds, then the canopies, of every
+    /// tile that can cast into it, their buffer and the bind group reading it.
+    shadow_ground: wgpu::RenderPipeline,
+    shadow_canopy: wgpu::RenderPipeline,
+    shadow_tiles: Vec<GroundTile>,
+    shadow_grounds: u32,
+    shadow_buffer: wgpu::Buffer,
+    shadow_capacity: usize,
+    shadow_bind1: wgpu::BindGroup,
 }
 
 fn quad_indices(quads: u32) -> Vec<u32> {
@@ -436,7 +446,60 @@ impl LodRenderer {
                 cache: None,
             })
         };
+        // The far shadow cascade: depth only, with neither the waves nor a colour.
+        let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("lod shadow pipeline layout"),
+            bind_group_layouts: &[Some(layout0), Some(&layout1)],
+            immediate_size: 0,
+        });
+        let shadow_pipe = |label: &str, cull: Option<wgpu::Face>| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&shadow_layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs_ground"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: cull,
+                    ..Default::default()
+                },
+                depth_stencil: Some(shadow_depth_state()),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some("fs_ground_shadow"),
+                    compilation_options: Default::default(),
+                    targets: &[],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let shadow_capacity = 256;
+        let shadow_buffer = Self::ground_tiles_buffer(device, shadow_capacity);
+        let shadow_bind1 = Self::bind(
+            device,
+            &layout1,
+            [
+                &origins,
+                &pool.buffer,
+                &shadow_buffer,
+                &ground_pool.buffer,
+                &materials,
+            ],
+        );
         Self {
+            shadow_ground: shadow_pipe("lod shadow ground", Some(wgpu::Face::Front)),
+            shadow_canopy: shadow_pipe("lod shadow canopy", None),
+            shadow_tiles: Vec::new(),
+            shadow_grounds: 0,
+            shadow_buffer,
+            shadow_capacity,
+            shadow_bind1,
             pipeline: pipe("lod", "vs_lod", "fs_lod"),
             ground_pipeline: pipe("lod ground", "vs_ground", "fs_ground"),
             layout1,
@@ -526,6 +589,17 @@ impl LodRenderer {
                 &self.origins,
                 &self.pool.buffer,
                 &self.ground_tiles,
+                &self.ground_pool.buffer,
+                &self.materials,
+            ],
+        );
+        self.shadow_bind1 = Self::bind(
+            device,
+            &self.layout1,
+            [
+                &self.origins,
+                &self.pool.buffer,
+                &self.shadow_buffer,
                 &self.ground_pool.buffer,
                 &self.materials,
             ],
@@ -828,6 +902,103 @@ impl LodRenderer {
             bytes: self.bytes(),
             gpu_culled: gpu && hzb.is_some(),
         };
+    }
+
+    /// The far shadow cascade's casters when it is drawn this frame: the grounds and canopies of
+    /// the tiles among `show` that can cast into it, wherever they lie about the camera (a ridge
+    /// behind it shades the valley ahead).
+    pub fn prepare_shadow(
+        &mut self,
+        ctx: &GpuContext,
+        camera: DVec3,
+        vertical_scale: f32,
+        shadows: &ShadowMaps,
+        show: &[u64],
+    ) {
+        self.shadow_tiles.clear();
+        self.shadow_grounds = 0;
+        let far = NEAR_CASCADES;
+        if !shadows.due().any(|i| i == far) {
+            return;
+        }
+        let curvature = (0.5 / (EARTH_RADIUS_M * vertical_scale.max(1e-3) as f64)) as f32;
+        let mut canopies = Vec::new();
+        for &id in show {
+            let Some(t) = self.tiles.get(&id) else {
+                continue;
+            };
+            if t.ground == u32::MAX && t.canopy == u32::MAX {
+                continue;
+            }
+            let ox = self.planet.delta_x(camera.x, t.origin[0] as f64) as f32;
+            let oz = (t.origin[1] as f64 - camera.z) as f32;
+            let size = t.size as f32;
+            let far_corner = (ox.abs() + size).powi(2) + (oz.abs() + size).powi(2);
+            let sink = far_corner * curvature;
+            let (y0, y1) = (
+                (t.y.0 as f64 - camera.y) as f32,
+                (t.y.1 as f64 - camera.y) as f32,
+            );
+            let min = Vec3::new(ox, y0 - sink, oz);
+            let max = Vec3::new(ox + size, y1, oz + size);
+            if !shadows.may_cast(far, camera, min, max) {
+                continue;
+            }
+            let cs = size / (GROUND_SIDE - 1) as f32;
+            if t.ground != u32::MAX {
+                self.shadow_tiles.push(GroundTile {
+                    origin: [ox, -(camera.y as f32), oz, cs],
+                    base: t.ground,
+                    skirt: 0.0,
+                    canopy: 0,
+                    pad: 0,
+                });
+            }
+            if t.canopy != u32::MAX {
+                canopies.push(GroundTile {
+                    origin: [ox - cs * 0.5, -(camera.y as f32), oz - cs * 0.5, cs],
+                    base: t.canopy,
+                    skirt: 0.0,
+                    canopy: 1,
+                    pad: 0,
+                });
+            }
+        }
+        self.shadow_grounds = self.shadow_tiles.len() as u32;
+        self.shadow_tiles.extend(canopies);
+        if self.shadow_tiles.len() > self.shadow_capacity {
+            self.shadow_capacity = self.shadow_tiles.len().next_power_of_two();
+            self.shadow_buffer = Self::ground_tiles_buffer(&ctx.device, self.shadow_capacity);
+            self.rebind(&ctx.device);
+        }
+        if !self.shadow_tiles.is_empty() {
+            ctx.write_buffer(
+                &self.shadow_buffer,
+                0,
+                bytemuck::cast_slice(&self.shadow_tiles),
+            );
+        }
+    }
+
+    /// Records the far shadow cascade's casters (in its pass, `bind0` the cascade's): the
+    /// height fields without their skirts.
+    pub fn draw_shadow<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, bind0: &'a wgpu::BindGroup) {
+        if self.shadow_tiles.is_empty() {
+            return;
+        }
+        pass.set_bind_group(0, bind0, &[]);
+        pass.set_bind_group(1, &self.shadow_bind1, &[]);
+        pass.set_index_buffer(self.ground_index.slice(..), wgpu::IndexFormat::Uint32);
+        let field = (GROUND_SIDE - 1) * (GROUND_SIDE - 1) * 6;
+        let all = self.shadow_tiles.len() as u32;
+        if self.shadow_grounds > 0 {
+            pass.set_pipeline(&self.shadow_ground);
+            pass.draw_indexed(0..field, 0, 0..self.shadow_grounds);
+        }
+        if all > self.shadow_grounds {
+            pass.set_pipeline(&self.shadow_canopy);
+            pass.draw_indexed(0..field, 0, self.shadow_grounds..all);
+        }
     }
 
     /// Uploads the candidates (every tile inside the frustum) and parameters of the GPU cull.

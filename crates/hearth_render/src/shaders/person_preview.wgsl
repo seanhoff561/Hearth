@@ -30,6 +30,9 @@ fn sun_rgb() -> vec3<f32> {
     return scene.light.rgb;
 }
 
+// Nothing casts shadows here.
+fn shade_sun(world: vec3<f32>, n: vec3<f32>) {}
+
 // The light from all round on a surface facing `n`.
 fn ambient(n: vec3<f32>) -> vec3<f32> {
     return mix(scene.ground.rgb, scene.sky.rgb, 0.5 + 0.5 * n.y);

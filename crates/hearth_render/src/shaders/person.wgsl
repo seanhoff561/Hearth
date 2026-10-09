@@ -1,7 +1,7 @@
 // A person's data (Amendment E §8, E7), shared by the skin, hair and eye shaders, in the
 // preview and in the world. A view prefix comes before it (`person_preview.wgsl` or
-// `common.wgsl` with `person_world.wgsl`), giving `clip`, `eye_pos`, `sun_dir`, `sun_rgb`,
-// `ambient` and `finish`.
+// `common.wgsl` with `person_world.wgsl`), giving `clip`, `eye_pos`, `sun_dir`, `shade_sun`,
+// `sun_rgb`, `ambient` and `finish`.
 
 struct Person {
     skin: vec4<f32>,
@@ -16,8 +16,11 @@ struct Person {
     marks: array<vec4<f32>, 17>,
     // The garment's colour (linear); w: 0 hide, 1 plant fibre.
     cloth: vec4<f32>,
-    // The light where the person is: x sky (0–1), y firelight (0–1).
+    // The light where the person is: x sky (0–1), y firelight (0–1); z 1 when `shadow_joints`
+    // holds the neck and the head as posed, drawn elsewhere (first person) but kept in the
+    // shadow.
     light: vec4<f32>,
+    shadow_joints: array<mat4x4<f32>, 2>,
 };
 
 struct Hair {

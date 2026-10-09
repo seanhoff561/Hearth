@@ -155,6 +155,8 @@ pub struct ShotSpec {
     pub lod: u32,
     /// Aerial perspective (haze and the blue of distance); off only for comparisons.
     pub fog: bool,
+    /// The sun's shadows (`shadows=off|low|medium|high`; the game's default otherwise).
+    pub shadows: hearth_render::shadow::ShadowQuality,
     /// Seconds the LOD terrain may take to build before the shot fails.
     pub lod_timeout: f64,
     /// Draw the planet as the globe (at this zoom) centred on the camera's place instead.
@@ -305,6 +307,9 @@ impl Default for ShotSpec {
             verify_cull: false,
             lod: 256,
             fog: true,
+            shadows: hearth_core::options::ShaderOptions::default()
+                .shadows
+                .into(),
             lod_timeout: 180.0,
             globe: None,
             globe_relief: hearth_render::globe::GlobeView::RELIEF,
@@ -404,6 +409,17 @@ impl ShotSpec {
                 "verify_cull" => spec.verify_cull = v.parse()?,
                 "lod" => spec.lod = v.parse()?,
                 "fog" => spec.fog = v.parse()?,
+                "shadows" => {
+                    use hearth_core::options::Quality;
+                    spec.shadows = match v {
+                        "off" => Quality::Off,
+                        "low" => Quality::Low,
+                        "medium" => Quality::Medium,
+                        "high" => Quality::High,
+                        _ => anyhow::bail!("shadows={v}: off, low, medium or high"),
+                    }
+                    .into();
+                }
                 "lod_timeout" => spec.lod_timeout = v.parse()?,
                 "globe" => spec.globe = Some(v.parse()?),
                 "globe_relief" => spec.globe_relief = v.parse()?,
@@ -1359,6 +1375,10 @@ pub fn render_shot(
         .collect();
     scene.near_area = (spec.lod > 0).then_some(near);
     scene.vertical_scale = lw.terrain().vertical_scale();
+    // The sun's shadows, every cascade drawn for the picture, the far one as wide as the LOD.
+    scene.terrain.set_shadow_quality(ctx, spec.shadows);
+    scene.terrain.redraw_shadows = true;
+    scene.terrain.shadows.far_radius = reach as f32;
     log::info!(
         "  LOD: {} tiles ({} built), {} quads to {:.0} blocks in {:.2}s",
         keys.len(),

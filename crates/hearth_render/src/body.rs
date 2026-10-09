@@ -364,6 +364,7 @@ impl PersonMotion {
             }),
             eyes,
             light,
+            cast: None,
         }
     }
 }
@@ -378,6 +379,9 @@ pub struct PersonFrame {
     /// The sky's light and the firelight where the person is (0–1 each), for the world's
     /// lighting.
     pub light: [f32; 2],
+    /// The neck and the head as posed, when the palette draws them elsewhere (in first person
+    /// the eye is in the head): the shadow keeps them.
+    pub cast: Option<[[[f32; 4]; 4]; 2]>,
 }
 
 #[repr(C)]
@@ -392,7 +396,9 @@ struct PersonUniform {
     state2: [f32; 4],
     marks: [[f32; 4]; JOINTS],
     cloth: [f32; 4],
+    /// x sky, y firelight; z 1 when `cast` holds the neck and head the shadow keeps.
     light: [f32; 4],
+    cast: [[[f32; 4]; 4]; 2],
 }
 
 impl PersonUniform {
@@ -409,7 +415,13 @@ impl PersonUniform {
             state2: [l.state.flush, l.state.goosebumps, 0.0, 0.0],
             marks: l.state.marks,
             cloth: l.cloth,
-            light: [f.light[0], f.light[1], 0.0, 0.0],
+            light: [
+                f.light[0],
+                f.light[1],
+                if f.cast.is_some() { 1.0 } else { 0.0 },
+                0.0,
+            ],
+            cast: f.cast.unwrap_or([[[0.0; 4]; 4]; 2]),
         }
     }
 }
@@ -513,14 +525,19 @@ struct Pipelines {
     hair: wgpu::RenderPipeline,
     eye: wgpu::RenderPipeline,
     lut: crate::skin_lut::SkinLut,
+    /// The body drawn into the sun's shadow maps (in the world only): depth alone, the faces
+    /// turned away from the sun.
+    shadow: Option<wgpu::RenderPipeline>,
 }
 
 impl Pipelines {
+    /// `shadows`: the body is drawn into the sun's shadow maps as well (in the world).
     fn new(
         ctx: &GpuContext,
         view: &wgpu::BindGroupLayout,
         prefix: &str,
         format: wgpu::TextureFormat,
+        shadows: bool,
     ) -> Self {
         let person_layout = ctx
             .device
@@ -626,6 +643,45 @@ impl Pipelines {
             &skin_attrs,
             Some(wgpu::Face::Back),
         );
+        let shadow = shadows.then(|| {
+            let source = format!(
+                "{prefix}\n{}\n{}",
+                include_str!("shaders/person.wgsl"),
+                include_str!("shaders/body.wgsl")
+            );
+            let module = ctx
+                .device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("body.wgsl (shadows)"),
+                    source: wgpu::ShaderSource::Wgsl(source.into()),
+                });
+            ctx.device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("body shadow"),
+                    layout: Some(&layout),
+                    vertex: wgpu::VertexState {
+                        module: &module,
+                        entry_point: Some("vs_shadow"),
+                        compilation_options: Default::default(),
+                        buffers: &[Some(wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<BodyVertex>() as u64,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &skin_attrs,
+                        })],
+                    },
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Front),
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(crate::terrain::shadow_depth_state()),
+                    multisample: Default::default(),
+                    fragment: None,
+                    multiview_mask: None,
+                    cache: None,
+                })
+        });
         let hair = make(
             "hair.wgsl",
             include_str!("shaders/hair.wgsl"),
@@ -646,6 +702,7 @@ impl Pipelines {
             hair,
             eye,
             lut: crate::skin_lut::SkinLut::new(ctx),
+            shadow,
         }
     }
 
@@ -721,6 +778,7 @@ impl BodyPreview {
             &scene_layout,
             include_str!("shaders/person_preview.wgsl"),
             format,
+            false,
         );
         let slot = PersonSlot::new(ctx, &pipelines);
         Self {
@@ -834,7 +892,7 @@ impl PeopleRenderer {
             include_str!("shaders/person_world.wgsl")
         );
         Self {
-            pipelines: Pipelines::new(ctx, globals, prefix, crate::post::HDR_FORMAT),
+            pipelines: Pipelines::new(ctx, globals, prefix, crate::post::HDR_FORMAT, true),
             slots: Vec::new(),
             people: Vec::new(),
         }
@@ -864,6 +922,28 @@ impl PeopleRenderer {
         for (slot, (meshes, frame)) in self.slots.iter().zip(&self.people) {
             pass.set_bind_group(1, &slot.bind, &[]);
             self.pipelines.draw(pass, meshes, frame);
+        }
+    }
+
+    /// Draws the people's bodies into a shadow cascade (in its pass, `globals` the cascade's).
+    pub fn draw_shadow<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        globals: &'a wgpu::BindGroup,
+    ) {
+        let Some(pipe) = &self.pipelines.shadow else {
+            return;
+        };
+        if self.people.is_empty() {
+            return;
+        }
+        pass.set_bind_group(0, globals, &[]);
+        pass.set_pipeline(pipe);
+        for (slot, (meshes, _)) in self.slots.iter().zip(&self.people) {
+            pass.set_bind_group(1, &slot.bind, &[]);
+            pass.set_vertex_buffer(0, meshes.body.vertices.slice(..));
+            pass.set_index_buffer(meshes.body.indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..meshes.body.count, 0, 0..1);
         }
     }
 }

@@ -282,6 +282,8 @@ pub struct BenchOptions {
     pub render_scale: f32,
     /// Water shading quality, when not the preset's.
     pub water: Option<hearth_core::options::Quality>,
+    /// The sun's shadows, when not the preset's.
+    pub shadows: Option<hearth_core::options::Quality>,
 }
 
 impl Default for BenchOptions {
@@ -308,6 +310,7 @@ impl Default for BenchOptions {
             lod_error: VideoOptions::default().lod_error_px(),
             render_scale: VideoOptions::default().render_scale,
             water: None,
+            shadows: None,
         }
     }
 }
@@ -344,6 +347,8 @@ OPTIONS:
     --render-scale S             Render at S times the size (0.5-2, default 1): upscaled
                                  with FSR 1 below 1, filtered down above
     --water low|medium|high      Water shading quality (default: the preset's, medium)
+    --shadows off|low|medium|high
+                                 The sun's shadows (default: the preset's, medium)
     --software                   Use the software adapter
     --preset low|medium|high     The graphics preset (default medium; the older names fast,
                                  fancy and fabulous are taken too)
@@ -418,6 +423,16 @@ impl BenchOptions {
                         "medium" => Quality::Medium,
                         "high" => Quality::High,
                         other => anyhow::bail!("--water low|medium|high, not {other:?}"),
+                    });
+                }
+                "--shadows" => {
+                    use hearth_core::options::Quality;
+                    o.shadows = Some(match val()?.as_str() {
+                        "off" => Quality::Off,
+                        "low" => Quality::Low,
+                        "medium" => Quality::Medium,
+                        "high" => Quality::High,
+                        other => anyhow::bail!("--shadows off|low|medium|high, not {other:?}"),
                     });
                 }
                 other => anyhow::bail!("unknown argument {other:?}"),
@@ -932,6 +947,14 @@ fn run_scene(
     scene.terrain.vertical_distance = video.vertical_render_distance as i32;
     scene.render_scale = opts.render_scale;
     scene.terrain.water.quality = opts.water.unwrap_or(video.shader.water).into();
+    scene
+        .terrain
+        .set_shadow_quality(ctx, opts.shadows.unwrap_or(video.shader.shadows).into());
+    scene.terrain.shadows.far_radius = hearth_lod::draw_distance(
+        def.lod,
+        path.keys.first().map_or(0.0, |k| k.0.y),
+        lw.terrain().vertical_scale() as f64,
+    ) as f32;
     // The near terrain: all of it up front, or (streamed) as it comes within reach.
     let pending = if def.stream {
         meshes
@@ -1250,9 +1273,11 @@ fn run_scene(
             sums.visible += st.visible_cubes as f64;
             sums.lod_tiles += scene.lod.stats.drawn as f64;
             // CPU-issued draws: terrain draw lists (translucent, or all on the CPU path), one per
-            // LOD tile, the sky, rain and tonemap.
-            sums.cpu_draws += (st.draws + scene.lod.stats.drawn + 3) as f64;
-            sums.cpu_quads += (st.translucent_quads + scene.lod.stats.quads) as f64;
+            // LOD tile, the sky, rain and tonemap, and what the near terrain casts into the sun's
+            // shadow maps (its triangles counted as quads, two to a quad).
+            sums.cpu_draws += (st.draws + st.shadow_draws + scene.lod.stats.drawn + 3) as f64;
+            sums.cpu_quads +=
+                (st.translucent_quads + scene.lod.stats.quads + st.shadow_triangles / 2) as f64;
             if !st.gpu_culling {
                 sums.cpu_quads += (st.quads_drawn - st.translucent_quads) as f64;
             }
@@ -1894,6 +1919,9 @@ fn preset_label(video: &VideoOptions, opts: &BenchOptions) -> String {
     }
     if let Some(w) = opts.water.filter(|w| *w != video.shader.water) {
         let _ = write!(s, ", water {w:?}");
+    }
+    if let Some(w) = opts.shadows.filter(|w| *w != video.shader.shadows) {
+        let _ = write!(s, ", shadows {w:?}");
     }
     s
 }

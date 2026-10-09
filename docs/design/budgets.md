@@ -19,6 +19,7 @@ only on a software device, so frame and GPU numbers come from the PC.
 | Distant-tile selection on the frame thread | ≤ 1 ms | 5–9 ms after a 16 m move (known) | perf audit |
 | What is looked at, picked (a look's every frame) | < 0.2 ms | 0.010–0.012 ms (`tests/picking.rs`, T1.3) | P §5.1 |
 | Its highlight (mask and glow) | small: its own geometry, scissored; none when nothing is looked at | — (the PC; software device not timed) | T §2.3 |
+| The sun's shadows (R1a): the cascades drawn, the lookups | ≤ 1.5 ms GPU at 1080p, Medium (RTX 4060); the caster lists on the frame thread ≤ 1 ms | GPU on the PC; on the software device the shadow passes half the main terrain pass's time (1.61 M triangles a frame against 0.82 M without), the caster lists 0.3 ms on frames with the near two alone (`hearth bench --shadows`) | RGA-1, D298 |
 
 ## Tick (server, 20 ticks a second, 50 ms)
 | What | Budget | Measured | Source |

@@ -1,9 +1,9 @@
 # Rendering
 
 *Status: implemented (v1 M3 terrain; V2-1 sky, lighting, exposure, seasons and weather; the
-core of v1 M8 distant terrain, pulled forward from V2-6). Code: `crates/hearth_render`,
-`crates/hearth_lod`. Details: `ARCHITECTURE.md` §7, `DECISIONS.md` D18–D19, D29, D32–D34, D37,
-D52–D54.*
+core of v1 M8 distant terrain, pulled forward from V2-6; R1a the sun's shadows). Code:
+`crates/hearth_render`, `crates/hearth_lod`. Details: `ARCHITECTURE.md` §7, `DECISIONS.md`
+D18–D19, D29, D32–D34, D37, D52–D54, D298.*
 
 ## Purpose
 Fast, correct voxel rendering that scales to large view distances, lit physically so that
@@ -22,18 +22,19 @@ CPU culling pixel check.
 ### Frame (V2-1, `scene.rs`)
 1. Atmosphere lookup tables (compute): transmittance 256×64 and multiple scattering 32×32 when
    the aerosol density changes, the camera's sky view 256×128 every frame.
-2. Opaque and cutout terrain into an HDR target (RGBA16F), GPU-culled.
-3. Distant (LOD) terrain beyond the full-detail area.
-4. Sky pass where nothing was drawn: sky view, sun and moon discs (the moon lit by its phase),
+2. The sun's shadow maps (below): the cascades due this frame, depth only.
+3. Opaque and cutout terrain into an HDR target (RGBA16F), GPU-culled.
+4. Distant (LOD) terrain beyond the full-detail area.
+5. Sky pass where nothing was drawn: sky view, sun and moon discs (the moon lit by its phase),
    stars rotating about the celestial pole, a cloud layer drifting with the wind.
-5. The scene so far copied for the water (only the part of the screen the translucent cubes
+6. The scene so far copied for the water (only the part of the screen the translucent cubes
    cover, plus a margin), then translucent terrain — water shaded as below — and rain and snow,
    with the depth buffer read-only so the water can read it.
-6. Highlight metering (compute) and tonemapping (ACES) with a night shift toward blue,
+7. Highlight metering (compute) and tonemapping (ACES) with a night shift toward blue,
    dithered into the 8-bit output; under water, the view through the water first. At a render scale other than 1 (`render_scale`) the scene
    renders at the scaled size, is tonemapped at that size, then upscaled with FSR 1 (EASU,
    then RCAS sharpening) or, above 1, filtered down; the dither comes last either way.
-7. The thing looked at, outlined (below), laid over the finished frame.
+8. The thing looked at, outlined (below), laid over the finished frame.
 
 ### Atmosphere (`atmosphere.wgsl`, D29)
 After Hillaire (2020): Rayleigh, aerosol (Mie, Cornette–Shanks phase) and ozone on an
@@ -46,9 +47,9 @@ with 10–20 % from the sky, ~750 lx at sunset, 4 lx at the end of civil twiligh
 degrees later.
 
 ### Lighting and exposure (`terrain.wgsl`, `scene.rs`, D33)
-Lighting is physical and pre-exposed: direct sun (or moon) on faces open to the sky (sky light
-15; there are no shadow maps yet), sky irradiance scaled by the voxel sky-light level and face
-orientation, a floor of starlight and airglow, firelight from the block-light level.
+Lighting is physical and pre-exposed: direct sun (or moon) where the shadow maps let it
+through (below), sky irradiance scaled by the voxel sky-light level and face orientation, a
+floor of starlight and airglow, firelight from the block-light level.
 
 **Aerial perspective** (`common.wgsl`, D53) is physical and has nothing to do with how far the
 terrain is loaded: the light of a surface is dimmed by the air on the way (Rayleigh per colour,
@@ -65,6 +66,60 @@ below that scenes are simply dark; in dim light it compensates only partly, so d
 dusk. A histogram of the frame then darkens it just enough to keep the bright end (90th
 percentile) in the tonemapper's colourful range — sunsets keep their colours and the ground
 goes to silhouette — with no readback (the tonemap pass reads the result directly).
+
+### The sun's shadows (`shadow.rs`, `common.wgsl`, D298)
+R1a, RGA-1's first gap. **Cascaded shadow maps**: five cascades in one Depth32Float array (2048²
+at Medium and High, 1024² at Low; 84 MB at 2048). Four are spheres about the camera for the
+full-detail world — 12, 40, 120 and 320 blocks in radius, texels of 1.2 cm, 3.9 cm, 12 cm and
+31 cm — and the fifth is as wide as the distant terrain is drawn (1–12 km). A sphere rather than
+a slice of the view keeps its texels however the camera turns; each centre is snapped to its
+texels in the light's plane so the edges stand still as the camera walks, and the light the
+maps are drawn for moves on only when the sun has turned 0.23° (about a minute of the day),
+every cascade redrawn at once, or its slow turn would undo the snapping. The near two are
+redrawn every frame (things sway in the wind), the others every 4, 8 and 16 frames on different
+frames (High: 2, 4 and 8), sooner when the camera has gone a tenth of a cascade's radius; each is
+sampled with the matrix it was drawn with, moved by how far the camera has gone since. Casters
+up to 200–600 blocks toward the sun beyond a cascade's sphere are taken (4 km for the far one):
+the cubes in the box about that region are looked up, not every one loaded (13,700 in the
+bench's forest; 0.3 ms a frame for the near two there on this machine), and the widest near
+cascade leaves out plants and small models, whose shadows are narrower than its texels.
+
+**Casters** draw with their own vertex shaders under a cascade's globals (the frame's with the
+light's view-projection), depth only: solid cubes only their face groups turned away from the
+sun (chosen on the CPU per cube and direction), the smooth ground and the distant height fields
+only their triangles turned away (culled in the pipeline), plants, models, leaves and the
+distant canopies from both sides, alpha-tested, fallen leaves left out; figures and people's
+bodies (in first person the body's shadow keeps the head the camera's eye replaces). Casting
+the far side of solid things means a lit surface never compares against itself, so the bias is
+small (slope 1.5, two units) and contact holds. The near world casts into the near cascades
+(every cube whose box can reach one, not only those in view), the distant terrain — all of it,
+under the near area too — into the far one.
+
+**Receivers** (`sun_shadow_at`): the first near cascade holding the point, looked up a texel
+and a half off the surface (toward the sun for plants), blended into the next across the outer
+tenth of its map; and the far cascade, the darker of the two. Every comparison off the point is
+made against the receiving surface's own plane there (its slope across the map from its
+normal), or a surface tilted from the sun would shade itself a few texels off. The edge is as
+soft as the sun's disc makes it (0.53° across: a centimetre of penumbra for every metre between
+caster and receiver) where the map can show it (the two nearest cascades): five gathers find the
+blockers about the point, and sixteen comparisons on a spiral spread over the penumbra their mean
+height above it gives, capped at 8 blocks' worth (3.7 cm) — softer, the averaged depths of a
+canopy far above wash out the sharp shadows of grass and stones under it; the leaves' texels
+lose their square edges and the dapples keep their shapes. Elsewhere nine comparisons a texel
+apart. For a point of the near world the far map counts only casters beyond its near
+cascade's reach toward the sun (the coarse distant terrain would otherwise double its own
+shadow edges); a distant ridge still shades the valley. Where no cascade holds a point (or with
+shadows off) the old rule decides: the sun only on faces fully open to the sky; and the maps'
+light never reaches deep into enclosed places (sky light under 4–8 of 15), whose roofs may lie
+beyond the loaded world. The terrain, water, ice, the distant terrain, figures, people (skin,
+hair, eyes) and the mesh trees all receive.
+
+Test: `sun_shadows` (a slab held over the ground darkens the ground in its shadow to 0.28 of
+its luminance without the maps; the open ground unchanged to the third decimal); `shadow.rs`'s
+unit tests
+(the basis, the snapping, the light's steps and the cascades' turns, the casters' selection).
+Option `video.shader.shadows` (off, low, medium, high; the presets' own level), screenshot key
+`shadows=`, bench `--shadows`.
 
 ### Water (`water.rs`, `water.wgsl`, `terrain.wgsl`, D62)
 Water keeps its blocky levels; waves are shading. **Waves**: a 256² tiling field of wave slopes
@@ -243,8 +298,11 @@ Atmosphere constants in `atmosphere.wgsl` and `hearth_env::sky` (kept equal; the
 box in `precip.rs`.
 
 ## Known simplifications
-- No shadow maps: direct light reaches faces with full sky light, so there are no cast shadows
-  from trees or overhangs yet beyond the sky-light falloff.
+- Shadows: hair, eyes and the LOD's crown boxes do not cast; the penumbra widens with the
+  caster's distance only in the two nearest cascades and only to 3.7 cm (a canopy 20 m up
+  should give 19 cm: sunflecks are sharper than real); the light moves in 0.23° steps; no
+  contact shadows (the nearest cascades' 1.2 and 3.9 cm texels hold contact at walking
+  distance); cloud shadows are R1b's.
 - LOD tiles are heightfields (no overhangs, S §5's smooth shelves not yet drawn); their quads
   (crowns, trunks) are occluded by the near terrain on the GPU, their ground and canopy only
   by the frustum; flat tiles draw as many triangles as rough ones. No TAA.
@@ -258,6 +316,6 @@ box in `precip.rs`.
 - Rain streaks are thin and alias at a distance.
 
 ## Still to come
-The smooth terrain and its materials (Amendment S, S1–S8), shadow maps and volumetric light
-(S2–S8, V2-16 at the latest). Foliage, TAA, instanced animals, fire and smoke are built; see
+The smooth terrain and its materials (Amendment S, S1–S8), volumetric light and cloud shadows
+(R1b). Foliage, TAA, instanced animals, fire and smoke are built; see
 `flora.md`, `fauna.md` and `fire-and-food.md`.

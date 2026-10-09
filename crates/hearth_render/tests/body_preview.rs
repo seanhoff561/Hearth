@@ -610,6 +610,7 @@ fn headless_for_first_person() {
         hair: None,
         eyes: None,
         light: [1.0, 0.0],
+        cast: None,
     };
     let (w, h) = (640, 360);
     let target = OffscreenTarget::new(&ctx, w, h);

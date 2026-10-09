@@ -306,3 +306,4 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D295 (2026-10-09) The thing looked at: met and outlined by its own drawn shape; a dig where the look rested
 - D296 (2026-10-09) Rain falls in some hours of a wet day: the weather's wet hours apart from its wet days
 - D297 (2026-10-09) T2's order: shadows first, then the relief from 30 m to 30 km, then walking scale
+- D298 (2026-10-09) The sun's shadows: cascades about the camera, the far side of things cast, the distant terrain in a fifth

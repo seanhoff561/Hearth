@@ -221,6 +221,8 @@ impl Skins {
 /// Bodies in the world.
 pub struct FigureRenderer {
     pipeline: wgpu::RenderPipeline,
+    /// The boxes drawn into the sun's shadow maps: depth alone, their faces turned from the sun.
+    shadow: wgpu::RenderPipeline,
     instances: Instances,
     skins: Skins,
 }
@@ -242,15 +244,41 @@ impl FigureRenderer {
             });
         let instances = Instances::new(ctx, "figure instances");
         let skins = Skins::new(ctx);
-        let pipeline = pipeline(
-            ctx,
-            "figures",
-            &module,
-            &[Some(globals), Some(&instances.layout), Some(&skins.layout)],
-            crate::post::HDR_FORMAT,
-        );
+        let layouts = [Some(globals), Some(&instances.layout), Some(&skins.layout)];
+        let pipeline = pipeline(ctx, "figures", &module, &layouts, crate::post::HDR_FORMAT);
+        let layout = ctx
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("figure shadows"),
+                bind_group_layouts: &layouts,
+                immediate_size: 0,
+            });
+        let shadow = ctx
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("figure shadows"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Front),
+                    ..Default::default()
+                },
+                depth_stencil: Some(crate::terrain::shadow_depth_state()),
+                multisample: Default::default(),
+                fragment: None,
+                multiview_mask: None,
+                cache: None,
+            });
         Self {
             pipeline,
+            shadow,
             instances,
             skins,
         }
@@ -277,6 +305,22 @@ impl FigureRenderer {
             return;
         }
         pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, globals, &[]);
+        pass.set_bind_group(1, &self.instances.bind, &[]);
+        pass.set_bind_group(2, &self.skins.bind, &[]);
+        pass.draw(0..36, 0..self.instances.count);
+    }
+
+    /// Draws the boxes into a shadow cascade (in its pass, `globals` the cascade's).
+    pub fn draw_shadow<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        globals: &'a wgpu::BindGroup,
+    ) {
+        if self.instances.count == 0 {
+            return;
+        }
+        pass.set_pipeline(&self.shadow);
         pass.set_bind_group(0, globals, &[]);
         pass.set_bind_group(1, &self.instances.bind, &[]);
         pass.set_bind_group(2, &self.skins.bind, &[]);

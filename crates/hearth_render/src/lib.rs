@@ -3,6 +3,7 @@
 //! The renderer is organised as a set of passes sharing one [`GpuContext`]; see
 //! `ARCHITECTURE.md` for the frame graph.
 
+mod arena;
 pub mod atlas;
 pub mod body;
 pub mod camera;
@@ -20,6 +21,7 @@ pub mod post;
 pub mod precip;
 pub mod profiler;
 pub mod scene;
+pub mod shadow;
 pub mod skin_lut;
 pub mod sky;
 pub mod smoke;

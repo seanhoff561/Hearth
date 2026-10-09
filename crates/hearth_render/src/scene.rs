@@ -1,6 +1,7 @@
-//! The frame: atmosphere lookup tables, opaque terrain (GPU-culled), distant LOD terrain, the
-//! sky, translucent terrain, then tonemapping to the display. Lighting comes in physical units (lux) from the
-//! caller (`hearth_env::sky`) and is pre-exposed here with an adapting eye.
+//! The frame: atmosphere lookup tables, the sun's shadow maps, opaque terrain (GPU-culled),
+//! distant LOD terrain, the sky, translucent terrain, then tonemapping to the display. Lighting
+//! comes in physical units (lux) from the caller (`hearth_env::sky`) and is pre-exposed here with
+//! an adapting eye.
 
 use glam::{Mat3, Vec2, Vec3};
 use hearth_math::Planet;
@@ -394,6 +395,13 @@ impl SceneRenderer {
             &self.lod_show,
             hzb,
         );
+        self.lod.prepare_shadow(
+            ctx,
+            camera.pos,
+            self.vertical_scale,
+            &self.terrain.shadows,
+            &self.lod_show,
+        );
         let t2 = std::time::Instant::now();
         let star_visibility = 1.0 - smoothstep(0.05, 3.0, env.sky_lux.y);
         let moon_trans = (env.moon_dir.y * 6.0).clamp(0.0, 1.0);
@@ -491,6 +499,21 @@ impl SceneRenderer {
             self.sky.update(ctx, enc, &p, vp);
         }
         mark(&mut timer, enc, "sky tables");
+        // The sun's shadow maps (R1a), before anything that receives them: the full-detail
+        // world and the bodies in it into the near cascades, the distant terrain into the far.
+        for i in self.terrain.shadows.due() {
+            let mut pass = self.terrain.begin_shadow_pass(enc, i);
+            let bind0 = self.terrain.shadow_bind(i);
+            if i < crate::shadow::NEAR_CASCADES {
+                self.terrain.draw_shadow(&mut pass, i);
+                self.trees.draw_shadow(&mut pass, bind0);
+                self.figures.draw_shadow(&mut pass, bind0);
+                self.people.draw_shadow(&mut pass, bind0);
+            } else {
+                self.lod.draw_shadow(&mut pass, bind0);
+            }
+        }
+        mark(&mut timer, enc, "shadows");
         let hdr = self.post.hdr_view(ctx, render).clone();
         self.terrain.render_opaque(
             ctx,

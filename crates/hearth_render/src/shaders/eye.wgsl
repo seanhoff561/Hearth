@@ -72,6 +72,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
     if !front {
         n = -n;
     }
+    shade_sun(in.world, n);
     let v = normalize(eye_pos() - in.world);
     let l = sun_dir();
     let hemi = ambient(n);

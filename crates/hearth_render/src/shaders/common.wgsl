@@ -56,6 +56,18 @@ struct Globals {
     // The map of water surfaces around the camera (`water.rs`): xy its first column relative to
     // the camera, z the camera's height (world Y), w 1 when there is a map.
     water_map: vec4<f32>,
+    // The sun's shadow maps (`shadow.rs`): each cascade's view-projection from camera-relative
+    // points into the map as it was drawn.
+    shadow_vp: array<mat4x4<f32>, 5>,
+    // x: 1 when the maps hold the sun's shadows this frame; y: their size (texels); z: how far
+    // toward the sun the far cascade takes its casters (blocks); w: 1 while a cascade is drawn.
+    shadow: vec4<f32>,
+    // Each cascade's texel (blocks): the four near ones, then the far one in the second's x.
+    shadow_texel: array<vec4<f32>, 2>,
+    // xyz: the direction toward the light the maps are drawn for.
+    shadow_light: vec4<f32>,
+    // How far toward the sun each near cascade takes its casters (blocks).
+    shadow_reach: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -67,6 +79,12 @@ struct Globals {
 // focus on floors below them (value / 4, mean 1 / 4).
 @group(0) @binding(5) var water_heights: texture_2d<f32>;
 @group(0) @binding(6) var caustics: texture_2d<f32>;
+// The sun's shadow maps, compared as they are read (lit where a point is no deeper from the sun
+// than what the map holds).
+@group(0) @binding(7) var shadow_map: texture_depth_2d_array;
+@group(0) @binding(8) var shadow_samp: sampler_comparison;
+// The maps' depths themselves, for finding what casts a shadow.
+@group(0) @binding(9) var shadow_depth: sampler;
 
 const TAU: f32 = 6.2831853;
 
@@ -277,6 +295,201 @@ fn dither(frag: vec2<f32>) -> f32 {
     let m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
     let i = u32(frag.x) % 4u + (u32(frag.y) % 4u) * 4u;
     return (m[i] + 0.5) / 16.0;
+}
+
+// ---------------------------------------------------------------- the sun's shadows (R1a)
+// Four cascades about the camera hold what the full-detail world casts, a fifth what the distant
+// terrain beyond it casts (`shadow.rs`).
+
+// A cascade's texel (blocks).
+fn shadow_texel(i: u32) -> f32 {
+    if i < 4u {
+        return g.shadow_texel[0][i];
+    }
+    return g.shadow_texel[1].x;
+}
+
+// Where a camera-relative point falls in cascade `i`: its place in the map (0..1, y down) and its
+// depth from the sun's side (0..1).
+fn shadow_coord(i: u32, p: vec3<f32>) -> vec3<f32> {
+    let c = g.shadow_vp[i] * vec4<f32>(p, 1.0);
+    return vec3<f32>(c.x * 0.5 + 0.5, 0.5 - c.y * 0.5, c.z);
+}
+
+// How far inside a cascade's map a point lies: 1 a tenth of the way in or more, falling to 0 at
+// its edge; negative outside it, and above or below its depth.
+fn shadow_inside(s: vec3<f32>) -> f32 {
+    if s.z <= 0.0 || s.z >= 1.0 {
+        return -1.0;
+    }
+    let edge = min(min(s.x, 1.0 - s.x), min(s.y, 1.0 - s.y));
+    return min(edge / 0.1, 1.0);
+}
+
+// Blocks of depth cascade `i`'s map spans: its width and how far it reaches toward the sun.
+fn shadow_span(i: u32) -> f32 {
+    return shadow_texel(i) * g.shadow.y + select(g.shadow.z, g.shadow_reach[i], i < 4u);
+}
+
+// How the depth of the surface through a point changes across cascade `i`'s map, per texel
+// across (u, v), from its normal `n` (zero for plants: none): comparisons off the point are made
+// against the surface's own plane there, not the point's depth, or a surface tilted from the sun
+// would shade itself a few texels off.
+fn shadow_slope(i: u32, n: vec3<f32>) -> vec2<f32> {
+    if dot(n, n) < 0.5 {
+        return vec2<f32>(0.0);
+    }
+    let back = g.shadow_light.xyz;
+    let hint = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(back.y) > 0.99);
+    let right = normalize(cross(hint, back));
+    let up = cross(back, right);
+    // Grazing faces held to a slope of five.
+    let facing = max(dot(n, back), 0.2);
+    return vec2<f32>(dot(n, right), -dot(n, up)) / facing * shadow_texel(i) / shadow_span(i);
+}
+
+// Nine filtered comparisons `spread` texels apart about a point of cascade `i`, each against the
+// surface's plane there (`slope`).
+fn shadow_taps(i: u32, s: vec3<f32>, slope: vec2<f32>, spread: f32) -> f32 {
+    let t = 1.0 / g.shadow.y;
+    var lit = 0.0;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            let o = vec2<f32>(f32(x), f32(y)) * spread;
+            let at = s.xy + o * t;
+            lit += textureSampleCompareLevel(shadow_map, shadow_samp, at, i32(i), s.z + dot(slope, o));
+        }
+    }
+    return lit / 9.0;
+}
+
+// The sun's angular radius (its disc is 0.53° across): a shadow's edge is as wide as twice this
+// times the distance from what casts it, a centimetre for every metre.
+const SUN_RADIUS: f32 = 0.00465;
+// Blockers are looked for as far about a point as the penumbra of something this far above it
+// reaches (blocks), and no penumbra is wider: softer would wash out the sharp shadows of things
+// near the ground where a canopy far above casts too (the blockers' depths are averaged).
+const PENUMBRA_REACH: f32 = 8.0;
+
+// The share of the sun a cascade lets through about a point on a surface sloping across the map
+// by `slope`, its edge as soft as the sun's disc makes it (percentage-closer soft shadows): where
+// the map is fine enough to show it, the blockers about the point are found (five gathers of four
+// texels), and sixteen comparisons spread over the penumbra their mean height above it gives; a
+// texel or so soft otherwise.
+fn shadow_pcf(i: u32, s: vec3<f32>, slope: vec2<f32>) -> f32 {
+    let texel = shadow_texel(i);
+    let search = SUN_RADIUS * PENUMBRA_REACH / texel;
+    if search < 1.5 {
+        return shadow_taps(i, s, slope, 1.0);
+    }
+    let t = 1.0 / g.shadow.y;
+    // Half a texel's slope either way within a gather's four texels.
+    let within = 0.5 * (abs(slope.x) + abs(slope.y));
+    var sum = 0.0;
+    var n = 0.0;
+    for (var k = 0; k < 5; k++) {
+        var o = vec2<f32>(0.0);
+        if k > 0 {
+            o = vec2<f32>(f32((k - 1) & 1) - 0.5, f32((k - 1) >> 1) - 0.5) * search;
+        }
+        let d = textureGather(shadow_map, shadow_depth, s.xy + o * t, i32(i));
+        let plane = s.z + dot(slope, o) - within;
+        for (var j = 0; j < 4; j++) {
+            if d[j] < plane {
+                sum += plane - d[j];
+                n += 1.0;
+            }
+        }
+    }
+    if n < 0.5 {
+        return 1.0;
+    }
+    if n > 19.5 {
+        return 0.0;
+    }
+    let above = sum / n * shadow_span(i);
+    let radius = clamp(SUN_RADIUS * above / texel, 1.0, search);
+    // On a spiral over the penumbra, turned by a hash of the map's texel (a pattern fixed in the
+    // world).
+    let cell = floor(s.xy * g.shadow.y);
+    let turn = fract(sin(dot(cell, vec2<f32>(12.9898, 78.233))) * 43758.5453) * TAU;
+    var lit = 0.0;
+    for (var k = 0; k < 16; k++) {
+        let a = f32(k) * 2.39996 + turn;
+        let o = vec2<f32>(cos(a), sin(a)) * sqrt((f32(k) + 0.5) / 16.0) * radius;
+        let at = s.xy + o * t;
+        lit += textureSampleCompareLevel(shadow_map, shadow_samp, at, i32(i), s.z + dot(slope, o));
+    }
+    return lit / 16.0;
+}
+
+// The sun's light reaching a camera-relative point on a surface facing `n` (zero for plants and
+// such, lit from every side): 1 in the open, 0 in a cast shadow, between at a shadow's soft edge;
+// -1 where no map holds the sun's shadows (shadows off, the sun down, the point beyond every
+// cascade). The point is looked up a texel and a half off its surface (toward the sun for
+// plants), so a surface does not shade itself. Its near cascade, blended into the next across the
+// outer tenth of its map, and the far one: the darker. The far one holds the distant terrain,
+// coarse; for a point of the full-detail world (`lod` false) only what lies beyond its near
+// cascade's reach toward the sun counts there, the nearer casters being the near cascade's own.
+fn sun_shadow_at(world: vec3<f32>, n: vec3<f32>, lod: bool) -> f32 {
+    if g.shadow.x < 0.5 {
+        return -1.0;
+    }
+    let l = g.shadow_light.xyz;
+    let off = select(n, l, dot(n, n) < 0.5) * 1.5;
+    var near = -1.0;
+    var reach = 0.0;
+    for (var i = 0u; i < 4u; i++) {
+        let s = shadow_coord(i, world + off * shadow_texel(i));
+        let inside = shadow_inside(s);
+        if inside <= 0.0 {
+            continue;
+        }
+        near = shadow_pcf(i, s, shadow_slope(i, n));
+        reach = g.shadow_reach[i];
+        if inside < 1.0 {
+            if i == 3u {
+                // The last near cascade gives way to the far one alone.
+                near = mix(1.0, near, inside);
+                reach *= inside;
+            } else {
+                let s2 = shadow_coord(i + 1u, world + off * shadow_texel(i + 1u));
+                if shadow_inside(s2) > 0.0 {
+                    near = mix(shadow_pcf(i + 1u, s2, shadow_slope(i + 1u, n)), near, inside);
+                }
+            }
+        }
+        break;
+    }
+    var far = -1.0;
+    let skip = select(reach, 0.0, lod);
+    let sf = shadow_coord(4u, world + off * shadow_texel(4u) + l * skip);
+    let inside = shadow_inside(sf);
+    if inside > 0.0 {
+        far = mix(1.0, shadow_pcf(4u, sf, shadow_slope(4u, n)), inside);
+    }
+    if near < 0.0 {
+        return far;
+    }
+    if far < 0.0 {
+        return near;
+    }
+    return min(near, far);
+}
+
+fn sun_shadow(world: vec3<f32>, n: vec3<f32>) -> f32 {
+    return sun_shadow_at(world, n, false);
+}
+
+// The share of the sun reaching a point whose sky-light level is `sky` (0..1): by the shadow maps
+// where they hold it, else only where it is fully open to the sky; never deep in enclosed places,
+// whose roofs may lie beyond the loaded world.
+fn sun_open(world: vec3<f32>, n: vec3<f32>, sky: f32) -> f32 {
+    let s = sun_shadow(world, n);
+    if s >= 0.0 {
+        return s * smoothstep(0.25, 0.55, sky);
+    }
+    return smoothstep(0.8, 1.0, sky);
 }
 
 // ---------------------------------------------------------------- blocks as drawn

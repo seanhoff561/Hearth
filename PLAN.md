@@ -40,11 +40,11 @@ cube-era code allowed where it serves that, T §5). V2.1 and its Addenda are sup
 10. **E4.1 — Earth-scale performance** (the owner's fix pass, done 2026-10-09).
 11. **Amendment T** (D291): **T0** (S5/P7 stopped at (b)), **T1** (quick wins) and **T2** (the
     realism gap analysis, `docs/review/realism/RGA-1.md`) done.
-12. As T2 revised it (D297): **R1a** (sun shadows) → **G1a** (relief from 30 m to 30 km) →
-    **S5/P7 (c)–(f) with G1b** (walking scale) → **W1** (water; S7's water) → **L1** (seamless
-    distance) → **P7G** → **S6 with H1** → **R1b** → **S7 → S8 → P8.** An audit after every
-    three milestones (Q §8.2), each updating the realism scorecard (T §3.6); the first after
-    G1b, with a check that no coarse-scale caller has crept into the fine generator.
+12. As T2 revised it (D297): **R1a** (sun shadows, done 2026-10-09, D298) → **G1a** (relief from
+    30 m to 30 km) → **S5/P7 (c)–(f) with G1b** (walking scale) → **W1** (water; S7's water) →
+    **L1** (seamless distance) → **P7G** → **S6 with H1** → **R1b** → **S7 → S8 → P8.** An audit
+    after every three milestones (Q §8.2), each updating the realism scorecard (T §3.6); the
+    first after G1b, with a check that no coarse-scale caller has crept into the fine generator.
 13. **V2-13 → V2-14** (technology only).
 14. **Audit.**
 15. **V2-15 → V2-16** (as amended by E §9.4).
@@ -162,9 +162,9 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   zone; a `cover()` accessor for the canopy; `level`'s reach documented.
 
 ## T's milestones (T §4, ranked by RGA-1; targets in `docs/review/realism/scorecard.md`)
-- **R1a — sun shadows** (RGA-1 gap 1): cascaded shadow maps for the near world, trees and things;
-  the distant terrain's horizon shadows from its height fields; contact shadows. *Accept:* the
-  suite's low-sun shots shadowed; ≤ 1.5 ms at 1080p on the RTX 4060.
+- **R1a — sun shadows** (RGA-1 gap 1): done (D298). Open: its GPU time at 1080p on the RTX 4060
+  (≤ 1.5 ms; `hearth bench --shadows off` against the default, owner check); hair and the distant
+  crowns' boxes casting; wider penumbrae under tall canopies.
 - **G1a — relief from 30 m to 30 km** (gaps 2, 4): relief by landscape type and height above base
   level, not uplift alone, calibrated to `bench realism global` and `terrain`; hillslope
   diffusion at the 306 m and 38 m levels; erosion routed by many flow directions; rivers as
