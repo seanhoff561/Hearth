@@ -60,3 +60,25 @@ and toes; the lighting matches the world's. Still plain: the faces' finer forms 
 sculpted, not alive: no expressions yet), the hair's coverage (alpha-tested cards show their
 edges close up; coily hair lacks volume), firelight shots wait for a fire in the scene, and
 everything wants the PC's look and frame times (PLAN, From E7).
+
+## S5 (b): every tree species as a mesh (2026-10-09)
+Made by `cargo test -p hearth --test tree_sheets species_sheets -- --ignored` (all 91 species
+into `bench-out/trees/`; `HEARTH_SHEET_SPECIES=` for some), on the software device: each
+species young, mature and old at one scale, left to right, in spring, summer, autumn and winter
+(clockwise from the top left), in the tree pass with the scene's sky and the seasons of a
+temperate place (10 °C on the year, 16 °C between its months).
+
+- Deciduous: the English oak (`s5/english_oak.jpg`), the sugar maple turning red
+  (`sugar_maple.jpg`), the silver birch yellow (`silver_birch.jpg`), the baobab
+  (`baobab.jpg`): bare in winter.
+- Evergreen: the Norway spruce (`norway_spruce.jpg`), the holm oak (`holm_oak.jpg`), the coconut
+  palm (`coconut_palm.jpg`), the red mangrove on its stilt roots (`red_mangrove.jpg`).
+- Every species grown, in the forest's order, five to a row: `summer.jpg`, `winter.jpg`.
+
+Seen: the forms read as their species (spires, domes, parasols, palms, prop roots, the baobab's
+bottle); the deciduous turn and fall, the evergreen keep their leaves. Found and fixed: twenty
+evergreen species (the Mediterranean oaks, the olive, the palms, the rainforest trees) had
+leaves that fell in a cold winter and a monsoon's dry season, as their blocks did in the world
+(D290); a conifer's leader ended in a hoop of sprays (they now fill their shoots). Still plain:
+spring's leaves are summer's green; the scale-leaved sprays of the tamarisk and saxaul are
+coarse; the crowns' lighting is flat beside the world's (no self-shadowing yet).

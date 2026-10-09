@@ -161,6 +161,8 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   with impostors, ground cover seated and bendable (S §7).
 - *Accept:* each species' silhouette screenshot set at three ages and four seasons; forest
   benchmark targets met.
+- From (b), the sheets: spring's fresh green (it is summer's), the scale-leaved sprays
+  (tamarisk, saxaul) finer, the crowns self-shadowed.
 
 ## P7 — Natural generation without the grid (with S5)
 - Shrubs and bushes grown as individuals of their species' forms, berries, flowers and thorns on

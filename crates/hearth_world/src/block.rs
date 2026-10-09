@@ -118,6 +118,9 @@ pub enum TintKind {
     Foliage,
     Water,
     Birch,
+    /// Evergreen foliage, kept through the year: the conifers' needles and the broad-leaved
+    /// evergreens' leaves (holm oak, palms); `evergreen` in data as well.
+    #[serde(alias = "evergreen")]
     Spruce,
     DryGrass,
     /// Deciduous foliage that turns red in autumn (maples, cherry, hawthorn).

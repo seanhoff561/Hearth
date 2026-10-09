@@ -128,10 +128,13 @@ Where it stands (`PLAN.md` S5, P7; tasks (a)–(f)):
   from (wood tubes, leaf cards by leaf kind, three details: a mature oak 47k / 8.7k / 1.7k
   triangles); each variant turned to its own angle and up to 0.4 m off its block's middle, voxels
   and mesh alike (`template::variant_skeleton`, `Turn::apply_f`).
-- **(b) in progress:** `hearth_render::trees` (instanced meshes, wood and alpha-tested leaves,
-  wind sway, seasons, translucency; `shaders/tree.wgsl`) is built and wired into the scene's
-  opaque pass but nothing gives it trees yet; `hearth/tests/scene_shaders.rs` checks its
-  pipelines. Next: species silhouette sheets (three ages, four seasons) in the screenshot tool.
+- **(b) done:** `hearth_render::trees` (instanced meshes, wood and alpha-tested leaves, wind
+  sway, seasons, translucency; `shaders/tree.wgsl`) in the scene's opaque pass;
+  `hearth::tree_draw` gives each species its look from its blocks' colours (D290), its mesh
+  keys and meshes, and an instance's packing. The species sheets (`hearth/tests/tree_sheets.rs`,
+  91 species × three ages × four seasons, `docs/review/smooth-world.md`) found twenty
+  evergreen species shedding their leaves (retinted, D290) and a conifer leader's hoop of
+  sprays (sprays now fill their shoots); a test in the suite holds every species to its kind.
 - **Next:** (c) the client's tree instances for loaded columns (from `trees_in` with the
   vegetation), the cube mesher hiding natural tree voxels (a per-cube mask from the templates),
   the LOD band (levels 0–2) as instances or impostors instead of crown boxes, the felling

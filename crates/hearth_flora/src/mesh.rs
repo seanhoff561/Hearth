@@ -535,7 +535,10 @@ impl Builder<'_> {
         let sprays = matches!(kind, LEAF_NEEDLE | LEAF_SCALE);
         for _ in 0..n {
             let out = self.unit();
-            let depth = 0.45 + 0.55 * self.rng.range_f32(0.0, 1.0).cbrt();
+            // Sprays fill their shoots' body (a shell of them reads as a hoop from the side);
+            // broad leaves sit on its outer part.
+            let inner = if sprays { 0.1 } else { 0.45 };
+            let depth = inner + (1.0 - inner) * self.rng.range_f32(0.0, 1.0).cbrt();
             let p = c + out * r * depth;
             let half = size * 0.5 * self.rng.range_f32(0.8, 1.2);
             let (u, v) = if sprays {

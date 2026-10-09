@@ -63,7 +63,9 @@ west, up, down). Per species: leaves. Thick branches (8 and 12 px) and logs are 
 be climbed; thin branches and foliage are not solid. **Foliage is passable**: moving through
 it is slow (a dense crown slows to half pace), it rustles, and it shades the ground below a
 little per block (sky light falls by one per leaf block). Deciduous foliage colours with the
-season (green, its autumn colour, bare), as the shaders already do by phenology.
+season (green, its autumn colour, bare), as the shaders already do by phenology; evergreen
+foliage (tint `evergreen`, the conifers' `spruce`: needles, and the broad-leaved evergreens such
+as the holm oak, olive and palms) keeps its leaves through the year (D290).
 
 ### Placement (`hearth_worldgen`)
 Trees stand on the generator's grid cells where the tree density passes. A column's
@@ -231,6 +233,17 @@ season shows in the tiles as near (deciduous crowns by phenology, bare in winter
 ice). Temporal anti-aliasing is an option (Anti-aliasing: Temporal; on in the Fabulous
 preset): the camera is jittered by a Halton (2, 3) sequence of eight, and each frame is
 blended into the reprojected, neighbourhood-clamped history.
+
+### Trees as meshes (S5, Amendment S §7.1–7.2)
+A tree's mesh is made from the skeleton its blocks come from (`hearth_flora::mesh`: wood as
+tapering tubes, foliage as cards by leaf kind, three details) and drawn by the tree pass
+(`hearth_render::trees`) as instances: each mesh kept once on the GPU under its species, stage,
+variant and detail (`hearth::tree_draw::mesh_key`), each tree an instance with its place, its
+look (bark and leaves coloured as the distant terrain colours its blocks, D290), the climate
+where it stands (its season's colours and leaf fall, as the terrain's leaves), the snow on it
+and the light there. The species sheets (`hearth/tests/tree_sheets.rs`; `docs/review/
+smooth-world.md`) show every species young, mature and old in the four seasons, and a test in
+the suite holds each to its kind (deciduous bare in winter, evergreen keeping its cover).
 
 ## Parameters
 - Stages by height: seedling < 0.6 m, sapling < 3 m, pole < 0.4 Hmax, young < 0.75 Hmax,
