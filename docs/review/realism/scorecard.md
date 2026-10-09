@@ -4,20 +4,22 @@ How the generated Earth stands against the real one, scale by scale: each measur
 its target, and the last realism suite's verdict. Updated at every audit (the measures by
 `bench realism`, the suite by `tools/shots/realism.shots`; RGA-1 for the evidence). Seed 7.
 
-**Last update:** R1a, 2026-10-09 (the Light and Images rows; the rest T2's, RGA-1). **Top open
-gaps:** the relief from 30 m to 30 km (half the Earth's over all land, a sixth in hill country);
-trees, grass and water drawn as blocks and sprites; indirect light.
+**Last update:** G1a, 2026-10-09 (the Regions and Landscapes rows, a Lakes row; Light and
+Images R1a's; the rest T2's, RGA-1). **Top open gaps:** trees, grass and water drawn as blocks
+and sprites; the ground at walking scale (G1b); the grid's lakes three times the Earth's share;
+indirect light.
 
 | Scale / system | Measure | Now | Target | Suite verdict |
 |---|---|---|---|---|
 | Planet | Land share; mean land height; mean ocean depth | 29.0 %; 791 m; 3,640 m | 29.2 %; 797–840 m; 3,682 m | The globe reads as the Earth's |
 | Planet | Surface above 2 km; below 6 km | 1.6 %; 0.14 % | ~3.5 %; ~1 % | — |
-| Regions | Channels on the grid's eight directions | combs, spokes, chords | none | Rivers zigzag |
-| Landscapes, all land | Windows' median slope; median relief; land over 5° | 1.5°; 78 m; 16 % | 2.8°; 163 m; 33 % (± 20 %) | Flat wherever the land is not a mountain range |
-| Landscapes, by height | Median relief of windows at 0–200 · 200–500 · 500–1,000 m · 1–2 · over 2 km | 33 · 50 · 89 · 299 · 1,515 m | 73 · 80 · 231 · 458 · 1,170 m (± 25 %) | Lowlands flat, high mountains too steep |
-| Landscapes, by kind | Slope p50 at 30 m: hills · plains · desert · boreal · mountains | 1.8 · 2.3 · 2.4 · 1.1 · 29.5° | 21.8 · 3.3 · 4.2 · 2.1 · 24.6° (± 25 %) | Hill country without hills; mountains without valleys |
+| Regions | Channels on the grid's eight directions | none: water spread by slope, courses curved through their nodes (G1a) | none | (G1a review: `docs/review/g1a/`) |
+| Landscapes, all land | Windows' median slope; median relief; land over 5° | 2.3°; 183 m; 30 % (G1a; T2 1.5°; 78 m; 16 %) | 2.8°; 163 m; 33 % (± 20 %) | Hills and valleys from 400 m (G1a) |
+| Landscapes, by height | Median relief of windows at 0–200 · 200–500 · 500–1,000 m · 1–2 · over 2 km | 80 · 73 · 188 · 482 · 1,167 m (G1a) | 73 · 80 · 231 · 458 · 1,170 m (± 25 %) | — |
+| Landscapes, by kind | Slope p50 at 30 m: hills · plains · desert · boreal · mountains | 20.0 · 2.9 · 4.9 · 2.4 · 28.5° (G1a) | 21.8 · 3.3 · 4.2 · 2.1 · 24.6° (± 25 %) | Hills right in amount, bumps rather than ridges and valleys; the desert's ranges low |
 | Hillslopes | Mean \|Δh\| at 4 m, hills · plains · desert · boreal | 0.24 · 0.15 · 0.14 · 0.08 m | 1.38 · 0.19–0.51 · 0.46 · 0.21 m (× 1.5) | No gullies, fans, scree or terraces |
 | Hillslopes | Curvature at 4 m, p95, hills | 0.015 /m | 0.12 /m (× 1.5) | — |
+| Lakes | The grid's lakes' share of the land | 6.3 % | ~2 % | Flat windows; shores stepped along the grid's cells (W1) |
 | Site | Closed hollows over 0.25 m at 1 m | 1–6 % | under 1 % outside glacial and karst land | Bare patches as flat coloured blobs |
 | Ground | What lies on it | one green sward, pixel-art sprites | litter, pebbles, moss, roots by biome | A lawn in every biome, tundra and boreal included |
 | Water | Cube edges; rivers in channels that hold them | blocks in 1 m steps; chords | none; all | (stream shots) |

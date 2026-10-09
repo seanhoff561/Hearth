@@ -165,10 +165,11 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 - **R1a — sun shadows** (RGA-1 gap 1): done (D298). Open: its GPU time at 1080p on the RTX 4060
   (≤ 1.5 ms; `hearth bench --shadows off` against the default, owner check); hair and the distant
   crowns' boxes casting; wider penumbrae under tall canopies.
-- **G1a — relief from 30 m to 30 km** (gaps 2, 4): done (D299). Open: the 200–500 m band's
-  relief (57 m against 80 m: a fifth of its windows lie on the grid's lakes; 88 m without them);
-  the grid's lakes 6.3 % of the land (W1); lake shores stepped at tiles' edges and the widest
-  rivers' sharp bends (W1); basin-and-range deserts (no rift deserts on the planet).
+- **G1a — relief from 30 m to 30 km** (gaps 2, 4): done (D299), every measure within its
+  bounds. Open: the grid's lakes 6.3 % of the land, the flattest windows (W1); lake shores
+  stepped at tiles' edges (W1); hill country's relief right in amount but not yet in form
+  (bumps, not ridges and valleys running together: G1b's channel heads); the desert's ranges
+  lower than a basin-and-range's (p90 15° against 22°).
 - **G1b — walking scale, with S5/P7 (c)–(f)** (gaps 3, 5, 9): a ~5 m and a ~1 m level
   (diffusion, channel heads and gullies, colluvium and fans, talus, tree-throw, frost, aeolian,
   karst and glacial forms where they belong) with detail from lidar statistics by landscape

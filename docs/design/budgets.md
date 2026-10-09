@@ -50,8 +50,8 @@ Measured on the cloud machine (4 cores, a software adapter): the lower configura
 | The places suggested | ≤ ~15 s | 5.5 s | E4.1 §4.2 |
 | The creator: a colour slider | shown the next frame | the next frame | E4.1 §4.3 |
 | The creator: a shape slider | the last setting shown ≤ 0.25 s, full detail ≤ 1 s on the reference machine | 0.14–0.15 s, 0.9–1.2 s (three threads) | E4.1 §4.3 |
-| A new world: Play → in control | ≤ ~10 s on the reference machine | 3.35 s | E4.1 §4.4 |
-| A save: Play → in control | ≤ ~5 s | 2.34 s | E4.1 §4.4 |
+| A new world: Play → in control | ≤ ~10 s on the reference machine | 4.1 s (G1a) | E4.1 §4.4 |
+| A save: Play → in control | ≤ ~5 s | 2.7 s (G1a) | E4.1 §4.4 |
 | The whole render distance | ≤ ~30 s on the reference machine | 34.6–37.1 s (llvmpipe's drawing) | E4.1 §4.4 |
 | The main thread while loading | its own work ≤ 1 ms a frame | 0.35–0.46 ms median | E4.1 §4.4 |
 | The caches together | ≤ 40 % of the machine's memory, a budget per kind | as set (`hearth_core::memory`) | E4.1 §4.7 |

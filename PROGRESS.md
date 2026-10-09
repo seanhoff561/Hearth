@@ -28,7 +28,7 @@ at every scale, judged by evidence; T0 → T1 → T2, then the plan T2 revises.
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
 P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7, S3, S4, Audit 2,
-E4.1, T0, T1, T2, R1a. V2-11 superseded.
+E4.1, T0, T1, T2, R1a, G1a. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -54,7 +54,8 @@ E4.1, T0, T1, T2, R1a. V2-11 superseded.
 | T1 — quick wins (ravens, skin, highlight, globe) | done 2026-10-09 (D292–D295) |
 | T2 — the realism gap analysis | done 2026-10-09 (D296, D297) |
 | R1a — the sun's shadows | done 2026-10-09 (D298) |
-| G1a → S5/P7 (c)–(f) with G1b → W1 → L1 → P7G → S6 with H1 → R1b → S7 → S8 → P8 | next: G1a (D297) |
+| G1a — relief from 30 m to 30 km | done 2026-10-09 (D299) |
+| S5/P7 (c)–(f) with G1b → W1 → L1 → P7G → S6 with H1 → R1b → S7 → S8 → P8 | next: S5/P7 (c) with G1b; Audit 3 after it (D297) |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
 
@@ -64,7 +65,7 @@ E4.1, T0, T1, T2, R1a. V2-11 superseded.
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E7 done 2026-10-08; E4.1 (the Earth-sized world fast to see, make a person on and load into) done 2026-10-09 |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); Audit 2 done 2026-10-08 (`AUDIT-2.md`); next: an audit after three completed milestones (Q §8.2) |
-| Realism (T) | last suite render: R1a, 2026-10-09 (`docs/review/realism/`); top open gaps (`scorecard.md`): the relief from 30 m to 30 km (half the Earth's, a sixth in hill country); trees, grass and water as voxels, sprites and blocks; the seam at the edge of full detail |
+| Realism (T) | last suite render: R1a, 2026-10-09 (`docs/review/realism/`); top open gaps (`scorecard.md`): trees, grass and water as voxels, sprites and blocks; walking-scale ground (G1b); the grid's lakes three times the Earth's; the seam at the edge of full detail. G1a brought the relief from 30 m to 30 km within the Earth's bounds |
 
 ## Owner checks
 Pictures and runs that need the owner (T §7), newest first:
@@ -90,6 +91,32 @@ Pictures and runs that need the owner (T §7), newest first:
   over it, coming down in turns, lifting as you walk up; a flock seen a kilometre or two off.
 - `cargo test -p hearth_worldgen --test planet_pinned` on the laptop: whether Windows' maths make
   the same planet as Linux's (D289). One command, a pass or a failure to paste back.
+
+## G1a — relief from 30 m to 30 km (2026-10-09, D299, RGA-1's gaps 2 and 4)
+- **Relief by the land's kind and height above base level** (`relief/roughness.rs`): an
+  amplitude at the valleys' spacing from the height above the graded profile the rivers could cut
+  to, rain, dry land, ice, provinces and mountains' uplift; the spacing as far as hillslopes take
+  to rise through it. Dry basins' floors buried at the finer levels. **Water spread over the
+  slopes** (`relief/drainage.rs`: many-direction routing and implicit erosion), **hillslope
+  creep** at the ~300 m and ~40 m levels, **rivers** whose beds every tile lays the same
+  (`relief/courses.rs`), whose courses curve through their nodes at every level and through the
+  finest reaches at the blocks, wandering by slope and discharge.
+- **Measured** (`bench realism global|terrain`, `docs/review/realism/measures/`), each within its
+  bounds: median slope 2.3° (the Earth's 2.8°), relief 183 m (163), land over 5° 30 % (33);
+  relief by height 80 · 73 · 188 · 482 · 1,167 m (73 · 80 · 231 · 458 · 1,170); slope at 30 m
+  hills 20.0° (21.8), plains 2.9° (3.3), desert 4.9° (4.2), boreal 2.4° (2.1), mountains 28.5°
+  (24.6). Before (T2): 1.5°, 78 m, 16 %; 33 · 50 · 89 · 299 · 1,515 m; 1.8 · 2.3 · 2.4 · 1.1 · 29.5°.
+- **Tests**: water spreading over a cone instead of down eight spokes; creep; relief by height,
+  rain and dry land; rivers falling through every level, curving at the blocks and through their
+  nodes at the levels; a cell the same whichever tile is made first.
+- **Pictures** (`docs/review/g1a/`): the planet's windows, the five kinds at 30 m beside lidar,
+  the river map, the land from 400 m in game.
+- **Fast?** Tiles 3–18 % slower (level 3 ~85 ms). R1a's pipelines had frozen a world's arrival
+  4–5 s and kept a save 6 s from control; the scene is now made beside the server's opening:
+  a new world in control in 3.7–4.1 s, a save in 2.5–2.8 s (`BENCHMARKS.md`).
+- **Open** (PLAN): the grid's lakes (6.3 % of the land; their stepped shores) for W1; hills
+  right in amount but not in form, the desert's ranges low.
+- Next: S5/P7 (c) with G1b, walking scale; Audit 3 after it.
 
 ## R1a — the sun's shadows (2026-10-09, D298, RGA-1's first gap)
 - **Cascaded shadow maps** (`hearth_render::shadow`, `terrain/casters.rs`, `common.wgsl`): four
@@ -124,7 +151,7 @@ Pictures and runs that need the owner (T §7), newest first:
   budget here; the GPU on the PC. **Whole?** Everything lit by the sun receives and nearly
   everything casts (not hair, eyes or the distant crowns' boxes, D298). **Organic?** The
   penumbra's spiral turned by a hash fixed in the world.
-- Next: G1a, the relief from 30 m to 30 km.
+- Next: G1a, the relief from 30 m to 30 km (done).
 
 ## T2 — the realism gap analysis (2026-10-09, Amendment T §3, D296–D297)
 - **Measured** (`bench realism terrain|global|levels|weather|images`; `docs/review/realism/`):

@@ -913,3 +913,29 @@ the GPU's share at 1080p on the RTX 4060 is the owner's check (budget 1.5 ms).
 The frame thread's 1.5 ms is the near cascades' caster lists (the cubes looked up in each
 cascade's region, D298) and their uploads; the allocations are wgpu's staging for the 25 more
 draw lists and 5 globals written a frame.
+
+## G1a — the relief, and a world's arrival (`hearth bench load --seed 7 --software --size 640x360`), 4 cores, software adapter (llvmpipe)
+
+R1a's end (commit cac4c31), G1a's relief before the load was mended, and G1a's end (four runs:
+the range and the median). At G1a's end `bench load` paces its frames at 60 Hz as vsync does the
+game's (before, the loop spun on frames with nothing to draw and took a core from the world's
+making), so the whole render distance is not quite comparable.
+
+| | R1a | G1a, relief only | G1a |
+|---|---:|---:|---:|
+| A new world, Play → in control | 6.49 s | 7.46 s | 3.73–4.14 s (4.06) |
+| A new world, Play → the whole render distance | 21.1 s | 22.4 s | 21.9–26.4 s (22.2) |
+| Its save, Play → in control | 5.90 s | 6.22 s | 2.52–2.80 s (2.71) |
+| Its save, Play → the whole render distance | 16.7 s | 17.4 s | 17.9–22.0 s (20.4) |
+| The main thread's slowest frame, new world / save | 4.76 / 4.36 s | 5.02 / 4.44 s | 0.55–0.64 / 0.48–0.55 s |
+| Peak resident, new world / save | 1,362 / 1,443 MiB | 1,474 / 1,540 MiB | 1,435–1,477 / 1,624–1,658 MiB |
+
+R1a's slowest frame was the scene's pipelines compiled on the main thread when the world came
+(the terrain's alone 2.66 s): they are now made side by side (the terrain's 1.20 s) and the scene
+on its own thread from Play, beside the server's opening of the world (2–3 s), so the world comes
+to a scene ready. The slowest frames left are llvmpipe drawing the world (the submit); one run of
+four had a 6.7 s submit, under the scene's compiling and the world's making on four cores.
+
+The refinement tiles (`bench relief --timing`, six in a row, cold, each): level 3 86 / 83 ms,
+level 2 54 / 68 ms, level 1 17 / 64 ms (the highest land / a plain); 3–18 % above R1a's, the
+height above base level read for each lattice point and the courses' beds followed downstream.
