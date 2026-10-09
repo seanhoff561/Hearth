@@ -58,7 +58,9 @@ impl Sizes {
             cores,
             reserved,
             near,
-            interactive: (cores / 2).max(2),
+            // What the player waits on in a menu, where the world about them is not running:
+            // as many as the near field.
+            interactive: near.max(2),
             lod: (cores / 4).max(2),
             background: (cores / 4).max(1),
         }
@@ -237,9 +239,9 @@ mod tests {
     #[test]
     fn cores_are_kept_for_the_main_thread() {
         let s = Sizes::for_machine(4, 0, 0);
-        assert_eq!((s.reserved, s.near), (1, 3));
+        assert_eq!((s.reserved, s.near, s.interactive), (1, 3, 3));
         let s = Sizes::for_machine(8, 0, 0);
-        assert_eq!((s.reserved, s.near), (2, 6));
+        assert_eq!((s.reserved, s.near, s.interactive), (2, 6, 6));
         let s = Sizes::for_machine(16, 0, 0);
         assert_eq!((s.reserved, s.near), (2, 14));
         // One core: it is shared.

@@ -174,10 +174,13 @@ fn the_shaders_move_at_the_documented_speeds() {
         "{periods:?}"
     );
 
-    // Caustics: two layers, each drifting at |v| × the map's scale.
+    // Caustics: two layers, each drifting at |v| × the map's scale (its repeat in blocks, as
+    // `wrap_freq` snaps it to whole repeats over WRAP blocks: within a thousandth).
     let c = body(&terrain, "caustic_light");
     let v = after(&c, "t * ");
-    let scale = [after(&c, "p / ")[0], after(&c, "q / ")[0]];
+    let repeats = after(&c, "wrap_freq(1.0 / ");
+    assert_eq!(repeats.len(), 2, "{c}");
+    let scale = [repeats[0], repeats[1]];
     let speeds = [
         (v[0].hypot(v[1]) * scale[0] * 100.0).round() / 100.0,
         (v[2].hypot(v[3]) * scale[1] * 100.0).round() / 100.0,

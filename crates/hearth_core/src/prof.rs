@@ -82,9 +82,14 @@ pub fn zones() -> Vec<(&'static str, ZoneStats)> {
 /// Adds to a counter.
 pub fn count(name: &str, n: u64) {
     if let Ok(mut c) = COUNTERS.lock() {
-        *c.get_or_insert_with(FxHashMap::default)
-            .entry(name.to_owned())
-            .or_default() += n;
+        let c = c.get_or_insert_with(FxHashMap::default);
+        // The name owned only the first time (counted per mesh and per tile, it is hot).
+        match c.get_mut(name) {
+            Some(v) => *v += n,
+            None => {
+                c.insert(name.to_owned(), n);
+            }
+        }
     }
 }
 

@@ -6,6 +6,7 @@
 //! everything else can build on it.
 
 pub mod disk_cache;
+pub mod hardware;
 pub mod jobs;
 pub mod memory;
 pub mod options;

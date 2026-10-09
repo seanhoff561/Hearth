@@ -376,6 +376,48 @@ impl App {
         self.save_options();
     }
 
+    /// The first run (E4.1 §6): the video settings that suit this machine — its cores, memory
+    /// and graphics adapter — set once, a safe preset the player can raise.
+    fn suit_the_machine(&mut self, info: &wgpu::AdapterInfo) {
+        use hearth_core::hardware::{Gpu, Machine, video_memory};
+        let gpu = match info.device_type {
+            wgpu::DeviceType::DiscreteGpu => Gpu::Discrete,
+            wgpu::DeviceType::IntegratedGpu => Gpu::Integrated,
+            wgpu::DeviceType::Cpu => Gpu::Software,
+            _ => Gpu::Unknown,
+        };
+        let machine = Machine::this(gpu, video_memory(&info.name));
+        let suited = machine.suited();
+        self.options.performance.machine_checked = true;
+        // Settings the player has chosen are theirs: only the defaults give way.
+        if self.options.video != hearth_core::options::VideoOptions::default() {
+            log::info!("the machine looked at; the video settings chosen before are kept");
+            self.save_options();
+            return;
+        }
+        suited.apply(&mut self.options.video);
+        log::info!(
+            "first run: {} cores, {} GiB of memory, {} ({gpu:?}, {}): the {:?} preset, render \
+             distance {}, distant terrain {} chunks with {} MiB",
+            machine.cores,
+            machine
+                .ram
+                .map_or("?".to_owned(), |r| (r >> 30).to_string()),
+            info.name,
+            machine
+                .vram
+                .map_or("its memory unknown".to_owned(), |v| format!(
+                    "{} GiB",
+                    v >> 30
+                )),
+            suited.preset,
+            suited.render_distance,
+            suited.lod_distance,
+            suited.lod_vram_budget_mb
+        );
+        self.save_options();
+    }
+
     fn save_options(&mut self) {
         self.options.controls.key_bindings = self.bindings.to_map();
         self.options.controls.pad_bindings = self.bindings.pad_map();
@@ -1432,6 +1474,9 @@ impl ApplicationHandler for App {
                 return;
             }
         };
+        if !self.options.performance.machine_checked {
+            self.suit_the_machine(&renderer.ctx.info);
+        }
         self.running = Some(Running {
             window,
             renderer,

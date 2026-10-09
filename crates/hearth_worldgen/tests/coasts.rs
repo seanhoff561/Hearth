@@ -28,16 +28,27 @@ fn generator() -> &'static WorldGenerator {
 
 /// Samples of the planet's columns on a lattice.
 fn lattice(step: i32) -> Vec<(i32, i32, hearth_worldgen::ColumnSample)> {
+    lattice_where(step, |_| true)
+}
+
+/// The samples on a lattice that `keep` picks, the rest let go as they are taken (a fine lattice
+/// of the whole planet kept would take gigabytes).
+fn lattice_where(
+    step: i32,
+    keep: impl Fn(&hearth_worldgen::ColumnSample) -> bool + Sync,
+) -> Vec<(i32, i32, hearth_worldgen::ColumnSample)> {
     let wg = generator();
     let c = wg.planet().circumference();
+    let keep = &keep;
     (-c / 2 + step..c / 2 - step)
         .step_by(step as usize)
         .collect::<Vec<_>>()
         .into_par_iter()
         .flat_map_iter(|z| {
-            (0..c)
-                .step_by(step as usize)
-                .map(move |x| (x, z, wg.terrain.sample(x, z)))
+            (0..c).step_by(step as usize).filter_map(move |x| {
+                let s = wg.terrain.sample(x, z);
+                keep(&s).then_some((x, z, s))
+            })
         })
         .collect()
 }
@@ -77,11 +88,10 @@ fn reefs_grow_in_warm_clear_shallow_sea() {
 #[test]
 #[ignore = "soak: a long run; scripts/soak.sh runs it at audits"]
 fn coastal_salt_pans_lie_on_hot_dry_coasts() {
-    let cols = lattice(23);
-    let pans: Vec<_> = cols
-        .iter()
-        .filter(|c| c.2.biome == Biome::SaltFlat && c.2.height < 1.5)
-        .collect();
+    // Finer than the other coasts' lattice: the test planet has few desert coasts, and whether
+    // their flats are sheltered goes by stretches of shore kilometres long (E4.1 redrew the
+    // shelter's noise periodic round the planet; at 23 blocks only three columns fell on them).
+    let pans = lattice_where(8, |s| s.biome == Biome::SaltFlat && s.height < 1.5);
     assert!(pans.len() > 10, "{} coastal salt pan columns", pans.len());
     for (x, z, s) in &pans {
         assert!(

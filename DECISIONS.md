@@ -287,3 +287,13 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D276 (2026-10-08) Trees in the distance: boxes where they are trees, a canopy where they are stands
 - D277 (2026-10-08) Snow and ice in the distance follow the near cover's year model
 - D278 (2026-10-08) The far field is the LOD's coarsest levels, out to the real horizon
+- D279 (2026-10-09) Every query at the scale it stands for; coarse callers never build the finest tiles
+- D280 (2026-10-09) The globe's map is the planet grid's, made with the planet and kept beside it
+- D281 (2026-10-09) The creator draws colours each frame and builds shapes coarse first, the newest first
+- D282 (2026-10-09) One job system: four priorities, a core kept free
+- D283 (2026-10-09) Caches bounded by the machine's memory; far animals set aside
+- D284 (2026-10-09) Terrain kept on disk per planet: the refinement tiles, the distant tiles, capped
+- D285 (2026-10-09) One planet across the seam and over the poles
+- D286 (2026-10-09) A first run suits the machine; the perf gate holds the Earth-scale numbers
+- D287 (2026-10-09) The server holds the meshes a client has not taken: one per cube, nearest first
+- D288 (2026-10-09) The near ground streams in view first and fades in where it first appears

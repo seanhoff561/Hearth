@@ -1,0 +1,17 @@
+# E4.1 §4.8: the terrain on the Earth-sized planet before and after the performance work — a range
+# (the highest land, 14 million blocks east of the origin), a temperate coast, a plain and a river
+# on it, from the ground and from above. Seed 7 at the game's grid (2048²); the sites are
+# `bench relief --site mountains|coast|plain`'s. Kept in docs/review/e4.1/ (as JPEGs).
+# `hearth --game-dir DIR --software --screenshot-list tools/shots/e41_earth.shots`
+defaults: seed=7, planet=earth, w=1280, h=720, dist=6, lod=256, season=summer, hour=11, clouds=0.2, dry=true
+x=14372696, z=4647400, above=3, yaw=0, pitch=-4, out=bench-out/e41/range_high.png
+x=14372696, z=4647400, above=1200, yaw=0, pitch=-25, out=bench-out/e41/range_air.png
+x=14372696, z=4647400, near=water, above=2, yaw=0, pitch=8, out=bench-out/e41/range_valley.png
+x=6036728, z=-6428088, above=2, yaw=-90, pitch=0, out=bench-out/e41/coast_shore.png
+x=6036728, z=-6428088, above=400, yaw=-60, pitch=-15, out=bench-out/e41/coast_air.png
+x=8013096, z=6741176, above=2, yaw=0, pitch=2, out=bench-out/e41/plain_ground.png
+x=8013096, z=6741176, above=300, yaw=0, pitch=-10, out=bench-out/e41/plain_air.png
+x=8013096, z=6741176, near=water, above=2, yaw=0, pitch=4, out=bench-out/e41/plain_river.png
+# The globe's map about the range, from the planet grid (E4.1 only: before it, the map took hours
+# and the globe stayed blue, PLAYTEST 29).
+x=14372696, z=4647400, globe=1, out=bench-out/e41/globe.png

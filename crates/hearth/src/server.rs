@@ -1,12 +1,14 @@
 //! The integrated server (v1 M4, V2-3): a thread that owns the world. Twenty times a second it
 //! takes the client's reports of the player's movement, advances the clock and lives the
 //! player's body in the weather, water and shelter where they are (`hearth_body`); between ticks
-//! it generates, lights and meshes the terrain around the player, nearest first, sending each
-//! cube's blocks (for the client's collision) and its mesh, and unloads what is left behind. It
-//! saves the world's clock and the player on request, every five minutes and when it stops.
+//! it generates, lights and meshes the terrain around the player, nearest and in view first,
+//! sending each cube's blocks (for the client's collision) and its mesh as the client takes those
+//! before it, and unloads what is left behind. It saves the world's clock and the player on request, every
+//! five minutes and when it stops.
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -36,6 +38,9 @@ use crate::workshop::{Here, Workshop, WorkshopSave};
 
 /// Cubes generated per batch (bounded so nearby terrain appears quickly while moving).
 const BATCH: usize = 192;
+/// Meshes sent and not yet taken by the client, at most (E4.1 §4.6): two of its frames' uploads.
+/// The rest wait in the server's outbox, one per cube, so a client behind holds no more.
+const MESH_WINDOW: u64 = 512;
 /// The body's longest step (s): the world going faster than lived is lived by it in steps no
 /// longer.
 const BODY_STEP_S: f64 = 30.0;
@@ -156,6 +161,8 @@ pub struct Server {
     stop: Arc<std::sync::atomic::AtomicBool>,
     /// Told when the server's thread ends.
     ended: Receiver<()>,
+    /// Meshes taken from the server: it sends more as these are read (`MESH_WINDOW`).
+    taken: Arc<AtomicU64>,
 }
 
 /// How long dropping the server waits for its thread to save and end before leaving it to end
@@ -169,10 +176,12 @@ impl Server {
         let (ended_tx, ended) = channel();
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let stopped = stop.clone();
+        let taken = Arc::new(AtomicU64::new(0));
+        let read = taken.clone();
         let thread = std::thread::Builder::new()
             .name("server".into())
             .spawn(move || {
-                if let Err(e) = run(spec, atlas, view, inbox, &tx, &stopped) {
+                if let Err(e) = run(spec, atlas, view, inbox, &tx, &stopped, read) {
                     log::error!("server: {e:#}");
                     let _ = tx.send(ToClient::Failed(format!("{e:#}")));
                 }
@@ -185,6 +194,7 @@ impl Server {
             thread: Some(thread),
             stop,
             ended,
+            taken,
         }
     }
 
@@ -192,9 +202,14 @@ impl Server {
         let _ = self.to.send(m);
     }
 
-    /// The next message, if any.
+    /// The next message, if any. A mesh read lets the server send another.
     pub fn poll(&self) -> Option<ToClient> {
-        self.from.try_recv().ok()
+        let m = self.from.try_recv().ok();
+        if let Some(ToClient::Mesh(_)) = &m {
+            self.taken.fetch_add(1, Ordering::Relaxed);
+            hearth_core::prof::count("net.meshes.taken", 1);
+        }
+        m
     }
 }
 
@@ -684,6 +699,7 @@ fn run(
     inbox: Receiver<ToServer>,
     tx: &Sender<ToClient>,
     stop: &std::sync::atomic::AtomicBool,
+    taken: Arc<AtomicU64>,
 ) -> anyhow::Result<()> {
     // Given up between the world's stages when the server is wanted no more.
     let stopped = || stop.load(std::sync::atomic::Ordering::Relaxed);
@@ -955,7 +971,10 @@ fn run(
     }
     let models = BlockModels::build(&lw.reg, &atlas);
     let opts = MeshOptions::default();
-    let mut stream = Stream::default();
+    let mut stream = Stream {
+        taken,
+        ..Default::default()
+    };
     let mut water = WaterSim::new(&lw.reg)?;
     // What is built, standing or falling (V2-8 (b)), and the day its weather was last told.
     let mut structures = crate::structure::Structures::new(&lw.reg, &lw.content);
@@ -1621,6 +1640,7 @@ fn run(
             if ticks.is_multiple_of(40) {
                 hearth_core::prof::gauge("animals", fauna.memory());
                 hearth_core::prof::gauge("cubes (server)", lw.map.heap_bytes() as u64);
+                hearth_core::prof::gauge("meshes waiting (server)", stream.waiting_bytes());
             }
             // The heap freed as terrain and animals come and go given back to the system each
             // minute (glibc's arenas keep it otherwise).
@@ -1987,6 +2007,7 @@ fn run(
                 opts,
                 planet,
                 observing.unwrap_or(player.mover.pos),
+                last_moved.as_ref().map(|m| m.yaw),
                 view,
                 year_frac,
                 tx,
@@ -2023,6 +2044,24 @@ fn run(
     }
 }
 
+/// How soon a cube `d` (cubes) from the player's is wanted, lower first (E4.1 §4.4): by its
+/// distance, a step up or down counting double, and with the way the player faces (`ahead`, a
+/// unit vector in x and z) what lies before them first: a cube to the side as if half as far
+/// again, one behind as if twice as far. The column the player stands in comes first whichever
+/// way they face.
+fn priority(d: glam::IVec3, ahead: Option<(f64, f64)>) -> i64 {
+    let (x, y, z) = (d.x as i64, d.y as i64, d.z as i64);
+    let near = x * x + z * z + y * y * 2;
+    let across = ((x * x + z * z) as f64).sqrt();
+    match ahead {
+        Some((fx, fz)) if across > 0.0 => {
+            let k = 1.5 - 0.5 * (x as f64 * fx + z as f64 * fz) / across;
+            (near as f64 * k * k).round() as i64
+        }
+        _ => near,
+    }
+}
+
 /// Terrain streaming around a point.
 #[derive(Default)]
 struct Stream {
@@ -2034,6 +2073,9 @@ struct Stream {
     wanted: Vec<(i64, CubePos)>,
     last_center: Option<CubePos>,
     last_view: (i32, i32),
+    /// The way the player faced when `wanted` was ordered (x, z), and faces now.
+    ordered_for: Option<(f64, f64)>,
+    ahead: Option<(f64, f64)>,
     cover_step: Option<i64>,
     heights_at: Option<(i32, i32)>,
     heights_dirty: bool,
@@ -2043,11 +2085,19 @@ struct Stream {
     grown: FxHashMap<CubePos, (Vegetation, f64)>,
     /// The vegetation last looked at (new disturbances since it regrow what they reach).
     veg_seen: Option<Vegetation>,
+    /// The meshes made and not yet sent (E4.1 §4.6): each cube's newest, let go when it
+    /// unloads, sent nearest and in view first as the client takes those before them. What
+    /// waits is bounded by the cubes loaded, not by how far the client is behind.
+    outbox: FxHashMap<CubePos, hearth_render::mesh::CubeMesh>,
+    /// Meshes sent; and taken by the client, as its handle counts them.
+    sent: u64,
+    taken: Arc<AtomicU64>,
 }
 
 impl Stream {
-    /// One step of streaming work: whether there was work, and the blocks the seasonal cover
-    /// changed. `Err` when the client is gone.
+    /// One step of streaming work about `center`, the player facing `facing` (radians, as
+    /// `Moved::yaw`): whether there was work, and the blocks the seasonal cover changed. `Err`
+    /// when the client is gone.
     fn work(
         &mut self,
         lw: &mut LocalWorld,
@@ -2056,6 +2106,7 @@ impl Stream {
         opts: MeshOptions,
         planet: Planet,
         center: DVec3,
+        facing: Option<f32>,
         view: View,
         year_frac: f64,
         tx: &Sender<ToClient>,
@@ -2079,9 +2130,16 @@ impl Stream {
             self.heights_sent = Some(Instant::now());
         }
         let c = planet.wrap_cube(CubePos::containing(center));
-        if self.last_center != Some(c) || self.last_view != (view.radius, view.vertical) {
+        self.ahead = facing.map(|y| (y.sin() as f64, y.cos() as f64));
+        // Turned an eighth of the way round or more since what is wanted was ordered.
+        let turned = match (self.ahead, self.ordered_for) {
+            (Some((x, z)), Some((ox, oz))) => x * ox + z * oz < std::f64::consts::FRAC_1_SQRT_2,
+            (a, b) => a.is_some() != b.is_some(),
+        };
+        if self.last_center != Some(c) || self.last_view != (view.radius, view.vertical) || turned {
             self.last_center = Some(c);
             self.last_view = (view.radius, view.vertical);
+            self.ordered_for = self.ahead;
             // Unload what fell out of range (with a margin so small moves don't thrash).
             let far: Vec<CubePos> = self
                 .loaded
@@ -2097,19 +2155,20 @@ impl Stream {
             for p in far {
                 self.loaded.remove(&p);
                 self.grown.remove(&p);
+                self.outbox.remove(&p);
                 lw.map.remove_cube(p);
                 if self.meshed.remove(&p) {
                     tx.send(ToClient::Unload(p)).map_err(|_| ())?;
                 }
             }
-            // Everything in range that is missing, nearest first.
+            // Everything in range that is missing, nearest and in view first.
             self.wanted.clear();
             for dy in -view.vertical..=view.vertical {
                 for dz in -view.radius..=view.radius {
                     for dx in -view.radius..=view.radius {
                         let p = planet.wrap_cube(CubePos::new(c.x + dx, c.y + dy, c.z + dz));
                         if !self.loaded.contains(&p) {
-                            let d = (dx * dx + dz * dz) as i64 + (dy * dy) as i64 * 2;
+                            let d = priority(glam::IVec3::new(dx, dy, dz), self.ahead);
                             self.wanted.push((d, p));
                         }
                     }
@@ -2131,6 +2190,7 @@ impl Stream {
         }
         // Trees grow and the land disturbed grows back.
         covered.extend(self.regrow(lw, models, opts, year_frac, tx)?);
+        self.flush(&planet, c, tx)?;
         if self.wanted.is_empty() {
             return Ok((!covered.is_empty(), covered));
         }
@@ -2203,10 +2263,46 @@ impl Stream {
         let meshes = lw.mesh(models, &ready, opts);
         for m in meshes {
             self.meshed.insert(m.pos);
-            hearth_core::prof::count("net.meshes.sent", 1);
-            tx.send(ToClient::Mesh(Box::new(m))).map_err(|_| ())?;
+            self.outbox.insert(m.pos, m);
         }
+        self.flush(&planet, c, tx)?;
         Ok((true, covered))
+    }
+
+    /// Sends the outbox's meshes nearest `center` and in view first (`priority`) while the
+    /// client holds fewer than `MESH_WINDOW` unread.
+    fn flush(&mut self, planet: &Planet, center: CubePos, tx: &Sender<ToClient>) -> Result<(), ()> {
+        let unread = self.sent.saturating_sub(self.taken.load(Ordering::Relaxed));
+        let room = (MESH_WINDOW.saturating_sub(unread) as usize).min(self.outbox.len());
+        if room == 0 {
+            return Ok(());
+        }
+        let mut near: Vec<(i64, CubePos)> = self
+            .outbox
+            .keys()
+            .map(|p| (priority(planet.cube_delta(center, *p), self.ahead), *p))
+            .collect();
+        if room < near.len() {
+            near.select_nth_unstable(room);
+            near.truncate(room);
+        }
+        near.sort_unstable();
+        for (_, p) in near {
+            if let Some(m) = self.outbox.remove(&p) {
+                self.sent += 1;
+                hearth_core::prof::count("net.meshes.sent", 1);
+                tx.send(ToClient::Mesh(Box::new(m))).map_err(|_| ())?;
+            }
+        }
+        Ok(())
+    }
+
+    /// What the meshes waiting to be sent hold (bytes).
+    fn waiting_bytes(&self) -> u64 {
+        self.outbox
+            .values()
+            .map(|m| (m.gpu_bytes() + std::mem::size_of_val(m)) as u64)
+            .sum()
     }
 
     /// Grows the loaded terrain on with the vegetation: the cubes whose trees pass into a new
@@ -2356,7 +2452,8 @@ impl Stream {
     }
 
     /// Relights the blocks that changed and sends the cubes they touch (and the neighbours that
-    /// show them on a face) again, with new meshes. Returns the cubes remeshed.
+    /// show them on a face) again, with new meshes (through the outbox). Returns the cubes
+    /// remeshed.
     fn blocks_changed(
         &mut self,
         lw: &mut LocalWorld,
@@ -2398,8 +2495,11 @@ impl Stream {
         let meshes = lw.mesh(models, &dirty, opts);
         let n = meshes.len();
         for m in meshes {
-            hearth_core::prof::count("net.meshes.sent", 1);
-            tx.send(ToClient::Mesh(Box::new(m))).map_err(|_| ())?;
+            self.outbox.insert(m.pos, m);
+        }
+        // Sent with the blocks where the client has room (the player's own changes at once).
+        if let Some(c) = self.last_center {
+            self.flush(&planet, c, tx)?;
         }
         self.heights_dirty |= !changed.is_empty();
         Ok(n)
@@ -2423,4 +2523,127 @@ fn neighbours_loaded(planet: &Planet, loaded: &FxHashSet<CubePos>, p: CubePos) -
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hearth_render::mesh::{CubeMesh, PackedQuad};
+
+    fn mesh(pos: CubePos, quads: usize) -> CubeMesh {
+        CubeMesh {
+            pos,
+            quads: vec![
+                PackedQuad {
+                    a: 0,
+                    b: 0,
+                    c: 0,
+                    d: 0
+                };
+                quads
+            ],
+            ..Default::default()
+        }
+    }
+
+    fn sent(rx: &Receiver<ToClient>) -> Vec<CubeMesh> {
+        rx.try_iter()
+            .filter_map(|m| match m {
+                ToClient::Mesh(m) => Some(*m),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A client behind holds no more than the window (E4.1 §4.6): the rest wait in the outbox,
+    /// each cube's newest mesh alone, and go nearest first, across the seam too, as the client
+    /// takes those before them.
+    #[test]
+    fn meshes_wait_one_per_cube_and_go_nearest_first_as_the_client_takes_them() {
+        let planet = Planet::from_size(PlanetSize::Earth).expect("the planet");
+        let (tx, rx) = channel();
+        let mut s = Stream::default();
+        // About a point on the seam: cubes on both sides of it.
+        let center = planet.wrap_cube(CubePos::new(0, 0, 0));
+        for x in -12..=12 {
+            for z in -12..=12 {
+                for y in -2..=2 {
+                    let p = planet.wrap_cube(CubePos::new(x, y, z));
+                    s.outbox.insert(p, mesh(p, 1));
+                }
+            }
+        }
+        let all = s.outbox.len();
+        assert!(all as u64 > 2 * MESH_WINDOW);
+        // A cube meshed again: its newest mesh waits, nothing more.
+        s.outbox.insert(center, mesh(center, 2));
+        assert_eq!(s.outbox.len(), all);
+        assert!(s.waiting_bytes() >= all as u64 * 16);
+
+        s.flush(&planet, center, &tx).expect("sent");
+        let first = sent(&rx);
+        assert_eq!(first.len() as u64, MESH_WINDOW, "no more than the window");
+        assert_eq!(
+            (first[0].pos, first[0].quads.len()),
+            (center, 2),
+            "the nearest first, its newest mesh"
+        );
+        let far = |p: CubePos| {
+            let d = planet.cube_delta(center, p);
+            let (x, y, z) = (d.x as i64, d.y as i64, d.z as i64);
+            x * x + z * z + y * y * 2
+        };
+        let sent_farthest = first.iter().map(|m| far(m.pos)).max().unwrap_or(0);
+        let left_nearest = s.outbox.keys().map(|p| far(*p)).min().unwrap_or(i64::MAX);
+        assert!(sent_farthest <= left_nearest, "none sent past one waiting");
+        let half = planet.cubes_around() / 2;
+        assert!(
+            first.iter().any(|m| m.pos.x > half) && first.iter().any(|m| m.pos.x < half),
+            "both sides of the seam are near"
+        );
+
+        // Nothing more until the client takes some; then as many as it took.
+        s.flush(&planet, center, &tx).expect("sent");
+        assert!(sent(&rx).is_empty());
+        s.taken.fetch_add(100, Ordering::Relaxed);
+        s.flush(&planet, center, &tx).expect("sent");
+        assert_eq!(sent(&rx).len(), 100);
+        assert_eq!(s.outbox.len(), all - MESH_WINDOW as usize - 100);
+        // All taken in the end, each cube once.
+        let mut seen: FxHashSet<CubePos> = first.iter().map(|m| m.pos).collect();
+        while !s.outbox.is_empty() {
+            s.taken.fetch_add(MESH_WINDOW, Ordering::Relaxed);
+            s.flush(&planet, center, &tx).expect("sent");
+            for m in sent(&rx) {
+                assert!(seen.insert(m.pos), "a cube sent twice");
+            }
+        }
+        assert_eq!(seen.len() + 100, all);
+    }
+
+    /// What lies before the player is wanted first, what lies behind later, the column they
+    /// stand in first of all (E4.1 §4.4).
+    #[test]
+    fn what_is_in_view_comes_first() {
+        use glam::IVec3;
+        // Facing +x (radians from +z toward +x).
+        let yaw = std::f64::consts::FRAC_PI_2;
+        let ahead = Some((yaw.sin(), yaw.cos()));
+        let p = |x, y, z| priority(IVec3::new(x, y, z), ahead);
+        assert!(p(4, 0, 0) < p(0, 0, 4), "ahead before the side");
+        assert!(p(0, 0, 4) < p(-4, 0, 0), "the side before behind");
+        assert!(
+            p(6, 0, 0) < p(-4, 0, 0),
+            "farther ahead before nearer behind"
+        );
+        assert!(
+            p(-5, 0, 0) < p(11, 0, 0),
+            "but near behind before twice as far ahead"
+        );
+        assert!(p(0, -1, 0) < p(2, 0, 0), "the ground underfoot first");
+        // Facing nowhere yet (no report): by distance alone.
+        let d = |x, y, z| priority(IVec3::new(x, y, z), None);
+        assert_eq!(d(4, 0, 0), d(-4, 0, 0));
+        assert_eq!(d(0, 1, 0), 2);
+    }
 }

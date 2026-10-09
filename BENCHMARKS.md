@@ -791,3 +791,46 @@ the caches and the GPU's buffers fill to their budgets in the first eight minute
 2,221 MiB from minute 8 to 26, and 2,580 at the end. The last minutes' rise is in what no cache
 accounts for ("the rest of the process"); the next soak tells the heap in use from the heap
 freed but kept.
+
+## E4.1 after — the Earth-sized planet (`hearth bench globe|creator|load`), 4 cores, 16 GB, software adapter (llvmpipe)
+
+The same machine and planet as "E4.1 before the fixes"; the end of E4.1. The lower configuration
+of E4.1 §6: the reference machine's numbers (8 cores and a GPU) are the owner's to run
+(`hearth bench load`, `hearth bench globe`). The load as before (the menus' work behind a new
+world, 640x360, the refinement tiles made afresh and its save reading them back), the median of
+three runs.
+
+| | before | after |
+|---|---:|---:|
+| The globe's map | never (some 9 hours) | 1.09 s, read back in 0.01 s |
+| Hovering over the globe, median / slowest | 154 / 427 ms | 0.004 / 0.055 ms |
+| A click to its place's details, median / slowest | 518 ms (on the interface's thread) | 481 / 1,167 ms (on a thread) |
+| The places suggested | 5.0 s | 5.5 s |
+| The creator, a person at Close | 1,605 ms | 711 ms |
+| The creator, the last setting shown after a slider's drag | 2.3–2.7 s | colours the next frame; shapes 140–148 ms |
+| The creator, at full detail after a drag | 2.3–2.7 s | 0.9–1.2 s |
+| A new world, Play → in control | never (the menus' work behind it) | 3.35 s |
+| A new world, Play → the whole render distance | never (46.2 s alone) | 37.1 s |
+| Its save, Play → in control | 32.8 s | 2.34 s |
+| Its save, Play → the whole render distance | 63.6 s | 34.6 s |
+| Peak resident, the new world / its save | 1,409 / 1,530 MiB | 1,393 / 1,575 MiB |
+| The main thread's own work a frame while loading, median | 0.21 ms | 0.35–0.46 ms |
+| Meshes a batch of cubes made (the client may hold 512 unread) | — | 142 |
+
+The three runs' whole render distance came at 38.3, 37.1 and 36.8 s (step 5: 35.8 s, one run);
+the slow frames are llvmpipe's drawing (`frame.submit`, 60 s over 332 frames). Each cube's mesh
+went to the client once: 7,935 meshes, one for each of the 23 × 23 × 15 cubes meshed (a cube is
+meshed once its neighbours are loaded, so not the outermost shell of the 25 × 25 × 17 loaded);
+its remeshes as the neighbours came replaced it in the outbox while the client was behind. The creator builds on the interactive pool, three threads here with a core kept
+free (step 4's 0.8 s to full detail had all four).
+
+**The soak** (`bench load --no-menus --fly 1800 --speed 60 --size 320x180`, 30 minutes across
+108 km): 1,310 MiB after the first minute; from the third minute to the 24th 1,577–1,788 MiB,
+the heap in use 1.0–1.1 GB throughout (glibc keeping some 0.5 GB of it freed); at the 25th the
+near terrain's general-quad arena doubled for denser country (its GPU buffers 96 → 160 MiB, held
+in memory on llvmpipe), then 1,869–1,900 MiB to the end; 2,092 MiB at the most (a save). The
+channel held its 512 meshes unread throughout (llvmpipe at 320x180 is the slow side) and the
+server's outbox 8–24 MiB. Before step 5 the flight rose 1,331 → 2,501 MiB, after it 1,452 →
+2,580 MiB, rising throughout; with the outbox alone (before the in-view order, the fades and the
+interactive pool's third thread) 1,253 → 1,851 MiB, the same plateau. Its save, opened 108 km
+from the spawn, was in control at 2.95 s and whole at 70 s (the distant tiles there not on disk).

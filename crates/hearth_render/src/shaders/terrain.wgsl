@@ -107,6 +107,12 @@ fn depth_under_water(world: vec3<f32>) -> f32 {
     return textureLoad(water_heights, c, 0).r - (world.y + g.water_map.z);
 }
 
+// How far a cube has faded in since it appeared (its instance's w), for the fragments: the second
+// byte of `flags` (the first is the fluid bit).
+fn fade_bits(faded: f32) -> u32 {
+    return u32(round(clamp(faded, 0.0, 1.0) * 255.0)) << 8u;
+}
+
 fn animated_layer(layer: u32, frames_m1: u32, frame_time_m1: u32) -> u32 {
     if frames_m1 == 0u {
         return layer;
@@ -169,7 +175,7 @@ fn vs_packed(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
     out.normal = face_normal(face);
     out.world = world;
     out.water_depth = water_depth;
-    out.flags = 0u;
+    out.flags = fade_bits(instances[ii].origin.w);
     return out;
 }
 
@@ -212,7 +218,7 @@ fn vs_general(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) 
     out.normal = face_normal((q.layer >> 20u) & 7u);
     out.world = world;
     out.water_depth = water_depth;
-    out.flags = fluid;
+    out.flags = fluid | fade_bits(instances[ii].origin.w);
     return out;
 }
 
@@ -281,7 +287,9 @@ fn shade_color(albedo: vec3<f32>, in: VsOut) -> vec3<f32> {
 
 // Full-detail terrain gives way to the LOD across the band at the edge of the loaded area.
 fn handoff(in: VsOut) {
-    if near_weight(in.world.xz) <= dither(in.pos.xy) {
+    // Dithered out where the distant ground takes over, and while the cube fades in.
+    let faded = f32((in.flags >> 8u) & 255u) / 255.0;
+    if near_weight(in.world.xz) * faded <= dither(in.pos.xy) {
         discard;
     }
 }
@@ -382,6 +390,7 @@ fn vs_smooth(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
     out.water_depth = water_depth;
     out.layers = vec2<u32>(0u, 4095u);
     out.leaf = 1.0;
+    out.flags = fade_bits(instances[ii].origin.w);
     return out;
 }
 
@@ -659,7 +668,7 @@ fn fs_translucent(in: VsOut) -> @location(0) vec4<f32> {
     let gx = dpdx(in.world);
     let gy = dpdy(in.world);
     let c = surface_color(in);
-    if in.flags == 1u {
+    if (in.flags & 1u) == 1u {
         return water_shade(in, gx, gy);
     }
     // Ice (the one translucent solid): its texture's colour and opacity under a Fresnel

@@ -18,9 +18,11 @@ responsively — ready for a network transport later without changing what eithe
   covers the head (no rain or sun, a third of the wind), the natural water's temperature when
   in it — moves the finite water (ten times a second; its slow changes every five game
   minutes) and sends the clock and the body's state (status, ability, injuries, illnesses,
-  exposure). Between ticks it streams terrain around the player: generate, cover, light,
-  mesh, and send each cube's blocks (for the client's collision) with its mesh; cubes that
-  load again get their finite water back. It saves the clock and the player every five
+  exposure). Between ticks it streams terrain around the player, nearest and in view first
+  (D288): generate, cover, light, mesh, and send each cube's blocks (for the client's
+  collision); the meshes wait in an outbox, each cube's newest alone, and go in the same order
+  while the client holds fewer than 512 it has not taken (D287); cubes that load again get
+  their finite water back. The client fades a cube in where it first appears. It saves the clock and the player every five
   minutes and when it stops; a saved world keeps its seed and planet.
 - **The client** (the render thread) mirrors the cubes it is sent, and moves the player
   itself every frame against that mirror with `hearth_physics` — no waiting for the server —

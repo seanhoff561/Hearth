@@ -28,6 +28,8 @@ use crate::server::{Server, View, WorldSpec};
 
 /// Meshes uploaded per frame at most (keeps frame times smooth while streaming).
 const UPLOADS_PER_FRAME: usize = 256;
+/// How long the ground takes to fade in where it first appears (s; E4.1 §4.4).
+const FADE_IN_S: f32 = 0.6;
 /// LOD tiles uploaded per frame at most.
 const LOD_UPLOADS_PER_FRAME: usize = 24;
 /// Seconds between movement reports to the server.
@@ -3304,6 +3306,7 @@ impl Client {
                     );
                     scene.terrain.render_distance = self.radius;
                     scene.terrain.vertical_distance = self.vertical;
+                    scene.terrain.fade_in_s = FADE_IN_S;
                     scene.terrain.set_ground_materials(ctx, &ground);
                     scene.render_scale = self.render_scale;
                     scene.terrain.water.quality = self.water_quality;
@@ -3322,7 +3325,6 @@ impl Client {
                     }
                 }
                 ToClient::Mesh(m) => {
-                    hearth_core::prof::count("net.meshes.taken", 1);
                     if let Some(s) = &mut self.scene {
                         s.terrain.upload(ctx, &m);
                     }

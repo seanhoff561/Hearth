@@ -497,6 +497,9 @@ pub fn run(args: &[String], cache_dir: Option<&Path>) -> i32 {
     {
         return crate::bench_earth::run(what, &args[1..], cache_dir);
     }
+    if args.first().is_some_and(|a| a == "earth-judge") {
+        return earth_judge(&args[1..]);
+    }
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{HELP}");
         return 0;
@@ -2034,6 +2037,46 @@ fn append_report(path: &Path, text: &str) -> anyhow::Result<()> {
     }
     writeln!(f, "{text}")?;
     Ok(())
+}
+
+/// `hearth bench earth-judge`: the perf gate's verdict on the Earth-scale benchmarks' saved runs
+/// (E4.1 §5); 0 if they hold, 1 if not, 2 on bad arguments.
+fn earth_judge(args: &[String]) -> i32 {
+    let (mut base, mut new, mut pct) = (Vec::new(), Vec::new(), 5.0);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        let list = |v: Option<&String>| -> Vec<PathBuf> {
+            v.map(|s| s.split(',').map(PathBuf::from).collect())
+                .unwrap_or_default()
+        };
+        match a.as_str() {
+            "--baseline" => base = list(it.next()),
+            "--candidate" => new = list(it.next()),
+            "--gate" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(p) => pct = p,
+                None => {
+                    eprintln!("--gate takes a percentage");
+                    return 2;
+                }
+            },
+            other => {
+                eprintln!("unknown argument {other}\n\n{}", crate::bench_earth::HELP);
+                return 2;
+            }
+        }
+    }
+    if base.is_empty() || new.is_empty() {
+        eprintln!("earth-judge needs --baseline and --candidate");
+        return 2;
+    }
+    match crate::bench_earth::judge(&base, &new, pct) {
+        Ok(true) => 0,
+        Ok(false) => 1,
+        Err(e) => {
+            eprintln!("{e:#}");
+            2
+        }
+    }
 }
 
 /// Reads saved runs (`--json` outputs).

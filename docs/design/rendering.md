@@ -154,7 +154,9 @@ horizon when that is farther (so the land never stops short of the skyline):
 - **Handoff**: across an 8-block band at the edge of the full-detail area the cubes thin out by
   an ordered dither while the LOD, drawn a hair behind them in depth, shows through their
   gaps; inside the area the LOD gives way entirely. The LOD shares the terrain's globals
-  (lighting, aerial perspective, curvature).
+  (lighting, aerial perspective, curvature). A cube appearing for the first time thins in by
+  the same dither over 0.6 s (its instance's fourth component; the game's client sets the
+  time, pictures and tests draw cubes at once; D288).
 - **Streaming**: the preview re-selects tiles when the camera moves 16 blocks, or when a
   tile arrives rough enough to split (a tile's error is known once it is built), and builds
   the missing ones nearest first, those in view before those behind, on a small thread pool of

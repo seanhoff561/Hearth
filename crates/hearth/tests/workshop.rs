@@ -37,8 +37,27 @@ fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
     let dir = temp("workshop-open");
     let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 11);
     let ground = w.ground();
-    // A place to build: open ground next to the player.
-    let site = [(2, 0), (-2, 0), (0, 2), (0, -2), (2, 2), (-2, -2)]
+    // A place to build: open ground next to the player, room above it (not a tree's trunk).
+    let gives_way = |p: BlockPos| {
+        w.mirror
+            .block(p)
+            .is_some_and(|s| s.is_air() || w.reg.block_of(s).def.replaceable)
+    };
+    let around = [
+        (2, 0),
+        (-2, 0),
+        (0, 2),
+        (0, -2),
+        (2, 2),
+        (-2, -2),
+        (2, -2),
+        (-2, 2),
+        (3, 0),
+        (-3, 0),
+        (0, 3),
+        (0, -3),
+    ];
+    let site = around
         .iter()
         .map(|(dx, dz)| {
             // The top solid block of that column near the feet.
@@ -49,7 +68,7 @@ fn knocking_stones_teaches_and_open_knowledge_builds_a_fire_that_cooks() {
                     .block(p)
                     .is_some_and(|s| !w.reg.collision_shape(s).is_empty());
                 if solid {
-                    return Some(p);
+                    return gives_way(p.up()).then_some(p);
                 }
                 p = p.down();
             }

@@ -223,6 +223,8 @@ struct GpuMesh {
     smooth_i_off: u32,
     smooth_i_words: u32,
     smooth_indices: u32,
+    /// When the cube first appeared (kept as its mesh is replaced), for its fade-in.
+    born: std::time::Instant,
 }
 
 /// The box (blocks from the cube's origin) a set of general quads spans.
@@ -246,6 +248,7 @@ struct DrawArgs {
     first_instance: u32,
 }
 
+/// A cube drawn this frame: its origin (camera-relative) and how far it has faded in (w, 0..1).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Instance {
@@ -466,6 +469,10 @@ pub struct TerrainRenderer {
     pub cave_culling: bool,
     /// Use GPU occlusion culling when the adapter supports it.
     pub gpu_culling: bool,
+    /// How long a cube takes to fade in when it first appears (s; E4.1 §4.4), its pixels
+    /// dithered in as the near ground's hand-off to the distant one is; 0, at once (pictures and
+    /// tests).
+    pub fade_in_s: f32,
     /// What the water surfaces read (the scene behind them, waves, wind).
     pub water: crate::water::WaterRenderer,
 }
@@ -747,6 +754,7 @@ impl TerrainRenderer {
             vertical_distance: 8,
             cave_culling: true,
             gpu_culling: true,
+            fade_in_s: 0.0,
             water,
         }
     }
@@ -764,8 +772,13 @@ impl TerrainRenderer {
 
     /// Uploads (or replaces) a cube's mesh.
     pub fn upload(&mut self, ctx: &GpuContext, mesh: &CubeMesh) {
-        self.remove(mesh.pos);
         let pos = self.planet.wrap_cube(mesh.pos);
+        // A cube remeshed (its light, a change) stays as faded in as it was.
+        let born = self
+            .meshes
+            .get(&pos)
+            .map_or_else(std::time::Instant::now, |g| g.born);
+        self.remove(mesh.pos);
         let slot = self.free_slots.pop().unwrap_or_else(|| {
             self.next_slot += 1;
             self.next_slot - 1
@@ -789,6 +802,7 @@ impl TerrainRenderer {
             smooth_i_off: 0,
             smooth_i_words: 0,
             smooth_indices: 0,
+            born,
         };
         if !mesh.smooth.is_empty() {
             let sm = &mesh.smooth;
@@ -1020,8 +1034,13 @@ impl TerrainRenderer {
         for (inst, (pos, o)) in visible.iter().enumerate() {
             let m = &self.meshes[pos];
             let inst = inst as u32;
+            let faded = if self.fade_in_s > 0.0 {
+                (m.born.elapsed().as_secs_f32() / self.fade_in_s).min(1.0)
+            } else {
+                1.0
+            };
             self.instance_data.push(Instance {
-                origin: [o.x, o.y, o.z, 0.0],
+                origin: [o.x, o.y, o.z, faded],
             });
             self.cand_slots.push(m.slot);
             if m.smooth_indices > 0 {

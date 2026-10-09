@@ -22,8 +22,8 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
-P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7, S3, S4. V2-11
-superseded.
+P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7, S3, S4, Audit 2,
+E4.1. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -44,8 +44,8 @@ superseded.
 | S3 — moving on the smooth ground | done 2026-10-08 (D271–D273) |
 | S4 — the distant terrain smooth | done 2026-10-08 (D274–D278) |
 | Audit 2 | done 2026-10-08 |
-| E4.1 — Earth-scale performance (the owner's fix pass) | now |
-| S5 with P7 | paused at (b) for E4.1; resumes after it |
+| E4.1 — Earth-scale performance (the owner's fix pass) | done 2026-10-09 (D279–D288) |
+| S5 with P7 | now: resumes at (b), where E4.1 paused it |
 | P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
@@ -54,11 +54,67 @@ superseded.
 |---|---|
 | Smooth world (S) | S4 done: the distant ground smooth height fields in fixed point, shaded with the near ground's materials and seasons, canopies over far stands, out to the real horizon. S3 done: movement on the field. S2 done: natural ground meshed smooth on the server and drawn with blended procedural materials, wet and snow overlays (0.28–0.87 ms a surface cube, as the blocks); frame targets need the PC. S1 done: fill in every surface cube, generated and saved; ground families; dig, pile and settle conserving volume (sand to 34.3°). S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
-| Earth-True (E) | E0–E7 done 2026-10-08 |
+| Earth-True (E) | E0–E7 done 2026-10-08; E4.1 (the Earth-sized world fast to see, make a person on and load into) done 2026-10-09 |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); Audit 2 done 2026-10-08 (`AUDIT-2.md`); next: Audit 3 after P8 |
 
-## S5 with P7 — paused for E4.1 (2026-10-08)
-Where it stands, to resume after E4.1 (`PLAN.md` S5, P7; tasks (a)–(f)):
+## E4.1 — Earth-scale performance (2026-10-09, D279–D288, `docs/spec/e4.1-earth-scale-performance.md`)
+The owner's playtest of the Earth-sized world (PLAYTEST 29–31): the globe all blue and laggy, the
+creator slow, loading maxing the CPU and never arriving. Measured first (`hearth bench
+globe|creator|load`, `hearth_core::prof`, the crash log), then fixed; the numbers before, at
+step 5 and after are in `BENCHMARKS.md`, the budgets in `docs/design/budgets.md`.
+- **Queries at their scale** (D279): the globe, the far field, the distant tiles, the animals'
+  habitats and the places read the level their footprint needs; `tests/fine_tiles.rs` (in
+  `scripts/check.sh`) fails if a coarse caller builds a tile of the finest level.
+- **The globe** (D280): its map from the planet grid in 1.1 s, kept beside the planet (was
+  never finished: some 9 hours); hover 0.004 ms (154); a click's details on a thread, 0.48 s.
+- **The creator** (D281): colours the next frame; a shape at once roughly, then coarse, then full
+  detail, the last setting shown at 0.14 s (2.3–2.7 s).
+- **Loading** (D282–D284, D288): one job system with four priorities and a core kept free; the
+  menus' generator kept for the world; stages and Cancel; the animals made in parallel and set
+  aside far from the player; the refinement tiles kept on disk; the near ground streamed nearest
+  and in view first, each cube fading in. A new world in control at 3.35 s (never, behind the
+  menus' work), its save at 2.34 s (32.8 s); the whole render distance at 37.1 and 34.6 s
+  (llvmpipe's drawing most of it).
+- **Memory** (D283, D287): budgets by kind (40 % of the machine's for the caches), memory by
+  kind in F3; a 30-minute flight found three leaks (a column's record outliving its cubes, the
+  animals' regions never let go, meshes a slow client had not taken piling up in the channel:
+  now one per cube in the server's outbox, at most 512 unread). The flight holds 1.6–1.9 GB from its third minute to its thirtieth (the near terrain's arena
+  doubling once on the way), 2.1 GB at the most (before: 1.3 → 2.5 GB, rising throughout).
+- **Precision and the seam** (D285): every noise periodic in the circumference, features hashed
+  by their place round the planet, geometry about its own origin or in f64, the shaders'
+  patterns periodic in 4,096 blocks; a body crossing a pole comes out on the far side. The seam
+  and pole tests run in `scripts/check.sh`.
+- **The machine** (D286): the first run picks the preset from the cores, the memory and the
+  adapter (its memory from Windows' registry or Linux's sysfs); the perf gate runs the three
+  benches on both builds (`bench earth-judge`: a median 5 % worse beyond a floor fails, as does a
+  coarse caller building the finest tiles).
+- **Realism** (`docs/review/earth-scale-performance.md`): the planet the same to the byte; all
+  of 600 sampled columns at the same height; the land's kinds in the same measure (1.8 % of the
+  blocks trading kinds); individual trees, plants and outcrops in other places (the noises made
+  periodic, D285); before and after pictures alike at a distance. The coastal salt pans' test
+  wanted a finer lattice after the shelter's noise was redrawn (28 columns, all where they
+  belong).
+- **Five tests:**
+  - *Real?* The planet and the land's shape unchanged to the byte and the block; the land's
+    make-up and Earth's hypsometry (29.0 % land, 791 m mean height, 3,640 m mean depth) as
+    before, checked against the stopping point's own build, census and pictures.
+  - *Lean?* The globe's block-level map, the creator's whole-body rebuild for a colour, the
+    menus' second generator and the duplicate meshes in the channel are gone; one job system
+    replaces rayon used ad hoc; the disk caches capped; nothing unused (`lean-check`).
+  - *Fast?* Every budget met on this machine but two set for the reference machine (the whole
+    render distance 34.6–37.1 s against ~30 s, the creator's full detail 0.9–1.2 s against 1 s;
+    llvmpipe and four cores here); the gate holds the Earth-scale numbers from the next baseline;
+    memory flat in the 30-minute flight. The owner is asked for `hearth bench load` and `globe`.
+  - *Whole?* What could look out of place: a world saved before E4.1 opens with its trees and
+    plants moved (reviewed, D285); cubes fading in while they load; the land past a pole's edge
+    not drawn until crossed (PLAN). Checked with the review's pictures and the seam, pole,
+    fine-tile, outbox and in-view tests.
+  - *Organic?* No new repetition: the generator's patterns repeat only round the planet
+    (40,000 km), the shaders' grain and beds every 4 km; the census's tops and kinds as varied
+    as before.
+
+## S5 with P7 — resuming (paused for E4.1 on 2026-10-08)
+Where it stands (`PLAN.md` S5, P7; tasks (a)–(f)):
 - **(a) done:** `hearth_flora::mesh` builds a tree's mesh from the skeleton its blocks come
   from (wood tubes, leaf cards by leaf kind, three details: a mature oak 47k / 8.7k / 1.7k
   triangles); each variant turned to its own angle and up to 0.4 m off its block's middle, voxels

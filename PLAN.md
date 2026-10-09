@@ -35,8 +35,8 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 7. **Audit 1** (done).
 8. **S1 → S2 → E7 → S3 → S4** (S4 as amended by E §9.2) (done).
 9. **Audit 2** (done).
-10. **E4.1 — Earth-scale performance** (the owner's fix pass, ahead of everything else; S5
-    resumes where it stopped, `PROGRESS.md`).
+10. **E4.1 — Earth-scale performance** (the owner's fix pass, done 2026-10-09; S5 resumes
+    where it stopped, `PROGRESS.md`).
 11. **S5 with P7 → P7G → S6** (animals and items) **→ S7 → S8 → P8.**
 12. **Audit 3** (with a check that no coarse-scale caller has crept into the fine generator).
 13. **V2-13 → V2-14** (technology only).
@@ -50,28 +50,23 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 21. **R10.**
 22. **Phase F**, an audit after every three milestones.
 
-## E4.1 — Earth-scale performance (now; `docs/spec/e4.1-earth-scale-performance.md`)
-The owner's playtest of the Earth-sized world: the globe all blue and laggy, the creator slow,
-loading maxing the CPU and crashing. A "Fast" failure (Q §1, §7).
-- Diagnose first: tracy zones, counters (fine-tile builds by caller, cache sizes by level, peak
-  memory, CPU per thread, queue lengths), `hearth bench globe|creator|load` on the Earth-sized
-  planet, a panic hook to the log; findings in `dev/PLAYTEST.md` before code changes.
-- Every query at its scale (`sample` with a footprint), callers audited, a guard against fine
-  builds from coarse callers. The globe from the planet grid, cached with it; hover from coarse
-  fields; click details asynchronous and cancellable. The creator coalesced, incremental,
-  refined asynchronously. Loading progressive and staged, responsive, with Cancel; tiles cached
-  on disk. f64 and i64 at 40 M blocks, tested at the extremes. One job system with priorities,
-  bounded queues, cancellation and reserved cores. Memory caps (about 40 % of RAM, LRU),
-  memory by category; a 30-minute soak. Realism unchanged (`docs/review/
-  earth-scale-performance.md`). Perf-gate entries, `budgets.md`; hardware detection scaling
-  workers, caches, distances and the default preset.
-- *Accept:* the brief's §7.
+## From E4.1 (open; E4.1 done 2026-10-09, D279–D288, `docs/spec/e4.1-earth-scale-performance.md`)
+- The reference machine's numbers (8 cores and a GPU): §4.4's targets, the main thread while
+  loading and the perf gate's Earth entries need the owner's PC; they were asked for
+  `hearth bench load` and `hearth bench globe` (2026-10-09). On the cloud machine the whole
+  render distance takes 31–36 s, most of it llvmpipe drawing.
+- §4.8's SIMD inner loops and GPU compute for the refinement tiles: not needed for E4.1's
+  targets once the tiles left the interactive paths (D279) and are kept on disk (D284); S8's
+  pass profiles tile building with Audit 2's hotspots.
+- Past a pole edge the land beyond is not drawn as the pole's far side until the player crosses
+  (D285).
+- The distant tiles refine in place without a fade (D288).
 
 
 ## Completed
 M0–M3 (v1 engine); V2-0 – V2-10; V2-12 (the Neolithic); S0 (D222); P0–P2; E0 (the human
 systems archived, D230); Audit 0; Q1; E1–E6; P3–P5 (P6 removed, D258); Audit 1; S1; S2; E7; S3;
-S4; Audit 2.
+S4; Audit 2; E4.1.
 What each did: `PROGRESS.md`, `docs/history/` and the design docs. V2-11 and V2.1's H0–H10
 superseded.
 

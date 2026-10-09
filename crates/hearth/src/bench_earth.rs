@@ -30,6 +30,7 @@ USAGE:
     hearth bench creator [--software] [--frames N] [--json FILE]
     hearth bench load    [--seed N] [--software] [--limit S] [--size WxH] [--render-distance N]
                          [--lod N] [--no-menus] [--fly S] [--speed M/S] [--json FILE]
+    hearth bench earth-judge --baseline FILE[,FILE...] --candidate FILE[,FILE...] [--gate PCT]
 
     globe    the planet's map as it is made now (rows of it within --budget seconds, default
              60, the whole map's time projected), --points random points hovered (default
@@ -41,6 +42,9 @@ USAGE:
              the menus' work that runs on behind a new world (the globe's map, the places);
              --fly S flies the new world's player across the planet for S seconds after it
              loads (at --speed, default 60 m/s), the memory looked at each minute
+    earth-judge  the perf gate's verdict on saved runs of the three (E4.1 §5): each gated
+             number's median against the baseline's, no more than PCT % (default 5) worse
+             beyond a small floor, and no tile of the finest level built for a coarse caller
     --seed N         the planet's seed (default 1)
     --software       the software (CPU) adapter
     --json FILE      also write the numbers as JSON";
@@ -179,6 +183,14 @@ fn tile_counts() -> Vec<(String, u64)> {
         .into_iter()
         .filter(|(k, _)| k.starts_with("relief.tile."))
         .collect()
+}
+
+/// The batches of cubes the server has streamed so far.
+fn stream_batches() -> u64 {
+    prof::zones()
+        .into_iter()
+        .find(|(k, _)| *k == "stream.batch")
+        .map_or(0, |(_, z)| z.count)
 }
 
 /// Peak resident memory, watched on a thread of its own (every 50 ms) between resets.
@@ -339,10 +351,18 @@ fn fly(
             let heap = prof::heap().map_or_else(String::new, |(used, free)| {
                 format!("; heap {:.0} in use, {:.0} free", mib(used), mib(free))
             });
-            // Meshes the server has sent the client not yet taken: the channel's backlog.
-            let backlog =
+            // Meshes the server has sent the client not yet taken (the channel's backlog, at most
+            // its window), and those it holds until the client takes those.
+            let unread =
                 prof::counter("net.meshes.sent").saturating_sub(prof::counter("net.meshes.taken"));
-            let heap = format!("{heap}; {backlog} meshes waiting");
+            let outbox = prof::gauges()
+                .into_iter()
+                .find(|(k, _)| *k == "meshes waiting (server)")
+                .map_or(0, |(_, b)| b);
+            let heap = format!(
+                "{heap}; {unread} meshes unread, {:.0} MiB waiting to be sent",
+                mib(outbox)
+            );
             println!(
                 "  minute {minute:>2}: {:>6.0} MiB resident, {:.0} km flown ({}){heap}",
                 mib(resident),
@@ -908,6 +928,7 @@ fn load_once(
     let target = hearth_render::offscreen::OffscreenTarget::new(ctx, w, h);
     let before = tile_counts();
     let cpu0 = cpu_by_group();
+    let (sent0, batches0) = (prof::counter("net.meshes.sent"), stream_batches());
     let t0 = Instant::now();
     let mut client = crate::client::Client::new(spec.clone(), options, format, Some(content));
     client.apply_options(options);
@@ -1023,6 +1044,16 @@ fn load_once(
         quantile_ms(&frame_ms, 1.0),
         "ms",
     );
+    // The meshes the server sent, and how many a batch of cubes made: a batch making more than
+    // the client may hold unread waits a batch longer for the rest (D287).
+    let sent = prof::counter("net.meshes.sent").saturating_sub(sent0);
+    let batches = stream_batches().saturating_sub(batches0);
+    r.add(&format!("{label}: meshes sent"), sent as f64, "meshes");
+    r.add(
+        &format!("{label}: meshes a batch of cubes made"),
+        sent as f64 / batches.max(1) as f64,
+        "meshes",
+    );
     r.tiles(label, &before);
     for (g, s) in cpu_since(&cpu0) {
         r.add(&format!("{label}: CPU of {g}"), s, "s");
@@ -1047,4 +1078,75 @@ fn load_once(
         "s",
     );
     Ok(())
+}
+
+/// The numbers the perf gate holds (E4.1 §5), lower being better: each key's suffix as the
+/// benchmarks write it, and the floor below which a difference is noise.
+const GATED: [(&str, f64); 12] = [
+    ("globe: map: made from the grid (and kept)", 0.05),
+    ("globe: hover: median", 0.5),
+    ("globe: click: to the details, median", 20.0),
+    ("creator: build close (6 mm)", 20.0),
+    ("creator: height: the last setting shown after", 20.0),
+    ("load: new world: Play to the player in control", 0.2),
+    ("load: save: Play to the player in control", 0.2),
+    ("load: new world: Play to the whole render distance", 1.0),
+    ("load: new world: peak resident", 32.0),
+    ("load: save: peak resident", 32.0),
+    ("load: new world: main thread a frame, median", 0.5),
+    ("load: new world: main thread a frame, 95th", 5.0),
+];
+
+/// The perf gate's verdict on saved runs (`--json` of `globe`, `creator` and `load`): false if
+/// a gated number's median is more than `pct` per cent (and its floor) worse than the
+/// baseline's, or a tile of the finest level was built for a coarse caller.
+pub fn judge(base: &[PathBuf], new: &[PathBuf], pct: f64) -> anyhow::Result<bool> {
+    let read =
+        |paths: &[PathBuf]| -> anyhow::Result<Vec<serde_json::Map<String, serde_json::Value>>> {
+            paths
+                .iter()
+                .map(|p| {
+                    let text = std::fs::read_to_string(p)
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", p.display()))?;
+                    serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("{}: {e}", p.display()))
+                })
+                .collect()
+        };
+    let (b, n) = (read(base)?, read(new)?);
+    let median = |runs: &[serde_json::Map<String, serde_json::Value>], key: &str| {
+        let mut v: Vec<f64> = runs
+            .iter()
+            .filter_map(|r| r.get(key).and_then(serde_json::Value::as_f64))
+            .collect();
+        v.sort_by(f64::total_cmp);
+        (!v.is_empty()).then(|| v[v.len() / 2])
+    };
+    let mut ok = true;
+    println!(
+        "{} runs against {} of the baseline, limit +{pct} %:",
+        n.len(),
+        b.len()
+    );
+    for (key, floor) in GATED {
+        let (Some(was), Some(now)) = (median(&b, key), median(&n, key)) else {
+            continue;
+        };
+        let limit = was * (1.0 + pct / 100.0) + floor;
+        let pass = now <= limit;
+        ok &= pass;
+        println!(
+            "  {} {key}: {now:.3} against {was:.3} (limit {limit:.3})",
+            if pass { "ok  " } else { "FAIL" }
+        );
+    }
+    // The guard (E4.1 §4.1): no tile of the finest level for a caller working at a coarse scale.
+    for run in &n {
+        for (key, v) in run {
+            if key.contains("relief.fine.") && v.as_f64().is_some_and(|x| x > 0.0) {
+                ok = false;
+                println!("  FAIL {key}: {v} tiles of the finest level built for a coarse caller");
+            }
+        }
+    }
+    Ok(ok)
 }
