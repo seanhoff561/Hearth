@@ -760,3 +760,34 @@ After the menus, the server's thread had 0.55 s of CPU in 300 s and the globe ma
 took 30.5 s (458 tiles of the finest level). The main thread's slow frames are llvmpipe's drawing
 (`queue.submit`, 63 s over 2,160 frames) and the frame the world arrives in (the scene's pipelines
 made, 0.9 s); its own work (pump, update, render) took 9.1 s in all.
+
+## E4.1 step 5 — loading and memory (`hearth bench load`), 4 cores, 16 GB, software adapter (llvmpipe)
+
+The same machine and planet as "E4.1 before the fixes"; commit beb5aba. A new world with the
+menus' work still running behind it (the globe's map, the places), then its save; the
+refinement tiles' disk store emptied first, so the new world makes its own and its save reads
+them back.
+
+| | Play → world shown | → in control | → whole render distance | peak resident | main thread a frame (median / 95th) |
+|---|---:|---:|---:|---:|---:|
+| new world, after the menus | 2.5 s (never) | 3.2 s (never) | 35.8 s (never; 46.2 s alone) | 1,346 MiB (1,409) | 0.25 / 678 ms |
+| its save | 2.2 s (32.8) | 2.2 s (32.8) | 33.6 s (63.6) | 1,557 MiB (1,530) | 0.46 / 656 ms |
+
+The animals of a save 0.18 s (30.5 s: their regions are made again as the player comes near);
+79 refinement tiles read from disk, 4 ms at most. The slow frames are llvmpipe's drawing
+(`queue.submit` 56.7 s over 329 frames); the main thread's own work stays under a millisecond.
+
+**Memory by kind** (F3's line, the bench's report): the new world after loading — the planet
+grid 108 MiB, the near terrain's GPU buffers 96, the animals 74, the distant terrain's 56,
+the rest of the process 972 MiB. The caches' budgets on this machine (40 % of 16.9 GB): the
+refinement tiles 516 MiB, the generated columns 322, the animals set aside 129, the samples'
+neighbourhoods 128.
+
+**The soak** (`bench load --no-menus --fly 1800 --speed 60 --size 320x180`, 30 minutes across
+108 km, about 15 times sprinting): before step 5, 1,331 → 2,501 MiB resident, growing
+throughout (each column's record outlived its cubes, about 2 KB a column, on the server and the
+client alike; the animals' regions, 8.3 MB each, were never let go); after, 1,452 → 2,580 MiB:
+the caches and the GPU's buffers fill to their budgets in the first eight minutes, then 2,092 →
+2,221 MiB from minute 8 to 26, and 2,580 at the end. The last minutes' rise is in what no cache
+accounts for ("the rest of the process"); the next soak tells the heap in use from the heap
+freed but kept.
