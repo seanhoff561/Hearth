@@ -130,7 +130,7 @@ struct Made {
     finder: Option<Arc<crate::places::Finder>>,
     places: Vec<crate::places::Place>,
     /// The globe's map, made with the planet (E4.1 §4.2).
-    map: Vec<[u8; 4]>,
+    map: crate::globe::GlobeMap,
 }
 
 /// A new world's globe, its birthplace being chosen.

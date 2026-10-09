@@ -41,7 +41,7 @@ only on a software device, so frame and GPU numbers come from the PC.
 Measured on the cloud machine (4 cores, a software adapter): the lower configuration.
 | What | Budget | Measured | Source |
 |---|---|---|---|
-| The globe's map | made with the planet ≤ 2 s, read back ≤ 0.1 s, no refinement tile | 1.09 s, 0.01 s, none | E4.1 §4.2 |
+| The globe's map | made with the planet ≤ 2 s, read back ≤ 0.1 s, no refinement tile | 1.28 s, 0.03 s, none (with its relief, T1.4) | E4.1 §4.2, T §2.4 |
 | Hovering over the globe | < 1 ms | 0.004 ms median | E4.1 §4.2 |
 | A click's details | on a thread ("Looking closer…"), ≤ 1 s median | 0.48 s median, 1.2 s slowest | E4.1 §4.2 |
 | The places suggested | ≤ ~15 s | 5.5 s | E4.1 §4.2 |

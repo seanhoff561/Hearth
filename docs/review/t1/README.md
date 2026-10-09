@@ -30,3 +30,15 @@ tools/shots/t1_birds.shots`); how they look on a real GPU is the owner's check.
   (`tools/shots/e7_people.shots`' views).
 - Not judged here: photographs of real skin under the same lights (they are the owner's to put
   side by side, and stay out of the repository); how a real GPU draws the pores up close.
+
+## T1.4 The globe in relief
+`tools/shots/t1_globe.shots` (seed 7, the Earth). Before: `docs/review/e4.1/globe.jpg` (flat biome
+colours, a slope shade).
+- `globe_biomes.jpg`, `globe_climate.jpg`, `globe_relief.jpg` — the whole Earth by biome, by
+  climate and as plain relief: ranges standing as ridges, the glacier range white, lakes and
+  rivers, the shelves pale along the coasts and the deep sea dark.
+- `globe_range.jpg` (×6) — nearer over the highest range: its relief lit from the north-west.
+- `globe_range_near.jpg` (×16, plain relief) — the 2.4 km level's relief over the view: ridges,
+  valleys and cirques through the ice.
+- `globe_coast_near.jpg` (×12) — a coast: the shelf, rivers to the sea, the hills behind it;
+  the biomes still the grid's 20 km cells.

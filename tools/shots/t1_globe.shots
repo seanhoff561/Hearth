@@ -1,0 +1,13 @@
+# T1.4 (Amendment T §2.4): the globe in relief — the whole Earth by biome, by climate and as plain
+# relief; nearer over the highest range and a coast, the relief exaggerated more. Seed 7 at the
+# game's grid; the sites are `bench relief --site mountains|coast`'s. Kept in docs/review/t1/.
+# `hearth --game-dir DIR --software --screenshot-list tools/shots/t1_globe.shots`
+defaults: seed=7, planet=earth, w=1280, h=720, dist=2, lod=0
+x=14372696, z=4647400, globe=1, out=bench-out/t1/globe_biomes.png
+x=14372696, z=4647400, globe=1, globe_mode=climate, out=bench-out/t1/globe_climate.png
+x=14372696, z=4647400, globe=1, globe_mode=relief, out=bench-out/t1/globe_relief.png
+x=14372696, z=4647400, globe=6, out=bench-out/t1/globe_range.png
+x=14372696, z=4647400, globe=6, globe_mode=relief, globe_relief=8, out=bench-out/t1/globe_range_relief.png
+x=6036728, z=-6428088, globe=6, out=bench-out/t1/globe_coast.png
+x=14372696, z=4647400, globe=16, globe_mode=relief, out=bench-out/t1/globe_range_near.png
+x=6036728, z=-6428088, globe=12, out=bench-out/t1/globe_coast_near.png

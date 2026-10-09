@@ -263,6 +263,52 @@ impl Field<f32> {
         }
         sum as f32
     }
+
+    /// `bicubic` at every (gx, gz) of `gxs` × `gzs`, row after row: the same values, sum for
+    /// sum, with each column's taps and weights found once and each row's (a map of millions
+    /// of samples, its rows in parallel).
+    pub fn bicubic_rows(&self, gxs: &[f64], gzs: &[f64]) -> Vec<f32> {
+        use rayon::prelude::*;
+        let n = self.n as isize;
+        let taps = |g: f64| {
+            let g = self.local(g);
+            let g0 = g.floor();
+            (g0 as isize - 1, catmull_weights(g - g0))
+        };
+        let columns: Vec<([usize; 4], [f64; 4])> = gxs
+            .iter()
+            .map(|&gx| {
+                let (first, w) = taps(gx);
+                let at = std::array::from_fn(|d| (first + d as isize).rem_euclid(n) as usize);
+                (at, w)
+            })
+            .collect();
+        let mut out = vec![0.0f32; gxs.len() * gzs.len()];
+        if gxs.is_empty() {
+            return out;
+        }
+        out.par_chunks_mut(gxs.len())
+            .zip(gzs.par_iter())
+            .for_each(|(line, &gz)| {
+                let (first, wz) = taps(gz);
+                let rows: [&[f32]; 4] = std::array::from_fn(|d| {
+                    let j = (first + d as isize).clamp(0, n - 1) as usize;
+                    &self.data[j * self.n..(j + 1) * self.n]
+                });
+                for (v, (at, wx)) in line.iter_mut().zip(&columns) {
+                    let mut sum = 0.0f64;
+                    for (row, wzv) in rows.iter().zip(&wz) {
+                        let mut rs = 0.0f64;
+                        for (&i, wxv) in at.iter().zip(wx) {
+                            rs += row[i] as f64 * wxv;
+                        }
+                        sum += rs * wzv;
+                    }
+                    *v = sum as f32;
+                }
+            });
+        out
+    }
 }
 
 #[inline]
@@ -312,5 +358,29 @@ mod tests {
         g.set(0, 5, 1.0);
         assert!((g.bicubic(16.0, 5.0) - 1.0).abs() < 1e-6, "x wraps");
         assert!((g.bicubic(-16.0, 5.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_row_samples_as_each_point_does() {
+        let mut f = Field::new(32, 0.0f32);
+        for (k, v) in f.data.iter_mut().enumerate() {
+            *v = ((k as f32 * 0.37).sin() * 900.0).round();
+        }
+        let coarse = f.downsample2();
+        let gxs: Vec<f64> = (0..200).map(|i| i as f64 * 0.173 - 1.4).collect();
+        let gzs = [-0.7, 0.0, 3.41, 15.5, 30.9, 31.6];
+        for field in [&f, &coarse] {
+            let rows = field.bicubic_rows(&gxs, &gzs);
+            assert_eq!(rows.len(), gxs.len() * gzs.len());
+            for (row, &gz) in rows.chunks(gxs.len()).zip(&gzs) {
+                for (&gx, &v) in gxs.iter().zip(row) {
+                    assert_eq!(
+                        v.to_bits(),
+                        field.bicubic(gx, gz).to_bits(),
+                        "at ({gx}, {gz})"
+                    );
+                }
+            }
+        }
     }
 }

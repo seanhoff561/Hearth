@@ -478,27 +478,21 @@ fn finder(terrain: &Arc<Terrain>) -> anyhow::Result<Arc<crate::places::Finder>> 
     )))
 }
 
-/// The share of a globe map's area that is land (water is drawn in its biome's colour,
-/// unshaded; a texel's area goes with the cosine of its latitude).
-fn land_share(map: &[[u8; 4]], terrain: &Terrain) -> f64 {
-    let water: Vec<[u8; 3]> = hearth_worldgen::region::biome::Biome::ALL
-        .iter()
-        .filter(|b| b.is_water())
-        .map(|b| b.color())
-        .collect();
-    let w = crate::globe::MAP_WIDTH;
-    let h = w / 2;
+/// The share of a globe map's area that is land (a texel's area goes with the cosine of its
+/// latitude).
+fn land_share(map: &crate::globe::GlobeMap, terrain: &Terrain) -> f64 {
+    let (w, h) = (map.width, map.height);
     let planet = terrain.planet();
     let edge = planet.latitude(-planet.pole_edge_z() + 1.0);
     let (mut land, mut all) = (0.0, 0.0);
-    for (y, row) in map.chunks_exact(w).enumerate().take(h) {
+    for y in 0..h {
         let lat = std::f64::consts::FRAC_PI_2 - (y as f64 + 0.5) / h as f64 * std::f64::consts::PI;
         if lat.abs() > edge {
             continue;
         }
-        for px in row {
+        for i in y * w..(y + 1) * w {
             all += lat.cos();
-            if !water.contains(&[px[0], px[1], px[2]]) {
+            if !map.wet(i) {
                 land += lat.cos();
             }
         }
@@ -543,6 +537,12 @@ fn globe(o: &Opts, cache_dir: Option<&Path>) -> anyhow::Result<Report> {
         t.elapsed().as_secs_f64(),
         "s",
     );
+    // It is kept on a thread of its own (renamed into place when whole): wait for it, so the
+    // read below reads rather than makes the map again.
+    let waited = Instant::now();
+    while !kept.exists() && waited.elapsed().as_secs_f64() < 30.0 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     let t = Instant::now();
     let again = crate::globe::cached_map(&terrain, crate::globe::MAP_WIDTH, Some(&kept));
     r.add(

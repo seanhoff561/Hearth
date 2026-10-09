@@ -872,3 +872,25 @@ finest-level tiles for the distant terrain about the player (`lod.near` and `lod
 there, 17 and 22 here; none on the older planet), the level it samples at there, and none for a
 coarse caller (the gate's `relief.fine.*`). The map's land differs by 0.007 points, some 150
 texels, between Windows and Linux (D289).
+
+## T1.4 — the globe in relief (`hearth bench globe --seed 7`), 4 cores, 16 GB, software adapter (llvmpipe)
+
+This build's planet of seed 7 (D289), the same machine as E4.1's. The map gains its heights at
+4096 × 2048 (D294). The first column is E4.1's end on the same planet (the owner's-laptop
+section above); the second is the map of everything at 4096 wide, made and kept as before; the
+third is T1.4's end.
+
+| | E4.1 | 4096 wide, all layers | T1.4 |
+|---|---:|---:|---:|
+| The globe's map, made (and kept) | 1.12 s | 4.3 s | 1.22–1.28 s |
+| Read back from where it is kept | 0.01 s | — | 0.025–0.032 s |
+| Kept, packed | — | — | 10.3 MB |
+| Hovering, median / slowest | 0.005 / 0.50 ms | | 0.006 / 0.05 ms |
+| A click to its place's details, median | 0.90 s | | 0.92 s |
+
+Within the map's time: its colours and facts at 2048 × 1024 (`grid_column`) 1.05–1.1 s as
+before; the heights 0.14–0.15 s, from 0.37–0.46 s sampling each texel's centre alone (a tangent,
+an inverse sine and a wrap each), once each column's bicubic weights were found once for the
+whole map (`Field::bicubic_rows`, the same sums); the keeping off the map's thread. Read back:
+read 7–10 ms; unpacked as one part 42–61 ms and copied out 22–25 ms (0.07–0.106 s, past the
+budget at times); as four parts in parallel into the map's own buffers, 0.025–0.032 s in all.

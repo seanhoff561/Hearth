@@ -159,6 +159,10 @@ pub struct ShotSpec {
     pub lod_timeout: f64,
     /// Draw the planet as the globe (at this zoom) centred on the camera's place instead.
     pub globe: Option<f32>,
+    /// The globe's relief exaggeration and colouring (`globe_relief=`, `globe_mode=biomes|
+    /// climate|relief`).
+    pub globe_relief: f32,
+    pub globe_mode: hearth_render::globe::GlobeMode,
     /// A person standing on the ground this far (m) in front of the camera, facing it (or
     /// turned this many degrees to their left: `person=2.5:90` shows their right side).
     pub person: Option<f64>,
@@ -295,6 +299,8 @@ impl Default for ShotSpec {
             fog: true,
             lod_timeout: 180.0,
             globe: None,
+            globe_relief: hearth_render::globe::GlobeView::RELIEF,
+            globe_mode: Default::default(),
             person: None,
             person_turn: 0.0,
             skin: None,
@@ -390,6 +396,16 @@ impl ShotSpec {
                 "fog" => spec.fog = v.parse()?,
                 "lod_timeout" => spec.lod_timeout = v.parse()?,
                 "globe" => spec.globe = Some(v.parse()?),
+                "globe_relief" => spec.globe_relief = v.parse()?,
+                "globe_mode" => {
+                    use hearth_render::globe::GlobeMode;
+                    spec.globe_mode = match v {
+                        "biomes" => GlobeMode::Biomes,
+                        "climate" => GlobeMode::Climate,
+                        "relief" => GlobeMode::Relief,
+                        other => anyhow::bail!("globe_mode={other}: biomes, climate or relief"),
+                    };
+                }
                 "person" => {
                     let (d, turn) = v.split_once(':').unwrap_or((v, "0"));
                     spec.person = Some(d.parse()?);
@@ -2239,12 +2255,38 @@ fn shoot_globe(
     let map = crate::globe::planet_map(lw.terrain(), crate::globe::MAP_WIDTH);
     log::info!("globe map in {:.2}s", t0.elapsed().as_secs_f64());
     let mut globe = hearth_render::globe::GlobeRenderer::new(ctx, OFFSCREEN_FORMAT);
-    let w = crate::globe::MAP_WIDTH as u32;
-    globe.set_map(ctx, w, w / 2, &map);
+    globe.set_map(ctx, &map.layers(), map.radius_m);
     let (lat, lon) = crate::globe::lat_lon(lw.map.planet(), DVec3::new(x, 0.0, z));
-    let view = hearth_render::globe::GlobeView { lat, lon, zoom };
+    let view = hearth_render::globe::GlobeView {
+        lat,
+        lon,
+        zoom,
+        relief: spec.globe_relief,
+        mode: spec.globe_mode,
+    };
     let target = OffscreenTarget::new(ctx, spec.width, spec.height);
     let size = (spec.width, spec.height);
+    // Seen near: the finer relief over the view, as the picker makes it.
+    let window = crate::globe::Detail::window_for(&view, size);
+    if zoom >= crate::globe::DETAIL_ZOOM
+        && let Some(level) = crate::globe::Detail::level_for(lw.terrain(), window)
+    {
+        let t = Instant::now();
+        let d = crate::globe::Detail::make(lw.terrain(), window, level);
+        log::info!(
+            "globe detail ({} texels square, level {level}) in {:.2}s",
+            crate::globe::DETAIL_SIZE,
+            t.elapsed().as_secs_f64()
+        );
+        globe.set_detail(
+            ctx,
+            Some(hearth_render::globe::DetailLayer {
+                window: d.window,
+                size: crate::globe::DETAIL_SIZE as u32,
+                elevation: &d.elevation,
+            }),
+        );
+    }
     let mut enc = ctx
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {

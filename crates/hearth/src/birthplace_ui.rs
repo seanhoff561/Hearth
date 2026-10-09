@@ -81,6 +81,34 @@ pub fn birthplace_screen(
             picked = Some(*b.shown);
         }
     }
+    // How the globe is drawn: coloured by biome, by climate or as plain relief, and how much
+    // its relief is exaggerated (Amendment T §2.4).
+    if let Some(g) = cx.globe.as_mut() {
+        use hearth_render::globe::{GlobeMode, GlobeView};
+        let view = &mut g.picker.view;
+        let mode = match view.mode {
+            GlobeMode::Biomes => "menu.birthplace.map.biomes",
+            GlobeMode::Climate => "menu.birthplace.map.climate",
+            GlobeMode::Relief => "menu.birthplace.map.relief",
+        };
+        if ui.button(c.row(ROW), &ui.t(mode)) {
+            view.mode = view.mode.next();
+        }
+        let relief = ui.lang.format(
+            "menu.birthplace.relief",
+            &[("n", &format!("{:.1}", view.relief))],
+        );
+        if ui.button(c.row(ROW), &relief) {
+            view.relief = if view.relief >= GlobeView::RELIEF_RANGE.1 {
+                GlobeView::RELIEF_RANGE.0
+            } else {
+                view.relief * 2.0
+            };
+            view.relief = view
+                .relief
+                .clamp(GlobeView::RELIEF_RANGE.0, GlobeView::RELIEF_RANGE.1);
+        }
+    }
     if let Some(i) = picked {
         *b.anywhere = false;
         *b.shown = i;

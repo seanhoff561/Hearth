@@ -183,15 +183,33 @@ horizon when that is farther (so the land never stops short of the skyline):
 ### Globe
 
 The world map's key opens the planet as a globe (`hearth_render::globe`, the minimal spawn
-picker of v2 §16): an equirectangular map (2048 × 1024; each texel the biome at its point,
-land shaded by its relief, made on its own thread in about half a second the first time it
-opens) drawn on an orthographic sphere in one full-screen pass, with mipmaps sampled by
-gradients that ignore the date line's jump, a graticule every 30°, a desk-globe light, the
-camera's place and the point under the cursor marked, and a thin glow of air at the edge.
-Dragging turns it (the land at the centre follows the cursor), the wheel zooms (up to 16×),
-the window title describes the place under the cursor (latitude, longitude, climate, biome,
-height or depth, temperature and rain) and a click goes there: to the nearest dry, gentle
-column, and from the sea or a lake to the nearest coast (`Terrain::spawn_near`).
+picker of v2 §16), drawn on an orthographic sphere in one full-screen pass, in relief
+(Amendment T §2.4, D294). Its map (`hearth::globe::GlobeMap`, made from the planet grid with
+the planet and kept beside it, E4.1) is equirectangular in three layers, each with mipmaps
+sampled by gradients that ignore the date line's jump: per grid cell (2048 × 1024, about
+20 km a texel on the Earth) the biome's colour and the water (the sea, a lake), and the river
+(by its discharge), ice, warmth and rain; and its heights at twice that (4096 × 2048, the
+grid's surface bicubic), the sea's floor below zero. The heights tilt the surface's normal,
+their slopes exaggerated (×3 by default, 1–12) and more the smaller the scale (slopes read over
+more than 10 km steepened in proportion, up to ten times), lit by the desk lamp fixed to the
+frame — so ranges catch the light as the globe turns — and by a cartographer's light from the
+north-west, the west and the north; the sea's floor fainter. The land is coloured by biome
+(tinted a little by height), by climate (warmth in hue, rain in depth of colour) or as plain
+relief (hypsometric tints, green lowlands to white peaks); the sea by its depth (pale over the
+shelves, dark over the abyssal plains and in the trenches), lakes fresh blue, rivers blue by
+their size, ice white, the polar pack pale. Seen near (zoom 10 and more), the relief over the
+view comes from the 2.4 km refinement level (`globe::Detail`: 512 texels square over the
+frame's corners, made on the interactive pool off the interface's thread as the view settles,
+a few seconds the first time, its tiles kept), faded in from the window's edges. A graticule
+every 30°, the camera's place and the point under the cursor marked, and a thin glow of air
+at the edge. Dragging turns it (the land at the centre follows the cursor), the wheel zooms
+(up to 16×); on the Birthplace screen two buttons choose the colouring and the relief, in the
+world the quick-slot keys (1 biome, 2 climate, 3 relief; 4 and 5 the relief less and more). The
+window title describes the place under the cursor (latitude, longitude, climate, biome, height
+or depth, temperature and rain) and a click goes there: to the nearest dry, gentle column, and
+from the sea or a lake to the nearest coast (`Terrain::spawn_near`). Review: `docs/review/t1/
+globe_*.jpg` (`tools/shots/t1_globe.shots`; screenshot keys `globe=`, `globe_mode=`,
+`globe_relief=`).
 
 ## Parameters
 Atmosphere constants in `atmosphere.wgsl` and `hearth_env::sky` (kept equal; the

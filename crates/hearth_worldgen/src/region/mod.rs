@@ -245,6 +245,8 @@ pub struct GridColumn {
     /// Mean yearly temperature (°C) and rain (mm a year).
     pub temperature: f32,
     pub precipitation: f32,
+    /// The river through the grid's cell there (its discharge, m³/s), nought where none runs.
+    pub discharge: f32,
 }
 
 impl GridColumn {
@@ -511,6 +513,52 @@ impl Terrain {
         self.relief.as_ref().map_or(0, |r| r.levels().len())
     }
 
+    /// The surface (blocks) at a refinement level (0: the grid's), bicubic between its cells:
+    /// what a map of the planet reads (E4.1: a coarse caller, building no finer tiles than its
+    /// level's). The grid's own where the planet has no levels.
+    pub fn level_height(&self, level: usize, x: f64, z: f64) -> f32 {
+        match &self.relief {
+            Some(r) if level > 0 => {
+                r.height(level.min(r.levels().len()), self.planet.wrap_xf(x), z)
+            }
+            // The grid's own, straight from its heights.
+            _ => {
+                let g = &*self.grid;
+                let (gx, gz) = g.geom.grid_coords(self.planet.wrap_xf(x), z);
+                g.elevation.bicubic(gx, gz) * self.v
+            }
+        }
+    }
+
+    /// The grid's surface (blocks) around the planet on each line of constant z in `zs`, at the
+    /// centres of `width` even steps from x = 0: what `level_height(0, x, z)` gives at each,
+    /// row after row (a map of the planet's relief, made in parallel).
+    pub fn grid_heights_around(&self, width: usize, zs: &[f64]) -> Vec<f32> {
+        let g = &*self.grid;
+        let c = self.planet.circumference_f64();
+        let gxs: Vec<f64> = (0..width)
+            .map(|i| {
+                g.geom
+                    .grid_coords((i as f64 + 0.5) / width as f64 * c, 0.0)
+                    .0
+            })
+            .collect();
+        let gzs: Vec<f64> = zs.iter().map(|&z| g.geom.grid_coords(0.0, z).1).collect();
+        let mut heights = g.elevation.bicubic_rows(&gxs, &gzs);
+        for h in &mut heights {
+            *h *= self.v;
+        }
+        heights
+    }
+
+    /// The cell size (blocks) of a refinement level (0: the grid's).
+    pub fn level_cell(&self, level: usize) -> f64 {
+        match &self.relief {
+            Some(r) if level > 0 => r.levels()[level.min(r.levels().len()) - 1].cell,
+            _ => self.grid.geom.cell,
+        }
+    }
+
     /// Samples one column of a far tile, its columns `scale` blocks apart.
     pub fn sample_scaled(&self, x: i32, z: i32, scale: f64) -> ColumnSample {
         let near = self.nearby_scaled(x, z, x, z, scale);
@@ -770,7 +818,8 @@ impl Terrain {
         let g = &*self.grid;
         let wx = self.planet.wrap_xf(xf);
         let (gx, gz) = g.geom.grid_coords(wx, zf);
-        let cell_flags = g.flags[g.cell_at(wx, zf)];
+        let cell = g.cell_at(wx, zf);
+        let cell_flags = g.flags[cell];
         let lat = self.planet.latitude_deg(zf);
         let polar = ((lat.abs() - POLAR_BLEND_START) / 2.5).clamp(0.0, 1.0) as f32;
         let mut h = g.elevation.bicubic(gx, gz) * self.v;
@@ -845,6 +894,11 @@ impl Terrain {
             climate: c.climate,
             temperature: c.temperature,
             precipitation: c.precip,
+            discharge: if cell_flags & flags::RIVER != 0 {
+                g.discharge[cell]
+            } else {
+                0.0
+            },
         }
     }
 

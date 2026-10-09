@@ -3012,9 +3012,27 @@ impl Client {
                 (self.camera.pitch + (dy * deg_per_count) as f32).clamp(-90.0, 90.0);
         }
         if self.globe.open {
-            // The wheel zooms the globe; nothing moves.
+            // The wheel zooms the globe; nothing moves. The quick slots' keys colour it (1 by
+            // biome, 2 by climate, 3 as plain relief) and exaggerate its relief less (4) or more
+            // (5) (Amendment T §2.4).
             let steps = input.take_scroll_steps(1.0, true);
             self.globe.view.zoom_by(steps);
+            use hearth_render::globe::GlobeMode;
+            for (key, mode) in [
+                (builtin::HOTBAR_1, GlobeMode::Biomes),
+                (builtin::HOTBAR_2, GlobeMode::Climate),
+                (builtin::HOTBAR_3, GlobeMode::Relief),
+            ] {
+                if input.was_pressed(key) {
+                    self.globe.view.mode = mode;
+                }
+            }
+            if input.was_pressed(builtin::HOTBAR_4) {
+                self.globe.view.relief_by(-1);
+            }
+            if input.was_pressed(builtin::HOTBAR_5) {
+                self.globe.view.relief_by(1);
+            }
             return;
         }
         let (sy, cy) = (self.camera.yaw as f64).to_radians().sin_cos();
@@ -4490,7 +4508,8 @@ impl Client {
                 |(lat, lon)| crate::globe::describe(&w.terrain, lat, lon),
             );
             return format!(
-                "{place} | click to go there, drag to turn, wheel to zoom, M or Esc to close"
+                "{place} | click to go there, drag to turn, wheel to zoom, 1–3 colours, 4/5 \
+                 relief, M or Esc to close"
             );
         }
         let Some(w) = &self.world else {

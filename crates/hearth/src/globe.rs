@@ -20,103 +20,399 @@ use hearth_render::GpuContext;
 use hearth_render::globe::{GlobeRenderer, GlobeView};
 use hearth_worldgen::Terrain;
 
-/// Width of the globe's map in texels (twice its height): 32 blocks a texel on the standard
-/// planet.
+/// Width of the globe's map in texels (twice its height): its grid's own cells, about 20 km on
+/// the Earth, 32 blocks on the standard planet.
 pub const MAP_WIDTH: usize = 2048;
+
+/// Width of its relief (heights) in texels: twice the map's, about 10 km a texel on the Earth,
+/// bicubic between the grid's cells (Amendment T §2.4).
+pub const RELIEF_WIDTH: usize = 2 * MAP_WIDTH;
 
 /// The map's file format (its first bytes: `HGLB` and this), bumped when the map is drawn
 /// otherwise.
-const MAP_FORMAT: u32 = 1;
+const MAP_FORMAT: u32 = 3;
 
-/// An equirectangular map of the planet for the globe, from the planet grid alone: the biome at
-/// each texel's point, land shaded by its relief (lit from the north-west); rows from the north
-/// pole to the south, columns eastward from longitude 0. Past the world's pole edges (about
-/// 85°) the edge goes on. Well under a second on the reference machine (E4.1 §4.2).
-pub fn planet_map(terrain: &Terrain, width: usize) -> Vec<[u8; 4]> {
+/// The globe's map (Amendment T §2.4): equirectangular, rows from the north pole to the south,
+/// columns eastward from longitude 0, from the planet grid alone; its heights at twice the
+/// resolution of the rest. The shader colours and lights it (relief, hypsometric tints, the
+/// sea's depths, rivers, ice; by biome, by climate or as plain relief).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlobeMap {
+    pub width: usize,
+    pub height: usize,
+    /// The planet's radius (m).
+    pub radius_m: f32,
+    /// The ground's colour by its biome (sRGB) and its water (alpha: 0 land, 128 a lake, 255
+    /// the sea).
+    pub color: Vec<[u8; 4]>,
+    /// The river through it (its discharge, logarithmic: 2 m³/s nought, 20,000 the most), ice
+    /// (255 an ice sheet or glacier, 180 the polar sea's pack), the mean temperature (−40 to
+    /// 40 °C) and the rain (the square root of its share of 4,000 mm a year).
+    pub facts: Vec<[u8; 4]>,
+    /// The surface's height, or under water its floor's (m), as half floats, `relief_width`
+    /// by half that.
+    pub elevation: Vec<u16>,
+    pub relief_width: usize,
+}
+
+impl GlobeMap {
+    /// The map as the renderer takes it.
+    pub fn layers(&self) -> hearth_render::globe::MapLayers<'_> {
+        hearth_render::globe::MapLayers {
+            width: self.width as u32,
+            height: self.height as u32,
+            color: &self.color,
+            facts: &self.facts,
+            relief_width: self.relief_width as u32,
+            elevation: &self.elevation,
+        }
+    }
+
+    /// Whether a texel is under water (the sea or a lake).
+    pub fn wet(&self, i: usize) -> bool {
+        self.color[i][3] >= 64
+    }
+
+    /// The surface's height at a texel of the relief (m).
+    pub fn elevation_m(&self, i: usize) -> f32 {
+        f16_to_f32(self.elevation[i])
+    }
+}
+
+/// A half float's value.
+pub fn f16_to_f32(h: u16) -> f32 {
+    let sign = if h & 0x8000 != 0 { -1.0 } else { 1.0 };
+    let e = ((h >> 10) & 0x1f) as i32;
+    let m = (h & 0x3ff) as f32;
+    sign * match e {
+        0 => m * 2f32.powi(-24),
+        31 => f32::INFINITY,
+        _ => (1.0 + m / 1024.0) * 2f32.powi(e - 15),
+    }
+}
+
+/// The planet's map from its grid alone. A few seconds on the reference machine (E4.1 §4.2:
+/// made once, with the planet, and kept).
+pub fn planet_map(terrain: &Terrain, width: usize) -> GlobeMap {
+    use hearth_worldgen::region::biome::Biome;
     use rayon::prelude::*;
     let _zone = hearth_core::prof::Zone::new("globe.map");
     let planet = terrain.planet();
-    let height = width / 2;
     let edge = planet.latitude(-planet.pole_edge_z() + 1.0);
-    let lat_of = |y: usize| (FRAC_PI_2 - (y as f64 + 0.5) / height as f64 * PI).clamp(-edge, edge);
     let c = planet.circumference_f64();
-    let rows: Vec<Vec<(f32, [u8; 3], bool)>> = (0..height)
+    // A texel's centre: its world (x, z), rows of `w` by `w / 2`.
+    let centre = move |w: usize, x: usize, y: usize| {
+        let h = w / 2;
+        let lat = (FRAC_PI_2 - (y as f64 + 0.5) / h as f64 * PI).clamp(-edge, edge);
+        (
+            (x as f64 + 0.5) / w as f64 * c,
+            planet.z_for_latitude(lat) + 0.5,
+        )
+    };
+    let height = width / 2;
+    let rows: Vec<Vec<([u8; 4], [u8; 4])>> = (0..height)
         .into_par_iter()
         .map(|y| {
             let _c = hearth_core::prof::caller("globe.map");
-            let z = planet.z_for_latitude(lat_of(y)) + 0.5;
             (0..width)
                 .map(|x| {
-                    let s = terrain.grid_column((x as f64 + 0.5) / width as f64 * c, z);
-                    (s.height, s.biome.color(), s.is_underwater())
+                    let (wx, wz) = centre(width, x, y);
+                    let s = terrain.grid_column(wx, wz);
+                    let wet = s.is_underwater();
+                    let sea = wet && s.water <= 0.5;
+                    let [r, g, b] = s.biome.color();
+                    let water = match (wet, sea) {
+                        (false, _) => 0,
+                        (true, false) => 128,
+                        (true, true) => 255,
+                    };
+                    let unit = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    let river = if s.discharge > 2.0 {
+                        unit((s.discharge / 2.0).log10() / 4.0)
+                    } else {
+                        0
+                    };
+                    let ice = match s.biome {
+                        Biome::IceSheet | Biome::Glacier => 255,
+                        Biome::PolarSea => 180,
+                        _ => 0,
+                    };
+                    let facts = [
+                        river,
+                        ice,
+                        unit((s.temperature + 40.0) / 80.0),
+                        unit((s.precipitation.max(0.0) / 4000.0).sqrt()),
+                    ];
+                    ([r, g, b, water], facts)
                 })
                 .collect()
         })
         .collect();
-    // World blocks between texel centres: the same east–west everywhere, more north–south
-    // toward the poles (the world is a Mercator projection).
-    let dx = c / width as f64;
-    let mut out = Vec::with_capacity(width * height);
-    for (y, row) in rows.iter().enumerate() {
-        let dz = planet.radius() / lat_of(y).cos() * PI / height as f64;
-        for (x, &(h, color, wet)) in row.iter().enumerate() {
-            let shade = if wet {
-                1.0
-            } else {
-                let west = row[(x + width - 1) % width].0;
-                let north = rows[y.saturating_sub(1)][x].0;
-                let slope = (h - west) as f64 / dx + (h - north) as f64 / dz;
-                (1.0 + 1.2 * slope).clamp(0.6, 1.4)
-            };
-            let [r, g, b] = color.map(|v| (v as f64 * shade).round().min(255.0) as u8);
-            out.push([r, g, b, 255]);
-        }
+    // The relief at twice the resolution: the grid's surface, bicubic (`level_height(0)` at
+    // each texel's centre), each column's weights found once.
+    let rw = 2 * width;
+    let zs: Vec<f64> = (0..rw / 2).map(|y| centre(rw, 0, y).1).collect();
+    let elevation: Vec<u16> = terrain
+        .grid_heights_around(rw, &zs)
+        .par_iter()
+        .map(|&h| to_f16(h))
+        .collect();
+    let (color, facts) = rows.into_iter().flatten().unzip();
+    GlobeMap {
+        width,
+        height,
+        radius_m: planet.radius() as f32,
+        color,
+        facts,
+        elevation,
+        relief_width: rw,
     }
-    out
+}
+
+/// A half float (IEEE 754 binary16) from a single, rounded to nearest.
+pub fn to_f16(x: f32) -> u16 {
+    hearth_render::skin_lut::to_f16(x)
 }
 
 /// The planet's map as kept at `path` (beside the planet's cache), or made from the grid and
-/// kept there: the same map for the same planet every time it is asked for.
-pub fn cached_map(terrain: &Terrain, width: usize, path: Option<&Path>) -> Vec<[u8; 4]> {
+/// kept there (written on a thread of its own, the map not waiting on the disk; a file whole
+/// or none, renamed into place): the same map for the same planet every time it is asked for.
+pub fn cached_map(terrain: &Terrain, width: usize, path: Option<&Path>) -> GlobeMap {
     if let Some(map) = path.and_then(|p| load_map(p, width)) {
         return map;
     }
     let map = planet_map(terrain, width);
-    if let Some(p) = path
-        && let Err(e) = save_map(p, width, &map)
-    {
-        log::warn!("could not keep the globe's map: {e}");
+    if let Some(p) = path {
+        let (p, kept) = (p.to_path_buf(), map.clone());
+        let spawned = std::thread::Builder::new()
+            .name("globe map kept".into())
+            .spawn(move || {
+                if let Err(e) = save_map(&p, &kept) {
+                    log::warn!("could not keep the globe's map: {e}");
+                }
+            });
+        if let Err(e) = spawned {
+            log::warn!("could not keep the globe's map: {e}");
+        }
     }
     map
 }
 
-fn load_map(path: &Path, width: usize) -> Option<Vec<[u8; 4]>> {
-    let bytes = zstd::decode_all(std::fs::File::open(path).ok()?).ok()?;
-    let (head, px) = bytes.split_at_checked(16)?;
-    let word = |i: usize| u32::from_le_bytes([head[i], head[i + 1], head[i + 2], head[i + 3]]);
+// The kept map: a header of five little-endian words (`HGLB`, the format, its width, its
+// height, the planet's radius as a single's bits), then four parts each packed alone (zstd)
+// after its packed length (a word): the colours, the facts, and the relief's northern and
+// southern halves, its heights little-endian. The parts unpack in parallel straight into the
+// map's own buffers: a third of the time of one part unpacked and then copied out (E4.1 §4.2:
+// read back within 0.1 s).
+fn load_map(path: &Path, width: usize) -> Option<GlobeMap> {
+    use rayon::prelude::*;
+    let height = width / 2;
+    let n = width * height;
+    let file = std::fs::read(path).ok()?;
+    let (head, mut rest) = file.split_at_checked(20)?;
+    let word = |b: &[u8], i: usize| u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]);
     let fits = &head[..4] == b"HGLB"
-        && word(4) == MAP_FORMAT
-        && word(8) as usize == width
-        && word(12) as usize == width / 2
-        && px.len() == width * (width / 2) * 4;
-    fits.then(|| {
-        px.chunks_exact(4)
-            .map(|c| [c[0], c[1], c[2], c[3]])
-            .collect()
+        && word(head, 4) == MAP_FORMAT
+        && word(head, 8) as usize == width
+        && word(head, 12) as usize == height;
+    if !fits {
+        return None;
+    }
+    let mut parts = Vec::with_capacity(4);
+    for _ in 0..4 {
+        let (len, after) = rest.split_at_checked(4)?;
+        let (part, after) = after.split_at_checked(word(len, 0) as usize)?;
+        parts.push(part);
+        rest = after;
+    }
+    let mut color = vec![[0u8; 4]; n];
+    let mut facts = vec![[0u8; 4]; n];
+    let mut elevation = vec![0u16; 4 * n];
+    let (north, south) = elevation.split_at_mut(2 * n);
+    let into: [&mut [u8]; 4] = [
+        bytemuck::cast_slice_mut(&mut color),
+        bytemuck::cast_slice_mut(&mut facts),
+        bytemuck::cast_slice_mut(north),
+        bytemuck::cast_slice_mut(south),
+    ];
+    let whole = parts.into_par_iter().zip(into).all(|(part, to)| {
+        zstd::bulk::decompress_to_buffer(part, to).is_ok_and(|got| got == to.len())
+    });
+    if !rest.is_empty() || !whole {
+        return None;
+    }
+    for h in &mut elevation {
+        *h = u16::from_le(*h);
+    }
+    Some(GlobeMap {
+        width,
+        height,
+        radius_m: f32::from_bits(word(head, 16)),
+        color,
+        facts,
+        elevation,
+        relief_width: 2 * width,
     })
 }
 
-fn save_map(path: &Path, width: usize, map: &[[u8; 4]]) -> std::io::Result<()> {
-    let mut bytes = Vec::with_capacity(16 + map.len() * 4);
-    bytes.extend_from_slice(b"HGLB");
-    for v in [MAP_FORMAT, width as u32, (width / 2) as u32] {
+fn save_map(path: &Path, map: &GlobeMap) -> std::io::Result<()> {
+    let mut bytes = b"HGLB".to_vec();
+    for v in [
+        MAP_FORMAT,
+        map.width as u32,
+        map.height as u32,
+        map.radius_m.to_bits(),
+    ] {
         bytes.extend_from_slice(&v.to_le_bytes());
     }
-    bytes.extend(map.iter().flatten());
+    let heights: Vec<u8> = map.elevation.iter().flat_map(|h| h.to_le_bytes()).collect();
+    let (north, south) = heights.split_at(heights.len() / 2);
+    let parts: [&[u8]; 4] = [
+        bytemuck::cast_slice(&map.color),
+        bytemuck::cast_slice(&map.facts),
+        north,
+        south,
+    ];
+    for part in parts {
+        let packed = zstd::bulk::compress(part, 3)?;
+        bytes.extend_from_slice(&(packed.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&packed);
+    }
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d)?;
     }
-    std::fs::write(path, zstd::encode_all(&bytes[..], 3)?)
+    let part = path.with_extension("part");
+    std::fs::write(&part, bytes)?;
+    std::fs::rename(&part, path)
+}
+
+/// How near the globe is seen (its zoom) before its relief is drawn finer, from the 2.4 km
+/// refinement level (Amendment T §2.4), where the window's texels come within three of that
+/// level's cells (a few hundred of its tiles at most, kept once made).
+pub const DETAIL_ZOOM: f32 = 10.0;
+
+/// Texels a side of the finer relief's window.
+pub const DETAIL_SIZE: usize = 512;
+
+/// A window of the planet's relief finer than the map's, for the globe seen near: its edges
+/// (radians: south, north, west, east) and its heights, `DETAIL_SIZE` square, rows from the
+/// north, as half floats.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Detail {
+    pub window: [f32; 4],
+    pub elevation: Vec<u16>,
+}
+
+impl Detail {
+    /// The refinement level a window's texels read, if finer than the grid's: the 2.4 km
+    /// level's where the texels are within three of its cells (E4.1's coarse callers read no
+    /// finer than their scale).
+    pub fn level_for(terrain: &Terrain, window: [f32; 4]) -> Option<usize> {
+        let [south, north, west, east] = window.map(|v| v as f64);
+        let span = (east - west) / DETAIL_SIZE as f64
+            * terrain.planet().radius()
+            * (0.5 * (south + north)).cos().max(0.05);
+        (terrain.finest_level() >= 1 && span <= 3.0 * terrain.level_cell(1)).then_some(1)
+    }
+
+    /// The relief over `window` at `level`, every core of the interactive pool at it.
+    pub fn make(terrain: &Terrain, window: [f32; 4], level: usize) -> Self {
+        use rayon::prelude::*;
+        let _zone = hearth_core::prof::Zone::new("globe.detail");
+        let planet = terrain.planet();
+        let [south, north, west, east] = window.map(|v| v as f64);
+        let n = DETAIL_SIZE;
+        let elevation = (0..n)
+            .into_par_iter()
+            .flat_map_iter(|j| {
+                let lat = north - (j as f64 + 0.5) / n as f64 * (north - south);
+                let z = planet.z_for_latitude(lat);
+                (0..n).map(move |i| {
+                    let lon = west + (i as f64 + 0.5) / n as f64 * (east - west);
+                    to_f16(terrain.level_height(level, planet.x_for_longitude(lon), z))
+                })
+            })
+            .collect();
+        Self { window, elevation }
+    }
+
+    /// The window a view near enough shows (radians: south, north, west, east), with a margin:
+    /// the frame's corners from the globe's centre.
+    pub fn window_for(view: &GlobeView, size: (u32, u32)) -> [f32; 4] {
+        let r = view.radius_px(size);
+        let half_px = 0.5 * (size.0 as f32).hypot(size.1 as f32);
+        let half = ((half_px / r).min(1.0).asin() * 1.1).min(0.6);
+        let (lat, lon) = (view.lat, view.lon);
+        let wide = half / lat.cos().max(0.2);
+        [
+            (lat - half).max(-1.5),
+            (lat + half).min(1.5),
+            lon - wide,
+            lon + wide,
+        ]
+    }
+}
+
+/// The finer relief for the view, made on a thread of its own as the view settles near (E4.1:
+/// never on the interface's thread), the latest wanted kept, given up when the view draws back.
+#[derive(Default)]
+pub struct DetailMaker {
+    making: Option<JoinHandle<Detail>>,
+    /// The window shown, and the zoom it was made for.
+    shown: Option<([f32; 4], f32)>,
+}
+
+impl DetailMaker {
+    /// A change to the finer relief shown, if there is one: a window made (`Some(Some)`), or
+    /// none any more (`Some(None)`, the view drawn back). Asks for the view's window when it is
+    /// near and has left the inner part of the window shown, or zoomed well in or out of it.
+    pub fn update(
+        &mut self,
+        terrain: &Arc<Terrain>,
+        view: &GlobeView,
+        size: (u32, u32),
+    ) -> Option<Option<Detail>> {
+        if self.making.as_ref().is_some_and(JoinHandle::is_finished) {
+            let made = self.making.take().and_then(|h| h.join().ok());
+            if let Some(d) = made
+                && view.zoom >= DETAIL_ZOOM
+            {
+                self.shown = Some((d.window, view.zoom));
+                return Some(Some(d));
+            }
+        }
+        if view.zoom < DETAIL_ZOOM {
+            return self.shown.take().map(|_| None);
+        }
+        if self.making.is_some() {
+            return None;
+        }
+        let stale = self.shown.is_none_or(|([s, n, w, e], zoom)| {
+            let (lat, lon) = (view.lat, view.lon);
+            let inner = |lo: f32, hi: f32, v: f32| {
+                let m = 0.3 * (hi - lo);
+                v > lo + m && v < hi - m
+            };
+            let lon = lon
+                + std::f32::consts::TAU * ((0.5 * (w + e) - lon) / std::f32::consts::TAU).round();
+            !inner(s, n, lat) || !inner(w, e, lon) || !(0.67..1.5).contains(&(view.zoom / zoom))
+        });
+        let window = Detail::window_for(view, size);
+        if let (true, Some(level)) = (stale, Detail::level_for(terrain, window)) {
+            let terrain = terrain.clone();
+            match std::thread::Builder::new()
+                .name("globe detail".into())
+                .spawn(move || {
+                    hearth_core::jobs::install(hearth_core::jobs::Priority::Interactive, || {
+                        Detail::make(&terrain, window, level)
+                    })
+                }) {
+                Ok(h) => self.making = Some(h),
+                Err(e) => log::error!("could not start the globe's detail: {e}"),
+            }
+        }
+        None
+    }
 }
 
 /// The world column at a latitude and longitude (radians), within the pole edges.
@@ -267,7 +563,7 @@ pub struct GlobePicker {
     pub view: GlobeView,
     renderer: Option<GlobeRenderer>,
     /// The map being made (on its own thread, the first time the globe opens).
-    building: Option<JoinHandle<Vec<[u8; 4]>>>,
+    building: Option<JoinHandle<GlobeMap>>,
     /// The cursor (pixels), where the button went down while it is held, and whether it has
     /// moved since (a drag, not a click).
     cursor: Option<Vec2>,
@@ -276,8 +572,11 @@ pub struct GlobePicker {
     /// The frame's size at the last draw.
     size: (u32, u32),
     /// The planet's map as made, to be uploaded when it is ready.
-    base: Option<Vec<[u8; 4]>>,
+    base: Option<GlobeMap>,
     map_changed: bool,
+    /// The planet (for the finer relief when the globe is seen near), and that relief.
+    terrain: Option<Arc<Terrain>>,
+    detail: DetailMaker,
 }
 
 impl Default for GlobePicker {
@@ -293,6 +592,8 @@ impl Default for GlobePicker {
             size: (1280, 720),
             base: None,
             map_changed: false,
+            terrain: None,
+            detail: DetailMaker::default(),
         }
     }
 }
@@ -301,6 +602,7 @@ impl GlobePicker {
     /// Opens the globe centred on (lat, lon) and starts making its map if there is none yet.
     pub fn open(&mut self, terrain: &Arc<Terrain>, lat: f32, lon: f32) {
         self.open = true;
+        self.terrain = Some(terrain.clone());
         self.view.lat = lat;
         self.view.lon = lon;
         let has_map =
@@ -326,8 +628,8 @@ impl GlobePicker {
     }
 
     /// The planet's map, made already (with the planet): no map is made when the globe opens.
-    pub fn set_map(&mut self, map: Vec<[u8; 4]>) {
-        if map.len() == MAP_WIDTH * MAP_WIDTH / 2 {
+    pub fn set_map(&mut self, map: GlobeMap) {
+        if map.width == MAP_WIDTH && map.color.len() == MAP_WIDTH * MAP_WIDTH / 2 {
             self.base = Some(map);
             self.map_changed = true;
         }
@@ -391,7 +693,19 @@ impl GlobePicker {
             && let Some(base) = &self.base
         {
             self.map_changed = false;
-            renderer.set_map(ctx, MAP_WIDTH as u32, (MAP_WIDTH / 2) as u32, base);
+            renderer.set_map(ctx, &base.layers(), base.radius_m);
+        }
+        if let Some(t) = &self.terrain
+            && let Some(change) = self.detail.update(t, &self.view, size)
+        {
+            renderer.set_detail(
+                ctx,
+                change.as_ref().map(|d| hearth_render::globe::DetailLayer {
+                    window: d.window,
+                    size: DETAIL_SIZE as u32,
+                    elevation: &d.elevation,
+                }),
+            );
         }
         let hovered = self.cursor.and_then(|c| self.view.pick(c, size));
         renderer.render(ctx, enc, target, size, &self.view, Some(camera), hovered);

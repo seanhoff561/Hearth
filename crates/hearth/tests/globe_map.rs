@@ -1,44 +1,43 @@
 //! The globe (E4.1 §4.2): its map made from the planet grid in about a second at most, land
 //! showing as land in the grid's own share (some 29 % on the Earth-like planet), not one
-//! colour; and a click's details found on a thread of their own, kept for the place.
+//! colour, kept and read back the same; and a click's details found on a thread of their own,
+//! kept for the place.
 
 use std::collections::HashSet;
 use std::f64::consts::{FRAC_PI_2, PI};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use hearth::globe::{Details, MAP_WIDTH, planet_map};
+use hearth::globe::{Details, MAP_WIDTH, RELIEF_WIDTH, cached_map};
 use hearth::scene::LocalWorld;
 use hearth_math::PlanetSize;
-use hearth_worldgen::region::biome::Biome;
 
 #[test]
 fn the_globes_map_shows_land_and_sea_as_the_grid_has_them() {
     let lw = LocalWorld::create(7, PlanetSize::Earth, 256, None).expect("world");
     let terrain = lw.terrain();
+    let kept = std::env::temp_dir().join(format!("hearth-test-globe-{}.zst", std::process::id()));
+    let _ = std::fs::remove_file(&kept);
     let t0 = Instant::now();
-    let map = planet_map(terrain, MAP_WIDTH);
+    let map = cached_map(terrain, MAP_WIDTH, Some(&kept));
     let took = t0.elapsed().as_secs_f64();
     let (w, h) = (MAP_WIDTH, MAP_WIDTH / 2);
-    assert_eq!(map.len(), w * h);
+    assert_eq!(map.color.len(), w * h);
+    assert_eq!(map.facts.len(), w * h);
+    assert_eq!(map.elevation.len(), RELIEF_WIDTH * RELIEF_WIDTH / 2);
     let planet = terrain.planet();
     let edge = planet.latitude(-planet.pole_edge_z() + 1.0);
     // The map's land by area (a texel's area goes with the cosine of its latitude): any texel
-    // not of a water biome's colour (water is drawn unshaded).
-    let water: Vec<[u8; 3]> = Biome::ALL
-        .iter()
-        .filter(|b| b.is_water())
-        .map(|b| b.color())
-        .collect();
+    // not under water.
     let (mut land, mut all) = (0.0, 0.0);
     for y in 0..h {
         let lat = FRAC_PI_2 - (y as f64 + 0.5) / h as f64 * PI;
         if lat.abs() > edge {
             continue;
         }
-        for px in &map[y * w..(y + 1) * w] {
+        for i in y * w..(y + 1) * w {
             all += lat.cos();
-            if !water.contains(&[px[0], px[1], px[2]]) {
+            if !map.wet(i) {
                 land += lat.cos();
             }
         }
@@ -72,13 +71,52 @@ fn the_globes_map_shows_land_and_sea_as_the_grid_has_them() {
         (map_land - grid_land).abs() < 0.03,
         "the map's land {map_land:.3}, the grid's {grid_land:.3}"
     );
-    let colours: HashSet<[u8; 4]> = map.iter().copied().collect();
+    let colours: HashSet<[u8; 4]> = map.color.iter().copied().collect();
     assert!(
-        colours.len() > 200,
+        colours.len() > 20,
         "a map, not a wash: {} colours",
         colours.len()
     );
+    // Its relief: the land's heights up to mountains, the sea's floor down to its deeps; rivers
+    // on the land; ice at the poles.
+    let heights: Vec<f32> = (0..map.elevation.len())
+        .map(|i| map.elevation_m(i))
+        .collect();
+    let top = heights.iter().copied().fold(f32::MIN, f32::max);
+    let deep = heights.iter().copied().fold(f32::MAX, f32::min);
+    let rivers = map.facts.iter().filter(|f| f[0] > 0).count();
+    let ice = map.facts.iter().filter(|f| f[1] == 255).count();
+    println!("heights {deep:.0} to {top:.0} m, {rivers} river texels, {ice} of ice");
+    assert!(top > 2000.0 && deep < -2000.0, "{deep} to {top}");
+    assert!(rivers > 1000 && ice > 1000, "{rivers} rivers, {ice} ice");
     assert!(took < 3.0, "made in {took:.2} s");
+    // Kept on a thread of its own, the file whole when it is there: read back, the same map.
+    let whole = |at: Instant| loop {
+        if let Ok(m) = std::fs::metadata(&kept) {
+            break m.len();
+        }
+        assert!(at.elapsed() < Duration::from_secs(30), "the map was kept");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let size = whole(Instant::now());
+    let t0 = Instant::now();
+    let read = cached_map(terrain, MAP_WIDTH, Some(&kept));
+    println!(
+        "kept in {:.1} MB, read back in {:.3} s",
+        size as f64 / 1e6,
+        t0.elapsed().as_secs_f64()
+    );
+    assert!(read == map, "the map read back is the map made");
+    // A file cut short is no map: made again, the same, and kept whole again.
+    let bytes = std::fs::read(&kept).expect("the kept map");
+    std::fs::write(&kept, &bytes[..bytes.len() / 2]).expect("cut short");
+    assert!(cached_map(terrain, MAP_WIDTH, Some(&kept)) == map);
+    let t0 = Instant::now();
+    while std::fs::metadata(&kept).map_or(0, |m| m.len()) != size {
+        assert!(t0.elapsed() < Duration::from_secs(30), "kept whole again");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let _ = std::fs::remove_file(&kept);
 }
 
 #[test]
