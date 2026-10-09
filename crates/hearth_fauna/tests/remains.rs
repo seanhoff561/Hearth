@@ -67,17 +67,17 @@ fn the_dead_lie_a_while_and_are_found() {
             .filter(|m| m.cause == Cause::Predation)
             .all(|m| m.left < 1.0)
     );
-    // Ravens over the fresh ones tell of them, not again within the hour.
+    // The fresh ones draw the scavengers from as far as they can be seen; gone stale, not.
     let m = *all
         .iter()
         .filter(|m| t - m.time < 3.0 / 365.0 && m.left_at(t) > 0.3)
         .max_by(|a, b| a.time.total_cmp(&b.time))
         .expect("a fresh one");
     let from = [m.at[0] + 900.0, m.at[1]];
-    let told = eco.ravens(from, 2000.0, t, 4.0 / 365.0, 1.0 / 8760.0);
-    assert!(told.iter().any(|x| x.at == m.at));
+    let fresh = eco.fresh_remains(from, 2000.0, t, 4.0 / 365.0);
+    assert!(fresh.iter().any(|x| x.at == m.at));
     assert!(
-        eco.ravens(from, 2000.0, t, 4.0 / 365.0, 1.0 / 8760.0)
+        eco.fresh_remains(from, 2000.0, t + 10.0 / 365.0, 4.0 / 365.0)
             .iter()
             .all(|x| x.at != m.at)
     );

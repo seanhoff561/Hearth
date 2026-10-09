@@ -428,6 +428,28 @@ impl Hearing {
         }
     }
 
+    /// A blow or a thing flung landing on an animal (`force` 0.2–1.5), from where it landed.
+    pub fn strike(&mut self, at: DVec3, force: f32, glancing: bool, ear: DVec3, facing: f32) {
+        let d = (at - ear).length().max(1.0) as f32;
+        let gain = (6.0 / d).min(1.0);
+        if gain < 0.02 {
+            return;
+        }
+        let right = glam::DVec2::new(-(facing.cos() as f64), facing.sin() as f64);
+        let to = glam::DVec2::new(at.x - ear.x, at.z - ear.z).normalize_or_zero();
+        self.out.push(Command::Play {
+            sound: Sound::Strike { force, glancing },
+            bus: Bus::Players,
+            gain,
+            pan: to.dot(right) as f32,
+        });
+        self.caption(if glancing {
+            "subtitles.strike.glancing"
+        } else {
+            "subtitles.strike"
+        });
+    }
+
     /// Built pieces giving way (V2-8): each sounding as what it is made of, as loud as it was
     /// heavy (N), from where it was; a falling piece landing sounds as it strikes.
     pub fn crash(

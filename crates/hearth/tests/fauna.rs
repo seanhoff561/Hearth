@@ -6,6 +6,7 @@ mod common;
 
 use common::World;
 use glam::DVec3;
+use hearth_fauna::live::Medium;
 use hearth_fauna::species::Catalog;
 
 #[test]
@@ -97,6 +98,8 @@ fn a_dead_deer_lies_until_found_and_is_butchered_by_its_kind() {
     let dir = common::temp("carcass");
     let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
     w.census_about();
+    // On into the morning, the birds of the day up and about (the world starts before sunrise).
+    w.wait_hours(1.5);
     let home = w.mover.pos;
     // A red deer hind dies 300 m to the east: out of sight, she is not yet in the world.
     let far = home + DVec3::new(300.0, 0.0, 0.0);
@@ -106,16 +109,42 @@ fn a_dead_deer_lies_until_found_and_is_butchered_by_its_kind() {
     });
     w.run(81);
     assert!(w.lying.iter().all(|l| !l.stack.id.contains("_carcass")));
-    // By day the ravens over her tell of her (each flock about in its turn, the nearest first:
-    // the populations' own dead may lie nearer).
-    let ravens: Vec<&String> = w
-        .acted
+    // By day the scavengers of the place circle over her, to be seen from afar; nothing tells of
+    // them in words (Amendment T §2.1).
+    let cat = Catalog::new(&w.content);
+    let over = |w: &World| {
+        w.flocks
+            .iter()
+            .find(|f| (f.at[0] - far.x).abs() < 1.0 && (f.at[2] - far.z).abs() < 1.0)
+            .copied()
+    };
+    let flock = over(&w).expect("birds over her");
+    let sp = &cat.species[flock.species as usize];
+    println!("{} {} over her", flock.count, sp.name);
+    assert!(hearth_fauna::flock::scavenges(sp), "{}", sp.name);
+    assert!(!flock.risen, "no one near her yet");
+    assert!(
+        w.acted.iter().all(|(_, _, s)| !s.contains("circling")),
+        "{:?}",
+        w.acted
+    );
+    // Near her, the birds are of the world: circling over her, higher and wider with the player
+    // standing by.
+    w.go(far.x - 20.0, far.z);
+    w.run(81);
+    let birds: Vec<_> = w
+        .animals
         .iter()
-        .filter(|(_, _, s)| s.contains("Ravens"))
-        .map(|(_, _, s)| s)
+        .filter(|v| v.species == flock.species && v.medium == Medium::Air)
         .collect();
-    if !ravens.is_empty() {
-        assert!(ravens.iter().any(|s| s.contains("east")), "{ravens:?}");
+    assert!(!birds.is_empty(), "the birds over her are in the world");
+    assert!(
+        over(&w).is_none(),
+        "drawn as birds of the world, not specks"
+    );
+    for b in &birds {
+        let up = b.pos.y - w.mover.pos.y;
+        assert!(up > 20.0, "{} at {up:.0} m up", sp.name);
     }
     // Come near, she is found, whole and fresh.
     w.go(far.x - 1.0, far.z);
@@ -219,19 +248,10 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
         .find(|a| a.species == deer && (a.pos - home).length() < 8.0)
         .expect("the hind brought");
     let sp = &catalog.species[v.species as usize];
-    // A wound that kills soon: the heart and lungs or the neck reached (one in the belly
-    // kills within the hour, and is followed up).
-    let mortal = |s: &str| {
-        s.contains("falls dead")
-            || (s.contains("deep")
-                && ["behind the shoulder", "in the neck"]
-                    .iter()
-                    .any(|p| s.contains(p)))
-    };
-    let mut said = Vec::new();
     // Up beside it, and a thrust behind its shoulder: it may walk on as the hunter comes up
     // (down into a hollow, along a bank), or start away as the spear is drawn back, and is
-    // followed and struck again.
+    // followed and struck again — until it falls (nothing tells of it: the hunter sees it go
+    // down, or run on wounded, Amendment T §0.2).
     for attempt in 0..6 {
         let mut chest = v.pos;
         for _ in 0..4 {
@@ -264,7 +284,7 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
                 break;
             }
         }
-        let n = w.acted.len();
+        let n = w.struck.len();
         // From where the hunter stands (the bank or a reed bed may have stopped it short): the
         // thrust lands at the end of its wind-up, a fifth of a second on (E §3.2).
         w.server.send(ToServer::Blow {
@@ -274,18 +294,28 @@ fn a_hunter_spears_an_animal_and_it_lies_where_it_fell() {
         });
         w.run(1);
         if attempt == 0 {
-            assert_eq!(w.acted.len(), n, "nothing before the wind-up is done");
+            assert_eq!(w.struck.len(), n, "nothing before the wind-up is done");
         }
         w.run(12);
-        let now: Vec<String> = w.acted[n..].iter().map(|(_, _, s)| s.clone()).collect();
-        println!("{}: {now:?}", sp.name);
-        let done = now.iter().any(|s| mortal(s));
-        said.extend(now);
-        if done || !w.animals.iter().any(|x| x.id == v.id) {
+        let now = w.animals.iter().find(|x| x.id == v.id);
+        println!(
+            "{}: {:?}, {}",
+            sp.name,
+            &w.struck[n..],
+            now.map_or("down".to_owned(), |x| format!(
+                "{:?}, wounded {}",
+                x.act, x.wounded
+            ))
+        );
+        if now.is_none() {
             break;
         }
     }
-    assert!(said.iter().any(|s| s.contains("strikes")), "{said:?}");
+    assert!(
+        w.struck.iter().any(|(_, _, glancing)| !glancing),
+        "no thrust went home: {:?}",
+        w.struck
+    );
     // It runs and falls; followed to where it lies.
     let mut last = v.pos;
     for _ in 0..120 {

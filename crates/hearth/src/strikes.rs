@@ -6,7 +6,7 @@
 use glam::DVec3;
 use hearth_body::BodyConfig;
 use hearth_content::schema::item::Use;
-use hearth_fauna::live::Live;
+use hearth_fauna::live::{Live, Struck};
 use hearth_fauna::species::Catalog;
 use hearth_fauna::wound::Blow;
 use hearth_items::{Carry, ItemKind, Items, Stack};
@@ -125,8 +125,24 @@ pub fn begin(
     true
 }
 
-/// What the blow under way meets as it strikes: the animal along its path, wounded and shoved;
-/// in words (none for a miss).
+/// A blow or a thing flung landing on an animal: where, with how much energy (J), and what it
+/// did there.
+#[derive(Debug, Clone)]
+pub struct Landed {
+    pub at: DVec3,
+    pub energy_j: f32,
+    pub struck: Struck,
+}
+
+impl Landed {
+    /// How loud it lands (0.2–1.5): a punch's smack to a thrust's thud.
+    pub fn force(&self) -> f32 {
+        (self.energy_j / 60.0).sqrt().clamp(0.2, 1.5)
+    }
+}
+
+/// What the blow under way meets as it strikes: the animal along its path, wounded and shoved
+/// (none for a miss).
 pub fn land(
     player: &Player,
     items: &Items,
@@ -134,7 +150,7 @@ pub fn land(
     live: &mut Live,
     cat: &Catalog,
     year_frac: f32,
-) -> Option<String> {
+) -> Option<Landed> {
     let s = player.striking?;
     let eye = player.mover.pos + DVec3::Y * (EYE_SHARE * cfg.height_m);
     let path = s
@@ -165,12 +181,16 @@ pub fn land(
         }
     };
     live.strike(cat, &hit, &blow, &what, player.mover.pos, year_frac)
-        .map(|s| s.words)
+        .map(|struck| Landed {
+            at: hit.at,
+            energy_j: blow.energy_j,
+            struck,
+        })
 }
 
 /// What a thing flung strikes on its way: the animal it meets first, wounded by the energy it
-/// carries there (and shoved by its momentum); in words, with where the thing comes to rest
-/// (where it struck, or where its flight ends).
+/// carries there (and shoved by its momentum); with where the thing comes to rest (where it
+/// struck, or where its flight ends).
 pub fn fly(
     f: &Flight,
     items: &Items,
@@ -178,7 +198,7 @@ pub fn fly(
     cat: &Catalog,
     from: DVec3,
     year_frac: f32,
-) -> (Option<String>, DVec3) {
+) -> (Option<Landed>, DVec3) {
     let end = f.path.last().copied().unwrap_or(from);
     let Some(hit) = live.hit_along(cat, &f.path, year_frac) else {
         return (None, end);
@@ -193,10 +213,14 @@ pub fn fly(
         push: along.normalize_or_zero() * f.mass * v,
     };
     let what = kind.map_or("thing".to_owned(), |k| k.name.clone());
-    let words = live
+    let landed = live
         .strike(cat, &hit, &blow, &what, from, year_frac)
-        .map(|s| s.words);
-    (words, hit.at)
+        .map(|struck| Landed {
+            at: hit.at,
+            energy_j: blow.energy_j,
+            struck,
+        });
+    (landed, hit.at)
 }
 
 /// Whether a stack is an arrow.

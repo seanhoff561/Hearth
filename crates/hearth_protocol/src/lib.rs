@@ -409,6 +409,9 @@ pub enum ToClient {
     },
     /// The groups of animals in the regions about the player: species, where, how many.
     Census(Vec<(u16, glam::DVec2, u32)>),
+    /// The birds circling over remains beyond the near field (Amendment T §2.1), for the client
+    /// to draw where `Flock::bird_at` puts them (when they change).
+    Flocks(Vec<hearth_fauna::flock::Flock>),
     /// The vegetation the distant terrain is grown with (when it changes, and as the years
     /// turn).
     Vegetation(hearth_worldgen::vegetation::Vegetation),
@@ -436,6 +439,13 @@ pub enum ToClient {
     Work(Option<WorkView>),
     /// What came of a process, a meal or a drink.
     Acted(Acted),
+    /// A blow or a thing flung lands on an animal (Amendment T §0.2: heard, not told): where,
+    /// how loud (0.2–1.5), and whether it glanced off.
+    Struck {
+        at: glam::DVec3,
+        force: f32,
+        glancing: bool,
+    },
     /// A tree falls: its blocks as they stood (gone from the world now), turning down about
     /// the edge `pivot` toward `toward` over `seconds`; where it comes to rest arrives as block
     /// changes when the fall is over.

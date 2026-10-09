@@ -85,7 +85,8 @@ sooner), settle toward the tameness their makeup allows, and breed in their kind
 female within sixty metres of a grown kept male of her kind is in young or not, the likelier
 the more settled she is, and gives birth in her kind's birth season. Breeding is abstracted
 (V2.1 ground rules): it is a chance and a due date, no more. Grown ones die of age at their
-kind's lifespan. Births and deaths near the player are told.
+kind's lifespan. Births and deaths are the world's to show, not told (Amendment T §0.2): the
+young stand at their mothers' sides, the old lie where they died; the log keeps them.
 
 What a person does with them (processes aimed at a live animal, `Target::Animal`):
 

@@ -393,8 +393,10 @@ The person can turn it. Fire keeps hunters off (light at the person's feet, from
 torch); facing an animal upright and loud (a shout, H) turns back a hunter at once and a
 defender before long, and makes a defender likelier to stop short; backing off from what it
 defends ends its charge; running from a hunter of people sets it after them. An animal turned
-back fears people more after, for a good while. Every charge and blow comes with its reason in
-words ("The brown bear charges and stops short: you came too near its young.") and in the log.
+back fears people more after, for a good while. Every charge and blow has its reason ("The brown
+bear charges and stops short: you came too near its young."), kept in the log; the person is
+not told it in words (Amendment T §0.2) but sees the charge, the stop and the turning away, hears
+the threat call, and feels the blow (a hurt's sound, the injury in the body's panel).
 
 Hunters hunt their prey in the world too: a hunter at its ease may go after the nearest of its
 prey within 150 m, stalking low and slow (quiet, half hidden), then rushing — a cat from seven
@@ -438,12 +440,47 @@ abstract step — taken by a hunter, or of age, hunger, winter or crowding — i
 its region (`Remains`: species, age and sex, where and when, how much was left, why), each lasting
 as its size allows (half of it gone in a day or two for a piglet, a week for a red deer, more than
 a fortnight for an aurochs; gone after a month at most). Remains within 90 m of the player come
-into the world as carcasses, gone off as their days in the air's warmth make them; by day, ravens
-circling over remains less than four days old within 2 km tell of them ("Ravens are circling to
-the north-east."), again each hour. A uniform wood holds about 150 remains in a region of 256 km²
+into the world as carcasses, gone off as their days in the air's warmth make them. A uniform wood
+holds about 150 remains in a region of 256 km²
 at a time, most of them wild boar (whose numbers turn over fast). The client draws a carcass as
 the animal lying dead on a flank, legs straight, in its coat (`dead` on the screenshot `animal=`
 key). Tests may force a natural death (`ToServer::Die`).
+
+### Birds over remains (`hearth_fauna::flock`, Amendment T §2.1)
+By day the scavengers of a place gather over fresh remains (less than four days old, more than a
+fifth of them left, within 2 km of the player; the six nearest): the birds of the place that live
+off carrion and soar over it — the crows and ravens, the vultures and the condors, birds of a
+quarter kilogram and more with carrion half or more of their liking (`flock::scavenges`; the jays
+that come to remains come through the trees and are not among them). The kind is the one with
+the most birds about the remains (pooled and in groups), awake at the hour; how many come grows
+with what is left (two to five ravens or crows to a deer, a dozen and more vultures to an
+antelope; at most what the place holds, eight of the small, fourteen of the big). Nothing tells
+of them in words: they are seen and heard.
+
+Each bird of a flock circles on a ring of its own about the remains (`Flock::bird_at`): 14–44 m
+across and 18–54 m up for a raven, wider and higher for the heavier birds (by the square root of
+their weight over a raven's, up to six times it), all of a flock turning one way as in one
+thermal, soaring at seven tenths of their cruising speed, the ring drifting a little with the air
+and the bird rising and sinking 3 m in it. Where it is depends only on the flock and the world's
+clock (the ticks over twenty), so the server and the client place it alike. Within 150 m of the
+player the birds are animals of the world (`Animal::attend`): each circles 15–50 s, then comes
+down to the remains if fewer than half the flock are on their way down or at them, feeds 20–60 s
+(head down tearing at it, up now and then to look about) and rises back to its ring. Someone near
+— the player within the bird's flight distance (a raven's 100 m), or a hunter at its kill —
+lifts the flock: none come down, those down rise with an alarm call, and the rings widen by
+seven tenths and rise 30 m more for as long. A flock no longer wanted (the remains gone, the day
+done) leaves: each bird flies 600 m off and 90 m up and is let go after 40 s. The birds call as
+they circle (a contact call every nine seconds or so: a raven's find is heard a kilometre off)
+and now and then as they feed. Beyond 150 m the server sends the flocks themselves
+(`ToClient::Flocks`, when they change), and the client draws their birds where their rings put
+them, out to 2.5 km, calling the same, the call fading with the distance (6 dB a doubling and
+half a decibel every hundred metres) until lost under the wood's own quiet. A bird whose figure
+would show under three pixels across is drawn as a speck of its back's colour, as wide as its
+wings, no smaller than a pixel and a half (`fauna::speck`): a raven's 1.2 m is 3′ at 1.5 km,
+finer than a pixel at a game's field of view, and its thin wings would fall between the pixels.
+While time races (a rest, sleep, a warp) there are no flocks; they gather again as it slows. The
+birds come of the place's numbers but are not taken from them: visitors of the hour, they are
+not kept in a save. Review pictures: `docs/review/t1/`; the screenshot key `flock=` places one.
 
 ## Hunting and wounds (`hearth_fauna::wound`, the server's throws and thrusts)
 A thrown thing flies as before (no drag; points every 20 ms), now strays from the aim as the
@@ -472,7 +509,11 @@ or body and stuns or bruises a large one. An animal that has lost two fifths of 
 dead; before that it goes slower the more it has lost and lies down when it can go no further.
 Hurt, it knows the person (aware, running), fears people more after, and a boar, bear or other
 defender hurt and come close upon turns on them (`Provoked`). An animal killed by a person lies
-as a carcass where it fell, whole, and the person is told it falls if they are within sight.
+as a carcass where it fell, whole. Nothing of a blow is told in words (Amendment T §0.2): it is
+heard where it lands (`ToClient::Struck`, `Sound::Strike`: the dull smack of a point or a blow
+driven into flesh, a knock where it glances off; as loud as √(E / 60 J), a fifth to one and a
+half) and the animal shows the rest — starting and shoved, crying out, running, bleeding (its
+drops on the ground the closer the faster it bleeds), lame, lying down, falling.
 
 ## Tracks and signs (`hearth_fauna::live`, the client's `signs.rs`)
 Animals within 80 m of the person leave signs: a print at each stride where the ground takes

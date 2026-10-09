@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use glam::{DVec2, DVec3};
+use glam::DVec3;
 use hearth_content::butchery::{Carcass, carcass_id};
 use hearth_fauna::ecology::{Cause, Ecology, REGION_CELLS, Region, Remains};
 use hearth_fauna::habitat::{GenLand, TreeYields};
@@ -174,6 +174,29 @@ impl MapGround<'_> {
     }
 }
 
+/// A bird on the wing far off as the eye makes it out (Amendment T §2.1): when its figure (span
+/// `span_m`, placed by `place`, `d` metres off) would show under three pixels across (`pixel`:
+/// the radians one pixel spans), a speck of its back's colour no smaller than a pixel and a half,
+/// as wide as its wings and as deep as their chord. The eye finds a raven against the sky a few
+/// kilometres off, finer than a screen's pixel at a game's field of view (about 5′ at 720 lines
+/// over 70°), where the figure's thin wings would fall between the pixels and vanish.
+pub fn speck(
+    sp: &hearth_fauna::species::Species,
+    span_m: f32,
+    place: glam::Affine3A,
+    d: f64,
+    pixel: f32,
+) -> Option<hearth_character::FigureInstance> {
+    let across = pixel * d as f32;
+    if span_m >= 3.0 * across {
+        return None;
+    }
+    let size = (1.5 * across).max(span_m);
+    let color = sp.coat.as_ref().map_or([40, 38, 36], |c| c.base.0);
+    let shape = glam::Affine3A::from_scale(glam::Vec3::new(size, 0.4 * size, 0.6 * size));
+    Some(hearth_character::solid(place * shape, color, (15, 0)))
+}
+
 /// The ground under an animal's feet in a map of blocks, for its pose: heights in its frame
 /// (it stands at `at`, facing `yaw`).
 pub struct CubeFooting<'a> {
@@ -281,6 +304,8 @@ pub struct Fauna {
     dir: Option<PathBuf>,
     /// What befell the kept animals since this was last taken (V2-12).
     pub tidings: Vec<hearth_fauna::herd::Tiding>,
+    /// The flocks over remains beyond the near field, for the client to draw (Amendment T §2.1).
+    pub far_flocks: Vec<hearth_fauna::flock::Flock>,
 }
 
 /// What is saved of the populations.
@@ -309,6 +334,13 @@ const FAST_YEARS: f64 = 1.0 / 48.0;
 /// The longest step the animals about the player live at a time (s): the world going faster
 /// than lived (a rest, the time speed) is lived by them in steps no longer.
 const LIVE_STEP_S: f32 = 0.5;
+/// How far off fresh remains draw birds the player may see over them (m), how long after a
+/// death they do (years), within what distance of the player the birds come as animals of the
+/// world rather than specks (m), and how many flocks at once at most.
+const FLOCK_SIGHT_M: f64 = 2000.0;
+const FLOCK_FRESH_YEARS: f64 = 4.0 / 365.0;
+const FLOCK_NEAR_M: f64 = 150.0;
+const FLOCKS_MOST: usize = 6;
 /// The most steps they live in a tick: up to a hundred times as fast as lived (faster, they lag
 /// the world's clock until a catch-up passes to the populations' tier).
 const LIVE_STEPS: f32 = 10.0;
@@ -362,6 +394,7 @@ impl Fauna {
             rng: hearth_math::hash::Rng::new(seed ^ 0x000c_a115),
             making: Vec::new(),
             tidings: Vec::new(),
+            far_flocks: Vec::new(),
             aside,
             asides,
             dir: dir.map(Path::to_path_buf),
@@ -663,6 +696,17 @@ impl Fauna {
                 self.live.materialize(&mut self.eco, &ground, player);
             }
         }
+        // Time racing (a rest, sleep, a warp, the Observer's fast-forward: more than a tick's
+        // seconds lived in one): no birds to whirl about their rings; they gather again on the
+        // first beat after it slows.
+        let racing = fast || dt as f64 * hearth_content::time::TICKS_PER_SECOND > 1.5;
+        if racing {
+            self.far_flocks.clear();
+            self.live.animals.retain(|a| a.attend.is_none());
+        } else if tick.is_multiple_of(20) {
+            self.keep_flocks(lw, player, now.hour);
+        }
+        self.live.world_s = tick as f64 / hearth_content::time::TICKS_PER_SECOND;
         let ground = MapGround {
             map: &lw.map,
             reg: &lw.reg,
@@ -720,16 +764,11 @@ impl Fauna {
     }
 
     /// The dead taken out of the world as the carcasses they leave: what is left of each
-    /// (a hunter's kill eaten from), where, which way it lies; and, in words, those the person
-    /// at `near` brought down that fell within sight of them.
-    pub fn carcasses(
-        &mut self,
-        items: &Items,
-        near: DVec3,
-    ) -> (Vec<(Stack, DVec3, f32)>, Vec<String>) {
+    /// (a hunter's kill eaten from), where, which way it lies (lying there in its coat, it
+    /// shows its fall: Amendment T §0.2).
+    pub fn carcasses(&mut self, items: &Items) -> Vec<(Stack, DVec3, f32)> {
         let cat = self.eco.catalog.clone();
         let mut out = Vec::new();
-        let mut words = Vec::new();
         for b in self.live.take_bodies(&cat) {
             let sp = &cat.species[b.species as usize];
             let how = match b.killed_by {
@@ -740,9 +779,6 @@ impl Fauna {
                 None if b.by_person => "killed by the person".to_owned(),
                 None => "dead".to_owned(),
             };
-            if b.by_person && (b.pos - near).length() < 150.0 {
-                words.push(format!("The {} falls.", sp.name.to_lowercase()));
-            }
             log::info!(
                 "A {} lies {how}, {:.0}% left",
                 sp.name.to_lowercase(),
@@ -754,7 +790,7 @@ impl Fauna {
                 out.push((s, b.pos, b.yaw));
             }
         }
-        (out, words)
+        out
     }
 
     /// The remains of the populations' dead lying within `radius` of the player, taken into the
@@ -801,17 +837,97 @@ impl Fauna {
         out
     }
 
-    /// Where ravens circle over fresh remains within sight of the player: the way to the
-    /// nearest not told of within the hour, on the ground (each flock in its turn).
-    pub fn ravens(&mut self, at: DVec3) -> Option<DVec2> {
-        let m = self.eco.raven(
-            [at.x, at.z],
-            2000.0,
+    /// The birds over the fresh remains within sight by day (Amendment T §2.1), kept each
+    /// second: those within the near field come as animals of the world (`hearth_fauna::flock`),
+    /// circling, coming down to feed in turns, rising when the player or a hunter comes near and
+    /// leaving when the remains are gone or the day is; the farther ones are left for the client
+    /// to draw as the specks they are (`far_flocks`).
+    fn keep_flocks(&mut self, lw: &LocalWorld, player: DVec3, hour: f32) {
+        use hearth_fauna::flock::{self, Flock};
+        let cat = self.eco.catalog.clone();
+        let planet = *lw.map.planet();
+        let mut wanted: Vec<Flock> = Vec::new();
+        for m in self.eco.fresh_remains(
+            [player.x, player.z],
+            FLOCK_SIGHT_M,
             self.now,
-            4.0 / 365.0,
-            1.0 / (365.0 * 24.0),
-        )?;
-        Some(DVec2::new(m.at[0] - at.x, m.at[1] - at.z))
+            FLOCK_FRESH_YEARS,
+        ) {
+            let Some(&(sp, there)) = self.eco.scavengers_at(m.at).first() else {
+                continue;
+            };
+            let bird = &cat.species[sp as usize];
+            if !hearth_fauna::live::awake(bird.activity, hour) {
+                continue;
+            }
+            let key = Flock::key_of(m.at, m.time);
+            let kg = cat.species[m.species as usize].mass_kg * m.left_at(self.now);
+            let off = ((m.at[0] - player.x).powi(2) + (m.at[1] - player.z).powi(2)).sqrt();
+            // The ground under them: as it lies near the player, as the land's shape farther off
+            // (a query at its own scale, E4.1).
+            let ground = if off <= FLOCK_NEAR_M {
+                crate::server::rest_on(lw, DVec3::new(m.at[0], player.y + 40.0, m.at[1])).y
+            } else {
+                lw.generator
+                    .terrain
+                    .sample_scaled(planet.wrap_x(m.at[0] as i32), m.at[1] as i32, 300.0)
+                    .height as f64
+            };
+            // Someone near: the player within the bird's flight distance, or a hunter at its kill.
+            let hunter_at = self.live.animals.iter().any(|a| {
+                !a.dead
+                    && a.kill_at.is_some_and(|k| {
+                        (k.x - m.at[0]).abs() < 12.0 && (k.z - m.at[1]).abs() < 12.0
+                    })
+            });
+            wanted.push(Flock {
+                key,
+                species: sp,
+                at: [m.at[0], ground, m.at[1]],
+                count: flock::flock_size(bird, kg, key, there),
+                risen: off < bird.flight_distance_m as f64 || hunter_at,
+            });
+            if wanted.len() >= FLOCKS_MOST {
+                break;
+            }
+        }
+        let near = |f: &Flock| {
+            ((f.at[0] - player.x).powi(2) + (f.at[2] - player.z).powi(2)).sqrt() <= FLOCK_NEAR_M
+        };
+        // The birds of the world: kept to their flock as it is now, sent off with it gone, let go
+        // once it is far (the client draws it from then on).
+        let mut far_off = Vec::new();
+        for a in self.live.animals.iter_mut() {
+            let Some(at) = a.attend.as_mut() else {
+                continue;
+            };
+            match wanted.iter().find(|f| f.key == at.flock.key) {
+                Some(f) if near(f) => at.flock = *f,
+                Some(_) => far_off.push(a.id),
+                None => flock::leave(a),
+            }
+        }
+        self.live.animals.retain(|a| !far_off.contains(&a.id));
+        self.far_flocks.clear();
+        for f in wanted {
+            if !near(&f) {
+                self.far_flocks.push(f);
+                continue;
+            }
+            let here: Vec<u8> = self
+                .live
+                .animals
+                .iter()
+                .filter_map(|a| {
+                    a.attend
+                        .filter(|at| at.flock.key == f.key)
+                        .map(|at| at.index)
+                })
+                .collect();
+            for i in (0..f.count).filter(|i| !here.contains(i)) {
+                self.live.attend(&cat.species[f.species as usize], f, i);
+            }
+        }
     }
 
     /// Tests and bots: a grown animal of a species dies at a place (a natural death a test may
@@ -831,7 +947,6 @@ impl Fauna {
                 left: 1.0,
                 half_days: hearth_fauna::ecology::half_days(self.eco.catalog.species[si].mass_kg),
                 cause: Cause::Natural,
-                told: -1.0,
             });
         }
     }

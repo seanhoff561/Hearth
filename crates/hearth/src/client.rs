@@ -239,6 +239,10 @@ pub struct Client {
     /// The animals near the player as the server last told of them, and as drawn (eased
     /// toward that between the server's word); the species they are of.
     animals: rustc_hash::FxHashMap<u64, ShownAnimal>,
+    /// The flocks over remains beyond the near field (Amendment T §2.1), and their birds as
+    /// drawn, by flock and place in it.
+    flocks: Vec<hearth_fauna::flock::Flock>,
+    flock_birds: rustc_hash::FxHashMap<(u64, u8), ShownAnimal>,
     /// Watching the world (Creative's spectating).
     pub watching: Option<crate::observer_ui::Watching>,
     /// The signs animals left about the player: the world's seconds they are timed by, how long
@@ -493,6 +497,8 @@ impl Client {
             falling: Vec::new(),
             tumbling: Vec::new(),
             animals: rustc_hash::FxHashMap::default(),
+            flocks: Vec::new(),
+            flock_birds: rustc_hash::FxHashMap::default(),
             watching: None,
             signs: (0.0, Vec::new()),
             insects: (0.0, 15.0),
@@ -1319,8 +1325,9 @@ impl Client {
     }
 
     /// The animals near the player, eased toward where the server has them, posed on the
-    /// ground under their feet and drawn in their coats.
-    fn animal_boxes(&mut self, view: DVec3, dt: f32) {
+    /// ground under their feet and drawn in their coats; birds on the wing far off no smaller
+    /// than a speck (`pixel`: the radians one pixel spans).
+    fn animal_boxes(&mut self, view: DVec3, dt: f32, pixel: f32) {
         let (Some(cat), Some(bodies), Some(w)) = (&self.fauna, &self.bodies, &self.world) else {
             return;
         };
@@ -1328,7 +1335,74 @@ impl Client {
         let year_frac = moment.year_frac as f32;
         let player = self.mover.pos;
         let k = 1.0 - (-dt * 12.0).exp();
-        for s in self.animals.values_mut() {
+        // The far flocks' birds where their rings have them now, as the server would place them,
+        // calling now and then as they circle (the near birds' calls come from the server).
+        let t =
+            (self.ticks as f64 + self.tick_frac.min(40.0)) / hearth_content::time::TICKS_PER_SECOND;
+        self.flock_birds
+            .retain(|(key, i), _| self.flocks.iter().any(|f| f.key == *key && *i < f.count));
+        let mut calls = Vec::new();
+        for f in &self.flocks {
+            let Some(sp) = cat.species.get(f.species as usize) else {
+                continue;
+            };
+            // The copy of the remains the shorter way round from the player (E4.1 §4.5).
+            let mut f = *f;
+            let at = w.planet.unwrap_near(DVec3::from(f.at), player);
+            f.at = at.to_array();
+            let cruise = sp.fly_m_s.unwrap_or(10.0) as f64;
+            let contact = hearth_fauna::voices::call_for(
+                sp,
+                hearth_content::schema::fauna::CallWhen::Contact,
+            );
+            for i in 0..f.count {
+                let (pos, yaw) = f.bird_at(i, t, cruise, sp.mass_kg as f64);
+                let id = f.key ^ ((i as u64) << 56) | (1 << 63);
+                if let Some(call) = contact
+                    && hearth_math::hash::unit_f64(hearth_math::hash::mix64(id ^ t.to_bits()))
+                        < (dt / 9.0) as f64
+                {
+                    calls.push(hearth_fauna::voices::Called {
+                        species: f.species,
+                        call,
+                        pos,
+                    });
+                }
+                let target = hearth_fauna::live::AnimalView {
+                    id,
+                    species: f.species,
+                    stage: hearth_fauna::live::Stage::Adult,
+                    female: i.is_multiple_of(2),
+                    pos,
+                    yaw,
+                    speed: (cruise * 0.7) as f32,
+                    act: hearth_fauna::live::Act::Fly,
+                    stride: 0.0,
+                    medium: hearth_fauna::live::Medium::Air,
+                    wounded: false,
+                    kept: false,
+                    fleece: 0.0,
+                    tame: 0.0,
+                };
+                let s = self.flock_birds.entry((f.key, i)).or_insert(ShownAnimal {
+                    target,
+                    pos,
+                    yaw,
+                    motion: hearth_fauna::anim::Motion::new(target.id),
+                    posed: false,
+                });
+                s.target = target;
+            }
+        }
+        if !calls.is_empty() {
+            let facing = -self.camera.yaw.to_radians();
+            self.hearing.calls(&calls, cat, self.camera.pos, facing);
+        }
+        for s in self
+            .animals
+            .values_mut()
+            .chain(self.flock_birds.values_mut())
+        {
             s.pos += (s.target.pos - s.pos) * k as f64;
             if (s.target.pos - s.pos).length() > 8.0 {
                 s.pos = s.target.pos;
@@ -1338,7 +1412,10 @@ impl Client {
                 d -= std::f32::consts::TAU;
             }
             s.yaw += d * k;
-            if (s.pos - view).length() > 160.0 {
+            // Birds on the wing are seen as specks far off; the rest drawn near.
+            let aloft = s.target.medium == hearth_fauna::live::Medium::Air;
+            let off = (s.pos - view).length();
+            if off > if aloft { 2500.0 } else { 160.0 } {
                 continue;
             }
             let species = s.target.species as usize;
@@ -1355,6 +1432,18 @@ impl Client {
                 sp.life.birth_frac,
                 sp.life.birth_mass_kg,
             );
+            if aloft {
+                let place = Affine3A::from_rotation_translation(
+                    Quat::from_rotation_y(s.yaw),
+                    (s.pos - view).as_vec3(),
+                );
+                if let Some(b) =
+                    crate::fauna::speck(sp, 2.0 * sp.length_m * scale, place, off, pixel)
+                {
+                    self.figure_boxes.push(b);
+                    continue;
+                }
+            }
             // Alarmed, it watches the player.
             let look = matches!(
                 s.target.act,
@@ -3277,6 +3366,8 @@ impl Client {
                     self.bodies = Some(Arc::new(hearth_fauna::skin::Bodies::new(&catalog)));
                     self.fauna = Some(Arc::new(catalog));
                     self.animals.clear();
+                    self.flocks.clear();
+                    self.flock_birds.clear();
                     let ground = crate::scene::ground_materials(&r.reg, &r.content).1;
                     self.crafting = Some(Crafting::new(
                         r.content,
@@ -3374,6 +3465,18 @@ impl Client {
                         let facing = -self.camera.yaw.to_radians();
                         self.hearing.calls(&calls, cat, self.camera.pos, facing);
                     }
+                }
+                ToClient::Flocks(f) => {
+                    self.flocks = f;
+                }
+                ToClient::Struck {
+                    at,
+                    force,
+                    glancing,
+                } => {
+                    let facing = -self.camera.yaw.to_radians();
+                    self.hearing
+                        .strike(near(at), force, glancing, self.camera.pos, facing);
                 }
                 ToClient::Animals(views) => {
                     // Those gone are gone; the rest ease toward where the server has them.
@@ -3668,7 +3771,12 @@ impl Client {
         });
         self.figure_boxes.clear();
         self.thing_boxes(view.pos);
-        self.animal_boxes(view.pos, dt);
+        // The radians a pixel spans, for the birds far off (drawn no smaller than a speck).
+        let pixel = self.scene.as_ref().map_or(0.002, |s| {
+            1.0 / hearth_lod::px_per_rad(s.render_size(targets.size).1.max(1), self.camera.fov_y)
+                as f32
+        });
+        self.animal_boxes(view.pos, dt, pixel);
         self.watch_frame(dt as f64);
         self.carcass_boxes(view.pos);
         self.sign_boxes(view.pos);

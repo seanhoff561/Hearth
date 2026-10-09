@@ -203,6 +203,9 @@ pub struct ShotSpec {
     /// Animals on the ground in front of the camera: (species, stage, female, what it does,
     /// metres ahead, metres to the right, its facing in degrees from the camera's).
     pub animals: Vec<ShotAnimal>,
+    /// Birds circling over a point on the ground (Amendment T §2.1): species, how many, metres
+    /// ahead and to the right, whether someone is near (higher and wider).
+    pub flocks: Vec<(String, u8, f64, f64, bool)>,
     /// Signs laid on the ground: whose, how many, what (prints, blood, droppings), from where
     /// (metres ahead, to the right) and going which way (degrees from the camera's).
     pub trails: Vec<(String, usize, hearth_fauna::live::SignKind, f64, f64, f32)>,
@@ -309,6 +312,7 @@ impl Default for ShotSpec {
             body: false,
             senses: None,
             animals: Vec::new(),
+            flocks: Vec::new(),
             trails: Vec::new(),
             fauna: false,
             stress: false,
@@ -488,6 +492,19 @@ impl ShotSpec {
                 "seek" => {
                     spec.fauna = true;
                     spec.seek = Some(v.to_owned());
+                }
+                // `flock=common_raven:6@60:0` (species, how many @ metres ahead : to the
+                // right), repeatable; `…:6:risen` with someone near them.
+                "flock" => {
+                    let (what, at) = v.split_once('@').unwrap_or((v, "60"));
+                    let mut w = what.split(':');
+                    let species = w.next().unwrap_or("common_raven").to_owned();
+                    let count = w.next().unwrap_or("5").parse()?;
+                    let risen = w.next() == Some("risen");
+                    let mut n = at.split(':');
+                    let ahead = n.next().unwrap_or("60").parse()?;
+                    let right = n.next().unwrap_or("0").parse()?;
+                    spec.flocks.push((species, count, ahead, right, risen));
                 }
                 // `animal=red_deer:adult:m:graze@20:-3:90` (species, stage, sex, what it does @
                 // metres ahead : to the right : facing in degrees from the camera's : above the
@@ -1399,7 +1416,7 @@ pub fn render_shot(
     // The animals: their bodies and coats, those placed and those of the populations.
     let mut drawn = Vec::new();
     let mut bodies = None;
-    if !spec.animals.is_empty() || fauna.is_some() {
+    if !spec.animals.is_empty() || !spec.flocks.is_empty() || fauna.is_some() {
         let catalog = hearth_fauna::species::Catalog::new(&lw.content);
         let made = std::time::Instant::now();
         let b = hearth_fauna::skin::Bodies::new(&catalog);
@@ -1506,6 +1523,7 @@ pub fn render_shot(
             lw,
             &camera,
             year_frac as f32,
+            1.0 / hearth_lod::px_per_rad(spec.height, spec.fov) as f32,
         ));
         let signs = trail_signs(spec, lw, catalog, &camera)?;
         let light = |p: DVec3| {
@@ -1901,7 +1919,8 @@ struct Drawn {
 }
 
 /// The boxes of animals in a shot, posed on the ground under their feet in their coats,
-/// camera-relative.
+/// camera-relative; birds on the wing far off no smaller than a speck (`pixel`: the radians one
+/// pixel spans).
 fn animal_instances(
     drawn: &[Drawn],
     catalog: &hearth_fauna::species::Catalog,
@@ -1909,6 +1928,7 @@ fn animal_instances(
     lw: &LocalWorld,
     camera: &hearth_render::camera::Camera,
     year_frac: f32,
+    pixel: f32,
 ) -> Vec<hearth_character::FigureInstance> {
     use hearth_fauna::anim::{Drive, Motion, pose, scale_of};
     let mut out = Vec::new();
@@ -1925,6 +1945,17 @@ fn animal_instances(
             sp.life.birth_frac,
             sp.life.birth_mass_kg,
         );
+        if a.medium == hearth_fauna::live::Medium::Air {
+            let place = glam::Affine3A::from_rotation_translation(
+                glam::Quat::from_rotation_y(a.yaw),
+                (a.pos - camera.pos).as_vec3(),
+            );
+            let off = (a.pos - camera.pos).length();
+            if let Some(b) = crate::fauna::speck(sp, 2.0 * sp.length_m * scale, place, off, pixel) {
+                out.push(b);
+                continue;
+            }
+        }
         // Alarmed, it watches the camera.
         let look = matches!(
             a.act,
@@ -2077,6 +2108,37 @@ fn placed_animals(
             medium: a.medium,
             fleece: a.fleece,
         });
+    }
+    // The flocks' birds where their rings have them, an hour into the world's day.
+    for (k, (id, count, ahead, right, risen)) in spec.flocks.iter().enumerate() {
+        let species = catalog
+            .index(id)
+            .ok_or_else(|| anyhow::anyhow!("flock={id}: no such species"))?;
+        let sp = &catalog.species[species];
+        let p = camera.pos + flat * *ahead + right * *right;
+        let flock = hearth_fauna::flock::Flock {
+            key: hearth_fauna::flock::Flock::key_of([p.x, p.z], k as f64),
+            species: species as u16,
+            at: [p.x, lw.surface_y(p.x, p.z), p.z],
+            count: *count,
+            risen: *risen,
+        };
+        let cruise = sp.fly_m_s.unwrap_or(10.0) as f64;
+        for i in 0..*count {
+            let (pos, yaw) = flock.bird_at(i, 3600.0, cruise, sp.mass_kg as f64);
+            out.push(Drawn {
+                species,
+                stage: hearth_fauna::live::Stage::Adult,
+                female: i.is_multiple_of(2),
+                act: hearth_fauna::live::Act::Fly,
+                pos,
+                yaw,
+                speed: (cruise * 0.7) as f32,
+                phase: (i as f32 * 0.37).fract(),
+                medium: hearth_fauna::live::Medium::Air,
+                fleece: 0.0,
+            });
+        }
     }
     Ok(out)
 }

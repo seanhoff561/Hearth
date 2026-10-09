@@ -132,6 +132,9 @@ pub enum Sound {
     /// Something built giving way (V2-8): wood cracks and splinters, stone grinds and
     /// thuds, brush and earth slump; `force` by its weight, 0.1 to 1.5.
     Break { surface: Surface, force: f32 },
+    /// A blow or a thing flung landing on an animal: the dull smack of it driven into flesh, or
+    /// the knock of it turned on hide and bone; `force` 0.2 to 1.5.
+    Strike { force: f32, glancing: bool },
     /// An animal's call: its kind, its pitch's range (Hz), how long (s), and its own variety
     /// (a species' song keeps its notes).
     Call {
@@ -407,6 +410,19 @@ fn build(sound: Sound, b: &mut Build) -> f32 {
             let f = force.clamp(0.1, 1.2);
             b.noise(Band, 1500.0, 1.2, sh(0.0, 0.12, 0.12), 0.05 * f);
             b.noise(Band, 2700.0, 3.0, sh(0.0, 0.12, 0.1), 0.02 * f);
+            1.2
+        }
+        Sound::Strike { force, glancing } => {
+            let f = force.clamp(0.2, 1.5);
+            if glancing {
+                b.noise(Band, 1700.0, 1.2, sh(0.0, 0.0008, 0.03), 0.07 * f);
+                b.tone(460.0, 320.0, 0.02, sh(0.0, 0.0008, 0.035), 0.05 * f);
+                b.noise(High, 3200.0, 0.8, sh(0.01, 0.01, 0.06), 0.02 * f);
+            } else {
+                b.noise(Band, 650.0, 0.9, sh(0.0, 0.001, 0.05), 0.12 * f);
+                b.tone(120.0, 60.0, 0.05, sh(0.0, 0.002, 0.09), 0.22 * f);
+                b.noise(Low, 260.0, 0.7, sh(0.0, 0.002, 0.08), 0.06 * f);
+            }
             1.2
         }
         Sound::Hurt { force, fracture } => {

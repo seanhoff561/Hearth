@@ -126,7 +126,7 @@ pub enum Cause {
 /// What is left where a large animal died in the abstract step: its species, age and sex,
 /// where (world x, z), when (years), how much of it was left then (a kill the hunters ate from,
 /// a death whole), how many days half of what is left lasts (the bigger the body, the longer),
-/// why it died, and when the ravens over it were last told of (years; never below zero).
+/// and why it died.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Remains {
     pub species: u16,
@@ -138,12 +138,6 @@ pub struct Remains {
     #[serde(default = "five")]
     pub half_days: f32,
     pub cause: Cause,
-    #[serde(default = "never")]
-    pub told: f64,
-}
-
-fn never() -> f64 {
-    -1.0
 }
 
 fn five() -> f32 {
@@ -1344,64 +1338,53 @@ impl Ecology {
         out
     }
 
-    /// The nearest fresh remains within `radius` of `at` not told of within `again` years, now
-    /// told of — one flock of ravens at a time, so that a second carcass is told of in its turn
-    /// rather than passed over with the first.
-    pub fn raven(
-        &mut self,
-        at: [f64; 2],
-        radius: f64,
-        now: f64,
-        fresh: f64,
-        again: f64,
-    ) -> Option<Remains> {
+    /// The fresh remains within `radius` of `at` with enough left of them to draw scavengers:
+    /// those dead within `fresh` years, a fifth or more left; the nearest first.
+    pub fn fresh_remains(&self, at: [f64; 2], radius: f64, now: f64, fresh: f64) -> Vec<Remains> {
         let wrap = self.wrap_m();
-        let mut best: Option<(f64, (i64, i64), usize)> = None;
-        for (key, r) in &self.regions {
-            for (i, m) in r.remains.iter().enumerate() {
-                let age = now - m.time;
-                let d = dist(m.at, at, wrap);
-                if (0.0..fresh).contains(&age)
-                    && now - m.told >= again
-                    && d <= radius
+        let mut out: Vec<Remains> = self
+            .regions
+            .values()
+            .flat_map(|r| r.remains.iter())
+            .filter(|m| {
+                (0.0..fresh).contains(&(now - m.time))
                     && m.left_at(now) > 0.2
-                    && best.is_none_or(|b| (d, *key, i) < (b.0, b.1, b.2))
-                {
-                    best = Some((d, *key, i));
-                }
-            }
-        }
-        let (_, key, i) = best?;
-        let m = self.regions.get_mut(&key)?.remains.get_mut(i)?;
-        m.told = now;
-        Some(*m)
+                    && dist(m.at, at, wrap) <= radius
+            })
+            .copied()
+            .collect();
+        out.sort_by(|a, b| dist(a.at, at, wrap).total_cmp(&dist(b.at, at, wrap)));
+        out
     }
 
-    /// Remains of animals dead within `fresh` years and within `radius` of a place, that ravens
-    /// circle over, not told of for `again` years: told of now.
-    pub fn ravens(
-        &mut self,
-        at: [f64; 2],
-        radius: f64,
-        now: f64,
-        fresh: f64,
-        again: f64,
-    ) -> Vec<Remains> {
-        let wrap = self.wrap_m();
-        let mut out = Vec::new();
-        for r in self.regions.values_mut() {
-            for m in r.remains.iter_mut() {
-                let age = now - m.time;
-                if (0.0..fresh).contains(&age)
-                    && now - m.told >= again
-                    && dist(m.at, at, wrap) <= radius
-                    && m.left_at(now) > 0.2
-                {
-                    m.told = now;
-                    out.push(*m);
+    /// The birds that gather over remains at a place (`flock::scavenges`), of those simulated
+    /// in its region: each species and how many of it there are (its cells' adults and its
+    /// groups' members), the most first.
+    pub fn scavengers_at(&self, at: [f64; 2]) -> Vec<(u16, u32)> {
+        let Some(r) = self.regions.get(&self.region_key(at[0], at[1])) else {
+            return Vec::new();
+        };
+        let scavenges = |sp: u16| crate::flock::scavenges(&self.catalog.species[sp as usize]);
+        let mut out: Vec<(u16, u32)> = Vec::new();
+        for (slot, &sp) in r.pool_species.iter().enumerate() {
+            if scavenges(sp) {
+                let n: f32 = r.adults[slot * REGION_LEN..(slot + 1) * REGION_LEN]
+                    .iter()
+                    .sum();
+                if n >= 1.0 {
+                    out.push((sp, n as u32));
                 }
             }
         }
+        for g in r.groups.iter().filter(|g| scavenges(g.species)) {
+            let n = (g.females + g.males + g.juveniles) as u32;
+            match out.iter_mut().find(|e| e.0 == g.species) {
+                Some(e) => e.1 += n,
+                None if n > 0 => out.push((g.species, n)),
+                None => {}
+            }
+        }
+        out.sort_by_key(|&(sp, n)| (std::cmp::Reverse(n), sp));
         out
     }
 
@@ -1450,7 +1433,6 @@ impl Ecology {
             left: left.clamp(0.0, 1.0),
             half_days: half_days(kg),
             cause,
-            told: never(),
         });
     }
 

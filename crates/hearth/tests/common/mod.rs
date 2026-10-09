@@ -51,6 +51,10 @@ pub struct World {
     pub signs: Vec<hearth_fauna::live::Sign>,
     /// The calls heard.
     pub calls: Vec<hearth_fauna::voices::Called>,
+    /// The flocks over remains beyond the near field, as last told.
+    pub flocks: Vec<hearth_fauna::flock::Flock>,
+    /// The blows heard landing on animals: where, how loud, whether glancing.
+    pub struck: Vec<(glam::DVec3, f32, bool)>,
     /// Whether the server said it saved since asked.
     pub saved: bool,
 }
@@ -168,6 +172,8 @@ impl World {
             census: None,
             signs: Vec::new(),
             calls: Vec::new(),
+            flocks: Vec::new(),
+            struck: Vec::new(),
             saved: false,
         };
         let feet = w.mover.pos;
@@ -201,6 +207,12 @@ impl World {
                 ToClient::Census(c) => self.census = Some(c),
                 ToClient::Signs { signs, .. } => self.signs = signs,
                 ToClient::Calls(c) => self.calls.extend(c),
+                ToClient::Flocks(f) => self.flocks = f,
+                ToClient::Struck {
+                    at,
+                    force,
+                    glancing,
+                } => self.struck.push((at, force, glancing)),
                 ToClient::Saved => self.saved = true,
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {

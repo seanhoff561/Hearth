@@ -4,6 +4,7 @@
 pub mod anim;
 pub mod danger;
 pub mod ecology;
+pub mod flock;
 pub mod habitat;
 pub mod herd;
 pub mod live;

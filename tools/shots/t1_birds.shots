@@ -1,0 +1,9 @@
+# T1.1 (Amendment T §2.1): birds over remains, seen and not told — ravens circling a dead hind
+# 30 m off, a flock 300 m off and 1.5 km off (no smaller than a speck), and a flock lifted higher
+# and wider by someone near. Kept in docs/review/t1/ (as JPEGs).
+# `hearth --software --screenshot-list tools/shots/t1_birds.shots`
+defaults: w=1280, h=720, clouds=0.3, dry=true, seed=7, planet=huge, res=256, dist=6, lod=128, biome=steppe, above=1.7, yaw=30, season=autumn, hour=10
+animal=red_deer:adult:f:dead@25:0:40, flock=common_raven:5@25:0, above=4, fov=85, pitch=-24, out=bench-out/t1/ravens_near.png
+flock=common_raven:5@300:0, pitch=-5, out=bench-out/t1/ravens_300m.png
+flock=common_raven:6@1500:0, pitch=-1, out=bench-out/t1/ravens_1500m.png
+animal=red_deer:adult:f:dead@25:0:40, flock=common_raven:5:risen@25:0, above=4, fov=85, pitch=-30, out=bench-out/t1/ravens_risen.png

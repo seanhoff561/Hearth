@@ -81,6 +81,16 @@ fn every_sound() -> Vec<(String, Sound, Bus)> {
         },
         Bus::Players,
     ));
+    for glancing in [false, true] {
+        all.push((
+            format!("strike{}", if glancing { ", glancing" } else { "" }),
+            Sound::Strike {
+                force: 1.0,
+                glancing,
+            },
+            Bus::Players,
+        ));
+    }
     all.push((
         "stomach".into(),
         Sound::Stomach { force: 1.0 },

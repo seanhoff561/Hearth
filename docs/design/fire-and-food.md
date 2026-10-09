@@ -58,6 +58,8 @@ or goes off by what it is and how it is kept, and cooking changes what it gives 
 ### Kills (stand-in)
 Until animals live in the world (V2-7), a predator's kill turns up 30–120 m away every one to
 two and a half days (while fewer than two lie within 250 m); ravens circling say which way.
+*(Gone since V2-7: kills and remains are the animals' own, and the birds over them are seen, not
+told, `fauna.md`.)*
 
 ## Parameters
 `REGRESSION_M_H` 0.048, `IN_FLAME` 0.4, `CHAR_SHARE` 0.15, `COAL_MJ_KG` 29.5,

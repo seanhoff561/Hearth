@@ -474,6 +474,8 @@
   "aim.animal": "{name}",
   "subtitles.crickets": "Crickets chirp",
   "subtitles.collapse": "Something gives way",
+  "subtitles.strike": "A blow lands",
+  "subtitles.strike.glancing": "A blow glances off",
   "subtitles.call.roar": "Roaring",
   "subtitles.call.bark": "Barking",
   "subtitles.call.grunt": "Grunting",

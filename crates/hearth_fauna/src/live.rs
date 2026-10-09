@@ -227,6 +227,8 @@ pub struct Animal {
     pub was: Act,
     /// Kept by people (V2-12): its makeup, how tame it is, where it is tethered.
     pub kept: Option<Kept>,
+    /// A bird come to remains (Amendment T §2.1): its flock and what it is doing there.
+    pub attend: Option<crate::flock::Attend>,
 }
 
 /// What a sign is: a print of a foot, a drop of blood, droppings.
@@ -299,6 +301,9 @@ pub struct Struck {
     pub part: Part,
     pub deep: bool,
     pub killed: bool,
+    /// It glanced off, doing no harm.
+    pub glancing: bool,
+    /// What it did, for the log and the tests (the world shows it: Amendment T §0.2).
     pub words: String,
 }
 
@@ -362,6 +367,7 @@ impl Animal {
             drip: 0.0,
             was: Act::Graze,
             kept: None,
+            attend: None,
         }
     }
 }
@@ -439,6 +445,9 @@ pub struct Live {
     pub calls: Vec<Called>,
     /// The world's years the kept animals were last tended to (V2-12).
     pub years: Option<f64>,
+    /// The world's clock (its ticks in seconds), which the birds over remains circle by, set
+    /// each tick and stepped with the animals (`flock::Flock::bird_at`).
+    pub world_s: f64,
 }
 
 /// Within this distance of the player groups become animals.
@@ -556,6 +565,7 @@ impl Live {
             clock: 0.0,
             calls: Vec::new(),
             years: None,
+            world_s: 0.0,
         }
     }
 
@@ -1012,6 +1022,7 @@ impl Live {
     ) {
         let cat = eco.catalog.clone();
         self.clock += dt as f64;
+        self.world_s += dt as f64;
         if let Some(p) = presence {
             self.reframe(p.pos, eco.cells_around as f64 * CELL_M);
         }
@@ -1081,11 +1092,34 @@ impl Live {
         };
         let mut killed: Vec<(u64, u16, DVec3)> = Vec::new();
         let mut packs: Vec<(u64, u64, DVec3)> = Vec::new();
+        // The birds over each remains on their way down to them or at them now (they come down
+        // in turns).
+        let mut down: FxHashMap<u64, usize> = FxHashMap::default();
+        for a in &self.animals {
+            if let Some(at) = a.attend
+                && matches!(
+                    at.doing,
+                    crate::flock::Doing::Landing | crate::flock::Doing::Feeding
+                )
+            {
+                *down.entry(at.flock.key).or_default() += 1;
+            }
+        }
+        let mut gone: Vec<u64> = Vec::new();
         for a in self.animals.iter_mut() {
             if a.dead {
                 continue;
             }
             let sp = &cat.species[a.species as usize];
+            if let Some(at) = a.attend
+                && !a.hurt.wounded()
+            {
+                let down = down.entry(at.flock.key).or_default();
+                if crate::flock::step(a, sp, self.world_s, down, dt as f64) {
+                    gone.push(a.id);
+                }
+                continue;
+            }
             let mover = mover_of(sp);
             let walker = Walker::of(sp);
             // Its wounds: bleeding (dead of it at the last), stunned, or too weak to go on.
@@ -1369,6 +1403,10 @@ impl Live {
                 }
             }
         }
+        // The birds that left remains, gone.
+        if !gone.is_empty() {
+            self.animals.retain(|a| !gone.contains(&a.id));
+        }
         // The kills: the prey dead where it fell, the hunter (and its pack about it) making a
         // meal of it.
         for (prey, predator, at) in killed {
@@ -1480,6 +1518,26 @@ impl Live {
                     });
                 }
             };
+            // A bird over remains calls the others to them as it circles (a raven's find is
+            // heard a kilometre off), now and then as it feeds, and in alarm rising from them.
+            if let Some(at) = a.attend
+                && !a.hurt.wounded()
+            {
+                use crate::flock::Doing;
+                if at.flock.risen && a.act == Act::Fly && matches!(was, Act::Graze | Act::Alert) {
+                    call(call_for(sp, CallWhen::Alarm));
+                    continue;
+                }
+                let p = match at.doing {
+                    Doing::Circling => dt / 9.0,
+                    Doing::Feeding => dt / 30.0,
+                    _ => 0.0,
+                };
+                if rng.next_f32() < p {
+                    call(call_for(sp, CallWhen::Contact));
+                }
+                continue;
+            }
             if a.act == Act::Flee && was != Act::Flee && rng.next_f32() < 0.5 {
                 call(call_for(sp, CallWhen::Alarm));
                 continue;
@@ -1735,6 +1793,8 @@ impl Live {
                 pos: a.pos,
             });
         }
+        let glancing =
+            !w.killed && !w.deep && w.stunned <= 0.0 && w.bleeding + w.clotting + w.lame <= 0.0;
         let words = if w.killed {
             a.dead = true;
             a.speed = 0.0;
@@ -1764,6 +1824,7 @@ impl Live {
             part: hit.part,
             deep: w.deep,
             killed: w.killed,
+            glancing,
             words,
         })
     }
@@ -1815,6 +1876,28 @@ impl Live {
             Medium::Ground,
         ));
         id
+    }
+
+    /// A bird come to remains (Amendment T §2.1): bird `index` of `flock`, of species `sp`,
+    /// circling on its ring.
+    pub fn attend(&mut self, sp: &crate::species::Species, flock: crate::flock::Flock, index: u8) {
+        let (attend, pos, yaw) = crate::flock::attending(flock, index, sp, self.world_s);
+        let id = self.id();
+        let mut a = Animal::new(
+            id,
+            flock.species,
+            None,
+            None,
+            Stage::Adult,
+            index.is_multiple_of(2),
+            pos,
+            yaw,
+            5.0,
+            Medium::Air,
+        );
+        a.act = Act::Fly;
+        a.attend = Some(attend);
+        self.animals.push(a);
     }
 }
 

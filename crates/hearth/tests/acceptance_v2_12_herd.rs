@@ -187,16 +187,12 @@ fn a_herder_breeds_a_wild_sheep_into_a_docile_woolly_lineage() {
         for _ in 0..4 {
             skip_days(&mut w, days_per_year / 16.0);
         }
-        born += w
-            .acted
-            .iter()
-            .filter(|(p, _, t)| p == "herd" && t.contains("given birth"))
-            .count();
-        w.acted.retain(|(p, _, _)| p != "herd");
         let now = w.calendar.at(w.ticks).days;
+        // The lambs seen at their mothers' sides (nothing tells of a birth: Amendment T §0.2).
         for a in flock(&w) {
             first_seen.entry(a.id).or_insert(year);
         }
+        born = first_seen.len() - founders.len();
         sustain(&mut w);
         // The young tethered as they grow (tame while young, they let the herder near).
         for a in flock(&w) {

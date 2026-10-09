@@ -50,7 +50,7 @@ E4.1. V2-11 superseded.
 | Audit 2 | done 2026-10-08 |
 | E4.1 — Earth-scale performance (the owner's fix pass) | done 2026-10-09 (D279–D289) |
 | T0 — S5/P7 stopped at (b) | done 2026-10-09 (D290, D291) |
-| T1 — quick wins (ravens, skin, highlight, globe) | next |
+| T1 — quick wins (ravens, skin, highlight, globe) | under way: T1.1 done (D292) |
 | T2 — the realism gap analysis | planned |
 | S5/P7 (c)–(f) with G1 → W1 → L1 → P7G → S6 with H1 → R1 → S7 → S8 → P8 | planned (T2 may revise) |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
@@ -68,6 +68,18 @@ E4.1. V2-11 superseded.
 Pictures and runs that need the owner (T §7), newest first:
 - `cargo test -p hearth_worldgen --test planet_pinned` on the laptop: whether Windows' maths make
   the same planet as Linux's (D289). One command, a pass or a failure to paste back.
+
+## T1 — quick wins (2026-10-09, Amendment T §2)
+- **T1.1 birds over remains, notices shown** (D292, PLAYTEST 34): `hearth_fauna::flock`; the
+  scavengers circle fresh remains by day (live within 150 m, drawn by the client to 2.5 km from
+  `ToClient::Flocks`), come down in turns, lift when someone is near, leave; calls near and far.
+  Kill, strike, attack and herd lines gone; a blow is heard (`ToClient::Struck`,
+  `Sound::Strike`). Tests: `hearth_fauna/tests/flocks.rs` (ring speed and heading, turns, lifting,
+  leaving, server and client alike), `hearth/tests/fauna.rs` (crows over a hind 300 m off; the
+  spear test reads the world). Far birds drawn as specks; pictures `docs/review/t1/`
+  (`tools/shots/t1_birds.shots`). Owner check: a carcass by day seen from a rise.
+- Next: T1.2 skin, T1.3 the thing aimed at, T1.4 the globe in relief; then T1's acceptance and
+  `main`.
 
 ## E4.1 — Earth-scale performance (2026-10-09, D279–D289, `docs/spec/e4.1-earth-scale-performance.md`)
 The owner's playtest of the Earth-sized world (PLAYTEST 29–31): the globe all blue and laggy, the

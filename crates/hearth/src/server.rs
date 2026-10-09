@@ -924,6 +924,7 @@ fn run(
         return Ok(());
     }
     let mut animals_shown = false;
+    let mut flocks_told: Vec<hearth_fauna::flock::Flock> = Vec::new();
     // Watching the world (Creative's spectating): where its eye is.
     let mut observing: Option<DVec3> = None;
     // How readily the animals turn on people: the world's Predator Behavior setting.
@@ -1222,7 +1223,7 @@ fn run(
                         // What it strikes on its way, and where it falls.
                         let year_frac = calendar.at(ticks).year_frac as f32;
                         let cat = fauna.eco.catalog.clone();
-                        let (words, end) = crate::strikes::fly(
+                        let (landed, end) = crate::strikes::fly(
                             &f,
                             &items,
                             &mut fauna.live,
@@ -1230,12 +1231,12 @@ fn run(
                             player.mover.pos,
                             year_frac,
                         );
-                        if let Some(words) = words {
-                            let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
-                                process: String::new(),
-                                done: false,
-                                words,
-                            }));
+                        if let Some(l) = landed {
+                            let _ = tx.send(ToClient::Struck {
+                                at: l.at,
+                                force: l.force(),
+                                glancing: l.struck.glancing,
+                            });
                         }
                         world_items.add(f.stack, rest_on(&lw, end).to_array(), 0.0);
                         items_changed = true;
@@ -1245,7 +1246,7 @@ fn run(
                     if let Some(f) = workshop.shoot(&mut here!(), dir, drawn_s) {
                         let year_frac = calendar.at(ticks).year_frac as f32;
                         let cat = fauna.eco.catalog.clone();
-                        let (words, end) = crate::strikes::fly(
+                        let (landed, end) = crate::strikes::fly(
                             &f,
                             &items,
                             &mut fauna.live,
@@ -1253,12 +1254,12 @@ fn run(
                             player.mover.pos,
                             year_frac,
                         );
-                        if let Some(words) = words {
-                            let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
-                                process: String::new(),
-                                done: false,
-                                words,
-                            }));
+                        if let Some(l) = landed {
+                            let _ = tx.send(ToClient::Struck {
+                                at: l.at,
+                                force: l.force(),
+                                glancing: l.struck.glancing,
+                            });
                         }
                         world_items.add(f.stack, rest_on(&lw, end).to_array(), 0.0);
                         items_changed = true;
@@ -1485,7 +1486,7 @@ fn run(
                     let done = striking.done();
                     if now_strikes {
                         let cat = fauna.eco.catalog.clone();
-                        if let Some(words) = crate::strikes::land(
+                        if let Some(l) = crate::strikes::land(
                             &player,
                             &items,
                             &cfg,
@@ -1493,50 +1494,31 @@ fn run(
                             &cat,
                             now.year_frac,
                         ) {
-                            let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
-                                process: String::new(),
-                                done: false,
-                                words,
-                            }));
+                            let _ = tx.send(ToClient::Struck {
+                                at: l.at,
+                                force: l.force(),
+                                glancing: l.struck.glancing,
+                            });
                         }
                     }
                     if done {
                         player.striking = None;
                     }
                 }
-                // The kept animals' doings near the player, told.
+                // The kept animals' doings are the world's to show: the young at their mothers'
+                // sides, the old lying where they died (Amendment T §0.2); the log keeps them.
                 for t in std::mem::take(&mut fauna.tidings) {
                     use hearth_fauna::herd::Tiding;
                     let cat = &fauna.eco.catalog;
-                    let (at, words) = match t {
-                        Tiding::Born {
-                            species, young, at, ..
-                        } => (
-                            at,
-                            format!(
-                                "One of your {}s has given birth: {}.",
-                                cat.species[species as usize].name.to_lowercase(),
-                                match young {
-                                    1 => "a single young one".to_owned(),
-                                    2 => "twins".to_owned(),
-                                    n => format!("{n} young"),
-                                }
-                            ),
+                    match t {
+                        Tiding::Born { species, young, .. } => log::info!(
+                            "a kept {} gives birth to {young}",
+                            cat.species[species as usize].name.to_lowercase()
                         ),
-                        Tiding::Died { species, at } => (
-                            at,
-                            format!(
-                                "One of your {}s has died of old age.",
-                                cat.species[species as usize].name.to_lowercase()
-                            ),
+                        Tiding::Died { species, .. } => log::info!(
+                            "a kept {} dies of old age",
+                            cat.species[species as usize].name.to_lowercase()
                         ),
-                    };
-                    if planet.delta(player.mover.pos, at).length() < 120.0 {
-                        outbox.push(ToClient::Acted(hearth_protocol::Acted {
-                            process: "herd".into(),
-                            done: true,
-                            words,
-                        }));
                     }
                 }
                 // What the animals called, in the world and about it.
@@ -1545,8 +1527,8 @@ fn run(
                 if !calls.is_empty() {
                     let _ = tx.send(ToClient::Calls(calls));
                 }
-                // What the animals did to the player: hurt them, or made them stop and think;
-                // and why.
+                // What the animals did to the player: hurt them (the charge, the bite and the
+                // turning away are the animals' own to show, Amendment T §0.2).
                 for at in fauna.live.attacks.clone() {
                     if !at.injury.is_empty() && player.body.dead.is_none() {
                         let side = if at.animal % 2 == 0 {
@@ -1561,40 +1543,16 @@ fn run(
                             player.body.catch_illness(&cfg, "envenomation");
                         }
                     }
-                    let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
-                        process: String::new(),
-                        done: false,
-                        words: at.words.clone(),
-                    }));
                 }
                 // The dead lie where they fell, as carcasses; the remains of the populations'
-                // dead come into the world as the player comes near, and ravens circling by day
-                // tell of the fresh ones within sight.
-                let (mut lying, fallen) = fauna.carcasses(&items, at);
-                for words in fallen {
-                    let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
-                        process: String::new(),
-                        done: false,
-                        words,
-                    }));
-                }
+                // dead come into the world as the player comes near (the birds over the fresh
+                // ones within sight are the fauna's, Amendment T §2.1).
+                let mut lying = fauna.carcasses(&items);
                 if ticks.is_multiple_of(40) {
                     let air_c = env.weather_at(&moment, at).temperature_c as f32;
                     let content = lw.content.clone();
                     let days = calendar.days_per_year();
                     lying.extend(fauna.found(&items, &content, &lw, at, 90.0, air_c, days));
-                    if now.air.light > 0.3
-                        && let Some(way) = fauna.ravens(at)
-                    {
-                        let _ = tx.send(ToClient::Acted(hearth_protocol::Acted {
-                            process: String::new(),
-                            done: false,
-                            words: format!(
-                                "Ravens are circling to the {}.",
-                                crate::workshop::compass(way.x, way.y)
-                            ),
-                        }));
-                    }
                 }
                 for (stack, pos, yaw) in lying {
                     world_items.add(stack, rest_on(&lw, pos).to_array(), yaw);
@@ -1638,6 +1596,10 @@ fn run(
                         animals_shown = !views.is_empty();
                         let _ = tx.send(ToClient::Animals(views));
                     }
+                }
+                if fauna.far_flocks != flocks_told {
+                    flocks_told = fauna.far_flocks.clone();
+                    let _ = tx.send(ToClient::Flocks(flocks_told.clone()));
                 }
             }
             // The vegetation for the distant terrain: when it changes, and as the years turn.
