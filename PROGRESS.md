@@ -28,7 +28,7 @@ at every scale, judged by evidence; T0 → T1 → T2, then the plan T2 revises.
 ## Milestones
 Done: M0–M3 (v1 engine), V2-0 – V2-10, V2-12 (the Neolithic), H0–H10 (removed in E0), S0,
 P0, P1, P2, E0, Audit 0, Q1, E1, E2, E3, E4, E5, P3, P4, E6, P5, S1, S2, E7, S3, S4, Audit 2,
-E4.1. V2-11 superseded.
+E4.1, T0, T1. V2-11 superseded.
 
 | Next, in order | State |
 |---|---|
@@ -51,8 +51,8 @@ E4.1. V2-11 superseded.
 | Audit 2 | done 2026-10-08 |
 | E4.1 — Earth-scale performance (the owner's fix pass) | done 2026-10-09 (D279–D289) |
 | T0 — S5/P7 stopped at (b) | done 2026-10-09 (D290, D291) |
-| T1 — quick wins (ravens, skin, highlight, globe) | under way: T1.1–T1.4 done (D292–D295); acceptance next |
-| T2 — the realism gap analysis | planned |
+| T1 — quick wins (ravens, skin, highlight, globe) | done 2026-10-09 (D292–D295) |
+| T2 — the realism gap analysis | next |
 | S5/P7 (c)–(f) with G1 → W1 → L1 → P7G → S6 with H1 → R1 → S7 → S8 → P8 | planned (T2 may revise) |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
@@ -112,7 +112,24 @@ Pictures and runs that need the owner (T §7), newest first:
   leaf fall, cost), `scene_shaders` (the glow only about its shape), `workshop` and
   `hearth_world/tests/ground.rs` (the hole where struck). Pictures `docs/review/t1/aim_*`
   (`tools/shots/t1_aim.shots`, keys `look=`, `thing=`). Box edges gone.
-- Next: T1's acceptance (`scripts/check.sh`, the perf gate), then `main`.
+- **Accepted** (T §2): no notice repeats (the world's lines reviewed, D292); birds over remains
+  near and as specks 2.5 km off; skin close-ups under four lights; each aim target glows along
+  its own shape (berries, a branch, a stone, a stick, a dig patch, water); the globe's relief,
+  depths and rivers; `scripts/check.sh` green; the CPU budgets met. The GPU's share (the
+  skin's, the glow's) and the perf gate need the PC (owner checks), as the gate's baseline is
+  still H1's.
+- **Real?** Birds as scavengers gather (by carrion share and mass, by day, lifting at people);
+  skin's roughness and albedo from measured faces (Weyrich et al. 2006); the look meets the
+  shape drawn, the leaves a season dropped included; the globe's heights from the grid itself.
+- **Lean?** Gone: five repeating notices, the box-edge highlight (`box_edges`), the cell-based
+  aim and its boxes, the second sharp skin lobe, map format 2.
+- **Fast?** A look 0.010–0.012 ms (< 0.2); the globe made in 1.28 s, read back in 0.03 s, hover
+  0.006 ms; flocks reckoned from the clock (no state per bird). Gate: the PC's.
+- **Whole?** Pictures reviewed (`docs/review/t1/`): the glow follows only the thing looked at
+  and hides behind what stands before it; birds only where remains are; the globe's three looks.
+- **Organic?** Each bird on its own ring and phase; pores and lines by region, not tiled; a dig's
+  leftover steps by a draw, not always the nearest voxel.
+- Next: T2, the realism gap analysis.
 
 ## E4.1 — Earth-scale performance (2026-10-09, D279–D289, `docs/spec/e4.1-earth-scale-performance.md`)
 The owner's playtest of the Earth-sized world (PLAYTEST 29–31): the globe all blue and laggy, the

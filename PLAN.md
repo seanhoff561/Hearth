@@ -38,8 +38,8 @@ cube-era code allowed where it serves that, T §5). V2.1 and its Addenda are sup
 8. **S1 → S2 → E7 → S3 → S4** (S4 as amended by E §9.2) (done).
 9. **Audit 2** (done).
 10. **E4.1 — Earth-scale performance** (the owner's fix pass, done 2026-10-09).
-11. **Amendment T** (D291): **T0**, S5/P7 stopped at (b) (done) → **T1**, quick wins → **T2**,
-    the realism gap analysis, which revises what follows.
+11. **Amendment T** (D291): **T0**, S5/P7 stopped at (b) (done) → **T1**, quick wins (done) →
+    **T2**, the realism gap analysis, which revises what follows.
 12. By default after T2: **S5/P7 (c)–(f) with G1** (the ground at walking scale) → **W1**
     (water; S7's water) → **L1** (seamless distance; trees in the LOD band) → **P7G** → **S6
     with H1** → **R1** (rendering realism; earlier if T2 says) → **S7 → S8 → P8.** An audit
