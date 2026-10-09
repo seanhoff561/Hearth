@@ -118,7 +118,9 @@ fn animated_layer(layer: u32, frames_m1: u32, frame_time_m1: u32) -> u32 {
 fn wind(world: vec3<f32>, amount: f32) -> vec3<f32> {
     let t = g.params.x;
     let p = world + g.camera.xyz;
-    let s = sin(t * 1.7 + p.x * 0.35 + p.z * 0.21) + 0.5 * sin(t * 2.9 + p.z * 0.5);
+    // Whole turns over WRAP blocks (the sway holds as the camera crosses a multiple of it).
+    let s = sin(t * 1.7 + p.x * wrap_rad(0.35) + p.z * wrap_rad(0.21))
+        + 0.5 * sin(t * 2.9 + p.z * wrap_rad(0.5));
     return vec3<f32>(s, 0.0, s * 0.6) * 0.04 * amount * g.sun.w;
 }
 
@@ -236,9 +238,12 @@ fn light_curve(l: f32) -> f32 {
 fn caustic_light(p: vec2<f32>, dist: f32, depth_m: f32) -> f32 {
     let t = g.params.x;
     let lod = log2(max(dist * 0.05, 1.0));
-    let a = textureSampleLevel(caustics, samp, p / 7.0 + vec2<f32>(t * 0.031, t * 0.017), lod).r * 4.0;
+    // Each layer's repeat snapped to whole repeats over WRAP blocks.
+    let a = textureSampleLevel(caustics, samp, p * wrap_freq(1.0 / 7.0).x
+        + vec2<f32>(t * 0.031, t * 0.017), lod).r * 4.0;
     let q = vec2<f32>(-p.y, p.x);
-    let b = textureSampleLevel(caustics, samp, q / 5.3 + vec2<f32>(-t * 0.023, t * 0.029), lod).r * 4.0;
+    let b = textureSampleLevel(caustics, samp, q * wrap_freq(1.0 / 5.3).x
+        + vec2<f32>(-t * 0.023, t * 0.029), lod).r * 4.0;
     return mix(1.0, a * b, exp(-depth_m / 6.0));
 }
 
@@ -301,9 +306,11 @@ fn fs_opaque(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(shade_color(c.rgb, in), 1.0);
 }
 
-// Integer hash of a texel position to 0..1.
+// Integer hash of a texel position (texels of 1/16 block) to 0..1, the texel's place wrapped at
+// WRAP blocks (65536 texels: the pattern holds as the camera crosses a multiple of it).
 fn hash_texel(p: vec3<f32>) -> f32 {
-    let q = vec3<u32>(bitcast<u32>(i32(p.x)), bitcast<u32>(i32(p.y)), bitcast<u32>(i32(p.z)));
+    let q = vec3<u32>(bitcast<u32>(i32(p.x)), bitcast<u32>(i32(p.y)), bitcast<u32>(i32(p.z)))
+        & vec3<u32>(0xffffu);
     var h = (q.x * 0x8da6b343u) ^ (q.y * 0xd8163841u) ^ (q.z * 0xcb1ab31fu);
     h = (h ^ (h >> 16u)) * 0x7feb352du;
     h = (h ^ (h >> 15u)) * 0x846ca68bu;
@@ -378,36 +385,42 @@ fn vs_smooth(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -
     return out;
 }
 
-fn hash31(p: vec3<f32>) -> f32 {
-    let q = vec3<u32>(bitcast<u32>(i32(p.x)), bitcast<u32>(i32(p.y)), bitcast<u32>(i32(p.z)));
+// Hash of a lattice point to 0..1, the point wrapped at `period` cells.
+fn hash31(p: vec3<f32>, period: i32) -> f32 {
+    let w = ((vec3<i32>(p) % period) + period) % period;
+    let q = vec3<u32>(bitcast<u32>(w.x), bitcast<u32>(w.y), bitcast<u32>(w.z));
     var h = (q.x * 0x8da6b343u) ^ (q.y * 0xd8163841u) ^ (q.z * 0xcb1ab31fu);
     h = (h ^ (h >> 16u)) * 0x7feb352du;
     h = (h ^ (h >> 15u)) * 0x846ca68bu;
     return f32(h ^ (h >> 16u)) / 4294967296.0;
 }
 
-// Value noise in 3D (0..1), smooth between lattice points.
-fn vnoise(p: vec3<f32>) -> f32 {
+// Value noise in 3D (0..1), smooth between lattice points, repeating every `period` cells (a
+// frequency from `wrap_freq` and its cycles: it repeats every WRAP blocks).
+fn vnoise(p: vec3<f32>, period: f32) -> f32 {
+    let n = i32(period);
     let i = floor(p);
     let f = p - i;
     let u = f * f * (3.0 - 2.0 * f);
-    let a = mix(hash31(i), hash31(i + vec3<f32>(1.0, 0.0, 0.0)), u.x);
-    let b = mix(hash31(i + vec3<f32>(0.0, 1.0, 0.0)), hash31(i + vec3<f32>(1.0, 1.0, 0.0)), u.x);
-    let c = mix(hash31(i + vec3<f32>(0.0, 0.0, 1.0)), hash31(i + vec3<f32>(1.0, 0.0, 1.0)), u.x);
-    let d = mix(hash31(i + vec3<f32>(0.0, 1.0, 1.0)), hash31(i + vec3<f32>(1.0, 1.0, 1.0)), u.x);
+    let a = mix(hash31(i, n), hash31(i + vec3<f32>(1.0, 0.0, 0.0), n), u.x);
+    let b = mix(hash31(i + vec3<f32>(0.0, 1.0, 0.0), n), hash31(i + vec3<f32>(1.0, 1.0, 0.0), n), u.x);
+    let c = mix(hash31(i + vec3<f32>(0.0, 0.0, 1.0), n), hash31(i + vec3<f32>(1.0, 0.0, 1.0), n), u.x);
+    let d = mix(hash31(i + vec3<f32>(0.0, 1.0, 1.0), n), hash31(i + vec3<f32>(1.0, 1.0, 1.0), n), u.x);
     return mix(mix(a, b, u.y), mix(c, d, u.y), u.z);
 }
 
-// Three octaves, finer octaves fading out with the distance (they would only shimmer).
+// Three octaves, finer octaves fading out with the distance (they would only shimmer), each
+// whole over WRAP blocks.
 fn fbm3(p: vec3<f32>, dist: f32, grain: f32) -> f32 {
     var sum = 0.0;
     var amp = 0.5;
     var freq = 1.0 / max(grain, 0.02);
     var norm = 0.0;
     for (var o = 0; o < 3; o++) {
+        let f = wrap_freq(freq);
         // An octave whose cells are smaller than a few pixels is left out.
-        let fade = 1.0 - smoothstep(0.5, 2.0, dist * freq * 0.004);
-        sum += amp * fade * vnoise(p * freq + vec3<f32>(f32(o) * 17.3));
+        let fade = 1.0 - smoothstep(0.5, 2.0, dist * f.x * 0.004);
+        sum += amp * fade * vnoise(p * f.x + vec3<f32>(f32(o) * 17.3), f.y);
         norm += amp * fade;
         amp *= 0.5;
         freq *= 2.3;
@@ -422,7 +435,9 @@ fn ground_sample(slot: u32, p: vec3<f32>, dist: f32, climate: u32) -> vec4<f32> 
     if m.strata > 0.0 {
         // Bedded rock (S §4.2): beds of about this thickness across the face, wavering a
         // little, finer than the 1 m voxels; they fade where they would only shimmer.
-        let bed = fract((p.y + (vnoise(p * 0.15) - 0.5) * 1.5) / m.strata);
+        let fs = wrap_freq(0.15);
+        let beds = WRAP / max(round(WRAP / m.strata), 1.0);
+        let bed = fract((p.y + (vnoise(p * fs.x, fs.y) - 0.5) * 1.5) / beds);
         let fade = 1.0 - smoothstep(20.0, 120.0, dist * 0.25 / m.strata);
         n = mix(n, mix(n, smoothstep(0.35, 0.65, bed), 0.6), fade);
     }

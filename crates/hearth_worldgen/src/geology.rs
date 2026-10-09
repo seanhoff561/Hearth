@@ -157,8 +157,21 @@ pub struct Geology {
     thickness: BlockFbm,
     presence: BlockFbm,
     pluton_shape: BlockFbm,
+    /// Each province's folds (if folded): the wave vectors (per block, x and z) of its two
+    /// harmonics, each a whole number of waves around the planet (whole at the seam, E4.1 §4.5).
+    folds: Vec<[(f64, f64); 2]>,
+    /// Each province's domes and basins (if not folded), at its wavelength.
+    domes: Vec<BlockFbm>,
     vertical_scale: f64,
     seed: u64,
+}
+
+/// The wave vector (per block) of waves of `wavelength` blocks across the axis `axis`
+/// (radians), the circumference `c` holding a whole number of them along x.
+fn fold_wave(c: f64, wavelength: f64, axis: f64) -> (f64, f64) {
+    let k = std::f64::consts::TAU / wavelength;
+    let around = (c * axis.cos() / wavelength).round();
+    (around * std::f64::consts::TAU / c, axis.sin() * k)
 }
 
 fn setting_of(grid: &PlanetGrid, idx: usize, coastal: bool) -> TectonicSetting {
@@ -246,9 +259,10 @@ impl Geology {
                     _ => {}
                 }
                 let mut setting = setting_of(grid, idx, coastal);
+                // Both warps periodic around the planet (the borders whole at the seam).
                 let wi = i as f64 + region_warp.sample2(i as f64, j as f64) * region as f64 * 0.4;
                 let wj = j as f64
-                    + region_warp.sample2(j as f64 + 5000.0, i as f64) * region as f64 * 0.4;
+                    + region_warp.sample2(i as f64, j as f64 + 5000.0) * region as f64 * 0.4;
                 // Large igneous provinces: some stable interiors were flooded by basalt from
                 // mantle plumes (about a twelfth of cratons and basins, in regions twice the
                 // usual size).
@@ -301,6 +315,25 @@ impl Geology {
         }
         let datum = blur3(&quarter);
         let wl = |x: f64| x.min(c / 4.0);
+        let folds = provinces
+            .iter()
+            .map(|p| {
+                let (w, a) = (p.wavelength as f64, p.axis as f64);
+                [fold_wave(c, w, a), fold_wave(c, w / 2.3, a)]
+            })
+            .collect();
+        let domes = provinces
+            .iter()
+            .map(|p| {
+                BlockFbm::new(
+                    derive_seed(seed, "phase"),
+                    circ,
+                    wl(p.wavelength as f64),
+                    2,
+                    0.5,
+                )
+            })
+            .collect();
         Ok(Self {
             provinces,
             cells,
@@ -315,6 +348,8 @@ impl Geology {
             thickness: BlockFbm::new(derive_seed(seed, "thickness"), circ, wl(4000.0), 2, 0.5),
             presence: BlockFbm::new(derive_seed(seed, "presence"), circ, wl(2600.0), 2, 0.5),
             pluton_shape: BlockFbm::new(derive_seed(seed, "pluton"), circ, wl(300.0), 2, 0.5),
+            folds,
+            domes,
             vertical_scale: v,
             seed,
         })
@@ -486,13 +521,14 @@ impl Geology {
         // Structure: folds across the province's axis (bent by the phase noise) in collision
         // belts; elsewhere irregular domes and basins.
         let structure = if p.folded {
-            let u = xf as f32 * p.axis.cos() + zf as f32 * p.axis.sin();
-            let phase = self.phase.sample2(xf, zf) as f32 * 3.0;
-            let k = std::f32::consts::TAU / p.wavelength;
-            p.amplitude * ((u * k + phase).sin() + 0.3 * (u * k * 2.3 + phase * 1.7).sin()) / 1.3
+            // In f64: exact at any x (E4.1 §4.5).
+            let [(kx, kz), (kx2, kz2)] = self.folds[pi as usize];
+            let phase = self.phase.sample2(xf, zf) * 3.0;
+            let wave =
+                (xf * kx + zf * kz + phase).sin() + 0.3 * (xf * kx2 + zf * kz2 + phase * 1.7).sin();
+            p.amplitude * (wave / 1.3) as f32
         } else {
-            let s = p.wavelength as f64 / 1600.0;
-            p.amplitude * self.phase.sample2(xf / s, zf / s + 911.0) as f32 * 1.6
+            p.amplitude * self.domes[pi as usize].sample2(xf, zf + 911.0) as f32 * 1.6
         };
         let top = datum + structure;
         let mut bases: SmallVec<[(f32, BlockStateId); 8]> = SmallVec::new();

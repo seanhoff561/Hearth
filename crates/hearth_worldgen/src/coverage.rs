@@ -107,7 +107,12 @@ pub fn coverage(
     coverage_of(wg, content, &bodies, max_era, min_continent_km2)
 }
 
-/// Coverage from an existing census.
+/// The most deposit cells around the planet a coverage takes: its grids are of cells on a side
+/// squared (a Standard planet's 256; an Earth-sized one's 156,544 would be tens of gigabytes and
+/// past `u32` indices). The content check runs it on a Standard planet (E4.1 §4.5).
+pub const MAX_CELLS_AROUND: usize = 4096;
+
+/// Coverage from an existing census (a planet of at most [`MAX_CELLS_AROUND`] cells around).
 pub fn coverage_of(
     wg: &WorldGenerator,
     content: &Content,
@@ -118,6 +123,10 @@ pub fn coverage_of(
     let grid = &wg.terrain.grid;
     let circumference = grid.planet().circumference();
     let n = wg.deposits.cells_around() as usize;
+    assert!(
+        n <= MAX_CELLS_AROUND,
+        "a coverage is of planets up to {MAX_CELLS_AROUND} cells around, not {n}"
+    );
     let half = (n / 2) as i32;
     let cell_km = CELL as f64 / 1000.0;
     let cell_km2 = cell_km * cell_km;

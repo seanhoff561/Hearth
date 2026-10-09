@@ -517,8 +517,9 @@ impl Wildfire {
     }
 
     /// The squares the fire has burned and left since the last call, as a Burned disturbance
-    /// of the year (none if there are none).
-    pub fn take_burned(&mut self, year: f64) -> Option<Disturbance> {
+    /// of the year (none if there are none), its centre among them across the seam where the
+    /// planet wraps (E4.1 §4.5).
+    pub fn take_burned(&mut self, planet: &hearth_math::Planet, year: f64) -> Option<Disturbance> {
         if self.left.is_empty() {
             return None;
         }
@@ -526,16 +527,19 @@ impl Wildfire {
         patches.sort_unstable();
         patches.dedup();
         let n = patches.len() as f64;
-        let cx = patches.iter().map(|p| p[0] as f64).sum::<f64>() / n;
+        // Each square's x as an offset from the first's, the shorter way round.
+        let first = patches[0][0] * PATCH;
+        let off = |p: &[i32; 2]| planet.delta_block_x(first, p[0] * PATCH) as f64;
+        let cx = first as f64 + patches.iter().map(off).sum::<f64>() / n;
         let cz = patches.iter().map(|p| p[1] as f64).sum::<f64>() / n;
         let (x, z) = (
-            (cx * PATCH as f64) as i32 + PATCH / 2,
+            planet.wrap_x(cx.floor() as i32 + PATCH / 2),
             (cz * PATCH as f64) as i32 + PATCH / 2,
         );
         let radius = patches
             .iter()
             .map(|p| {
-                let dx = (p[0] * PATCH + PATCH / 2 - x) as f32;
+                let dx = planet.delta_block_x(x, p[0] * PATCH + PATCH / 2) as f32;
                 let dz = (p[1] * PATCH + PATCH / 2 - z) as f32;
                 (dx * dx + dz * dz).sqrt()
             })
@@ -760,7 +764,9 @@ impl FarFire {
                 (-1, 1),
                 (-1, -1),
             ] {
-                let next = (cell.0 + dx, cell.1 + dz);
+                // Keyed by its place around the planet (one cell, one key, across the seam).
+                let around = (env.planet.circumference() / ECO_CELL).max(1);
+                let next = ((cell.0 + dx).rem_euclid(around), cell.1 + dz);
                 if self.cells.contains_key(&next) || self.burned.contains(&next) {
                     continue;
                 }
@@ -956,17 +962,18 @@ mod tests {
             rain_mm_h: 0.0,
         };
         let (_, _, mut fire) = run(danger, 60);
-        let d = fire.take_burned(2.5).expect("burned squares");
+        let planet = hearth_math::Planet::from_size(hearth_math::PlanetSize::Tiny).expect("planet");
+        let d = fire.take_burned(&planet, 2.5).expect("burned squares");
         assert_eq!(d.kind, DisturbanceKind::Burned);
         assert!(!d.patches.is_empty());
         assert!(d.patches.iter().all(|p| {
             let (dx, dz) = (
-                (p[0] * PATCH + PATCH / 2 - d.x) as f32,
+                planet.delta_block_x(d.x, p[0] * PATCH + PATCH / 2) as f32,
                 (p[1] * PATCH + PATCH / 2 - d.z) as f32,
             );
             (dx * dx + dz * dz).sqrt() <= d.radius
         }));
-        assert!(fire.take_burned(2.5).is_none(), "taken once");
+        assert!(fire.take_burned(&planet, 2.5).is_none(), "taken once");
     }
 
     #[test]

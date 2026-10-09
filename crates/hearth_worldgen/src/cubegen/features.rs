@@ -57,10 +57,75 @@ fn ground_change(kind: DisturbanceKind, year: f64, since: f32) -> f64 {
 #[derive(Debug, Clone)]
 pub struct FeatureGen {
     seed: u64,
+    /// The planet's circumference (blocks): features are the same from either side of the seam.
+    c: i32,
     cliff: Perlin,
     flower_patch: Perlin,
     /// The age of the stands across the land.
     stands: Perlin,
+    /// The noises' frequencies, each a whole number of waves around the planet.
+    waves: Waves,
+    trees: SeamCells,
+    debris: SeamCells,
+}
+
+/// A noise's frequency (per block) and its period (lattice cells around the planet).
+type Wave = (f64, i64);
+
+/// The frequencies of the features' noises.
+#[derive(Debug, Clone, Copy)]
+struct Waves {
+    cliff: Wave,
+    kelp: Wave,
+    flowers: Wave,
+    stands: Wave,
+}
+
+/// The frequency for noise of about `wavelength` blocks that the circumference `c` holds a
+/// whole number of times, and that number: noise periodic at the seam (E4.1 §4.5).
+fn wave(c: i32, wavelength: f64) -> Wave {
+    let cells = ((c as f64 / wavelength).round() as i64).max(1);
+    (cells as f64 / c as f64, cells)
+}
+
+/// Cells of `size` blocks in x around the planet, the last one wider by what is left over (the
+/// circumference is seldom a multiple of the size): a cell is the same cell, its feature the
+/// same, from either side of the seam (E4.1 §4.5).
+#[derive(Debug, Clone, Copy)]
+struct SeamCells {
+    size: i32,
+    c: i32,
+    n: i32,
+}
+
+impl SeamCells {
+    fn new(size: i32, c: i32) -> Self {
+        Self {
+            size,
+            c,
+            n: (c / size).max(1),
+        }
+    }
+
+    /// The cells over the blocks `x0..=x1` (as unwrapped as they come): each its index around
+    /// the planet and its first block in their frame.
+    fn over(self, x0: i32, x1: i32) -> impl Iterator<Item = (i32, i32)> {
+        let mut x = x0;
+        std::iter::from_fn(move || {
+            (x <= x1).then(|| {
+                let w = x.rem_euclid(self.c);
+                let k = (w / self.size).min(self.n - 1);
+                let first = x - (w - k * self.size);
+                let width = if k == self.n - 1 {
+                    self.c - k * self.size
+                } else {
+                    self.size
+                };
+                x = first + width;
+                (k, first)
+            })
+        })
+    }
 }
 
 /// A tree of a real species where the generator grows one.
@@ -128,7 +193,7 @@ impl PlacedTree {
 
 /// Tree shapes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TreeKind {
+pub(crate) enum TreeKind {
     Oak,
     BigOak,
     GiantOak,
@@ -145,7 +210,7 @@ enum TreeKind {
 }
 
 impl TreeKind {
-    fn wood(self) -> Wood {
+    pub(crate) fn wood(self) -> Wood {
         match self {
             TreeKind::Birch => Wood::Birch,
             TreeKind::Spruce | TreeKind::GiantSpruce | TreeKind::Krummholz => Wood::Spruce,
@@ -347,21 +412,37 @@ fn soil_ok(s: &ColumnSample) -> bool {
 }
 
 impl FeatureGen {
-    pub fn new(seed: u64) -> Self {
+    /// The features of a planet of circumference `c` (blocks).
+    pub fn new(seed: u64, c: i32) -> Self {
         Self {
             seed: derive_seed(seed, "features"),
+            c,
             cliff: Perlin::new(derive_seed(seed, "cliff3d")),
             flower_patch: Perlin::new(derive_seed(seed, "flowers")),
             stands: Perlin::new(derive_seed(seed, "stands")),
+            waves: Waves {
+                cliff: wave(c, 11.0),
+                kelp: wave(c, 40.0),
+                flowers: wave(c, 24.0),
+                stands: wave(c, 380.0),
+            },
+            trees: SeamCells::new(TREE_CELL, c),
+            debris: SeamCells::new(DEBRIS_CELL, c),
         }
+    }
+
+    /// A block's x around the planet (for hashes: the same block from either side of the seam).
+    #[inline]
+    fn wrap(&self, x: i32) -> i32 {
+        x.rem_euclid(self.c)
     }
 
     /// 3D noise in [-1, 1] used for cliff overhangs.
     #[inline]
     pub fn cliff_noise(&self, x: i32, y: i32, z: i32) -> f32 {
-        let f = 1.0 / 11.0;
+        let (f, cells) = self.waves.cliff;
         self.cliff
-            .noise3(x as f64 * f, y as f64 * f * 1.4, z as f64 * f, 0) as f32
+            .noise3(x as f64 * f, y as f64 * f * 1.4, z as f64 * f, cells) as f32
     }
 
     /// Places all features intersecting the cube, as the vegetation has grown. Returns the year
@@ -393,13 +474,13 @@ impl FeatureGen {
         let (z0, z1) = (o.z - TREE_REACH, o.z + 15 + TREE_REACH);
         let sample = |x: i32, z: i32| Self::sample_at(wg, x, z);
         for fz in z0.div_euclid(TREE_CELL)..=z1.div_euclid(TREE_CELL) {
-            for fx in x0.div_euclid(TREE_CELL)..=x1.div_euclid(TREE_CELL) {
-                next = next.min(self.tree_cell(&mut w, wg, veg, fx, fz, &sample));
+            for (fx, first) in self.trees.over(x0, x1) {
+                next = next.min(self.tree_cell(&mut w, wg, veg, (fx, first), fz, &sample));
             }
         }
         for fz in (o.z - 8).div_euclid(DEBRIS_CELL)..=(o.z + 23).div_euclid(DEBRIS_CELL) {
-            for fx in (o.x - 8).div_euclid(DEBRIS_CELL)..=(o.x + 23).div_euclid(DEBRIS_CELL) {
-                self.debris_cell(&mut w, wg, fx, fz);
+            for (fx, first) in self.debris.over(o.x - 8, o.x + 23) {
+                self.debris_cell(&mut w, wg, (fx, first), fz);
             }
         }
         next
@@ -472,9 +553,8 @@ impl FeatureGen {
             // Kelp forests hold to rocky floors in cool, clear water, thickest in patches.
             let rocky = matches!(s.surface, Surface::Gravel | Surface::Stone);
             let kelp_water = (5.0..20.0).contains(&s.sea_temperature);
-            let kelp_patch = self
-                .flower_patch
-                .noise2(x as f64 / 40.0, z as f64 / 40.0, 3) as f32;
+            let (f, cells) = self.waves.kelp;
+            let kelp_patch = self.flower_patch.noise2(x as f64 * f, z as f64 * f, cells) as f32;
             let kelp_chance = if rocky {
                 if kelp_patch > 0.1 { 0.4 } else { 0.08 }
             } else {
@@ -548,9 +628,8 @@ impl FeatureGen {
         // their climates: dwarf shrubs, sedges, mosses, lichens); the generic grasses, ferns and
         // flowers do not.
         let frozen = s.temperature < -0.5;
-        let flower_n = self
-            .flower_patch
-            .noise2(x as f64 / 24.0, z as f64 / 24.0, 0) as f32;
+        let (f, cells) = self.waves.flowers;
+        let flower_n = self.flower_patch.noise2(x as f64 * f, z as f64 * f, cells) as f32;
         let grassy = matches!(s.surface, Surface::Grass | Surface::Podzol | Surface::Moss);
         let tall = |w: &mut Writer<'_>, pair: [BlockStateId; 2]| {
             w.put(x, top, z, pair[0]);
@@ -950,19 +1029,20 @@ impl FeatureGen {
         let planet = wg.planet();
         let sample = |x: i32, z: i32| wg.terrain.sample(planet.wrap_x(x), z);
         for fz in z0.div_euclid(TREE_CELL)..=z1.div_euclid(TREE_CELL) {
-            for fx in x0.div_euclid(TREE_CELL)..=x1.div_euclid(TREE_CELL) {
-                self.tree_cell(sink, wg, veg, fx, fz, &sample);
+            for (fx, first) in self.trees.over(x0, x1) {
+                self.tree_cell(sink, wg, veg, (fx, first), fz, &sample);
             }
         }
     }
 
-    /// The tree of a tree cell, written into the sink; returns the year it next changes.
+    /// The tree of a tree cell (its index around the planet and first block, and its row),
+    /// written into the sink; returns the year it next changes.
     fn tree_cell<S: TreeSink>(
         &self,
         w: &mut S,
         wg: &WorldGenerator,
         veg: &Vegetation,
-        fx: i32,
+        fx: (i32, i32),
         fz: i32,
         sample: &impl Fn(i32, i32) -> ColumnSample,
     ) -> f64 {
@@ -1000,21 +1080,21 @@ impl FeatureGen {
         if ox + reach < lo[0] || ox - reach > hi[0] || oz + reach < lo[2] || oz - reach > hi[2] {
             return f64::INFINITY;
         }
-        let mut rng = Rng::new(hash_3d(self.seed, ox, base, oz));
+        let mut rng = Rng::new(hash_3d(self.seed, self.wrap(ox), base, oz));
         self.grow(w, &wg.blocks, kind, ox, base, oz, &mut rng, &s);
         f64::INFINITY
     }
 
-    /// Where a tree cell's tree would stand, if the place takes a tree: its hash, origin and
-    /// column.
+    /// Where a tree cell's tree would stand (the cell's index around the planet and its first
+    /// block, its row), if the place takes a tree: its hash, origin and column.
     fn cell_site(
         &self,
-        fx: i32,
+        (fx, first): (i32, i32),
         fz: i32,
         sample: &impl Fn(i32, i32) -> ColumnSample,
     ) -> Option<(u64, i32, i32, ColumnSample)> {
         let h = hash_2d(self.seed ^ 0x7ee5, fx, fz);
-        let ox = fx * TREE_CELL + (h % TREE_CELL as u64) as i32;
+        let ox = first + (h % TREE_CELL as u64) as i32;
         let oz = fz * TREE_CELL + ((h >> 8) % TREE_CELL as u64) as i32;
         // The upper hash bits (the lower ones placed the tree in its cell).
         let u = unit_f32(h.rotate_left(24));
@@ -1042,9 +1122,7 @@ impl FeatureGen {
         for fz in
             (p.z - TREE_REACH).div_euclid(TREE_CELL)..=(p.z + TREE_REACH).div_euclid(TREE_CELL)
         {
-            for fx in
-                (p.x - TREE_REACH).div_euclid(TREE_CELL)..=(p.x + TREE_REACH).div_euclid(TREE_CELL)
-            {
+            for fx in self.trees.over(p.x - TREE_REACH, p.x + TREE_REACH) {
                 let Some((h, ox, oz, s)) = self.cell_site(fx, fz, &sample) else {
                     continue;
                 };
@@ -1075,7 +1153,7 @@ impl FeatureGen {
         let sample = |x: i32, z: i32| wg.terrain.sample(planet.wrap_x(x), z);
         let mut out = Vec::new();
         for fz in min.1.div_euclid(TREE_CELL)..=max.1.div_euclid(TREE_CELL) {
-            for fx in min.0.div_euclid(TREE_CELL)..=max.0.div_euclid(TREE_CELL) {
+            for fx in self.trees.over(min.0, max.0) {
                 let Some((h, ox, oz, s)) = self.cell_site(fx, fz, &sample) else {
                     continue;
                 };
@@ -1093,8 +1171,8 @@ impl FeatureGen {
     /// Age (years) of the stand at a place: young woods and old growth in patches a few
     /// hundred metres across.
     pub fn stand_age(&self, x: i32, z: i32) -> f32 {
-        let f = 1.0 / 380.0;
-        let n = self.stands.noise2(x as f64 * f, z as f64 * f, 0) as f32;
+        let (f, cells) = self.waves.stands;
+        let n = self.stands.noise2(x as f64 * f, z as f64 * f, cells) as f32;
         let u = ((n + 1.0) * 0.5).clamp(0.0, 1.0);
         15.0 + 285.0 * u * u
     }
@@ -1338,7 +1416,7 @@ impl FeatureGen {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn grow<S: TreeSink>(
+    pub(crate) fn grow<S: TreeSink>(
         &self,
         w: &mut S,
         b: &GenBlocks,
@@ -1349,6 +1427,10 @@ impl FeatureGen {
         rng: &mut Rng,
         s: &ColumnSample,
     ) {
+        // Built about its origin (exact in f32 wherever on the planet it stands, E4.1 §4.5),
+        // written where it stands.
+        let (ox, oz) = (x, z);
+        let (x, z) = (0, 0);
         let wood = b.wood(kind.wood());
         // Collect logs first; leaves take their distance from the nearest log.
         let mut logs: smallvec::SmallVec<[(i32, i32, i32, BlockStateId); 64]> =
@@ -1535,12 +1617,12 @@ impl FeatureGen {
             TreeKind::Spruce => {
                 let h = rng.range_i32(7, 11) + (vigor * 3.0) as i32;
                 trunk(&mut logs, h, false);
-                self.spruce_crown(w, wood.leaves, x, y, z, h, 2.8 + vigor, false);
+                self.spruce_crown(w, wood.leaves, (ox, oz), y, h, 2.8 + vigor, false);
             }
             TreeKind::GiantSpruce => {
                 let h = rng.range_i32(22, 30);
                 trunk(&mut logs, h, true);
-                self.spruce_crown(w, wood.leaves, x, y, z, h, 5.5, true);
+                self.spruce_crown(w, wood.leaves, (ox, oz), y, h, 5.5, true);
             }
             TreeKind::Krummholz => {
                 let h = rng.range_i32(1, 2);
@@ -1616,6 +1698,10 @@ impl FeatureGen {
         }
         // Leaves from blobs: distance = Manhattan distance to the nearest log (1..=6).
         let (lo, hi) = w.bounds();
+        let (lo, hi) = (
+            [lo[0] - ox, lo[1], lo[2] - oz],
+            [hi[0] - ox, hi[1], hi[2] - oz],
+        );
         for &(cx, cy, cz, r, ry) in &blobs {
             let (x0, x1) = ((cx - r).floor() as i32, (cx + r).ceil() as i32);
             let (y0, y1) = ((cy - ry).floor() as i32, (cy + ry).ceil() as i32);
@@ -1634,7 +1720,14 @@ impl FeatureGen {
                             continue;
                         }
                         // Ragged edges.
-                        if d > 0.65 && unit_f32(hash_3d(self.seed ^ 0x1eaf, lx, ly, lz)) < 0.35 {
+                        if d > 0.65
+                            && unit_f32(hash_3d(
+                                self.seed ^ 0x1eaf,
+                                self.wrap(ox + lx),
+                                ly,
+                                oz + lz,
+                            )) < 0.35
+                        {
                             continue;
                         }
                         let dist = logs
@@ -1648,32 +1741,34 @@ impl FeatureGen {
                         if dist >= 7 {
                             continue;
                         }
-                        w.put(lx, ly, lz, wood.leaves[dist as usize - 1]);
+                        w.put(ox + lx, ly, oz + lz, wood.leaves[dist as usize - 1]);
                         if vines && d > 0.55 && ly <= cy as i32 {
-                            self.hang_vine(w, b, lx, ly, lz, cx, cz);
+                            self.hang_vine(w, b, (ox, oz), lx, ly, lz, cx, cz);
                         }
                     }
                 }
             }
         }
         for (lx, ly, lz, st) in logs {
-            w.put(lx, ly, lz, st);
+            w.put(ox + lx, ly, oz + lz, st);
         }
     }
 
-    /// Conical spruce crown: ragged layers shrinking toward a spike.
+    /// Conical spruce crown: ragged layers shrinking toward a spike, about the trunk's foot
+    /// `(ox, oz)`.
     #[allow(clippy::too_many_arguments)]
     fn spruce_crown<S: TreeSink>(
         &self,
         w: &mut S,
         leaves: [BlockStateId; 7],
-        x: i32,
+        (ox, oz): (i32, i32),
         y: i32,
-        z: i32,
         h: i32,
         max_r: f32,
         wide: bool,
     ) {
+        // About the foot (exact in f32 anywhere on the planet).
+        let (x, z) = (0, 0);
         let start = y + (h as f32 * if wide { 0.4 } else { 0.25 }) as i32;
         let top = y + h + 1;
         let (cx, cz) = if wide {
@@ -1706,25 +1801,27 @@ impl FeatureGen {
                     };
                     let above_trunk = if ly > y + h - 1 { ly - (y + h - 1) } else { 0 };
                     let dist = (trunk_d + above_trunk).clamp(1, 6);
-                    w.put(lx, ly, lz, leaves[dist as usize - 1]);
+                    w.put(ox + lx, ly, oz + lz, leaves[dist as usize - 1]);
                 }
             }
         }
     }
 
-    /// Vines hanging from the outer face of a crown leaf.
+    /// Vines hanging from the outer face of a crown leaf (`lx`, `lz` and the crown's centre
+    /// about the tree's foot `(ox, oz)`).
     #[allow(clippy::too_many_arguments)]
     fn hang_vine<S: TreeSink>(
         &self,
         w: &mut S,
         b: &GenBlocks,
+        (ox, oz): (i32, i32),
         lx: i32,
         ly: i32,
         lz: i32,
         cx: f32,
         cz: f32,
     ) {
-        let hv = hash_3d(self.seed ^ 0x517e, lx, ly, lz);
+        let hv = hash_3d(self.seed ^ 0x517e, self.wrap(ox + lx), ly, oz + lz);
         if unit_f32(hv) > 0.22 {
             return;
         }
@@ -1745,19 +1842,26 @@ impl FeatureGen {
         let len = 2 + (hv >> 20) as i32 % 7;
         for k in 0..len {
             let yy = ly - k;
-            match w.get(vx, yy, vz) {
-                Some(s) if s.is_air() => w.put(vx, yy, vz, b.vines[attach]),
+            match w.get(ox + vx, yy, oz + vz) {
+                Some(s) if s.is_air() => w.put(ox + vx, yy, oz + vz, b.vines[attach]),
                 Some(_) => break,
                 None => {}
             }
         }
     }
 
-    /// Fallen logs, boulders and cacti on a coarse grid.
-    fn debris_cell(&self, w: &mut Writer<'_>, wg: &WorldGenerator, fx: i32, fz: i32) {
+    /// Fallen logs, boulders and cacti on a coarse grid (a cell's index around the planet and
+    /// first block, its row).
+    fn debris_cell(
+        &self,
+        w: &mut Writer<'_>,
+        wg: &WorldGenerator,
+        (fx, first): (i32, i32),
+        fz: i32,
+    ) {
         let b = &wg.blocks;
         let h = hash_2d(self.seed ^ 0xdeb, fx, fz);
-        let ox = fx * DEBRIS_CELL + (h % DEBRIS_CELL as u64) as i32;
+        let ox = first + (h % DEBRIS_CELL as u64) as i32;
         let oz = fz * DEBRIS_CELL + ((h >> 8) % DEBRIS_CELL as u64) as i32;
         let u = unit_f32(h.rotate_left(24));
         let s = Self::sample_at(wg, ox, oz);
@@ -1769,7 +1873,7 @@ impl FeatureGen {
         if y + 4 < o.y || y - 2 > o.y + 15 {
             return;
         }
-        let mut rng = Rng::new(hash_3d(self.seed ^ 0xdeb, ox, y, oz));
+        let mut rng = Rng::new(hash_3d(self.seed ^ 0xdeb, self.wrap(ox), y, oz));
         match s.biome {
             Biome::HotDesert | Biome::DuneSea
                 if u < 0.55

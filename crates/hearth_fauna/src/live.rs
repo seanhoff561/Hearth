@@ -565,6 +565,55 @@ impl Live {
         id
     }
 
+    /// Brings every animal, what it heads for and the marks they left to the copy of the planet
+    /// nearest `at` (x shifted by whole circumferences, `wrap` blocks): the player is wrapped
+    /// around the planet, and the animals about them are kept in the same frame, so their
+    /// distances and headings hold across the seam (E4.1 §4.5).
+    pub fn reframe(&mut self, at: DVec3, wrap: f64) {
+        if wrap <= 0.0 {
+            return;
+        }
+        let shift = |x: f64| ((at.x - x) / wrap).round() * wrap;
+        for a in &mut self.animals {
+            let s = shift(a.pos.x);
+            if s == 0.0 {
+                continue;
+            }
+            a.pos.x += s;
+            if let Some(g) = &mut a.goal {
+                g.x += s;
+            }
+            for w in &mut a.way {
+                w.x += s;
+            }
+            if let Some(w) = &mut a.water {
+                w.x += s;
+            }
+            if let Some(k) = &mut a.kill_at {
+                k.x += s;
+            }
+            if let Some(c) = &mut a.climb {
+                c.trunk.x += s;
+            }
+            if let Some(f) = &mut a.flying {
+                f.flight.from.x += s;
+                f.flight.to.x += s;
+            }
+            if let Some((stake, _)) = a.kept.as_mut().and_then(|k| k.tether.as_mut()) {
+                stake.x += s;
+            }
+        }
+        for k in &mut self.kills {
+            k.at.x += shift(k.at.x);
+        }
+        for sign in &mut self.signs {
+            sign.pos.x += shift(sign.pos.x);
+        }
+        for c in &mut self.calls {
+            c.pos.x += shift(c.pos.x);
+        }
+    }
+
     /// Brings the groups and small animals near `player` into the world.
     pub fn materialize(&mut self, eco: &mut Ecology, ground: &dyn Ground, player: DVec3) {
         let cat = eco.catalog.clone();
@@ -812,12 +861,15 @@ impl Live {
                 }
             }
         }
+        // In the player's frame (across the seam).
+        self.reframe(player, wrap);
     }
 
     /// Folds the groups and small animals far from `player` back into their numbers: the
     /// living into their group (by age and sex) or cell; the dead are left to be taken as bodies.
     pub fn fold(&mut self, eco: &mut Ecology, player: DVec3) {
         let wrap = eco.cells_around as f64 * CELL_M;
+        self.reframe(player, wrap);
         // Groups whose animals are all far (or gone).
         let mut groups: FxHashMap<u64, (bool, Vec<usize>)> = FxHashMap::default();
         for (k, a) in self.animals.iter().enumerate() {
@@ -960,6 +1012,9 @@ impl Live {
     ) {
         let cat = eco.catalog.clone();
         self.clock += dt as f64;
+        if let Some(p) = presence {
+            self.reframe(p.pos, eco.cells_around as f64 * CELL_M);
+        }
         // Where each group's members are, about, and how many; where every animal is.
         let mut centres: FxHashMap<u64, (DVec2, f64)> = FxHashMap::default();
         let mut whereabouts: FxHashMap<u64, DVec3> = FxHashMap::default();

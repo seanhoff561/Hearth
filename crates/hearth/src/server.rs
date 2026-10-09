@@ -672,6 +672,9 @@ fn save(
     } else {
         log::info!("saved world {:?} at tick {ticks}", s.meta.name);
     }
+    // The save's buffers (the animals' regions written out, megabytes each) given back to the
+    // system rather than kept by the allocator (E4.1 §4.7).
+    hearth_core::prof::trim_heap();
 }
 
 fn run(
@@ -1489,7 +1492,7 @@ fn run(
                             ),
                         ),
                     };
-                    if (at - player.mover.pos).length() < 120.0 {
+                    if planet.delta(player.mover.pos, at).length() < 120.0 {
                         outbox.push(ToClient::Acted(hearth_protocol::Acted {
                             process: "herd".into(),
                             done: true,
@@ -1571,7 +1574,7 @@ fn run(
                     let clock = fauna.live.clock;
                     let fresh_print = near.iter().any(|s| {
                         s.kind == hearth_fauna::live::SignKind::Print
-                            && (s.pos - feet).length() < 2.5
+                            && planet.delta(feet, s.pos).length() < 2.5
                             && clock - s.t < hearth_content::time::DAY_S
                     });
                     if !near.is_empty() || signs_shown {
@@ -1618,6 +1621,11 @@ fn run(
             if ticks.is_multiple_of(40) {
                 hearth_core::prof::gauge("animals", fauna.memory());
                 hearth_core::prof::gauge("cubes (server)", lw.map.heap_bytes() as u64);
+            }
+            // The heap freed as terrain and animals come and go given back to the system each
+            // minute (glibc's arenas keep it otherwise).
+            if ticks.is_multiple_of(1200) {
+                hearth_core::prof::trim_heap();
             }
             // The smoke over fires in the vegetation, for the client to draw.
             if ticks.is_multiple_of(20) && (workshop.fire_burning() || smoke_shown) {
@@ -1891,7 +1899,8 @@ fn run(
                     .items
                     .iter()
                     .filter(|w| {
-                        let d = DVec3::from_array(w.pos) - player.mover.pos;
+                        // Across the seam too (E4.1 §4.5).
+                        let d = planet.delta(player.mover.pos, DVec3::from_array(w.pos));
                         d.x * d.x + d.z * d.z < 96.0 * 96.0
                     })
                     .cloned()
@@ -2194,6 +2203,7 @@ impl Stream {
         let meshes = lw.mesh(models, &ready, opts);
         for m in meshes {
             self.meshed.insert(m.pos);
+            hearth_core::prof::count("net.meshes.sent", 1);
             tx.send(ToClient::Mesh(Box::new(m))).map_err(|_| ())?;
         }
         Ok((true, covered))
@@ -2388,6 +2398,7 @@ impl Stream {
         let meshes = lw.mesh(models, &dirty, opts);
         let n = meshes.len();
         for m in meshes {
+            hearth_core::prof::count("net.meshes.sent", 1);
             tx.send(ToClient::Mesh(Box::new(m))).map_err(|_| ())?;
         }
         self.heights_dirty |= !changed.is_empty();

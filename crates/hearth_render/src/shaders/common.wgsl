@@ -2,6 +2,30 @@
 // lookup, aerial perspective, planet curvature and the handoff between full-detail and LOD
 // terrain.
 
+// The camera's place reaches the shaders modulo WRAP blocks (reduced in f64: precise anywhere on
+// the planet), and every planet's circumference is a multiple of it: a pattern fixed in the
+// world repeats every WRAP blocks, or it would jump each time the camera crosses a multiple of it
+// (E4.1 §4.5).
+const WRAP: f32 = 4096.0;
+
+// A frequency (cycles per block) snapped so WRAP blocks hold a whole number of its cycles; that
+// number in y.
+fn wrap_freq(f: f32) -> vec2<f32> {
+    let cycles = max(round(WRAP * f), 1.0);
+    return vec2<f32>(cycles / WRAP, cycles);
+}
+
+// An angular frequency (radians per block) snapped to whole turns over WRAP blocks.
+fn wrap_rad(k: f32) -> f32 {
+    return round(k * WRAP / TAU) * TAU / WRAP;
+}
+
+// A direction scaled to `f` cycles per block, snapped so WRAP blocks hold whole cycles along x and
+// along z: a tiling pattern turned to it repeats every WRAP blocks.
+fn wrap_dir(d: vec2<f32>, f: f32) -> vec2<f32> {
+    return round(d * f * WRAP) / WRAP;
+}
+
 // Lighting is physically based and pre-exposed (lux × exposure): direct light from the sun (or
 // the moon at night) by face orientation, diffuse sky light scaled by the voxel sky-light
 // level, and firelight from the block-light level.

@@ -379,6 +379,14 @@ fn smooth(lo: f32, hi: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// The view as a block's own frame has it: shifted by whole circumferences so that the block (x
+/// as the map gives it, around the planet) is drawn the shorter way round from the eye (E4.1
+/// §4.5).
+fn view_for(planet: &hearth_math::Planet, at: hearth_math::BlockPos, view: DVec3) -> DVec3 {
+    let c = DVec3::new(at.x as f64 + 0.5, at.y as f64, at.z as f64 + 0.5);
+    view + (c - planet.unwrap_near(c, view))
+}
+
 /// A block's map colour (`#rrggbb`) as RGB.
 fn hearth_lod_color(hex: &str) -> [u8; 3] {
     let v = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0x6f5a40);
@@ -1528,9 +1536,10 @@ impl Client {
         if self.builder_view
             && let Some(w) = &self.world
         {
+            let planet = w.mirror.planet();
             for (p, s) in &self.stress {
                 let c = DVec3::new(p.x as f64 + 0.5, p.y as f64 + 0.5, p.z as f64 + 0.5);
-                if (c - view).length() > 32.0 {
+                if planet.delta(view, c).length() > 32.0 {
                     continue;
                 }
                 if let Some(state) = w.mirror.block(*p) {
@@ -1539,7 +1548,7 @@ impl Client {
                         state,
                         *p,
                         crate::building::stress_color(*s),
-                        view,
+                        view_for(planet, *p, view),
                     ));
                 }
             }
@@ -1550,8 +1559,13 @@ impl Client {
         let Some(w) = &self.world else {
             return;
         };
-        self.figure_boxes
-            .extend(crate::building::ghost(&w.reg, state, at, color, view));
+        self.figure_boxes.extend(crate::building::ghost(
+            &w.reg,
+            state,
+            at,
+            color,
+            view_for(w.mirror.planet(), at, view),
+        ));
     }
 
     /// The signs animals left on the ground about the player.
@@ -3062,6 +3076,7 @@ impl Client {
             reg: &w.reg,
         };
         let vy_before = self.mover.vel.y;
+        let x_before = self.mover.pos.x;
         let report = if self.flying {
             // The wheel sets the speed; Sprint triples it; Jump rises and Crouch descends.
             let steps = input.take_scroll_steps(1.0, true);
@@ -3086,6 +3101,13 @@ impl Client {
         } else {
             hearth_physics::step(&terrain, &mut self.mover, &intent, &ability, dt)
         };
+        // Past a pole the body comes out on the far side, half the planet on, going the other way
+        // north–south (E4.1 §4.5): the eyes and the body turn with the way.
+        let planet = w.mirror.planet();
+        if planet.delta_x(x_before, self.mover.pos.x).abs() > planet.circumference_f64() / 4.0 {
+            self.camera.yaw = 180.0 - self.camera.yaw;
+            self.body_yaw = (180.0 - self.body_yaw).rem_euclid(360.0);
+        }
         let foot = self
             .hearing
             .moved(&w.mirror, &w.reg, &self.mover, &report, vy_before, dt);
@@ -3202,6 +3224,11 @@ impl Client {
     /// Applies the server's messages; call once per frame before rendering.
     pub fn pump(&mut self, ctx: &GpuContext) {
         let mut uploaded = 0;
+        // What the server places, in the player's frame: its copy the shorter way round the
+        // planet from the player (the player wraps at the seam; E4.1 §4.5).
+        let planet = self.world.as_ref().map(|w| *w.mirror.planet());
+        let player = self.mover.pos;
+        let near = move |p: DVec3| planet.map_or(p, |pl| pl.unwrap_near(p, player));
         while uploaded < UPLOADS_PER_FRAME {
             let Some(ev) = self.server.poll() else {
                 break;
@@ -3295,6 +3322,7 @@ impl Client {
                     }
                 }
                 ToClient::Mesh(m) => {
+                    hearth_core::prof::count("net.meshes.taken", 1);
                     if let Some(s) = &mut self.scene {
                         s.terrain.upload(ctx, &m);
                     }
@@ -3326,8 +3354,20 @@ impl Client {
                 }
                 // A census is for tools and tests.
                 ToClient::Census(_) => {}
-                ToClient::Signs { now, signs } => self.signs = (now, signs),
-                ToClient::Calls(calls) => {
+                ToClient::Signs { now, signs } => {
+                    let signs = signs
+                        .into_iter()
+                        .map(|mut s| {
+                            s.pos = near(s.pos);
+                            s
+                        })
+                        .collect();
+                    self.signs = (now, signs);
+                }
+                ToClient::Calls(mut calls) => {
+                    for c in &mut calls {
+                        c.pos = near(c.pos);
+                    }
                     if let Some(cat) = &self.fauna {
                         let facing = -self.camera.yaw.to_radians();
                         self.hearing.calls(&calls, cat, self.camera.pos, facing);
@@ -3337,7 +3377,8 @@ impl Client {
                     // Those gone are gone; the rest ease toward where the server has them.
                     self.animals
                         .retain(|id, _| views.iter().any(|v| v.id == *id));
-                    for v in views {
+                    for mut v in views {
+                        v.pos = near(v.pos);
                         self.animals
                             .entry(v.id)
                             .and_modify(|s| s.target = v)
@@ -3356,7 +3397,7 @@ impl Client {
                             plumes
                                 .iter()
                                 .map(|p| hearth_render::smoke::SmokePlume {
-                                    at: p.at,
+                                    at: near(p.at),
                                     strength: p.strength,
                                     far: p.far,
                                 })
@@ -3374,7 +3415,15 @@ impl Client {
                     self.carry = c;
                     self.redress();
                 }
-                ToClient::Items(v) => self.world_items = v,
+                ToClient::Items(v) => {
+                    self.world_items = v
+                        .into_iter()
+                        .map(|mut w| {
+                            w.pos = near(DVec3::from_array(w.pos)).to_array();
+                            w
+                        })
+                        .collect();
+                }
                 ToClient::Knowledge(k) => {
                     if let Some(c) = &mut self.crafting {
                         c.knowledge = *k;
@@ -3413,6 +3462,9 @@ impl Client {
                 } => {
                     if let Some(w) = &self.world {
                         let reg = &w.reg;
+                        // The tree as the player sees it (across the seam).
+                        let shift = near(pivot) - pivot;
+                        let pivot = pivot + shift;
                         let parts = blocks
                             .iter()
                             .map(|(p, s)| {
@@ -3423,7 +3475,7 @@ impl Client {
                                     None if def.collision => 1.0,
                                     None => 0.9,
                                 };
-                                (p.center(), glam::Vec3::splat(size), color)
+                                (p.center() + shift, glam::Vec3::splat(size), color)
                             })
                             .collect();
                         let n = toward.normal_f64();
@@ -3454,7 +3506,8 @@ impl Client {
                             {
                                 g = g.down();
                             }
-                            let origin = DVec3::new(p.x as f64, p.y as f64, p.z as f64);
+                            // Where the player sees it (across the seam).
+                            let origin = near(DVec3::new(p.x as f64, p.y as f64, p.z as f64));
                             let seed = (p.x as u32).wrapping_mul(73_856_093)
                                 ^ (p.y as u32).wrapping_mul(19_349_663)
                                 ^ (p.z as u32).wrapping_mul(83_492_791);
@@ -3465,7 +3518,8 @@ impl Client {
                                 .iter()
                                 .enumerate()
                                 .map(|(k, b)| {
-                                    let h = seed.wrapping_add(k as u32 * 2_654_435_761);
+                                    let h =
+                                        seed.wrapping_add((k as u32).wrapping_mul(2_654_435_761));
                                     let r = |sh: u32| ((h >> sh) & 255) as f64 / 255.0 - 0.5;
                                     let size = (b.max - b.min).as_vec3();
                                     volume += size.x * size.y * size.z;
@@ -3486,7 +3540,7 @@ impl Client {
                             };
                             let weight = volume * density * 9.81;
                             self.hearing.crash(
-                                p.center(),
+                                origin + DVec3::splat(0.5),
                                 surface,
                                 weight,
                                 self.camera.pos,

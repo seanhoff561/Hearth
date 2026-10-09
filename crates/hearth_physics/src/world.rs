@@ -57,6 +57,12 @@ pub trait Terrain {
     fn wrap_x(&self, x: f64) -> f64 {
         x
     }
+    /// Where a position past a pole edge comes out on the far side of the pole (E4.1 §4.5):
+    /// half the planet on in x, mirrored at the edge in z. `None` inside the edges, or for a
+    /// world without poles.
+    fn cross_pole(&self, _p: DVec3) -> Option<DVec3> {
+        None
+    }
     /// How deep inside natural ground a point lies (m; negative outside), where the ground is
     /// drawn smooth (Amendment S §8.1): it is collided as this field, not as its blocks' boxes.
     /// `None` for a world without one (every solid block a box).
@@ -152,6 +158,10 @@ impl Terrain for BlockWorld<'_> {
 
     fn wrap_x(&self, x: f64) -> f64 {
         self.map.planet().wrap_xf(x)
+    }
+
+    fn cross_pole(&self, p: DVec3) -> Option<DVec3> {
+        self.map.planet().cross_pole(p).map(|c| c.position)
     }
 
     fn depth(&self, p: DVec3) -> Option<f64> {

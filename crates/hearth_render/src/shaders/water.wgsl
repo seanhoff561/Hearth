@@ -36,31 +36,32 @@ fn wave_steepness() -> f32 {
 
 // Wave slopes at a world point (blocks): two scales of the tiling wave field travelling with the
 // wind, steeper in a stronger wind. `gx`, `gy` are the point's screen gradients (taken in uniform
-// control flow) and choose the mip level, so distant water flattens.
+// control flow) and choose the mip level, so distant water flattens. Each field's frame is
+// snapped to whole cycles over WRAP blocks (`wrap_dir`: a turn of under a degree), so the waves
+// hold as the camera crosses a multiple of it.
 fn wave_slope(p: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>) -> vec2<f32> {
     let d = water.wind.xy;
     // In the wind's frame (x along the wind): long swell and a shorter chop at an angle, each
     // travelling at its own speed.
-    let q = rotate(p, d);
-    let s1 = 1.0 / 40.0;
-    let a = textureSampleGrad(wave_tex, wave_samp, (q + vec2<f32>(water.phase.x, 0.0)) * s1,
-        rotate(gx, d) * s1, rotate(gy, d) * s1).xy * 2.0 - 1.0;
-    let c = vec2<f32>(0.8, 0.6);
-    let s2 = 1.0 / 11.0;
-    let q2 = rotate(q, c) + vec2<f32>(water.phase.y, 0.0);
-    let b = textureSampleGrad(wave_tex, wave_samp, q2 * s2, rotate(rotate(gx, d), c) * s2,
-        rotate(rotate(gy, d), c) * s2).xy * 2.0 - 1.0;
-    return unrotate(a * 0.6 + unrotate(b, c) * 0.4, d) * wave_steepness();
+    let k1 = wrap_dir(d, 1.0 / 40.0);
+    let a = textureSampleGrad(wave_tex, wave_samp,
+        rotate(p, k1) + vec2<f32>(water.phase.x * length(k1), 0.0),
+        rotate(gx, k1), rotate(gy, k1)).xy * 2.0 - 1.0;
+    let k2 = wrap_dir(unrotate(vec2<f32>(0.8, 0.6), d), 1.0 / 11.0);
+    let b = textureSampleGrad(wave_tex, wave_samp,
+        rotate(p, k2) + vec2<f32>(water.phase.y * length(k2), 0.0),
+        rotate(gx, k2), rotate(gy, k2)).xy * 2.0 - 1.0;
+    return (unrotate(a, normalize(k1)) * 0.6 + unrotate(b, normalize(k2)) * 0.4)
+        * wave_steepness();
 }
 
 // Wave slopes of distant water: the long swell alone (the chop is under a pixel there).
 fn wave_slope_far(p: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>) -> vec2<f32> {
-    let d = water.wind.xy;
-    let q = rotate(p, d);
-    let s1 = 1.0 / 40.0;
-    let a = textureSampleGrad(wave_tex, wave_samp, (q + vec2<f32>(water.phase.x, 0.0)) * s1,
-        rotate(gx, d) * s1, rotate(gy, d) * s1).xy * 2.0 - 1.0;
-    return unrotate(a * 0.6, d) * wave_steepness();
+    let k1 = wrap_dir(water.wind.xy, 1.0 / 40.0);
+    let a = textureSampleGrad(wave_tex, wave_samp,
+        rotate(p, k1) + vec2<f32>(water.phase.x * length(k1), 0.0),
+        rotate(gx, k1), rotate(gy, k1)).xy * 2.0 - 1.0;
+    return unrotate(a * 0.6, normalize(k1)) * wave_steepness();
 }
 
 // Schlick's Fresnel for water seen at cos θ = `ndv`.

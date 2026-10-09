@@ -291,7 +291,7 @@ mod sys {
         c.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
         // SAFETY: the current process's pseudo-handle, and a counters struct of its size.
         let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb) };
-        (ok != 0).then(|| (c.WorkingSetSize as u64, c.PeakWorkingSetSize as u64))
+        (ok != 0).then_some((c.WorkingSetSize as u64, c.PeakWorkingSetSize as u64))
     }
 
     pub fn ram() -> Option<u64> {

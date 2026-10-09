@@ -206,14 +206,17 @@ impl Hydrology {
 
     /// The drainage base and the smoothed land, interpolated between tile centres.
     fn drainage_base(&self, wg: &WorldGenerator, x: i32, z: i32) -> (f32, f32) {
-        let fx = (x as f32 - TILE as f32 * 0.5) / TILE as f32;
-        let fz = (z as f32 - TILE as f32 * 0.5) / TILE as f32;
+        // In f64 (exact at any x), the tiles keyed by their place around the planet (E4.1 §4.5).
+        let fx = (x as f64 - TILE as f64 * 0.5) / TILE as f64;
+        let fz = (z as f64 - TILE as f64 * 0.5) / TILE as f64;
         let (tx, tz) = (fx.floor() as i32, fz.floor() as i32);
-        let (ux, uz) = (fx - tx as f32, fz - tz as f32);
+        let (ux, uz) = ((fx - tx as f64) as f32, (fz - tz as f64) as f32);
+        let around = (wg.planet().circumference() / TILE).max(1);
         let b = |dx: i32, dz: i32| {
+            let tx = (tx + dx).rem_euclid(around);
             *self
                 .bases
-                .get_or_insert_with((tx + dx, tz + dz), || Self::tile_base(wg, tx + dx, tz + dz))
+                .get_or_insert_with((tx, tz + dz), || Self::tile_base(wg, tx, tz + dz))
         };
         let (b00, b10, b01, b11) = (b(0, 0), b(1, 0), b(0, 1), b(1, 1));
         let lerp2 = |a: f32, b: f32, c: f32, d: f32| {

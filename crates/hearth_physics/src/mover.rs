@@ -286,10 +286,22 @@ pub fn fly(t: &impl Terrain, m: &mut Mover, v: DVec3, dt: f64, through: bool) ->
         moved
     };
     m.pos += moved;
-    m.pos.x = t.wrap_x(m.pos.x);
     m.vel = if dt > 0.0 { moved / dt } else { DVec3::ZERO };
+    keep_on_planet(t, m);
     m.on_ground = false;
     moved
+}
+
+/// Keeps a body on the planet: its x around it, and past a pole edge out on the far side of the
+/// pole (E4.1 §4.5), going the other way north–south. Returns whether it crossed a pole.
+fn keep_on_planet(t: &impl Terrain, m: &mut Mover) -> bool {
+    m.pos.x = t.wrap_x(m.pos.x);
+    let Some(p) = t.cross_pole(m.pos) else {
+        return false;
+    };
+    m.pos = p;
+    m.vel.z = -m.vel.z;
+    true
 }
 
 /// The water's surface over the body's column, if water reaches the feet.
@@ -645,7 +657,7 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
         m.vel = DVec3::ZERO;
         if c.left_s <= 0.0 {
             m.pos = c.to;
-            m.pos.x = t.wrap_x(m.pos.x);
+            keep_on_planet(t, m);
             m.climb = None;
             m.stance = Stance::Standing;
             m.on_ground = true;
@@ -959,7 +971,8 @@ fn substep(t: &impl Terrain, m: &mut Mover, i: &Intent, a: &Ability, dt: f64) ->
         FieldContact::default()
     };
     m.pos += moved;
-    m.pos.x = t.wrap_x(m.pos.x);
+    // (Past a pole the velocity turns with the body; the checks below only stop it.)
+    keep_on_planet(t, m);
     if (moved.x - d.x).abs() > 1e-9 && !contact.on_ground {
         m.vel.x = 0.0;
     }

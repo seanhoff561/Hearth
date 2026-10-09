@@ -148,19 +148,25 @@ impl Disturbances {
         self.list.push(e);
     }
 
-    /// Horizontal distance (m) from a disturbance's centre, across the seam where the planet
-    /// wraps.
-    fn distance(&self, e: &Disturbance, x: i32, z: i32) -> f32 {
-        let mut dx = (self.wrap(x) - e.x) as f32;
+    /// The offset in x (blocks) of a place from a disturbance's centre, across the seam where
+    /// the planet wraps (in whole blocks: exact at any x, E4.1 §4.5).
+    fn dx(&self, e: &Disturbance, x: i32) -> i64 {
+        let mut dx = self.wrap(x) as i64 - e.x as i64;
         if self.circumference > 0 {
-            let c = self.circumference as f32;
-            if dx > c / 2.0 {
+            let c = self.circumference as i64;
+            if dx > c / 2 {
                 dx -= c;
-            } else if dx < -c / 2.0 {
+            } else if dx < -c / 2 {
                 dx += c;
             }
         }
-        let dz = (z - e.z) as f32;
+        dx
+    }
+
+    /// Horizontal distance (m) from a disturbance's centre, across the seam.
+    fn distance(&self, e: &Disturbance, x: i32, z: i32) -> f32 {
+        let dx = self.dx(e, x) as f32;
+        let dz = (z as i64 - e.z as i64) as f32;
         (dx * dx + dz * dz).sqrt()
     }
 
@@ -176,11 +182,13 @@ impl Disturbances {
             return false;
         }
         let seed = e.seed();
-        let wx = self.wrap(x);
-        if d > e.radius * (0.85 + 0.3 * patchy(seed, wx, z, 7.0)) {
+        // Its edge and spared patches drawn about its centre: whole across the seam, exact
+        // anywhere on the planet (E4.1 §4.5).
+        let (rx, rz) = (self.dx(e, x) as i32, z - e.z);
+        if d > e.radius * (0.85 + 0.3 * patchy(seed, rx, rz, 7.0)) {
             return false;
         }
-        e.severity >= 1.0 || patchy(seed ^ 0x5eed, wx, z, 11.0) < e.severity
+        e.severity >= 1.0 || patchy(seed ^ 0x5eed, rx, rz, 11.0) < e.severity
     }
 
     /// The disturbances that may reach a place, oldest first, with their index.

@@ -222,7 +222,11 @@ impl TaaRenderer {
             Some((vp, c)) => (vp, c, false),
             None => (unjittered, cam, true),
         };
-        let delta = cam - prev_cam;
+        // The camera's move since the last frame. Crossing the planet's seam its x jumps by the
+        // circumference, a multiple of 4096 blocks; no frame moves it 2048 blocks, so the move is
+        // its x folded into ±2048 (E4.1 §4.5).
+        let mut delta = cam - prev_cam;
+        delta.x = (delta.x + 2048.0).rem_euclid(4096.0) - 2048.0;
         let jitter = self.jitter_px();
         ctx.write_buffer(
             &self.params,

@@ -339,6 +339,10 @@ fn fly(
             let heap = prof::heap().map_or_else(String::new, |(used, free)| {
                 format!("; heap {:.0} in use, {:.0} free", mib(used), mib(free))
             });
+            // Meshes the server has sent the client not yet taken: the channel's backlog.
+            let backlog =
+                prof::counter("net.meshes.sent").saturating_sub(prof::counter("net.meshes.taken"));
+            let heap = format!("{heap}; {backlog} meshes waiting");
             println!(
                 "  minute {minute:>2}: {:>6.0} MiB resident, {:.0} km flown ({}){heap}",
                 mib(resident),

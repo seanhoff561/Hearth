@@ -6,7 +6,10 @@
 //! * rare giant caverns on a 1024-block grid, with pillars, underground lakes and sometimes a
 //!   sinkhole to the surface.
 //!
-//! Systems are pure functions of their region and cached.
+//! Systems are pure functions of their region and cached. A region is keyed by its place around
+//! the planet (the same region from either side of the seam: every planet's circumference is a
+//! multiple of both grids) and its caves are laid out about its first block in x and z, exact in
+//! f32 anywhere on the planet (E4.1 §4.5).
 
 use std::sync::Arc;
 
@@ -24,6 +27,7 @@ const CAVERN_REGION: i32 = 1024;
 /// Worms never travel farther than this from their region's bounds.
 const WORM_REACH: i32 = 112;
 
+/// A sphere of a worm: x and z about its region's first block, y as it is.
 #[derive(Debug, Clone, Copy)]
 struct Sphere {
     x: f32,
@@ -35,6 +39,7 @@ struct Sphere {
     ry: f32,
 }
 
+/// A worm: its spheres and their bounds (as theirs: x and z about the region's first block).
 #[derive(Debug, Clone, Default)]
 struct Worm {
     spheres: Vec<Sphere>,
@@ -68,7 +73,8 @@ pub struct CaveSystem {
     flood_level: Option<i32>,
 }
 
-/// A giant cavern.
+/// A giant cavern: x and z (its centre, sinkhole and bounds) about its region's first block, y
+/// as it is.
 #[derive(Debug, Clone)]
 pub struct Cavern {
     cx: f32,
@@ -87,6 +93,8 @@ pub struct Cavern {
 /// Cave generator.
 pub struct CaveGen {
     seed: u64,
+    /// The planet's circumference (blocks).
+    c: i32,
     systems: Cache<(i32, i32, i32), Vec<CaveSystem>>,
     caverns: Cache<(i32, i32), Option<Cavern>>,
     noise: Perlin,
@@ -94,10 +102,19 @@ pub struct CaveGen {
     vertical_scale: f32,
 }
 
+/// A noise's frequency (per block) for about `wavelength` blocks, a whole number of waves around
+/// a planet of circumference `c`, and that number (its period in lattice cells).
+fn wave(c: i32, wavelength: f64) -> (f64, i64) {
+    let cells = ((c as f64 / wavelength).round() as i64).max(1);
+    (cells as f64 / c as f64, cells)
+}
+
 impl CaveGen {
-    pub fn new(seed: u64, vertical_scale: f32) -> Self {
+    /// The caves of a planet of circumference `c` (blocks).
+    pub fn new(seed: u64, vertical_scale: f32, c: i32) -> Self {
         Self {
             seed: derive_seed(seed, "caves"),
+            c,
             systems: Cache::new(4096),
             caverns: Cache::new(1024),
             noise: Perlin::new(derive_seed(seed, "cavern-noise")),
@@ -111,6 +128,7 @@ impl CaveGen {
         self.cavern_frequency = f;
     }
 
+    /// The systems of a region (its index around the planet).
     fn region_systems(
         &self,
         rx: i32,
@@ -125,8 +143,10 @@ impl CaveGen {
     fn generate_region(&self, rx: i32, ry: i32, rz: i32, wg: &WorldGenerator) -> Vec<CaveSystem> {
         let terrain = &*wg.terrain;
         let mut rng = Rng::new(hash_3d(self.seed, rx, ry, rz));
-        let cx = rx * REGION + REGION / 2;
-        let cz = rz * REGION + REGION / 2;
+        // The region's first block in x and z (about which its caves are laid out).
+        let (x0, z0) = (rx * REGION, rz * REGION);
+        let cx = x0 + REGION / 2;
+        let cz = z0 + REGION / 2;
         let cy = ry * REGION + REGION / 2;
         // Local conditions from the pure surface model at the region centre.
         let s = terrain.sample(cx, cz);
@@ -153,9 +173,9 @@ impl CaveGen {
         for _ in 0..count {
             let mut sys = CaveSystem::default();
             let start = (
-                (rx * REGION) as f32 + rng.range_f32(8.0, (REGION - 8) as f32),
+                rng.range_f32(8.0, (REGION - 8) as f32),
                 (ry * REGION) as f32 + rng.range_f32(8.0, (REGION - 8) as f32),
-                (rz * REGION) as f32 + rng.range_f32(8.0, (REGION - 8) as f32),
+                rng.range_f32(8.0, (REGION - 8) as f32),
             );
             let worms = 1 + rng.below(3);
             for _ in 0..worms {
@@ -168,7 +188,9 @@ impl CaveGen {
                 }
             }
             // Below the water table every void is full of water.
-            let table = wg.hydro.water_table(wg, start.0 as i32, start.2 as i32);
+            let table = wg
+                .hydro
+                .water_table(wg, x0 + start.0 as i32, z0 + start.2 as i32);
             sys.flood_level = Some(table.floor() as i32);
             systems.push(sys);
         }
@@ -179,7 +201,7 @@ impl CaveGen {
             && rng.chance(0.05)
         {
             let mut w = Worm::default();
-            let start = (cx as f32, surface - 6.0, cz as f32);
+            let start = ((REGION / 2) as f32, surface - 6.0, (REGION / 2) as f32);
             self.worm(&mut rng, start, true, &mut w, 0);
             w.finish();
             let table = wg.hydro.water_table(wg, cx, cz);
@@ -277,7 +299,10 @@ impl CaveGen {
         self.cavern(rx, rz, wg).is_some()
     }
 
+    /// The cavern of a cavern region (its index around the planet, as `rx` may be from either
+    /// side of the seam).
     fn cavern(&self, rx: i32, rz: i32, wg: &WorldGenerator) -> Arc<Option<Cavern>> {
+        let rx = rx.rem_euclid((self.c / CAVERN_REGION).max(1));
         self.caverns
             .get_or_insert_with((rx, rz), || self.generate_cavern(rx, rz, wg))
     }
@@ -291,12 +316,14 @@ impl CaveGen {
             return None;
         }
         let margin = 260.0;
-        let cx = (rx * CAVERN_REGION) as f32 + rng.range_f32(margin, CAVERN_REGION as f32 - margin);
-        let cz = (rz * CAVERN_REGION) as f32 + rng.range_f32(margin, CAVERN_REGION as f32 - margin);
+        // About the region's first block in x and z.
+        let (x0, z0) = (rx * CAVERN_REGION, rz * CAVERN_REGION);
+        let cx = rng.range_f32(margin, CAVERN_REGION as f32 - margin);
+        let cz = rng.range_f32(margin, CAVERN_REGION as f32 - margin);
         let rxr = rng.range_f32(80.0, 210.0);
         let rzr = rng.range_f32(80.0, 210.0);
         let ryr = rng.range_f32(50.0, 140.0);
-        let s = terrain.sample(cx as i32, cz as i32);
+        let s = terrain.sample(x0 + cx as i32, z0 + cz as i32);
         let underwater = s.is_underwater();
         let cover = if underwater {
             rng.range_f32(80.0, 200.0)
@@ -305,14 +332,17 @@ impl CaveGen {
         };
         let cy = s.height - cover - ryr;
         // An underground lake, or the water table if that stands higher.
-        let lake_level = ((cy - ryr * rng.range_f32(0.45, 0.75)) as i32)
-            .max(wg.hydro.water_table(wg, cx as i32, cz as i32).floor() as i32);
+        let lake_level = ((cy - ryr * rng.range_f32(0.45, 0.75)) as i32).max(
+            wg.hydro
+                .water_table(wg, x0 + cx as i32, z0 + cz as i32)
+                .floor() as i32,
+        );
         let sinkhole = if !underwater && rng.chance(0.35) {
             let a = rng.range_f32(0.0, std::f32::consts::TAU);
             let d = rng.range_f32(0.0, 0.5);
             let sx = cx + a.cos() * rxr * d;
             let sz = cz + a.sin() * rzr * d;
-            let top = terrain.sample(sx as i32, sz as i32).height as i32 + 6;
+            let top = terrain.sample(x0 + sx as i32, z0 + sz as i32).height as i32 + 6;
             Some((sx, sz, rng.range_f32(7.0, 15.0), top))
         } else {
             None
@@ -366,10 +396,11 @@ impl CaveGen {
             o.y + CUBE_SIZE - 1,
             o.z + CUBE_SIZE - 1,
         ];
-        // Worm systems from the surrounding regions.
+        // Worm systems from the surrounding regions (as the cube sees them: x unwrapped).
         let r0 = |v: i32| (v - WORM_REACH - REGION).div_euclid(REGION);
         let r1 = |v: i32| (v + WORM_REACH + REGION).div_euclid(REGION);
         let _ = pos;
+        let around = (self.c / REGION).max(1);
         for rz in r0(cmin[2])..=r1(cmax[2]) {
             for ry in r0(cmin[1])..=r1(cmax[1]) {
                 for rx in r0(cmin[0])..=r1(cmax[0]) {
@@ -387,14 +418,18 @@ impl CaveGen {
                     if !overlaps(reg_min, reg_max, cmin, cmax) {
                         continue;
                     }
-                    let systems = self.region_systems(rx, ry, rz, wg);
+                    let systems = self.region_systems(rx.rem_euclid(around), ry, rz, wg);
+                    // Its first block in x and z where the cube sees it.
+                    let (x0, z0) = (rx * REGION, rz * REGION);
                     for sys in systems.iter() {
                         for w in &sys.worms {
-                            if !overlaps(w.min, w.max, cmin, cmax) {
+                            let wmin = [w.min[0] + x0, w.min[1], w.min[2] + z0];
+                            let wmax = [w.max[0] + x0, w.max[1], w.max[2] + z0];
+                            if !overlaps(wmin, wmax, cmin, cmax) {
                                 continue;
                             }
                             for s in &w.spheres {
-                                self.carve_sphere(buf, s, sys.flood_level, col, b);
+                                self.carve_sphere(buf, s, (x0, z0), sys.flood_level, col, b);
                             }
                         }
                     }
@@ -407,19 +442,28 @@ impl CaveGen {
         for rz in c0(cmin[2])..=c1(cmax[2]) {
             for rx in c0(cmin[0])..=c1(cmax[0]) {
                 let cav = self.cavern(rx, rz, wg);
+                let (x0, z0) = (rx * CAVERN_REGION, rz * CAVERN_REGION);
                 if let Some(c) = cav.as_ref()
-                    && overlaps(c.min, c.max, cmin, cmax)
+                    && overlaps(
+                        [c.min[0] + x0, c.min[1], c.min[2] + z0],
+                        [c.max[0] + x0, c.max[1], c.max[2] + z0],
+                        cmin,
+                        cmax,
+                    )
                 {
-                    self.carve_cavern(buf, c, col, b);
+                    self.carve_cavern(buf, c, (x0, z0), col, b);
                 }
             }
         }
     }
 
+    /// Carves a sphere of a worm whose region's first block is `(rx0, rz0)` where the cube sees
+    /// it.
     fn carve_sphere(
         &self,
         buf: &mut CubeBuf,
         s: &Sphere,
+        (rx0, rz0): (i32, i32),
         flood: Option<i32>,
         col: &ColumnData,
         b: &GenBlocks,
@@ -427,12 +471,12 @@ impl CaveGen {
         let o = buf.origin;
         // The walls' fill reaches a voxel and a half beyond the space.
         let m = hearth_world::fill::RANGE;
-        let x0 = ((s.x - s.r - m).floor() as i32).max(o.x);
-        let x1 = ((s.x + s.r + m).ceil() as i32).min(o.x + 15);
+        let x0 = (rx0 + (s.x - s.r - m).floor() as i32).max(o.x);
+        let x1 = (rx0 + (s.x + s.r + m).ceil() as i32).min(o.x + 15);
         let y0 = ((s.y - s.ry - m).floor() as i32).max(o.y);
         let y1 = ((s.y + s.ry + m).ceil() as i32).min(o.y + 15);
-        let z0 = ((s.z - s.r - m).floor() as i32).max(o.z);
-        let z1 = ((s.z + s.r + m).ceil() as i32).min(o.z + 15);
+        let z0 = (rz0 + (s.z - s.r - m).floor() as i32).max(o.z);
+        let z1 = (rz0 + (s.z + s.r + m).ceil() as i32).min(o.z + 15);
         let short = s.r.min(s.ry);
         if x0 > x1 || y0 > y1 || z0 > z1 {
             return;
@@ -452,9 +496,9 @@ impl CaveGen {
                     if y >= protect_above {
                         break;
                     }
-                    let dx = x as f32 + 0.5 - s.x;
+                    let dx = (x - rx0) as f32 + 0.5 - s.x;
                     let dy = y as f32 + 0.5 - s.y;
-                    let dz = z as f32 + 0.5 - s.z;
+                    let dz = (z - rz0) as f32 + 0.5 - s.z;
                     let e = dx * dx * inv_r2 + dz * dz * inv_r2 + dy * dy * inv_ry2;
                     // Out from the wall, in voxels (about: the ellipsoid's shorter radius).
                     let outside = (e.sqrt() - 1.0) * short;
@@ -481,10 +525,25 @@ impl CaveGen {
         }
     }
 
-    fn carve_cavern(&self, buf: &mut CubeBuf, c: &Cavern, col: &ColumnData, b: &GenBlocks) {
+    /// Carves a cavern whose region's first block is `(rx0, rz0)` where the cube sees it.
+    fn carve_cavern(
+        &self,
+        buf: &mut CubeBuf,
+        c: &Cavern,
+        (rx0, rz0): (i32, i32),
+        col: &ColumnData,
+        b: &GenBlocks,
+    ) {
         let o = buf.origin;
         let pillar_seed = (c.seed >> 7) as f64 * 1e-6;
         let short = c.rx.min(c.ry).min(c.rz);
+        // The noises periodic around the planet (the walls whole at the seam).
+        let (pillars, wide, fine, wobbles) = (
+            wave(self.c, 38.0),
+            wave(self.c, 44.0),
+            wave(self.c, 13.0),
+            wave(self.c, 9.0),
+        );
         for lz in 0..16 {
             for lx in 0..16 {
                 let x = o.x + lx;
@@ -495,15 +554,18 @@ impl CaveGen {
                 } else {
                     i32::MAX
                 };
-                let fx = (x as f32 + 0.5 - c.cx) / c.rx;
-                let fz = (z as f32 + 0.5 - c.cz) / c.rz;
+                // About the region's first block (exact in f32).
+                let (ux, uz) = ((x - rx0) as f32 + 0.5, (z - rz0) as f32 + 0.5);
+                let fx = (ux - c.cx) / c.rx;
+                let fz = (uz - c.cz) / c.rz;
                 // Pillars: columns of rock where a 2D noise peaks (not near the walls).
+                let (f, cells) = pillars;
                 let pn = self
                     .noise
-                    .noise2(x as f64 / 38.0 + pillar_seed, z as f64 / 38.0, 0);
+                    .noise2(x as f64 * f + pillar_seed, z as f64 * f, cells);
                 let pillar = pn > 0.55 && fx * fx + fz * fz < 0.6;
                 let sink = c.sinkhole.map(|(sx, sz, r, top)| {
-                    let d2 = (x as f32 + 0.5 - sx).powi(2) + (z as f32 + 0.5 - sz).powi(2);
+                    let d2 = (ux - sx).powi(2) + (uz - sz).powi(2);
                     (d2, r, top)
                 });
                 for ly in 0..16 {
@@ -515,18 +577,17 @@ impl CaveGen {
                     let mut d = (fx * fx + fy * fy + fz * fz).sqrt();
                     let mut open = false;
                     if d < 1.4 {
-                        let n =
-                            self.noise
-                                .noise3(x as f64 / 44.0, y as f64 / 44.0, z as f64 / 44.0, 0)
+                        let ((fw, cw), (ff, cf)) = (wide, fine);
+                        let n = self
+                            .noise
+                            .noise3(x as f64 * fw, y as f64 * fw, z as f64 * fw, cw)
+                            as f32
+                            * 0.24
+                            + self
+                                .noise
+                                .noise3(x as f64 * ff, y as f64 * ff, z as f64 * ff, cf)
                                 as f32
-                                * 0.24
-                                + self.noise.noise3(
-                                    x as f64 / 13.0,
-                                    y as f64 / 13.0,
-                                    z as f64 / 13.0,
-                                    0,
-                                ) as f32
-                                    * 0.07;
+                                * 0.07;
                         d += n;
                         open = d < 1.0 && !pillar;
                     }
@@ -538,8 +599,9 @@ impl CaveGen {
                     };
                     if !open && let Some((d2, r, top)) = sink {
                         // Shaft from the cavern roof up to the surface.
+                        let (f, cells) = wobbles;
                         let wobble =
-                            self.noise.noise2(y as f64 / 9.0, x as f64 / 9.0, 0) as f32 * 2.5;
+                            self.noise.noise2(x as f64 * f, y as f64 * f, cells) as f32 * 2.5;
                         let shaft = y as f32 > c.cy && y <= top;
                         open = shaft && d2 < (r + wobble).powi(2);
                         if shaft {

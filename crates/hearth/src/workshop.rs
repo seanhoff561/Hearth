@@ -2224,7 +2224,8 @@ impl Workshop {
     /// A game minute of fire: the ground the near fire has left is kept as burned; the far
     /// fire's hours; flames burn whoever stands in them.
     fn fire_minute(&mut self, h: &mut Here) {
-        if let Some(d) = self.blaze.take_burned(h.lw.vegetation.year) {
+        let planet = *h.lw.generator.planet();
+        if let Some(d) = self.blaze.take_burned(&planet, h.lw.vegetation.year) {
             h.lw.vegetation = h.lw.vegetation.with(d);
         }
         if self.far_fire.is_burning() {

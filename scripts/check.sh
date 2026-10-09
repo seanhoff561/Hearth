@@ -11,6 +11,13 @@ cargo fmt --all -- --check
 echo "==> cargo clippy (deny warnings)"
 cargo clippy --workspace --all-targets -- -D warnings
 
+echo "==> Earth-scale guards (E4.1 §5): fine tiles by caller, the seam, the poles, precision"
+cargo test --profile dev-opt -q -p hearth --test fine_tiles
+cargo test --profile dev-opt -q -p hearth_worldgen --lib -- seam the_features_noises \
+  old_trees_grow rock_beds_run_on
+cargo test --profile dev-opt -q -p hearth_fauna --test seam --test aside
+cargo test --profile dev-opt -q -p hearth_physics --test poles
+
 echo "==> cargo test (the dev-opt profile: optimized, no LTO)"
 cargo test --profile dev-opt --workspace
 

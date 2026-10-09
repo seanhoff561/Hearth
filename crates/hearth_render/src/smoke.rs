@@ -187,7 +187,10 @@ impl SmokeRenderer {
                 ],
                 params: [
                     if p.far { 1.0 } else { 0.0 },
-                    ((p.at.x.floor() as i64 * 31 + p.at.z.floor() as i64).rem_euclid(9973)) as f32,
+                    // Its look by its place, x taken modulo 4096 (as every planet's circumference
+                    // is): the same plume from either side of the seam.
+                    (((p.at.x.floor() as i64).rem_euclid(4096) * 31 + p.at.z.floor() as i64)
+                        .rem_euclid(9973)) as f32,
                     0.0,
                     0.0,
                 ],

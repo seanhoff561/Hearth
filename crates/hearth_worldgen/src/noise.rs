@@ -196,6 +196,21 @@ impl BlockFbm {
         sum * self.norm
     }
 
+    /// [`Self::sample2`] at `scale` times its frequencies, each octave's snapped so the
+    /// circumference still holds a whole number of its cells: periodic in x as `sample2` is,
+    /// where sampling it at a scaled x would not be (E4.1 §4.5).
+    #[inline]
+    pub fn sample2_scaled(&self, x: f64, z: f64, scale: f64) -> f64 {
+        let mut sum = 0.0;
+        for (i, (n, f, p, a)) in self.octaves.iter().enumerate() {
+            let off = i as f64 * 17.13;
+            let cells = ((*p as f64 * scale).round() as i64).max(1);
+            let fs = f * cells as f64 / *p as f64;
+            sum += n.noise2(x * fs, z * fs + off, cells) * a;
+        }
+        sum * self.norm
+    }
+
     #[inline]
     pub fn sample3(&self, x: f64, y: f64, z: f64) -> f64 {
         let mut sum = 0.0;

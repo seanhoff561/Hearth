@@ -207,8 +207,8 @@ impl WorldGenerator {
             .collect();
         Ok(Self {
             natural,
-            caves: caves::CaveGen::new(seed, v),
-            features: features::FeatureGen::new(seed),
+            caves: caves::CaveGen::new(seed, v, terrain.planet().circumference()),
+            features: features::FeatureGen::new(seed, terrain.planet().circumference()),
             planet: *terrain.planet(),
             columns: Cache::new({
                 // As many as the columns' memory budget holds (E4.1 §4.7).

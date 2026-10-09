@@ -254,3 +254,146 @@ fn surface_cubes_carry_the_grounds_fill() {
         "the surface is {worst} m from the terrain's height"
     );
 }
+
+/// A sink recording every block a tree puts, within generous bounds.
+struct Record {
+    lo: [i32; 3],
+    hi: [i32; 3],
+    put: Vec<(i32, i32, i32, BlockStateId)>,
+}
+
+impl super::features::TreeSink for Record {
+    fn bounds(&self) -> ([i32; 3], [i32; 3]) {
+        (self.lo, self.hi)
+    }
+    fn get(&self, _x: i32, _y: i32, _z: i32) -> Option<BlockStateId> {
+        Some(BlockStateId::AIR)
+    }
+    fn put(&mut self, x: i32, y: i32, z: i32, s: BlockStateId) {
+        self.put.push((x, y, z, s));
+    }
+}
+
+#[test]
+fn old_trees_grow_the_same_anywhere_on_the_planet() {
+    // E4.1 §4.5: a tree is built about its foot, so one forty million blocks east (an Earth's
+    // breadth, where f32 holds only every fourth block) is the one grown near the origin: its
+    // trunk, branches and roots block for block.
+    use super::features::{FeatureGen, TreeKind};
+    let g = generator();
+    let s = terrain().sample(0, 0);
+    let earth = FeatureGen::new(5, PlanetSize::Earth.circumference());
+    for kind in [
+        TreeKind::BigOak,
+        TreeKind::GiantOak,
+        TreeKind::Mangrove,
+        TreeKind::GiantSpruce,
+        TreeKind::SavannaOak,
+    ] {
+        let wood = g.blocks.wood(kind.wood());
+        let grown = |x0: i32| {
+            let mut sink = Record {
+                lo: [x0 - 48, -64, -48],
+                hi: [x0 + 48, 256, 48],
+                put: Vec::new(),
+            };
+            let mut rng = hearth_math::hash::Rng::new(11);
+            earth.grow(&mut sink, &g.blocks, kind, x0, 64, 0, &mut rng, &s);
+            let mut v: Vec<(i32, i32, i32, BlockStateId)> = sink
+                .put
+                .iter()
+                .filter(|p| !wood.leaves.contains(&p.3) && !g.blocks.vines.contains(&p.3))
+                .map(|p| (p.0 - x0, p.1, p.2, p.3))
+                .collect();
+            v.sort_by_key(|p| (p.0, p.1, p.2, p.3.0));
+            v.dedup();
+            v
+        };
+        let near = grown(1000);
+        let far = grown(39_999_000);
+        assert!(near.len() > 3, "{kind:?}: {} blocks of wood", near.len());
+        assert_eq!(near, far, "{kind:?} grown far east is not the same tree");
+    }
+}
+
+#[test]
+fn trees_are_the_same_from_either_side_of_the_seam() {
+    // E4.1 §4.5: the tree cells are the planet's own (the last one around wider by what is left
+    // over), so a strip across the seam holds the same trees seen from the east (x about 0) and
+    // from the west (x about C).
+    let g = generator();
+    let c = g.planet().circumference();
+    let veg = crate::vegetation::Vegetation::default();
+    let key = |t: &super::features::PlacedTree| {
+        (
+            t.foot[0].rem_euclid(c),
+            t.foot[1],
+            t.foot[2],
+            t.species,
+            format!("{:?} {:?}", t.stage, t.remains),
+        )
+    };
+    let mut seen = 0;
+    for z0 in (-c / 2..c / 2).step_by(1024) {
+        let east = g.features().trees_in(&g, &veg, (-24, z0), (24, z0 + 300));
+        let west = g
+            .features()
+            .trees_in(&g, &veg, (c - 24, z0), (c + 24, z0 + 300));
+        let mut e: Vec<_> = east.iter().map(key).collect();
+        let mut w: Vec<_> = west.iter().map(key).collect();
+        e.sort();
+        w.sort();
+        assert_eq!(e, w, "the trees across the seam at z {z0}");
+        seen += e.len();
+    }
+    assert!(seen > 0, "no trees along the seam to compare");
+}
+
+#[test]
+fn the_features_noises_and_caverns_wrap_with_the_planet() {
+    let g = generator();
+    let c = g.planet().circumference();
+    let f = g.features();
+    for (x, y, z) in [
+        (0, 40, 0),
+        (17, 63, -5000),
+        (c - 1, 12, 9000),
+        (c / 3, -40, 1234),
+    ] {
+        let (a, b) = (f.cliff_noise(x, y, z), f.cliff_noise(x + c, y, z));
+        assert!((a - b).abs() < 1e-4, "cliffs at x {x}: {a} and {b}");
+        let (a, b) = (f.stand_age(x, z), f.stand_age(x + c, z));
+        assert!((a - b).abs() < 1e-3, "stands at x {x}: {a} and {b}");
+    }
+    // A cavern region is the same from either side of the seam.
+    let around = c / 1024;
+    for rz in -12..12 {
+        assert_eq!(
+            g.caves.has_cavern(-1, rz, &g),
+            g.caves.has_cavern(around - 1, rz, &g),
+            "the cavern region west of the seam at row {rz}"
+        );
+    }
+}
+
+#[test]
+fn rock_beds_run_on_across_the_seam() {
+    // E4.1 §4.5: folds whole around the planet, domes from noise periodic in it: the top of the
+    // beds steps across the seam no more than between neighbours anywhere.
+    let g = generator();
+    let c = g.planet().circumference();
+    let mut compared = 0;
+    for z in (-c / 2 + 64..c / 2 - 64).step_by(256) {
+        let (west, east) = (g.geology.column(c - 1, z), g.geology.column(0, z));
+        if west.province != east.province {
+            continue;
+        }
+        compared += 1;
+        let step = (west.top - east.top).abs();
+        assert!(
+            step < 4.0,
+            "the beds step {step:.1} blocks across the seam at z {z}"
+        );
+    }
+    assert!(compared > 50, "{compared} columns compared");
+}

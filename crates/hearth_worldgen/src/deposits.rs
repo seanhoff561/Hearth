@@ -711,8 +711,9 @@ impl Deposits {
                         }
                         DepositGeometry::Seam | DepositGeometry::Evaporite => {
                             let r = (d[0] * d[0] + d[2] * d[2]).sqrt();
-                            let undulation = ((x as f32 * 0.02 + b.seed as f32 % 7.0).sin()
-                                + (z as f32 * 0.017).cos())
+                            // About the body's centre: exact anywhere, whole across the seam.
+                            let undulation = ((d[0] * 0.02 + b.seed as f32 % 7.0).sin()
+                                + (d[2] * 0.017).cos())
                                 * 1.2;
                             r < b.size * 0.5 * (1.0 + 0.15 * wobble)
                                 && (d[1] - undulation).abs() < b.thickness * 0.5

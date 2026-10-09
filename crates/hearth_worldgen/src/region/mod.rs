@@ -727,8 +727,9 @@ impl Terrain {
     /// little with gentle regional noise.
     fn local_climate(&self, xf: f64, zf: f64, gx: f64, gz: f64, h: f32) -> LocalClimate {
         let g = &*self.grid;
-        let wobble = self.noise.variation.sample2(xf * 0.37, zf * 0.37) as f32;
-        let wobble2 = self.noise.variation2.sample2(zf * 0.41, xf * 0.41) as f32;
+        // Periodic in x (whole at the seam, E4.1 §4.5).
+        let wobble = self.noise.variation.sample2_scaled(xf, zf, 0.37) as f32;
+        let wobble2 = self.noise.variation2.sample2_scaled(xf, zf, 0.41) as f32;
         let sea_t = g.sea_level_temperature.bilinear(gx, gz) + wobble * 1.4;
         let range = g.temp_range.bilinear(gx, gz);
         let precip = g.precipitation.bilinear(gx, gz) * (1.0 + wobble2 * 0.18);
@@ -896,7 +897,7 @@ impl Terrain {
                     .is_some_and(|k| g.flags[k] & flags::DELTA != 0)
             })
         });
-        let shelter_n = self.noise.variation.sample2(xf * 0.45 + 7_000.0, zf * 0.45) as f32;
+        let shelter_n = self.noise.variation.sample2_scaled(xf + 15_556.0, zf, 0.45) as f32;
         let mut shelter = if delta_near {
             1.0
         } else {
@@ -909,9 +910,9 @@ impl Terrain {
         if ocean_near && !lake && water == 0.0 && h < -0.5 && sea_t > 21.0 && !delta_near {
             let depth_m = -h / self.v;
             if depth_m < 60.0 {
-                let n1 = (self.noise.variation2.sample2(xf * 1.7, zf * 1.7) as f32 * 0.5 + 0.5)
+                let n1 = (self.noise.variation2.sample2_scaled(xf, zf, 1.7) as f32 * 0.5 + 0.5)
                     .clamp(0.0, 1.0);
-                let n2 = (self.noise.variation.sample2(zf * 1.3 + 900.0, xf * 1.3) as f32 * 0.5
+                let n2 = (self.noise.variation.sample2_scaled(xf, zf + 692.0, 1.3) as f32 * 0.5
                     + 0.5)
                     .clamp(0.0, 1.0);
                 let blocks_per_radian =
@@ -934,7 +935,7 @@ impl Terrain {
                 if fringing || barrier || atoll {
                     reef = true;
                     // Coral heads reach the surface in places, spurs and grooves lie deeper.
-                    let heads = self.noise.rough.sample2(xf * 0.7, zf * 0.7) as f32 * 0.5 + 0.5;
+                    let heads = self.noise.rough.sample2_scaled(xf, zf, 0.7) as f32 * 0.5 + 0.5;
                     h = h.max(-1.0 - 2.5 * (1.0 - heads).clamp(0.0, 1.0));
                     // The crest takes the waves.
                     shelter = 0.0;
