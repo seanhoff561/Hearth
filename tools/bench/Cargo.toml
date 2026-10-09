@@ -22,8 +22,11 @@ hearth_smooth.workspace = true
 hearth_ui.workspace = true
 glam.workspace = true
 png.workspace = true
+tiff.workspace = true
+zune-jpeg.workspace = true
 rayon.workspace = true
 rustc-hash.workspace = true
+serde_json.workspace = true
 anyhow.workspace = true
 env_logger.workspace = true
 

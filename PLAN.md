@@ -38,13 +38,13 @@ cube-era code allowed where it serves that, T §5). V2.1 and its Addenda are sup
 8. **S1 → S2 → E7 → S3 → S4** (S4 as amended by E §9.2) (done).
 9. **Audit 2** (done).
 10. **E4.1 — Earth-scale performance** (the owner's fix pass, done 2026-10-09).
-11. **Amendment T** (D291): **T0**, S5/P7 stopped at (b) (done) → **T1**, quick wins (done) →
-    **T2**, the realism gap analysis, which revises what follows.
-12. By default after T2: **S5/P7 (c)–(f) with G1** (the ground at walking scale) → **W1**
-    (water; S7's water) → **L1** (seamless distance; trees in the LOD band) → **P7G** → **S6
-    with H1** → **R1** (rendering realism; earlier if T2 says) → **S7 → S8 → P8.** An audit
-    after every three milestones (Q §8.2), each updating the realism scorecard (T §3.6), the
-    first with a check that no coarse-scale caller has crept into the fine generator.
+11. **Amendment T** (D291): **T0** (S5/P7 stopped at (b)), **T1** (quick wins) and **T2** (the
+    realism gap analysis, `docs/review/realism/RGA-1.md`) done.
+12. As T2 revised it (D297): **R1a** (sun shadows) → **G1a** (relief from 30 m to 30 km) →
+    **S5/P7 (c)–(f) with G1b** (walking scale) → **W1** (water; S7's water) → **L1** (seamless
+    distance) → **P7G** → **S6 with H1** → **R1b** → **S7 → S8 → P8.** An audit after every
+    three milestones (Q §8.2), each updating the realism scorecard (T §3.6); the first after
+    G1b, with a check that no coarse-scale caller has crept into the fine generator.
 13. **V2-13 → V2-14** (technology only).
 14. **Audit.**
 15. **V2-15 → V2-16** (as amended by E §9.4).
@@ -76,7 +76,7 @@ cube-era code allowed where it serves that, T §5). V2.1 and its Addenda are sup
 ## Completed
 M0–M3 (v1 engine); V2-0 – V2-10; V2-12 (the Neolithic); S0 (D222); P0–P2; E0 (the human
 systems archived, D230); Audit 0; Q1; E1–E6; P3–P5 (P6 removed, D258); Audit 1; S1; S2; E7; S3;
-S4; Audit 2; E4.1.
+S4; Audit 2; E4.1; T0; T1; T2.
 What each did: `PROGRESS.md`, `docs/history/` and the design docs. V2-11 and V2.1's H0–H10
 superseded.
 
@@ -161,32 +161,28 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 - Duplicates: LOD normal packing, the seasonal range, two field gradients, the beard's lip
   zone; a `cover()` accessor for the canopy; `level`'s reach documented.
 
-## T1 — Quick wins (T §2)
-- Scavenger birds over fresh remains, seen and heard (and as dots on the horizon), in place of
-  the repeating text; every world-describing notice reviewed (show it, don't say it, T §0.2).
-- Skin calibrated against measured reflectance: rougher, regional, micro-detailed, occluded,
-  subsurface-scattered, lit by the sky, a film when wet.
-- Aim at real things and their parts (a berry cluster, a branch, a stone, a dig patch, a water
-  point, a body part), picked against their shapes, highlighted from their own geometry; the box
-  edges removed.
-- The globe in relief: 4096 × 2048, hillshading, hypsometric tints, bathymetry, rivers, ice.
-- *Accept:* T §2's.
-
-## T2 — The realism gap analysis (T §3)
-- Evidence at every scale against photographs, real elevation data and field statistics; the
-  fine-detail regression (Standard against Earth); process against appearance per scale.
-- *Output:* `docs/review/realism/RGA-1.md`, the ranked gap table, the realism suite (shot
-  specs, references and licenses, metrics script), `scorecard.md`, this plan revised (D-entry).
-
-## G1, W1, L1, R1, H1 (T §4; refined by T2)
-- **G1:** physically based ground below ~38 m (diffusion, rills, colluvium, talus, tree-throw,
-  frost, aeolian, karst, glacial forms) or example-based or learned detail, chosen by terrain
-  statistics; clasts by lithology and sorting; soil surfaces; with S5/P7 (c)–(f).
+## T's milestones (T §4, ranked by RGA-1; targets in `docs/review/realism/scorecard.md`)
+- **R1a — sun shadows** (RGA-1 gap 1): cascaded shadow maps for the near world, trees and things;
+  the distant terrain's horizon shadows from its height fields; contact shadows. *Accept:* the
+  suite's low-sun shots shadowed; ≤ 1.5 ms at 1080p on the RTX 4060.
+- **G1a — relief from 30 m to 30 km** (gaps 2, 4): relief by landscape type and height above base
+  level, not uplift alone, calibrated to `bench realism global` and `terrain`; hillslope
+  diffusion at the 306 m and 38 m levels; erosion routed by many flow directions; rivers as
+  curves meandering by slope and discharge. *Accept:* the land's median slope 2.8° ± 20 %,
+  relief 163 m ± 20 %, land over 5° 33 % ± 5, relief by height band within 25 % of the Earth's;
+  each kind's 30 m slope within 25 % of the real; no grid directions in channels; tile times
+  within E4.1's budgets.
+- **G1b — walking scale, with S5/P7 (c)–(f)** (gaps 3, 5, 9): a ~5 m and a ~1 m level
+  (diffusion, channel heads and gullies, colluvium and fans, talus, tree-throw, frost, aeolian,
+  karst and glacial forms where they belong) with detail from lidar statistics by landscape
+  type; clasts by lithology and sorting; soil surfaces. *Accept:* |Δh| from 1 to 64 m and the
+  4 m curvature within × 1.5 of the kind's lidar; closed hollows over 0.25 m under 1 % outside
+  glacial and karst land; S5's and P7's own.
 - **W1:** water as continuous surfaces from the hydrology (hydraulic geometry, beds and banks
   carved to hold them), a shallow-water simulation near players, flow maps; block water removed.
-- **L1:** no seam where full detail ends: measured, then the first rings shaded as the near
-  ground, geomorphing, trees as instances then impostors, distant water as near.
-- **R1:** indirect light, occlusion, translucency, calibrated materials, by realism per ms.
+- **L1:** the LOD shaded as the near ground, geomorphing, trees as instances then impostors,
+  distant water as near. *Accept:* the seam metric (`seams.tsv`) ≤ 1.3, bands within 5 %.
+- **R1b:** clouds by type with their shadows, fog, indirect light, translucency, by realism per ms.
 - **H1:** the body to the owner's reference bar (T §4.5) from anthropometric data and openly
   licensed bases, with S6's animals and items.
 
@@ -247,7 +243,8 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   fixed.
 
 ## Audit 3
-After P8, covering S5–S8.
+After G1b (R1a, G1a, G1b with S5/P7), with the scorecard's first update; then one after every
+three milestones of item 12.
 
 ## V2-13 — Metallurgy & mining
 - Prospecting, mining with supports, ore processing, charcoal, furnaces, bellows, crucibles,

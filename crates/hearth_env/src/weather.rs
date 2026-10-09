@@ -147,6 +147,12 @@ pub struct WeatherModel {
     /// Standard deviations of the storm and cell fields (measured at construction).
     sigma: f64,
     cell_sigma: f64,
+    /// The storm field's values (in standard deviations) as measured at construction, sorted,
+    /// and the sums of those from each on: its quantiles and the mean excess over them, so the
+    /// shares of wet days and hours and the year's total come out as the climate's whatever
+    /// the field's distribution.
+    levels: Vec<f64>,
+    above: Vec<f64>,
 }
 
 /// Fraction of a wet area covered by convective cells at any moment.
@@ -196,11 +202,15 @@ impl WeatherModel {
             cells,
             sigma: 0.25,
             cell_sigma: 0.25,
+            levels: Vec::new(),
+            above: Vec::new(),
         };
-        // Measure the storm field's spread so wet-day frequencies come out right.
+        // Measure the storm field's spread and distribution so wet-day and wet-hour
+        // frequencies come out right.
         let (mut sum2, mut cell2) = (0.0, 0.0);
-        let n = 2000;
+        let n = 4096;
         let mut rng = hearth_math::hash::Rng::new(seed ^ 0x5eed);
+        let mut values = Vec::with_capacity(n);
         for i in 0..n {
             let p = DVec3::new(
                 rng.range_f64(-1.0, 1.0),
@@ -209,13 +219,38 @@ impl WeatherModel {
             )
             .normalize_or(DVec3::Y);
             let v = m.storm_value(p, i as f64 * 0.37);
+            values.push(v);
             sum2 += v * v;
             let c = m.cells.sample(p);
             cell2 += c * c;
         }
         m.sigma = (sum2 / n as f64).sqrt().max(1e-3);
         m.cell_sigma = (cell2 / n as f64).sqrt().max(1e-3);
+        m.levels = values.into_iter().map(|v| v / m.sigma).collect();
+        m.levels.sort_by(f64::total_cmp);
+        m.above = vec![0.0; n + 1];
+        for k in (0..n).rev() {
+            m.above[k] = m.above[k + 1] + m.levels[k];
+        }
         m
+    }
+
+    /// The storm field's value (standard deviations) exceeded a share `1 − p` of the time.
+    fn quantile(&self, p: f64) -> f64 {
+        let x = p.clamp(0.0, 1.0) * (self.levels.len() - 1) as f64;
+        let k = (x as usize).min(self.levels.len() - 2);
+        let f = x - k as f64;
+        self.levels[k] * (1.0 - f) + self.levels[k + 1] * f
+    }
+
+    /// How far the field stands above `t`, on average, where it does.
+    fn mean_excess(&self, t: f64) -> f64 {
+        let k = self.levels.partition_point(|&v| v <= t);
+        let count = self.levels.len() - k;
+        if count == 0 {
+            return 0.0;
+        }
+        self.above[k] / count as f64 - t
     }
 
     fn storm_value(&self, p: DVec3, days: f64) -> f64 {
@@ -247,18 +282,27 @@ impl WeatherModel {
         let drift = -zonal * WESTERLY_DRIFT * TAU * days;
         let q = Self::advect(p, drift);
         let s = self.storm_value(q, days) / self.sigma;
-        // How often it precipitates at this time of year.
+        // How often it precipitates at this time of year: the days with some (a millimetre or
+        // more), and the hours of rain in them — some five in a day of frontal rain, fewer
+        // where it falls in showers (London rains in some 6–8 % of its hours, on some 30 % of
+        // its days).
         let mm_day = n.precip_mm_per_day(year_frac);
-        let wet_frac = (mm_day / (mm_day + 4.0)).clamp(0.02, 0.85);
-        let threshold = inv_norm(1.0 - wet_frac);
+        let wet_days = (mm_day / (mm_day + 4.0)).clamp(0.02, 0.85);
+        let convective = ((n.temperature(year_frac) - 14.0) / 10.0).clamp(0.0, 0.85);
+        let wet_hours = wet_days * (5.0 - 2.5 * convective) / 24.0;
+        // A weather system covers the place on its wet days (its cloud and its wind); within
+        // it, it rains where the field stands highest.
+        let system = self.quantile(1.0 - wet_days);
+        let threshold = self.quantile(1.0 - wet_hours);
         let excess = s - threshold;
         let precip_mm_h = if excess > 0.0 && mm_day > 0.01 {
-            // Mean intensity while wet, higher in the core of a system.
-            let mean_rate = mm_day / (24.0 * wet_frac);
-            let steady = mean_rate * (0.4 + 1.2 * excess.min(3.0));
+            // Mean intensity while it rains, higher in the core of a system (the core's
+            // weighting over its mean, so the year sums to the normals).
+            let mean_rate = mm_day / (24.0 * wet_hours);
+            let steady = mean_rate * (0.4 + 1.2 * excess.min(3.0))
+                / (0.4 + 1.2 * self.mean_excess(threshold));
             // In warm climates much of the rain falls in short, intense convective cells that
             // cover a small part of the wet area (same total, far higher rates).
-            let convective = ((n.temperature(year_frac) - 14.0) / 10.0).clamp(0.0, 0.85);
             let cell = self.cells.sample(q + DVec3::Z * days * 3.0) / self.cell_sigma;
             let in_cell = cell > inv_norm(1.0 - CELL_COVER);
             (1.0 - convective) * steady
@@ -271,7 +315,7 @@ impl WeatherModel {
             0.0
         };
         let cloud_cover = {
-            let frontal = ((s - (threshold - 1.1)) / 1.3).clamp(0.0, 1.0);
+            let frontal = ((s - (system - 1.1)) / 1.3).clamp(0.0, 1.0);
             // Fair-weather cumulus on warm humid afternoons.
             let humid = (mm_day / 4.0).min(1.0);
             let afternoon = (1.0 - ((local_time - 0.6) / 0.2).powi(2)).max(0.0);
@@ -309,7 +353,7 @@ impl WeatherModel {
         };
         let gust = self.gusts.sample(q + DVec3::Y * days * 1.3);
         let wind_speed_m_s =
-            (3.0 + 4.0 * zonal.abs() + 6.0 * excess.max(0.0) + 3.0 * gust).max(0.0);
+            (3.0 + 4.0 * zonal.abs() + 6.0 * (s - system).max(0.0) + 3.0 * gust).max(0.0);
         // Mostly zonal, turning with the storm field's gradient direction.
         let wind_dir = if zonal >= 0.0 {
             TAU / 4.0
@@ -363,18 +407,22 @@ mod tests {
                 assert!((0.0..=1.0).contains(&w.cloud_cover));
             }
         }
-        // Annual totals come out near the normals (weather is random: allow ±35%).
+        // Annual totals come out near the normals (weather is random: allow ±20%).
         assert!(
-            (total[0] / 1400.0 - 1.0).abs() < 0.35,
+            (total[0] / 1400.0 - 1.0).abs() < 0.2,
             "wet climate total {}",
             total[0]
         );
         assert!(
-            (total[1] / 150.0 - 1.0).abs() < 0.5,
+            (total[1] / 150.0 - 1.0).abs() < 0.35,
             "dry climate total {}",
             total[1]
         );
         assert!(wet_hours[0] > 3 * wet_hours[1], "{wet_hours:?}");
+        // It rains in some tenth of the wet climate's hours (half its days have some), not in
+        // a third of them (T2: wet days were taken for wet hours).
+        let share = wet_hours[0] as f64 / hours as f64;
+        assert!((0.06..0.14).contains(&share), "wet hours {share:.3}");
     }
 
     #[test]

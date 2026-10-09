@@ -304,3 +304,5 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D293 (2026-10-09) Skin as measured: roughness by region, relief, scattering by curvature, its colour
 - D294 (2026-10-09) The globe in relief: heights in their own layer, lit and tinted; finer relief near
 - D295 (2026-10-09) The thing looked at: met and outlined by its own drawn shape; a dig where the look rested
+- D296 (2026-10-09) Rain falls in some hours of a wet day: the weather's wet hours apart from its wet days
+- D297 (2026-10-09) T2's order: shadows first, then the relief from 30 m to 30 km, then walking scale

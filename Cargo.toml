@@ -60,6 +60,10 @@ gilrs = "0.11.2"
 cpal = "0.18.2"
 pollster = "1.0.1"
 png = "0.18.1"
+# Real elevation models and photographs for the realism analysis (`bench realism`, T2;
+# 2026-10-09).
+tiff = { version = "0.11.3", default-features = false, features = ["deflate", "lzw"] }
+zune-jpeg = "0.5.15"
 zstd = "0.14.0"
 lz4_flex = "0.14.0"
 directories = "6.0.0"

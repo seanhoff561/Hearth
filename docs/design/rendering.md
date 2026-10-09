@@ -157,7 +157,11 @@ horizon when that is farther (so the land never stops short of the skyline):
   gaps; inside the area the LOD gives way entirely. The LOD shares the terrain's globals
   (lighting, aerial perspective, curvature). A cube appearing for the first time thins in by
   the same dither over 0.6 s (its instance's fourth component; the game's client sets the
-  time, pictures and tests draw cubes at once; D288).
+  time, pictures and tests draw cubes at once; D288). How visible the handoff is gets measured
+  in every screenshot (`screenshot::seam`, T2): the brightness step between neighbouring pixels
+  across the edge of the full-detail square over the steps beside it, and how the bands either
+  side differ, one line a shot in `seams.tsv` beside the pictures (the realism suite's median
+  was 4, L1's target 1.3).
 - **Streaming**: the preview re-selects tiles when the camera moves 16 blocks, or when a
   tile arrives rough enough to split (a tile's error is known once it is built), and builds
   the missing ones nearest first, those in view before those behind, on a small thread pool of

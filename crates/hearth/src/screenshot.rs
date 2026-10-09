@@ -1958,6 +1958,104 @@ pub fn render_shot(
     })
 }
 
+/// How the ground drawn in full detail meets its distant (LOD) rendering in a shot (T §3.3, the
+/// boundary-seam metric for L1): the brightness step across the edge of the full-detail square
+/// against the steps between neighbouring pixels on either side of it, and how the bands just
+/// inside and just outside it differ in brightness and colour.
+#[derive(Debug, Clone, Copy)]
+pub struct Seam {
+    /// Mean |ΔL| of neighbouring pixels across the edge over the mean on one side (1: unseen).
+    pub ratio: f64,
+    /// The outer band's mean luminance less the inner's, over the inner's.
+    pub luma: f64,
+    /// The distance between the bands' mean colours in the opponent channels (0–255 scale).
+    pub chroma: f64,
+    /// Pixel pairs across the edge.
+    pub pairs: usize,
+}
+
+/// The seam in a shot, where enough of the edge of the full-detail square is in view.
+pub fn seam(shot: &Shot, w: u32, h: u32) -> Option<Seam> {
+    let (w, h) = (w as usize, h as usize);
+    let inv = shot.camera.view_proj(w as f32 / h as f32).inverse();
+    let r = shot.near_radius;
+    // Each pixel's horizontal distance (Chebyshev, about the eye) and luminance; NaN for sky.
+    let dist: Vec<f64> = (0..w * h)
+        .into_par_iter()
+        .map(|k| {
+            let d = shot.depth[k];
+            if d <= 0.0 {
+                return f64::NAN;
+            }
+            let (x, y) = (k % w, k / w);
+            let ndc = glam::Vec4::new(
+                (x as f32 + 0.5) / w as f32 * 2.0 - 1.0,
+                1.0 - (y as f32 + 0.5) / h as f32 * 2.0,
+                d,
+                1.0,
+            );
+            let p = inv * ndc;
+            let p = p / p.w;
+            (p.x as f64).abs().max((p.z as f64).abs())
+        })
+        .collect();
+    let px = |k: usize| {
+        let c = &shot.pixels[k * 4..k * 4 + 3];
+        let (r, g, b) = (c[0] as f64, c[1] as f64, c[2] as f64);
+        (
+            0.2126 * r + 0.7152 * g + 0.0722 * b,
+            r - g,
+            0.5 * (r + g) - b,
+        )
+    };
+    let band = |d: f64| d >= 0.75 * r && d < 1.33 * r;
+    let (mut across, mut n_across, mut beside, mut n_beside) = (0.0, 0usize, 0.0, 0usize);
+    let mut sums = [[0.0f64; 4]; 2];
+    for y in 0..h {
+        for x in 0..w {
+            let k = y * w + x;
+            let d = dist[k];
+            if !d.is_finite() || !band(d) {
+                continue;
+            }
+            let (l, rg, yb) = px(k);
+            let side = (d >= r) as usize;
+            sums[side][0] += l;
+            sums[side][1] += rg;
+            sums[side][2] += yb;
+            sums[side][3] += 1.0;
+            for m in [(x + 1 < w).then_some(k + 1), (y + 1 < h).then_some(k + w)]
+                .into_iter()
+                .flatten()
+            {
+                let e = dist[m];
+                if !e.is_finite() || !band(e) {
+                    continue;
+                }
+                let step = (l - px(m).0).abs();
+                if (d >= r) != (e >= r) {
+                    across += step;
+                    n_across += 1;
+                } else {
+                    beside += step;
+                    n_beside += 1;
+                }
+            }
+        }
+    }
+    if n_across < 50 || n_beside < 50 || sums[0][3] < 1.0 || sums[1][3] < 1.0 {
+        return None;
+    }
+    let mean = |s: &[f64; 4], i: usize| s[i] / s[3];
+    Some(Seam {
+        ratio: (across / n_across as f64) / (beside / n_beside as f64).max(1e-6),
+        luma: (mean(&sums[1], 0) - mean(&sums[0], 0)) / mean(&sums[0], 0).max(1e-6),
+        chroma: (mean(&sums[1], 1) - mean(&sums[0], 1))
+            .hypot(mean(&sums[1], 2) - mean(&sums[0], 2)),
+        pairs: n_across,
+    })
+}
+
 /// The least distance from a group sought the camera stands (m).
 const SEEK_M: f64 = 20.0;
 
@@ -2467,6 +2565,33 @@ fn shoot(
     }
     let shot = render_shot(ctx, atlas, lod, lw, spec, out)?;
     write_png(out, spec.width, spec.height, &shot.pixels)?;
+    if let Some(m) = seam(&shot, spec.width, spec.height) {
+        log::info!(
+            "seam: {:.2} times the steps beside it across the edge of full detail ({} pairs); \
+             beyond it {:+.1}% brighter, colour {:.1} apart",
+            m.ratio,
+            m.pairs,
+            100.0 * m.luma,
+            m.chroma
+        );
+        // One line a shot beside the pictures, for the realism suite's measures.
+        if let Some(dir) = out.parent() {
+            use std::io::Write as _;
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(dir.join("seams.tsv"))?;
+            writeln!(
+                f,
+                "{}\t{:.3}\t{:.4}\t{:.2}\t{}",
+                out.file_stem().and_then(|s| s.to_str()).unwrap_or("?"),
+                m.ratio,
+                m.luma,
+                m.chroma,
+                m.pairs
+            )?;
+        }
+    }
     let s = shot.terrain;
     log::info!(
         "wrote {} ({} visible cubes, {} draws, {} quads, {:.1} MiB mesh memory; {} LOD tiles drawn, {} quads, {:.1} MiB)",

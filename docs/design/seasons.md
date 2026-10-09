@@ -42,9 +42,12 @@ from which the rivers' seasonal regimes are built (`hearth_env::rivers`, geology
 
 ### Weather (`weather.rs`) — two layers (D30)
 - **What the player sees:** a smooth field on the sphere (fBm) advected by the
-  prevailing wind of the latitude band, plus convective cells in warm humid climates. The wet
-  fraction is matched to the climate's precipitation rate for the date (an inverse normal CDF
-  threshold), so wet seasons really are wetter. Out of it: cloud cover, precipitation rate and
+  prevailing wind of the latitude band, plus convective cells in warm humid climates. Two
+  thresholds on it, from its own measured distribution, follow the climate's precipitation for
+  the date, so wet seasons really are wetter: a weather system covers the place on its wet days
+  (mm / (mm + 4) of the day's mean: its cloud and wind), and within it rain falls in some five
+  hours of such a day (2.5 where it falls in showers), at rates that sum to the normal (D296:
+  London rains in 6 % of its hours). Out of it: cloud cover, precipitation rate and
   type (rain, sleet, snow by temperature), thunder chance, humidity, wind, the day's
   temperature with a synoptic anomaly.
 - **What accumulates:** snowpack and ice come from the normals (above), not from the weather the

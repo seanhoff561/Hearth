@@ -3,6 +3,7 @@
 mod deposits;
 mod r#gen;
 mod image;
+mod realism;
 mod region;
 mod relief;
 mod smooth;
@@ -24,7 +25,14 @@ fn usage() {
       uplift), with each level's time.
   smooth [--out DIR] [--scenes a,b,...|shading] [--view 560x350] [--supersample 2] [--no-images]
       S0's smooth-terrain prototypes: the eight test scenes meshed by Surface Nets, Surface Nets
-      with sharp features and Dual Contouring, measured and rendered; the shading prototype."
+      with sharp features and Dual Contouring, measured and rendered; the shading prototype.
+  realism terrain|global|levels [--seed N] [--planet earth|standard] [--kinds hills,plains,...]
+      The realism analysis (T §3.3, docs/review/realism/): the generator's ground beside real
+      ground of the same kind (one-metre lidar, thirty-metre SRTM), over the whole land (random
+      windows), and by refinement level; references from scripts/fetch-realism-refs.sh.
+  realism weather | images DIR | sheet | photo-queries | photo-pick
+      The weather's year at real places' normals; pictures' statistics; the suite's contact
+      sheet beside its photographs (and the fetch script's two steps for them)."
     );
 }
 
@@ -44,6 +52,7 @@ fn main() -> anyhow::Result<()> {
         "deposits" => deposits::run(&args[1..]),
         "textures" => textures::run(&args[1..]),
         "smooth" => smooth::run(&args[1..]),
+        "realism" => realism::run(&args[1..]),
         "-h" | "--help" | "help" => {
             usage();
             Ok(())
