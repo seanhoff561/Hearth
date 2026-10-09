@@ -297,3 +297,4 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D286 (2026-10-09) A first run suits the machine; the perf gate holds the Earth-scale numbers
 - D287 (2026-10-09) The server holds the meshes a client has not taken: one per cube, nearest first
 - D288 (2026-10-09) The near ground streams in view first and fades in where it first appears
+- D289 (2026-10-09) A world keeps its planet; the planet cache carries the generator's version

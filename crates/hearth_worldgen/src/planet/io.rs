@@ -254,6 +254,16 @@ impl PlanetGrid {
         })
     }
 
+    /// A hash of all the planet holds (its file's bytes before compression), unlike
+    /// [`Self::fingerprint`]'s sample: what `tests/planet_pinned.rs` pins to
+    /// [`super::GENERATOR`].
+    pub fn content_hash(&self) -> u64 {
+        use std::hash::Hasher;
+        let mut h = rustc_hash::FxHasher::default();
+        h.write(&self.to_bytes());
+        h.finish()
+    }
+
     /// Writes the planet to `path` (zstd-compressed, atomic via a temp file).
     pub fn save(&self, path: &Path) -> Result<(), PlanetIoError> {
         let raw = self.to_bytes();

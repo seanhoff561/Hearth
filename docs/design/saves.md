@@ -15,8 +15,15 @@ saves/<world>/
   items.json      the things lying in the world (V2-4)
   crafts.json     stations and their fires, wildfires, harvest counts (V2-5)
   blocks.json     the blocks the player has changed, by position and state name (V2-5, D73)
+  planet.bin.zst  the planet the world was made on (D289)
   region/         r.<x>.<y>.<z>.hrg, 8×8×8 cubes per file
 ```
+- **The planet** (D289): a world keeps the planet grid it was made on, so that a newer
+  generator or an emptied cache never changes the land under it. A new world's is copied from
+  the cache, where planets are named for their seed, size, resolution and the generator's
+  version (`planet_<seed>_<size>_<resolution>_g<version>.bin.zst`); a world saved before worlds
+  kept theirs takes the planet it has been opened on (the cache's older name, without the
+  version) while that is there, else this build's.
 - **Format version** (`meta::FORMAT`, currently 7). Every world before format 6 had people in
   it (V2.1) and is refused with a clear message (Amendment E §2.4: "This world was made with an
   earlier version that had people in it; start a new world"); newer formats are refused. Later

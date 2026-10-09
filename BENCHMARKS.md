@@ -798,7 +798,9 @@ The same machine and planet as "E4.1 before the fixes"; the end of E4.1. The low
 of E4.1 §6: the reference machine's numbers (8 cores and a GPU) are the owner's to run
 (`hearth bench load`, `hearth bench globe`). The load as before (the menus' work behind a new
 world, 640x360, the refinement tiles made afresh and its save reading them back), the median of
-three runs.
+three runs. The planet of both was the one an older build had cached here on 8 October, not the
+one this build makes of seed 7 (D289): the timings stand for that planet; this build's planet
+and the owner's laptop are in the next section.
 
 | | before | after |
 |---|---:|---:|
@@ -834,3 +836,39 @@ server's outbox 8–24 MiB. Before step 5 the flight rose 1,331 → 2,501 MiB, a
 2,580 MiB, rising throughout; with the outbox alone (before the in-view order, the fades and the
 interactive pool's third thread) 1,253 → 1,851 MiB, the same plateau. Its save, opened 108 km
 from the spawn, was in control at 2.95 s and whole at 70 s (the distant tiles there not on disk).
+
+## E4.1 on the reference machine — the owner's laptop, and this build's planet here
+
+The owner's laptop: Ryzen 7 7840HS (8 cores, 16 threads), RTX 4060 Laptop on Vulkan, 16 GB,
+Windows, `cargo run --release`, commit 86e24ce, one run of each at the defaults (1280x720, render
+distance 12, LOD 256; seed 7, its planet made afresh). Here: the cloud machine of the sections
+above, `--software --size 640x360`, this build's planet of seed 7 made afresh (D289), one run.
+
+| | the owner's laptop | here | budget |
+|---|---:|---:|---:|
+| The globe's map, made / read back | 0.26 / 0.014 s | 1.12 / 0.01 s | |
+| The map's land by area | 27.258 % | 27.251 % | |
+| Hovering over the globe, median / slowest | 0.002 / 0.024 ms | 0.005 / 0.50 ms | |
+| A click to its place's details, median / slowest | 489 / 825 ms | 897 / 1,439 ms | |
+| The places suggested | 4.1 s | 7.4 s | |
+| The creator, a person at Close | 137 ms | 711 ms (E4.1 after) | |
+| The creator, the last setting shown after a drag (height, build) | 75 / 70 ms | 140–148 ms (E4.1 after) | |
+| The creator, at full detail after a drag (height, build) | 244 / 224 ms | 0.9–1.2 s (E4.1 after) | 1 s |
+| A new world, Play → in control | 2.28 s | 2.99 s | |
+| A new world, Play → the whole render distance | 4.84 s | 20.3 s | ~30 s |
+| Its save, Play → in control | 1.08 s | 2.28 s | |
+| Its save, Play → the whole render distance | 3.29 s | 14.7 s | |
+| Peak resident, the new world / its save | 617 / 591 MiB | 1,101 / 1,174 MiB | |
+| The main thread a frame while loading, median, new world / save | 1.48 / 1.15 ms | 0.26 / 0.26 ms | |
+| The main thread's slowest frame, new world / save | 1,356 / 183 ms | 1,188 / 655 ms | |
+
+Both budgets the cloud machine missed are met on the reference machine: the whole render
+distance in 4.8 s, the creator's full detail in 0.22–0.24 s. On this build's planet the cloud
+machine reaches the whole render distance in 20 s too (37 s on the older planet, its spawn on
+other ground). The laptop's slowest frame is the scene's pipelines compiled when the world
+arrives, the first time (PLAYTEST 33): 183 ms the next, from the driver's shader cache. Its
+memory is half the cloud machine's (llvmpipe holds the GPU's buffers in memory). Both runs built
+finest-level tiles for the distant terrain about the player (`lod.near` and `lod.mid`: 24 and 29
+there, 17 and 22 here; none on the older planet), the level it samples at there, and none for a
+coarse caller (the gate's `relief.fine.*`). The map's land differs by 0.007 points, some 150
+texels, between Windows and Linux (D289).

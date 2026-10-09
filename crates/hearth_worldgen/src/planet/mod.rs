@@ -157,6 +157,12 @@ pub struct PlanetGrid {
 /// Progress callback: (fraction 0..1, stage name).
 pub type Progress<'a> = &'a (dyn Fn(f32, &str) + Sync);
 
+/// The planet generator's version, part of the name a planet is cached under: bumped whenever
+/// the planet made for the same settings changes, so that no machine goes on using a planet an
+/// older build made (`tests/planet_pinned.rs` fails until it is bumped and the new planets are
+/// pinned). A world keeps the planet it was made on in its own folder, whatever the version.
+pub const GENERATOR: u32 = 1;
+
 /// Discharge below this is not a river. Discharge is measured in square degrees of catchment ×
 /// metres of rain per year, so it is independent of grid resolution and planet size.
 pub const RIVER_MIN_DISCHARGE: f32 = 2.0;

@@ -305,7 +305,21 @@ fn open_save(spec: &WorldSpec, lw: &LocalWorld) -> anyhow::Result<Option<Save>> 
     let meta = WorldMeta::new(&spec.name, settings, lw.reg.state_names());
     let dir = WorldDir::create(saves, &meta)?;
     log::info!("created world {:?} in {}", spec.name, dir.root.display());
+    keep_planet(lw, &dir, spec.cache_dir.as_deref());
     Ok(Some(Save { dir, meta }))
+}
+
+/// A new world's planet kept in its folder: copied from the cache, where this build's generator
+/// made it (written out otherwise).
+fn keep_planet(lw: &LocalWorld, dir: &WorldDir, cache_dir: Option<&std::path::Path>) {
+    let grid = &lw.generator.terrain.grid;
+    let cached = cache_dir.map(|d| d.join(crate::scene::planet_cache_name(&grid.settings)));
+    let copied = cached
+        .filter(|c| c.exists())
+        .is_some_and(|c| std::fs::copy(c, dir.planet_file()).is_ok());
+    if !copied && let Err(e) = grid.save(&dir.planet_file()) {
+        log::warn!("could not keep the world's planet: {e}");
+    }
 }
 
 /// Whether a point is within the player's reach (3 m of the eyes).
@@ -705,13 +719,15 @@ fn run(
     let stopped = || stop.load(std::sync::atomic::Ordering::Relaxed);
     // What the server's thread works on, for the profile (E4.1).
     let _caller = hearth_core::prof::caller("server");
-    // A saved world keeps its own planet.
+    // A saved world keeps its own planet: its settings, and the planet in its folder.
     let mut gen_settings = spec.shape.planet(spec.seed, spec.planet);
+    let mut own_planet = None;
     if let Some(saves) = &spec.saves_dir {
         let root = saves.join(&spec.name);
         if root.join("level.json").exists() {
-            let (_, meta, _) = WorldDir::open(&root)?;
+            let (dir, meta, _) = WorldDir::open(&root)?;
             gen_settings = meta.settings.planet.clone();
+            own_planet = Some(dir.planet_file());
         }
     }
     let seed = gen_settings.seed;
@@ -724,19 +740,23 @@ fn run(
     progress(0.0, "menu.making.opening");
     let mut lw = {
         hearth_core::zone!("load.world");
-        // The menus' world when it is this one's planet (the birthplace's ground made already).
+        // The menus' world when it is this new world's planet (the birthplace's ground made
+        // already); a saved world's is the one it keeps.
         let prepared = spec
             .prepared
             .clone()
-            .filter(|p| p.generator.terrain.grid.settings == gen_settings);
+            .filter(|p| own_planet.is_none() && p.generator.terrain.grid.settings == gen_settings);
         match prepared {
             Some(p) => LocalWorld::from_generator(p.generator, p.content, p.reg)?,
-            None => {
-                LocalWorld::create_with(&gen_settings, spec.cache_dir.as_deref(), &|f, stage| {
+            None => LocalWorld::create_with(
+                &gen_settings,
+                spec.cache_dir.as_deref(),
+                own_planet.as_deref(),
+                &|f, stage| {
                     log::debug!("planet {:.0}% {stage}", f * 100.0);
                     progress(f, stage);
-                })?
-            }
+                },
+            )?,
         }
     };
     if stopped() {

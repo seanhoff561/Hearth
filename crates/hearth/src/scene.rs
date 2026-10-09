@@ -49,16 +49,18 @@ impl LocalWorld {
             grid_resolution: resolution,
         }
         .sanitized();
-        Self::create_with(&settings, cache_dir, &|f, stage| {
+        Self::create_with(&settings, cache_dir, None, &|f, stage| {
             log::debug!("planet {:.0}% {stage}", f * 100.0);
         })
     }
 
-    /// Builds (or loads from `cache_dir`) the planet of `settings`, telling `progress` how far it
-    /// has come (a share and the stage's words), and prepares a generator.
+    /// Builds (or loads, [`planet_for`]: a saved world's `own`, else from `cache_dir`) the planet
+    /// of `settings`, telling `progress` how far it has come (a share and the stage's words), and
+    /// prepares a generator.
     pub fn create_with(
         settings: &WorldGenSettings,
         cache_dir: Option<&Path>,
+        own: Option<&Path>,
         progress: hearth_worldgen::planet::Progress<'_>,
     ) -> anyhow::Result<Self> {
         let (content, report) = hearth_content::Content::load(&[data_pack_dir()]);
@@ -76,34 +78,7 @@ impl LocalWorld {
         let defs = hearth_world::datapack::load_block_defs(&[data_pack_dir()])?;
         let reg = Arc::new(BlockRegistry::build(defs)?);
         let t0 = Instant::now();
-        let cache = cache_dir.map(|d| d.join(planet_cache_name(settings)));
-        let cached =
-            cache
-                .as_ref()
-                .filter(|p| p.exists())
-                .and_then(|p| match PlanetGrid::load(p) {
-                    Ok(g) => Some(g),
-                    Err(e) => {
-                        log::warn!("planet cache unreadable ({e}); rebuilding");
-                        None
-                    }
-                });
-        let grid = match cached {
-            Some(g) => g,
-            // Built afresh, and cached (over an unreadable file, an older format's).
-            None => {
-                let g = PlanetGrid::build(settings, progress);
-                if let Some(p) = &cache {
-                    if let Some(d) = p.parent() {
-                        std::fs::create_dir_all(d).ok();
-                    }
-                    if let Err(e) = g.save(p) {
-                        log::warn!("could not cache planet: {e}");
-                    }
-                }
-                g
-            }
-        };
+        let grid = planet_for(settings, cache_dir, own, progress);
         log::info!("planet ready in {:.2}s", t0.elapsed().as_secs_f64());
         let terrain = Arc::new(Terrain::new(Arc::new(grid)));
         if let Some(d) = cache_dir {
@@ -428,8 +403,6 @@ pub fn data_pack_dir() -> std::path::PathBuf {
     hearth_world::datapack::builtin_pack_dir()
 }
 
-/// The planet cache's file for world-generation settings: its seed, size and resolution.
-/// The file the globe's map of a planet is kept in, beside the planet's cache (E4.1 §4.2).
 /// The most the refinement levels' tiles kept on disk take, every planet's together (bytes).
 pub const RELIEF_CACHE_CAP: u64 = 512 << 20;
 
@@ -439,20 +412,202 @@ pub fn keep_relief(terrain: &Terrain, cache_dir: &Path) {
     terrain.keep_tiles_on_disk(&cache_dir.join("relief"), RELIEF_CACHE_CAP);
 }
 
-pub fn globe_cache_name(settings: &WorldGenSettings) -> String {
+/// The file the globe's map of a planet is kept in, beside the planet's cache (E4.1 §4.2):
+/// named for the planet's fingerprint, so that no other planet of the seed is shown with it.
+pub fn globe_cache_name(grid: &PlanetGrid) -> String {
+    format!("globe_{:016x}.bin.zst", grid.fingerprint())
+}
+
+/// The planet cache's file for world-generation settings: its seed, size and resolution, and
+/// the generator's version, so that no new world is made on a planet an older build cached.
+pub fn planet_cache_name(settings: &WorldGenSettings) -> String {
     format!(
-        "globe_{}_{}_{}.bin.zst",
+        "{}_g{}.bin.zst",
+        planet_cache_stem(settings),
+        hearth_worldgen::planet::GENERATOR
+    )
+}
+
+/// The name planets were cached under before the generator's version was part of it: the
+/// planet a world saved then has been opened on.
+fn legacy_planet_cache_name(settings: &WorldGenSettings) -> String {
+    format!("{}.bin.zst", planet_cache_stem(settings))
+}
+
+fn planet_cache_stem(settings: &WorldGenSettings) -> String {
+    format!(
+        "planet_{}_{}_{}",
         settings.seed,
         settings.planet_size.name(),
         settings.grid_resolution
     )
 }
 
-pub fn planet_cache_name(settings: &WorldGenSettings) -> String {
-    format!(
-        "planet_{}_{}_{}.bin.zst",
-        settings.seed,
-        settings.planet_size.name(),
-        settings.grid_resolution
-    )
+/// The planet of `settings`: a saved world's own (`own`, in its folder) where it has one; else,
+/// for a world saved before worlds kept theirs, the planet it has been opened on (the cache's
+/// older name); else this build's, from the cache or made afresh (`progress` told) and cached.
+/// A saved world without its own keeps in its folder the planet it is given.
+pub fn planet_for(
+    settings: &WorldGenSettings,
+    cache_dir: Option<&Path>,
+    own: Option<&Path>,
+    progress: hearth_worldgen::planet::Progress<'_>,
+) -> PlanetGrid {
+    let settings = settings.clone().sanitized();
+    let read = |p: &Path| -> Option<PlanetGrid> {
+        if !p.exists() {
+            return None;
+        }
+        match PlanetGrid::load(p) {
+            Ok(g) if g.settings == settings => Some(g),
+            Ok(_) => {
+                log::warn!("{} holds another planet; not used", p.display());
+                None
+            }
+            Err(e) => {
+                log::warn!("planet file {} unreadable ({e}); not used", p.display());
+                None
+            }
+        }
+    };
+    if let Some(g) = own.and_then(read) {
+        return g;
+    }
+    let cache = cache_dir.map(|d| d.join(planet_cache_name(&settings)));
+    let legacy = own
+        .and(cache_dir)
+        .map(|d| d.join(legacy_planet_cache_name(&settings)));
+    let grid = legacy
+        .as_deref()
+        .and_then(read)
+        .or_else(|| cache.as_deref().and_then(read))
+        .unwrap_or_else(|| {
+            let g = PlanetGrid::build(&settings, progress);
+            if let Some(p) = &cache {
+                cache_planet(&g, p);
+            }
+            g
+        });
+    if let Some(p) = own
+        && let Err(e) = grid.save(p)
+    {
+        log::warn!("could not keep the world's planet: {e}");
+    }
+    grid
+}
+
+/// Caches a planet made afresh at `path`, letting go of the planets of its settings that other
+/// generators made (the worlds made on them keep their own).
+fn cache_planet(grid: &PlanetGrid, path: &Path) {
+    if let Some(d) = path.parent() {
+        std::fs::create_dir_all(d).ok();
+    }
+    if let Err(e) = grid.save(path) {
+        log::warn!("could not cache planet: {e}");
+        return;
+    }
+    let others = format!("{}_g", planet_cache_stem(&grid.settings));
+    let Some(dir) = path.parent().and_then(|d| std::fs::read_dir(d).ok()) else {
+        return;
+    };
+    for e in dir.flatten() {
+        let name = e.file_name();
+        if Some(name.as_os_str()) != path.file_name() && name.to_string_lossy().starts_with(&others)
+        {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tiny(seed: u64) -> WorldGenSettings {
+        WorldGenSettings {
+            seed,
+            planet_size: PlanetSize::Tiny,
+            grid_resolution: 64,
+        }
+        .sanitized()
+    }
+
+    fn made(s: &WorldGenSettings, cache: Option<&Path>, own: Option<&Path>) -> u64 {
+        planet_for(s, cache, own, &|_, _| {}).content_hash()
+    }
+
+    fn temp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("hearth-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn a_world_keeps_its_planet_and_a_new_world_gets_this_builds() {
+        let dir = temp("planet-for");
+        let cache = dir.join("cache");
+        let s = tiny(5);
+        let fresh = PlanetGrid::build(&s, &|_, _| {}).content_hash();
+        // A new world: this build's planet, cached under the generator's name.
+        assert_eq!(made(&s, Some(&cache), None), fresh);
+        assert!(cache.join(planet_cache_name(&s)).exists());
+        // A planet of the seed an older build cached is not used for a new world...
+        let mut older = PlanetGrid::build(&s, &|_, _| {});
+        older.elevation.data[0] += 100.0;
+        let old = older.content_hash();
+        older
+            .save(&cache.join(legacy_planet_cache_name(&s)))
+            .unwrap();
+        assert_eq!(made(&s, Some(&cache), None), fresh);
+        // ...but a world saved then, with no planet of its own, keeps the one it was opened on.
+        let world = dir.join("world");
+        std::fs::create_dir_all(&world).unwrap();
+        let own = world.join(hearth_save::PLANET_FILE);
+        assert_eq!(made(&s, Some(&cache), Some(&own)), old);
+        assert!(own.exists(), "kept in the world's folder");
+        // The world's own planet, whatever the cache holds or after it is emptied.
+        std::fs::remove_dir_all(&cache).unwrap();
+        assert_eq!(made(&s, Some(&cache), Some(&own)), old);
+        // A world saved before, without a planet and no older one cached: this build's.
+        let other = dir.join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        assert_eq!(
+            made(
+                &s,
+                Some(&cache),
+                Some(&other.join(hearth_save::PLANET_FILE))
+            ),
+            fresh
+        );
+        // A file of another planet is not taken for the world's.
+        PlanetGrid::build(&tiny(6), &|_, _| {}).save(&own).unwrap();
+        assert_eq!(made(&s, Some(&cache), Some(&own)), fresh);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn caching_a_planet_lets_go_of_what_other_generators_made_of_it() {
+        let cache = temp("planet-cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        let s = tiny(5);
+        let stem = planet_cache_stem(&s);
+        let other_generator = cache.join(format!("{stem}_g0.bin.zst"));
+        let other_seed = cache.join(format!("{}_g0.bin.zst", planet_cache_stem(&tiny(55))));
+        let legacy = cache.join(legacy_planet_cache_name(&s));
+        for p in [&other_generator, &other_seed, &legacy] {
+            std::fs::write(p, b"kept by an older build").unwrap();
+        }
+        made(&s, Some(&cache), None);
+        assert!(cache.join(planet_cache_name(&s)).exists());
+        assert!(
+            !other_generator.exists(),
+            "an older generator's planet of it let go"
+        );
+        assert!(other_seed.exists(), "another seed's kept");
+        assert!(
+            legacy.exists(),
+            "the older name's kept, for the worlds saved on it"
+        );
+        let _ = std::fs::remove_dir_all(&cache);
+    }
 }

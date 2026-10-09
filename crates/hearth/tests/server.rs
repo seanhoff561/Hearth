@@ -103,6 +103,10 @@ fn a_world_lives_saves_and_comes_back() {
     });
     drop(server);
     assert!(dir.join("test").join("player.json").exists());
+    assert!(
+        dir.join("test").join(hearth_save::PLANET_FILE).exists(),
+        "the world keeps its planet"
+    );
 
     let server = Server::start(spec(&dir), atlas(), view);
     let ready = wait(&server, 120.0, |m| match m {

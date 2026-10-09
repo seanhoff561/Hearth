@@ -732,14 +732,6 @@ impl App {
     fn make_planet(&mut self, choice: crate::menus::NewWorldChoice) {
         let progress = Arc::new(std::sync::Mutex::new((0.0f32, String::new())));
         let settings = choice.shape.planet(choice.seed, choice.size);
-        let cache = self
-            .dirs
-            .cache()
-            .join(crate::scene::planet_cache_name(&settings));
-        let map_cache = self
-            .dirs
-            .cache()
-            .join(crate::scene::globe_cache_name(&settings));
         let cache_dir = self.dirs.cache();
         let told = progress.clone();
         let content = self.content.content.clone();
@@ -756,26 +748,14 @@ impl App {
         let handle = std::thread::Builder::new()
             .name("new planet".into())
             .spawn(move || {
-                use hearth_worldgen::planet::PlanetGrid;
                 let _c = hearth_core::prof::caller("places.suggest");
                 let tell = |f: f32, stage: &str| {
                     if let Ok(mut p) = told.lock() {
                         *p = (f, stage.to_owned());
                     }
                 };
-                let grid = match PlanetGrid::load(&cache) {
-                    Ok(g) if cache.exists() => g,
-                    _ => {
-                        let g = PlanetGrid::build(&settings, &tell);
-                        if let Some(d) = cache.parent() {
-                            std::fs::create_dir_all(d).ok();
-                        }
-                        if let Err(e) = g.save(&cache) {
-                            log::warn!("could not cache planet: {e}");
-                        }
-                        g
-                    }
-                };
+                let grid = crate::scene::planet_for(&settings, Some(&cache_dir), None, &tell);
+                let map_cache = cache_dir.join(crate::scene::globe_cache_name(&grid));
                 let terrain = Arc::new(hearth_worldgen::region::Terrain::new(Arc::new(grid)));
                 crate::scene::keep_relief(&terrain, &cache_dir);
                 // The globe's map from the grid, kept beside it: never blank once the planet is.

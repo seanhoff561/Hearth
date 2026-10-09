@@ -453,24 +453,10 @@ fn earth(seed: u64) -> WorldGenSettings {
     .sanitized()
 }
 
-/// The planet's grid as the game has it: from the cache, else built (and cached).
+/// The planet's grid as the game has it for a new world: from the cache, else built (and
+/// cached).
 fn planet_grid(settings: &WorldGenSettings, cache_dir: Option<&Path>) -> PlanetGrid {
-    let cache = cache_dir.map(|d| d.join(crate::scene::planet_cache_name(settings)));
-    if let Some(p) = cache.as_ref().filter(|p| p.exists())
-        && let Ok(g) = PlanetGrid::load(p)
-    {
-        return g;
-    }
-    let g = PlanetGrid::build(settings, &|_, _| {});
-    if let Some(p) = &cache {
-        if let Some(d) = p.parent() {
-            std::fs::create_dir_all(d).ok();
-        }
-        if let Err(e) = g.save(p) {
-            log::warn!("could not cache planet: {e}");
-        }
-    }
-    g
+    crate::scene::planet_for(settings, cache_dir, None, &|_, _| {})
 }
 
 /// The places' finder as the menus make it for a new world (`App::make_planet`).

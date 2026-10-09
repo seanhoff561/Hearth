@@ -5,6 +5,7 @@
 //! ```text
 //! saves/<world>/
 //!   level.json      WorldMeta (format, settings, clock, block state palette, packs)
+//!   planet.bin.zst  the planet the world was made on (hearth_worldgen's planet file)
 //!   region/         r.<x>.<y>.<z>.hrg — 8×8×8 cubes each
 //! ```
 
@@ -37,6 +38,9 @@ pub enum SaveError {
     Exists(String),
 }
 
+/// The world's planet file in its folder ([`WorldDir::planet_file`]).
+pub const PLANET_FILE: &str = "planet.bin.zst";
+
 /// An opened world directory.
 #[derive(Debug, Clone)]
 pub struct WorldDir {
@@ -50,6 +54,12 @@ impl WorldDir {
 
     pub fn region_dir(&self) -> PathBuf {
         self.root.join("region")
+    }
+
+    /// The planet the world was made on, kept with it so that a newer generator, or a cache
+    /// emptied, never changes the land under it.
+    pub fn planet_file(&self) -> PathBuf {
+        self.root.join(PLANET_FILE)
     }
 
     pub fn regions(&self) -> RegionStore {

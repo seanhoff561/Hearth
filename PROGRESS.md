@@ -57,7 +57,7 @@ E4.1. V2-11 superseded.
 | Earth-True (E) | E0–E7 done 2026-10-08; E4.1 (the Earth-sized world fast to see, make a person on and load into) done 2026-10-09 |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); Audit 2 done 2026-10-08 (`AUDIT-2.md`); next: Audit 3 after P8 |
 
-## E4.1 — Earth-scale performance (2026-10-09, D279–D288, `docs/spec/e4.1-earth-scale-performance.md`)
+## E4.1 — Earth-scale performance (2026-10-09, D279–D289, `docs/spec/e4.1-earth-scale-performance.md`)
 The owner's playtest of the Earth-sized world (PLAYTEST 29–31): the globe all blue and laggy, the
 creator slow, loading maxing the CPU and never arriving. Measured first (`hearth bench
 globe|creator|load`, `hearth_core::prof`, the crash log), then fixed; the numbers before, at
@@ -101,12 +101,19 @@ step 5 and after are in `BENCHMARKS.md`, the budgets in `docs/design/budgets.md`
   - *Lean?* The globe's block-level map, the creator's whole-body rebuild for a colour, the
     menus' second generator and the duplicate meshes in the channel are gone; one job system
     replaces rayon used ad hoc; the disk caches capped; nothing unused (`lean-check`).
-  - *Fast?* Every budget met on this machine but two set for the reference machine (the whole
-    render distance 34.6–37.1 s against ~30 s, the creator's full detail 0.9–1.2 s against 1 s;
-    llvmpipe and four cores here); the gate holds the Earth-scale numbers from the next baseline;
-    memory flat in the 30-minute flight. The owner is asked for `hearth bench load`, `creator`
-    and `globe` (`cargo run --release -p hearth -- bench …` in PowerShell, the output teed to
-    `bench.txt`).
+  - *Fast?* Every budget met: here but two set for the reference machine (the whole render
+    distance 34.6–37.1 s against ~30 s, the creator's full detail 0.9–1.2 s against 1 s; llvmpipe
+    and four cores), and those on the owner's laptop (8 cores, RTX 4060 Laptop): the whole render
+    distance in 4.8 s, the creator's full detail in 0.24 s (`BENCHMARKS.md`, run with `cargo run
+    --release -p hearth -- bench load|creator|globe`); the gate holds the Earth-scale numbers
+    from the next baseline; memory flat in the 30-minute flight.
+- **After E4.1** (D289, PLAYTEST 32–33): the owner's numbers showed this machine's cached seed 7
+  was an older build's planet, used for every new world of the seed. The cache's name now
+  carries the generator's version (pinned by `tests/planet_pinned.rs`), and a world keeps its
+  planet in its folder. On this build's planet the whole render distance comes at 20 s here
+  too. Open: the first world after an update stops the loading screen 1.4 s making the scene's
+  pipelines (PLAYTEST 33); whether Windows' maths make the same planet (`planet_pinned` on the
+  owner's machine).
   - *Whole?* What could look out of place: a world saved before E4.1 opens with its trees and
     plants moved (reviewed, D285); cubes fading in while they load; the land past a pole's edge
     not drawn until crossed (PLAN). Checked with the review's pictures and the seam, pole,

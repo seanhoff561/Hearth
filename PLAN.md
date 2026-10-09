@@ -50,11 +50,15 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 21. **R10.**
 22. **Phase F**, an audit after every three milestones.
 
-## From E4.1 (open; E4.1 done 2026-10-09, D279–D288, `docs/spec/e4.1-earth-scale-performance.md`)
-- The reference machine's numbers (8 cores and a GPU): §4.4's targets, the main thread while
-  loading and the perf gate's Earth entries need the owner's PC; they were asked for
-  `hearth bench load` and `hearth bench globe` (2026-10-09). On the cloud machine the whole
-  render distance takes 31–36 s, most of it llvmpipe drawing.
+## From E4.1 (open; E4.1 done 2026-10-09, D279–D289, `docs/spec/e4.1-earth-scale-performance.md`)
+- The owner's laptop meets §4.4's targets (`BENCHMARKS.md`: the whole render distance in 4.8 s,
+  the creator's full detail in 0.24 s); the perf gate's Earth entries from the next baseline
+  there.
+- The scene's pipelines made while the world loads, off the main thread: the first world after
+  an update holds the loading screen 1.4 s (PLAYTEST 33).
+- Whether Windows' maths make the same planet as Linux's: `cargo test -p hearth_worldgen --test
+  planet_pinned` on the owner's machine (the globe's map differs by some 150 texels, D289); if
+  not, portable maths (the `libm` crate) in the planet's generation.
 - §4.8's SIMD inner loops and GPU compute for the refinement tiles: not needed for E4.1's
   targets once the tiles left the interactive paths (D279) and are kept on disk (D284); S8's
   pass profiles tile building with Audit 2's hotspots.
