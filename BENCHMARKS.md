@@ -894,3 +894,22 @@ an inverse sine and a wrap each), once each column's bicubic weights were found 
 whole map (`Field::bicubic_rows`, the same sums); the keeping off the map's thread. Read back:
 read 7–10 ms; unpacked as one part 42–61 ms and copied out 22–25 ms (0.07–0.106 s, past the
 budget at times); as four parts in parallel into the map's own buffers, 0.025–0.032 s in all.
+
+## R1a — the sun's shadows (`hearth bench --scenes lowland_forest --size 960x540 --software`), 4 cores, software adapter (llvmpipe)
+
+The same build (commit 20a43ac) with `--shadows off` and the default (medium); 150 frames after
+40. On this device a frame is the GPU's (the submit), so the frame rates say nothing of the PC's;
+the GPU's share at 1080p on the RTX 4060 is the owner's check (budget 1.5 ms).
+
+| | Shadows off | Medium |
+|---|---:|---:|
+| Frame p50 (ms) | 846 | 1,047 |
+| GPU: the shadow passes (ms) | 0.06 | 249 |
+| GPU: terrain 0 · distant terrain (ms) | 529 · 282 | 561 · 281 |
+| CPU: prepare: terrain (ms) | 1.02 | 2.52 |
+| Draws · triangles | 2,492 · 0.81 M | 5,316 · 1.54 M |
+| Allocations a frame (prepare: terrain · submit) | 53 · 273 | 113 · 390 |
+
+The frame thread's 1.5 ms is the near cascades' caster lists (the cubes looked up in each
+cascade's region, D298) and their uploads; the allocations are wgpu's staging for the 25 more
+draw lists and 5 globals written a frame.

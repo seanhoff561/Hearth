@@ -1,0 +1,13 @@
+# R1a (D298): the sun's shadows, on and off — a person in the morning sun, a ridge at dawn (the
+# distant terrain's shadows), a low hill (its land too gentle for the sun at 5° to cast beyond each
+# slope's own shade: G1a), the boreal floor underfoot. Kept in docs/review/r1a/ (as JPEGs).
+# `hearth --software --screenshot-list tools/shots/r1a.shots`
+defaults: w=960, h=540, clouds=0.2, dry=true, seed=7, planet=huge, res=256, dist=6, biome=cold_desert, above=1.6, yaw=30, pitch=6, season=summer, lod=0
+hour=8, person=2.6:25, out=bench-out/r1a/person_morning.png
+hour=8, person=2.6:25, shadows=off, out=bench-out/r1a/person_morning_off.png
+defaults: seed=7, planet=earth, res=2048, w=960, h=540, fov=60, dist=6, lod=256, season=summer, yaw=30, dry=true
+biome=alpine_rock, above=40, pitch=10, hour=5.2, clouds=0.0, out=bench-out/r1a/ridge_dawn.png
+biome=alpine_rock, above=40, pitch=10, hour=5.2, clouds=0.0, shadows=off, out=bench-out/r1a/ridge_dawn_off.png
+biome=alpine_rock, above=400, pitch=6, hour=5.2, clouds=0.0, out=bench-out/r1a/hill_dawn.png
+biome=alpine_rock, above=400, pitch=6, hour=5.2, clouds=0.0, shadows=off, out=bench-out/r1a/hill_dawn_off.png
+biome=boreal_forest, above=1.7, pitch=55, hour=7, clouds=0.2, shadows=off, out=bench-out/r1a/boreal_feet_low_off.png

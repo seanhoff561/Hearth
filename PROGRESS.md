@@ -91,6 +91,41 @@ Pictures and runs that need the owner (T §7), newest first:
 - `cargo test -p hearth_worldgen --test planet_pinned` on the laptop: whether Windows' maths make
   the same planet as Linux's (D289). One command, a pass or a failure to paste back.
 
+## R1a — the sun's shadows (2026-10-09, D298, RGA-1's first gap)
+- **Cascaded shadow maps** (`hearth_render::shadow`, `terrain/casters.rs`, `common.wgsl`): four
+  spheres about the camera (12–320 blocks; texels 1.2–31 cm at 2048²) and one over the distant
+  terrain (1–12 km), their texels still as the camera walks and turns (snapped centres, the
+  light moved on in 0.23° steps), the outer ones redrawn by turns. Cast: the far side of solid
+  cubes, the smooth ground and the distant height fields, plants and leaves cut to their texels
+  (fallen ones left out), figures, people's bodies (in first person with the head), the mesh
+  trees; the near world into the near cascades (the cubes looked up in each one's region), the
+  distant terrain into the far one, where a near point counts only what lies beyond its near
+  cascade's reach. Received by the terrain, water and ice, the distant terrain, figures, skin,
+  hair and eyes, trees: each comparison against the surface's own plane, the edges as soft as
+  the sun's disc makes them in the two nearest cascades (to 3.7 cm); never deep in enclosed
+  places. Option *Shadows* (off, low, medium, high; presets), screenshot `shadows=`, bench
+  `--shadows`, F3 line.
+- **Tests**: `sun_shadows` (a slab over the ground: its shadow 0.161 against 0.567 without the
+  maps; the open ground 0.592 both ways); `shadow.rs` (the light's basis, the snapping, the
+  light's steps and the cascades' turns, the casters' selection, every caster in its cascade's
+  box); `options` (an older file's shadows by its preset).
+- **Pictures**: the realism suite re-rendered with shadows (`docs/review/realism/suite/`); low
+  sun before and after, a person, a ridge at dawn, the soft edges (`docs/review/r1a/`).
+- **Accepted** (PLAN, R1a): the suite's low-sun shots shadowed — trees, tussocks, stones and
+  people cast at 7 h, the distant terrain at 5 h; the GPU budget (≤ 1.5 ms at 1080p on the
+  RTX 4060) is the owner's check: on the software device the shadow passes take half the main
+  terrain pass's time (1.54 M triangles a frame against 0.81 M without, 5,316 draws against
+  2,492), the frame thread +1.5 ms (prepare: terrain 1.02 → 2.52 ms; `BENCHMARKS.md`).
+- **Real?** Shadows from the sun's own direction and disc; image statistics (medians over the
+  biomes): spectral α underfoot 1.89 → 2.26 (the Earth's 1.8–2.4), at eye height 1.23 → 1.32,
+  colourfulness at eye height 60 → 54 (15–60); a low sun's darkest tones underfoot 0.34 → 0.14.
+  **Lean?** One module and a submodule; the sky-light gate kept only where no map reaches;
+  `terrain.rs` split (the arena, the casters) under 2,000 lines. **Fast?** Within the CPU
+  budget here; the GPU on the PC. **Whole?** Everything lit by the sun receives and nearly
+  everything casts (not hair, eyes or the distant crowns' boxes, D298). **Organic?** The
+  penumbra's spiral turned by a hash fixed in the world.
+- Next: G1a, the relief from 30 m to 30 km.
+
 ## T2 — the realism gap analysis (2026-10-09, Amendment T §3, D296–D297)
 - **Measured** (`bench realism terrain|global|levels|weather|images`; `docs/review/realism/`):
   the planet right (land 29.0 %, mean land 791 m); the land between 30 m and 30 km half the
