@@ -32,9 +32,9 @@ USAGE:
                          [--lod N] [--no-menus] [--fly S] [--speed M/S] [--json FILE]
     hearth bench earth-judge --baseline FILE[,FILE...] --candidate FILE[,FILE...] [--gate PCT]
 
-    globe    the planet's map as it is made now (rows of it within --budget seconds, default
-             60, the whole map's time projected), --points random points hovered (default
-             1000, within the budget), --clicks clicks (default 10) and the places suggested
+    globe    the planet's map made from its grid and read back from where it is kept, --points
+             random points hovered (default 1000) and --clicks clicks (default 10), each within
+             --budget seconds (default 60), and the places suggested
     creator  sliders dragged on the creator's preview, a change a frame for --frames frames
              each (default 60): the main thread's time a frame, how far the person shown lags
     load     from Play to the player in control and to the whole render distance, a new world
