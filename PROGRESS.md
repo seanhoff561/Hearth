@@ -9,6 +9,8 @@ Direction: v2 (`docs/spec/v2-direction-change.md`) as amended by S (smooth world
 (playability) and, above them, **E and Q** (`docs/spec/amendments-e-q.md`, D227): Earth-True
 and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 (`docs/archive/humans-v2.1/`, D230); Phase F plans them anew. Amendment R waits until V2-16.
+Since 2026-10-09 **Amendment T** (`docs/spec/amendment-t-true-to-earth.md`, D291): true to Earth
+at every scale, judged by evidence; T0 → T1 → T2, then the plan T2 revises.
 
 ## Resume
 1. Read this file, `PLAN.md` and the `DECISIONS.md` index; `git log --oneline -20`. Open
@@ -16,6 +18,8 @@ and the Quality Charter. V2.1's simulated humans were removed in E0 and archived
 2. Run `scripts/check.sh` (it runs `scripts/lean-check.sh`); the long runs are
    `scripts/soak.sh`, at audits (D235).
 3. Work in `PLAN.md`'s order; each milestone ends with its five-test checklist (Q §8.1) below.
+   Check the realism scorecard's open gaps (`docs/review/realism/scorecard.md`, once T2 has made
+   it) before choosing the next task (T §9).
 4. Builds: `cargo test --profile dev-opt` (no LTO, D233); `--release` is fat LTO, for the game
    and the perf gate. The cloud machine renders only on a software device: frame rates, the
    perf gate and how screenshots look need the owner's PC.
@@ -44,9 +48,11 @@ E4.1. V2-11 superseded.
 | S3 — moving on the smooth ground | done 2026-10-08 (D271–D273) |
 | S4 — the distant terrain smooth | done 2026-10-08 (D274–D278) |
 | Audit 2 | done 2026-10-08 |
-| E4.1 — Earth-scale performance (the owner's fix pass) | done 2026-10-09 (D279–D288) |
-| S5 with P7 | now: resumes at (b), where E4.1 paused it |
-| P7G → S6 → S7 → S8 → P8, Audit 3 | planned |
+| E4.1 — Earth-scale performance (the owner's fix pass) | done 2026-10-09 (D279–D289) |
+| T0 — S5/P7 stopped at (b) | done 2026-10-09 (D290, D291) |
+| T1 — quick wins (ravens, skin, highlight, globe) | next |
+| T2 — the realism gap analysis | planned |
+| S5/P7 (c)–(f) with G1 → W1 → L1 → P7G → S6 with H1 → R1 → S7 → S8 → P8 | planned (T2 may revise) |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
 
@@ -55,7 +61,13 @@ E4.1. V2-11 superseded.
 | Smooth world (S) | S4 done: the distant ground smooth height fields in fixed point, shaded with the near ground's materials and seasons, canopies over far stands, out to the real horizon. S3 done: movement on the field. S2 done: natural ground meshed smooth on the server and drawn with blended procedural materials, wet and snow overlays (0.28–0.87 ms a surface cube, as the blocks); frame targets need the PC. S1 done: fill in every surface cube, generated and saved; ground families; dig, pile and settle conserving volume (sand to 34.3°). S0 done (D222: Surface Nets with sharp features, biplanar shading); Baseline-S's CPU half recorded, its GPU half needs the PC (`scripts/baseline-s.sh`); prototype mesher 3,553 surface cubes/s on one thread (target 2,000 on eight) |
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E7 done 2026-10-08; E4.1 (the Earth-sized world fast to see, make a person on and load into) done 2026-10-09 |
-| Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); Audit 2 done 2026-10-08 (`AUDIT-2.md`); next: Audit 3 after P8 |
+| Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); Audit 2 done 2026-10-08 (`AUDIT-2.md`); next: an audit after three completed milestones (Q §8.2) |
+| Realism (T) | last suite render: none yet (T2 makes the suite); top open gaps from the owner: the ground below ~38 m (PLAYTEST 40–41), water as blocks (39), the seam at the edge of full detail (42) |
+
+## Owner checks
+Pictures and runs that need the owner (T §7), newest first:
+- `cargo test -p hearth_worldgen --test planet_pinned` on the laptop: whether Windows' maths make
+  the same planet as Linux's (D289). One command, a pass or a failure to paste back.
 
 ## E4.1 — Earth-scale performance (2026-10-09, D279–D289, `docs/spec/e4.1-earth-scale-performance.md`)
 The owner's playtest of the Earth-sized world (PLAYTEST 29–31): the globe all blue and laggy, the
@@ -122,8 +134,8 @@ step 5 and after are in `BENCHMARKS.md`, the budgets in `docs/design/budgets.md`
     (40,000 km), the shaders' grain and beds every 4 km; the census's tops and kinds as varied
     as before.
 
-## S5 with P7 — resuming (paused for E4.1 on 2026-10-08)
-Where it stands (`PLAN.md` S5, P7; tasks (a)–(f)):
+## S5 with P7 — stopped at (b) for Amendment T (T0, 2026-10-09)
+Where it stands (`PLAN.md` S5, P7; tasks (a)–(f)); (c)–(f) resume after T2, with G1:
 - **(a) done:** `hearth_flora::mesh` builds a tree's mesh from the skeleton its blocks come
   from (wood tubes, leaf cards by leaf kind, three details: a mature oak 47k / 8.7k / 1.7k
   triangles); each variant turned to its own angle and up to 0.4 m off its block's middle, voxels
@@ -135,12 +147,22 @@ Where it stands (`PLAN.md` S5, P7; tasks (a)–(f)):
   91 species × three ages × four seasons, `docs/review/smooth-world.md`) found twenty
   evergreen species shedding their leaves (retinted, D290) and a conifer leader's hoop of
   sprays (sprays now fill their shoots); a test in the suite holds every species to its kind.
-- **Next:** (c) the client's tree instances for loaded columns (from `trees_in` with the
-  vegetation), the cube mesher hiding natural tree voxels (a per-cube mask from the templates),
-  the LOD band (levels 0–2) as instances or impostors instead of crown boxes, the felling
-  animation with the mesh; (d) woody shrubs as individuals, Poisson-like spacing, clustering,
-  clonal patches, herbs off the grid, P §11.4's statistics; (e) boulders and fallen logs as
-  smooth shapes, dipping strata and veins, the §11.3 evaluation, the screenshot set; (f) docs.
+- **Next, (c):** trees drawn as meshes in the world. Worked out before T0 stopped it:
+  `LocalWorld::mesh` (every mesh goes through it) blanks the voxels of trees drawn as meshes
+  before meshing, where they still hold their natural state; which trees those are is decided
+  on both sides from the generator and the shared `Vegetation` alone, so server and client
+  agree: every natural tree but those the player has cut into (a set of feet kept in the
+  vegetation, saved and sent with it; marked where player edits are recorded, the cubes the tree
+  spans remeshed), so what is taken from a tree shows as blocks; `PlacedTree` carries its
+  variant for the mesh key; a tree's instance is its foot plus `Turn::apply_f`'s affine map (an
+  origin and a 2×2 turn); the client lists trees by loaded column (`trees_in`), detail by
+  distance, meshes built off the main thread; the screenshot tool draws them; felling animates
+  the mesh (`TreeFalls` carrying the tree); trees beyond the near field as instances, then
+  impostors, never boxes (with L1); collision against the skeleton's capsules (From S3).
+- **Then:** (d) woody shrubs as individuals, Poisson-like spacing, clustering, clonal patches,
+  herbs off the grid, P §11.4's statistics; (e) boulders and fallen logs as smooth shapes,
+  dipping strata and veins, the §11.3 evaluation, the screenshot set (with G1's clasts and
+  landforms); (f) docs.
 - **The stopping point's check** (`scripts/check.sh`, the whole suite) found two tests to mend:
   the felling tests looked for a slim tree by its blocks' shape, which trees off the grid no
   longer have, and now take its foot from where the generator placed it; the finite-water test

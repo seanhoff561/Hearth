@@ -299,3 +299,4 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D288 (2026-10-09) The near ground streams in view first and fades in where it first appears
 - D289 (2026-10-09) A world keeps its planet; the planet cache carries the generator's version
 - D290 (2026-10-09) Trees' looks from their blocks; evergreen leaves kept through the year
+- D291 (2026-10-09) Amendment T: true to Earth; T0, T1, T2 before the rest

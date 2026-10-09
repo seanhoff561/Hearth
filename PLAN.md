@@ -5,9 +5,11 @@ as amended by Amendment S (`docs/spec/amendment-s-smooth-world.md`, smooth world
 (`docs/spec/amendment-p-playability.md`, playability) and, since 2026-10-08, Amendments E and Q
 (`docs/spec/amendments-e-q.md`): **Amendment E** (Earth-True: real Earth time and size, work
 stroke by stroke, Wild Earth as an adult you design, the simulated humans removed and planned as
-Phase F) and **Amendment Q** (the Quality Charter, above the per-amendment details). V2.1 and its
-Addenda are superseded (archived in E0). The full plan as it stood before is
-`docs/history/plan-2026-10-08.md`.
+Phase F) and **Amendment Q** (the Quality Charter, above the per-amendment details), and since
+2026-10-09 **Amendment T** (`docs/spec/amendment-t-true-to-earth.md`, True to Earth: the world
+real at every scale, from continents to the pebbles underfoot, judged by evidence; rewriting
+cube-era code allowed where it serves that, T §5). V2.1 and its Addenda are superseded
+(archived in E0). The full plan as it stood before is `docs/history/plan-2026-10-08.md`.
 
 ## Definition of done (every milestone)
 - Implement; design docs in `docs/design/` current; data added; tests.
@@ -35,18 +37,22 @@ Addenda are superseded (archived in E0). The full plan as it stood before is
 7. **Audit 1** (done).
 8. **S1 → S2 → E7 → S3 → S4** (S4 as amended by E §9.2) (done).
 9. **Audit 2** (done).
-10. **E4.1 — Earth-scale performance** (the owner's fix pass, done 2026-10-09; S5 resumes
-    where it stopped, `PROGRESS.md`).
-11. **S5 with P7 → P7G → S6** (animals and items) **→ S7 → S8 → P8.**
-12. **Audit 3** (with a check that no coarse-scale caller has crept into the fine generator).
+10. **E4.1 — Earth-scale performance** (the owner's fix pass, done 2026-10-09).
+11. **Amendment T** (D291): **T0**, S5/P7 stopped at (b) (done) → **T1**, quick wins → **T2**,
+    the realism gap analysis, which revises what follows.
+12. By default after T2: **S5/P7 (c)–(f) with G1** (the ground at walking scale) → **W1**
+    (water; S7's water) → **L1** (seamless distance; trees in the LOD band) → **P7G** → **S6
+    with H1** → **R1** (rendering realism; earlier if T2 says) → **S7 → S8 → P8.** An audit
+    after every three milestones (Q §8.2), each updating the realism scorecard (T §3.6), the
+    first with a check that no coarse-scale caller has crept into the fine generator.
 13. **V2-13 → V2-14** (technology only).
-14. **Audit 4.**
+14. **Audit.**
 15. **V2-15 → V2-16** (as amended by E §9.4).
-16. **Audit 5.**
+16. **Audit.**
 17. **Phase R-A: R1 → R2 → R3 → R5** (as amended by E §9.3).
-18. **Audit 6.**
+18. **Audit.**
 19. **Phase R-B: R0 → R7 → R8 → R9.**
-20. **Audit 7.**
+20. **Audit.**
 21. **R10.**
 22. **Phase F**, an audit after every three milestones.
 
@@ -154,6 +160,35 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   friction coefficient with a source for the slope fit.
 - Duplicates: LOD normal packing, the seasonal range, two field gradients, the beard's lip
   zone; a `cover()` accessor for the canopy; `level`'s reach documented.
+
+## T1 — Quick wins (T §2)
+- Scavenger birds over fresh remains, seen and heard (and as dots on the horizon), in place of
+  the repeating text; every world-describing notice reviewed (show it, don't say it, T §0.2).
+- Skin calibrated against measured reflectance: rougher, regional, micro-detailed, occluded,
+  subsurface-scattered, lit by the sky, a film when wet.
+- Aim at real things and their parts (a berry cluster, a branch, a stone, a dig patch, a water
+  point, a body part), picked against their shapes, highlighted from their own geometry; the box
+  edges removed.
+- The globe in relief: 4096 × 2048, hillshading, hypsometric tints, bathymetry, rivers, ice.
+- *Accept:* T §2's.
+
+## T2 — The realism gap analysis (T §3)
+- Evidence at every scale against photographs, real elevation data and field statistics; the
+  fine-detail regression (Standard against Earth); process against appearance per scale.
+- *Output:* `docs/review/realism/RGA-1.md`, the ranked gap table, the realism suite (shot
+  specs, references and licenses, metrics script), `scorecard.md`, this plan revised (D-entry).
+
+## G1, W1, L1, R1, H1 (T §4; refined by T2)
+- **G1:** physically based ground below ~38 m (diffusion, rills, colluvium, talus, tree-throw,
+  frost, aeolian, karst, glacial forms) or example-based or learned detail, chosen by terrain
+  statistics; clasts by lithology and sorting; soil surfaces; with S5/P7 (c)–(f).
+- **W1:** water as continuous surfaces from the hydrology (hydraulic geometry, beds and banks
+  carved to hold them), a shallow-water simulation near players, flow maps; block water removed.
+- **L1:** no seam where full detail ends: measured, then the first rings shaded as the near
+  ground, geomorphing, trees as instances then impostors, distant water as near.
+- **R1:** indirect light, occlusion, translucency, calibrated materials, by realism per ms.
+- **H1:** the body to the owner's reference bar (T §4.5) from anthropometric data and openly
+  licensed bases, with S6's animals and items.
 
 ## S5 — Trees and foliage (with P7)
 - Smooth trunks and branches, felling rigid bodies and log meshes, leaf clusters with
