@@ -380,11 +380,9 @@ impl Terrain {
                 river_q_for_width((reach - 3.0) / 1.4)
             };
             if max_q > min_q {
-                for r in relief.reaches(cells, min_q) {
-                    if r.q_a < max_q {
-                        segments.push(self.segment(&r));
-                    }
-                }
+                let mut reaches = relief.reaches(cells, min_q);
+                reaches.retain(|r| r.q_a < max_q);
+                self.curve(&reaches, &mut segments);
             }
             if level == 0 || max_q.is_infinite() {
                 break;
@@ -396,6 +394,105 @@ impl Terrain {
         Nearby {
             segments,
             patch: Some(patch),
+        }
+    }
+
+    /// A level's reaches as the channels the sampler carves: each river a curve through its
+    /// nodes rather than a run of chords, every bend rounded from the middle of the reach before
+    /// it to the middle of the next (a quadratic Bézier with the node its control point; Chaikin
+    /// 1974), its water falling all the way.
+    fn curve(&self, reaches: &[Reach], out: &mut SmallVec<[Segment; 16]>) {
+        // A reach's end met as another's start: the next reach down the river.
+        let key = |p: (f64, f64)| ((p.0 * 64.0).round() as i64, (p.1 * 64.0).round() as i64);
+        let starts: rustc_hash::FxHashMap<(i64, i64), usize> = reaches
+            .iter()
+            .enumerate()
+            .map(|(k, r)| (key(r.a), k))
+            .collect();
+        let ends: rustc_hash::FxHashSet<(i64, i64)> = reaches.iter().map(|r| key(r.b)).collect();
+        let mid = |p: (f64, f64), q: (f64, f64)| ((p.0 + q.0) * 0.5, (p.1 + q.1) * 0.5);
+        for r in reaches {
+            let s = self.segment(r);
+            let m = mid(r.a, r.b);
+            let half = |a: f32, b: f32| (a + b) * 0.5;
+            // From the middle of the reach to its end, at the reach's own levels and sizes.
+            let at_mid = Segment {
+                ax: m.0,
+                az: m.1,
+                level_a: half(s.level_a, s.level_b),
+                width_a: half(s.width_a, s.width_b),
+                depth_a: half(s.depth_a, s.depth_b),
+                ..s
+            };
+            // A source: its first half straight.
+            if !ends.contains(&key(r.a)) {
+                out.push(Segment {
+                    bx: m.0,
+                    bz: m.1,
+                    level_b: at_mid.level_a,
+                    width_b: at_mid.width_a,
+                    depth_b: at_mid.depth_a,
+                    ..s
+                });
+            }
+            let Some(&n) = starts.get(&key(r.b)) else {
+                // The river's end here: its last half straight.
+                out.push(at_mid);
+                continue;
+            };
+            // The bend about the end's node, to the middle of the next reach.
+            let next = self.segment(&reaches[n]);
+            let m2 = mid(reaches[n].a, reaches[n].b);
+            let end = (
+                half(next.level_a, next.level_b).min(s.level_b),
+                half(next.width_a, next.width_b),
+                half(next.depth_a, next.depth_b),
+            );
+            const PIECES: usize = 6;
+            let point = |t: f64| {
+                let (u, v, w) = ((1.0 - t) * (1.0 - t), 2.0 * (1.0 - t) * t, t * t);
+                (
+                    u * m.0 + v * r.b.0 + w * m2.0,
+                    u * m.1 + v * r.b.1 + w * m2.1,
+                )
+            };
+            let along = |t: f64| -> (f32, f32, f32) {
+                let t = t as f32;
+                if t <= 0.5 {
+                    let f = t * 2.0;
+                    (
+                        at_mid.level_a + (s.level_b - at_mid.level_a) * f,
+                        at_mid.width_a + (s.width_b - at_mid.width_a) * f,
+                        at_mid.depth_a + (s.depth_b - at_mid.depth_a) * f,
+                    )
+                } else {
+                    let f = t * 2.0 - 1.0;
+                    (
+                        s.level_b + (end.0 - s.level_b) * f,
+                        s.width_b + (end.1 - s.width_b) * f,
+                        s.depth_b + (end.2 - s.depth_b) * f,
+                    )
+                }
+            };
+            for k in 0..PIECES {
+                let (t0, t1) = (k as f64 / PIECES as f64, (k + 1) as f64 / PIECES as f64);
+                let (p0, p1) = (point(t0), point(t1));
+                let (l0, w0, d0) = along(t0);
+                let (l1, w1, d1) = along(t1);
+                out.push(Segment {
+                    cell: s.cell,
+                    ax: p0.0,
+                    az: p0.1,
+                    bx: p1.0,
+                    bz: p1.1,
+                    level_a: l0,
+                    level_b: l1.min(l0),
+                    width_a: w0,
+                    width_b: w1,
+                    depth_a: d0,
+                    depth_b: d1,
+                });
+            }
         }
     }
 
@@ -663,8 +760,9 @@ impl Terrain {
     ) -> Shape {
         let g = &*self.grid;
         // Below the level's cells, the blocks' own relief, as rough as the place is.
-        let rough = self.relief.as_deref().map_or(0.0, |r| r.relief_at(gx, gz));
-        let amp = (crate::relief::amplitude(DETAIL_M) * rough) as f32 * self.v;
+        let amp = self.relief.as_deref().map_or(0.0, |r| {
+            (r.roughness_at(gx, gz).at(DETAIL_M) as f32) * self.v
+        });
         let surface =
             |x: f64, z: f64| patch.height(x, z) + self.noise.detail.sample2(x, z) as f32 * amp;
         let mut h = surface(xf, zf);
@@ -1600,6 +1698,51 @@ pub(crate) mod tests {
             }
         }
         assert!(reaches > 50, "rivers about the land: {reaches}");
+    }
+
+    #[test]
+    fn rivers_bend_as_curves_and_fall_all_the_way() {
+        let t = earth_terrain();
+        let (mut joints, mut gentle) = (0, 0);
+        for (x, z) in land_columns(t, 11) {
+            let near = t.nearby(x, z, x + 63, z + 63);
+            let segs = &near.segments;
+            for s in segs {
+                // The segment that carries this one's water on.
+                let Some(n) = segs.iter().find(|n| {
+                    (n.ax - s.bx).abs() < 1e-6 && (n.az - s.bz).abs() < 1e-6 && n.cell == s.cell
+                }) else {
+                    continue;
+                };
+                // Where streams meet, the tributary joins at an angle.
+                let meeting = segs
+                    .iter()
+                    .filter(|o| (o.bx - s.bx).abs() < 1e-6 && (o.bz - s.bz).abs() < 1e-6)
+                    .count()
+                    > 1;
+                assert!(
+                    n.level_a <= s.level_a + 1e-3,
+                    "by {x},{z} the water rises from {} to {}",
+                    s.level_a,
+                    n.level_a
+                );
+                let (ux, uz) = (s.bx - s.ax, s.bz - s.az);
+                let (vx, vz) = (n.bx - n.ax, n.bz - n.az);
+                let cos = (ux * vx + uz * vz) / (ux.hypot(uz) * vx.hypot(vz)).max(1e-9);
+                if !meeting {
+                    joints += 1;
+                    if cos > 40f64.to_radians().cos() {
+                        gentle += 1;
+                    }
+                }
+            }
+        }
+        // A river's course turns a little at each joint, not by a chord's corner.
+        assert!(joints > 200, "joints: {joints}");
+        assert!(
+            gentle as f64 > 0.97 * joints as f64,
+            "{gentle} of {joints} joints turn under 40°"
+        );
     }
 
     #[test]

@@ -259,7 +259,9 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         _ => mountains(&g),
     };
     println!("about {:.0}, {:.0}", at.0, at.1);
+    let t0 = Instant::now();
     let relief = Relief::new(g.clone());
+    println!("levels made in {:.2} s", t0.elapsed().as_secs_f64());
     let levels = relief.levels().to_vec();
     println!(
         "levels: {}",
@@ -293,6 +295,16 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
                 t0.elapsed().as_secs_f64() * 1e3,
                 t0.elapsed().as_secs_f64() * 1e3 / 6.0
             );
+        }
+        // The time a tile of each level took to make, its parents' made within it included.
+        for (name, z) in hearth_core::prof::zones() {
+            if name.starts_with("relief.build") {
+                println!(
+                    "{name}: {} tiles, {:.1} ms each",
+                    z.count,
+                    z.total.as_secs_f64() * 1e3 / z.count.max(1) as f64
+                );
+            }
         }
         return Ok(());
     }

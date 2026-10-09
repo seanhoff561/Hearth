@@ -107,6 +107,12 @@ pub struct Loading {
 pub struct Client {
     server: Server,
     scene: Option<SceneRenderer>,
+    /// The scene being made on its own thread from the first frame, while the server opens the
+    /// world (its pipelines take seconds on a software device), and when it was begun. Once the
+    /// world has come the server's messages wait for it.
+    scene_making: Option<(std::thread::JoinHandle<SceneRenderer>, std::time::Instant)>,
+    /// The world's ground materials, for its scene.
+    ground: Vec<hearth_render::terrain::GroundMaterial>,
     env: Option<EnvSampler>,
     atlas: Arc<TextureArray>,
     color_format: wgpu::TextureFormat,
@@ -410,6 +416,8 @@ impl Client {
         Self {
             server,
             scene: None,
+            scene_making: None,
+            ground: Vec::new(),
             env: None,
             atlas,
             color_format,
@@ -3316,8 +3324,58 @@ impl Client {
         l
     }
 
+    /// Takes the scene made for the world, set to the world's planet and ground and as the
+    /// options have it.
+    fn set_scene(&mut self, ctx: &GpuContext, mut scene: SceneRenderer) {
+        if let Some(w) = &self.world {
+            scene.set_planet(w.planet);
+        }
+        scene.terrain.set_ground_materials(ctx, &self.ground);
+        scene.terrain.render_distance = self.radius;
+        scene.terrain.vertical_distance = self.vertical;
+        scene.terrain.fade_in_s = FADE_IN_S;
+        scene.render_scale = self.render_scale;
+        scene.terrain.water.quality = self.water_quality;
+        if let Some(b) = &self.bodies {
+            scene
+                .figures
+                .set_coats(ctx, b.atlas.w, b.atlas.h, &b.atlas.px);
+        }
+        self.scene = Some(scene);
+    }
+
     /// Applies the server's messages; call once per frame before rendering.
     pub fn pump(&mut self, ctx: &GpuContext) {
+        if self.scene.is_none() && self.scene_making.is_none() {
+            let (gpu, atlas, format) = (ctx.clone(), self.atlas.clone(), self.color_format);
+            let making = std::thread::Builder::new()
+                .name("scene".into())
+                .spawn(move || {
+                    // The world's planet is given when it comes (`set_scene`).
+                    let planet =
+                        Planet::from_size(hearth_math::PlanetSize::Earth).expect("the Earth");
+                    SceneRenderer::new(
+                        &gpu,
+                        &atlas,
+                        format,
+                        planet,
+                        hearth_render::scene::MIP_LEVELS,
+                        hearth_render::scene::ANISOTROPY,
+                    )
+                })
+                .expect("a thread to make the scene");
+            self.scene_making = Some((making, std::time::Instant::now()));
+        }
+        if self.world.is_some() && self.scene.is_none() {
+            let Some((making, t0)) = self.scene_making.take_if(|(m, _)| m.is_finished()) else {
+                return;
+            };
+            match making.join() {
+                Ok(scene) => self.set_scene(ctx, scene),
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+            log::info!("the scene made in {:.2} s", t0.elapsed().as_secs_f64());
+        }
         let mut uploaded = 0;
         // What the server places, in the player's frame: its copy the shorter way round the
         // planet from the player (the player wraps at the seam; E4.1 §4.5).
@@ -3398,28 +3456,11 @@ impl Client {
                         reg: r.reg,
                         mirror: CubeMap::new(planet),
                     });
-                    let mut scene = SceneRenderer::new(
-                        ctx,
-                        &self.atlas,
-                        self.color_format,
-                        planet,
-                        hearth_render::scene::MIP_LEVELS,
-                        hearth_render::scene::ANISOTROPY,
-                    );
-                    scene.terrain.render_distance = self.radius;
-                    scene.terrain.vertical_distance = self.vertical;
-                    scene.terrain.fade_in_s = FADE_IN_S;
-                    scene.terrain.set_ground_materials(ctx, &ground);
-                    scene.render_scale = self.render_scale;
-                    scene.terrain.water.quality = self.water_quality;
-                    if let Some(b) = &self.bodies {
-                        scene
-                            .figures
-                            .set_coats(ctx, b.atlas.w, b.atlas.h, &b.atlas.px);
-                    }
-                    self.scene = Some(scene);
+                    self.ground = ground;
                     self.env = Some(EnvSampler::new(r.grid, self.calendar));
                     self.status = "streaming".into();
+                    // The rest of the server's messages wait for the scene (the top of `pump`).
+                    return;
                 }
                 ToClient::Cube(p, cube) => {
                     if let Some(w) = &mut self.world {

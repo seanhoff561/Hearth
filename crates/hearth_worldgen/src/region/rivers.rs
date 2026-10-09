@@ -257,6 +257,15 @@ impl RiverNet {
     pub fn closest(x: f64, z: f64, segments: &[Segment]) -> Option<RiverHit> {
         let mut best: Option<RiverHit> = None;
         for s in segments {
+            // Too far off, by the box about the segment and its channel, to beat the best.
+            if let Some(b) = best {
+                let half = 0.5 * s.width_a.max(s.width_b) as f64;
+                let ox = (s.ax.min(s.bx) - x).max(x - s.ax.max(s.bx)).max(0.0);
+                let oz = (s.az.min(s.bz) - z).max(z - s.az.max(s.bz)).max(0.0);
+                if ox.hypot(oz) - half >= (b.distance - b.width * 0.5) as f64 {
+                    continue;
+                }
+            }
             let (dx, dz) = (s.bx - s.ax, s.bz - s.az);
             let len2 = dx * dx + dz * dz;
             let t = if len2 > 0.0 {

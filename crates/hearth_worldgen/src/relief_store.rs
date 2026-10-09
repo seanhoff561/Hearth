@@ -10,7 +10,7 @@ use hearth_core::disk_cache::Folder;
 use crate::relief::Tile;
 
 /// The files' format: bumped when a tile is made otherwise.
-pub const FORMAT: u32 = 1;
+pub const FORMAT: u32 = 2;
 /// A file's first bytes.
 const MAGIC: &[u8; 4] = b"HRLT";
 /// A file's head: magic, format, level, tile x and z, cells.

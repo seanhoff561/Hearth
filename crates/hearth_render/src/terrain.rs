@@ -681,15 +681,19 @@ impl TerrainRenderer {
         });
         ctx.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
         let module = terrain_module(device);
-        let pipes = make_pipelines(
-            device,
-            &module,
-            &layout0,
-            &layout1,
-            water.layout(),
-            color_format,
-        );
-        let shadow_pipes = make_shadow_pipelines(device, &module, &layout0, &layout1);
+        // The pipelines made side by side: a software device compiles each on one core.
+        let (pipes, shadow_pipes) = std::thread::scope(|scope| {
+            let shadow = scope.spawn(|| make_shadow_pipelines(device, &module, &layout0, &layout1));
+            let pipes = make_pipelines(
+                device,
+                &module,
+                &layout0,
+                &layout1,
+                water.layout(),
+                color_format,
+            );
+            (pipes, shadow.join().expect("the shadow pipelines"))
+        });
         let passes = [
             Pass::new(device, "draws packed opaque"),
             Pass::new(device, "draws packed cutout"),
@@ -756,6 +760,13 @@ impl TerrainRenderer {
     /// the LOD renderer so both light and fade the same way.
     pub fn globals_bind(&self) -> (&wgpu::BindGroupLayout, &wgpu::BindGroup) {
         (&self.layout0, &self.bind0)
+    }
+
+    /// Sets the planet places wrap on, before any mesh is uploaded (those held are kept by their
+    /// place on it).
+    pub fn set_planet(&mut self, planet: Planet) {
+        debug_assert!(self.meshes.is_empty());
+        self.planet = planet;
     }
 
     /// True when this frame's opaque geometry is culled and drawn by the GPU.
@@ -1756,56 +1767,56 @@ fn make_pipelines(
             cache: None,
         })
     };
-    Pipelines {
-        smooth: make(
-            "smooth ground",
-            "vs_smooth",
-            "fs_smooth",
-            Some(wgpu::Face::Back),
-            None,
-            true,
-        ),
-        packed_opaque: make(
-            "packed opaque",
-            "vs_packed",
-            "fs_opaque",
-            Some(wgpu::Face::Back),
-            None,
-            true,
-        ),
-        packed_cutout: make(
-            "packed cutout",
-            "vs_packed",
-            "fs_cutout",
-            Some(wgpu::Face::Back),
-            None,
-            true,
-        ),
-        general_opaque: make(
-            "general opaque",
-            "vs_general",
-            "fs_opaque",
-            Some(wgpu::Face::Back),
-            None,
-            true,
-        ),
-        general_cutout: make(
-            "general cutout",
-            "vs_general",
-            "fs_cutout",
-            None,
-            None,
-            true,
-        ),
-        translucent: make(
+    // Each made on its own thread (`TerrainRenderer::new`).
+    let make = &make;
+    std::thread::scope(|scope| {
+        let back = Some(wgpu::Face::Back);
+        let smooth =
+            scope.spawn(move || make("smooth ground", "vs_smooth", "fs_smooth", back, None, true));
+        let packed_opaque =
+            scope.spawn(move || make("packed opaque", "vs_packed", "fs_opaque", back, None, true));
+        let packed_cutout =
+            scope.spawn(move || make("packed cutout", "vs_packed", "fs_cutout", back, None, true));
+        let general_opaque = scope.spawn(move || {
+            make(
+                "general opaque",
+                "vs_general",
+                "fs_opaque",
+                back,
+                None,
+                true,
+            )
+        });
+        let general_cutout = scope.spawn(move || {
+            make(
+                "general cutout",
+                "vs_general",
+                "fs_cutout",
+                None,
+                None,
+                true,
+            )
+        });
+        let translucent = make(
             "translucent",
             "vs_general",
             "fs_translucent",
             None,
             Some(wgpu::BlendState::ALPHA_BLENDING),
             false,
-        ),
-    }
+        );
+        let join = |h: std::thread::ScopedJoinHandle<'_, wgpu::RenderPipeline>| {
+            h.join().expect("a terrain pipeline")
+        };
+        Pipelines {
+            smooth: join(smooth),
+            packed_opaque: join(packed_opaque),
+            packed_cutout: join(packed_cutout),
+            general_opaque: join(general_opaque),
+            general_cutout: join(general_cutout),
+            translucent,
+        }
+    })
 }
 
 /// Uploads the texture array with a full (alpha-aware) mip chain.

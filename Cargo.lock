@@ -211,6 +211,7 @@ dependencies = [
  "env_logger",
  "glam",
  "hearth_content",
+ "hearth_core",
  "hearth_env",
  "hearth_math",
  "hearth_smooth",

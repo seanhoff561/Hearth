@@ -190,13 +190,35 @@ impl SceneRenderer {
     ) -> Self {
         let sky = SkyRenderer::new(ctx);
         let terrain = TerrainRenderer::new(ctx, atlas, &sky, planet, mip_levels, anisotropy);
-        let lod = LodRenderer::new(ctx, &terrain, planet, crate::post::HDR_FORMAT);
-        let figures = FigureRenderer::new(ctx, terrain.globals_bind().0);
-        let people = crate::body::PeopleRenderer::new(ctx, terrain.globals_bind().0);
-        let trees =
-            crate::trees::TreeRenderer::new(ctx, terrain.globals_bind().0, crate::post::HDR_FORMAT);
-        let outline =
-            crate::outline::OutlineRenderer::new(ctx, terrain.globals_bind().0, output_format);
+        // The rest made side by side: their pipelines are most of the wait at a world's arrival,
+        // and a software device compiles each on one core.
+        let globals = terrain.globals_bind().0;
+        let terrain_ref = &terrain;
+        let (lod, figures, people, trees, outline, post, precip, smoke) =
+            std::thread::scope(|scope| {
+                let lod = scope.spawn(move || {
+                    LodRenderer::new(ctx, terrain_ref, planet, crate::post::HDR_FORMAT)
+                });
+                let people = scope.spawn(move || crate::body::PeopleRenderer::new(ctx, globals));
+                let trees = scope.spawn(move || {
+                    crate::trees::TreeRenderer::new(ctx, globals, crate::post::HDR_FORMAT)
+                });
+                let post = scope.spawn(move || PostProcess::new(ctx, output_format));
+                let figures = FigureRenderer::new(ctx, globals);
+                let outline = crate::outline::OutlineRenderer::new(ctx, globals, output_format);
+                let precip = PrecipRenderer::new(ctx);
+                let smoke = crate::smoke::SmokeRenderer::new(ctx);
+                (
+                    lod.join().expect("the distant land's renderer"),
+                    figures,
+                    people.join().expect("the people's renderer"),
+                    trees.join().expect("the trees' renderer"),
+                    outline,
+                    post.join().expect("the post-processing"),
+                    precip,
+                    smoke,
+                )
+            });
         Self {
             figures,
             people,
@@ -204,9 +226,9 @@ impl SceneRenderer {
             outline,
             highlight: None,
             senses: crate::post::Senses::default(),
-            post: PostProcess::new(ctx, output_format),
-            precip: PrecipRenderer::new(ctx),
-            smoke: crate::smoke::SmokeRenderer::new(ctx),
+            post,
+            precip,
+            smoke,
             taa: None,
             taa_frame: None,
             sky,
@@ -227,6 +249,13 @@ impl SceneRenderer {
             underwater: None,
             inv_view_proj: glam::Mat4::IDENTITY,
         }
+    }
+
+    /// Sets the world's planet, for a scene made before its world came (the client makes it
+    /// while the server opens the world).
+    pub fn set_planet(&mut self, planet: Planet) {
+        self.terrain.set_planet(planet);
+        self.lod.set_planet(planet);
     }
 
     /// The size the scene is rendered at for an output of `size` (the render scale applied).

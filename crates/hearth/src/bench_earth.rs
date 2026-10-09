@@ -6,8 +6,8 @@
 //!   a frame: the main thread's time a frame and how many frames the person shown lags behind;
 //! - `hearth bench load`: from "Play" to the player in control and on to the whole render
 //!   distance, a new world (with the menus' work before it still running, as the game leaves
-//!   it) and then its save: each stage's time, the main thread's frames, memory at its peak, the
-//!   CPU each thread used.
+//!   it) and then its save, its frames paced at 60 Hz as vsync paces the game's: each stage's
+//!   time, the main thread's frames, memory at its peak, the CPU each thread used.
 //!
 //! Each prints the fine terrain tiles built and for whom (`hearth_core::prof`), and `--json FILE`
 //! writes its numbers for the perf gate.
@@ -959,6 +959,11 @@ fn load_once(
             let _ = ctx.device.poll(wgpu::PollType::Poll);
         }
         frame_ms.push(ms(f0.elapsed()));
+        // Paced as the game's are by default (vsync at 60 Hz): a loop spinning on frames with
+        // nothing to draw would take a core from the world's making.
+        if let Some(rest) = std::time::Duration::from_secs_f64(dt).checked_sub(f0.elapsed()) {
+            std::thread::sleep(rest);
+        }
         let at = t0.elapsed().as_secs_f64();
         let l = client.loading();
         if l.stage != stage {

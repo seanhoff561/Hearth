@@ -163,8 +163,8 @@ fn earth_windows(refs: &Path, count: usize, missing: &mut Vec<String>) -> Vec<(f
 }
 
 /// The generator's windows: as many points of its land, by area as on a sphere, each sampled
-/// over the same ground as an Earth tile at its latitude.
-fn generated_windows(t: &Terrain, count: usize) -> Vec<(f64, Dem)> {
+/// over the same ground as an Earth tile at its latitude; and where each lies (x, z).
+fn generated_windows(t: &Terrain, count: usize) -> (Vec<(f64, Dem)>, Vec<(i32, i32)>) {
     let g = &*t.grid;
     let n = g.n();
     // Rows by their share of the sphere's area.
@@ -207,13 +207,90 @@ fn generated_windows(t: &Terrain, count: usize) -> Vec<(f64, Dem)> {
         points.push((g.geom.lat[j].to_degrees(), x as i32, z as i32));
     }
     // Columns as far apart as an Earth tile's pixels at the same latitude.
-    points
+    let at = points.iter().map(|&(_, x, z)| (x, z)).collect();
+    let windows = points
         .into_iter()
         .map(|(lat, x, z)| {
             let step = (EQUATOR_PX / (1u64 << ZOOM) as f64 * lat.to_radians().cos()).round();
             (lat, generated(t, x, z, TILE, step.max(8.0) as i32))
         })
-        .collect()
+        .collect();
+    (windows, at)
+}
+
+/// The generator's windows one a line (for calibrating the relief): where each lies, its mean
+/// height, the relief the generator gives the place, and what the window measured.
+fn window_table(t: &Terrain, windows: &[(f64, Dem)], at: &[(i32, i32)]) -> String {
+    let mut out = String::from(
+        "x\tz\tlat\tmean_m\tabove_base_m\tamp_m\tspacing_m\trelief_m\tslope_p50\tflat\tgrid\train_mm\ttemp_c\n",
+    );
+    let g = &*t.grid;
+    for ((lat, d), &(x, z)) in windows.iter().zip(at) {
+        let m = measure(d);
+        let known: Vec<f32> = d.h.iter().copied().filter(|h| h.is_finite()).collect();
+        let mean = known.iter().sum::<f32>() / known.len().max(1) as f32;
+        let (gx, gz) = g.geom.grid_coords(x as f64, z as f64);
+        let (above, r) = t.relief().map_or((f32::NAN, None), |r| {
+            (r.above_base(gx, gz), Some(r.roughness_at(gx, gz)))
+        });
+        // The share of the window's steps that do not change at all (water, filled hollows).
+        let flat =
+            d.h.windows(2)
+                .filter(|w| w[0].is_finite() && w[0] == w[1])
+                .count() as f32
+                / d.h.len() as f32;
+        // The grid's cell there: its lake, closed basin, province.
+        let k = g.cell_at(x as f64, z as f64);
+        let f = g.flags[k];
+        let cell = format!(
+            "{}{}p{}",
+            if f & flags::LAKE != 0 { "lake," } else { "" },
+            if f & flags::ENDORHEIC != 0 {
+                "closed,"
+            } else {
+                ""
+            },
+            g.province[k]
+        );
+        out += &format!(
+            "{x}\t{z}\t{lat:.1}\t{mean:.0}\t{above:.0}\t{:.1}\t{:.0}\t{:.0}\t{:.2}\t{flat:.2}\t{cell}\t{:.0}\t{:.1}\n",
+            r.map_or(f64::NAN, |r| r.amp),
+            r.map_or(f64::NAN, |r| r.spacing),
+            m.relief,
+            m.slope[1],
+            g.precipitation.bilinear(gx, gz),
+            g.temperature.bilinear(gx, gz)
+        );
+    }
+    out
+}
+
+/// The share of the generator's land between the latitudes ±`MAX_LAT` its grid's lakes cover
+/// (by area), and its windows' (the Earth's lakes: some 2 % of its land).
+fn lake_share(t: &Terrain) -> String {
+    let g = &*t.grid;
+    let n = g.n();
+    let (mut land, mut lake) = (0.0f64, 0.0f64);
+    for j in 0..n {
+        let lat = g.geom.lat[j];
+        if lat.to_degrees().abs() > MAX_LAT {
+            continue;
+        }
+        for i in 0..n {
+            let k = g.geom.idx(i, j);
+            if g.flags[k] & flags::OCEAN != 0 {
+                continue;
+            }
+            land += lat.cos();
+            if g.flags[k] & flags::LAKE != 0 {
+                lake += lat.cos();
+            }
+        }
+    }
+    format!(
+        "\nThe grid's lakes cover {:.1} % of the generator's land within {MAX_LAT}° of the equator.\n",
+        100.0 * lake / land.max(1.0)
+    )
 }
 
 /// Percentiles of a statistic over windows.
@@ -278,7 +355,11 @@ pub fn run(t: &Terrain, planet: &str, refs: &Path, out: &Path, count: usize) -> 
         );
         return Ok(());
     }
-    let gens = generated_windows(t, count);
+    let (gens, at) = generated_windows(t, count);
+    std::fs::write(
+        out.join(format!("global_{planet}_windows.tsv")),
+        window_table(t, &gens, &at),
+    )?;
     let generated_name = format!("generated ({planet})");
     let sets: [(&str, &str, &[(f64, Dem)]); 2] = [
         ("real Earth", "real", &earth),
@@ -356,6 +437,18 @@ pub fn run(t: &Terrain, planet: &str, refs: &Path, out: &Path, count: usize) -> 
         sheet(set, &out.join("terrain").join(format!("global_{file}.png")))?;
     }
     md += &by_height;
+    md += &lake_share(t);
+    // What the refinement tiles cost to make (the windows' sampling made them all).
+    for (name, z) in hearth_core::prof::zones() {
+        if name.starts_with("relief.build.") {
+            println!(
+                "{name}: {} tiles, {:.1} ms each, {:.1} ms at most",
+                z.count,
+                z.total.as_secs_f64() * 1000.0 / z.count.max(1) as f64,
+                z.max.as_secs_f64() * 1000.0
+            );
+        }
+    }
     md +=
         "\n(the median relief and median slope of the windows of each mean height, and how many)\n";
     println!("{md}");

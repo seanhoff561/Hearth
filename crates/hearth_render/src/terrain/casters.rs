@@ -297,26 +297,41 @@ pub(super) fn make_shadow_pipelines(
     };
     // Solid faces are chosen by the way they face (`shadow_casters`); plants and models cast
     // from both sides; the smooth ground's faces turned toward the light are culled.
-    ShadowPipelines {
-        packed: make("shadow packed", "vs_packed", None, None),
-        packed_cutout: make(
-            "shadow packed cutout",
-            "vs_packed",
-            Some("fs_shadow_cutout"),
-            None,
-        ),
-        general: make("shadow general", "vs_general", None, None),
-        general_cutout: make(
-            "shadow general cutout",
-            "vs_general",
-            Some("fs_shadow_cutout"),
-            None,
-        ),
-        smooth: make(
+    let make = &make;
+    std::thread::scope(|scope| {
+        let packed = scope.spawn(move || make("shadow packed", "vs_packed", None, None));
+        let packed_cutout = scope.spawn(move || {
+            make(
+                "shadow packed cutout",
+                "vs_packed",
+                Some("fs_shadow_cutout"),
+                None,
+            )
+        });
+        let general = scope.spawn(move || make("shadow general", "vs_general", None, None));
+        let general_cutout = scope.spawn(move || {
+            make(
+                "shadow general cutout",
+                "vs_general",
+                Some("fs_shadow_cutout"),
+                None,
+            )
+        });
+        let smooth = make(
             "shadow smooth ground",
             "vs_smooth",
             None,
             Some(wgpu::Face::Front),
-        ),
-    }
+        );
+        let join = |h: std::thread::ScopedJoinHandle<'_, wgpu::RenderPipeline>| {
+            h.join().expect("a shadow pipeline")
+        };
+        ShadowPipelines {
+            packed: join(packed),
+            packed_cutout: join(packed_cutout),
+            general: join(general),
+            general_cutout: join(general_cutout),
+            smooth,
+        }
+    })
 }

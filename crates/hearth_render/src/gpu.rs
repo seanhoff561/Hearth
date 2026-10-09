@@ -44,7 +44,9 @@ pub struct GpuCapabilities {
     pub max_anisotropy: u16,
 }
 
-/// Device, queue and adapter information shared by all renderer subsystems.
+/// Device, queue and adapter information shared by all renderer subsystems. A clone shares the
+/// device, the queue and the count of bytes written (renderers made on another thread).
+#[derive(Clone)]
 pub struct GpuContext {
     pub instance: wgpu::Instance,
     pub adapter: wgpu::Adapter,
@@ -53,7 +55,7 @@ pub struct GpuContext {
     pub info: wgpu::AdapterInfo,
     pub caps: GpuCapabilities,
     /// Bytes written through the queue (buffers and textures) since creation.
-    uploaded: AtomicU64,
+    uploaded: Arc<AtomicU64>,
 }
 
 impl GpuContext {
@@ -158,7 +160,7 @@ impl GpuContext {
             queue,
             info,
             caps,
-            uploaded: AtomicU64::new(0),
+            uploaded: Arc::new(AtomicU64::new(0)),
         })
     }
 

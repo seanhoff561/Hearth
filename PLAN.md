@@ -41,7 +41,7 @@ cube-era code allowed where it serves that, T §5). V2.1 and its Addenda are sup
 11. **Amendment T** (D291): **T0** (S5/P7 stopped at (b)), **T1** (quick wins) and **T2** (the
     realism gap analysis, `docs/review/realism/RGA-1.md`) done.
 12. As T2 revised it (D297): **R1a** (sun shadows, done 2026-10-09, D298) → **G1a** (relief from
-    30 m to 30 km) → **S5/P7 (c)–(f) with G1b** (walking scale) → **W1** (water; S7's water) →
+    30 m to 30 km, done 2026-10-09, D299) → **S5/P7 (c)–(f) with G1b** (walking scale) → **W1** (water; S7's water) →
     **L1** (seamless distance) → **P7G** → **S6 with H1** → **R1b** → **S7 → S8 → P8.** An audit
     after every three milestones (Q §8.2), each updating the realism scorecard (T §3.6); the
     first after G1b, with a check that no coarse-scale caller has crept into the fine generator.
@@ -165,13 +165,10 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 - **R1a — sun shadows** (RGA-1 gap 1): done (D298). Open: its GPU time at 1080p on the RTX 4060
   (≤ 1.5 ms; `hearth bench --shadows off` against the default, owner check); hair and the distant
   crowns' boxes casting; wider penumbrae under tall canopies.
-- **G1a — relief from 30 m to 30 km** (gaps 2, 4): relief by landscape type and height above base
-  level, not uplift alone, calibrated to `bench realism global` and `terrain`; hillslope
-  diffusion at the 306 m and 38 m levels; erosion routed by many flow directions; rivers as
-  curves meandering by slope and discharge. *Accept:* the land's median slope 2.8° ± 20 %,
-  relief 163 m ± 20 %, land over 5° 33 % ± 5, relief by height band within 25 % of the Earth's;
-  each kind's 30 m slope within 25 % of the real; no grid directions in channels; tile times
-  within E4.1's budgets.
+- **G1a — relief from 30 m to 30 km** (gaps 2, 4): done (D299). Open: the 200–500 m band's
+  relief (57 m against 80 m: a fifth of its windows lie on the grid's lakes; 88 m without them);
+  the grid's lakes 6.3 % of the land (W1); lake shores stepped at tiles' edges and the widest
+  rivers' sharp bends (W1); basin-and-range deserts (no rift deserts on the planet).
 - **G1b — walking scale, with S5/P7 (c)–(f)** (gaps 3, 5, 9): a ~5 m and a ~1 m level
   (diffusion, channel heads and gullies, colluvium and fans, talus, tree-throw, frost, aeolian,
   karst and glacial forms where they belong) with detail from lidar statistics by landscape
@@ -179,7 +176,9 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   4 m curvature within × 1.5 of the kind's lidar; closed hollows over 0.25 m under 1 % outside
   glacial and karst land; S5's and P7's own.
 - **W1:** water as continuous surfaces from the hydrology (hydraulic geometry, beds and banks
-  carved to hold them), a shallow-water simulation near players, flow maps; block water removed.
+  carved to hold them), a shallow-water simulation near players, flow maps; block water removed;
+  the grid's lakes to the Earth's share (G1a: 6.3 % of the land), lake shores whole across tiles,
+  wide rivers' bends as wide as their channels.
 - **L1:** the LOD shaded as the near ground, geomorphing, trees as instances then impostors,
   distant water as near. *Accept:* the seam metric (`seams.tsv`) ≤ 1.3, bands within 5 %.
 - **R1b:** clouds by type with their shadows, fog, indirect light, translucency, by realism per ms.

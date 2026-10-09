@@ -22,8 +22,7 @@
 //! margins reach it. A value so never depends on which tile was asked for first, and tiles meet
 //! without a seam. Tiles are kept in an LRU cache per level.
 
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use hearth_math::hash::{derive_seed, hash_2d, hash2, unit_f64};
@@ -31,6 +30,16 @@ use hearth_math::hash::{derive_seed, hash_2d, hash2, unit_f64};
 use crate::cubegen::cache::Cache;
 use crate::noise::BlockFbm;
 use crate::planet::{PlanetGrid, flags};
+use drainage::{
+    Routing, accumulate, breach_depth, break_rings, diffuse, fill, flood_sea, lakes, slump, stack,
+    steepest, target,
+};
+
+mod courses;
+mod drainage;
+mod roughness;
+
+pub use roughness::Roughness;
 
 /// Each level's cells are this many times finer than its parent's.
 pub const RATIO: i64 = 8;
@@ -261,18 +270,22 @@ impl Patch {
     }
 }
 
-/// Noise for one level: an octave per wavelength, with its amplitude in metres at full relief.
+/// Noise for one level: an octave per wavelength, longest first, halving.
 #[derive(Debug, Clone)]
 struct LevelNoise {
-    octaves: Vec<(BlockFbm, f64)>,
+    octaves: Vec<BlockFbm>,
+    /// The longest octave's wavelength (blocks).
+    longest: f64,
     warp: BlockFbm,
-    /// The octaves' amplitudes summed (m at full relief): how far the level's relief can reach.
-    reach: f64,
 }
 
 /// How far below the parent's surface a river's bed lies at a level, as a share of the level's
 /// reach: rivers are the low ground of the relief the level adds, so it rises from them.
-const VALLEY: f64 = 0.35;
+const VALLEY: f64 = 0.6;
+/// Cells between the points at which a tile's relief is reckoned (`build`).
+const LATTICE: i64 = 8;
+/// How deep a hollow may be cut through, as a share of the relief the level adds there.
+const BREACH_REACH: f64 = 1.5;
 /// How far apart (blocks, along z) the relief's warp takes its two parts.
 const WARP_APART: f64 = 3.7e7;
 
@@ -285,6 +298,8 @@ pub struct Relief {
     seed: u64,
     levels: Vec<Level>,
     noise: Vec<LevelNoise>,
+    /// What the grid says of its land's relief (empty without levels).
+    land: roughness::Land,
     tiles: Vec<Cache<TileKey, Tile>>,
     /// The tiles kept on disk too, once given a folder ([`Relief::keep_on_disk`]).
     store: std::sync::OnceLock<crate::relief_store::TileStore>,
@@ -296,12 +311,6 @@ impl std::fmt::Debug for Relief {
             .field("levels", &self.levels)
             .finish()
     }
-}
-
-/// Relief amplitude (metres, ±) at full relief for a wavelength: rough as mountain ranges are,
-/// some 300 m at 2.5 km and 70 m at 300 m (amplitude ∝ λ^0.7).
-pub fn amplitude(wavelength_m: f64) -> f64 {
-    160.0 * (wavelength_m / 1000.0).powf(0.7)
 }
 
 #[inline]
@@ -333,18 +342,19 @@ impl Relief {
                 // level's own; the finest level's to four times, as the blocks interpolate it
                 // and add their own below (relief at its cells' own size would show their grid).
                 let mut octaves = Vec::new();
-                let mut wl = lv.cell * RATIO as f64 * if l == 0 { 2.0 } else { 1.0 };
+                let longest = lv.cell * RATIO as f64 * if l == 0 { 2.0 } else { 1.0 };
+                let mut wl = longest;
                 let shortest = if l + 1 == levels.len() { 4.0 } else { 2.0 } * lv.cell;
                 let mut k = 0u64;
                 while wl >= shortest - 1e-6 {
                     let s = hash2(seed, (l as u64) << 8 | k);
-                    octaves.push((BlockFbm::new(s, c as i64, wl, 1, 0.5), amplitude(wl)));
+                    octaves.push(BlockFbm::new(s, c as i64, wl, 1, 0.5));
                     wl *= 0.5;
                     k += 1;
                 }
                 LevelNoise {
-                    reach: octaves.iter().map(|o| o.1).sum(),
                     octaves,
+                    longest,
                     warp: BlockFbm::new(
                         hash2(seed, 0xa11 + l as u64),
                         c as i64,
@@ -361,12 +371,18 @@ impl Relief {
             / TILE_BYTES)
             .max(TILES_KEPT_MIN);
         let tiles = levels.iter().map(|_| Cache::new(kept)).collect();
+        let land = if levels.is_empty() {
+            roughness::Land::none()
+        } else {
+            roughness::Land::new(&grid)
+        };
         Self {
             v: grid.vertical_scale,
             c,
             seed,
             levels,
             noise,
+            land,
             tiles,
             grid,
             store: std::sync::OnceLock::new(),
@@ -560,25 +576,6 @@ impl Relief {
         }
     }
 
-    /// The level of the water a cell's river flows on to: the first lake's surface or the sea's
-    /// level (0) down its course, followed up to a hundred cells; −∞ if none comes.
-    fn base_level(&self, level: usize, mut i: i64, mut j: i64) -> f32 {
-        for _ in 0..100 {
-            let c = self.cell(level, i, j);
-            if c.sea {
-                return 0.0;
-            }
-            if c.lake.is_finite() {
-                return c.lake;
-            }
-            match c.receiver {
-                Some((ri, rj)) => (i, j) = (ri, rj),
-                None => break,
-            }
-        }
-        f32::NEG_INFINITY
-    }
-
     /// A tile, from the cache, from disk ([`Relief::keep_on_disk`]: `relief.disk.L<level>`) or
     /// made: each made counted by its level and the caller it was made for
     /// (`relief.tile.L<level>.<caller>`, E4.1 §3), and timed. A tile of the finest level wanted
@@ -762,20 +759,29 @@ impl Relief {
         out
     }
 
-    /// How much relief a place takes (0 flat … 1 the roughest mountains), from the grid (at
-    /// grid coordinates).
-    pub fn relief_at(&self, gx: f64, gz: f64) -> f64 {
-        let g = &*self.grid;
-        let e = g.elevation.bilinear(gx, gz) as f64;
-        let uplift = g.uplift.bilinear(gx, gz).max(0.0) as f64;
-        if e < 0.0 {
-            // The shelf smooth, the slope and the deep floor in abyssal hills.
-            return 0.008 + 0.07 * smoothstep(-150.0, -2500.0, e);
+    /// A place's height above its base level (m, at grid coordinates; [`roughness`]).
+    pub fn above_base(&self, gx: f64, gz: f64) -> f32 {
+        self.land.above.bilinear(gx, gz)
+    }
+
+    /// The relief a place takes at the levels (at grid coordinates): by its kind of land and its
+    /// height above base level ([`roughness`]).
+    pub fn roughness_at(&self, gx: f64, gz: f64) -> Roughness {
+        roughness::roughness(&self.grid, &self.land, gx, gz)
+    }
+
+    /// The amplitudes (blocks) of a level's octaves at a place, longest first, into `out`; their
+    /// sum, how far the level's relief reaches there.
+    fn amplitudes(&self, level: usize, r: &Roughness, out: &mut [f64]) -> f64 {
+        let noise = &self.noise[level - 1];
+        let mut wl = noise.longest / self.v;
+        let mut sum = 0.0;
+        for a in out.iter_mut().take(noise.octaves.len()) {
+            *a = r.at(wl) * self.v;
+            sum += *a;
+            wl *= 0.5;
         }
-        let mountains = smoothstep(300.0, 3500.0, uplift).powf(0.8);
-        // Coasts and lowlands nearly flat, higher land hillier.
-        let land = 0.012 + 0.10 * smoothstep(80.0, 1500.0, e);
-        mountains.max(land)
+        sum
     }
 
     /// Builds a tile of `level` (≥ 1).
@@ -802,6 +808,28 @@ impl Relief {
             let w = (pj - pj0).clamp(0, pw - 1);
             &parent[(w * pw + u) as usize]
         };
+        // The parent's ground about each of its cells (the 25 within two of it): its mean,
+        // lowest and highest.
+        let ground: Vec<(f64, f64, f64)> = (0..pw * pw)
+            .map(|q| {
+                let (pi, pj) = (pi0 + q % pw, pj0 + q / pw);
+                let (mut mean, mut lo, mut hi) = (0.0, f64::MAX, f64::MIN);
+                for dj in -2..=2 {
+                    for di in -2..=2 {
+                        let v = pcell(pi + di, pj + dj).h as f64;
+                        mean += v / 25.0;
+                        lo = lo.min(v);
+                        hi = hi.max(v);
+                    }
+                }
+                (mean, lo, hi)
+            })
+            .collect();
+        let ground_about = |pi: i64, pj: i64| {
+            let u = (pi - pi0).clamp(0, pw - 1);
+            let w = (pj - pj0).clamp(0, pw - 1);
+            ground[(w * pw + u) as usize]
+        };
         // ------------------------------------------------ the surface with this level's relief
         let noise = &self.noise[level - 1];
         let g = &*self.grid;
@@ -814,6 +842,38 @@ impl Relief {
         // of the four parent cells about it.
         let mut parent_lake = vec![f32::NAN; len];
         let mut lake_share = vec![0.0f32; len];
+        let mut amps = [0.0f64; 16];
+        // The relief the place takes, on a lattice every LATTICE cells (at the same cells for every
+        // tile: the spans start on it), between its points interpolated; it changes only over
+        // the grid's cells.
+        let side = (n as i64 - 1) / LATTICE + 2;
+        let lattice: Vec<([f64; 16], f64, f64)> = (0..side * side)
+            .map(|q| {
+                let (lu, lw) = (q % side, q / side);
+                let (x, z) = self.centre(
+                    level,
+                    i0 + lu * LATTICE,
+                    (j0 + lw * LATTICE).clamp(0, lv.count - 1),
+                );
+                let (gx, gz) = g.geom.grid_coords(x.rem_euclid(self.c), z);
+                let rough = self.roughness_at(gx, gz);
+                let mut a = [0.0; 16];
+                self.amplitudes(level, &rough, &mut a);
+                let p = g.precipitation.bilinear(gx, gz) as f64;
+                let t = g.temperature.bilinear(gx, gz) as f64;
+                // Runoff (mm/yr): what the rain leaves after evaporation, more of it in cool
+                // wet climates.
+                let share = (0.12 + 0.45 * smoothstep(300.0, 2500.0, p)
+                    - 0.15 * smoothstep(10.0, 28.0, t))
+                .clamp(0.03, 0.75);
+                // A cell's real area: Mercator's blocks are cos φ metres apart.
+                let lat = g.geom.planet().latitude(z);
+                let area_m2 = (s * lat.cos() / self.v).powi(2);
+                (a, rough.fill, area_m2 * p * share / 1000.0 / YEAR_S)
+            })
+            .collect();
+        // How deep a hollow may be and still be cut through: deeper where the relief is rougher.
+        let mut breach = vec![breach_depth(level) * self.v as f32; len];
         let count = lv.count;
         for w in 0..n {
             let j = j0 + w as i64;
@@ -842,18 +902,58 @@ impl Relief {
                     *row = catmull(p, fx);
                 }
                 let base = catmull(rows, fz);
-                // The grid's view of the place.
-                let (ggx, ggz) = g.geom.grid_coords(x.rem_euclid(self.c), z);
-                let relief = self.relief_at(ggx, ggz);
+                // The parent's ground about the place, its mean and its range: the four cells'
+                // about it, bilinear (no step where the place passes from one cell to the next).
+                let (mut mean, mut lo, mut hi) = (0.0, 0.0, 0.0);
+                for (dj, wz) in [(0, 1.0 - fz), (1, fz)] {
+                    for (di, wx) in [(0, 1.0 - fx), (1, fx)] {
+                        let (m, l, h) = ground_about(ci + di, cj + dj);
+                        mean += m * wx * wz;
+                        lo += l * wx * wz;
+                        hi += h * wx * wz;
+                    }
+                }
+                // The relief the place takes, from the lattice about it.
+                let (lu, lw) = (u as i64 / LATTICE, w as i64 / LATTICE);
+                let (fu, fw) = (
+                    (u as i64 % LATTICE) as f64 / LATTICE as f64,
+                    (w as i64 % LATTICE) as f64 / LATTICE as f64,
+                );
+                let corner = |du: i64, dw: i64| &lattice[((lw + dw) * side + lu + du) as usize];
+                let weights = [
+                    (corner(0, 0), (1.0 - fu) * (1.0 - fw)),
+                    (corner(1, 0), fu * (1.0 - fw)),
+                    (corner(0, 1), (1.0 - fu) * fw),
+                    (corner(1, 1), fu * fw),
+                ];
+                let (mut fill, mut runoff) = (0.0, 0.0);
+                amps.fill(0.0);
+                for (c, wgt) in weights {
+                    for (a, ca) in amps.iter_mut().zip(&c.0) {
+                        *a += ca * wgt;
+                    }
+                    fill += c.1 * wgt;
+                    runoff += c.2 * wgt;
+                }
+                let reach: f64 = amps.iter().sum();
+                breach[k] = breach[k].max((BREACH_REACH * reach) as f32);
                 // Both of the warp's parts periodic round the planet (the second taken far off
                 // along the other axis).
                 let wx = x + noise.warp.sample2(x, z) * s * RATIO as f64 * 0.5;
                 let wz = z + noise.warp.sample2(x, z + WARP_APART) * s * RATIO as f64 * 0.5;
                 let mut add = 0.0;
-                for (oct, amp) in &noise.octaves {
+                for (oct, amp) in noise.octaves.iter().zip(&amps) {
                     add += oct.sample2(wx, wz) * amp;
                 }
-                let mut hk = base + add * relief * self.v;
+                // Dry land's basins, the ground lying low among the parent's, are filled with
+                // what the ranges about them shed: the finer levels' relief laid only thinly
+                // there, their floors and fans buried. The first level's (its cells some
+                // kilometres) is the ranges' within a basin, which stand above the fill.
+                if level > 1 && fill > 0.0 && hi > lo {
+                    let low = smoothstep(0.25, -0.2, (base - mean) / (hi - lo));
+                    add *= 1.0 - fill * low;
+                }
+                let mut hk = base + add;
                 let idx = g.cell_at(x.rem_euclid(self.c), z);
                 // The parent's sea, where this level's surface stays under it, is the sea; the
                 // low ground joined to it is found below.
@@ -879,26 +979,15 @@ impl Relief {
                     }
                 }
                 if share > 0.0 {
-                    let rough = 0.3 * noise.reach * relief * self.v + 0.5 * self.v;
-                    let shore =
-                        surface as f64 + (0.5 - share) * 2.0 * rough + add * relief * self.v;
+                    let rough = 0.3 * reach + 0.5 * self.v;
+                    let shore = surface as f64 + (0.5 - share) * 2.0 * rough + add;
                     let t = 1.0 - (2.0 * share - 1.0).abs();
                     hk += (shore - hk) * t;
                     lake_share[k] = share as f32;
                     parent_lake[k] = surface;
                 }
                 h[k] = hk as f32;
-                let p = g.precipitation.bilinear(ggx, ggz) as f64;
-                let t = g.temperature.bilinear(ggx, ggz) as f64;
-                // Runoff (mm/yr): what the rain leaves after evaporation, more of it in cool
-                // wet climates.
-                let share = (0.12 + 0.45 * smoothstep(300.0, 2500.0, p)
-                    - 0.15 * smoothstep(10.0, 28.0, t))
-                .clamp(0.03, 0.75);
-                // A cell's real area: Mercator's blocks are cos φ metres apart.
-                let lat = g.geom.planet().latitude(z);
-                let area_m2 = (s * lat.cos() / self.v).powi(2);
-                rain[k] = (area_m2 * p * share / 1000.0 / YEAR_S) as f32;
+                rain[k] = runoff as f32;
                 // Hard old rock wears slowly, soft young rock fast.
                 erodibility[k] = match g.province[idx] {
                     crate::planet::province::SHIELD => 0.5,
@@ -942,18 +1031,9 @@ impl Relief {
         let mut recv = vec![OUTLET; len];
         let mut inflow = vec![0.0f32; len];
         let min_q = channel_threshold(level);
-        // The water each parent cell's river flows on to.
-        let mut floors: rustc_hash::FxHashMap<(i64, i64), f32> = Default::default();
+        let mut courses = courses::Courses::new(self, level);
         // The lowest a channel's bed may be cut: where the reach it drains along ends.
         let mut bottom = vec![f32::NEG_INFINITY; len];
-        // A river runs on its lake's surface where it crosses one.
-        let top = |c: &Cell| {
-            if c.lake.is_finite() {
-                c.h.max(c.lake)
-            } else {
-                c.h
-            }
-        };
         for pj in pj0..pj0 + pw {
             for pi in pi0..pi0 + pw {
                 let pc = *pcell(pi, pj);
@@ -963,51 +1043,33 @@ impl Relief {
                 if pc.q < min_q {
                     continue;
                 }
-                let rc = self.cell(level - 1, ri, rj);
+                let rc = courses.cell(ri, rj);
                 if pc.lake.is_finite() && rc.lake.is_finite() {
                     // Water crossing a lake is the lake's, not a river.
                     continue;
                 }
                 let a = self.node(level - 1, pi, pj);
                 let b = self.node(level - 1, ri, rj);
-                // A river's bed lies below the parent's surface by a share of the relief this
-                // level adds there (keeping half its height above the sea, so lowland rivers
-                // still fall to it), but never below the water it flows on to: a river on land
-                // falls to the sea's level, not to the sea floor, and to a lake's surface. A
-                // lake's outflow leaves at its surface, and an inflow ends there.
+                // The main stream above and the reach below, which the course bends towards.
+                let above = courses
+                    .upstream(pi, pj, min_q)
+                    .map(|(ui, uj)| self.node(level - 1, ui, uj));
+                let below = rc.receiver.map(|(ci, cj)| self.node(level - 1, ci, cj));
+                // The beds at either end ([`courses::Courses::bed`]), falling along the reach.
                 let land = !pc.sea;
-                let mut floor_of = |i: i64, j: i64| -> f32 {
-                    *floors
-                        .entry((i, j))
-                        .or_insert_with(|| self.base_level(level - 1, i, j))
-                };
-                let (fa, fb) = (floor_of(pi, pj), floor_of(ri, rj));
-                let bed = |c: &Cell, at: (f64, f64), floor: f32| -> f32 {
-                    if c.lake.is_finite() {
-                        return top(c);
-                    }
-                    let (gx, gz) = g.geom.grid_coords(at.0.rem_euclid(self.c), at.1);
-                    let mut low = VALLEY * noise.reach * self.relief_at(gx, gz) * self.v;
-                    if land {
-                        low = low.min(0.5 * (top(c) as f64).max(0.0));
-                    }
-                    let b = ((top(c) as f64 - low) as f32).max(floor.min(top(c)));
-                    if land { b.max(0.0) } else { b }
-                };
-                let rh = bed(&rc, b, fb);
-                let ha = bed(&pc, a, fa).max(rh);
-                let hb = rh;
+                let hb = courses.bed(ri, rj, land);
+                let ha = courses.bed(pi, pj, land).max(hb);
+                let length = (wrap_delta(b.0 - a.0, self.c)).hypot(b.1 - a.1).max(1e-6);
                 let path = meander(
-                    a,
-                    b,
-                    ps,
-                    s,
+                    (above, a, b, below),
+                    (ps, s),
                     hash_2d(
                         hash2(self.seed, 0x5ee + level as u64),
                         pi.rem_euclid(self.count(level - 1)) as i32,
                         pj as i32,
                     ),
                     self.c,
+                    wander((ha - hb) as f64 / length, pc.q),
                 );
                 self.rasterize(
                     &path,
@@ -1094,19 +1156,20 @@ impl Relief {
         // hollow's brim where it holds water. Each round the hollows fill (or are cut through),
         // the water runs, and the ground wears towards where it drains: a hollow's outlet wears
         // down with all its water through it, so a lake drains as its outlet is cut.
-        let k_level = 0.08;
         let talus = (0.84 * self.v * s) as f32;
-        let breach = breach_depth(level) * self.v as f32;
         // A cell's runoff at 300 mm a year: the discharge the wearing is reckoned against.
         let q_cell = ((s / self.v).powi(2) * 0.3 / YEAR_S) as f32;
+        let k_power: Vec<f32> = erodibility.iter().map(|e| K_POWER * e).collect();
+        let creep = creep_rate(level);
         let mut z = h;
         let mut wet = z.clone();
+        let mut routing = Routing::new(len);
         for it in 0..8 {
             // The parent's lakes stand at their surface, which the water about them drains to.
             for k in 0..len {
                 wet[k] = if held[k].is_finite() { held[k] } else { z[k] };
             }
-            fill(&mut wet, &base, n, 1e-3, breach);
+            fill(&mut wet, &base, n, 1e-3, &breach);
             // A cut is the ground's.
             for (zk, &wk) in z.iter_mut().zip(&wet) {
                 *zk = zk.min(wk);
@@ -1114,36 +1177,12 @@ impl Relief {
             if it == 7 {
                 break;
             }
-            let rec = steepest(&wet, &base, &channel, &recv, n, s as f32);
-            let order = stack(&rec, n);
-            let q = accumulate(&rec, &order, &rain, &inflow, &channel, n);
-            // Implicit stream power (n = 1): f = K · ((q / q_cell)^0.5 − 1) / (distance in
-            // cells), so ground that drains only itself (a ridge, a summit) is left to slump.
-            for &c in &order {
-                let c = c as usize;
-                let r = rec[c];
-                if r == OUTLET || base[c] || wet[c] > z[c] + 1e-2 {
-                    continue;
-                }
-                let (du, dw) = D8[r as usize];
-                let rk = (c as i64 + dw * n as i64 + du) as usize;
-                let dist = if du != 0 && dw != 0 {
-                    std::f32::consts::SQRT_2
-                } else {
-                    1.0
-                };
-                let f = k_level * erodibility[c] * ((q[c] / q_cell).sqrt() - 1.0).max(0.0) / dist;
-                // Land wears down to the sea's level at most.
-                let hr = if z[c] >= 0.0 {
-                    wet[rk].max(0.0)
-                } else {
-                    wet[rk]
-                };
-                if z[c] > hr {
-                    z[c] = (z[c] + f * hr) / (1.0 + f);
-                    wet[c] = z[c];
-                }
-            }
+            // The water spread over the slopes and gathered in the hollows, the ground worn
+            // where it gathers, the slopes crept and slumped.
+            routing.route(&wet, &base, &channel, &recv, n);
+            let q = routing.accumulate(&rain, &inflow, &channel, n);
+            routing.erode(&mut z, &mut wet, &q, &k_power, &base, q_cell, n);
+            diffuse(&mut z, &base, n, creep);
             slump(&mut z, &base, n, talus);
         }
         // ------------------------------------------------ results
@@ -1258,119 +1297,6 @@ impl Relief {
     }
 }
 
-/// The lakes over ground `z` whose hollows the water's surface `wet` fills, with the parent's
-/// lakes `held` (their surfaces, NaN elsewhere): lake surfaces, NaN elsewhere. A hollow joined
-/// to a parent's lake is that lake's; one of this level's own is a lake if it fits in a tile's
-/// margin, so every tile that sees it sees it whole and agrees on it, and somewhere it is deeper
-/// than `deep` or its bed lies below the sea's level (the water table standing at it). A larger
-/// one of its own (the parent saw no lake there) is filled to its brim with what washed into
-/// it, a basin's flat floor.
-fn lakes(wet: &[f32], z: &mut [f32], base: &[bool], held: &[f32], n: usize, deep: f32) -> Vec<f32> {
-    const DAMP: f32 = 0.01;
-    let len = wet.len();
-    let water = |k: usize| held[k].is_finite() || (!base[k] && wet[k] - z[k] > DAMP);
-    let mut lake = vec![f32::NAN; len];
-    let mut seen = vec![false; len];
-    let mut hollow = Vec::new();
-    let mut basins = Vec::new();
-    for start in 0..len {
-        if seen[start] || !water(start) || wet[start] <= 0.0 {
-            continue;
-        }
-        // One hollow: the water-covered cells joined to this one.
-        hollow.clear();
-        hollow.push(start);
-        seen[start] = true;
-        let mut i = 0;
-        let (mut lo, mut hi) = ((i64::MAX, i64::MAX), (i64::MIN, i64::MIN));
-        let (mut parents, mut own) = (false, false);
-        while i < hollow.len() {
-            let k = hollow[i];
-            i += 1;
-            parents |= held[k].is_finite();
-            own |= wet[k] - z[k] > deep || z[k] < 0.0;
-            let (u, w) = ((k % n) as i64, (k / n) as i64);
-            lo = (lo.0.min(u), lo.1.min(w));
-            hi = (hi.0.max(u), hi.1.max(w));
-            for &(du, dw) in &D8 {
-                let (nu, nw) = (u + du, w + dw);
-                if nu < 0 || nw < 0 || nu >= n as i64 || nw >= n as i64 {
-                    continue;
-                }
-                let nb = (nw * n as i64 + nu) as usize;
-                if !seen[nb] && water(nb) {
-                    seen[nb] = true;
-                    hollow.push(nb);
-                }
-            }
-        }
-        let small = hi.0 - lo.0 < MARGIN && hi.1 - lo.1 < MARGIN;
-        if parents || (own && small) {
-            for &k in &hollow {
-                lake[k] = if held[k].is_finite() { held[k] } else { wet[k] };
-            }
-        } else if !small {
-            basins.extend_from_slice(&hollow);
-        }
-    }
-    for k in basins {
-        z[k] = wet[k];
-    }
-    lake
-}
-
-/// Ends any ring the channels' receivers close: following each channel's course, a cell met
-/// twice on one walk gives up its receiver.
-fn break_rings(recv: &mut [u8], channel: &[bool], n: usize) {
-    let len = recv.len();
-    // 0: not yet walked; walk number + 1 while on a walk, or once its course is known to end.
-    let mut mark = vec![0u32; len];
-    for (walk, start) in (0..len).filter(|&k| channel[k]).enumerate() {
-        let walk = walk as u32 + 1;
-        let mut k = start;
-        while channel[k] && mark[k] == 0 {
-            mark[k] = walk;
-            match target(k, recv[k], n) {
-                Some(r) if mark[r] == walk => {
-                    recv[k] = OUTLET;
-                    break;
-                }
-                Some(r) => k = r,
-                None => break,
-            }
-        }
-    }
-}
-
-/// Spreads the sea from its cells over the ground below its level joined to them (side by side,
-/// not corner to corner), and up channels whose beds lie at its level; a lake (`held`) keeps it
-/// out.
-fn flood_sea(
-    sea: &mut [bool],
-    h: &[f32],
-    channel: &[bool],
-    outside: &[bool],
-    held: &[f32],
-    n: usize,
-) {
-    let mut reach: VecDeque<usize> = (0..sea.len()).filter(|&k| sea[k]).collect();
-    while let Some(k) = reach.pop_front() {
-        let (u, w) = ((k % n) as i64, (k / n) as i64);
-        for (du, dw) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let (nu, nw) = (u + du, w + dw);
-            if nu < 0 || nw < 0 || nu >= n as i64 || nw >= n as i64 {
-                continue;
-            }
-            let nb = (nw * n as i64 + nu) as usize;
-            let low = h[nb] < 0.0 || (channel[nb] && h[nb] <= 0.0);
-            if !sea[nb] && !outside[nb] && held[nb].is_nan() && low {
-                sea[nb] = true;
-                reach.push_back(nb);
-            }
-        }
-    }
-}
-
 /// Discharge (m³/s) from which a level's parent's rivers are kept as its channels: a river
 /// draining some hundreds of km² from the grid, some tens from the first level, a few from
 /// the second.
@@ -1379,6 +1305,20 @@ fn channel_threshold(level: usize) -> f32 {
         1 => 3.0,
         2 => 1.0,
         _ => 0.15,
+    }
+}
+
+/// The stream power's strength (per round, at a level's cells; times the rock's erodibility).
+const K_POWER: f32 = 0.08;
+
+/// How far each round the slopes creep towards their neighbours' mean at a level (hillslope
+/// diffusion, `drainage::diffuse`): at the ~300 m and ~40 m levels, where hillslopes are a few
+/// cells long; none at the coarsest, whose cells are wider than a hillslope.
+fn creep_rate(level: usize) -> f32 {
+    match level {
+        1 => 0.0,
+        2 => 0.05,
+        _ => 0.12,
     }
 }
 
@@ -1391,18 +1331,71 @@ fn lake_depth(level: usize) -> f32 {
     }
 }
 
-/// The path of a reach from `a` to `b` (a parent cell of size `ps` apart), wandering by a
-/// fractal of midpoints displaced across it, down to the child's cell size `s`. The same reach
-/// always takes the same path (`hash`).
-fn meander(a: (f64, f64), b: (f64, f64), ps: f64, s: f64, hash: u64, c: f64) -> Vec<(f64, f64)> {
-    // Unwrap b near a.
-    let mut dx = b.0 - a.0;
-    if dx > c * 0.5 {
-        dx -= c;
-    } else if dx < -c * 0.5 {
-        dx += c;
-    }
-    let b = (a.0 + dx, b.1);
+/// How far a river wanders from the straight line, as a share of each stretch's length (its
+/// midpoint displaced across it by up to half this): by its slope (blocks a block) and its
+/// discharge (m³/s). A river on a gentle floodplain meanders, one falling steeply runs straight
+/// (Leopold and Wolman 1957; sinuosity falls with the valley's slope), and large rivers more
+/// than small.
+fn wander(slope: f64, q: f32) -> f64 {
+    0.2 + 0.3 * (1.0 - smoothstep(0.001, 0.03, slope)) + 0.05 * smoothstep(1.0, 100.0, q as f64)
+}
+
+/// The path of a reach from node `a` to node `b` (parent cells of size `ps` apart; `cells` =
+/// (ps, s)), with the main stream's node above `a` and the node below `b` where there are:
+/// a curve through the nodes (Hermite, leaving `a` along the line from the node above to `b` and
+/// reaching `b` along the line from `a` to the node below, each tangent the reach's length: the
+/// main stream bends through its nodes instead of turning there), wandering about it by a
+/// fractal of midpoints displaced across it by up to half of `wander` of their length, down to
+/// the child's cell size `s`. The same reach always takes the same path (`hash`).
+fn meander(
+    (above, a, b, below): (
+        Option<(f64, f64)>,
+        (f64, f64),
+        (f64, f64),
+        Option<(f64, f64)>,
+    ),
+    (ps, s): (f64, f64),
+    hash: u64,
+    c: f64,
+    wander: f64,
+) -> Vec<(f64, f64)> {
+    // Every node unwrapped near a.
+    let near = |p: (f64, f64)| {
+        let mut dx = p.0 - a.0;
+        if dx > c * 0.5 {
+            dx -= c;
+        } else if dx < -c * 0.5 {
+            dx += c;
+        }
+        (a.0 + dx, p.1)
+    };
+    let b = near(b);
+    let chord = (b.0 - a.0, b.1 - a.1);
+    let length = chord.0.hypot(chord.1).max(1e-9);
+    let tangent = |from: (f64, f64), to: (f64, f64)| {
+        let (dx, dz) = (to.0 - from.0, to.1 - from.1);
+        let d = dx.hypot(dz);
+        if d < 1e-9 {
+            chord
+        } else {
+            (dx / d * length, dz / d * length)
+        }
+    };
+    let ta = above.map_or(chord, |z| tangent(near(z), b));
+    let tb = below.map_or(chord, |c| tangent(a, near(c)));
+    let spine = |t: f64| {
+        let (t2, t3) = (t * t, t * t * t);
+        let (h00, h10, h01, h11) = (
+            2.0 * t3 - 3.0 * t2 + 1.0,
+            t3 - 2.0 * t2 + t,
+            -2.0 * t3 + 3.0 * t2,
+            t3 - t2,
+        );
+        (
+            h00 * a.0 + h10 * ta.0 + h01 * b.0 + h11 * tb.0,
+            h00 * a.1 + h10 * ta.1 + h01 * b.1 + h11 * tb.1,
+        )
+    };
     let mut path = vec![a, b];
     let mut depth = 0u64;
     let mut seg = ps * 1.5;
@@ -1414,7 +1407,7 @@ fn meander(a: (f64, f64), b: (f64, f64), ps: f64, s: f64, hash: u64, c: f64) -> 
             let (lx, lz) = (q.0 - p.0, q.1 - p.1);
             let len = (lx * lx + lz * lz).sqrt().max(1e-9);
             let r = unit_f64(hash2(hash, depth << 32 | k as u64)) - 0.5;
-            let off = r * 0.45 * len;
+            let off = r * wander * len;
             next.push(p);
             next.push((mx - lz / len * off, mz + lx / len * off));
         }
@@ -1422,6 +1415,16 @@ fn meander(a: (f64, f64), b: (f64, f64), ps: f64, s: f64, hash: u64, c: f64) -> 
         path = next;
         seg *= 0.5;
         depth += 1;
+    }
+    // The wander laid on the curve instead of the chord.
+    let last = (path.len() - 1) as f64;
+    for (k, p) in path.iter_mut().enumerate() {
+        let t = k as f64 / last;
+        let (cx, cz) = spine(t);
+        *p = (
+            cx + p.0 - (a.0 + chord.0 * t),
+            cz + p.1 - (a.1 + chord.1 * t),
+        );
     }
     path
 }
@@ -1434,248 +1437,6 @@ fn catmull(p: [f64; 4], t: f64) -> f64 {
         + (-p[0] + p[2]) * t
         + (2.0 * p[0] - 5.0 * p[1] + 4.0 * p[2] - p[3]) * t2
         + (-p[0] + 3.0 * p[1] - 3.0 * p[2] + p[3]) * t3)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Ord32(f32);
-impl Eq for Ord32 {}
-impl PartialOrd for Ord32 {
-    fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(o))
-    }
-}
-impl Ord for Ord32 {
-    fn cmp(&self, o: &Self) -> std::cmp::Ordering {
-        self.0.total_cmp(&o.0)
-    }
-}
-
-/// Priority-Flood+ε over an n × n span from its base cells, so every other cell drains. A
-/// hollow up to `breach` deep is drained by cutting its way out (the path the flood came by
-/// lowered below it, as a stream would have cut it: Lindsay 2016); a deeper one is filled to
-/// its brim, a lake.
-fn fill(h: &mut [f32], base: &[bool], n: usize, eps: f32, breach: f32) {
-    let mut closed = base.to_vec();
-    let mut from = vec![u32::MAX; h.len()];
-    let mut open: BinaryHeap<Reverse<(Ord32, u32)>> = BinaryHeap::new();
-    let mut pit: VecDeque<u32> = VecDeque::new();
-    for k in 0..h.len() {
-        if base[k] {
-            open.push(Reverse((Ord32(h[k]), k as u32)));
-        }
-    }
-    while let Some(c) = pit
-        .pop_front()
-        .or_else(|| open.pop().map(|Reverse((_, c))| c))
-    {
-        let c = c as usize;
-        let (u, w) = ((c % n) as i64, (c / n) as i64);
-        for &(du, dw) in &D8 {
-            let (nu, nw) = (u + du, w + dw);
-            if nu < 0 || nw < 0 || nu >= n as i64 || nw >= n as i64 {
-                continue;
-            }
-            let nb = (nw * n as i64 + nu) as usize;
-            if closed[nb] {
-                continue;
-            }
-            closed[nb] = true;
-            from[nb] = c as u32;
-            let hc = h[c];
-            if h[nb] <= hc + eps {
-                // A hollow below the sea's level is not cut through, which would let the sea in.
-                if h[nb] >= 0.0
-                    && hc - h[nb] <= breach
-                    && can_cut(h, base, &from, c, h[nb] - eps, eps)
-                {
-                    // Cut the way out: down the flood's path, each cell below the last.
-                    let mut level = h[nb] - eps;
-                    let mut p = c;
-                    while !base[p] && h[p] > level {
-                        h[p] = level;
-                        level -= eps;
-                        if from[p] == u32::MAX {
-                            break;
-                        }
-                        p = from[p] as usize;
-                    }
-                    open.push(Reverse((Ord32(h[nb]), nb as u32)));
-                } else {
-                    h[nb] = hc + eps;
-                    pit.push_back(nb as u32);
-                }
-            } else {
-                open.push(Reverse((Ord32(h[nb]), nb as u32)));
-            }
-        }
-    }
-}
-
-/// Whether the flood's path back from `c` can be cut to fall from `level`: it must reach a fixed
-/// cell (the sea, a channel, the span's edge) that lies lower still, as fixed cells are not cut.
-fn can_cut(h: &[f32], base: &[bool], from: &[u32], c: usize, mut level: f32, eps: f32) -> bool {
-    let mut p = c;
-    loop {
-        if base[p] {
-            return h[p] <= level;
-        }
-        if h[p] <= level {
-            return true;
-        }
-        level -= eps;
-        if from[p] == u32::MAX {
-            return true;
-        }
-        p = from[p] as usize;
-    }
-}
-
-/// How deep (m) a hollow may be and still be cut through at a level, rather than hold a lake:
-/// as deep as the level's relief makes its hollows, so only the deepest hold water. Rivers keep
-/// pace with the land's rise, so a mountain range drains through its valleys; lakes are where
-/// the ground sank or the parent held one.
-fn breach_depth(level: usize) -> f32 {
-    match level {
-        1 => 400.0,
-        2 => 100.0,
-        _ => 25.0,
-    }
-}
-
-/// Steepest-descent receivers; channels keep theirs, base cells drain out.
-fn steepest(h: &[f32], base: &[bool], channel: &[bool], fixed: &[u8], n: usize, s: f32) -> Vec<u8> {
-    let mut rec = vec![OUTLET; h.len()];
-    for k in 0..h.len() {
-        if channel[k] {
-            rec[k] = fixed[k];
-            continue;
-        }
-        if base[k] {
-            continue;
-        }
-        let (u, w) = ((k % n) as i64, (k / n) as i64);
-        let mut best = OUTLET;
-        let mut best_slope = 0.0f32;
-        for (code, &(du, dw)) in D8.iter().enumerate() {
-            let (nu, nw) = (u + du, w + dw);
-            if nu < 0 || nw < 0 || nu >= n as i64 || nw >= n as i64 {
-                continue;
-            }
-            let nb = (nw * n as i64 + nu) as usize;
-            let drop = h[k] - h[nb];
-            if drop > 0.0 {
-                let d = if du != 0 && dw != 0 { s * 1.414 } else { s };
-                if drop / d > best_slope {
-                    best_slope = drop / d;
-                    best = code as u8;
-                }
-            }
-        }
-        rec[k] = best;
-    }
-    rec
-}
-
-/// The receiver's index of a cell, if any.
-#[inline]
-fn target(k: usize, code: u8, n: usize) -> Option<usize> {
-    if code == OUTLET {
-        return None;
-    }
-    let (du, dw) = D8[code as usize];
-    let (u, w) = ((k % n) as i64 + du, (k / n) as i64 + dw);
-    (u >= 0 && w >= 0 && u < n as i64 && w < n as i64).then(|| (w * n as i64 + u) as usize)
-}
-
-/// Outlets first, then every cell after the cell it drains to.
-fn stack(rec: &[u8], n: usize) -> Vec<u32> {
-    let len = rec.len();
-    // Each cell's donors, packed: those of cell r at donors[first[r]..first[r + 1]].
-    let recv: Vec<Option<usize>> = rec
-        .iter()
-        .enumerate()
-        .map(|(k, &code)| target(k, code, n))
-        .collect();
-    let mut first = vec![0u32; len + 1];
-    for r in recv.iter().flatten() {
-        first[r + 1] += 1;
-    }
-    for k in 0..len {
-        first[k + 1] += first[k];
-    }
-    let mut fill = first.clone();
-    let mut donors = vec![0u32; first[len] as usize];
-    for (k, r) in recv.iter().enumerate() {
-        if let Some(r) = *r {
-            donors[fill[r] as usize] = k as u32;
-            fill[r] += 1;
-        }
-    }
-    // Breadth first from the outlets: the order is the queue itself.
-    let mut order: Vec<u32> = (0..len as u32)
-        .filter(|&k| recv[k as usize].is_none())
-        .collect();
-    order.reserve(len - order.len());
-    let mut head = 0;
-    while head < order.len() {
-        let c = order[head] as usize;
-        head += 1;
-        order.extend_from_slice(&donors[first[c] as usize..first[c + 1] as usize]);
-    }
-    order
-}
-
-/// Discharge: each cell's own runoff carried downstream; a channel carries at least its
-/// parent river's.
-fn accumulate(
-    rec: &[u8],
-    order: &[u32],
-    rain: &[f32],
-    inflow: &[f32],
-    channel: &[bool],
-    n: usize,
-) -> Vec<f32> {
-    let mut q = rain.to_vec();
-    for &c in order.iter().rev() {
-        let c = c as usize;
-        if channel[c] {
-            q[c] = q[c].max(inflow[c]);
-        }
-        if let Some(r) = target(c, rec[c], n) {
-            q[r] += q[c];
-        }
-    }
-    q
-}
-
-/// Slopes steeper than `max_drop` per cell slump half their excess onto the lower neighbour.
-fn slump(h: &mut [f32], base: &[bool], n: usize, max_drop: f32) {
-    let src = h.to_vec();
-    for k in 0..h.len() {
-        if base[k] {
-            continue;
-        }
-        let (u, w) = ((k % n) as i64, (k / n) as i64);
-        let mut best: Option<(usize, f32)> = None;
-        for &(du, dw) in &D8 {
-            let (nu, nw) = (u + du, w + dw);
-            if nu < 0 || nw < 0 || nu >= n as i64 || nw >= n as i64 {
-                continue;
-            }
-            let nb = (nw * n as i64 + nu) as usize;
-            let d = if du != 0 && dw != 0 { 1.414 } else { 1.0 };
-            let excess = src[k] - src[nb] - max_drop * d;
-            if excess > best.map_or(0.0, |b| b.1) {
-                best = Some((nb, excess));
-            }
-        }
-        if let Some((nb, excess)) = best {
-            h[k] -= excess * 0.25;
-            if !base[nb] {
-                h[nb] += excess * 0.25;
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1782,6 +1543,41 @@ mod tests {
                 "level {level}: {mean:.1} m against its parent's {parent:.1} m"
             );
         }
+    }
+
+    #[test]
+    fn a_river_bends_through_its_nodes_instead_of_turning_at_them() {
+        // Two reaches round a right angle (nodes 8 cells apart), without wander: where one
+        // reach meets the next the course runs on (as chords it turned 90° there), and no piece
+        // of a cell turns far from the one before (a curve through the corner's node swings a
+        // little wide before it).
+        let nodes = [
+            (0.0, 0.0),
+            (8.0, 0.0),
+            (16.0, 0.0),
+            (16.0, 8.0),
+            (16.0, 16.0),
+        ];
+        let heading = |p: (f64, f64), q: (f64, f64)| (q.1 - p.1).atan2(q.0 - p.0).to_degrees();
+        let turn = |a: f64, b: f64| ((b - a + 540.0).rem_euclid(360.0) - 180.0).abs();
+        let mut course: Vec<(f64, f64)> = Vec::new();
+        for k in 1..3 {
+            let reach = (
+                Some(nodes[k - 1]),
+                nodes[k],
+                nodes[k + 1],
+                Some(nodes[k + 2]),
+            );
+            let path = meander(reach, (8.0, 1.0), 1, 1e9, 0.0);
+            assert_eq!((path[0], *path.last().unwrap()), (nodes[k], nodes[k + 1]));
+            course.extend(&path[usize::from(k > 1)..]);
+        }
+        let headings: Vec<f64> = course.windows(2).map(|w| heading(w[0], w[1])).collect();
+        let sharpest = headings
+            .windows(2)
+            .map(|h| turn(h[0], h[1]))
+            .fold(0.0, f64::max);
+        assert!(sharpest < 25.0, "the course turns {sharpest:.0}° at once");
     }
 
     #[test]

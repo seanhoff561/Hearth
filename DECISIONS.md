@@ -307,3 +307,4 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D296 (2026-10-09) Rain falls in some hours of a wet day: the weather's wet hours apart from its wet days
 - D297 (2026-10-09) T2's order: shadows first, then the relief from 30 m to 30 km, then walking scale
 - D298 (2026-10-09) The sun's shadows: cascades about the camera, the far side of things cast, the distant terrain in a fifth
+- D299 (2026-10-09) The relief by kind of land and height above base level; water spread over the slopes; rivers as curves

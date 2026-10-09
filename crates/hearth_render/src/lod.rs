@@ -606,6 +606,11 @@ impl LodRenderer {
         );
     }
 
+    /// Sets the planet places wrap on (a renderer made before its world came).
+    pub fn set_planet(&mut self, planet: Planet) {
+        self.planet = planet;
+    }
+
     /// Uploads (or replaces) a tile: its id, minimum corner in world blocks (X canonical), side,
     /// height range, ground (`GROUND_SIDE`² corners of `GROUND_BYTES`, or none) with its skirts'
     /// depth, canopy (as many vertices, or none), and quad records (`QUAD_BYTES` each), grouped

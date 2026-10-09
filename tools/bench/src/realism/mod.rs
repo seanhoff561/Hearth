@@ -11,6 +11,7 @@ mod global;
 mod images;
 pub mod metrics;
 mod photos;
+mod rivers;
 mod weather;
 
 use std::fmt::Write as _;
@@ -34,8 +35,10 @@ struct Kind {
     key: &'static str,
     name: &'static str,
     biome: Biome,
-    /// The generator's columns (at the grid's scale) that count: their height (m).
+    /// The generator's columns (at the grid's scale) that count: their height (m) and their
+    /// rain (mm a year), the real place's within some hundreds of metres and millimetres.
     heights: (f32, f32),
+    rain: (f32, f32),
     /// The lidar tile (in `refs/lidar`) and the SRTM tile (in `refs/srtm`) with the point at
     /// the centre of the thirty-metre window (latitude, longitude).
     lidar: &'static str,
@@ -49,6 +52,7 @@ const KINDS: &[Kind] = &[
         name: "forested hills (Oregon Coast Range)",
         biome: Biome::TemperateRainforest,
         heights: (150.0, 900.0),
+        rain: (1500.0, 3000.0),
         lidar: "USGS_1M_10_x41y481_OR_SouthCoast_2019_A19.tif",
         hgt: "N43W124.hgt",
         at: (43.45, -123.75),
@@ -58,6 +62,7 @@ const KINDS: &[Kind] = &[
         name: "rolling plains (south-central Iowa)",
         biome: Biome::TemperatePlains,
         heights: (100.0, 450.0),
+        rain: (700.0, 1000.0),
         lidar: "USGS_1M_15_x45y454_IA_SouthCentral_2020_D20.tif",
         hgt: "N41W094.hgt",
         at: (41.3, -93.5),
@@ -69,6 +74,7 @@ const KINDS: &[Kind] = &[
         // lie mostly on cold low ground.
         biome: Biome::AlpineMeadow,
         heights: (1500.0, 3000.0),
+        rain: (400.0, 2500.0),
         lidar: "USGS_one_meter_x29y538_MT_GlacierNP_2016.tif",
         hgt: "N48W114.hgt",
         at: (48.6, -113.75),
@@ -78,6 +84,7 @@ const KINDS: &[Kind] = &[
         name: "basin and range desert (Mojave, Nevada)",
         biome: Biome::HotDesert,
         heights: (300.0, 1500.0),
+        rain: (50.0, 300.0),
         lidar: "USGS_1M_11_x74y407_NV_ClarkCounty_2018_C19.tif",
         hgt: "N36W115.hgt",
         at: (36.45, -114.55),
@@ -87,6 +94,7 @@ const KINDS: &[Kind] = &[
         name: "boreal shield with lakes (north-east Minnesota)",
         biome: Biome::BorealForest,
         heights: (150.0, 700.0),
+        rain: (550.0, 950.0),
         lidar: "USGS_1M_15_x61y530_MN_LakeCounty_2018_C20.tif",
         hgt: "N47W092.hgt",
         at: (47.75, -91.55),
@@ -107,6 +115,8 @@ struct Args {
     kinds: Vec<String>,
     /// Windows a side in the planet-wide comparison.
     count: usize,
+    /// Only the thirty-metre windows (the view from a hill), not the walking scale's.
+    wide: bool,
 }
 
 fn parse(args: &[String]) -> anyhow::Result<Args> {
@@ -118,6 +128,7 @@ fn parse(args: &[String]) -> anyhow::Result<Args> {
         out: PathBuf::from("bench-out/realism"),
         kinds: KINDS.iter().map(|k| k.key.to_owned()).collect(),
         count: 200,
+        wide: false,
     };
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -137,6 +148,7 @@ fn parse(args: &[String]) -> anyhow::Result<Args> {
             "--out" => a.out = PathBuf::from(val()?),
             "--kinds" => a.kinds = val()?.split(',').map(str::to_owned).collect(),
             "--count" => a.count = val()?.parse()?,
+            "--wide" => a.wide = true,
             other => anyhow::bail!("unknown option {other}"),
         }
     }
@@ -161,6 +173,15 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         }
         Some("levels") => levels(&parse(&args[1..])?),
         Some("weather") => weather::run(),
+        Some("rivers") => {
+            let a = parse(&args[1..])?;
+            let grid = Arc::new(crate::relief::cached_grid(a.seed, a.planet, a.res)?);
+            std::fs::create_dir_all(a.out.join("terrain"))?;
+            rivers::run(
+                &Terrain::new(grid),
+                &a.out.join("terrain").join("river.png"),
+            )
+        }
         // Photographs: the searches to run, then the pictures to fetch (for the fetch script),
         // and the contact sheet of the suite beside them.
         Some("photo-queries") => {
@@ -185,10 +206,10 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
             Ok(())
         }
         _ => anyhow::bail!(
-            "bench realism terrain|global|levels|weather|images DIR|sheet|photo-queries|photo-pick|\
+            "bench realism terrain|global|levels|rivers|weather|images DIR|sheet|photo-queries|photo-pick|\
              missing-tiles \
-             [--seed N] [--planet earth|standard] [--kinds a,b] [--count N] [--refs DIR] \
-             [--out DIR]"
+             [--seed N] [--planet earth|standard] [--kinds a,b] [--count N] [--wide] \
+             [--refs DIR] [--out DIR]"
         ),
     }
 }
@@ -336,31 +357,40 @@ fn terrain(a: &Args) -> anyhow::Result<()> {
     for kind in KINDS.iter().filter(|k| a.kinds.iter().any(|s| s == k.key)) {
         let t1 = Instant::now();
         // The kinds' heights in blocks (a small planet's blocks stand for more than a metre).
-        let v = t.vertical_scale();
-        let (lo, hi) = (kind.heights.0 * v, kind.heights.1 * v);
-        let found = if kind.key == "mountains" {
-            // The grid's heights are metres.
-            mountain_site(&t, kind.heights.0, kind.heights.1)
-        } else {
-            None
-        };
-        let found = found.or_else(|| {
-            t.find_biome(kind.biome, 20_000.0, |s| (lo..hi).contains(&s.height))
-                .or_else(|| {
-                    println!(
-                        "{}: no {:?} between {lo} and {hi} m; its heart at any height",
-                        kind.key, kind.biome
-                    );
-                    t.find_biome(kind.biome, 20_000.0, |_| true)
-                })
-        });
+        let found = site_of(&t, kind);
         let Some((x, z)) = found else {
             println!("{}: no {:?}", kind.key, kind.biome);
             continue;
         };
         let s = t.sample(x, z);
+        // The relief the generator gives the place (its height above base level, the
+        // roughness's amplitude and valley spacing).
+        let rough = t.relief().map_or(String::new(), |r| {
+            let (gx, gz) = t.grid.geom.grid_coords(x as f64, z as f64);
+            let k = r.roughness_at(gx, gz);
+            let g = &*t.grid;
+            format!(
+                "; {:.0} m above base level, relief {:.0} m at {:.0} m; {:.0} mm, {:.1} °C, \
+                 province {}, uplift {:.0} m{}",
+                r.above_base(gx, gz),
+                k.amp,
+                k.spacing,
+                g.precipitation.bilinear(gx, gz),
+                g.temperature.bilinear(gx, gz),
+                g.province[g.cell_at(x as f64, z as f64)],
+                g.uplift.bilinear(gx, gz),
+                if g.flags[g.cell_at(x as f64, z as f64)]
+                    & hearth_worldgen::planet::flags::ENDORHEIC
+                    != 0
+                {
+                    ", a closed basin"
+                } else {
+                    ""
+                }
+            )
+        });
         println!(
-            "{} — {}: {:?} at {x}, {z} (height {:.0} m) found in {:.1} s",
+            "{} — {}: {:?} at {x}, {z} (height {:.0} m{rough}) found in {:.1} s",
             kind.key,
             kind.name,
             s.biome,
@@ -369,17 +399,23 @@ fn terrain(a: &Args) -> anyhow::Result<()> {
         );
 
         // Walking scale.
-        let lidar = Lidar::load(&a.refs.join("lidar").join(kind.lidar)).ok();
+        let lidar = (!a.wide)
+            .then(|| Lidar::load(&a.refs.join("lidar").join(kind.lidar)).ok())
+            .flatten();
         let real: Vec<Dem> = lidar.as_ref().map_or(Vec::new(), |l| {
             lidar_windows(l)
                 .into_iter()
                 .map(|(x, y)| l.window(x, y, N))
                 .collect()
         });
-        let gens: Vec<Dem> = generated_windows(&t, x, z)
-            .into_iter()
-            .map(|(x, z)| generated(&t, x, z, N, 1))
-            .collect();
+        let gens: Vec<Dem> = if a.wide {
+            Vec::new()
+        } else {
+            generated_windows(&t, x, z)
+                .into_iter()
+                .map(|(x, z)| generated(&t, x, z, N, 1))
+                .collect()
+        };
         for (i, g) in gens.iter().enumerate() {
             let r = real.get(i);
             save_pair(
@@ -460,8 +496,25 @@ fn site_of(t: &Terrain, kind: &Kind) -> Option<(i32, i32)> {
     {
         return Some(p);
     }
-    t.find_biome(kind.biome, 20_000.0, |s| (lo..hi).contains(&s.height))
-        .or_else(|| t.find_biome(kind.biome, 20_000.0, |_| true))
+    let rains = kind.rain.0..kind.rain.1;
+    let matched = |s: &hearth_worldgen::ColumnSample| {
+        (lo..hi).contains(&s.height) && rains.contains(&s.precipitation)
+    };
+    t.find_biome(kind.biome, 20_000.0, matched)
+        .or_else(|| {
+            println!(
+                "{}: no {:?} between {lo} and {hi} m with {:?} mm; at those heights",
+                kind.key, kind.biome, kind.rain
+            );
+            t.find_biome(kind.biome, 20_000.0, |s| (lo..hi).contains(&s.height))
+        })
+        .or_else(|| {
+            println!(
+                "{}: no {:?} between {lo} and {hi} m; its heart at any height",
+                kind.key, kind.biome
+            );
+            t.find_biome(kind.biome, 20_000.0, |_| true)
+        })
 }
 
 /// What each refinement level and the blocks' own noise give the ground (T §3.3, the
