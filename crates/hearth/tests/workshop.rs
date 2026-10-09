@@ -247,6 +247,7 @@ fn work_left_part_done_is_taken_up_where_it_was_left() {
     w.server.send(ToServer::Act {
         process: "hearth:dig_by_hand".into(),
         aim,
+        at: None,
         hand: None,
         with: None,
     });
@@ -263,6 +264,7 @@ fn work_left_part_done_is_taken_up_where_it_was_left() {
     w.server.send(ToServer::Act {
         process: "hearth:dig_by_hand".into(),
         aim,
+        at: None,
         hand: None,
         with: None,
     });
@@ -270,6 +272,58 @@ fn work_left_part_done_is_taken_up_where_it_was_left() {
     w.pump();
     let again = w.work_done.expect("digging again");
     assert!(again >= before, "taken up at {again}, left at {before}");
+    drop(w);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A dig takes its earth where the look rested when it began (T §2.3: the patch its highlight
+/// showed), not the middle of the block looked at: the ground falls there and not a stride off
+/// across the block.
+#[test]
+fn a_dig_takes_its_earth_where_the_look_rested() {
+    let dir = temp("workshop-dig-point");
+    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 11);
+    let soil = w.ground();
+    let surface = |w: &World, x: f64, z: f64| {
+        let above = DVec3::new(x, soil.y as f64 + 3.0, z);
+        hearth_world::ground::raycast(&w.mirror, &w.reg, above, DVec3::NEG_Y, 8.0)
+            .map_or(f64::NEG_INFINITY, |h| h.at.y)
+    };
+    // Two points of the block's ground 0.85 m apart, either side of its middle; the look rests
+    // on the first.
+    let (cx, cz) = (soil.x as f64 + 0.5, soil.z as f64 + 0.5);
+    let (here, there) = ((cx + 0.425, cz), (cx - 0.425, cz));
+    let before = (surface(&w, here.0, here.1), surface(&w, there.0, there.1));
+    let point = DVec3::new(here.0, before.0, here.1);
+    w.server.send(ToServer::Act {
+        process: "hearth:dig_by_hand".into(),
+        aim: AimAt::Block {
+            pos: soil,
+            top: true,
+        },
+        at: Some(point),
+        hand: None,
+        with: None,
+    });
+    // Half an hour of digging (of four hours' work).
+    w.run(20 * 60 * 30);
+    w.pump();
+    assert!(
+        w.work_done.is_some_and(|d| d > 0.05),
+        "digging: {:?}",
+        w.work_done
+    );
+    let fell = |(x, z): (f64, f64), was: f64| was - surface(&w, x, z);
+    let (at_point, across) = (fell(here, before.0), fell(there, before.1));
+    println!("the ground fell {at_point:.2} m where the look rested, {across:.2} m across");
+    assert!(at_point > 0.08, "dug where looked at: {at_point}");
+    // Half an hour moves a tenth of a cubic metre or so, shared toward the point: the ground
+    // there falls a centimetre more than across the block (the difference grows with the hole,
+    // `hearth_world`'s `a_hole_is_centred_where_the_tool_strikes`).
+    assert!(
+        at_point > across + 0.004,
+        "{at_point} there, {across} across the block"
+    );
     drop(w);
     let _ = std::fs::remove_dir_all(&dir);
 }

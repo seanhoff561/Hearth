@@ -31,6 +31,22 @@ tools/shots/t1_birds.shots`); how they look on a real GPU is the owner's check.
 - Not judged here: photographs of real skin under the same lights (they are the owner's to put
   side by side, and stay out of the repository); how a real GPU draws the pores up close.
 
+## T1.3 The thing itself
+`tools/shots/t1_aim.shots` (summer, temperate plains, 60° lens, eye height; `look=` turns the
+camera onto the part named and highlights what the middle of the view meets, as in play):
+- `aim_berries.jpg`, `aim_berries_detail.jpg` (×2, nearest neighbour) — a bilberry, the eyes on
+  its berries: each berry outlined on its own, the leaves not.
+- `aim_bush.jpg` — the same bilberry, the eyes on its leaves: the whole sprite outlined along
+  its own pixels, gaps and berries included.
+- `aim_raspberries.jpg` — a raspberry two blocks tall, the eyes on its fruit at chest height:
+  the red fruit outlined, nothing else.
+- `aim_branch.jpg` — a young hazel's branch (a limb block): its own crossed limbs outlined.
+- `aim_stone.jpg`, `aim_stick.jpg` — a granite cobble and an oak stick lying in the grass, each
+  outlined by the box it is drawn as (the other lying unlit beside it).
+- `aim_dig.jpg` — the grass ground: the patch a dig there would take, a soft wash with a
+  brighter rim lying on the ground (and on the plant standing in it).
+- `aim_water.jpg` — the shallows: a ring on the water's surface about the point looked at.
+
 ## T1.4 The globe in relief
 `tools/shots/t1_globe.shots` (seed 7, the Earth). Before: `docs/review/e4.1/globe.jpg` (flat biome
 colours, a slope shade).

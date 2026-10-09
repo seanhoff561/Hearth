@@ -63,7 +63,7 @@ fn bramble(seed: u64) -> Tex {
         let bx = x0 + lean * 3;
         for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
             let dark = rand01(seed, c, dx + dy * 2) < 0.5;
-            t.put(
+            t.put_part(
                 bx + dx,
                 3 + dy,
                 if dark { [34, 18, 40] } else { [70, 26, 58] },

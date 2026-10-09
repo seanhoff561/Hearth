@@ -44,8 +44,8 @@ fast-forward time-lapses them at most 120 times at 60 frames a second.
 | Rain | real | falls at 7.2–9.8 m/s (8.5 × 0.85–1.15), carried by the ten-metre wind (summed) | `precip.rs`, `precip.wgsl` (`vs_main`, `whole_speed`, `whole_turns`) | P5 (`motion_timing`) |
 | Snow | real | falls at 0.8–1.3 m/s, wobbling 0.4 m over 5–6 s, carried by the wind (summed) | `precip.wgsl` (`vs_main`) | P5 (`motion_timing`) |
 | Sunlight's caustics under water | real | two layers drifting at 0.25 and 0.20 m/s | `terrain.wgsl` (`caustic_light`) | P5 (`motion_timing`) |
-| Plants' and leaves' sway | real | two waves, periods of 3.7 and 2.2 s, the amplitude with the wind | `terrain.wgsl` (`wind`) | P5 (`motion_timing`) |
-| Animated textures | real | in ticks of 1/20 s, each texture's frames at its own frame time | `terrain.wgsl` (`animated_layer`) | P5 (`motion_timing`) |
+| Plants' and leaves' sway | real | two waves, periods of 3.7 and 2.2 s, the amplitude with the wind | `common.wgsl` (`wind`) | P5 (`motion_timing`) |
+| Animated textures | real | in ticks of 1/20 s, each texture's frames at its own frame time | `common.wgsl` (`animated_layer`) | P5 (`motion_timing`) |
 | Smoke | real | a puff lives 40 s by a fire (300 s for a far plume), rising first at 2.1–3.5 m/s and slowing, swelling, carried off at the wind's speed by the end of its life | `smoke.wgsl` (`vs_main`) | P5 (`motion_timing`) |
 | Heat shimmer (a fevered or overheated body) | real | two waves of 0.3–0.6 Hz | `post.wgsl` (`graded`) | P5 (`motion_timing`) |
 | The eye's highlight meter | frame time | adapts with a time constant of 0.67 s | `meter.wgsl` (`meter_main`) | P5 (`motion_timing`) |

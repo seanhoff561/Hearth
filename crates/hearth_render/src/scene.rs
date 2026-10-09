@@ -149,6 +149,9 @@ pub struct SceneRenderer {
     /// The player's body's senses on the image.
     pub senses: crate::post::Senses,
     pub post: PostProcess,
+    /// The thing looked at, outlined by its own shape (T §2.3), and what it is this frame.
+    pub outline: crate::outline::OutlineRenderer,
+    pub highlight: Option<crate::outline::Highlight>,
     /// Adapted illuminance (natural log of lux).
     adapted: Option<f32>,
     pub exposure: f32,
@@ -191,10 +194,14 @@ impl SceneRenderer {
         let people = crate::body::PeopleRenderer::new(ctx, terrain.globals_bind().0);
         let trees =
             crate::trees::TreeRenderer::new(ctx, terrain.globals_bind().0, crate::post::HDR_FORMAT);
+        let outline =
+            crate::outline::OutlineRenderer::new(ctx, terrain.globals_bind().0, output_format);
         Self {
             figures,
             people,
             trees,
+            outline,
+            highlight: None,
             senses: crate::post::Senses::default(),
             post: PostProcess::new(ctx, output_format),
             precip: PrecipRenderer::new(ctx),
@@ -255,6 +262,7 @@ impl SceneRenderer {
         env: &Environment,
         dt: f32,
     ) {
+        let output = size;
         let size = self.render_size(size);
         // With TAA, every pass sees the camera jittered by this frame's sub-pixel offset.
         let unjittered = *camera;
@@ -369,6 +377,14 @@ impl SceneRenderer {
                 camera.pos,
             )
         });
+        self.outline.prepare(
+            ctx,
+            self.highlight.as_ref(),
+            unjittered.view_proj(aspect),
+            self.inv_view_proj,
+            size,
+            output,
+        );
         let hzb = self.terrain.hzb().map(|(_, size, mips)| (size, mips));
         self.lod.prepare(
             ctx,
@@ -553,6 +569,17 @@ impl SceneRenderer {
             &self.senses,
             timer.as_mut(),
         );
+        if self.outline.active() {
+            self.outline.render(
+                ctx,
+                enc,
+                self.terrain.globals_bind().1,
+                depth,
+                output,
+                render,
+            );
+            mark(&mut timer, enc, "outline");
+        }
         if let Some(t) = &mut timer {
             t.end_frame(enc, self.terrain.cull_counters());
         }

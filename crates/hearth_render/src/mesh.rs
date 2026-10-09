@@ -1168,6 +1168,33 @@ fn pack_corner(p: Vec3, uv: Vec2, light: u8, ao: u8) -> [u32; 3] {
     ]
 }
 
+/// The face of a full cube toward `d` as the packed path draws it alone: its corners in the
+/// shader's order and its texels as the shader maps them, turned by the face's rotation (a block's
+/// own shape, for the aim and its highlight, T1.3).
+pub fn cube_face(d: Direction, tex: FaceTex, waving: bool) -> ModelQuad {
+    let uv = [
+        Vec2::new(0.0, 16.0),
+        Vec2::new(16.0, 16.0),
+        Vec2::new(16.0, 0.0),
+        Vec2::new(0.0, 0.0),
+    ];
+    let turn = |t: Vec2| match tex.rot & 3 {
+        1 => Vec2::new(t.y, -t.x),
+        2 => -t,
+        3 => Vec2::new(-t.y, t.x),
+        _ => t,
+    };
+    ModelQuad {
+        pos: face_corner_offsets(d).map(|o| o.as_vec3()),
+        uv: uv.map(turn),
+        tex,
+        dir: Some(d),
+        cull: Some(d),
+        shade: true,
+        waving,
+    }
+}
+
 /// Converts a packed cube face (1×1..16×16) to a general quad for the translucent path.
 fn packed_to_general(q: &PackedQuad, d: Direction) -> GeneralQuad {
     let x = (q.a & 15) as i32;

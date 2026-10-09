@@ -234,6 +234,14 @@ pub struct ShotSpec {
     pub near_water: bool,
     /// The camera's pitch aimed at the group sought (a `seek` without a `pitch`).
     pub aim: bool,
+    /// What the eyes rest on, highlighted as in play (T §2.3): `centre` what the middle of the
+    /// view meets; the camera turned first to the blocks placed's `fruit` or `leaves` (the texel
+    /// of them nearest the middle of the view that is seen), the first `thing` set down, the
+    /// nearest `water`'s surface, or `block:<name ending>` (a branch: `block:_branch`).
+    pub look: Option<String>,
+    /// Things set on the ground before the camera, drawn as they lie: (item, metres ahead, to
+    /// the right, turned by degrees).
+    pub things: Vec<(String, f64, f64, f32)>,
     /// Whether `yaw` was given (a `near` place faces its sight otherwise).
     pub yaw_given: bool,
 }
@@ -330,6 +338,8 @@ impl Default for ShotSpec {
             near_water: false,
             yaw_given: false,
             aim: false,
+            look: None,
+            things: Vec::new(),
         }
     }
 }
@@ -489,6 +499,17 @@ impl ShotSpec {
                 }
                 // `farsmoke=4000`: a far fire's smoke 4 km ahead, repeatable.
                 "farsmoke" => spec.far_smoke.push(v.parse()?),
+                // `look=centre|fruit|leaves`: what the eyes rest on, highlighted.
+                "look" => spec.look = Some(v.to_owned()),
+                // `thing=hearth:flint_nodule@1.6:0.2:30` (ahead : right : turned), repeatable.
+                "thing" => {
+                    let (id, at) = v.split_once('@').unwrap_or((v, "2"));
+                    let mut n = at.split(':');
+                    let ahead = n.next().unwrap_or("2").parse()?;
+                    let right = n.next().unwrap_or("0").parse()?;
+                    let yaw = n.next().unwrap_or("0").parse()?;
+                    spec.things.push((id.to_owned(), ahead, right, yaw));
+                }
                 "taa" => spec.taa = v.parse()?,
                 "ui" => spec.ui = Some(v.parse()?),
                 "body" => spec.body = v.parse()?,
@@ -1114,6 +1135,7 @@ pub fn render_shot(
         .put
         .iter()
         .map(|(state, east, south, up)| (state, camera.pos.x + east, camera.pos.z + south, up));
+    let mut placed_at = Vec::new();
     for (state, px, pz, up) in placed.chain(put) {
         let s = lw
             .reg
@@ -1127,6 +1149,7 @@ pub fn render_shot(
         let reg = lw.reg.clone();
         lw.map.set_block(pos, s, &reg);
         lw.light.block_changed(&mut lw.map, &reg, pos);
+        placed_at.push(pos);
     }
     // Trees grown in front of the camera, their feet on the ground.
     if !spec.trees.is_empty() {
@@ -1194,6 +1217,7 @@ pub fn render_shot(
     }
     let models = BlockModels::build(&lw.reg, atlas);
     let meshes = lw.mesh(&models, &positions, MeshOptions::default());
+    let shapes = crate::aim::Shapes::with_models(models, std::sync::Arc::new(atlas.clone()));
     let mut scene = SceneRenderer::new(
         ctx,
         atlas,
@@ -1597,6 +1621,222 @@ pub fn render_shot(
             *color,
             (lw.map.sky_light(b), lw.map.block_light(b)),
         ));
+    }
+    // Things set on the ground before the camera, as they lie (`thing=`).
+    let first_thing = boxes.len();
+    if !spec.things.is_empty() {
+        let items = hearth_items::Items::from_content(&lw.content);
+        let f = camera.forward().as_dvec3();
+        let flat = DVec3::new(f.x, 0.0, f.z).normalize_or(DVec3::Z);
+        let side = DVec3::new(-flat.z, 0.0, flat.x);
+        for (id, ahead, right, turn) in &spec.things {
+            let k = items
+                .get(id)
+                .ok_or_else(|| anyhow::anyhow!("thing={id}: no such thing"))?;
+            let at = camera.pos + flat * *ahead + side * *right;
+            let ground = hearth_world::ground::raycast(
+                &lw.map,
+                &lw.reg,
+                DVec3::new(at.x, camera.pos.y + 2.0, at.z),
+                DVec3::NEG_Y,
+                40.0,
+            )
+            .map_or(lw.surface_y(at.x, at.z), |g| g.at.y);
+            let size = glam::Vec3::from(k.resting_m());
+            let c = DVec3::new(at.x, ground + size.y as f64 / 2.0, at.z);
+            let b = hearth_math::BlockPos::containing(c + DVec3::Y * 0.3);
+            let place = glam::Affine3A::from_scale_rotation_translation(
+                size,
+                glam::Quat::from_rotation_y(turn.to_radians()),
+                (c - camera.pos).as_vec3(),
+            );
+            boxes.push(hearth_character::solid(
+                place,
+                k.color,
+                (lw.map.sky_light(b), lw.map.block_light(b)),
+            ));
+        }
+    }
+    // What the eyes rest on, highlighted as in play (`look=`).
+    if let Some(look) = &spec.look {
+        let leaf = |p: hearth_math::BlockPos| {
+            let col = hearth_math::ColumnPos::new(p.x >> 4, p.z >> 4);
+            let t = crate::scene::column_tints(&lw.generator, col);
+            crate::aim::leaf_cover(
+                t.climate[((p.z & 15) * 16 + (p.x & 15)) as usize],
+                year_frac,
+            )
+        };
+        const REACH: f64 = 8.0;
+        let pick = |dir: DVec3| {
+            crate::aim::pick_block(&lw.map, &lw.reg, &shapes, (camera.pos, dir), REACH, &leaf)
+        };
+        // Turned to the fruit or the leaves of the first block placed: the texel of them
+        // nearest the middle of the view that the look meets.
+        let want: Option<(fn(u8) -> bool, crate::aim::Part)> = match look.as_str() {
+            "fruit" => Some((|a| a == hearth_texgen::PART_ALPHA, crate::aim::Part::Fruit)),
+            "leaves" => Some((|a| a == 255, crate::aim::Part::Whole)),
+            _ => None,
+        };
+        // `look=block:_branch`: turned to the block of a name ending so, within reach, nearest
+        // the middle of the view, that the look meets (at the middle of its own quads).
+        if let Some(suffix) = look.strip_prefix("block:") {
+            let forward = camera.forward().as_dvec3();
+            let c = hearth_math::BlockPos::containing(camera.pos);
+            let mut found = Vec::new();
+            for dy in -7..=7 {
+                for dz in -7..=7 {
+                    for dx in -7..=7 {
+                        let p = hearth_math::BlockPos::new(c.x + dx, c.y + dy, c.z + dz);
+                        let Some(s) = lw.map.block(p) else { continue };
+                        if s.is_air() || !lw.reg.block_of(s).name.path().ends_with(suffix) {
+                            continue;
+                        }
+                        let (mut sum, mut n) = (DVec3::ZERO, 0.0);
+                        shapes.models.each_quad(s, |q, _| {
+                            for v in q.pos {
+                                sum += v.as_dvec3();
+                                n += 1.0;
+                            }
+                        });
+                        if n > 0.0 {
+                            let at = DVec3::new(p.x as f64, p.y as f64, p.z as f64) + sum / n;
+                            found.push((p, (at - camera.pos).normalize()));
+                        }
+                    }
+                }
+            }
+            found.sort_by(|a, b| b.1.dot(forward).total_cmp(&a.1.dot(forward)));
+            let d = found
+                .into_iter()
+                .find(|&(p, d)| {
+                    matches!(pick(d), Some((_, crate::aim::Aim::Block { pos, .. })) if pos == p)
+                })
+                .map(|(_, d)| d)
+                .ok_or_else(|| anyhow::anyhow!("look={look}: none within reach is seen"))?;
+            camera.pitch = (-d.y).asin().to_degrees() as f32;
+            camera.yaw = (-d.x).atan2(d.z).to_degrees() as f32;
+        } else if look == "thing" {
+            // Turned to the first thing set down (its box's middle).
+            let b = boxes
+                .get(first_thing)
+                .ok_or_else(|| anyhow::anyhow!("look=thing: set a thing down first"))?;
+            let d = glam::Vec3::new(b.rows[0][3], b.rows[1][3], b.rows[2][3])
+                .as_dvec3()
+                .normalize();
+            camera.pitch = (-d.y).asin().to_degrees() as f32;
+            camera.yaw = (-d.x).atan2(d.z).to_degrees() as f32;
+        } else if look == "water" {
+            // Turned to the nearest point of water's surface before the camera that the look
+            // meets: the middle of a water block's top, open to the sky.
+            let forward = camera.forward().as_dvec3();
+            let c = hearth_math::BlockPos::containing(camera.pos);
+            let mut found = Vec::new();
+            for dy in -7..=1 {
+                for dz in -7..=7 {
+                    for dx in -7..=7 {
+                        let p = hearth_math::BlockPos::new(c.x + dx, c.y + dy, c.z + dz);
+                        let wet = |p| {
+                            lw.map
+                                .block(p)
+                                .is_some_and(|s| lw.reg.has(s, hearth_world::StateFlags::WATER))
+                        };
+                        if !wet(p) || wet(p.up()) {
+                            continue;
+                        }
+                        let at = DVec3::new(p.x as f64 + 0.5, p.y as f64 + 0.85, p.z as f64 + 0.5);
+                        let d = (at - camera.pos).normalize();
+                        if d.dot(forward) > 0.5 {
+                            found.push((p, d, (at - camera.pos).length()));
+                        }
+                    }
+                }
+            }
+            found.sort_by(|a, b| a.2.total_cmp(&b.2));
+            let d = found
+                .into_iter()
+                .find(|&(p, d, _)| {
+                    matches!(pick(d), Some((_, crate::aim::Aim::Block { pos, part: crate::aim::Part::Water, .. })) if pos == p)
+                })
+                .map(|(_, d, _)| d)
+                .ok_or_else(|| anyhow::anyhow!("look=water: no water's surface within reach"))?;
+            camera.pitch = (-d.y).asin().to_degrees() as f32;
+            camera.yaw = (-d.x).atan2(d.z).to_degrees() as f32;
+        } else if want.is_none() && !matches!(look.as_str(), "centre" | "center" | "true") {
+            anyhow::bail!(
+                "look={look}: centre, fruit, leaves, thing, water or block:<name ending>"
+            );
+        }
+        if let Some((alpha, part)) = want {
+            // Of the blocks placed (a tall plant's fruit is in its upper half).
+            if placed_at.is_empty() {
+                anyhow::bail!("look={look}: place a block first");
+            }
+            let forward = camera.forward().as_dvec3();
+            let mut texels: Vec<(hearth_math::BlockPos, DVec3)> = Vec::new();
+            for &pos in &placed_at {
+                let s = lw.map.block(pos).unwrap_or(hearth_world::BlockStateId::AIR);
+                let corner = DVec3::new(pos.x as f64, pos.y as f64, pos.z as f64);
+                texels.extend(
+                    shapes
+                        .texels(s, corner, alpha)
+                        .into_iter()
+                        .map(|p| (pos, (p - camera.pos).normalize())),
+                );
+            }
+            texels.sort_by(|a, b| b.1.dot(forward).total_cmp(&a.1.dot(forward)));
+            let seen = texels.into_iter().find(|&(pos, d)| {
+                matches!(pick(d), Some((_, crate::aim::Aim::Block { pos: p, part: q, .. }))
+                    if p == pos && q == part)
+            });
+            let seen = seen.map(|(_, d)| d);
+            let d = seen.ok_or_else(|| anyhow::anyhow!("look={look}: none of it is seen"))?;
+            camera.pitch = (-d.y).asin().to_degrees() as f32;
+            camera.yaw = (-d.x).atan2(d.z).to_degrees() as f32;
+        }
+        let dir = camera.forward().as_dvec3();
+        let mut best: Option<(f64, Option<usize>, Option<crate::aim::Aim>)> = None;
+        for (i, b) in boxes.iter().enumerate().skip(first_thing) {
+            if let Some(t) = crate::aim::ray_instance(b, DVec3::ZERO, dir)
+                && t <= REACH
+                && best.as_ref().is_none_or(|b| t < b.0)
+            {
+                best = Some((t, Some(i), None));
+            }
+        }
+        if let Some((t, hit)) = pick(dir)
+            && best.as_ref().is_none_or(|b| t < b.0)
+        {
+            best = Some((t, None, Some(hit)));
+        }
+        scene.highlight = match best {
+            Some((t, Some(i), _)) => {
+                log::info!("  look: a thing lying, {t:.2} m off");
+                Some(hearth_render::outline::Highlight::Boxes(vec![boxes[i]]))
+            }
+            Some((t, None, Some(crate::aim::Aim::Block { pos, at, part, .. }))) => {
+                log::info!(
+                    "  look: {} at {pos:?}, {t:.2} m off ({part:?})",
+                    lw.map.block(pos).map_or("nothing".into(), |s| lw
+                        .reg
+                        .block_of(s)
+                        .name
+                        .to_string())
+                );
+                let col = hearth_math::ColumnPos::new(pos.x >> 4, pos.z >> 4);
+                crate::aim::block_highlight(
+                    &shapes,
+                    &lw.map,
+                    &crate::scene::column_tints(&lw.generator, col),
+                    (pos, at, part),
+                    camera.pos,
+                )
+            }
+            _ => {
+                log::info!("  look: nothing within {REACH} m");
+                None
+            }
+        };
     }
     if !boxes.is_empty() {
         scene.figures.set(ctx, &boxes);

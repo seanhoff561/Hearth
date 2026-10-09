@@ -158,6 +158,9 @@ pub struct Workshop {
     falls: Vec<(u64, Vec<(BlockPos, BlockStateId)>)>,
     /// The ground dug so far by the dig in hand (m³ of `ground::DIG_M3`).
     dug: f64,
+    /// Where the player's look met the ground when the dig in hand began: the patch its preview
+    /// showed (T §2.3), each stroke taken there.
+    dig_point: Option<DVec3>,
     /// Fire in the vegetation near the player, and far away.
     blaze: Wildfire,
     far_fire: FarFire,
@@ -338,6 +341,7 @@ impl Workshop {
             tasted_salt: None,
             falls: Vec::new(),
             dug: 0.0,
+            dig_point: None,
             blaze: Wildfire::new(seed),
             far_fire: FarFire::new(seed),
             fuel: None,
@@ -578,12 +582,14 @@ impl Workshop {
         }
     }
 
-    /// Starts the player doing a process.
+    /// Starts the player doing a process; `point` is where on what is aimed at the look rests
+    /// (the ground a dig takes from).
     pub fn act(
         &mut self,
         h: &mut Here,
         process: &str,
         aim: AimAt,
+        point: Option<DVec3>,
         hand: Option<f32>,
         with: Option<hearth_items::Hand>,
     ) {
@@ -690,6 +696,7 @@ impl Workshop {
             .unwrap_or(0.0);
         // A dig taken up again has dug its share already.
         self.dug = done * ground::DIG_M3;
+        self.dig_point = point;
         self.work = Some(Work {
             recipe: r,
             aim,

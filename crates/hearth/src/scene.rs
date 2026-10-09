@@ -217,36 +217,7 @@ impl LocalWorld {
 
     /// Tint inputs of a column: climate codes for seasonal vegetation colours, baked water.
     pub fn tints(&self, col: ColumnPos) -> ColumnTints {
-        use hearth_env::tint::{DryType, encode};
-        use hearth_worldgen::planet::climate::ClimateClass as C;
-        let data = self.generator.column(col);
-        let (x0, z0) = col.min_block_xz();
-        let southern = self.map.planet().latitude(z0 as f64 + 8.0) < 0.0;
-        // Dry-season strengths vary smoothly: one sample per column.
-        let normals = hearth_env::climate::Normals::sample(
-            &self.generator.terrain.grid,
-            x0 as f64 + 8.0,
-            z0 as f64 + 8.0,
-        );
-        let mut t = ColumnTints::default();
-        for (i, s) in data.samples.iter().enumerate() {
-            let arid = matches!(
-                s.climate,
-                C::HotDesert | C::HotSteppe | C::ColdDesert | C::ColdSteppe
-            );
-            let dry = DryType::of(&normals, arid);
-            let range = (2.0 * (s.t_warm - s.temperature)).max(0.0) as f64;
-            t.climate[i] = encode(
-                s.temperature as f64,
-                range,
-                s.precipitation as f64,
-                dry,
-                southern,
-            );
-            let depth = s.water_i().saturating_sub(s.height_i()).max(0) as f32;
-            t.water[i] = water_color(s.sea_temperature, depth);
-        }
-        t
+        column_tints(&self.generator, col)
     }
 
     /// Meshes cubes in parallel.
@@ -291,6 +262,41 @@ impl LocalWorld {
         let s = self.terrain().sample(x.floor() as i32, z.floor() as i32);
         s.height.max(s.water) as f64
     }
+}
+
+/// Tint inputs of a column, as the meshes are made with them: climate codes for seasonal
+/// vegetation colours (and the leaves' fall), baked water colours.
+pub fn column_tints(generator: &WorldGenerator, col: ColumnPos) -> ColumnTints {
+    use hearth_env::tint::{DryType, encode};
+    use hearth_worldgen::planet::climate::ClimateClass as C;
+    let data = generator.column(col);
+    let (x0, z0) = col.min_block_xz();
+    let southern = generator.planet().latitude(z0 as f64 + 8.0) < 0.0;
+    // Dry-season strengths vary smoothly: one sample per column.
+    let normals = hearth_env::climate::Normals::sample(
+        &generator.terrain.grid,
+        x0 as f64 + 8.0,
+        z0 as f64 + 8.0,
+    );
+    let mut t = ColumnTints::default();
+    for (i, s) in data.samples.iter().enumerate() {
+        let arid = matches!(
+            s.climate,
+            C::HotDesert | C::HotSteppe | C::ColdDesert | C::ColdSteppe
+        );
+        let dry = DryType::of(&normals, arid);
+        let range = (2.0 * (s.t_warm - s.temperature)).max(0.0) as f64;
+        t.climate[i] = encode(
+            s.temperature as f64,
+            range,
+            s.precipitation as f64,
+            dry,
+            southern,
+        );
+        let depth = s.water_i().saturating_sub(s.height_i()).max(0) as f32;
+        t.water[i] = water_color(s.sea_temperature, depth);
+    }
+    t
 }
 
 /// The smooth ground's materials (Amendment S §4): the registry's natural blocks as slots, their

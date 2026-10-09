@@ -112,6 +112,8 @@ pub enum ToServer {
     Act {
         process: String,
         aim: AimAt,
+        /// Where on it the look rests (Amendment T §2.3): the ground a dig takes from.
+        at: Option<DVec3>,
         /// The quality reached knapping by hand, when it was.
         hand: Option<f32>,
         /// The hand doing it (P §5.2): its tools are used (none: either hand's).

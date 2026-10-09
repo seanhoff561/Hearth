@@ -33,6 +33,7 @@ CPU culling pixel check.
    dithered into the 8-bit output; under water, the view through the water first. At a render scale other than 1 (`render_scale`) the scene
    renders at the scaled size, is tonemapped at that size, then upscaled with FSR 1 (EASU,
    then RCAS sharpening) or, above 1, filtered down; the dither comes last either way.
+7. The thing looked at, outlined (below), laid over the finished frame.
 
 ### Atmosphere (`atmosphere.wgsl`, D29)
 After Hillaire (2020): Rayleigh, aerosol (Mie, Cornette–Shanks phase) and ozone on an
@@ -210,6 +211,26 @@ or depth, temperature and rain) and a click goes there: to the nearest dry, gent
 from the sea or a lake to the nearest coast (`Terrain::spawn_near`). Review: `docs/review/t1/
 globe_*.jpg` (`tools/shots/t1_globe.shots`; screenshot keys `globe=`, `globe_mode=`,
 `globe_relief=`).
+
+### The thing looked at (`outline.rs`, `outline.wgsl`, `outline_glow.wgsl`, D295)
+
+What the eyes rest on glows along its own shape (Amendment T §2.3), never a box about it. Its
+geometry is drawn again into a two-channel mask the size of the scene: red where the thing is
+seen — its boxes as the figures are drawn (a thing lying, a carcass, an animal), or its block's
+own quads as the terrain draws them (`BlockModels::each_quad`: a cube's six faces as the packed
+path maps them, a model's quads), alpha-tested texel for texel, swaying in the wind and thinned
+by the season's leaf fall exactly as the terrain's (`common.wgsl`'s `wind`, `leaf_fall`), only
+the texels of fruit and flowers (alpha `PART_ALPHA`, 254) when those are what is looked at; green
+over the patch of ground a dig there takes (the scene's depth read back, within the dig's bowl)
+or about the point of water's surface looked at (where the look meets its plane before the
+floor). The mask is drawn with the unjittered camera, so the glow, laid after the temporal
+anti-aliasing, does not shimmer; against the scene's depth, the thing drawn 0.6 % nearer the eye
+(its pixels unchanged) so its own surface does not hide it, so only what of it is seen glows.
+The glow (in the display's light, alike by day and night) is a warm line a pixel and a half
+outside the mask's red and a fainter halo to four (wider on frames over 1080 lines), and over
+the green a faint wash with a brighter rim where it fades. Both passes are scissored to the
+thing's part of the frame; with nothing looked at there are none. Review: `docs/review/t1/
+aim_*.jpg` (`tools/shots/t1_aim.shots`; screenshot keys `look=`, `thing=`).
 
 ## Parameters
 Atmosphere constants in `atmosphere.wgsl` and `hearth_env::sky` (kept equal; the

@@ -285,6 +285,7 @@ impl World {
         self.server.send(ToServer::Act {
             process: id.clone(),
             aim,
+            at: None,
             hand: None,
             with: None,
         });

@@ -303,3 +303,4 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D292 (2026-10-09) Birds over remains, not a line about them; the world's notices shown instead
 - D293 (2026-10-09) Skin as measured: roughness by region, relief, scattering by curvature, its colour
 - D294 (2026-10-09) The globe in relief: heights in their own layer, lit and tinted; finer relief near
+- D295 (2026-10-09) The thing looked at: met and outlined by its own drawn shape; a dig where the look rested

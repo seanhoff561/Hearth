@@ -170,6 +170,28 @@ impl BlockModels {
         l & (1 << d.index()) != 0 && (l >> 8) as u8 >= px
     }
 
+    /// A state's own drawn shape (T1.3): each quad the mesher draws for it standing alone, with
+    /// its render layer (a cutout's texels are seen only where their alpha is) — a full cube's
+    /// six faces as the packed path maps them; nothing for a fluid or an invisible state.
+    pub fn each_quad(&self, s: BlockStateId, mut f: impl FnMut(&ModelQuad, RenderLayer)) {
+        match self.get(s) {
+            StateModel::Cube(c) => {
+                for d in Direction::ALL {
+                    f(
+                        &crate::mesh::cube_face(d, c.faces[d.index()], c.waving),
+                        c.layer,
+                    );
+                }
+            }
+            StateModel::Quads(quads, layer) => {
+                for q in quads.iter() {
+                    f(q, *layer);
+                }
+            }
+            StateModel::Fluid { .. } | StateModel::Invisible => {}
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.models.len()
     }

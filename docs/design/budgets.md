@@ -17,6 +17,8 @@ only on a software device, so frame and GPU numbers come from the PC.
 | Grass and ground cover | ≤ 1.5 ms GPU High, ≤ 0.6 ms Low (1080p), ≤ 0.2 ms CPU | — (P7G) | P §11.5 |
 | A close-up character | ≤ ~1 ms GPU at High | — (E7) | E §8 |
 | Distant-tile selection on the frame thread | ≤ 1 ms | 5–9 ms after a 16 m move (known) | perf audit |
+| What is looked at, picked (a look's every frame) | < 0.2 ms | 0.010–0.012 ms (`tests/picking.rs`, T1.3) | P §5.1 |
+| Its highlight (mask and glow) | small: its own geometry, scissored; none when nothing is looked at | — (the PC; software device not timed) | T §2.3 |
 
 ## Tick (server, 20 ticks a second, 50 ms)
 | What | Budget | Measured | Source |

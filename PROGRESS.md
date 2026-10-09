@@ -51,7 +51,7 @@ E4.1. V2-11 superseded.
 | Audit 2 | done 2026-10-08 |
 | E4.1 — Earth-scale performance (the owner's fix pass) | done 2026-10-09 (D279–D289) |
 | T0 — S5/P7 stopped at (b) | done 2026-10-09 (D290, D291) |
-| T1 — quick wins (ravens, skin, highlight, globe) | under way: T1.1, T1.2, T1.4 done (D292–D294) |
+| T1 — quick wins (ravens, skin, highlight, globe) | under way: T1.1–T1.4 done (D292–D295); acceptance next |
 | T2 — the realism gap analysis | planned |
 | S5/P7 (c)–(f) with G1 → W1 → L1 → P7G → S6 with H1 → R1 → S7 → S8 → P8 | planned (T2 may revise) |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
@@ -67,6 +67,9 @@ E4.1. V2-11 superseded.
 
 ## Owner checks
 Pictures and runs that need the owner (T §7), newest first:
+- T1.3: in the world on the PC, look at a berry bush's berries and its leaves, a branch, a stone
+  and a stick lying, the ground and water: each glows along its own shape (only the berries when
+  they are looked at); dig a little where the ground glows and see the hole there.
 - T1.4: the globe on the PC (New world → Birthplace): turning it under the lamp, the three
   looks and the relief buttons, a range zoomed in past 10 (the finer relief comes in a few
   seconds the first time).
@@ -99,7 +102,17 @@ Pictures and runs that need the owner (T §7), newest first:
   in 0.03 s (kept in four parts unpacked in parallel), hover 0.006 ms (`hearth bench globe`).
   Tests: `tests/globe_map.rs` (land share, heights, rivers, ice, kept and read back the same),
   `bicubic_rows` sum for sum. Pictures `docs/review/t1/globe_*` (`tools/shots/t1_globe.shots`).
-- Next: T1.3 the thing aimed at; then T1's acceptance and `main`.
+- **T1.3 the thing itself** (D295, PLAYTEST 37): `aim.rs` meets what is drawn — blocks by their
+  models' quads and textures' alpha (the season's leaf fall too), a plant's fruit apart from its
+  leaves (sprites mark them, `PART_ALPHA`), things by their drawn boxes, the ground's dig patch,
+  water's surface (0.010–0.012 ms a look); `hearth_render::outline` glows along that shape (a
+  mask of its own geometry, unjittered and depth-tested, a glow laid after the tonemap). A dig
+  takes its earth where the look rested (`ToServer::Act::at`, `ground::dig` shares a stroke
+  over the voxels about the point). Tests: `tests/picking.rs` (fruit, leaves, gaps, water,
+  leaf fall, cost), `scene_shaders` (the glow only about its shape), `workshop` and
+  `hearth_world/tests/ground.rs` (the hole where struck). Pictures `docs/review/t1/aim_*`
+  (`tools/shots/t1_aim.shots`, keys `look=`, `thing=`). Box edges gone.
+- Next: T1's acceptance (`scripts/check.sh`, the perf gate), then `main`.
 
 ## E4.1 — Earth-scale performance (2026-10-09, D279–D289, `docs/spec/e4.1-earth-scale-performance.md`)
 The owner's playtest of the Earth-sized world (PLAYTEST 29–31): the globe all blue and laggy, the

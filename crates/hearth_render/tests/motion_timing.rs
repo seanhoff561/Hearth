@@ -13,7 +13,8 @@ const SHADERS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/shaders");
 /// carry), the particles' and the smoke's clocks, the heat shimmer's, a frame's seconds.
 const CLOCKS: &[(&str, &str)] = &[
     ("terrain.wgsl", "g.params.x"),
-    ("terrain.wgsl", "g.params.y"),
+    ("common.wgsl", "g.params.x"),
+    ("common.wgsl", "g.params.y"),
     ("sky.wgsl", "P.camera.w"),
     ("sky.wgsl", "P.clouds.zw"),
     ("sky.wgsl", "P.ambient.w"),
@@ -25,9 +26,9 @@ const CLOCKS: &[(&str, &str)] = &[
     ("meter.wgsl", "P.p.x"),
 ];
 
-/// Shaders that declare a clock only for others to read (`common.wgsl`'s globals, read by the
-/// terrain's).
-const DECLARES: &[&str] = &["common.wgsl"];
+/// Shaders that declare a clock only for others to read (none now: `common.wgsl` declares the
+/// globals and reads them itself, in the sway and the animated textures).
+const DECLARES: &[&str] = &[];
 
 fn doc() -> String {
     let p = concat!(
@@ -160,10 +161,11 @@ fn the_shaders_move_at_the_documented_speeds() {
     let rows = rows(&doc());
     let terrain = shader("terrain.wgsl");
 
-    // Plants' sway: the periods of its two waves.
-    let w = body(&terrain, "wind");
+    // Plants' sway: the periods of its two waves (in `common.wgsl`, as the highlight's mask
+    // sways with the plant it outlines).
+    let w = body(&shader("common.wgsl"), "wind");
     let periods: Vec<f32> = after(&w, "t * ").iter().map(|a| TAU / a).collect();
-    let s = speed_of(&rows, "terrain.wgsl", "wind");
+    let s = speed_of(&rows, "common.wgsl", "wind");
     assert_eq!(periods.len(), 2, "{w}");
     for p in &periods {
         assert!(says(&s, *p, 1), "sway period {p:.1} s not in \"{s}\"");

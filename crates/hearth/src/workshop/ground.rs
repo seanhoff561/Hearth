@@ -92,15 +92,20 @@ impl Workshop {
     }
 
     /// Digs `volume` m³ of the ground at `pos` (the block looked at), where the player's look
-    /// meets it; the spoil goes on a heap beside the hole, away from the player (snow packs
-    /// away), and loose ground about slumps. Returns the volume dug.
+    /// meets it (at the point the look rested on when the dig began, its preview's patch, T
+    /// §2.3); the spoil goes on a heap beside the hole, away from the player (snow packs away),
+    /// and loose ground about slumps. Returns the volume dug.
     pub(super) fn dig_ground(&mut self, h: &mut Here, pos: BlockPos, volume: f64) -> f64 {
         if volume <= 0.0 {
             return 0.0;
         }
         let reg = h.lw.reg.clone();
         let eye = h.player.mover.pos + DVec3::Y * 1.6;
-        let aim = super::center(pos);
+        // The point told, if it is on the block aimed at (or about it); else its middle.
+        let aim = self
+            .dig_point
+            .filter(|p| (*p - super::center(pos)).length() < 1.5)
+            .unwrap_or_else(|| super::center(pos));
         let look = (aim - eye).normalize_or(DVec3::NEG_Y);
         let hit = ground::raycast(&h.lw.map, &reg, eye, look, 6.0)
             .or_else(|| ground::raycast(&h.lw.map, &reg, aim + DVec3::Y * 2.0, DVec3::NEG_Y, 4.0));
@@ -109,7 +114,7 @@ impl Workshop {
         };
         let content = h.lw.content.clone();
         let diggable = |s: BlockStateId| family(&content, &reg, s).is_some_and(|g| g.slumps());
-        let r = 0.55;
+        let r = ground::DIG_RADIUS_M;
         let lo = BlockPos::containing(hit.at - DVec3::splat(2.0));
         let hi = BlockPos::containing(hit.at + DVec3::splat(2.0));
         let taken = self.ground_edit(h, lo, hi, |map, reg| {

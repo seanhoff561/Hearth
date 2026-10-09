@@ -279,3 +279,45 @@ fn earth_piled_over_a_cave_lies_on_the_surface() {
         .count();
     assert_eq!(cave_floor, 0, "earth piled into the cave");
 }
+
+/// A hole is dug where the tool strikes (T §2.3), not at the middle of the voxel struck: strokes
+/// at a point 0.425 m off a voxel's middle take the earth from it and the voxel beyond in
+/// proportion to their nearness, so the ground falls more on the point's side.
+#[test]
+fn a_hole_is_centred_where_the_tool_strikes() {
+    let (mut map, reg, _) = field("hearth:loam", 0.5);
+    let (lo, hi) = region();
+    let before = total(&ground::volume(&map, &reg, lo, hi));
+    let surface = |map: &CubeMap, x: f64| {
+        ground::raycast(map, &reg, DVec3::new(x, 2.5, 0.5), DVec3::NEG_Y, 5.0)
+            .map_or(f64::NAN, |h| h.at.y)
+    };
+    let (here, across) = (0.925, 0.075);
+    let mut dug = 0.0;
+    let mut carry = 0.0;
+    for _ in 0..60 {
+        let hit = ground::raycast(&map, &reg, DVec3::new(here, 2.5, 0.5), DVec3::NEG_Y, 5.0)
+            .expect("ground under");
+        let got = total(&ground::dig(
+            &mut map,
+            &reg,
+            hit.at,
+            hit.normal,
+            ground::DIG_RADIUS_M,
+            0.012 + carry,
+            &|_| true,
+        ));
+        carry += 0.012 - got;
+        dug += got;
+    }
+    let (at, off) = (surface(&map, here), surface(&map, across));
+    eprintln!("{dug:.2} m³ dug: the ground at {at:.3} where struck, {off:.3} across");
+    assert!(dug > 0.6, "{dug} m³");
+    assert!(at < off - 0.05, "{at} where struck, {off} across the voxel");
+    // Conserved all the same.
+    let after = total(&ground::volume(&map, &reg, lo, hi));
+    assert!(
+        (before - after - dug).abs() < 0.02,
+        "{before} → {after}, {dug} dug"
+    );
+}

@@ -1,7 +1,8 @@
 //! Textures of the understory's plants (V2-6): each species drawn by its sprite (a bush hung
 //! with fruit, a heath, a rosette, an umbel, a spike of flowers, a fern, a mushroom, a clump of
 //! leaves, a creeper, a tuft of sedge, a carpet of moss or lichen) in its own foliage, flower and
-//! fruit colours. Plants two blocks tall get a bottom and a top.
+//! fruit colours. Plants two blocks tall get a bottom and a top. The texels of fruit and flowers
+//! (and a cereal's ears) are marked (`Tex::set_part`): the eyes can rest on them alone.
 
 use hearth_content::Content;
 use hearth_content::schema::flora::{GrowthForm, Sprite, WaterHabit};
@@ -63,9 +64,9 @@ fn bush(p: Palette, seed: u64, part: u8) -> Tex {
         for k in 0..9 {
             let x = 2 + (rand01(seed ^ 3, k, 0) * 12.0) as i32;
             let y = top + 1 + (rand01(seed ^ 3, k, 1) * (bottom - top - 2) as f32) as i32;
-            t.set(x, y, c);
+            t.set_part(x, y, c);
             if k % 3 == 0 {
-                t.set(x + 1, y, scale(c, 0.8));
+                t.set_part(x + 1, y, scale(c, 0.8));
             }
         }
     }
@@ -87,7 +88,7 @@ fn heath(p: Palette, seed: u64) -> Tex {
         for k in 0..10 {
             let x = (rand01(seed ^ 4, k, 0) * 16.0) as i32;
             let y = 7 + (rand01(seed ^ 4, k, 1) * 5.0) as i32;
-            t.set(x, y, c);
+            t.set_part(x, y, c);
         }
     }
     t
@@ -106,7 +107,7 @@ fn rosette(p: Palette, seed: u64) -> Tex {
     if let Some(c) = p.flower {
         line(&mut t, 8, 15, 8, 6, scale(p.leaf, 0.7));
         for (dx, dy) in [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)] {
-            t.set(8 + dx, 5 + dy, c);
+            t.set_part(8 + dx, 5 + dy, c);
         }
     }
     t
@@ -144,8 +145,8 @@ fn umbel(p: Palette, seed: u64, part: u8) -> Tex {
     for x in 3..14 {
         line(&mut t, 8, 6, x, 3, scale(stem, 1.1));
         if rand01(seed ^ 7, x, 0) < 0.85 {
-            t.set(x, 2, flower);
-            t.set(x, 3, scale(flower, 0.9));
+            t.set_part(x, 2, flower);
+            t.set_part(x, 3, scale(flower, 0.9));
         }
     }
     t
@@ -174,8 +175,8 @@ fn spike(p: Palette, seed: u64, part: u8) -> Tex {
     }
     for y in (top + 1..15).step_by(2) {
         let side = if (y / 2) % 2 == 0 { 1 } else { -1 };
-        t.set(8 + side, y, flower);
-        t.set(8 + 2 * side, y + 1, scale(flower, 0.8));
+        t.set_part(8 + side, y, flower);
+        t.set_part(8 + 2 * side, y + 1, scale(flower, 0.8));
     }
     if part == 0 {
         for k in 0..3 {
@@ -259,9 +260,9 @@ fn pad(p: Palette, seed: u64) -> Tex {
     }
     if let Some(c) = p.flower {
         for (dx, dy) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1)] {
-            t.set(5 + dx, 6 + dy, shade(c, seed ^ 7, dx, dy));
+            t.set_part(5 + dx, 6 + dy, shade(c, seed ^ 7, dx, dy));
         }
-        t.set(5, 6, [236, 200, 60]);
+        t.set_part(5, 6, [236, 200, 60]);
     }
     t
 }
@@ -301,7 +302,7 @@ fn clump(p: Palette, seed: u64) -> Tex {
     if let Some(c) = p.flower {
         line(&mut t, 8, 15, 8, 3, scale(p.leaf, 0.8));
         for (dx, dy) in [(0, 0), (1, 1), (-1, 1), (1, -1), (-1, -1), (0, 2)] {
-            t.set(8 + dx, 2 + dy, c);
+            t.set_part(8 + dx, 2 + dy, c);
         }
     }
     t
@@ -320,13 +321,13 @@ fn creeper(p: Palette, seed: u64) -> Tex {
     if let Some(c) = p.fruit {
         for k in 0..5 {
             let x = 1 + (rand01(seed ^ 2, k, 0) * 14.0) as i32;
-            t.set(x, 12 + (k % 3), c);
-            t.set(x, 13 + (k % 3), scale(c, 0.8));
+            t.set_part(x, 12 + (k % 3), c);
+            t.set_part(x, 13 + (k % 3), scale(c, 0.8));
         }
     }
     if let Some(c) = p.flower {
-        t.set(4, 10, c);
-        t.set(11, 11, c);
+        t.set_part(4, 10, c);
+        t.set_part(11, 11, c);
     }
     t
 }
@@ -346,7 +347,7 @@ fn tuft(p: Palette, seed: u64) -> Tex {
             let x = 4 + k * 4 + (rand01(seed ^ 3, k, 0) * 2.0) as i32;
             line(&mut t, x, 12, x, 3, scale(p.leaf, 0.8));
             for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1), (-1, 1), (0, -1)] {
-                t.set(x + dx, 2 + dy, shade(c, seed ^ 5, x + dx, dy));
+                t.set_part(x + dx, 2 + dy, shade(c, seed ^ 5, x + dx, dy));
             }
         }
     }
@@ -404,13 +405,13 @@ fn crop_drawn(stalk: Rgb, ear: Rgb, seed: u64, tall: i32, eared: bool, nod: f32)
             let dx = if nod > 0.3 { 1 } else { 0 };
             for j in 0..4 {
                 let c = shade(ear, seed ^ 9, k, j);
-                t.set(x0 + lean + dx * (j / 2), top - 3 + j, c);
+                t.set_part(x0 + lean + dx * (j / 2), top - 3 + j, c);
                 if j % 2 == 0 {
-                    t.set(x0 + lean + dx * (j / 2) + 1, top - 3 + j, scale(c, 0.85));
+                    t.set_part(x0 + lean + dx * (j / 2) + 1, top - 3 + j, scale(c, 0.85));
                 }
             }
             // The awns.
-            t.set(x0 + lean, top - 4, scale(ear, 0.8));
+            t.set_part(x0 + lean, top - 4, scale(ear, 0.8));
         }
     }
     t
@@ -446,8 +447,8 @@ fn cactus(p: Palette, seed: u64) -> Tex {
     }
     if let Some(c) = p.fruit.or(p.flower) {
         for (x, y) in [(3, 2), (5, 2), (10, 1), (12, 2)] {
-            t.set(x, y, c);
-            t.set(x, y + 1, scale(c, 0.8));
+            t.set_part(x, y, c);
+            t.set_part(x, y + 1, scale(c, 0.8));
         }
     }
     t
@@ -488,7 +489,7 @@ fn carpet(p: Palette, form: GrowthForm, seed: u64) -> Tex {
         for k in 0..6 {
             let x = (rand01(seed ^ 4, k, 0) * 16.0) as i32;
             let y = (rand01(seed ^ 4, k, 1) * 16.0) as i32;
-            t.set(x, y, c);
+            t.set_part(x, y, c);
         }
     }
     t

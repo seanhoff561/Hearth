@@ -1192,10 +1192,11 @@ fn run(
                 Ok(ToServer::Act {
                     process,
                     aim,
+                    at,
                     hand,
                     with,
                 }) => {
-                    workshop.act(&mut here!(), &process, aim, hand, with);
+                    workshop.act(&mut here!(), &process, aim, at, hand, with);
                     // Creative's instant actions: the work is done as soon as it is begun.
                     if creative
                         && instant

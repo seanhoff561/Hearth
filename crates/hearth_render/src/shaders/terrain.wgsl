@@ -52,18 +52,6 @@ struct VsOut {
     @location(14) snow: f32,
 };
 
-fn face_normal(face: u32) -> vec3<f32> {
-    switch face {
-        case 0u: { return vec3<f32>(0.0, -1.0, 0.0); }
-        case 1u: { return vec3<f32>(0.0, 1.0, 0.0); }
-        case 2u: { return vec3<f32>(0.0, 0.0, -1.0); }
-        case 3u: { return vec3<f32>(0.0, 0.0, 1.0); }
-        case 4u: { return vec3<f32>(-1.0, 0.0, 0.0); }
-        case 5u: { return vec3<f32>(1.0, 0.0, 0.0); }
-        default: { return vec3<f32>(0.0); }
-    }
-}
-
 // Corner of a (w × h) face of block (0,0,0), corner order shared with the mesher.
 fn face_corner(face: u32, c: u32, w: f32, h: f32) -> vec3<f32> {
     switch face {
@@ -111,23 +99,6 @@ fn depth_under_water(world: vec3<f32>) -> f32 {
 // byte of `flags` (the first is the fluid bit).
 fn fade_bits(faded: f32) -> u32 {
     return u32(round(clamp(faded, 0.0, 1.0) * 255.0)) << 8u;
-}
-
-fn animated_layer(layer: u32, frames_m1: u32, frame_time_m1: u32) -> u32 {
-    if frames_m1 == 0u {
-        return layer;
-    }
-    let frame = u32(g.params.y / f32(frame_time_m1 + 1u)) % (frames_m1 + 1u);
-    return layer + frame;
-}
-
-fn wind(world: vec3<f32>, amount: f32) -> vec3<f32> {
-    let t = g.params.x;
-    let p = world + g.camera.xyz;
-    // Whole turns over WRAP blocks (the sway holds as the camera crosses a multiple of it).
-    let s = sin(t * 1.7 + p.x * wrap_rad(0.35) + p.z * wrap_rad(0.21))
-        + 0.5 * sin(t * 2.9 + p.z * wrap_rad(0.5));
-    return vec3<f32>(s, 0.0, s * 0.6) * 0.04 * amount * g.sun.w;
 }
 
 @vertex
@@ -314,18 +285,6 @@ fn fs_opaque(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(shade_color(c.rgb, in), 1.0);
 }
 
-// Integer hash of a texel position (texels of 1/16 block) to 0..1, the texel's place wrapped at
-// WRAP blocks (65536 texels: the pattern holds as the camera crosses a multiple of it).
-fn hash_texel(p: vec3<f32>) -> f32 {
-    let q = vec3<u32>(bitcast<u32>(i32(p.x)), bitcast<u32>(i32(p.y)), bitcast<u32>(i32(p.z)))
-        & vec3<u32>(0xffffu);
-    var h = (q.x * 0x8da6b343u) ^ (q.y * 0xd8163841u) ^ (q.z * 0xcb1ab31fu);
-    h = (h ^ (h >> 16u)) * 0x7feb352du;
-    h = (h ^ (h >> 15u)) * 0x846ca68bu;
-    h = h ^ (h >> 16u);
-    return f32(h) / 4294967296.0;
-}
-
 // Bare twigs (linear albedo).
 const TWIG: vec3<f32> = vec3<f32>(0.085, 0.07, 0.058);
 
@@ -337,16 +296,10 @@ fn fs_cutout(in: VsOut) -> @location(0) vec4<f32> {
         discard;
     }
     var albedo = c.rgb;
-    if in.leaf < 0.999 {
-        // Leaf fall: this share of the leaf texels stays (a pattern fixed in the world), and a
-        // sparse network of twigs shows among the rest.
-        let texel = floor((in.world + g.camera.xyz - in.normal * 0.03) * 16.0);
-        if hash_texel(texel) >= in.leaf {
-            if hash_texel(texel + vec3<f32>(19.0, 7.0, 3.0)) > 0.16 {
-                discard;
-            }
-            albedo = TWIG;
-        }
+    switch leaf_fall(in.world, in.normal, in.leaf) {
+        case 1u: { albedo = TWIG; }
+        case 2u: { discard; }
+        default: {}
     }
     return vec4<f32>(shade_color(albedo, in), 1.0);
 }

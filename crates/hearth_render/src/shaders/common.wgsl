@@ -278,3 +278,65 @@ fn dither(frag: vec2<f32>) -> f32 {
     let i = u32(frag.x) % 4u + (u32(frag.y) % 4u) * 4u;
     return (m[i] + 0.5) / 16.0;
 }
+
+// ---------------------------------------------------------------- blocks as drawn
+// Shared by the terrain and the highlight's mask of a block (`outline.wgsl`), which must move
+// and thin exactly as the block on screen does.
+
+fn face_normal(face: u32) -> vec3<f32> {
+    switch face {
+        case 0u: { return vec3<f32>(0.0, -1.0, 0.0); }
+        case 1u: { return vec3<f32>(0.0, 1.0, 0.0); }
+        case 2u: { return vec3<f32>(0.0, 0.0, -1.0); }
+        case 3u: { return vec3<f32>(0.0, 0.0, 1.0); }
+        case 4u: { return vec3<f32>(-1.0, 0.0, 0.0); }
+        case 5u: { return vec3<f32>(1.0, 0.0, 0.0); }
+        default: { return vec3<f32>(0.0); }
+    }
+}
+
+fn animated_layer(layer: u32, frames_m1: u32, frame_time_m1: u32) -> u32 {
+    if frames_m1 == 0u {
+        return layer;
+    }
+    let frame = u32(g.params.y / f32(frame_time_m1 + 1u)) % (frames_m1 + 1u);
+    return layer + frame;
+}
+
+fn wind(world: vec3<f32>, amount: f32) -> vec3<f32> {
+    let t = g.params.x;
+    let p = world + g.camera.xyz;
+    // Whole turns over WRAP blocks (the sway holds as the camera crosses a multiple of it).
+    let s = sin(t * 1.7 + p.x * wrap_rad(0.35) + p.z * wrap_rad(0.21))
+        + 0.5 * sin(t * 2.9 + p.z * wrap_rad(0.5));
+    return vec3<f32>(s, 0.0, s * 0.6) * 0.04 * amount * g.sun.w;
+}
+
+// Integer hash of a texel position (texels of 1/16 block) to 0..1, the texel's place wrapped at
+// WRAP blocks (65536 texels: the pattern holds as the camera crosses a multiple of it).
+fn hash_texel(p: vec3<f32>) -> f32 {
+    let q = vec3<u32>(bitcast<u32>(i32(p.x)), bitcast<u32>(i32(p.y)), bitcast<u32>(i32(p.z)))
+        & vec3<u32>(0xffffu);
+    var h = (q.x * 0x8da6b343u) ^ (q.y * 0xd8163841u) ^ (q.z * 0xcb1ab31fu);
+    h = (h ^ (h >> 16u)) * 0x7feb352du;
+    h = (h ^ (h >> 15u)) * 0x846ca68bu;
+    h = h ^ (h >> 16u);
+    return f32(h) / 4294967296.0;
+}
+
+// Leaf fall on a texel of foliage drawn at `world` (camera-relative, as drawn) facing `normal`,
+// its cover `leaf` (1 in full leaf): 0 the leaf stays; 1 a twig shows instead (a sparse network
+// among the fallen); 2 nothing. The share that stays is a pattern fixed in the world.
+fn leaf_fall(world: vec3<f32>, normal: vec3<f32>, leaf: f32) -> u32 {
+    if leaf >= 0.999 {
+        return 0u;
+    }
+    let texel = floor((world + g.camera.xyz - normal * 0.03) * 16.0);
+    if hash_texel(texel) < leaf {
+        return 0u;
+    }
+    if hash_texel(texel + vec3<f32>(19.0, 7.0, 3.0)) > 0.16 {
+        return 2u;
+    }
+    return 1u;
+}

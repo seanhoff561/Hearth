@@ -215,12 +215,12 @@ fn flower(seed: u64, petals: Rgb, center: Rgb, shape: u8) -> Tex {
                 (-1, 1),
                 (1, 1),
             ] {
-                t.put(x + dx, 5 + dy, petals);
+                t.put_part(x + dx, 5 + dy, petals);
             }
-            t.put(x, 5, center);
-            t.put(x - 1, 3, scale(petals, 0.85));
-            t.put(x + 1, 3, scale(petals, 0.85));
-            t.put(x, 3, petals);
+            t.put_part(x, 5, center);
+            t.put_part(x - 1, 3, scale(petals, 0.85));
+            t.put_part(x + 1, 3, scale(petals, 0.85));
+            t.put_part(x, 3, petals);
         }
         // Daisy: white ray petals around a yellow disc.
         1 => {
@@ -234,26 +234,26 @@ fn flower(seed: u64, petals: Rgb, center: Rgb, shape: u8) -> Tex {
                 (-1, 1),
                 (1, 1),
             ] {
-                t.put(x + dx, 5 + dy, petals);
+                t.put_part(x + dx, 5 + dy, petals);
             }
-            t.put(x, 5, center);
+            t.put_part(x, 5, center);
         }
         // Bells hanging from an arched stem (lily of the valley).
         2 => {
             for (k, y) in [4, 7, 10].iter().enumerate() {
                 let bx = x + 2 + (k as i32 % 2);
-                t.put(bx, *y, petals);
-                t.put(bx, *y + 1, scale(petals, 0.9));
+                t.put_part(bx, *y, petals);
+                t.put_part(bx, *y + 1, scale(petals, 0.9));
                 t.put(bx - 1, *y - 1, stem);
             }
         }
         // Small clusters (bluet, aster, gentian).
         _ => {
             for (dx, dy) in [(-2, 5), (2, 4), (0, 3), (-1, 6), (1, 6)] {
-                t.put(x + dx, dy, petals);
-                t.put(x + dx, dy + 1, scale(petals, 0.8));
+                t.put_part(x + dx, dy, petals);
+                t.put_part(x + dx, dy + 1, scale(petals, 0.8));
             }
-            t.put(x, 4, center);
+            t.put_part(x, 4, center);
         }
     }
     let _ = seed;

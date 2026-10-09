@@ -15,6 +15,7 @@ pub mod lod;
 pub mod mesh;
 pub mod models;
 pub mod offscreen;
+pub mod outline;
 pub mod post;
 pub mod precip;
 pub mod profiler;

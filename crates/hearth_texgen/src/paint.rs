@@ -5,6 +5,11 @@ use hearth_math::hash::{hash_2d, hash2, mix64};
 pub type Rgb = [u8; 3];
 pub type Rgba = [u8; 4];
 
+/// The alpha of a texel of fruit or flowers in a plant's sprite: one step short of full, the
+/// same to the eye and to the alpha test, read exactly where the aim and its highlight look for
+/// them (Amendment T §2.3).
+pub const PART_ALPHA: u8 = 254;
+
 /// An RGBA8 image.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tex {
@@ -56,11 +61,26 @@ impl Tex {
         self.px[i] = c;
     }
 
+    /// Sets a texel of a plant's fruit or flowers: opaque as any, told from the leaves by its
+    /// alpha (`PART_ALPHA`), so the eyes can rest on the berries themselves (Amendment T §2.3).
+    #[inline]
+    pub fn set_part(&mut self, x: i32, y: i32, c: Rgb) {
+        self.set_rgba(x, y, [c[0], c[1], c[2], PART_ALPHA]);
+    }
+
     /// Sets a pixel only if inside the image (no wrapping), for sprites.
     #[inline]
     pub fn put(&mut self, x: i32, y: i32, c: Rgb) {
         if x >= 0 && y >= 0 && (x as u32) < self.w && (y as u32) < self.h {
             self.set(x, y, c);
+        }
+    }
+
+    /// `set_part` only if inside the image (no wrapping), for sprites.
+    #[inline]
+    pub fn put_part(&mut self, x: i32, y: i32, c: Rgb) {
+        if x >= 0 && y >= 0 && (x as u32) < self.w && (y as u32) < self.h {
+            self.set_part(x, y, c);
         }
     }
 

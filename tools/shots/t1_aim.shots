@@ -1,0 +1,14 @@
+# T1.3 (Amendment T §2.3): what the eyes rest on, highlighted by its own shape — a bilberry's
+# berries alone and the bush itself, a raspberry's fruit at chest height, a hazel's branch, a
+# stone and a stick lying, the patch of ground a dig would take, a point of water's surface.
+# Never a box. Kept in docs/review/t1/ (as JPEGs).
+# `hearth --software --screenshot-list tools/shots/t1_aim.shots`
+defaults: w=1280, h=720, clouds=0.3, dry=true, seed=7, planet=huge, res=256, dist=4, lod=96, biome=temperate_plains, above=1.6, yaw=30, season=summer, hour=10, fov=60
+place=hearth:bilberry@1.3, pitch=45, look=fruit, out=bench-out/t1/aim_berries.png
+place=hearth:bilberry@1.3, pitch=45, look=leaves, out=bench-out/t1/aim_bush.png
+place=hearth:raspberry@1.6, place=hearth:raspberry[half=upper]@1.6:0:1, pitch=10, look=fruit, out=bench-out/t1/aim_raspberries.png
+tree=common_hazel:young:0@2.2, pitch=5, look=block:_branch, out=bench-out/t1/aim_branch.png
+thing=hearth:cobble/granite@1.4:0.1:30, thing=hearth:stick/oak_wood@1.8:-0.6:70, pitch=48, look=thing, out=bench-out/t1/aim_stone.png
+pitch=50, look=centre, out=bench-out/t1/aim_dig.png
+x=30766.8, z=-39106.4, yaw=0, pitch=45, look=water, out=bench-out/t1/aim_water.png
+thing=hearth:stick/oak_wood@1.4:0.1:70, thing=hearth:cobble/granite@1.8:-0.5:30, pitch=48, look=thing, out=bench-out/t1/aim_stick.png

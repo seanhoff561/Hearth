@@ -46,22 +46,7 @@ pub enum Perspective {
     Front,
 }
 
-/// What the eyes rest on within reach.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Aim {
-    /// A thing lying in the world.
-    Item(u64),
-    /// An animal within reach of what is in hand.
-    Animal(u64),
-    /// A block (a plant, water, a hearth, the ground): where, whether its top face is looked
-    /// at (and which face is), and the point the eyes rest on.
-    Block {
-        pos: hearth_math::BlockPos,
-        top: bool,
-        face: hearth_math::Direction,
-        at: DVec3,
-    },
-}
+pub use crate::aim::{Aim, Part, pick_block};
 
 /// How far the hands reach from the eyes (m).
 const REACH_M: f64 = 2.6;
@@ -69,28 +54,6 @@ const REACH_M: f64 = 2.6;
 const DRAW_S: f64 = 0.5;
 /// Quick slots (keys 1–6): the attachment points, in order.
 const QUICK_SLOTS: usize = 6;
-
-/// Where a ray from `from` along `dir` enters the box `lo`–`hi` (distance), if it does.
-fn ray_box(from: DVec3, dir: DVec3, lo: DVec3, hi: DVec3) -> Option<f64> {
-    let mut near = 0.0f64;
-    let mut far = f64::INFINITY;
-    for a in 0..3 {
-        let (o, d, l, h) = (from[a], dir[a], lo[a], hi[a]);
-        if d.abs() < 1e-9 {
-            if o < l || o > h {
-                return None;
-            }
-            continue;
-        }
-        let (t0, t1) = ((l - o) / d, (h - o) / d);
-        near = near.max(t0.min(t1));
-        far = far.min(t0.max(t1));
-        if near > far {
-            return None;
-        }
-    }
-    Some(near)
-}
 
 /// How far a third-person camera stands from the eyes (m).
 const THIRD_PERSON_M: f64 = 3.5;
@@ -230,6 +193,15 @@ pub struct Client {
     pub perspective: Perspective,
     view_bobbing: bool,
     figure_boxes: Vec<FigureInstance>,
+    /// The things lying, carcasses and animals as last drawn: their boxes' range in
+    /// `figure_boxes`, drawn about `drawn_view` (T §2.3: the aim meets them and the highlight
+    /// follows them as drawn).
+    drawn: Vec<(Drawn, std::ops::Range<usize>)>,
+    drawn_view: DVec3,
+    /// The blocks as they are drawn, for the aim to meet them by their own shapes.
+    shapes: Option<crate::aim::Shapes>,
+    /// The climate codes of the column last highlighted (its foliage's season).
+    aim_tints: Option<(hearth_math::ColumnPos, hearth_render::mesh::ColumnTints)>,
     /// The player's body as a sculpted mesh (E7).
     person: crate::people::Person,
     /// Trees falling: drawn as boxes turning about their stump until they come to rest.
@@ -340,6 +312,13 @@ pub struct Client {
     pub crafting: Option<Crafting>,
     /// Knapping by hand asked for (the app opens its screen).
     pub knap_request: Option<crate::knapping_ui::KnapScreen>,
+}
+
+/// What a run of the boxes drawn is (the aim meets it, the highlight follows it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Drawn {
+    Item(u64),
+    Animal(u64),
 }
 
 /// An animal as the server last told of it, and as drawn: where, facing, and its body's
@@ -493,6 +472,10 @@ impl Client {
             perspective: Perspective::First,
             view_bobbing: options.video.view_bobbing,
             figure_boxes: Vec::new(),
+            drawn: Vec::new(),
+            drawn_view: DVec3::ZERO,
+            shapes: None,
+            aim_tints: None,
             person: crate::people::Person::new(7),
             falling: Vec::new(),
             tumbling: Vec::new(),
@@ -618,32 +601,28 @@ impl Client {
         Some(((angle / std::f64::consts::TAU * n as f64 + 0.5) as usize) % n)
     }
 
-    /// What the eyes rest on within reach: a thing lying there, or a block (plants and water
-    /// included).
+    /// What the eyes rest on within reach (T §2.3): a thing lying there by the boxes it is drawn
+    /// as (a carcass by its body), an animal by its body's parts, or a block by its drawn shape
+    /// (a plant's fruit told from its leaves, the ground's patch, water's surface).
     fn find_aim(&self) -> Option<Aim> {
         let w = self.world.as_ref()?;
         let items = self.items.as_ref()?;
         let eye = self.camera.pos;
         let dir = self.camera.forward().as_dvec3();
         let mut best: Option<(f64, Aim)> = None;
-        for wi in &self.world_items {
-            let Some(k) = wi.stack.kind(items) else {
+        // The boxes as last drawn, about where they were drawn from.
+        let from = eye - self.drawn_view;
+        for (thing, run) in &self.drawn {
+            let Drawn::Item(id) = *thing else {
                 continue;
             };
-            let p = DVec3::from_array(wi.pos);
-            if (p - eye).length() > REACH_M + 2.0 {
-                continue;
-            }
-            let [x, y, z] = k.resting_m();
-            let r = (0.5 * x.max(z) as f64).max(0.08);
-            let h = (y as f64).max(0.06);
-            let lo = p - DVec3::new(r, 0.0, r);
-            let hi = p + DVec3::new(r, h, r);
-            if let Some(t) = ray_box(eye, dir, lo, hi)
-                && t <= REACH_M
-                && best.as_ref().is_none_or(|b| t < b.0)
-            {
-                best = Some((t, Aim::Item(wi.id)));
+            for b in self.figure_boxes.get(run.clone()).unwrap_or_default() {
+                if let Some(t) = crate::aim::ray_instance(b, from, dir)
+                    && t <= REACH_M
+                    && best.as_ref().is_none_or(|b| t < b.0)
+                {
+                    best = Some((t, Aim::Item(id)));
+                }
             }
         }
         // An animal within reach of what is in the right hand (a spear's length and the arm),
@@ -683,7 +662,24 @@ impl Client {
                 }
             }
         }
-        if let Some((t, hit)) = pick_block(&w.mirror, &w.reg, eye, dir, REACH_M)
+        // The leaves fallen as the terrain draws them: by the column's climate and the date
+        // (the column of the block the eyes last rested on kept).
+        let year_frac = self.calendar.at(self.ticks).year_frac;
+        let kept = self.aim_tints.as_ref();
+        let leaf = |p: hearth_math::BlockPos| {
+            let col = hearth_math::ColumnPos::new(p.x >> 4, p.z >> 4);
+            let climate = match kept {
+                Some((c, t)) if *c == col => t.climate[((p.z & 15) * 16 + (p.x & 15)) as usize],
+                _ => {
+                    crate::scene::column_tints(&w.generator, col).climate
+                        [((p.z & 15) * 16 + (p.x & 15)) as usize]
+                }
+            };
+            crate::aim::leaf_cover(climate, year_frac)
+        };
+        if let Some(shapes) = &self.shapes
+            && let Some((t, hit)) =
+                pick_block(&w.mirror, &w.reg, shapes, (eye, dir), REACH_M, &leaf)
             && best.as_ref().is_none_or(|b| t < b.0)
         {
             best = Some((t, hit));
@@ -833,6 +829,7 @@ impl Client {
                 ToServer::Act {
                     process,
                     aim,
+                    at: self.aim.and_then(|a| a.point()),
                     hand: None,
                     with: self.with_hand.take(),
                 }
@@ -858,6 +855,7 @@ impl Client {
         self.server.send(ToServer::Act {
             process,
             aim,
+            at: None,
             hand,
             with,
         });
@@ -1398,10 +1396,12 @@ impl Client {
             let facing = -self.camera.yaw.to_radians();
             self.hearing.calls(&calls, cat, self.camera.pos, facing);
         }
-        for s in self
+        // The animals by their ids (the aim meets them); the birds of the far flocks, none.
+        for (id, s) in self
             .animals
-            .values_mut()
-            .chain(self.flock_birds.values_mut())
+            .iter_mut()
+            .map(|(id, s)| (Some(*id), s))
+            .chain(self.flock_birds.values_mut().map(|s| (None, s)))
         {
             s.pos += (s.target.pos - s.pos) * k as f64;
             if (s.target.pos - s.pos).length() > 8.0 {
@@ -1487,9 +1487,14 @@ impl Client {
             let chest =
                 hearth_math::BlockPos::containing(s.pos + DVec3::Y * (rig.torso_y * scale) as f64);
             let light = (w.mirror.sky_light(chest), w.mirror.block_light(chest));
+            let first = self.figure_boxes.len();
             for (b, skin) in bodies.skinned(species, rig, &pose, coat) {
                 self.figure_boxes
                     .push(hearth_character::skinned(place * b, skin, light));
+            }
+            if let Some(id) = id {
+                self.drawn
+                    .push((Drawn::Animal(id), first..self.figure_boxes.len()));
             }
         }
     }
@@ -1534,77 +1539,46 @@ impl Client {
         Some((at, state, crate::building::ghost_color(rests, worst)))
     }
 
-    /// The one thing looked at, softly outlined (P §5.1): the block (its shape's bounds), the
-    /// thing lying there, or the animal.
-    fn highlight_boxes(&mut self, view: DVec3) {
-        const SOFT: [u8; 3] = [255, 238, 182];
-        const THIN: f32 = 0.012;
+    /// The one thing looked at, as its own shape (P §5.1, T §2.3): the boxes it is drawn as
+    /// (a thing lying, a carcass, an animal); a block's own quads (only its fruit and flowers
+    /// when those are what the eyes rest on); the patch of ground a dig there takes; the water
+    /// about the point. Never a box about it.
+    fn highlight(&mut self, view: DVec3) -> Option<hearth_render::outline::Highlight> {
+        use hearth_render::outline::Highlight;
         if self.mode != CameraMode::Body || self.dead() {
-            return;
+            return None;
         }
-        let (Some(aim), Some(w), Some(items)) = (self.aim, &self.world, &self.items) else {
-            return;
-        };
-        let boxes = match aim {
-            Aim::Block { pos, .. } => {
-                let Some(state) = w.mirror.block(pos) else {
-                    return;
+        let aim = self.aim?;
+        match aim {
+            Aim::Item(id) | Aim::Animal(id) => {
+                let want = match aim {
+                    Aim::Item(_) => Drawn::Item(id),
+                    _ => Drawn::Animal(id),
                 };
-                let Some(all) = w
-                    .reg
-                    .outline_shape(state)
-                    .boxes
-                    .iter()
-                    .copied()
-                    .reduce(|a, b| hearth_math::Aabb {
-                        min: a.min.min(b.min),
-                        max: a.max.max(b.max),
-                    })
-                else {
-                    return;
-                };
-                let o = DVec3::new(pos.x as f64, pos.y as f64, pos.z as f64);
-                crate::building::box_edges(o + all.min, o + all.max, SOFT, view, THIN)
+                let (_, run) = self.drawn.iter().find(|(d, _)| *d == want)?;
+                Some(Highlight::Boxes(
+                    self.figure_boxes.get(run.clone())?.to_vec(),
+                ))
             }
-            Aim::Item(id) => {
-                let Some(wi) = self.world_items.iter().find(|w| w.id == id) else {
-                    return;
-                };
-                let Some(k) = wi.stack.kind(items) else {
-                    return;
-                };
-                let p = DVec3::from_array(wi.pos);
-                let [x, y, z] = k.resting_m();
-                let r = (0.5 * x.max(z) as f64).max(0.08);
-                let h = (y as f64).max(0.06);
-                crate::building::box_edges(
-                    p - DVec3::new(r, 0.0, r),
-                    p + DVec3::new(r, h, r),
-                    SOFT,
-                    view,
-                    THIN,
-                )
+            Aim::Block { pos, at, part, .. } => {
+                let col = hearth_math::ColumnPos::new(pos.x >> 4, pos.z >> 4);
+                let tints = self.tints_of(col)?;
+                let (w, shapes) = (self.world.as_ref()?, self.shapes.as_ref()?);
+                crate::aim::block_highlight(shapes, &w.mirror, &tints, (pos, at, part), view)
             }
-            Aim::Animal(id) => {
-                let (Some(a), Some(cat)) = (self.animals.get(&id), &self.fauna) else {
-                    return;
-                };
-                let Some(sp) = cat.species.get(a.target.species as usize) else {
-                    return;
-                };
-                // About the body: its length from its mass, its height a little over half.
-                let l = 0.45 * (sp.mass_kg as f64).max(0.05).cbrt();
-                let (r, h) = (0.5 * l, 0.6 * l);
-                crate::building::box_edges(
-                    a.pos - DVec3::new(r, 0.0, r),
-                    a.pos + DVec3::new(r, h, r),
-                    SOFT,
-                    view,
-                    THIN,
-                )
-            }
-        };
-        self.figure_boxes.extend(boxes);
+        }
+    }
+
+    /// A column's tints (its climate codes), kept for the column last asked about.
+    fn tints_of(
+        &mut self,
+        col: hearth_math::ColumnPos,
+    ) -> Option<hearth_render::mesh::ColumnTints> {
+        let w = self.world.as_ref()?;
+        if self.aim_tints.as_ref().is_none_or(|(c, _)| *c != col) {
+            self.aim_tints = Some((col, crate::scene::column_tints(&w.generator, col)));
+        }
+        self.aim_tints.as_ref().map(|(_, t)| t.clone())
     }
 
     /// The ghost of a piece where it will go: the one being put up while the work goes on,
@@ -1785,9 +1759,14 @@ impl Client {
             );
             let b = hearth_math::BlockPos::containing(pos + DVec3::Y * 0.3);
             let light = (w.mirror.sky_light(b), w.mirror.block_light(b));
+            let first = self.figure_boxes.len();
             for (b, skin) in bodies.skinned(si, rig, &pose, coat) {
                 self.figure_boxes
                     .push(hearth_character::skinned(place * b, skin, light));
+            }
+            if seed != u64::MAX {
+                self.drawn
+                    .push((Drawn::Item(seed), first..self.figure_boxes.len()));
             }
         }
     }
@@ -1816,6 +1795,10 @@ impl Client {
                 Quat::from_rotation_y(wi.yaw),
                 (center - view).as_vec3(),
             );
+            self.drawn.push((
+                Drawn::Item(wi.id),
+                self.figure_boxes.len()..self.figure_boxes.len() + 1,
+            ));
             self.figure_boxes
                 .push(hearth_character::solid(place, k.color, light(p)));
         }
@@ -3398,6 +3381,13 @@ impl Client {
                         c.prefer = crate::crafting_ui::load_prefer(&path);
                     }
                     self.pose = None;
+                    let t0 = std::time::Instant::now();
+                    self.shapes = Some(crate::aim::Shapes::new(&r.reg, self.atlas.clone()));
+                    self.aim_tints = None;
+                    log::info!(
+                        "the blocks' shapes for the aim baked in {:.0} ms",
+                        t0.elapsed().as_secs_f64() * 1e3
+                    );
                     self.world = Some(World {
                         planet,
                         terrain: r.generator.terrain.clone(),
@@ -3788,6 +3778,8 @@ impl Client {
                 / 15.0
         });
         self.figure_boxes.clear();
+        self.drawn.clear();
+        self.drawn_view = view.pos;
         self.thing_boxes(view.pos);
         // The radians a pixel spans, for the birds far off (drawn no smaller than a speck).
         let pixel = self.scene.as_ref().map_or(0.002, |s| {
@@ -3799,7 +3791,7 @@ impl Client {
         self.carcass_boxes(view.pos);
         self.sign_boxes(view.pos);
         self.ghost_boxes(view.pos);
-        self.highlight_boxes(view.pos);
+        let highlight = self.highlight(view.pos);
         let (Some(scene), Some(env)) = (&mut self.scene, &mut self.env) else {
             // Nothing to draw yet: just clear.
             let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -3916,6 +3908,7 @@ impl Client {
         }
         scene.people.set(ctx, people);
         scene.figures.set(ctx, &self.figure_boxes);
+        scene.highlight = highlight;
         scene.senses = clear.senses(senses);
         scene.set_taa(ctx, self.taa);
         scene.prepare(ctx, &view, targets.size, &e, dt);
@@ -4706,104 +4699,4 @@ fn hand_index(hand: hearth_items::Hand) -> usize {
         hearth_items::Hand::Left => 0,
         hearth_items::Hand::Right => 1,
     }
-}
-
-/// The first block a look meets within `reach` (m) of `eye` along `dir`, by the bounds of its
-/// shape (water at its surface): how far, and where (the face it was met by). A march of 3 cm
-/// steps: cheap enough to run every frame (P §5.1 asks under 0.2 ms; `tests/picking.rs`).
-pub fn pick_block(
-    mirror: &CubeMap,
-    reg: &BlockRegistry,
-    eye: DVec3,
-    dir: DVec3,
-    reach: f64,
-) -> Option<(f64, Aim)> {
-    // The smooth ground (Amendment S): where the look meets its surface, to the millimetre.
-    // Blocks are looked for only before it, and natural ground is not a block to them.
-    let ground = hearth_world::ground::raycast(mirror, reg, eye, dir, reach);
-    let reach = ground.map_or(reach, |g| g.distance);
-    let mut t = 0.0;
-    let mut prev = eye;
-    while t <= reach {
-        let p = eye + dir * t;
-        let bp = hearth_math::BlockPos::containing(p);
-        if let Some(s) = mirror.block(bp)
-            && !s.is_air()
-            && !reg.has(s, hearth_world::StateFlags::NATURAL)
-        {
-            let local = p - DVec3::new(bp.x as f64, bp.y as f64, bp.z as f64);
-            let def = &reg.block_of(s).def;
-            let shape = reg.outline_shape(s);
-            let hit_box = shape.boxes.iter().find(|b| {
-                local.x >= b.min.x
-                    && local.x <= b.max.x
-                    && local.y >= b.min.y
-                    && local.y <= b.max.y
-                    && local.z >= b.min.z
-                    && local.z <= b.max.z
-            });
-            let top_y = match (def.fluid.is_some(), hit_box) {
-                (true, _) => Some(0.85),
-                (false, Some(b)) => Some(b.max.y),
-                _ => None,
-            };
-            if let Some(top_y) = top_y {
-                {
-                    let top = prev.y >= bp.y as f64 + top_y - 1e-3;
-                    // The face the ray came in by: the side of the box the step before lay
-                    // furthest out of.
-                    let before = prev - DVec3::new(bp.x as f64, bp.y as f64, bp.z as f64);
-                    let (lo, hi) = hit_box.map_or((DVec3::ZERO, DVec3::ONE), |b| (b.min, b.max));
-                    let face = if top {
-                        hearth_math::Direction::Up
-                    } else {
-                        use hearth_math::Direction as D;
-                        [
-                            (lo.y - before.y, D::Down),
-                            (lo.x - before.x, D::West),
-                            (before.x - hi.x, D::East),
-                            (lo.z - before.z, D::North),
-                            (before.z - hi.z, D::South),
-                        ]
-                        .into_iter()
-                        .max_by(|a, b| a.0.total_cmp(&b.0))
-                        .map_or(D::Up, |(_, d)| d)
-                    };
-                    return Some((
-                        t,
-                        Aim::Block {
-                            pos: bp,
-                            top,
-                            face,
-                            at: p,
-                        },
-                    ));
-                }
-            }
-        }
-        prev = p;
-        t += 0.03;
-    }
-    ground.map(|g| {
-        use hearth_math::Direction as D;
-        let n = g.normal;
-        let face = if n.y.abs() >= n.x.abs().max(n.z.abs()) {
-            if n.y > 0.0 { D::Up } else { D::Down }
-        } else if n.x.abs() >= n.z.abs() {
-            if n.x > 0.0 { D::East } else { D::West }
-        } else if n.z > 0.0 {
-            D::South
-        } else {
-            D::North
-        };
-        (
-            g.distance,
-            Aim::Block {
-                pos: g.voxel,
-                top: face == D::Up,
-                face,
-                at: g.at,
-            },
-        )
-    })
 }

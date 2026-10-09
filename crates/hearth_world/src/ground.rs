@@ -10,6 +10,7 @@
 
 use glam::DVec3;
 use hearth_math::BlockPos;
+use hearth_math::hash::{mix64, unit_f64};
 
 use crate::block::{BlockRegistry, BlockStateId, StateFlags};
 use crate::fill::{Fill, RANGE};
@@ -200,10 +201,29 @@ pub fn refill(map: &mut CubeMap, reg: &BlockRegistry, lo: BlockPos, hi: BlockPos
     }
 }
 
+/// The bowl a dig of `radius` m takes its earth from about `at` (a surface point with its
+/// outward `normal`): its middle, sunk a third of the radius below the surface, and its radius
+/// (0.6 m at least). Where it meets the surface is the patch the dig changes, the one its
+/// preview shows (S §8.3, T §2.3).
+pub fn bowl(at: DVec3, normal: DVec3, radius: f64) -> (DVec3, f64) {
+    (at - normal * (radius * 0.35), radius.max(0.6))
+}
+
+/// The radius of a stroke of digging (m).
+pub const DIG_RADIUS_M: f64 = 0.55;
+
+/// How far along the surface a stroke's earth is shared among the voxels about it (m): one
+/// voxel's spacing, so the voxels either side of where the tool strikes give in proportion to
+/// its nearness to each, and the hole's middle is where it struck (T §2.3), not the middle of a
+/// voxel.
+const SHARE_M: f64 = 1.0;
+
 /// Digs `volume` m³ of natural ground about `at` (a surface point), from a bowl of `radius` m
-/// sunk along `-normal`: the voxels nearest the bowl's middle give most. Returns what was taken,
-/// to the fill's step (`STEP`, some 12 litres): a caller digging less at a stroke carries the
-/// rest to the next. `diggable` says which states the tool can move.
+/// sunk along `-normal` (`bowl`): the voxels nearest the bowl's middle give most, along the
+/// surface shared over a voxel's spacing (the hole centred where the tool struck), into it no
+/// deeper than the bowl. Returns what was taken, to the fill's step (`STEP`, some 12 litres): a
+/// caller digging less at a stroke carries the rest to the next. `diggable` says which states the
+/// tool can move.
 pub fn dig(
     map: &mut CubeMap,
     reg: &BlockRegistry,
@@ -213,10 +233,11 @@ pub fn dig(
     volume: f32,
     diggable: &dyn Fn(BlockStateId) -> bool,
 ) -> Taken {
-    let centre = at - normal * (radius * 0.35);
-    let r = radius.max(0.6);
-    let (lo, hi) = bounds(centre, r);
-    // Weight each voxel by nearness to the bowl's middle and what ground it holds.
+    let (centre, r) = bowl(at, normal, radius);
+    let along = r.max(SHARE_M);
+    let (lo, hi) = bounds(centre, along);
+    // Weight each voxel by nearness to the bowl's middle, into the ground and along it, and
+    // what ground it holds.
     let mut cells = Vec::new();
     let mut total = 0.0f32;
     for y in lo.y..=hi.y {
@@ -227,13 +248,14 @@ pub fn dig(
                 if !reg.has(s, StateFlags::NATURAL) || !diggable(s) {
                     continue;
                 }
-                let d =
-                    (DVec3::new(x as f64 + 0.5, y as f64 + 0.5, z as f64 + 0.5) - centre).length();
-                if d > r {
+                let o = DVec3::new(x as f64 + 0.5, y as f64 + 0.5, z as f64 + 0.5) - centre;
+                let deep = o.dot(normal).abs();
+                let aside = (o - normal * o.dot(normal)).length();
+                if deep > r || aside > along {
                     continue;
                 }
                 let occ = occupancy_at(map, reg, p);
-                let w = (1.0 - d / r) as f32 * occ;
+                let w = ((1.0 - deep / r) * (1.0 - aside / along)) as f32 * occ;
                 if w > 0.0 {
                     cells.push((p, s, occ, w));
                     total += w;
@@ -245,18 +267,54 @@ pub fn dig(
     if total <= 0.0 {
         return taken;
     }
-    // Whole steps of the fill: each voxel its share by weight, rounded down, then the steps
-    // left to the voxels nearest a further step, until the volume is taken to half a step.
+    // Whole steps of the fill: each voxel its share by weight, rounded down.
     let mut steps = (volume / STEP).round() as i64;
     let have: Vec<i64> = cells.iter().map(|c| (c.2 / STEP).round() as i64).collect();
     let mut give: Vec<i64> = vec![0; cells.len()];
-    let mut part: Vec<(f32, usize)> = Vec::new();
+    let mut left: Vec<f32> = vec![0.0; cells.len()];
     for (k, c) in cells.iter().enumerate() {
         let want = c.3 / total * steps as f32;
         give[k] = (want.floor() as i64).min(have[k]);
-        part.push((want - give[k] as f32, k));
+        if give[k] < have[k] {
+            left[k] = (want - give[k] as f32).clamp(0.0, 1.0);
+        }
     }
     steps -= give.iter().sum::<i64>();
+    // The steps left fall to the voxels by a draw over what is left of their shares: a stroke
+    // takes a step or two, and over its strokes each voxel gives in proportion to its share, so
+    // the hole's middle is where the tool struck, not the middle of the nearest voxel. The draw
+    // is fixed by the ground as it is (the same stroke of the same ground takes the same earth).
+    let mut h = cells.iter().zip(&have).fold(
+        mix64(
+            ((centre.x * 1e3).round() as i64 as u64)
+                ^ ((centre.z * 1e3).round() as i64 as u64) << 1,
+        ),
+        |h, (c, n)| {
+            mix64(h ^ (c.0.x as u64) ^ (c.0.y as u64) << 21 ^ (c.0.z as u64) << 42 ^ *n as u64)
+        },
+    );
+    while steps > 0 {
+        let sum: f32 = left.iter().sum();
+        if sum <= 0.0 {
+            break;
+        }
+        h = mix64(h);
+        let mut u = unit_f64(h) as f32 * sum;
+        let k = left
+            .iter()
+            .position(|&f| {
+                u -= f;
+                f > 0.0 && u <= 0.0
+            })
+            .or_else(|| left.iter().rposition(|&f| f > 0.0))
+            .unwrap_or(0);
+        give[k] += 1;
+        left[k] = 0.0;
+        steps -= 1;
+    }
+    // Any still asked for (the shares' voxels emptied): from the voxels with room, the nearest
+    // the bowl's middle first.
+    let mut part: Vec<(f32, usize)> = cells.iter().enumerate().map(|(k, c)| (c.3, k)).collect();
     part.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
     while steps > 0 {
         let mut any = false;

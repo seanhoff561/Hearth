@@ -11,7 +11,7 @@ pub mod paint;
 pub mod plants;
 pub mod trees;
 
-pub use paint::Tex;
+pub use paint::{PART_ALPHA, Tex};
 
 /// A texture in the pack. Animated textures are vertical strips of `frames` frames.
 #[derive(Debug, Clone)]

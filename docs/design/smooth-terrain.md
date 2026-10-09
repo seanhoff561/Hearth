@@ -75,10 +75,17 @@ centres, unloaded ground outside.
 - **Looking:** a look marches the field a tenth of a metre at a time and bisects to the
   crossing, to a millimetre; the normal is the field's gradient (`raycast`).
 - **Digging** takes a volume from a bowl sunk into the surface at the point looked at, the
-  voxels nearest its middle giving most (`dig`). It takes whole steps of the fill (some 12
-  litres of a 1 m voxel); a stroke smaller carries the rest to the next. A dig process moves a
-  cubic metre in all, stroke by stroke as the work goes (`workshop/ground.rs`); work taken up
-  again has its share dug already.
+  voxels nearest its middle giving most (`dig`): into the ground no deeper than the bowl, along
+  it shared over a voxel's spacing, so the voxels either side of the point give in proportion
+  to its nearness to each and the hole's middle is where the tool struck (T §2.3, D295). It
+  takes whole steps of the fill (some 12 litres of a 1 m voxel), the steps left over drawn by
+  what is left of each voxel's share (a draw fixed by the ground as it is); a stroke smaller
+  carries the rest to the next. A dig process moves a cubic metre in all, stroke by stroke as
+  the work goes, where the player's look rested when it began (`workshop/ground.rs`,
+  `ToServer::Act::at`); work taken up again has its share dug already. Struck 0.425 m off a
+  voxel's middle, 0.72 m³ leaves the ground 0.20 m lower on the point's side than across the
+  voxel (`a_hole_is_centred_where_the_tool_strikes`). The patch a stroke takes is what the aim's
+  highlight shows (`ground::bowl`).
 - **Piling** puts a volume into the lowest open voxels about a point, each filled from below,
   reaching further where something stands in the way; it buries grass and low plants (`pile`).
   What is laid on top is what a voxel shows: a voxel is of one material.
