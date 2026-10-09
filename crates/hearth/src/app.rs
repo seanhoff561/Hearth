@@ -666,6 +666,12 @@ impl App {
         spec.shape = new.shape;
         spec.birthplace = new.birthplace;
         spec.mode = new.mode;
+        // The world the menus made to choose the birthplace, taken up by the new world.
+        spec.prepared = self
+            .choosing
+            .as_ref()
+            .and_then(|c| c.finder.as_ref())
+            .map(|f| f.prepared());
         self.making = None;
         self.choosing = None;
         let mut client = Client::new(
@@ -692,6 +698,7 @@ impl App {
             .dirs
             .cache()
             .join(crate::scene::globe_cache_name(&settings));
+        let cache_dir = self.dirs.cache();
         let told = progress.clone();
         let content = self.content.content.clone();
         let when = match choice.shape.start {
@@ -728,6 +735,7 @@ impl App {
                     }
                 };
                 let terrain = Arc::new(hearth_worldgen::region::Terrain::new(Arc::new(grid)));
+                crate::scene::keep_relief(&terrain, &cache_dir);
                 // The globe's map from the grid, kept beside it: never blank once the planet is.
                 tell(1.0, "Drawing the globe");
                 let map =
@@ -1236,9 +1244,7 @@ impl App {
                 let gui = options.video.gui_scale;
                 let backdrop = options.accessibility.text_background_opacity;
                 interface.frame(ctx, enc, targets.color, format, targets.size, gui, |ui| {
-                    if let Some(c) = client.as_ref() {
-                        c.hud(ui, backdrop);
-                    }
+                    let cancelled = client.as_ref().is_some_and(|c| c.hud(ui, backdrop));
                     let mut cx = MenuContext {
                         options,
                         bindings,
@@ -1269,6 +1275,9 @@ impl App {
                         }),
                     };
                     actions = menus.ui(ui, &mut cx);
+                    if cancelled {
+                        actions.push(MenuAction::QuitToTitle);
+                    }
                 });
                 // The character creator's person, over its space in the interface.
                 if let Some(p) = menus.preview() {

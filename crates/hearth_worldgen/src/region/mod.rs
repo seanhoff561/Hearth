@@ -308,7 +308,12 @@ impl Terrain {
             seed: grid.seed,
             realms: Arc::new(crate::realms::Realms::new(&grid)),
             relief: (!relief.levels().is_empty()).then(|| Arc::new(relief)),
-            near: Arc::new(NearCache(crate::cubegen::cache::Cache::new(1024))),
+            near: Arc::new(NearCache(crate::cubegen::cache::Cache::new(
+                // As many as the samples' memory budget holds, at some 16 KiB each (E4.1 §4.7).
+                (hearth_core::memory::budget(hearth_core::memory::Kind::Samples) as usize
+                    / (16 << 10))
+                    .clamp(256, 4096),
+            ))),
             coarse: Arc::new(CoarseCache(crate::cubegen::cache::Cache::new(256))),
             grid,
         }
@@ -458,6 +463,47 @@ impl Terrain {
             self.nearby_scaled(x0, z0, x0 + side - 1, z0 + side - 1, cell / 4.0)
         });
         self.sample_with(x, z, &near)
+    }
+
+    /// What the terrain keeps in memory, by kind (bytes): the planet grid, the refinement
+    /// levels' tiles, the neighbourhoods kept for samples (E4.1 §4.7).
+    pub fn memory(&self) -> Vec<(&'static str, u64)> {
+        const LEVELS: [&str; 4] = [
+            "terrain tiles ~2.5 km",
+            "terrain tiles ~300 m",
+            "terrain tiles ~40 m",
+            "terrain tiles, finer",
+        ];
+        let mut out = vec![("planet grid", self.grid.bytes())];
+        if let Some(r) = &self.relief {
+            for (l, b) in r.tiles_bytes().into_iter().enumerate() {
+                out.push((LEVELS[l.min(3)], b));
+            }
+        }
+        let nearby = |n: &Nearby| {
+            std::mem::size_of::<Nearby>() as u64 + n.patch.as_ref().map_or(0, Patch::bytes)
+        };
+        out.push((
+            "terrain samples' neighbourhoods",
+            self.near.0.sum(nearby) + self.coarse.0.sum(nearby),
+        ));
+        out
+    }
+
+    /// Keeps the refinement levels' tiles on disk too (E4.1 §4.4), in a folder of `root` of the
+    /// planet's own (its grid's fingerprint, the tiles' format); the folders of other planets
+    /// there go, the longest unused first, while all together hold more than `cap` bytes.
+    pub fn keep_tiles_on_disk(&self, root: &std::path::Path, cap: u64) {
+        let Some(r) = &self.relief else {
+            return;
+        };
+        let dir = root.join(format!(
+            "{:016x}_f{}",
+            self.grid.fingerprint(),
+            crate::relief_store::FORMAT
+        ));
+        hearth_core::disk_cache::prune_others(root, &dir, cap);
+        r.keep_on_disk(&dir, cap);
     }
 
     /// The finest refinement level (0 where there are none: the grid's).

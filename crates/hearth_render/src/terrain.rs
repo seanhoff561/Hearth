@@ -105,6 +105,11 @@ pub(crate) struct Arena {
 }
 
 impl Arena {
+    /// Video memory the arena's buffer takes (bytes).
+    pub(crate) fn bytes(&self) -> u64 {
+        self.stride * self.alloc.capacity() as u64
+    }
+
     pub(crate) fn new(
         device: &wgpu::Device,
         label: &'static str,
@@ -898,6 +903,11 @@ impl TerrainRenderer {
 
     pub fn contains(&self, pos: CubePos) -> bool {
         self.meshes.contains_key(&self.planet.wrap_cube(pos))
+    }
+
+    /// Video memory the near terrain's meshes take (bytes, their buffers' whole size).
+    pub fn bytes(&self) -> u64 {
+        self.packed.bytes() + self.general.bytes() + self.smooth_v.bytes() + self.smooth_i.bytes()
     }
 
     /// Visible cubes via cave culling (BFS through connected faces) and frustum tests, into

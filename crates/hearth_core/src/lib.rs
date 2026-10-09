@@ -5,6 +5,9 @@
 //! This crate deliberately has no dependency on rendering, windowing or world code so that
 //! everything else can build on it.
 
+pub mod disk_cache;
+pub mod jobs;
+pub mod memory;
 pub mod options;
 pub mod paths;
 pub mod prof;

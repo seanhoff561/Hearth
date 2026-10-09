@@ -48,6 +48,7 @@ fn main() {
     if all.first().map(String::as_str) == Some("bench") {
         let dirs = hearth::resolve_dirs(None);
         hearth::crash::open(&dirs.logs(), "bench");
+        hearth_core::jobs::init(0, 0);
         let code = hearth::bench::run(&all[1..], Some(&dirs.cache()));
         hearth::crash::clean_exit();
         std::process::exit(code);
@@ -116,6 +117,7 @@ fn main() {
         }
         let dirs = hearth::resolve_dirs(config.dirs);
         hearth::crash::open(&dirs.logs(), "screenshot");
+        hearth_core::jobs::init(0, 0);
         if let Err(e) = hearth::screenshot::run(&shots, Some(&dirs.cache()), &dirs.screenshots()) {
             hearth::crash::fatal(&format!("screenshot failed: {e:#}"));
             std::process::exit(1);
@@ -126,6 +128,11 @@ fn main() {
 
     let dirs = hearth::resolve_dirs(config.dirs.take());
     hearth::crash::open(&dirs.logs(), "latest");
+    // The worker threads, before anything runs in parallel: as the options say, else from the
+    // machine with cores kept for the game's own threads (E4.1 §4.6).
+    let perf = hearth_core::options::Options::load_or_default(&dirs.options_file()).performance;
+    hearth_core::jobs::init(perf.workers as usize, perf.reserved_cores as usize);
+    hearth_core::memory::init(perf.memory_share);
     config.dirs = Some(dirs);
     if let Err(e) = hearth::run(config) {
         hearth::crash::fatal(&format!("{} crashed: {e:#}", hearth_core::GAME_NAME));

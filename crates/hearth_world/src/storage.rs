@@ -106,16 +106,6 @@ impl CubeMap {
         self.columns.iter()
     }
 
-    /// Removes a column record (only when none of its cubes are loaded).
-    pub fn remove_column_if_empty(&mut self, pos: ColumnPos) -> Option<Column> {
-        let pos = self.planet.wrap_column(pos);
-        if self.columns.get(&pos).is_some_and(|c| c.loaded.is_empty()) {
-            self.columns.remove(&pos)
-        } else {
-            None
-        }
-    }
-
     #[inline]
     pub fn cube(&self, pos: CubePos) -> Option<&Arc<Cube>> {
         self.cubes.get(&self.planet.wrap_cube(pos))
@@ -178,12 +168,17 @@ impl CubeMap {
         }
     }
 
-    /// Removes a cube. The column record stays (its heightmap remains valid knowledge).
+    /// Removes a cube, and its column's record with its last cube.
     pub fn remove_cube(&mut self, pos: CubePos) -> Option<Arc<Cube>> {
         let pos = self.planet.wrap_cube(pos);
         let cube = self.cubes.remove(&pos)?;
         if let Some(col) = self.columns.get_mut(&pos.column()) {
             col.mark_unloaded(pos.y);
+            // A column with nothing loaded is let go (made again from the estimate when a cube
+            // of it loads, as the first time): a long journey leaves none behind (E4.1 §4.7).
+            if col.loaded.is_empty() {
+                self.columns.remove(&pos.column());
+            }
         }
         Some(cube)
     }
@@ -290,9 +285,15 @@ impl CubeMap {
             .map_or(0, |c| c.block_light(pos.local()))
     }
 
-    /// Total approximate heap bytes of loaded cubes.
+    /// Total approximate heap bytes of the loaded cubes and their columns.
     pub fn heap_bytes(&self) -> usize {
-        self.cubes.values().map(|c| c.heap_bytes()).sum()
+        self.cubes.values().map(|c| c.heap_bytes()).sum::<usize>()
+            + self.columns.len() * std::mem::size_of::<Column>()
+    }
+
+    /// The columns kept (those with a cube loaded).
+    pub fn column_count(&self) -> usize {
+        self.columns.len()
     }
 }
 
@@ -454,16 +455,20 @@ mod tests {
     }
 
     #[test]
-    fn remove_cube_keeps_column_until_empty() {
+    fn a_column_goes_with_its_last_cube() {
         let reg = test_registry();
         let mut m = map();
-        m.insert_cube(
-            CubePos::new(3, 1, 3),
-            Arc::new(Cube::filled(BlockStateId::AIR)),
-            &reg,
-        );
-        assert!(m.remove_column_if_empty(ColumnPos::new(3, 3)).is_none());
+        for y in [1, 2] {
+            m.insert_cube(
+                CubePos::new(3, y, 3),
+                Arc::new(Cube::filled(BlockStateId::AIR)),
+                &reg,
+            );
+        }
+        assert_eq!(m.column_count(), 1);
         assert!(m.remove_cube(CubePos::new(3, 1, 3)).is_some());
-        assert!(m.remove_column_if_empty(ColumnPos::new(3, 3)).is_some());
+        assert_eq!(m.column_count(), 1, "kept while a cube of it is loaded");
+        assert!(m.remove_cube(CubePos::new(3, 2, 3)).is_some());
+        assert_eq!(m.column_count(), 0, "let go with its last cube");
     }
 }

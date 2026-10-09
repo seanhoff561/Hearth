@@ -95,6 +95,7 @@ impl World {
             shape: Default::default(),
             birthplace: None,
             mode: None,
+            prepared: None,
         };
         Self::start_spec(spec)
     }
@@ -114,6 +115,7 @@ impl World {
             shape: Default::default(),
             birthplace: None,
             mode: Some(mode.to_owned()),
+            prepared: None,
         };
         Self::start_spec(spec)
     }

@@ -1,6 +1,7 @@
 //! Streams distant terrain (v1 §8) around the camera: re-selects the LOD quadtree as the camera
-//! moves, builds missing tiles nearest first — those in view before those behind — on a small
-//! thread pool of its own (so it never starves the full-detail cube generation), and uploads
+//! moves, builds missing tiles nearest first — those in view before those behind — on the
+//! distant terrain's pool (below the near field's priority, so it never starves the
+//! full-detail cube generation: `hearth_core::jobs`), and uploads
 //! finished tiles a few per frame. Until a new tile is ready, the tiles it replaces stay drawn
 //! (`hearth_lod::cover`), so moving never opens holes in the distant land. Rough tiles are
 //! refined by their error on screen (`hearth_lod::select_refined`): a tile that arrives with
@@ -18,6 +19,8 @@ use hearth_worldgen::WorldGenerator;
 use hearth_worldgen::vegetation::Vegetation;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+/// The most the distant terrain's tiles kept on disk take, every planet's together (bytes).
+pub const LOD_CACHE_CAP: u64 = 1 << 30;
 /// Tiles being built at once (more wait in the queue, so a moving camera reprioritises).
 const IN_FLIGHT: usize = 48;
 /// The camera moves this far (blocks) before the selection is redone.
@@ -34,7 +37,8 @@ const MIN_DETAIL: f64 = 0.3;
 pub struct LodStream {
     generator: Arc<WorldGenerator>,
     lod: Arc<LodGen>,
-    pool: rayon::ThreadPool,
+    /// The distant terrain's pool (below the near field's priority, E4.1 §4.6).
+    pool: &'static rayon::ThreadPool,
     /// LOD distance setting (chunks) and the world's vertical scale.
     chunks: u32,
     vertical_scale: f64,
@@ -81,12 +85,8 @@ impl LodStream {
         vertical_scale: f64,
         max_error_px: f64,
     ) -> Self {
-        let threads = (std::thread::available_parallelism().map_or(4, |n| n.get()) / 4).max(2);
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .thread_name(|i| format!("lod-{i}"))
-            .build()
-            .expect("LOD thread pool");
+        let pool = hearth_core::jobs::pool(hearth_core::jobs::Priority::Lod)
+            .expect("the distant terrain's pool");
         let (done_tx, done_rx) = channel();
         Self {
             generator,
@@ -156,9 +156,20 @@ impl LodStream {
         }
     }
 
-    /// Keeps the tiles built on disk in `dir` (and reads them back).
+    /// Keeps the tiles built on disk in `dir` (and reads them back), at most
+    /// [`LOD_CACHE_CAP`] of every planet's together: the folders of other planets beside it go
+    /// (on a worker), the longest unused first, while all hold more.
     pub fn set_cache(&mut self, dir: std::path::PathBuf) {
-        self.cache = Some(Arc::new(hearth_lod::cache::TileCache::new(dir)));
+        if let Some(root) = dir.parent() {
+            let (root, keep) = (root.to_path_buf(), dir.clone());
+            hearth_core::jobs::spawn(hearth_core::jobs::Priority::Background, move || {
+                hearth_core::disk_cache::prune_others(&root, &keep, LOD_CACHE_CAP);
+            });
+        }
+        self.cache = Some(Arc::new(hearth_lod::cache::TileCache::new(
+            dir,
+            LOD_CACHE_CAP,
+        )));
     }
 
     /// New changes by the player: the tiles holding columns whose top changed are built again.

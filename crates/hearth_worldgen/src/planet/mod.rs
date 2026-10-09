@@ -162,6 +162,61 @@ pub type Progress<'a> = &'a (dyn Fn(f32, &str) + Sync);
 pub const RIVER_MIN_DISCHARGE: f32 = 2.0;
 
 impl PlanetGrid {
+    /// A fingerprint of what the refinement levels are made from (the surface, its waters and
+    /// their drainage): tells this planet's tiles kept on disk from another's, or from an older
+    /// build's of the same seed.
+    pub fn fingerprint(&self) -> u64 {
+        use std::hash::Hasher;
+        let mut h = rustc_hash::FxHasher::default();
+        h.write_u64(self.seed);
+        h.write_usize(self.n());
+        h.write_u64(self.vertical_scale.to_bits());
+        h.write_u64(self.geom.c.to_bits());
+        // Every seventh cell: a change to how a planet is made changes nearly all of them.
+        for i in (0..self.flow.len()).step_by(7) {
+            h.write_u32(self.elevation.data[i].to_bits());
+            h.write_u32(self.water.data[i].to_bits());
+            h.write_u32(self.discharge[i].to_bits());
+            h.write_u8(self.flow[i]);
+            h.write_u8(self.flags[i]);
+        }
+        h.finish()
+    }
+
+    /// The memory its fields take (bytes).
+    pub fn bytes(&self) -> u64 {
+        fn field<T>(f: &Field<T>) -> u64 {
+            (f.data.len() * std::mem::size_of::<T>()) as u64
+        }
+        let f32s = [
+            &self.elevation,
+            &self.water,
+            &self.uplift,
+            &self.coast,
+            &self.temperature,
+            &self.sea_level_temperature,
+            &self.temp_range,
+            &self.precipitation,
+            &self.winter_dry,
+            &self.summer_dry,
+            &self.current,
+        ];
+        let bytes: [&Vec<u8>; 6] = [
+            &self.flow,
+            &self.flags,
+            &self.plate,
+            &self.province,
+            &self.dry_season,
+            &self.climate,
+        ];
+        f32s.iter().map(|f| field(f)).sum::<u64>()
+            + bytes.iter().map(|v| v.len() as u64).sum::<u64>()
+            + (self.discharge.len() * 4) as u64
+            + (self.rivers.len() * std::mem::size_of::<(u32, RiverCell)>()) as u64
+    }
+}
+
+impl PlanetGrid {
     /// Builds the planet for `settings`. Deterministic for a given seed and settings.
     pub fn build(settings: &WorldGenSettings, progress: Progress<'_>) -> Self {
         let settings = settings.clone().sanitized();

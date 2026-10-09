@@ -2,7 +2,7 @@
 //! player, advanced with the calendar, their groups and small animals brought into the world
 //! near the player and folded back as the player leaves, saved with the world.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glam::{DVec2, DVec3};
@@ -17,6 +17,7 @@ use hearth_items::{Items, Stack};
 use hearth_math::BlockPos;
 use hearth_physics::{Mover, Stance};
 use hearth_world::{BlockRegistry, BlockStateId, CubeMap};
+use rustc_hash::FxHashMap;
 
 use crate::scene::LocalWorld;
 
@@ -24,6 +25,13 @@ use crate::scene::LocalWorld;
 const FILE: &str = "fauna.json.zst";
 /// Regions made on workers at once.
 const MAKERS: usize = 3;
+/// Regions this many regions or more from the player's own are set aside (E4.1 §4.7): kept as
+/// they are saved (the land's part let go, made again when they are brought back), beyond the
+/// animals' share of memory written into the world's folder, so a journey keeps in memory only
+/// the regions about the player.
+const ASIDE_STEPS: i64 = 2;
+/// The folder in the world's folder the regions set aside beyond memory are written to.
+const ASIDE_DIR: &str = "fauna";
 
 /// The loaded terrain as animals walk on it.
 pub struct MapGround<'a> {
@@ -264,18 +272,34 @@ pub struct Fauna {
     rng: hearth_math::hash::Rng,
     /// Regions being made on workers: their keys, and where each will come.
     making: Vec<((i64, i64), std::sync::mpsc::Receiver<Region>)>,
+    /// Regions set aside, as saved, by key: when each was (to write out the longest set aside
+    /// first) and the region.
+    aside: FxHashMap<(i64, i64), (u64, Region)>,
+    /// Regions set aside so far.
+    asides: u64,
+    /// The world's folder, if it is saved.
+    dir: Option<PathBuf>,
     /// What befell the kept animals since this was last taken (V2-12).
     pub tidings: Vec<hearth_fauna::herd::Tiding>,
 }
 
 /// What is saved of the populations.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 struct Saved {
     years: f64,
     next_id: u64,
     regions: Vec<Region>,
     /// The animals people keep (V2-12), apart from the populations' numbers.
     #[serde(default)]
+    kept: Vec<hearth_fauna::live::KeptSaved>,
+}
+
+/// [`Saved`] as written: the regions where they are.
+#[derive(serde::Serialize)]
+struct Saving<'a> {
+    years: f64,
+    next_id: u64,
+    regions: Vec<&'a Region>,
     kept: Vec<hearth_fauna::live::KeptSaved>,
 }
 
@@ -309,11 +333,22 @@ impl Fauna {
         let mut eco = Ecology::new(catalog.clone(), seed, year_offset, &land);
         let mut at = years;
         let mut live = Live::new(seed);
-        if let Some(saved) = dir.and_then(|d| load(&d.join(FILE))) {
+        let mut aside = FxHashMap::default();
+        let mut asides = 0;
+        if let Some(d) = dir
+            && let Some(saved) = load(&d.join(FILE))
+        {
             eco.next_id = saved.next_id;
             at = saved.years;
+            // Set aside, each brought back on a worker as the player comes near (E4.1 §4.4: a
+            // save opens without making its animals' land again first). A region written out
+            // since it was saved is not as saved: the save's stands.
             for r in saved.regions {
-                eco.restore(&land, r);
+                if let Some(path) = aside_path(Some(d), r.key) {
+                    let _ = std::fs::remove_file(path);
+                }
+                asides += 1;
+                aside.insert(r.key, (asides, r));
             }
             live.restore_kept(&catalog, saved.kept);
         }
@@ -327,6 +362,9 @@ impl Fauna {
             rng: hearth_math::hash::Rng::new(seed ^ 0x000c_a115),
             making: Vec::new(),
             tidings: Vec::new(),
+            aside,
+            asides,
+            dir: dir.map(Path::to_path_buf),
         }
     }
 
@@ -357,8 +395,69 @@ impl Fauna {
             trees: &self.yields,
         };
         for key in self.regions_about(at) {
-            self.eco.ensure_region(&land, key, self.years);
+            match self.aside.remove(&key) {
+                Some((_, r)) => self.eco.restore(&land, r),
+                None => self.eco.ensure_region(&land, key, self.years),
+            }
         }
+    }
+
+    /// Sets aside the regions far from `at` (none of their animals in the world), and writes
+    /// out the longest set aside beyond the animals' share of memory (a world not saved lets
+    /// them go: made again, they hold their animals as the land does).
+    fn set_aside(&mut self, at: DVec3) {
+        let (ki, kj) = self.eco.region_key(at.x, at.z);
+        let around = (self.eco.cells_around / REGION_CELLS).max(1);
+        let far: Vec<(i64, i64)> = self
+            .eco
+            .regions
+            .iter()
+            .filter(|(k, r)| {
+                let di = (k.0 - ki).rem_euclid(around);
+                di.min(around - di).max((k.1 - kj).abs()) >= ASIDE_STEPS
+                    && r.groups.iter().all(|g| !g.live)
+            })
+            .map(|(k, _)| *k)
+            .collect();
+        for key in far {
+            if let Some(mut r) = self.eco.regions.remove(&key) {
+                r.strip();
+                self.asides += 1;
+                self.aside.insert(key, (self.asides, r));
+            }
+        }
+        let budget = hearth_core::memory::budget(hearth_core::memory::Kind::Animals) as usize;
+        let mut held: usize = self.aside.values().map(|(_, r)| r.bytes()).sum();
+        while held > budget {
+            let Some(key) = self
+                .aside
+                .iter()
+                .min_by_key(|(_, (n, _))| *n)
+                .map(|(k, _)| *k)
+            else {
+                break;
+            };
+            let Some((_, r)) = self.aside.remove(&key) else {
+                break;
+            };
+            held = held.saturating_sub(r.bytes());
+            match aside_path(self.dir.as_deref(), key) {
+                Some(path) => hearth_core::jobs::spawn(hearth_core::jobs::Priority::Background, {
+                    move || write_region(&path, &r)
+                }),
+                None => log::debug!("region {key:?} of the populations let go (not saved)"),
+            }
+        }
+    }
+
+    /// The memory the populations hold (bytes): the regions about the player, those set aside.
+    pub fn memory(&self) -> u64 {
+        self.eco
+            .regions
+            .values()
+            .chain(self.aside.values().map(|(_, r)| r))
+            .map(|r| r.bytes() as u64)
+            .sum()
     }
 
     /// How the animals sense a person from how they move: the noise of their going (by gait
@@ -477,8 +576,11 @@ impl Fauna {
                     r.key,
                     r.groups.len()
                 );
+                // Brought back: no longer set aside.
+                self.aside.remove(&r.key);
                 self.eco.adopt(r);
             }
+            self.set_aside(player);
             let wanted: Vec<(i64, i64)> = self
                 .regions_about(player)
                 .into_iter()
@@ -497,6 +599,10 @@ impl Fauna {
                     self.yields.clone(),
                 );
                 let years = self.years;
+                // Set aside (a copy: it stays aside until it is back, and is saved so), written
+                // out, or new.
+                let kept = self.aside.get(&key).map(|(_, r)| r.clone());
+                let written = aside_path(self.dir.as_deref(), key).filter(|p| p.exists());
                 let (tx, rx) = std::sync::mpsc::channel();
                 let spawned = std::thread::Builder::new()
                     .name("fauna region".into())
@@ -508,7 +614,16 @@ impl Fauna {
                             catalog: &cat,
                             trees: &trees,
                         };
-                        maker.ensure_region(&land, key, years);
+                        match kept.or_else(|| written.and_then(|p| read_region(&p))) {
+                            Some(r) => {
+                                maker.restore(&land, r);
+                                // Long away: the years it missed as numbers (D210).
+                                if maker.regions.values().any(|r| years - r.time > FAST_YEARS) {
+                                    maker.advance_coarse(years);
+                                }
+                            }
+                            None => maker.ensure_region(&land, key, years),
+                        }
                         if let Some(r) = maker.regions.into_values().next() {
                             let _ = tx.send(r);
                         }
@@ -747,9 +862,15 @@ impl Fauna {
         let mut live = self.live.clone();
         // Everything folds, as if the player were far away.
         live.fold(&mut eco, DVec3::new(f64::MAX / 4.0, 0.0, f64::MAX / 4.0));
-        let mut regions: Vec<Region> = eco.regions.into_values().collect();
+        // With those set aside (those written out stay where they are).
+        let mut regions: Vec<&Region> = eco
+            .regions
+            .values()
+            .chain(self.aside.values().map(|(_, r)| r))
+            .collect();
         regions.sort_by_key(|r| r.key);
-        let saved = Saved {
+        let keys: Vec<(i64, i64)> = regions.iter().map(|r| r.key).collect();
+        let saved = Saving {
             years: self.years,
             next_id: eco.next_id,
             regions,
@@ -766,9 +887,59 @@ impl Fauna {
             Ok(z) => {
                 if let Err(e) = std::fs::write(dir.join(FILE), z) {
                     log::error!("fauna not saved: {e}");
+                    return;
                 }
             }
-            Err(e) => log::error!("fauna not saved: {e}"),
+            Err(e) => {
+                log::error!("fauna not saved: {e}");
+                return;
+            }
+        }
+        // Written out before, saved now: the file is old.
+        for key in keys {
+            if let Some(path) = aside_path(Some(dir), key)
+                && path.exists()
+            {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+}
+
+/// Where a region set aside beyond memory is written in a world's folder.
+fn aside_path(dir: Option<&Path>, key: (i64, i64)) -> Option<PathBuf> {
+    Some(
+        dir?.join(ASIDE_DIR)
+            .join(format!("{}_{}.json.zst", key.0, key.1)),
+    )
+}
+
+/// Writes a region set aside (whole or not at all).
+fn write_region(path: &Path, r: &Region) {
+    let written = (|| -> std::io::Result<()> {
+        if let Some(d) = path.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        let json = serde_json::to_vec(r)?;
+        let z = zstd::encode_all(json.as_slice(), 3)?;
+        let part = path.with_extension("part");
+        std::fs::write(&part, z)?;
+        std::fs::rename(&part, path)
+    })();
+    if let Err(e) = written {
+        log::error!("{} not written: {e}", path.display());
+    }
+}
+
+/// A region written out.
+fn read_region(path: &Path) -> Option<Region> {
+    let bytes = std::fs::read(path).ok()?;
+    let json = zstd::decode_all(bytes.as_slice()).ok()?;
+    match serde_json::from_slice(&json) {
+        Ok(r) => Some(r),
+        Err(e) => {
+            log::error!("{} unreadable ({e}): made anew", path.display());
+            None
         }
     }
 }

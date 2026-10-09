@@ -105,6 +105,8 @@ pub enum CameraMode {
 struct World {
     planet: Planet,
     terrain: Arc<hearth_worldgen::Terrain>,
+    /// The world's generator (its caches are counted in the memory, E4.1 §4.7).
+    generator: Arc<hearth_worldgen::WorldGenerator>,
     reg: Arc<BlockRegistry>,
     /// The blocks near the player, for movement.
     mirror: CubeMap,
@@ -197,6 +199,11 @@ pub struct Client {
     pub calendar: Calendar,
     /// Extra ticks per second of play (asked of the server).
     pub time_warp: f64,
+    /// The ground about the player has been drawn once: the loading screen gives way (E4.1
+    /// §4.4).
+    entered: bool,
+    /// The debug screen's memory line, and when it was made.
+    memory_line: std::cell::RefCell<Option<(std::time::Instant, String)>>,
     pub status: String,
     /// How far the world being made or opened has come (0–1).
     pub progress: f32,
@@ -454,6 +461,8 @@ impl Client {
             tick_frac: 0.0,
             calendar,
             time_warp: 0.0,
+            entered: false,
+            memory_line: Default::default(),
             status: "menu.making.opening".into(),
             progress: 0.0,
             debug_overlay: false,
@@ -2534,6 +2543,7 @@ impl Client {
             shape: Default::default(),
             birthplace: None,
             mode: None,
+            prepared: None,
         }
     }
 
@@ -3108,7 +3118,51 @@ impl Client {
         self.place_eyes(dt);
     }
 
-    /// Applies the server's messages; call once per frame before rendering.
+    /// What the game keeps in memory, by kind (bytes; E4.1 §4.7): the terrain's and the
+    /// generator's caches, the cubes loaded, and on the GPU the near and the distant terrain.
+    pub fn memory(&self) -> Vec<(&'static str, u64)> {
+        let mut out = Vec::new();
+        if let Some(w) = &self.world {
+            out.extend(w.generator.memory());
+            out.push(("cubes", w.mirror.heap_bytes() as u64));
+            // The server's, as it last told.
+            out.extend(hearth_core::prof::gauges());
+        }
+        if let Some(s) = &self.scene {
+            out.push(("GPU: near terrain", s.terrain.bytes()));
+            out.push(("GPU: distant terrain", s.lod.bytes()));
+        }
+        // What none of these accounts for: the code, the content, the allocator's slack (and on
+        // a software adapter the GPU's buffers).
+        if let Some((resident, _)) = hearth_core::prof::memory() {
+            let known: u64 = out
+                .iter()
+                .filter(|(k, _)| !k.starts_with("GPU"))
+                .map(|(_, b)| b)
+                .sum();
+            out.push(("rest of the process", resident.saturating_sub(known)));
+        }
+        out.sort_by_key(|(_, b)| std::cmp::Reverse(*b));
+        out
+    }
+
+    /// Whether the cubes about the player's feet, one each way, are drawn.
+    fn ground_ready(&self) -> bool {
+        let Some(scene) = &self.scene else {
+            return false;
+        };
+        let c = hearth_math::CubePos::containing(self.mover.pos);
+        (-1..=1).all(|dy| {
+            (-1..=1).all(|dz| {
+                (-1..=1).all(|dx| {
+                    scene
+                        .terrain
+                        .contains(hearth_math::CubePos::new(c.x + dx, c.y + dy, c.z + dz))
+                })
+            })
+        })
+    }
+
     /// How far the world about the player has come.
     pub fn loading(&self) -> Loading {
         let mut l = Loading {
@@ -3145,6 +3199,7 @@ impl Client {
         l
     }
 
+    /// Applies the server's messages; call once per frame before rendering.
     pub fn pump(&mut self, ctx: &GpuContext) {
         let mut uploaded = 0;
         while uploaded < UPLOADS_PER_FRAME {
@@ -3208,6 +3263,7 @@ impl Client {
                     self.world = Some(World {
                         planet,
                         terrain: r.generator.terrain.clone(),
+                        generator: r.generator.clone(),
                         reg: r.reg,
                         mirror: CubeMap::new(planet),
                     });
@@ -3483,6 +3539,9 @@ impl Client {
                 }
             }
         }
+        if !self.entered && self.world.is_some() && self.ground_ready() {
+            self.entered = true;
+        }
         let near = self.near_area();
         if let (Some(lod), Some(scene), Some(w)) = (&mut self.lod, &mut self.scene, &self.world) {
             let forward = self.camera.forward().as_dvec3();
@@ -3683,11 +3742,12 @@ impl Client {
 
     /// The client's part of the interface: what death says, and the debug screen;
     /// `backdrop` is the opacity of the panels behind text (0–1).
-    pub fn hud(&self, ui: &mut Ui<'_>, backdrop: f32) {
+    /// Draws the heads-up display; until the ground about the player is drawn, the loading
+    /// screen instead, and whether its Cancel was pressed.
+    pub fn hud(&self, ui: &mut Ui<'_>, backdrop: f32) -> bool {
         let (w, h) = ui.size;
-        if self.world.is_none() {
-            self.draw_loading(ui);
-            return;
+        if !self.entered {
+            return self.draw_loading(ui);
         }
         let veil = (backdrop.clamp(0.0, 1.0) * 255.0) as u8;
         if let Some(b) = &self.body
@@ -3783,6 +3843,7 @@ impl Client {
                 ui.label(3.0, 3.0 + k as f32 * lh, line, Rgba::WHITE);
             }
         }
+        false
     }
 
     /// Breath fog in cold air: puffs rising in front of the eyes as the breath goes out, thicker
@@ -4013,9 +4074,10 @@ impl Client {
         })
     }
 
-    /// The world being made or opened (Amendment P §4.3): what is being done, how far it has
-    /// come, and a tip.
-    fn draw_loading(&self, ui: &mut Ui<'_>) {
+    /// The world being made or opened (Amendment P §4.3, E4.1 §4.4): what is being done, how
+    /// far it has come (once the world has arrived, the ground about the player), a tip, and a
+    /// Cancel back to the menu; whether it was pressed.
+    fn draw_loading(&self, ui: &mut Ui<'_>) -> bool {
         use hearth_ui::widgets::theme;
         let (w, h) = ui.size;
         ui.draw
@@ -4024,21 +4086,39 @@ impl Client {
         let x = ((w - wide) / 2.0).round();
         let y = (h * 0.38).round();
         ui.title(y, &ui.t("menu.making.title"));
-        let stage = if self.status.starts_with("menu.") {
+        // Once the world has arrived: the cubes about the feet drawn, of the 27.
+        let ground = self.world.is_some().then(|| {
+            let Some(scene) = &self.scene else {
+                return 0.0;
+            };
+            let c = hearth_math::CubePos::containing(self.mover.pos);
+            let mut n = 0;
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    for dx in -1..=1 {
+                        n += scene.terrain.contains(hearth_math::CubePos::new(
+                            c.x + dx,
+                            c.y + dy,
+                            c.z + dz,
+                        )) as u32;
+                    }
+                }
+            }
+            n as f32 / 27.0
+        });
+        let stage = if ground.is_some() {
+            ui.t("menu.making.ground")
+        } else if self.status.starts_with("menu.") {
             ui.t(&self.status)
         } else {
             format!("{}…", self.status)
         };
+        let share = ground.unwrap_or(self.progress);
         let r = hearth_ui::Rect::new(x, y + 18.0, wide, 10.0);
         ui.text_centred(&r, &stage, theme::TEXT);
         ui.draw.rect(x, y + 34.0, wide, 6.0, theme::FIELD);
-        ui.draw.rect(
-            x,
-            y + 34.0,
-            wide * self.progress.clamp(0.0, 1.0),
-            6.0,
-            theme::FILL,
-        );
+        ui.draw
+            .rect(x, y + 34.0, wide * share.clamp(0.0, 1.0), 6.0, theme::FILL);
         // A tip, the same one while the world is made.
         let tips = ui.lang.get("menu.making.tips").to_owned();
         let tips: Vec<&str> = tips.split('|').collect();
@@ -4049,6 +4129,10 @@ impl Client {
             ui.label(((w - lw) / 2.0).round(), ty, &l, theme::DIM);
             ty += hearth_ui::font::LINE as f32;
         }
+        // Back to the menu: the world's making given up (its thread ends on its own).
+        let bw = wide.min(120.0);
+        let cancel = hearth_ui::Rect::new(((w - bw) / 2.0).round(), ty + 10.0, bw, 20.0);
+        cancel.y + cancel.h <= h && ui.button(cancel, &ui.t("menu.cancel"))
     }
 
     /// The debug screen's lines.
@@ -4066,6 +4150,8 @@ impl Client {
         if !self.debug_full() {
             // Realistic and Easy: how the game performs, nothing of the world.
             out.extend(self.terrain_line(l));
+            out.extend(self.memory_line(l));
+            out.extend(self.memory_line(l));
             return out;
         }
         let p = self.camera.pos;
@@ -4187,6 +4273,31 @@ impl Client {
     /// of no mode (tests and tools); otherwise only how the game performs (Amendment P §2).
     pub fn debug_full(&self) -> bool {
         self.developer || self.rules.as_ref().is_none_or(|r| r.creative)
+    }
+
+    /// The memory line (E4.1 §4.7): resident memory and its largest kinds, made again at most
+    /// once a second.
+    fn memory_line(&self, l: &Lang) -> Option<String> {
+        let mut kept = self.memory_line.borrow_mut();
+        if let Some((at, line)) = kept.as_ref()
+            && at.elapsed() < std::time::Duration::from_secs(1)
+        {
+            return Some(line.clone());
+        }
+        let mib = |b: u64| format!("{} MB", b >> 20);
+        let resident = hearth_core::prof::memory().map_or_else(|| "?".to_owned(), |(m, _)| mib(m));
+        let parts: Vec<String> = self
+            .memory()
+            .iter()
+            .take(5)
+            .map(|(k, b)| format!("{k} {}", mib(*b)))
+            .collect();
+        let line = l.format(
+            "debug.memory",
+            &[("resident", &resident), ("parts", &parts.join(" · "))],
+        );
+        *kept = Some((std::time::Instant::now(), line.clone()));
+        Some(line)
     }
 
     /// The terrain's work: cubes meshed and seen, distant tiles drawn and waiting.

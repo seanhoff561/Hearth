@@ -20,6 +20,7 @@ pub struct ZoneStats {
 
 static ZONES: Mutex<Option<FxHashMap<&'static str, ZoneStats>>> = Mutex::new(None);
 static COUNTERS: Mutex<Option<FxHashMap<String, u64>>> = Mutex::new(None);
+static GAUGES: Mutex<Option<FxHashMap<&'static str, u64>>> = Mutex::new(None);
 
 /// A zone being timed: from its making to its drop.
 pub struct Zone {
@@ -110,6 +111,28 @@ pub fn counter(name: &str) -> u64 {
         .unwrap_or(0)
 }
 
+/// Sets a gauge: a figure its owner keeps up to date for others to read (the server's memory
+/// by kind, for the client's report).
+pub fn gauge(name: &'static str, value: u64) {
+    if let Ok(mut g) = GAUGES.lock() {
+        g.get_or_insert_with(FxHashMap::default).insert(name, value);
+    }
+}
+
+/// Every gauge, by name.
+pub fn gauges() -> Vec<(&'static str, u64)> {
+    let mut v: Vec<(&'static str, u64)> = GAUGES
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref()
+                .map(|m| m.iter().map(|(k, v)| (*k, *v)).collect())
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
 /// Clears the zones and counters (a benchmark's next stage).
 pub fn reset() {
     if let Ok(mut z) = ZONES.lock() {
@@ -148,6 +171,12 @@ pub fn current_caller() -> &'static str {
     CALLER.with(Cell::get)
 }
 
+/// Names whom the calling thread works for when nothing else is said (a pool's threads, from
+/// their start).
+pub fn set_thread_caller(name: &'static str) {
+    CALLER.with(|c| c.set(name));
+}
+
 /// The process's resident memory now and at its peak (bytes), where the system tells.
 pub fn memory() -> Option<(u64, u64)> {
     #[cfg(target_os = "linux")]
@@ -166,6 +195,35 @@ pub fn memory() -> Option<(u64, u64)> {
     #[cfg(not(target_os = "linux"))]
     {
         sys::memory()
+    }
+}
+
+/// The heap as the allocator holds it (bytes): in use, and freed but kept from the system
+/// (fragments and arenas' slack), where the allocator tells (glibc's).
+pub fn heap() -> Option<(u64, u64)> {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // SAFETY: mallinfo2 only reads the allocator's own counters.
+        let m = unsafe { libc::mallinfo2() };
+        Some(((m.uordblks + m.hblkhd) as u64, m.fordblks as u64))
+    }
+    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+    {
+        None
+    }
+}
+
+/// Gives the heap's freed pages back to the system (glibc's arenas keep them otherwise): after a
+/// long journey's terrain has come and gone (E4.1 §4.7). Returns whether any were.
+pub fn trim_heap() -> bool {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // SAFETY: malloc_trim only returns the allocator's free pages to the system.
+        unsafe { libc::malloc_trim(0) != 0 }
+    }
+    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+    {
+        false
     }
 }
 

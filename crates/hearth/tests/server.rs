@@ -26,6 +26,7 @@ fn spec(dir: &std::path::Path) -> WorldSpec {
         shape: Default::default(),
         birthplace: None,
         mode: None,
+        prepared: None,
     }
 }
 

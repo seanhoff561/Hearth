@@ -538,6 +538,38 @@ fn usual_density(prey: &Species) -> f32 {
 impl Ecology {}
 
 impl Region {
+    /// The memory it holds (bytes).
+    pub fn bytes(&self) -> usize {
+        fn of<T>(v: &[T]) -> usize {
+            std::mem::size_of_val(v)
+        }
+        of(&self.habitat)
+            + of(&self.avail_mean)
+            + of(&self.carrion)
+            + of(&self.remains)
+            + of(&self.pool_species)
+            + of(&self.young)
+            + of(&self.adults)
+            + of(&self.cond)
+            + of(&self.groups)
+            + of(&self.capacity)
+            + of(&self.block_capacity)
+            + of(&self.quality)
+            + of(&self.prey)
+    }
+
+    /// Lets go of what [`Ecology::restore`] makes again from the land (most of a region: the
+    /// habitat and what each species makes of it), keeping what is saved (E4.1 §4.7: a region
+    /// far from the player is set aside so).
+    pub fn strip(&mut self) {
+        self.habitat = Vec::new();
+        self.avail_mean = Vec::new();
+        self.capacity = Vec::new();
+        self.block_capacity = Vec::new();
+        self.quality = Vec::new();
+        self.prey = Vec::new();
+    }
+
     /// The local index of the cell at a world position, if it is in this region.
     pub fn cell_at(&self, eco_cells_around: i64, x: f64, z: f64) -> Option<usize> {
         let ci = (x / CELL_M).floor() as i64;
@@ -933,10 +965,13 @@ impl Ecology {
         self.regions.insert(key, r);
     }
 
-    /// The habitats of a region's cells, with the realm of their animals.
+    /// The habitats of a region's cells, with the realm of their animals (the cells read side
+    /// by side: E4.1 §4.4, a save's regions made again as it opens).
     fn habitats(&self, land: &dyn Land, key: (i64, i64)) -> Vec<Habitat> {
+        use rayon::prelude::*;
         let (i0, j0) = (key.0 * REGION_CELLS, key.1 * REGION_CELLS);
         let mut habitat: Vec<Habitat> = (0..REGION_LEN as i64)
+            .into_par_iter()
             .map(|idx| land.habitat((i0 + idx % REGION_CELLS, j0 + idx / REGION_CELLS)))
             .collect();
         let mut known: FxHashMap<(u8, u32), u8> = FxHashMap::default();

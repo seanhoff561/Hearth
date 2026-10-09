@@ -149,6 +149,26 @@ pub struct WorldGenerator {
 }
 
 impl WorldGenerator {
+    /// What the generator keeps in memory, by kind (bytes): the terrain's, and its own caches
+    /// of columns and rock (E4.1 §4.7).
+    pub fn memory(&self) -> Vec<(&'static str, u64)> {
+        let mut out = self.terrain.memory();
+        out.push((
+            "generated columns",
+            self.columns.sum(|c| {
+                (std::mem::size_of::<ColumnData>()
+                    + c.samples.capacity() * std::mem::size_of::<ColumnSample>())
+                    as u64
+            }),
+        ));
+        out.push((
+            "rock columns",
+            self.rocks
+                .sum(|r| (r.capacity() * std::mem::size_of::<(RockColumn, Profile)>()) as u64),
+        ));
+        out
+    }
+
     /// A generator for the planet in `terrain`, with rocks and provinces from `content`.
     pub fn new(
         terrain: Arc<Terrain>,
@@ -190,7 +210,13 @@ impl WorldGenerator {
             caves: caves::CaveGen::new(seed, v),
             features: features::FeatureGen::new(seed),
             planet: *terrain.planet(),
-            columns: Cache::new(8192),
+            columns: Cache::new({
+                // As many as the columns' memory budget holds (E4.1 §4.7).
+                let each = std::mem::size_of::<ColumnData>()
+                    + hearth_math::CUBE_AREA * std::mem::size_of::<ColumnSample>();
+                (hearth_core::memory::budget(hearth_core::memory::Kind::Columns) as usize / each)
+                    .clamp(1024, 16384)
+            }),
             rocks: Cache::new(1024),
             geology,
             soils,

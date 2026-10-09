@@ -33,6 +33,7 @@ pub struct Options {
     pub sound: SoundOptions,
     pub accessibility: AccessibilityOptions,
     pub window: WindowState,
+    pub performance: PerformanceOptions,
     /// Language code, e.g. `en_us`.
     pub language: String,
     /// Developer mode (Amendment P §2): the debug screen (F3) shows everything in every mode,
@@ -49,6 +50,7 @@ impl Default for Options {
             sound: SoundOptions::default(),
             accessibility: AccessibilityOptions::default(),
             window: WindowState::default(),
+            performance: PerformanceOptions::default(),
             language: "en_us".to_owned(),
             developer_mode: false,
         }
@@ -192,6 +194,21 @@ impl Default for ShaderOptions {
             water: Quality::Medium,
         }
     }
+}
+
+/// How the game uses the machine (E4.1 §4.6, §4.7, §6): each 0 is chosen from the machine.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PerformanceOptions {
+    /// Worker threads generating the world about the player; 0: the machine's cores less those
+    /// kept free.
+    pub workers: u32,
+    /// Cores kept free for the main thread, rendering and sound; 0: one, two from eight cores.
+    pub reserved_cores: u32,
+    /// The caches' share of the machine's memory (%); 0: forty.
+    pub memory_share: u32,
+    /// Whether the first run's look at the machine set the video settings to suit it.
+    pub machine_checked: bool,
 }
 
 /// Video settings.

@@ -13,7 +13,11 @@ rustc-hash.workspace = true
 thiserror.workspace = true
 log.workspace = true
 toml.workspace = true
+rayon.workspace = true
 tracy-client = { workspace = true, optional = true, features = ["enable"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

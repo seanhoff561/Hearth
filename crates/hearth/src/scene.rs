@@ -105,9 +105,22 @@ impl LocalWorld {
             }
         };
         log::info!("planet ready in {:.2}s", t0.elapsed().as_secs_f64());
-        let cover = crate::season_cover::SeasonCover::new(&reg, &grid)?;
         let terrain = Arc::new(Terrain::new(Arc::new(grid)));
-        let generator = Arc::new(WorldGenerator::new(terrain.clone(), &reg, &content)?);
+        if let Some(d) = cache_dir {
+            keep_relief(&terrain, d);
+        }
+        let generator = Arc::new(WorldGenerator::new(terrain, &reg, &content)?);
+        Self::from_generator(generator, content, reg)
+    }
+
+    /// A world from a generator made already (the menus', E4.1 §4.4), its game data and blocks.
+    pub fn from_generator(
+        generator: Arc<WorldGenerator>,
+        content: Arc<hearth_content::Content>,
+        reg: Arc<BlockRegistry>,
+    ) -> anyhow::Result<Self> {
+        let terrain = &generator.terrain;
+        let cover = crate::season_cover::SeasonCover::new(&reg, &terrain.grid)?;
         let vegetation = hearth_worldgen::vegetation::Vegetation::new(
             &Default::default(),
             terrain.planet().circumference(),
@@ -417,6 +430,15 @@ pub fn data_pack_dir() -> std::path::PathBuf {
 
 /// The planet cache's file for world-generation settings: its seed, size and resolution.
 /// The file the globe's map of a planet is kept in, beside the planet's cache (E4.1 §4.2).
+/// The most the refinement levels' tiles kept on disk take, every planet's together (bytes).
+pub const RELIEF_CACHE_CAP: u64 = 512 << 20;
+
+/// Keeps a planet's refinement tiles in the cache folder, to be read back rather than made
+/// again (E4.1 §4.4).
+pub fn keep_relief(terrain: &Terrain, cache_dir: &Path) {
+    terrain.keep_tiles_on_disk(&cache_dir.join("relief"), RELIEF_CACHE_CAP);
+}
+
 pub fn globe_cache_name(settings: &WorldGenSettings) -> String {
     format!(
         "globe_{}_{}_{}.bin.zst",

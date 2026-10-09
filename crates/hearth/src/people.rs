@@ -148,7 +148,12 @@ impl Person {
             .name("person".into())
             .spawn(move || {
                 let refs: Vec<&str> = worn.iter().map(String::as_str).collect();
-                let _ = tx.send(meshes(&a, &refs, detail));
+                // What the player waits on: the interactive pool, never behind the world's work.
+                let m =
+                    hearth_core::jobs::install(hearth_core::jobs::Priority::Interactive, || {
+                        meshes(&a, &refs, detail)
+                    });
+                let _ = tx.send(m);
             });
         match spawned {
             Ok(_) => {

@@ -186,6 +186,15 @@ impl Finder {
         }
     }
 
+    /// The world the finder reads, and what it was made from (for the world to take up).
+    pub fn prepared(&self) -> crate::server::Prepared {
+        crate::server::Prepared {
+            generator: self.wg.clone(),
+            content: self.content.clone(),
+            reg: self.reg.clone(),
+        }
+    }
+
     /// Three to five places for a first life at `when`, of different climates and lands, each
     /// verified (fewer only if the planet has no more).
     pub fn suggest(&self, when: When, seed: u64) -> Vec<Place> {

@@ -87,6 +87,14 @@ impl<K: Hash + Eq + Copy, V> Cache<K, V> {
         self.len() == 0
     }
 
+    /// The sum of `f` over the values kept (their memory, E4.1 §4.7).
+    pub fn sum(&self, f: impl Fn(&V) -> u64) -> u64 {
+        self.shards
+            .iter()
+            .map(|s| s.lock().map.values().map(|(v, _)| f(v)).sum::<u64>())
+            .sum()
+    }
+
     /// (hits, misses) since creation.
     pub fn stats(&self) -> (u64, u64) {
         (

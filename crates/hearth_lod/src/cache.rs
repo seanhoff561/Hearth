@@ -2,12 +2,15 @@
 //! written beside the world's planet cache, stamped with what it was built from, and read back
 //! instead of built again while the stamp holds. The stamp is the build's fingerprint (two probe
 //! tiles near the spawn built and hashed, so a change to generation, meshing or colours makes
-//! every tile stale) with the vegetation and the player's changes that reach the tile.
+//! every tile stale) with the vegetation and the player's changes that reach the tile. The
+//! folder holds at most so much, the oldest tiles let go first (E4.1 §4.4).
 
 use std::hash::{Hash, Hasher};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+
+use hearth_core::disk_cache::Folder;
 
 use hearth_worldgen::WorldGenerator;
 use rustc_hash::FxHasher;
@@ -18,7 +21,7 @@ const MAGIC: &[u8; 4] = b"HLT4";
 
 /// Tiles on disk.
 pub struct TileCache {
-    dir: PathBuf,
+    folder: Folder,
     fingerprint: OnceLock<u64>,
 }
 
@@ -36,15 +39,21 @@ fn hash_mesh(h: &mut FxHasher, m: &TileMesh) {
 }
 
 impl TileCache {
-    pub fn new(dir: impl Into<PathBuf>) -> Self {
+    /// The tiles kept in `dir`, at most `cap` bytes of them.
+    pub fn new(dir: impl Into<PathBuf>, cap: u64) -> Self {
         Self {
-            dir: dir.into(),
+            folder: Folder::new(dir, cap),
             fingerprint: OnceLock::new(),
         }
     }
 
     pub fn dir(&self) -> &Path {
-        &self.dir
+        self.folder.dir()
+    }
+
+    /// What the folder holds (bytes).
+    pub fn used(&self) -> u64 {
+        self.folder.used()
     }
 
     /// What the build makes of two probe tiles near the spawn, hashed (once).
@@ -95,7 +104,8 @@ impl TileCache {
     }
 
     fn path(&self, key: TileKey) -> PathBuf {
-        self.dir
+        self.folder
+            .dir()
             .join(format!("{}", key.level))
             .join(format!("{}_{}.lod", key.x, key.z))
     }
@@ -181,18 +191,9 @@ impl TileCache {
         field(&mut data, &mesh.ground);
         data.extend_from_slice(&(mesh.canopy.len() as u32).to_le_bytes());
         field(&mut data, &mesh.canopy);
-        let write = || -> std::io::Result<()> {
-            if let Some(d) = path.parent() {
-                std::fs::create_dir_all(d)?;
-            }
-            let tmp = path.with_extension("tmp");
-            let mut f = std::fs::File::create(&tmp)?;
-            let packed = zstd::encode_all(data.as_slice(), 1)?;
-            f.write_all(&packed)?;
-            drop(f);
-            std::fs::rename(&tmp, &path)
-        };
-        if let Err(e) = write() {
+        let written = zstd::encode_all(data.as_slice(), 1)
+            .and_then(|packed| self.folder.write(&path, &packed));
+        if let Err(e) = written {
             log::debug!("LOD tile {:?} not cached: {e}", mesh.key);
         }
     }
@@ -255,7 +256,7 @@ mod tests {
         };
         let dir = std::env::temp_dir().join(format!("hearth-lodcache-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let cache = TileCache::new(&dir);
+        let cache = TileCache::new(&dir, 1 << 30);
         let world = LodWorld::default();
         let stamp = cache.stamp(&lod, &wg, &world, key);
         assert!(cache.load(key, stamp).is_none(), "nothing kept yet");

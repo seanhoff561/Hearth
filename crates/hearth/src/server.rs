@@ -76,6 +76,26 @@ pub struct WorldSpec {
     /// knowledge, what a new life keeps and the predators' ways over `knowledge`; `None` (tests
     /// and tools): `knowledge` as given, and every power of watching and of time open.
     pub mode: Option<String>,
+    /// The world as the menus made it for choosing the birthplace (its planet, generator,
+    /// game data and blocks): taken up rather than made again when its planet is the world's
+    /// (E4.1 §4.4).
+    pub prepared: Option<Prepared>,
+}
+
+/// A world's generator and what it was made from, made already.
+#[derive(Clone)]
+pub struct Prepared {
+    pub generator: Arc<hearth_worldgen::WorldGenerator>,
+    pub content: Arc<hearth_content::Content>,
+    pub reg: Arc<hearth_world::BlockRegistry>,
+}
+
+impl std::fmt::Debug for Prepared {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Prepared")
+            .field("planet", self.generator.planet())
+            .finish_non_exhaustive()
+    }
 }
 
 /// A new world's shape, as Create World's More options set it (Amendment P §4.3); each `None`
@@ -132,25 +152,39 @@ pub struct Server {
     to: Sender<ToServer>,
     from: Receiver<ToClient>,
     thread: Option<JoinHandle<()>>,
+    /// Set when the server is wanted no more: the world's making gives up between its stages.
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    /// Told when the server's thread ends.
+    ended: Receiver<()>,
 }
+
+/// How long dropping the server waits for its thread to save and end before leaving it to end
+/// on its own (a stage of the world's making under way finishes first).
+const STOP_WAIT: Duration = Duration::from_secs(10);
 
 impl Server {
     pub fn start(spec: WorldSpec, atlas: Arc<TextureArray>, view: View) -> Self {
         let (to, inbox) = channel();
         let (tx, from) = channel();
+        let (ended_tx, ended) = channel();
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stopped = stop.clone();
         let thread = std::thread::Builder::new()
             .name("server".into())
             .spawn(move || {
-                if let Err(e) = run(spec, atlas, view, inbox, &tx) {
+                if let Err(e) = run(spec, atlas, view, inbox, &tx, &stopped) {
                     log::error!("server: {e:#}");
                     let _ = tx.send(ToClient::Failed(format!("{e:#}")));
                 }
+                let _ = ended_tx.send(());
             })
             .expect("spawn server thread");
         Self {
             to,
             from,
             thread: Some(thread),
+            stop,
+            ended,
         }
     }
 
@@ -166,9 +200,19 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = self.to.send(ToServer::Quit);
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
+        // Saved and ended: joined. Still making the world after a while: left to end on its own
+        // (it gives up at its next stage), never holding the game up (E4.1 §4.4).
+        match self.ended.recv_timeout(STOP_WAIT) {
+            Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                if let Some(t) = self.thread.take() {
+                    let _ = t.join();
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                log::warn!("the server's thread is still busy; left to end on its own");
+            }
         }
     }
 }
@@ -636,7 +680,10 @@ fn run(
     mut view: View,
     inbox: Receiver<ToServer>,
     tx: &Sender<ToClient>,
+    stop: &std::sync::atomic::AtomicBool,
 ) -> anyhow::Result<()> {
+    // Given up between the world's stages when the server is wanted no more.
+    let stopped = || stop.load(std::sync::atomic::Ordering::Relaxed);
     // What the server's thread works on, for the profile (E4.1).
     let _caller = hearth_core::prof::caller("server");
     // A saved world keeps its own planet.
@@ -658,11 +705,24 @@ fn run(
     progress(0.0, "menu.making.opening");
     let mut lw = {
         hearth_core::zone!("load.world");
-        LocalWorld::create_with(&gen_settings, spec.cache_dir.as_deref(), &|f, stage| {
-            log::debug!("planet {:.0}% {stage}", f * 100.0);
-            progress(f, stage);
-        })?
+        // The menus' world when it is this one's planet (the birthplace's ground made already).
+        let prepared = spec
+            .prepared
+            .clone()
+            .filter(|p| p.generator.terrain.grid.settings == gen_settings);
+        match prepared {
+            Some(p) => LocalWorld::from_generator(p.generator, p.content, p.reg)?,
+            None => {
+                LocalWorld::create_with(&gen_settings, spec.cache_dir.as_deref(), &|f, stage| {
+                    log::debug!("planet {:.0}% {stage}", f * 100.0);
+                    progress(f, stage);
+                })?
+            }
+        }
     };
+    if stopped() {
+        return Ok(());
+    }
     let planet = *lw.map.planet();
     let mut save_state = open_save(&spec, &lw)?;
 
@@ -700,6 +760,9 @@ fn run(
         let _c = hearth_core::prof::caller("spawn");
         first_spawn(&lw, Some(&place))
     };
+    if stopped() {
+        return Ok(());
+    }
     let created = save_state.as_ref().map(|s| s.meta.created_unix);
     let calendar = calendar_of(&planet, life.start, created, first_spawn);
     let mut env = EnvSampler::new(lw.grid(), calendar);
@@ -818,6 +881,9 @@ fn run(
             save_state.as_ref().map(|s| s.dir.root.as_path()),
         )
     };
+    if stopped() {
+        return Ok(());
+    }
     let mut animals_shown = false;
     // Watching the world (Creative's spectating): where its eye is.
     let mut observing: Option<DVec3> = None;
@@ -1547,6 +1613,11 @@ fn run(
                 edits_told = Some(lw.edits.version());
                 let tops = lw.edits.tops(&lw.reg, |x| planet.wrap_x(x));
                 let _ = tx.send(ToClient::EditTops(Arc::new(tops)));
+            }
+            // The server's memory by kind, for the client's report (E4.1 §4.7).
+            if ticks.is_multiple_of(40) {
+                hearth_core::prof::gauge("animals", fauna.memory());
+                hearth_core::prof::gauge("cubes (server)", lw.map.heap_bytes() as u64);
             }
             // The smoke over fires in the vegetation, for the client to draw.
             if ticks.is_multiple_of(20) && (workshop.fire_burning() || smoke_shown) {

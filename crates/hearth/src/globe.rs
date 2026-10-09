@@ -215,7 +215,11 @@ impl Details {
                 let (x, z) = world_xz(wg.planet(), at.0, at.1);
                 let (x, z) = wg.terrain.spawn_near(x, z);
                 if asked.load(Ordering::Relaxed) == n {
-                    let _ = tx.send(finder.verify(x, z, when));
+                    let found = hearth_core::jobs::install(
+                        hearth_core::jobs::Priority::Interactive,
+                        || finder.verify(x, z, when),
+                    );
+                    let _ = tx.send(found);
                 }
             });
         match spawned {
@@ -305,8 +309,11 @@ impl GlobePicker {
             let terrain = terrain.clone();
             match std::thread::Builder::new()
                 .name("globe map".into())
-                .spawn(move || planet_map(&terrain, MAP_WIDTH))
-            {
+                .spawn(move || {
+                    hearth_core::jobs::install(hearth_core::jobs::Priority::Background, || {
+                        planet_map(&terrain, MAP_WIDTH)
+                    })
+                }) {
                 Ok(handle) => self.building = Some(handle),
                 Err(e) => log::error!("could not start making the globe's map: {e}"),
             }

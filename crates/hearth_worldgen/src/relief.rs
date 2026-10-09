@@ -44,8 +44,10 @@ const SPAN: i64 = TILE + 2 * MARGIN;
 pub const MIN_CELL: f64 = 24.0;
 /// A grid whose cells are smaller than this (blocks) has no refinement levels.
 pub const MIN_GRID_CELL: f64 = 1000.0;
-/// Tiles kept per level.
-const TILES_KEPT: usize = 512;
+/// Tiles kept per level at least (the rest as the memory budget allows, E4.1 §4.7).
+const TILES_KEPT_MIN: usize = 64;
+/// A tile's memory (bytes): its six arrays over the span.
+const TILE_BYTES: usize = (SPAN * SPAN) as usize * 15;
 /// The callers that work at a coarse scale (`hearth_core::prof::caller`) and must never make
 /// tiles of the finest level (E4.1 §4.1): the globe's map and its hovering, the places' search
 /// across the planet, the animals' habitats, the distant LOD tiles and the far field.
@@ -115,6 +117,18 @@ pub struct Tile {
     pub sea: Vec<bool>,
 }
 
+impl Tile {
+    /// The memory it takes (bytes).
+    pub fn bytes(&self) -> u64 {
+        (self.h.len() * 4
+            + self.lake.len() * 4
+            + self.q.len() * 4
+            + self.recv.len()
+            + self.channel.len()
+            + self.sea.len()) as u64
+    }
+}
+
 /// What a level knows of one cell.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cell {
@@ -172,6 +186,11 @@ fn wrap_delta(d: f64, c: f64) -> f64 {
 }
 
 impl Patch {
+    /// The memory its cells take (bytes).
+    pub fn bytes(&self) -> u64 {
+        (self.cells.len() * std::mem::size_of::<Cell>()) as u64
+    }
+
     /// The level's cell size (blocks).
     pub fn cell_size(&self) -> f64 {
         self.cell
@@ -267,6 +286,8 @@ pub struct Relief {
     levels: Vec<Level>,
     noise: Vec<LevelNoise>,
     tiles: Vec<Cache<TileKey, Tile>>,
+    /// The tiles kept on disk too, once given a folder ([`Relief::keep_on_disk`]).
+    store: std::sync::OnceLock<crate::relief_store::TileStore>,
 }
 
 impl std::fmt::Debug for Relief {
@@ -334,7 +355,12 @@ impl Relief {
                 }
             })
             .collect();
-        let tiles = levels.iter().map(|_| Cache::new(TILES_KEPT)).collect();
+        // Each level its share of the tiles' memory budget.
+        let kept = (hearth_core::memory::budget(hearth_core::memory::Kind::TerrainTiles) as usize
+            / levels.len().max(1)
+            / TILE_BYTES)
+            .max(TILES_KEPT_MIN);
+        let tiles = levels.iter().map(|_| Cache::new(kept)).collect();
         Self {
             v: grid.vertical_scale,
             c,
@@ -343,6 +369,23 @@ impl Relief {
             noise,
             tiles,
             grid,
+            store: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Keeps the tiles made in `dir` too (at most `cap` bytes), read back rather than made again
+    /// the next time they are wanted: when the world opens again, or the player comes back.
+    pub fn keep_on_disk(&self, dir: &std::path::Path, cap: u64) {
+        match crate::relief_store::TileStore::open(dir, cap) {
+            Ok(store) => {
+                log::info!(
+                    "terrain tiles kept in {} ({} MiB there)",
+                    dir.display(),
+                    store.used() >> 20
+                );
+                let _ = self.store.set(store);
+            }
+            Err(e) => log::warn!("terrain tiles not kept on disk ({e})"),
         }
     }
 
@@ -536,10 +579,11 @@ impl Relief {
         f32::NEG_INFINITY
     }
 
-    /// A tile, from the cache or made: each made counted by its level and the caller it was made
-    /// for (`relief.tile.L<level>.<caller>`, E4.1 §3), and timed. A tile of the finest level
-    /// made for a caller that works at a coarse scale ([`COARSE_CALLERS`]) is counted again as
-    /// such (`relief.fine.<caller>`) and said once in the log: the guard of E4.1 §4.1.
+    /// A tile, from the cache, from disk ([`Relief::keep_on_disk`]: `relief.disk.L<level>`) or
+    /// made: each made counted by its level and the caller it was made for
+    /// (`relief.tile.L<level>.<caller>`, E4.1 §3), and timed. A tile of the finest level wanted
+    /// by a caller that works at a coarse scale ([`COARSE_CALLERS`]) is counted again as such
+    /// (`relief.fine.<caller>`) and said once in the log: the guard of E4.1 §4.1.
     fn tile(&self, level: usize, tx: i64, tz: i64) -> Arc<Tile> {
         let key = TileKey {
             level: level as u8,
@@ -547,9 +591,7 @@ impl Relief {
             tz,
         };
         self.tiles[level - 1].get_or_insert_with(key, || {
-            let _zone = hearth_core::prof::Zone::new(BUILD_ZONES[(level - 1).min(3)]);
             let caller = hearth_core::prof::current_caller();
-            hearth_core::prof::count(&format!("relief.tile.L{level}.{caller}"), 1);
             if level == self.levels.len() && COARSE_CALLERS.contains(&caller) {
                 let name = format!("relief.fine.{caller}");
                 if hearth_core::prof::counter(&name) == 0 {
@@ -557,13 +599,32 @@ impl Relief {
                 }
                 hearth_core::prof::count(&name, 1);
             }
-            self.build(level, tx, tz)
+            let store = self.store.get();
+            if let Some(s) = store {
+                let _zone = hearth_core::prof::Zone::new("relief.disk");
+                if let Some(t) = s.load(level, tx, tz, SPAN as usize) {
+                    hearth_core::prof::count(&format!("relief.disk.L{level}"), 1);
+                    return t;
+                }
+            }
+            let _zone = hearth_core::prof::Zone::new(BUILD_ZONES[(level - 1).min(3)]);
+            hearth_core::prof::count(&format!("relief.tile.L{level}.{caller}"), 1);
+            let t = self.build(level, tx, tz);
+            if let Some(s) = store {
+                s.store(level, tx, tz, &t);
+            }
+            t
         })
     }
 
     /// Tiles kept now at each level, coarsest first.
     pub fn tiles_kept(&self) -> Vec<usize> {
         self.tiles.iter().map(Cache::len).collect()
+    }
+
+    /// The memory the tiles kept take at each level, coarsest first (bytes).
+    pub fn tiles_bytes(&self) -> Vec<u64> {
+        self.tiles.iter().map(|c| c.sum(Tile::bytes)).collect()
     }
 
     /// The surface at a level (0: the grid's), interpolated bicubically between its cells.

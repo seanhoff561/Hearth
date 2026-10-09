@@ -29,7 +29,7 @@ USAGE:
     hearth bench globe   [--seed N] [--points N] [--clicks N] [--budget S] [--json FILE]
     hearth bench creator [--software] [--frames N] [--json FILE]
     hearth bench load    [--seed N] [--software] [--limit S] [--size WxH] [--render-distance N]
-                         [--lod N] [--no-menus] [--json FILE]
+                         [--lod N] [--no-menus] [--fly S] [--speed M/S] [--json FILE]
 
     globe    the planet's map as it is made now (rows of it within --budget seconds, default
              60, the whole map's time projected), --points random points hovered (default
@@ -38,7 +38,9 @@ USAGE:
              each (default 60): the main thread's time a frame, how far the person shown lags
     load     from Play to the player in control and to the whole render distance, a new world
              and then its save, within --limit seconds each (default 300); --no-menus leaves out
-             the menus' work that runs on behind a new world (the globe's map, the places)
+             the menus' work that runs on behind a new world (the globe's map, the places);
+             --fly S flies the new world's player across the planet for S seconds after it
+             loads (at --speed, default 60 m/s), the memory looked at each minute
     --seed N         the planet's seed (default 1)
     --software       the software (CPU) adapter
     --json FILE      also write the numbers as JSON";
@@ -57,6 +59,11 @@ struct Opts {
     render_distance: Option<u32>,
     lod: Option<u32>,
     menus: bool,
+    /// After the new world has loaded: flown across the planet this long (s), the memory
+    /// looked at each minute (the soak of E4.1 §4.7).
+    fly: f64,
+    /// The flight's speed (m/s).
+    speed: f64,
     json: Option<PathBuf>,
 }
 
@@ -74,6 +81,8 @@ impl Default for Opts {
             render_distance: None,
             lod: None,
             menus: true,
+            fly: 0.0,
+            speed: 60.0,
             json: None,
         }
     }
@@ -97,6 +106,8 @@ impl Opts {
                 "--limit" => o.limit = num(it.next(), a)?,
                 "--render-distance" => o.render_distance = Some(num(it.next(), a)? as u32),
                 "--lod" => o.lod = Some(num(it.next(), a)? as u32),
+                "--fly" => o.fly = num(it.next(), a)?,
+                "--speed" => o.speed = num(it.next(), a)?,
                 "--software" => o.software = true,
                 "--no-menus" => o.menus = false,
                 "--size" => {
@@ -257,6 +268,105 @@ fn ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1000.0
 }
 
+fn mib(bytes: u64) -> f64 {
+    bytes as f64 / (1u64 << 20) as f64
+}
+
+/// The soak (E4.1 §4.7): the player carried eastward across the planet at `o.speed` for
+/// `o.fly` seconds, high over the ground, the world streaming about them; the resident memory
+/// and its largest kinds looked at each minute.
+fn fly(
+    r: &mut Report,
+    client: &mut crate::client::Client,
+    ctx: &GpuContext,
+    target: &hearth_render::offscreen::OffscreenTarget,
+    o: &Opts,
+) -> anyhow::Result<()> {
+    r.section(&format!(
+        "Flying {:.0} minutes at {:.0} m/s",
+        o.fly / 60.0,
+        o.speed
+    ));
+    let format = hearth_render::offscreen::OFFSCREEN_FORMAT;
+    let (w, h) = o.size;
+    let mut input =
+        hearth_input::InputState::new(hearth_input::ActionRegistry::with_builtins().len());
+    let pad = crate::gamepad::Pad::default();
+    let start = client.mover.pos;
+    let t0 = Instant::now();
+    let mut last = Instant::now();
+    let mut minute = 0;
+    let mut first: Option<u64> = None;
+    let mut peak = 0u64;
+    let dt = 1.0 / 60.0;
+    while t0.elapsed().as_secs_f64() < o.fly {
+        let f0 = Instant::now();
+        let flown = t0.elapsed().as_secs_f64() * o.speed;
+        let at = glam::DVec3::new(start.x + flown, start.y + 60.0, start.z);
+        client.mover.pos = at;
+        client.mover.vel = glam::DVec3::ZERO;
+        client.pump(ctx);
+        client.update(dt, &mut input, None, 1.0, &pad, 1.0);
+        client.mover.pos = at;
+        let mut enc = ctx
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        client.render(
+            ctx,
+            &mut enc,
+            hearth_render::FrameTargets {
+                color: &target.color_view,
+                depth: &target.depth.view,
+                size: (w, h),
+                format,
+            },
+            dt as f32,
+        );
+        ctx.queue.submit([enc.finish()]);
+        let _ = ctx.device.poll(wgpu::PollType::Poll);
+        if last.elapsed() >= Duration::from_secs(60) {
+            last = Instant::now();
+            minute += 1;
+            let resident = prof::memory().map_or(0, |m| m.0);
+            first.get_or_insert(resident);
+            peak = peak.max(resident);
+            let parts: Vec<String> = client
+                .memory()
+                .iter()
+                .take(7)
+                .map(|(k, b)| format!("{k} {:.0}", mib(*b)))
+                .collect();
+            let heap = prof::heap().map_or_else(String::new, |(used, free)| {
+                format!("; heap {:.0} in use, {:.0} free", mib(used), mib(free))
+            });
+            println!(
+                "  minute {minute:>2}: {:>6.0} MiB resident, {:.0} km flown ({}){heap}",
+                mib(resident),
+                flown / 1000.0,
+                parts.join(", ")
+            );
+        }
+        if let Some(wait) = Duration::from_secs_f64(dt).checked_sub(f0.elapsed()) {
+            std::thread::sleep(wait);
+        }
+    }
+    let end = prof::memory().map_or(0, |m| m.0);
+    r.add("fly: minutes flown", minute as f64, "min");
+    r.add(
+        "fly: km flown",
+        t0.elapsed().as_secs_f64() * o.speed / 1000.0,
+        "km",
+    );
+    r.add(
+        "fly: resident after the first minute",
+        mib(first.unwrap_or(end)),
+        "MiB",
+    );
+    r.add("fly: resident at the end", mib(end), "MiB");
+    r.add("fly: resident at the most", mib(peak.max(end)), "MiB");
+    Ok(())
+}
+
 /// Runs `hearth bench globe|creator|load`.
 pub fn run(what: &str, args: &[String], cache_dir: Option<&Path>) -> i32 {
     if args.iter().any(|a| a == "-h" || a == "--help") {
@@ -270,10 +380,8 @@ pub fn run(what: &str, args: &[String], cache_dir: Option<&Path>) -> i32 {
             return 2;
         }
     };
-    // The global pool's threads named, so their CPU time is told apart.
-    let _ = rayon::ThreadPoolBuilder::new()
-        .thread_name(|i| format!("rayon-{i}"))
-        .build_global();
+    // The game's pools (named, so their CPU time is told apart).
+    hearth_core::jobs::init(0, 0);
     let _main = prof::caller("main");
     let (cores, ram) = prof::machine();
     println!(
@@ -762,6 +870,7 @@ fn load(o: &Opts, cache_dir: Option<&Path>) -> anyhow::Result<Report> {
         shape: Default::default(),
         birthplace: None,
         mode: Some("realistic".into()),
+        prepared: None,
     };
     let menus = if o.menus {
         r.section("The menus' work behind a new world");
@@ -919,6 +1028,12 @@ fn load_once(
         println!("  the server's thread is stuck making the world: left running");
         Box::leak(Box::new(client));
         anyhow::bail!("{label}: the world never arrived within {} s", o.limit);
+    }
+    for (kind, bytes) in client.memory() {
+        r.add(&format!("{label}: memory, {kind}"), mib(bytes), "MiB");
+    }
+    if o.fly > 0.0 && label == "new world" {
+        fly(r, &mut client, ctx, &target, o)?;
     }
     let t = Instant::now();
     drop(client);
