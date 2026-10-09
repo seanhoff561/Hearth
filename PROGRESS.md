@@ -104,7 +104,9 @@ step 5 and after are in `BENCHMARKS.md`, the budgets in `docs/design/budgets.md`
   - *Fast?* Every budget met on this machine but two set for the reference machine (the whole
     render distance 34.6–37.1 s against ~30 s, the creator's full detail 0.9–1.2 s against 1 s;
     llvmpipe and four cores here); the gate holds the Earth-scale numbers from the next baseline;
-    memory flat in the 30-minute flight. The owner is asked for `hearth bench load` and `globe`.
+    memory flat in the 30-minute flight. The owner is asked for `hearth bench load`, `creator`
+    and `globe` (`cargo run --release -p hearth -- bench …` in PowerShell, the output teed to
+    `bench.txt`).
   - *Whole?* What could look out of place: a world saved before E4.1 opens with its trees and
     plants moved (reviewed, D285); cubes fading in while they load; the land past a pole's edge
     not drawn until crossed (PLAN). Checked with the review's pictures and the seam, pole,
