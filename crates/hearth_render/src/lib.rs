@@ -39,6 +39,19 @@ pub struct Renderer {
     pub ctx: GpuContext,
     pub surface: SurfaceState,
     pub depth: offscreen::DepthTarget,
+    /// How long the last frame's parts took on the calling thread.
+    pub parts: FrameParts,
+}
+
+/// The calling thread's time in each part of a frame ([`Renderer::render_with`]).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FrameParts {
+    /// Waiting for the surface's next image.
+    pub acquire: std::time::Duration,
+    /// Recording the frame's commands (the caller's drawing).
+    pub draw: std::time::Duration,
+    pub submit: std::time::Duration,
+    pub present: std::time::Duration,
 }
 
 /// What a frame callback draws into.
@@ -61,6 +74,7 @@ impl Renderer {
             ctx,
             surface,
             depth,
+            parts: FrameParts::default(),
         })
     }
 
@@ -83,9 +97,16 @@ impl Renderer {
         &mut self,
         draw: impl FnOnce(&GpuContext, &mut wgpu::CommandEncoder, FrameTargets<'_>),
     ) -> bool {
-        let Some(frame) = self.surface.acquire(&self.ctx) else {
+        let t = std::time::Instant::now();
+        let acquired = self.surface.acquire(&self.ctx);
+        self.parts = FrameParts {
+            acquire: t.elapsed(),
+            ..FrameParts::default()
+        };
+        let Some(frame) = acquired else {
             return false;
         };
+        let t = std::time::Instant::now();
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -105,8 +126,14 @@ impl Renderer {
                 format: self.surface.config.format,
             },
         );
-        self.ctx.queue.submit(Some(encoder.finish()));
+        let finished = encoder.finish();
+        self.parts.draw = t.elapsed();
+        let t = std::time::Instant::now();
+        self.ctx.queue.submit(Some(finished));
+        self.parts.submit = t.elapsed();
+        let t = std::time::Instant::now();
         self.ctx.queue.present(frame);
+        self.parts.present = t.elapsed();
         true
     }
 

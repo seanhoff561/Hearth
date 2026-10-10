@@ -111,6 +111,9 @@ pub struct Client {
     /// world (its pipelines take seconds on a software device), and when it was begun. Once the
     /// world has come the server's messages wait for it.
     scene_making: Option<(std::thread::JoinHandle<SceneRenderer>, std::time::Instant)>,
+    /// When the world came (the loading screen tells, and the log, how long it waits for the
+    /// scene).
+    world_came: Option<std::time::Instant>,
     /// The world's ground materials, for its scene.
     ground: Vec<hearth_render::terrain::GroundMaterial>,
     env: Option<EnvSampler>,
@@ -205,8 +208,11 @@ pub struct Client {
     /// follows them as drawn).
     drawn: Vec<(Drawn, std::ops::Range<usize>)>,
     drawn_view: DVec3,
-    /// The blocks as they are drawn, for the aim to meet them by their own shapes.
+    /// The blocks as they are drawn, for the aim to meet them by their own shapes; baked on a
+    /// thread of their own when the world comes (a few hundred ms, the loading screen still up),
+    /// no block aimed at till then.
     shapes: Option<crate::aim::Shapes>,
+    shapes_making: Option<std::thread::JoinHandle<crate::aim::Shapes>>,
     /// The climate codes of the column last highlighted (its foliage's season).
     aim_tints: Option<(hearth_math::ColumnPos, hearth_render::mesh::ColumnTints)>,
     /// The player's body as a sculpted mesh (E7).
@@ -417,6 +423,7 @@ impl Client {
             server,
             scene: None,
             scene_making: None,
+            world_came: None,
             ground: Vec::new(),
             env: None,
             atlas,
@@ -485,6 +492,7 @@ impl Client {
             drawn: Vec::new(),
             drawn_view: DVec3::ZERO,
             shapes: None,
+            shapes_making: None,
             aim_tints: None,
             person: crate::people::Person::new(7),
             falling: Vec::new(),
@@ -3288,6 +3296,11 @@ impl Client {
         })
     }
 
+    /// What the world's making or opening is doing ("streaming" once the world has come).
+    pub fn status(&self) -> &str {
+        &self.status
+    }
+
     /// How far the world about the player has come.
     pub fn loading(&self) -> Loading {
         let mut l = Loading {
@@ -3346,6 +3359,12 @@ impl Client {
 
     /// Applies the server's messages; call once per frame before rendering.
     pub fn pump(&mut self, ctx: &GpuContext) {
+        if let Some(making) = self.shapes_making.take_if(|m| m.is_finished()) {
+            match making.join() {
+                Ok(shapes) => self.shapes = Some(shapes),
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        }
         if self.scene.is_none() && self.scene_making.is_none() {
             let (gpu, atlas, format) = (ctx.clone(), self.atlas.clone(), self.color_format);
             let making = std::thread::Builder::new()
@@ -3374,7 +3393,11 @@ impl Client {
                 Ok(scene) => self.set_scene(ctx, scene),
                 Err(panic) => std::panic::resume_unwind(panic),
             }
-            log::info!("the scene made in {:.2} s", t0.elapsed().as_secs_f64());
+            let waited = self.world_came.map_or(0.0, |t| t.elapsed().as_secs_f64());
+            log::info!(
+                "the scene made in {:.2} s (the world waited {waited:.2} s for it)",
+                t0.elapsed().as_secs_f64()
+            );
         }
         let mut uploaded = 0;
         // What the server places, in the player's frame: its copy the shorter way round the
@@ -3442,13 +3465,22 @@ impl Client {
                         c.prefer = crate::crafting_ui::load_prefer(&path);
                     }
                     self.pose = None;
-                    let t0 = std::time::Instant::now();
-                    self.shapes = Some(crate::aim::Shapes::new(&r.reg, self.atlas.clone()));
+                    let (reg, atlas) = (r.reg.clone(), self.atlas.clone());
+                    self.shapes = None;
+                    self.shapes_making = std::thread::Builder::new()
+                        .name("aim shapes".into())
+                        .spawn(move || {
+                            let t0 = std::time::Instant::now();
+                            let shapes = crate::aim::Shapes::new(&reg, atlas);
+                            log::info!(
+                                "the blocks' shapes for the aim baked in {:.0} ms",
+                                t0.elapsed().as_secs_f64() * 1e3
+                            );
+                            shapes
+                        })
+                        .map_err(|e| log::error!("could not bake the aim's shapes: {e}"))
+                        .ok();
                     self.aim_tints = None;
-                    log::info!(
-                        "the blocks' shapes for the aim baked in {:.0} ms",
-                        t0.elapsed().as_secs_f64() * 1e3
-                    );
                     self.world = Some(World {
                         planet,
                         terrain: r.generator.terrain.clone(),
@@ -3459,6 +3491,7 @@ impl Client {
                     self.ground = ground;
                     self.env = Some(EnvSampler::new(r.grid, self.calendar));
                     self.status = "streaming".into();
+                    self.world_came = Some(std::time::Instant::now());
                     // The rest of the server's messages wait for the scene (the top of `pump`).
                     return;
                 }
@@ -4330,7 +4363,10 @@ impl Client {
             }
             n as f32 / 27.0
         });
-        let stage = if ground.is_some() {
+        let stage = if self.world.is_some() && self.scene.is_none() {
+            // The world here, the scene still being made (`pump`).
+            ui.t("menu.making.drawing")
+        } else if ground.is_some() {
             ui.t("menu.making.ground")
         } else if self.status.starts_with("menu.") {
             ui.t(&self.status)

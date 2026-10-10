@@ -59,6 +59,8 @@ pub struct App {
     input: InputState,
     running: Option<Running>,
     limiter: FrameLimiter,
+    /// When a long frame was last logged ([`LongFrame`]).
+    long_logged: Option<Instant>,
     /// Fullscreen kind F11 switches to from windowed mode.
     last_fullscreen: DisplayMode,
     start: Instant,
@@ -175,6 +177,7 @@ impl App {
         Self {
             dirs,
             limiter: FrameLimiter::new(),
+            long_logged: None,
             options,
             bindings,
             input,
@@ -1169,7 +1172,10 @@ impl App {
     }
 
     fn frame(&mut self) {
+        let frame_start = Instant::now();
+        let mut parts = LongFrame::default();
         self.follow_making();
+        parts.making = frame_start.elapsed();
         let sensitivity = self.options.controls.mouse_sensitivity;
         let invert = self.options.controls.invert_y;
         let pad_sensitivity = self.options.controls.controller_sensitivity;
@@ -1193,7 +1199,9 @@ impl App {
                 (dx, if invert { -dy } else { dy })
             });
             if let Some(c) = &mut run.client {
+                let t = Instant::now();
                 c.pump(&run.renderer.ctx);
+                parts.pump = t.elapsed();
                 if c.dead() && !run.menus.is_open() {
                     run.menus.open(Screen::Death);
                     if run.captured {
@@ -1203,6 +1211,7 @@ impl App {
                     }
                 }
                 if !menu_open {
+                    let t = Instant::now();
                     c.update(
                         dt,
                         &mut self.input,
@@ -1211,6 +1220,7 @@ impl App {
                         &pad,
                         pad_sensitivity,
                     );
+                    parts.update = t.elapsed();
                     // Knapping by hand opens its screen; resting asked for, the Rest screen.
                     let rest = std::mem::take(&mut c.rest_request).then_some(Screen::Rest);
                     if let Some(k) = c
@@ -1387,6 +1397,8 @@ impl App {
                 self.frames_rendered += 1;
                 run.title_frames += 1;
             }
+            parts.render = run.renderer.parts;
+            parts.stage = run.client.as_ref().map(|c| c.status().to_owned());
             let elapsed = run.title_timer.elapsed().as_secs_f64();
             // The globe describes the place under the cursor: keep up with it.
             let globe = run.client.as_ref().is_some_and(|c| c.globe.open);
@@ -1413,9 +1425,12 @@ impl App {
         }
         self.sound(frame_dt);
         if !actions.is_empty() {
+            let t = Instant::now();
             self.menu_actions(actions);
+            parts.actions = t.elapsed();
         }
         self.input.end_frame();
+        parts.report(frame_start.elapsed(), &mut self.long_logged);
     }
 
     /// Error that terminated the app, if any.
@@ -1628,6 +1643,55 @@ pub fn run(config: LaunchConfig) -> anyhow::Result<()> {
         anyhow::bail!("{err}");
     }
     Ok(())
+}
+
+/// Where a frame's time on the main thread went, logged when the frame is long (the window
+/// stops answering for as long): the planet's making followed, the client's messages applied and
+/// its update, the window's frame by part, the menus' actions (Play makes the client), and the
+/// loading screen's stage.
+#[derive(Default)]
+struct LongFrame {
+    making: std::time::Duration,
+    pump: std::time::Duration,
+    update: std::time::Duration,
+    render: hearth_render::FrameParts,
+    actions: std::time::Duration,
+    stage: Option<String>,
+}
+
+impl LongFrame {
+    /// A frame longer than this is logged: always when it stops the window for a second, else
+    /// at most every few seconds (a slow device's every frame is long).
+    const LONG: std::time::Duration = std::time::Duration::from_millis(200);
+    const STALL: std::time::Duration = std::time::Duration::from_secs(1);
+    const EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+
+    fn report(&self, total: std::time::Duration, logged: &mut Option<Instant>) {
+        if total < Self::LONG
+            || (total < Self::STALL && logged.is_some_and(|t| t.elapsed() < Self::EVERY))
+        {
+            return;
+        }
+        *logged = Some(Instant::now());
+        let ms = |d: std::time::Duration| d.as_secs_f64() * 1e3;
+        let r = &self.render;
+        log::warn!(
+            "a long frame: {:.0} ms (planet {:.0}, messages {:.0}, update {:.0}, the window's \
+             image {:.0}, drawing {:.0}, submit {:.0}, present {:.0}, menus' actions {:.0}){}",
+            ms(total),
+            ms(self.making),
+            ms(self.pump),
+            ms(self.update),
+            ms(r.acquire),
+            ms(r.draw),
+            ms(r.submit),
+            ms(r.present),
+            ms(self.actions),
+            self.stage
+                .as_ref()
+                .map_or(String::new(), |s| format!(" while \"{s}\""))
+        );
+    }
 }
 
 /// Sleep granularity helper used by the limiter; exposed for tests.
