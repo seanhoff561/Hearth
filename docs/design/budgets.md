@@ -48,17 +48,18 @@ Measured on the cloud machine (4 cores, a software adapter): the lower configura
 | The globe's map | made with the planet ≤ 2 s, read back ≤ 0.1 s, no refinement tile | 1.28 s, 0.03 s, none (with its relief, T1.4) | E4.1 §4.2, T §2.4 |
 | Hovering over the globe | < 1 ms | 0.004 ms median | E4.1 §4.2 |
 | A click's details | on a thread ("Looking closer…"), ≤ 1 s median | 0.48 s median, 1.2 s slowest | E4.1 §4.2 |
-| The places suggested | ≤ ~15 s | 5.5 s | E4.1 §4.2 |
+| The places suggested | ≤ ~15 s | 7.2–7.3 s, both disk caches cleared (G1b) | E4.1 §4.2 |
 | The creator: a colour slider | shown the next frame | the next frame | E4.1 §4.3 |
 | The creator: a shape slider | the last setting shown ≤ 0.25 s, full detail ≤ 1 s on the reference machine | 0.14–0.15 s, 0.9–1.2 s (three threads) | E4.1 §4.3 |
-| A new world: Play → in control | ≤ ~10 s on the reference machine | 4.1 s (G1a) | E4.1 §4.4 |
-| A save: Play → in control | ≤ ~5 s | 2.7 s (G1a) | E4.1 §4.4 |
-| The whole render distance | ≤ ~30 s on the reference machine | 34.6–37.1 s (llvmpipe's drawing) | E4.1 §4.4 |
+| A new world: Play → in control | ≤ ~10 s on the reference machine | 4.8–4.9 s, both disk caches cleared (G1b) | E4.1 §4.4 |
+| A save: Play → in control | ≤ ~5 s | 2.8–3.1 s (G1b) | E4.1 §4.4 |
+| The whole render distance | ≤ ~30 s on the reference machine | 4.8 s on the owner's laptop (E4.1); here 32.6–36.2 s, most of it llvmpipe's drawing (G1b) | E4.1 §4.4 |
 | The main thread while loading | its own work ≤ 1 ms a frame | 0.35–0.46 ms median | E4.1 §4.4 |
 | The caches together | ≤ 40 % of the machine's memory, a budget per kind | as set (`hearth_core::memory`) | E4.1 §4.7 |
 | A 30-minute journey | resident memory flat once the caches are full | 1.6–1.8 GB from minute 3, 1.9 GB after the near arena's one doubling; 2.1 GB at the most | E4.1 §4.7 |
 | Meshes a client has not taken | at most 512 in the channel; the rest one per cube in the server's outbox | 512; 0–14 MiB waiting | D287 |
 | Finest-level tiles for coarse callers | none | none (`tests/fine_tiles.rs`) | E4.1 §4.1 |
+| The walking level's tiles (G1b) | made only for the blocks about the players, a new world's before its first cubes; ≤ 100 ms a tile here (a running player crosses one in a minute) | 16 for a new world (2.1 MiB); 52 ms a tile, its second pass 1.5 ms | D301 |
 | Disk caches, every planet together | refinement tiles ≤ 512 MiB, distant tiles ≤ 1 GiB | as set | E4.1 §4.4 |
 | A gated number's median | ≤ 5 % worse than the baseline's, beyond a small floor | `bench earth-judge` | D59 |
 

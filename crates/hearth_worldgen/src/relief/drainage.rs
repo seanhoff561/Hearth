@@ -142,11 +142,19 @@ impl Ord for Ord32 {
     }
 }
 
-/// Priority-Flood+ε over an n × n span from its base cells, so every other cell drains. A
-/// hollow up to `breach` deep (at its bottom) is drained by cutting its way out (the path the
-/// flood came by lowered below it, as a stream would have cut it: Lindsay 2016); a deeper one is
-/// filled to its brim, a lake.
-pub(super) fn fill(h: &mut [f32], base: &[bool], n: usize, eps: f32, breach: &[f32]) {
+/// Priority-Flood+ε over an n × n span from its base cells, so every other cell drains to one of
+/// its neighbours `ways` (all eight, or the four along its row and column). A hollow up to
+/// `breach` deep (at its bottom) is drained by cutting its way out (the path the flood came by
+/// lowered below it, as a stream would have cut it: Lindsay 2016); a deeper one is filled to its
+/// brim, a lake.
+pub(super) fn fill(
+    h: &mut [f32],
+    base: &[bool],
+    n: usize,
+    eps: f32,
+    breach: &[f32],
+    ways: &[(i64, i64)],
+) {
     let mut closed = base.to_vec();
     let mut from = vec![u32::MAX; h.len()];
     let mut open: BinaryHeap<Reverse<(Ord32, u32)>> = BinaryHeap::new();
@@ -162,7 +170,7 @@ pub(super) fn fill(h: &mut [f32], base: &[bool], n: usize, eps: f32, breach: &[f
     {
         let c = c as usize;
         let (u, w) = ((c % n) as i64, (c / n) as i64);
-        for &(du, dw) in &D8 {
+        for &(du, dw) in ways {
             let (nu, nw) = (u + du, w + dw);
             if nu < 0 || nw < 0 || nu >= n as i64 || nw >= n as i64 {
                 continue;

@@ -195,6 +195,46 @@ fn fill(d: &Dem) -> Vec<f64> {
     out
 }
 
+/// The share of the known ground in closed depressions deeper than `t` (m) whose hollow (its
+/// samples that deep, side by side) touches no sample of `river`: the hollows of the land,
+/// apart from the troughs a river's water lies in.
+pub fn hollows_off_rivers(d: &Dem, river: &[bool], t: f32) -> f32 {
+    let n = d.n;
+    let depth = hollow_depths(d);
+    let deep: Vec<bool> = depth.iter().map(|&v| v > t).collect();
+    let mut seen = vec![false; n * n];
+    let mut count = 0usize;
+    for start in 0..n * n {
+        if !deep[start] || seen[start] {
+            continue;
+        }
+        // One hollow, and whether a river lies in it.
+        let (mut stack, mut cells, mut wet) = (vec![start], 0usize, false);
+        seen[start] = true;
+        while let Some(k) = stack.pop() {
+            cells += 1;
+            wet |= river.get(k).copied().unwrap_or(false);
+            let (i, j) = (k % n, k / n);
+            for (di, dj) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+                let (a, b) = (i as i64 + di, j as i64 + dj);
+                if a < 0 || b < 0 || a >= n as i64 || b >= n as i64 {
+                    continue;
+                }
+                let m = b as usize * n + a as usize;
+                if deep[m] && !seen[m] {
+                    seen[m] = true;
+                    stack.push(m);
+                }
+            }
+        }
+        if !wet {
+            count += cells;
+        }
+    }
+    let known = d.h.iter().filter(|h| h.is_finite()).count().max(1);
+    count as f32 / known as f32
+}
+
 /// How deep each sample lies in a closed depression (m; 0 where water runs off it).
 pub fn hollow_depths(d: &Dem) -> Vec<f32> {
     fill(d)

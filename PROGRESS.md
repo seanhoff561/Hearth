@@ -56,7 +56,7 @@ E4.1, T0, T1, T2, R1a, G1a. V2-11 superseded.
 | T2 — the realism gap analysis | done 2026-10-09 (D296, D297) |
 | R1a — the sun's shadows | done 2026-10-09 (D298) |
 | G1a — relief from 30 m to 30 km | done 2026-10-09 (D299) |
-| S5/P7 (c)–(f) with G1b → W1 → L1 → P7G → S6 with H1 → R1b → S7 → S8 → P8 | S5/P7 (c) done 2026-10-14 (D300); next: G1b with S5/P7 (d)–(f); Audit 3 after it (D297) |
+| S5/P7 (c)–(f) with G1b → W1 → L1 → P7G → S6 with H1 → R1b → S7 → S8 → P8 | S5/P7 (c) done 2026-10-14 (D300); G1b's ground done 2026-10-14 (D301); next: S5/P7 (d)–(f); Audit 3 after them (D297) |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
 
@@ -66,10 +66,14 @@ E4.1, T0, T1, T2, R1a, G1a. V2-11 superseded.
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E7 done 2026-10-08; E4.1 (the Earth-sized world fast to see, make a person on and load into) done 2026-10-09 |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); Audit 2 done 2026-10-08 (`AUDIT-2.md`); next: an audit after three completed milestones (Q §8.2) |
-| Realism (T) | last suite render: R1a, 2026-10-09 (`docs/review/realism/`); top open gaps (`scorecard.md`): grass and water as sprites and blocks, trees past the render distance as boxes; walking-scale ground (G1b); the grid's lakes three times the Earth's; the seam at the edge of full detail. G1a brought the relief from 30 m to 30 km within the Earth's bounds; S5 (c) draws the trees as their meshes |
+| Realism (T) | last suite render: R1a, 2026-10-09 (`docs/review/realism/`); top open gaps (`scorecard.md`): grass and water as sprites and blocks, rivers' banks below their water, trees past the render distance as boxes; the grid's lakes three times the Earth's; the seam at the edge of full detail; the desert's form. G1a brought the relief from 30 m to 30 km within the Earth's bounds, G1b the walking scale (D301); S5 (c) draws the trees as their meshes |
 
 ## Owner checks
 Pictures and runs that need the owner (T §7), newest first:
+- G1b: on the PC, a new world in hill country and one in a desert: walk a hillside and down a
+  gully to its brook, look across a valley from a ridge and out over the land from a hill (the
+  far ground should read as the near); in the desert, a wash and a stony slope. Which ground looks
+  least real, and what gives it away?
 - S5 (c): on the PC, `cargo run --release -- bench --scenes lowland_forest,rainforest_walk`
   and the same with `--trees blocks`: the frame times and the GPU's passes with the trees as
   meshes and as blocks; then `--preset high --scenes rainforest_walk` (S §7.4: a dense
@@ -99,6 +103,40 @@ Pictures and runs that need the owner (T §7), newest first:
 - `cargo test -p hearth_worldgen --test planet_pinned` on the laptop: whether Windows' maths make
   the same planet as Linux's (D289). One command, a pass or a failure to paste back.
 
+## G1b — walking scale (the ground: 2026-10-14, D301, RGA-1's gaps 3, 5 and 9)
+- **A walking level** of 4.8 m cells beneath the 38 m one (`relief/walking.rs`), made by the same
+  tiles and read only by the blocks about the players; its erosion by dry land's storms, its
+  relief the dry basins' own surface, a second drainage pass over half-offset tiles, drained and
+  its brooks stepping along its rows and columns, its tiles made about the spawn first.
+- **Ridges and valleys running downhill** at every level (`relief/gullies.rs`); soil-mantled
+  ground smoother below 76 m. **The ground's own roughness** below the cells
+  (`Terrain::micro_relief`): soil's mounds and pits, dry land's stony knobs, bare rock; none on a
+  channel's bed. Reads between cells never leave the cells' range (`monotone`).
+- **Every other read a stand-in** (`walking_proxy`): the distant view (within half a degree of
+  the blocks at 30 m), and placement (`sample_regional`: deposits, springs, caves, places' cards).
+- **Measured** (`docs/review/g1b/`, G1a at the same windows): |Δh| at 1–64 m and the 4 m
+  curvature within × 1.5 of lidar in hills, desert, boreal land and the plains' first window
+  (0.68–1.34); the plains' second 0.48–0.56, between the kind's two lidar windows; mountains to
+  their 64 m relief (0.66). Closed hollows over 0.25 m 0.0–0.7 % off rivers outside the
+  mountains (G1a 0.8–12 %). The planet's measures within bounds; slope at 30 m by kind within
+  ± 25 % but the desert's (5.5° against 4.2°). Drenched hills' gradient set again (D301).
+- **Tests**: the walking level drains (cells, and as the blocks read it); its channels step along
+  rows and columns; reads between cells stay between them; a far read stands in for it; coarse
+  callers make none of its tiles (`fine_tiles`); placement reads (`places`, `hydro`).
+- **Fast?** Cold, both caches cleared (`BENCHMARKS.md`): places 7.2–7.3 s (G1a 7.7–8.4), a new
+  world in control 4.8–4.9 s (5.0–5.3), its save 2.8–3.1 s (2.8); 16 walking tiles, 52 ms each.
+  The whole render distance 33–36 s here (28–29): finer distant tiles where the land is
+  rougher, llvmpipe's drawing (4.8 s on the laptop at E4.1, budget 30 s).
+- **Real?** Ridges, gullies and washes where lidar has them; hollows as rare as the Earth's.
+  **Lean?** One module for the walking level; the old blocks' noise gone; the bench's probes
+  folded into `realism terrain` (the far read against the blocks). **Whole?** The far view
+  stands in for the near ground at 30 m. **Organic?** Gullies on a jittered lattice, brooks
+  along curves through their nodes (D299), the micro relief's noise unrepeating.
+- **Open** (PLAN): the desert's form, the mountains' kilometre relief and grain, the plains'
+  steep valley sides; rivers' banks below their water and stepped lake shores (W1); frost, wind
+  and solution forms, clasts, soil surfaces (S5/P7 (e), P7G).
+- Next: S5/P7 (d)–(f); Audit 3 after them.
+
 ## G1a — relief from 30 m to 30 km (2026-10-09, D299, RGA-1's gaps 2 and 4)
 - **Relief by the land's kind and height above base level** (`relief/roughness.rs`): an
   amplitude at the valleys' spacing from the height above the graded profile the rivers could cut
@@ -125,68 +163,8 @@ Pictures and runs that need the owner (T §7), newest first:
   right in amount but not in form, the desert's ranges low.
 - Next: S5/P7 (c) with G1b, walking scale; Audit 3 after it.
 
-## R1a — the sun's shadows (2026-10-09, D298, RGA-1's first gap)
-- **Cascaded shadow maps** (`hearth_render::shadow`, `terrain/casters.rs`, `common.wgsl`): four
-  spheres about the camera (12–320 blocks; texels 1.2–31 cm at 2048²) and one over the distant
-  terrain (1–12 km), their texels still as the camera walks and turns (snapped centres, the
-  light moved on in 0.23° steps), the outer ones redrawn by turns. Cast: the far side of solid
-  cubes, the smooth ground and the distant height fields, plants and leaves cut to their texels
-  (fallen ones left out), figures, people's bodies (in first person with the head), the mesh
-  trees; the near world into the near cascades (the cubes looked up in each one's region), the
-  distant terrain into the far one, where a near point counts only what lies beyond its near
-  cascade's reach. Received by the terrain, water and ice, the distant terrain, figures, skin,
-  hair and eyes, trees: each comparison against the surface's own plane, the edges as soft as
-  the sun's disc makes them in the two nearest cascades (to 3.7 cm); never deep in enclosed
-  places. Option *Shadows* (off, low, medium, high; presets), screenshot `shadows=`, bench
-  `--shadows`, F3 line.
-- **Tests**: `sun_shadows` (a slab over the ground: its shadow 0.161 against 0.567 without the
-  maps; the open ground 0.592 both ways); `shadow.rs` (the light's basis, the snapping, the
-  light's steps and the cascades' turns, the casters' selection, every caster in its cascade's
-  box); `options` (an older file's shadows by its preset).
-- **Pictures**: the realism suite re-rendered with shadows (`docs/review/realism/suite/`); low
-  sun before and after, a person, a ridge at dawn, the soft edges (`docs/review/r1a/`).
-- **Accepted** (PLAN, R1a): the suite's low-sun shots shadowed — trees, tussocks, stones and
-  people cast at 7 h, the distant terrain at 5 h; the GPU budget (≤ 1.5 ms at 1080p on the
-  RTX 4060) is the owner's check: on the software device the shadow passes take half the main
-  terrain pass's time (1.54 M triangles a frame against 0.81 M without, 5,316 draws against
-  2,492), the frame thread +1.5 ms (prepare: terrain 1.02 → 2.52 ms; `BENCHMARKS.md`).
-- **Real?** Shadows from the sun's own direction and disc; image statistics (medians over the
-  biomes): spectral α underfoot 1.89 → 2.26 (the Earth's 1.8–2.4), at eye height 1.23 → 1.32,
-  colourfulness at eye height 60 → 54 (15–60); a low sun's darkest tones underfoot 0.34 → 0.14.
-  **Lean?** One module and a submodule; the sky-light gate kept only where no map reaches;
-  `terrain.rs` split (the arena, the casters) under 2,000 lines. **Fast?** Within the CPU
-  budget here; the GPU on the PC. **Whole?** Everything lit by the sun receives and nearly
-  everything casts (not hair, eyes or the distant crowns' boxes, D298). **Organic?** The
-  penumbra's spiral turned by a hash fixed in the world.
-- Next: G1a, the relief from 30 m to 30 km (done).
-
-## T2 — the realism gap analysis (2026-10-09, Amendment T §3, D296–D297)
-- **Measured** (`bench realism terrain|global|levels|weather|images`; `docs/review/realism/`):
-  the planet right (land 29.0 %, mean land 791 m); the land between 30 m and 30 km half the
-  Earth's relief (200 random windows each: median slope 1.5° against 2.8°, relief 78 m against
-  163 m), a sixth in hill country (the Oregon Coast Range's 762 m over 30 km, the generator's
-  122 m) — each level's relief scaled by uplift alone; below 38 m noise two to six times smoother
-  than lidar; drainage on the grids' eight directions; closed hollows where real ground drains;
-  no cast shadows; trees, grass and water as voxels, sprites and blocks; the seam 3–8 times the
-  steps beside it in forests. `RGA-1.md` with the ranked table; `scorecard.md`.
-- **The suite** (`tools/shots/realism.shots`): 16 biomes and a stream × underfoot, eye height, a
-  40 m rise, a 400 m hill × late morning and low sun, 132 shots, each shot's seam measured
-  (`seams.tsv`); sheets in `docs/review/realism/suite/`. References (`references.md`): USGS 3DEP
-  lidar and SRTM for five matched places, AWS terrain tiles for the planet-wide windows; the
-  photographs by `scripts/fetch-realism-refs.sh --photos` (Commons is closed to this machine).
-- **Fixed in passing** (D296): the weather took wet days for wet hours — London rained in 29 %
-  of its hours, now 6.0 % (records 6–8 %), the years within 5 % of their normals.
-- **The plan revised** (D297): R1a (sun shadows) → G1a (relief from 30 m to 30 km) → S5/P7
-  (c)–(f) with G1b (walking scale) → W1 → L1 → P7G → S6 with H1 → R1b → S7 → S8 → P8.
-- **Accepted** (T §8): `RGA-1.md` with evidence at every scale of T §3.1, the ranked gap table,
-  the realism suite and its metrics (`bench realism`), the scorecard, `PLAN.md` revised (D297);
-  `scripts/check.sh` green.
-- **Real?** The analysis is the Earth's numbers against ours; the weather now rains as places
-  do. **Lean?** One bench module; `tiff` and `zune-jpeg` only in the bench tool; the
-  E4.1 entry moved to `docs/history/`. **Fast?** No cost in the game (the weather's thresholds
-  two lookups). **Whole?** The suite reviewed shot by shot (RGA-1 §2.13). **Organic?** The
-  suite's repetition measured (`images.md`).
-- Next: R1a, sun shadows.
+## R1a — the sun's shadows; T2 — the realism gap analysis (done 2026-10-09)
+Their entries: `docs/history/progress-2026-10-09-r1a-t2.md`.
 
 ## T1 — quick wins (done 2026-10-09)
 Its entry: `docs/history/progress-2026-10-09-t1.md`.

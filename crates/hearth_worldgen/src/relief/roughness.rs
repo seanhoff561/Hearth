@@ -260,8 +260,9 @@ pub fn roughness(g: &PlanetGrid, land: &Land, gx: f64, gz: f64) -> Roughness {
     // The hillslopes' gradient by the climate: steeper as rain cuts; gentler on dry land, whose
     // basins fill with what the ranges shed, and where ice scoured and drift buried the land
     // (cold lowland; where it is drenched, rivers and ice cut it steep); steeper as the relief
-    // grows.
-    let mut grad = lerp(0.12, 0.35, humid) + 0.75 * drenched;
+    // grows. (Drenched land's set again in G1b, D301: G1a's 30 m reads had counted the blocks'
+    // own noise, aliased, as slope.)
+    let mut grad = lerp(0.12, 0.35, humid) + 0.95 * drenched;
     grad *= lerp(1.0, 0.4, smoothstep(11.0, 2.0, t) * (1.0 - drenched));
     grad *= amp / (amp + 20.0);
     grad *= lerp(1.0, 0.5, dry);

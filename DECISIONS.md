@@ -311,3 +311,4 @@ task needs it. A new decision gets a line here and its text in the current file.
 
 ## [D300-D399](docs/decisions/D300-D399.md)
 - D300 (2026-10-14) The natural trees drawn as their meshes; a tree cut into drawn as its blocks; a felled tree falls as its mesh
+- D301 (2026-10-14) The walking scale: a level of ~5 m cells for the blocks alone, dissected and drained; the ground's own roughness below it; every other read a stand-in

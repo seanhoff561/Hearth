@@ -98,6 +98,8 @@ const D8: [(i64, i64); 8] = [
     (0, -1),
     (1, -1),
 ];
+/// The four neighbours along the cells' rows and columns.
+const D4: [(i64, i64); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 const OUTLET: u8 = 8;
 
 /// One refinement level.
@@ -238,7 +240,8 @@ impl Patch {
         (x / self.cell - 0.5, (z + self.half_c) / self.cell - 0.5)
     }
 
-    /// The surface (blocks) at a point, interpolated bicubically between the cells.
+    /// The surface (blocks) at a point, interpolated bicubically between the cells, never
+    /// leaving the range of the cells about it ([`monotone`]).
     pub fn height(&self, x: f64, z: f64) -> f32 {
         let (gx, gz) = self.coords(x.rem_euclid(self.c), z);
         let (i0, j0) = (gx.floor() as i64, gz.floor() as i64);
@@ -252,9 +255,9 @@ impl Patch {
                 self.at(i0 + 1, j).h as f64,
                 self.at(i0 + 2, j).h as f64,
             ];
-            *row = catmull(p, fx);
+            *row = monotone(p, fx);
         }
-        catmull(rows, fz) as f32
+        monotone(rows, fz) as f32
     }
 
     /// The water about a point: the sea's share and the lakes' share of the four cells about
@@ -278,6 +281,22 @@ impl Patch {
             }
         }
         (sea, lakes, level)
+    }
+
+    /// The channels' share of the four cells about a point (weighted by nearness).
+    pub fn channel(&self, x: f64, z: f64) -> f32 {
+        let (gx, gz) = self.coords(x.rem_euclid(self.c), z);
+        let (i0, j0) = (gx.floor() as i64, gz.floor() as i64);
+        let (fx, fz) = ((gx - i0 as f64) as f32, (gz - j0 as f64) as f32);
+        let mut share = 0.0;
+        for (dj, wz) in [(0, 1.0 - fz), (1, fz)] {
+            for (di, wx) in [(0, 1.0 - fx), (1, fx)] {
+                if self.at(i0 + di, j0 + dj).channel {
+                    share += wx * wz;
+                }
+            }
+        }
+        share
     }
 }
 
@@ -685,7 +704,8 @@ impl Relief {
             .collect()
     }
 
-    /// The surface at a level (0: the grid's), interpolated bicubically between its cells.
+    /// The surface at a level (0: the grid's), interpolated bicubically between its cells, as
+    /// [`Patch::height`] reads it.
     pub fn height(&self, level: usize, x: f64, z: f64) -> f32 {
         let s = self.cell_size(level);
         let gx = x / s - 0.5;
@@ -702,9 +722,9 @@ impl Relief {
                 self.cell_in(level, i0 + 1, j, &mut runs).h as f64,
                 self.cell_in(level, i0 + 2, j, &mut runs).h as f64,
             ];
-            *row = catmull(p, fx);
+            *row = monotone(p, fx);
         }
-        catmull(rows, fz) as f32
+        monotone(rows, fz) as f32
     }
 
     /// The finest surface (blocks) at a point, or the grid's where there are no levels.
@@ -858,11 +878,11 @@ impl Relief {
         sum
     }
 
-    /// The relief a level's noise adds at a point (blocks), before its drainage: its octaves no
-    /// shorter than `min_wl` (blocks) at amplitudes `amps` (longest first), each laid across the
-    /// slope beneath it — the parent's surface's (`slope`, blocks a block) with the longer
-    /// octaves' on it — where that slope falls further over its wavelength than its relief
-    /// reaches (`gullies`), isotropic on gentler ground.
+    /// The relief a level's noise adds at a point (blocks), before its drainage: its octaves as
+    /// columns `min_wl` blocks apart see them (0: all) at amplitudes `amps` (longest first),
+    /// each laid across the slope beneath it — the parent's surface's (`slope`, blocks a block)
+    /// with the longer octaves' on it — where that slope falls further over its wavelength than
+    /// its relief reaches (`gullies`), isotropic on gentler ground.
     fn octaves_at(
         &self,
         level: usize,
@@ -881,20 +901,28 @@ impl Relief {
         let mut add = 0.0;
         let mut grad = slope;
         for ((oct, amp), &(seed, cells, wl)) in noise.octaves.iter().zip(amps).zip(&noise.dissect) {
-            if wl < min_wl {
+            // How much of the octave columns `min_wl` apart see: all of it from two spacings up,
+            // none below one (a column stands for its square's mean, as a 30 m DEM's sample
+            // does: finer relief averages away rather than showing as noise).
+            let seen = if min_wl > 0.0 {
+                smoothstep(1.0, 2.0, wl / min_wl)
+            } else {
+                1.0
+            };
+            if seen <= 0.0 {
                 break;
             }
             let iso = oct.sample2(wx, wz);
             let fall = grad.0.hypot(grad.1);
             let led = smoothstep(0.5, 2.0, fall * wl / amp.max(1e-6));
             if led <= 0.0 {
-                add += iso * amp;
+                add += iso * amp * seen;
                 continue;
             }
             let along = (grad.0 / fall, grad.1 / fall);
             let (g, (gu, gv)) = gullies::octave(seed, cells, (wx / wl, wz / wl), along);
-            add += (led * g * gullies::GAIN + (1.0 - led) * iso) * amp;
-            let k = led * gullies::GAIN * amp / wl;
+            add += (led * g * gullies::GAIN + (1.0 - led) * iso) * amp * seen;
+            let k = led * gullies::GAIN * amp * seen / wl;
             grad = (grad.0 + k * gu, grad.1 + k * gv);
         }
         add
@@ -951,6 +979,7 @@ impl Relief {
         let g = &*self.grid;
         let mut h = vec![0.0f32; len];
         let mut rain = vec![0.0f32; len];
+        let mut storm = vec![0.0f32; len];
         let mut erodibility = vec![1.0f32; len];
         let mut rock = vec![0.0f32; len];
         let mut sea = vec![false; len];
@@ -964,7 +993,7 @@ impl Relief {
         // tile: the spans start on it), between its points interpolated; it changes only over
         // the grid's cells.
         let side = (n as i64 - 1) / LATTICE + 2;
-        let lattice: Vec<([f64; 16], f64, f64, f64)> = (0..side * side)
+        let lattice: Vec<([f64; 16], f64, f64, f64, f64)> = (0..side * side)
             .map(|q| {
                 let (lu, lw) = (q % side, q / side);
                 let (x, z) = self.centre(
@@ -986,6 +1015,14 @@ impl Relief {
                 // A cell's real area: Mercator's blocks are cos φ metres apart.
                 let lat = g.geom.planet().latitude(z);
                 let area_m2 = (s * lat.cos() / self.v).powi(2);
+                // The walking level's washes and gullies are cut by the storms that run off a
+                // dry land's bare ground, not by the year's mean (Wolman and Gerson 1978; dry
+                // lands drain densest, Melton 1957): its erosion reckons with their runoff.
+                let storm = if self.walking(level) {
+                    share.max(STORM_SHARE * (1.0 - smoothstep(150.0, 600.0, p)))
+                } else {
+                    share
+                };
                 // Bare rock where it is cold above the trees (frost-shattered, ice-scoured): at
                 // the walking level it stands in cliffs and steps, steeper than scree.
                 let alpine = if level == self.levels.len() && self.levels.len() >= 4 {
@@ -993,7 +1030,8 @@ impl Relief {
                 } else {
                     0.0
                 };
-                (a, rough.fill, area_m2 * p * share / 1000.0 / YEAR_S, alpine)
+                let per = area_m2 * p / 1000.0 / YEAR_S;
+                (a, rough.fill, per * share, alpine, per * storm)
             })
             .collect();
         // How deep a hollow may be and still be cut through: deeper where the relief is rougher.
@@ -1054,7 +1092,7 @@ impl Relief {
                     (corner(0, 1), (1.0 - fu) * fw),
                     (corner(1, 1), fu * fw),
                 ];
-                let (mut fill, mut runoff, mut alpine) = (0.0, 0.0, 0.0);
+                let (mut fill, mut runoff, mut alpine, mut flood) = (0.0, 0.0, 0.0, 0.0);
                 amps.fill(0.0);
                 for (c, wgt) in weights {
                     for (a, ca) in amps.iter_mut().zip(&c.0) {
@@ -1063,7 +1101,9 @@ impl Relief {
                     fill += c.1 * wgt;
                     runoff += c.2 * wgt;
                     alpine += c.3 * wgt;
+                    flood += c.4 * wgt;
                 }
+                storm[k] = flood as f32;
                 rock[k] = alpine as f32;
                 let reach: f64 = amps.iter().sum();
                 breach[k] = breach[k].max((BREACH_REACH * reach) as f32);
@@ -1073,8 +1113,10 @@ impl Relief {
                 // Dry land's basins, the ground lying low among the parent's, are filled with
                 // what the ranges about them shed: the finer levels' relief laid only thinly
                 // there, their floors and fans buried. The first level's (its cells some
-                // kilometres) is the ranges' within a basin, which stand above the fill.
-                if level > 1 && fill > 0.0 && hi > lo {
+                // kilometres) is the ranges' within a basin, which stand above the fill; the
+                // walking level's is the fill's own surface, its washes, bars and swales (Bull
+                // 1977), as rough on a fan as off it.
+                if level > 1 && !self.walking(level) && fill > 0.0 && hi > lo {
                     let low = smoothstep(0.25, -0.2, (base - mean) / (hi - lo));
                     add *= 1.0 - fill * low;
                 }
@@ -1201,7 +1243,7 @@ impl Relief {
                     (ha, hb),
                     pc.q,
                     (i0, j0, count),
-                    s,
+                    (s, self.walking(level)),
                     &sea,
                     &mut h,
                     &mut channel,
@@ -1289,12 +1331,15 @@ impl Relief {
         let mut z = h;
         let mut wet = z.clone();
         let mut routing = Routing::new(len);
+        // The walking level drains along its rows and columns, as the blocks read between its
+        // cells: a cell draining only across a corner, between two higher, would hold a hollow.
+        let ways: &[(i64, i64)] = if self.walking(level) { &D4 } else { &D8 };
         for it in 0..8 {
             // The parent's lakes stand at their surface, which the water about them drains to.
             for k in 0..len {
                 wet[k] = if held[k].is_finite() { held[k] } else { z[k] };
             }
-            fill(&mut wet, &base, n, 1e-3, &breach);
+            fill(&mut wet, &base, n, 1e-3, &breach, ways);
             // A cut is the ground's.
             for (zk, &wk) in z.iter_mut().zip(&wet) {
                 *zk = zk.min(wk);
@@ -1305,7 +1350,7 @@ impl Relief {
             // The water spread over the slopes and gathered in the hollows, the ground worn
             // where it gathers, the slopes crept and slumped.
             routing.route(&wet, &base, &channel, &recv, n);
-            let q = routing.accumulate(&rain, &inflow, &channel, n);
+            let q = routing.accumulate(&storm, &inflow, &channel, n);
             routing.erode(&mut z, &mut wet, &q, &k_power, &base, q_cell, n);
             diffuse(&mut z, &base, n, creep);
             slump(&mut z, &base, n, talus, &rock);
@@ -1322,7 +1367,7 @@ impl Relief {
                     open_base[k] = outside[k] || sea[k] || channel[k];
                 }
             }
-            fill(&mut out, &open_base, n, 1e-3, &breach);
+            fill(&mut out, &open_base, n, 1e-3, &breach, ways);
             for k in 0..len {
                 if held[k].is_nan() && out[k] < z[k] {
                     z[k] = out[k];
@@ -1355,7 +1400,9 @@ impl Relief {
     /// Marks the cells a channel's path crosses, from `a` to `b` falling `levels.0` to
     /// `levels.1`, each draining to the next; it ends where it meets the sea. Where reaches
     /// cross, a cell drains along the one that ends lowest, and `bottom` keeps that end: the
-    /// lowest its bed may be cut.
+    /// lowest its bed may be cut. With `straight` (the walking level's, whose cells the blocks
+    /// read between) it steps only along rows and columns: a channel stepping across a corner
+    /// between two banks would rise between its cells there, damming itself.
     #[allow(clippy::too_many_arguments)]
     fn rasterize(
         &self,
@@ -1363,7 +1410,7 @@ impl Relief {
         levels: (f32, f32),
         q: f32,
         (i0, j0, count): (i64, i64, i64),
-        s: f64,
+        (s, straight): (f64, bool),
         sea: &[bool],
         h: &mut [f32],
         channel: &mut [bool],
@@ -1381,6 +1428,8 @@ impl Relief {
         }
         let mut walked = 0.0;
         let mut prev: Option<(i64, i64)> = None;
+        // Where the path was last sampled (blocks).
+        let mut last = (f64::NAN, f64::NAN);
         let span_i = |x: f64| -> i64 {
             // The cell index along x relative to the span, nearest to it across the wrap.
             let i = (x / s).floor() as i64;
@@ -1397,44 +1446,72 @@ impl Relief {
                 let at = (walked + seg * f) / total;
                 let u = span_i(x);
                 let w = ((z + self.c * 0.5) / s).floor() as i64 - j0;
+                let from = std::mem::replace(&mut last, (x, z));
                 if (u, w) == prev.unwrap_or((i64::MIN, i64::MIN)) {
                     continue;
                 }
                 let level = levels.0 + (levels.1 - levels.0) * at as f32;
-                if let Some((pu, pw)) = prev
-                    && (0..n).contains(&pu)
-                    && (0..n).contains(&pw)
+                // The cells the step enters: across a corner, first the one of the two beside
+                // it that the path crosses into first.
+                let mut cells = [(u, w), (u, w)];
+                let mut visits = 1;
+                if straight
+                    && let Some((pu, pw)) = prev
+                    && (u - pu).abs() == 1
+                    && (w - pw).abs() == 1
                 {
-                    // The previous cell drains here (a diagonal or straight step), unless a
-                    // reach through it falling lower takes its water.
-                    let (du, dw) = ((u - pu).clamp(-1, 1), (w - pw).clamp(-1, 1));
-                    let pk = (pw * n + pu) as usize;
-                    // (A reach crossing its own path drains on from its last visit, so its
-                    // loops hold no water.)
-                    if let Some(code) = D8.iter().position(|&o| o == (du, dw))
-                        && (recv[pk] == OUTLET || levels.1 <= bottom[pk])
+                    let (dx, dz) = (x - from.0, z - from.1);
+                    // How far along the step it crosses into the next column, and row.
+                    let cross = |a: f64, d: f64, up: bool| {
+                        let into = (a / s).rem_euclid(1.0);
+                        let gap = if up { 1.0 - into } else { into };
+                        if d == 0.0 {
+                            f64::MAX
+                        } else {
+                            gap * s / d.abs()
+                        }
+                    };
+                    let tx = cross(from.0, dx, u > pu);
+                    let tz = cross(from.1 + self.c * 0.5, dz, w > pw);
+                    cells[0] = if tx < tz { (u, pw) } else { (pu, w) };
+                    visits = 2;
+                }
+                for &(u, w) in &cells[..visits] {
+                    if let Some((pu, pw)) = prev
+                        && (0..n).contains(&pu)
+                        && (0..n).contains(&pw)
                     {
-                        recv[pk] = code as u8;
-                        bottom[pk] = levels.1;
+                        // The previous cell drains here (a diagonal or straight step), unless a
+                        // reach through it falling lower takes its water.
+                        let (du, dw) = ((u - pu).clamp(-1, 1), (w - pw).clamp(-1, 1));
+                        let pk = (pw * n + pu) as usize;
+                        // (A reach crossing its own path drains on from its last visit, so its
+                        // loops hold no water.)
+                        if let Some(code) = D8.iter().position(|&o| o == (du, dw))
+                            && (recv[pk] == OUTLET || levels.1 <= bottom[pk])
+                        {
+                            recv[pk] = code as u8;
+                            bottom[pk] = levels.1;
+                        }
                     }
-                }
-                prev = Some((u, w));
-                if !(0..n).contains(&u) || !(0..n).contains(&w) {
-                    continue;
-                }
-                let k = (w * n + u) as usize;
-                if sea[k] {
-                    continue;
-                }
-                if channel[k] {
-                    // Two reaches meet: the lower bed and the larger flow.
-                    h[k] = h[k].min(level);
-                    inflow[k] = inflow[k].max(q);
-                } else {
-                    channel[k] = true;
-                    h[k] = level;
-                    inflow[k] = q;
-                    bottom[k] = levels.1;
+                    prev = Some((u, w));
+                    if !(0..n).contains(&u) || !(0..n).contains(&w) {
+                        continue;
+                    }
+                    let k = (w * n + u) as usize;
+                    if sea[k] {
+                        continue;
+                    }
+                    if channel[k] {
+                        // Two reaches meet: the lower bed and the larger flow.
+                        h[k] = h[k].min(level);
+                        inflow[k] = inflow[k].max(q);
+                    } else {
+                        channel[k] = true;
+                        h[k] = level;
+                        inflow[k] = q;
+                        bottom[k] = levels.1;
+                    }
                 }
             }
             walked += seg;
@@ -1455,6 +1532,10 @@ fn channel_threshold(level: usize) -> f32 {
         _ => 0.0005,
     }
 }
+
+/// The share of a dry land's rain its storms run off (Hortonian flow on bare and crusted ground,
+/// a fifth to a half of a heavy storm's: Yair and Lavee 1985), for the walking level's erosion.
+const STORM_SHARE: f64 = 0.3;
 
 /// The stream power's strength (per round, at a level's cells; times the rock's erodibility).
 const K_POWER: f32 = 0.08;
@@ -1661,263 +1742,31 @@ fn catmull(p: [f64; 4], t: f64) -> f64 {
         + (-p[0] + 3.0 * p[1] - 3.0 * p[2] + p[3]) * t3)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::WorldGenSettings;
-    use hearth_math::PlanetSize;
-
-    fn earth(seed: u64) -> Relief {
-        let s = WorldGenSettings {
-            seed,
-            planet_size: PlanetSize::Earth,
-            grid_resolution: 256,
-        };
-        Relief::new(Arc::new(PlanetGrid::build(&s.sanitized(), &|_, _| {})))
-    }
-
-    /// The walking level drains (G1b): over some of its land, closed hollows deeper than a
-    /// quarter of a metre hold under a hundredth of the ground outside its lakes, and its second
-    /// pass leaves fewer than its first pass's blend alone would. Each tile drains its own span;
-    /// the second pass cuts what their blend dams.
-    #[test]
-    fn the_walking_level_drains() {
-        let r = earth(5);
-        let top = r.levels().len();
-        assert!(r.walking(top), "{:?}", r.levels());
-        let scale = RATIO.pow(top as u32 - 1);
-        let n = 160usize;
-        // The ground in hollows deeper than a quarter of a metre (outside lakes and the sea),
-        // filled from the edges, nothing cut.
-        let hollows = |c: &[Cell]| {
-            let h: Vec<f32> = c
-                .iter()
-                .map(|c| {
-                    if c.lake.is_finite() {
-                        c.lake.max(c.h)
-                    } else {
-                        c.h
-                    }
-                })
-                .collect();
-            let mut filled = h.clone();
-            let edge: Vec<bool> = (0..n * n)
-                .map(|k| k % n == 0 || k / n == 0 || k % n == n - 1 || k / n == n - 1)
-                .collect();
-            fill(&mut filled, &edge, n, 0.0, &vec![-1.0; n * n]);
-            (0..n * n)
-                .filter(|&k| c[k].lake.is_nan() && !c[k].sea)
-                .fold((0usize, 0usize), |(d, all), k| {
-                    (d + (filled[k] - h[k] > 0.25 * r.v as f32) as usize, all + 1)
-                })
-        };
-        let (mut deep, mut first, mut cells) = (0, 0, 0);
-        for nth in 0..6 {
-            let (i1, j1) = land(&r, nth);
-            let (i0, j0) = (i1 * scale, j1 * scale);
-            let at = |k: usize| (i0 + (k % n) as i64, j0 + (k / n) as i64);
-            let drained: Vec<Cell> = (0..n * n)
-                .map(|k| {
-                    let (i, j) = at(k);
-                    r.cell(top, i, j)
-                })
-                .collect();
-            let mut run = Run::default();
-            let blended: Vec<Cell> = (0..n * n)
-                .map(|k| {
-                    let (i, j) = at(k);
-                    r.blended_in(top, i, j, &mut run)
-                })
-                .collect();
-            let (d, all) = hollows(&drained);
-            deep += d;
-            cells += all;
-            first += hollows(&blended).0;
+/// [`catmull`] with its slopes held in so that it never leaves the range of the two values it
+/// lies between (Fritsch and Carlson 1980; Hyman 1983); the same where the values rise or fall
+/// steadily. A drained surface's cells so read between them dam no hollow: plain Catmull-Rom
+/// dips below a valley's floor two cells wide between steep sides, by an eighth of their rise.
+#[inline]
+fn monotone(p: [f64; 4], t: f64) -> f64 {
+    let held = |a: f64, b: f64| {
+        if a * b <= 0.0 {
+            0.0
+        } else {
+            let m = 0.5 * (a + b);
+            m.signum() * m.abs().min(3.0 * a.abs().min(b.abs()))
         }
-        assert!(
-            (deep as f64) < 0.01 * cells as f64,
-            "{deep} of {cells} cells in hollows"
-        );
-        assert!(
-            deep <= first,
-            "{deep} after the second pass, {first} before"
-        );
-    }
-
-    /// A far read stands in for the walking level (G1b): the relief the walking level lays on
-    /// its parent's surface, and its stand-in without drainage, spread alike.
-    #[test]
-    fn a_far_read_stands_in_for_the_walking_level() {
-        let r = earth(5);
-        let top = r.levels().len();
-        let scale = RATIO.pow(top as u32 - 1);
-        let s = r.cell_size(top);
-        let (i1, j1) = land(&r, 1);
-        let (mut own, mut proxy) = (Vec::new(), Vec::new());
-        for k in 0..80 * 80 {
-            let (i, j) = (i1 * scale + (k % 80) as i64, j1 * scale + (k / 80) as i64);
-            let (x, z) = r.centre(top, i, j);
-            let base = r.height(top - 1, x, z) as f64;
-            let slope = (
-                (r.height(top - 1, x + s, z) as f64 - base) / s,
-                (r.height(top - 1, x, z + s) as f64 - base) / s,
-            );
-            own.push(r.cell(top, i, j).h as f64 - base);
-            proxy.push(r.walking_proxy(x, z, slope, 0.0));
-        }
-        let spread = |v: &[f64]| {
-            let m = v.iter().sum::<f64>() / v.len() as f64;
-            (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
-        };
-        let (a, b) = (spread(&own), spread(&proxy));
-        assert!(
-            b > 0.0 && (0.5..2.0).contains(&(a / b)),
-            "own {a}, stand-in {b}"
-        );
-    }
-
-    #[test]
-    fn earth_has_levels_down_to_metres_and_a_test_planet_none() {
-        let r = earth(3);
-        let cells: Vec<f64> = r.levels().iter().map(|l| l.cell).collect();
-        assert!(cells.len() >= 4, "{cells:?}");
-        assert!(
-            r.walking(cells.len()),
-            "the finest is the walking scale's: {cells:?}"
-        );
-        assert!(*cells.last().unwrap() >= MIN_CELL && *cells.last().unwrap() < MIN_CELL * 8.0);
-        let s = WorldGenSettings {
-            seed: 3,
-            planet_size: PlanetSize::Standard,
-            grid_resolution: 2048,
-        };
-        let std = Relief::new(Arc::new(PlanetGrid::build(&s.sanitized(), &|_, _| {})));
-        assert!(std.levels().is_empty(), "the grid is already fine");
-    }
-
-    /// A land cell of the grid away from the poles: (its centre's x, z) at the first level's
-    /// indices.
-    fn land(r: &Relief, nth: usize) -> (i64, i64) {
-        let g = &r.grid;
-        let n = g.n();
-        let idx = (n * n / 4..n * n * 3 / 4)
-            .filter(|&i| g.flags[i] & flags::OCEAN == 0 && g.elevation.data[i] > 50.0)
-            .nth(nth * 97)
-            .expect("land");
-        let (x, z) = g.geom.world_xz(idx % n, idx / n);
-        let cell = r.levels()[0].cell;
-        ((x / cell) as i64, ((z + r.c * 0.5) / cell) as i64)
-    }
-
-    #[test]
-    fn rivers_fall_all_the_way_down_through_every_level() {
-        let r = earth(11);
-        for nth in 0..3 {
-            let (mut i0, mut j0) = land(&r, nth);
-            for level in 1..=r.levels().len() {
-                if level > 1 {
-                    (i0, j0) = (i0 * RATIO, j0 * RATIO);
-                }
-                for j in j0 - 40..j0 + 40 {
-                    for i in i0 - 40..i0 + 40 {
-                        let c = r.cell(level, i, j);
-                        let Some((ri, rj)) = c.receiver else {
-                            continue;
-                        };
-                        if !c.channel || c.sea || c.lake.is_finite() {
-                            continue;
-                        }
-                        let next = r.cell(level, ri, rj);
-                        let surface = if next.lake.is_finite() {
-                            next.lake
-                        } else {
-                            next.h
-                        };
-                        assert!(
-                            next.sea || surface <= c.h + 0.5,
-                            "level {level}: ({i}, {j}) at {} m runs up to ({ri}, {rj}) at {surface} m",
-                            c.h
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn each_level_keeps_its_parents_surface_on_the_whole() {
-        let r = earth(13);
-        let (mut i0, mut j0) = land(&r, 1);
-        for level in 1..=r.levels().len() {
-            if level > 1 {
-                (i0, j0) = (i0 * RATIO, j0 * RATIO);
-            }
-            let cell = r.levels()[level - 1].cell;
-            let (mut mean, mut parent) = (0.0, 0.0);
-            for j in j0 - 30..j0 + 30 {
-                for i in i0 - 30..i0 + 30 {
-                    mean += r.cell(level, i, j).h as f64;
-                    let x = (i as f64 + 0.5) * cell;
-                    let z = -r.c * 0.5 + (j as f64 + 0.5) * cell;
-                    parent += r.height(level - 1, x, z) as f64;
-                }
-            }
-            let (mean, parent) = (mean / 3600.0, parent / 3600.0);
-            // Within a tenth of the height, or a few metres on low ground.
-            assert!(
-                (mean - parent).abs() <= 0.1 * parent.abs() + 5.0,
-                "level {level}: {mean:.1} m against its parent's {parent:.1} m"
-            );
-        }
-    }
-
-    #[test]
-    fn a_river_bends_through_its_nodes_instead_of_turning_at_them() {
-        // Two reaches round a right angle (nodes 8 cells apart), without wander: where one
-        // reach meets the next the course runs on (as chords it turned 90° there), and no piece
-        // of a cell turns far from the one before (a curve through the corner's node swings a
-        // little wide before it).
-        let nodes = [
-            (0.0, 0.0),
-            (8.0, 0.0),
-            (16.0, 0.0),
-            (16.0, 8.0),
-            (16.0, 16.0),
-        ];
-        let heading = |p: (f64, f64), q: (f64, f64)| (q.1 - p.1).atan2(q.0 - p.0).to_degrees();
-        let turn = |a: f64, b: f64| ((b - a + 540.0).rem_euclid(360.0) - 180.0).abs();
-        let mut course: Vec<(f64, f64)> = Vec::new();
-        for k in 1..3 {
-            let reach = (
-                Some(nodes[k - 1]),
-                nodes[k],
-                nodes[k + 1],
-                Some(nodes[k + 2]),
-            );
-            let path = meander(reach, (8.0, 1.0), 1, 1e9, 0.0);
-            assert_eq!((path[0], *path.last().unwrap()), (nodes[k], nodes[k + 1]));
-            course.extend(&path[usize::from(k > 1)..]);
-        }
-        let headings: Vec<f64> = course.windows(2).map(|w| heading(w[0], w[1])).collect();
-        let sharpest = headings
-            .windows(2)
-            .map(|h| turn(h[0], h[1]))
-            .fold(0.0, f64::max);
-        assert!(sharpest < 25.0, "the course turns {sharpest:.0}° at once");
-    }
-
-    #[test]
-    fn a_cell_has_one_value_whichever_tile_is_made_first() {
-        let a = earth(5);
-        let b = earth(5);
-        let lv = a.levels()[0];
-        // Cells along a tile's edge, asked for from either side first.
-        let j = 3 * TILE + 5;
-        let i = 40 * TILE;
-        let va: Vec<f32> = (i - 3..i + 3).map(|ii| a.cell(1, ii, j).h).collect();
-        let vb: Vec<f32> = (i - 3..i + 3).rev().map(|ii| b.cell(1, ii, j).h).collect();
-        let vb: Vec<f32> = vb.into_iter().rev().collect();
-        assert_eq!(va, vb);
-        assert!(lv.cell > 0.0);
-    }
+    };
+    let (m1, m2) = (
+        held(p[1] - p[0], p[2] - p[1]),
+        held(p[2] - p[1], p[3] - p[2]),
+    );
+    let t2 = t * t;
+    let t3 = t2 * t;
+    (2.0 * t3 - 3.0 * t2 + 1.0) * p[1]
+        + (t3 - 2.0 * t2 + t) * m1
+        + (3.0 * t2 - 2.0 * t3) * p[2]
+        + (t3 - t2) * m2
 }
+
+#[cfg(test)]
+mod tests;

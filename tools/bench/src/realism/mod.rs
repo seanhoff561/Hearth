@@ -4,7 +4,9 @@
 //! (one-metre lidar, a kilometre square) and at the view from a hill (thirty-metre SRTM, some
 //! thirty kilometres), with the same statistics and pictures for both. The real models are
 //! fetched by `scripts/fetch-realism-refs.sh` into `bench-out/realism/refs` (not kept in the
-//! repository; their sources and licences in `docs/review/realism/references.md`).
+//! repository; their sources and licences in `docs/review/realism/references.md`). Each run
+//! picks the generator's typical windows of each kind and prints where they lie; to measure
+//! two versions at the same places, `REALISM_WINDOWS` names them (`hills:x,z,x,z;plains:…`).
 
 mod dem;
 mod global;
@@ -23,8 +25,8 @@ use hearth_math::PlanetSize;
 use hearth_worldgen::Terrain;
 use hearth_worldgen::region::biome::Biome;
 
-use dem::{Hgt, Lidar, generated, hillshade};
-use metrics::{Dem, Metrics, measure};
+use dem::{Hgt, Lidar, generated, generated_rivers, hillshade};
+use metrics::{Dem, Metrics, hollows_off_rivers, measure};
 use rayon::prelude::*;
 
 use crate::image::Image;
@@ -230,12 +232,14 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
     }
 }
 
-/// One measured window: where it is from, its scale, its statistics.
+/// One measured window: where it is from, its scale, its statistics, and (a generated window
+/// at 1 m) its share in hollows deeper than 0.25 m that no river lies in.
 struct Row {
     kind: &'static str,
     source: String,
     scale: &'static str,
     m: Metrics,
+    off_rivers: Option<f32>,
 }
 
 /// Of the windows given as (grid, label), those nearly all known, sorted by relief: the median
@@ -286,6 +290,19 @@ fn generated_windows(t: &Terrain, x: i32, z: i32, spread: i32, key: &str) -> Vec
         q(0.9)
     );
     typical(cands)
+}
+
+/// The windows `REALISM_WINDOWS` names for a kind (`hills:x,z,x,z;plains:…`), if any.
+fn windows_given(key: &str) -> Option<Vec<(i32, i32)>> {
+    let all = std::env::var("REALISM_WINDOWS").ok()?;
+    let spec = all
+        .split(';')
+        .find_map(|s| s.trim().strip_prefix(key)?.strip_prefix(':'))?;
+    let v: Vec<i32> = spec
+        .split(',')
+        .filter_map(|t| t.trim().parse().ok())
+        .collect();
+    Some(v.chunks_exact(2).map(|c| (c[0], c[1])).collect())
 }
 
 /// A lidar tile's windows: of those a kilometre apart and nearly all known, the median and
@@ -469,13 +486,26 @@ fn terrain(a: &Args) -> anyhow::Result<()> {
         let places = if a.wide {
             Vec::new()
         } else {
-            generated_windows(&t, x, z, a.spread, kind.key)
+            windows_given(kind.key)
+                .unwrap_or_else(|| generated_windows(&t, x, z, a.spread, kind.key))
         };
-        let gens: Vec<Dem> = places
+        let at: Vec<String> = places.iter().map(|(x, z)| format!("{x},{z}")).collect();
+        println!("{}: windows at {}", kind.key, at.join(","));
+        let gens: Vec<(Dem, Vec<bool>)> = places
             .iter()
-            .map(|&(x, z)| generated(&t, x, z, N, 1))
+            .map(|&(x, z)| generated_rivers(&t, x, z, N, 1))
             .collect();
-        for (i, g) in gens.iter().enumerate() {
+        for (i, (g, wet)) in gens.iter().enumerate() {
+            // The far read (a distant tile's, the walking level stood in for) against the blocks
+            // averaged to its spacing: the same ground seen from afar.
+            let (wx, wz) = places[i];
+            println!(
+                "{} {}: slope p50 at 30 m, the blocks averaged {:.1}°, the far read {:.1}°",
+                kind.key,
+                i + 1,
+                measure(&g.coarsen(30)).slope[1],
+                measure(&generated(&t, wx, wz, N / 30, 30)).slope[1]
+            );
             let r = real.get(i);
             save_pair(
                 &pics.join(format!("{}_1m_{i}_{planet}.png", kind.key)),
@@ -488,12 +518,14 @@ fn terrain(a: &Args) -> anyhow::Result<()> {
                     source: format!("real {}", i + 1),
                     scale: "1 m",
                     m: measure(r),
+                    off_rivers: None,
                 });
                 rows.push(Row {
                     kind: kind.key,
                     source: format!("real {}", i + 1),
                     scale: "4 m",
                     m: measure(&r.coarsen(4)),
+                    off_rivers: None,
                 });
             }
             rows.push(Row {
@@ -501,12 +533,14 @@ fn terrain(a: &Args) -> anyhow::Result<()> {
                 source: format!("{planet} {}", i + 1),
                 scale: "1 m",
                 m: measure(g),
+                off_rivers: Some(hollows_off_rivers(g, wet, 0.25)),
             });
             rows.push(Row {
                 kind: kind.key,
                 source: format!("{planet} {}", i + 1),
                 scale: "4 m",
                 m: measure(&g.coarsen(4)),
+                off_rivers: None,
             });
         }
 
@@ -525,6 +559,7 @@ fn terrain(a: &Args) -> anyhow::Result<()> {
                 source: "real".into(),
                 scale: "30 m",
                 m: measure(r),
+                off_rivers: None,
             });
         }
         rows.push(Row {
@@ -532,6 +567,7 @@ fn terrain(a: &Args) -> anyhow::Result<()> {
             source: planet.into(),
             scale: "30 m",
             m: measure(&gen_wide),
+            off_rivers: None,
         });
         println!(
             "{}: measured in {:.1} s",
@@ -617,6 +653,7 @@ fn levels(a: &Args) -> anyhow::Result<()> {
                         dx: step as f64,
                         h,
                     }),
+                    off_rivers: None,
                 });
             }
             rows.push(Row {
@@ -624,6 +661,7 @@ fn levels(a: &Args) -> anyhow::Result<()> {
                 source: "the blocks (all levels and noise)".into(),
                 scale,
                 m: measure(&generated(&t, x, z, n, step)),
+                off_rivers: None,
             });
         }
         println!("{}: measured", kind.key);
@@ -640,7 +678,7 @@ fn table(rows: &[Row]) -> String {
     let _ = writeln!(
         s,
         "| Land | Source | Grid | Slope p50 / p90 (°) | >30° | Curvature p5 / p95 (1/m), skew | \
-         |Δh| at 1·4·16·64 cells (m) | Pits /km² | In hollows >0.25 m · >1 m | Drainage (km/km², \
+         |Δh| at 1·4·16·64 cells (m) | Pits /km² | In hollows >0.25 m (no river in them) · >1 m | Drainage (km/km², \
          10⁴ · 10⁵ m²) | θ | Turn (m²) | Sinuosity | HI | Relief (m) |"
     );
     let _ = writeln!(
@@ -653,7 +691,7 @@ fn table(rows: &[Row]) -> String {
         let _ = writeln!(
             s,
             "| {} | {} | {} | {:.1} / {:.1} | {:.1}% | {:.4} / {:.4}, {:.2} | {:.2} · {:.2} · {:.2} · \
-             {:.2} | {:.0} | {:.1}% · {:.1}% | {:.1} · {:.2} | {:.2} | {:.0} | {:.2} | {:.2} | \
+             {:.2} | {:.0} | {:.1}%{} · {:.1}% | {:.1} · {:.2} | {:.2} | {:.0} | {:.2} | {:.2} | \
              {:.0} |",
             r.kind,
             r.source,
@@ -670,6 +708,8 @@ fn table(rows: &[Row]) -> String {
             lag(64.0),
             m.pits_per_km2,
             100.0 * m.depressed[0],
+            r.off_rivers
+                .map_or(String::new(), |v| format!(" ({:.1}%)", 100.0 * v)),
             100.0 * m.depressed[1],
             m.drainage[0],
             m.drainage[1],
@@ -687,13 +727,14 @@ fn tsv(rows: &[Row]) -> String {
     let mut s = String::from(
         "kind\tsource\tgrid\tdx\tn\tslope10\tslope50\tslope90\tslope99\tsteep30\tsteep45\tflat2\t\
          curv5\tcurv50\tcurv95\tcurv_skew\tpits_km2\tdepressed25\tdepressed100\tdd4\tdd5\t\
-         concavity\tturn_area\tsinuosity\thypsometric\trelief\tstructure\thurst\tslope_area\n",
+         concavity\tturn_area\tsinuosity\thypsometric\trelief\tstructure\thurst\tslope_area\t\
+         depressed25_off\n",
     );
     for r in rows {
         let m = &r.m;
         let _ = writeln!(
             s,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             r.kind,
             r.source,
             r.scale,
@@ -734,7 +775,8 @@ fn tsv(rows: &[Row]) -> String {
                 .iter()
                 .map(|(a, v, c)| format!("{a:.2}:{v:.4}:{c}"))
                 .collect::<Vec<_>>()
-                .join(",")
+                .join(","),
+            r.off_rivers.unwrap_or(f32::NAN)
         );
     }
     s

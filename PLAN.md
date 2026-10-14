@@ -42,7 +42,8 @@ cube-era code allowed where it serves that, T §5). V2.1 and its Addenda are sup
     realism gap analysis, `docs/review/realism/RGA-1.md`) done.
 12. As T2 revised it (D297): **R1a** (sun shadows, done 2026-10-09, D298) → **G1a** (relief from
     30 m to 30 km, done 2026-10-09, D299) → **S5/P7 (c)–(f) with G1b** (walking scale; (c), the
-    trees drawn as their meshes, done 2026-10-14, D300) → **W1** (water; S7's water) →
+    trees drawn as their meshes, done 2026-10-14, D300; G1b's ground done 2026-10-14, D301) →
+    **W1** (water; S7's water) →
     **L1** (seamless distance) → **P7G** → **S6 with H1** → **R1b** → **S7 → S8 → P8.** An audit
     after every three milestones (Q §8.2), each updating the realism scorecard (T §3.6); the
     first after G1b, with a check that no coarse-scale caller has crept into the fine generator.
@@ -89,8 +90,9 @@ a prioritized fix list (high first), `docs/review/audits/AUDIT-<n>.md` and five 
 `PROGRESS.md`.
 
 ## Older open items
-From Audit 0, E3–E5, P3–P5 and Audit 1, each when its file is next touched:
-`docs/history/plan-open-items-2026-10-08.md`.
+Each when its file is next touched: from Audit 0, E3–E5, P3–P5 and Audit 1,
+`docs/history/plan-open-items-2026-10-08.md`; from S1–S4, E7 and Audit 2,
+`docs/history/plan-open-items-2026-10-14.md`.
 
 ## Amendment S — Smooth voxel world (S0–S8)
 Amendment S (`docs/spec/amendment-s-smooth-world.md`, 2026-10-07) makes natural terrain smooth
@@ -102,81 +104,23 @@ numbers live in `BENCHMARKS.md`; `docs/review/smooth-world.md` is the visual rev
 milestone: implement, design docs and data, tests, `scripts/check.sh`, `hearth content lint`,
 the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
 
-## From S1 (open)
-- Building pieces, tilling and the structure check read the fill (S3's Level ground, a built
-  piece's buried skirt); collision against the field is S3's.
-- A fresh cut's faces holding sharper than soil's sharpness, weathering soft (S0's note).
-- The bot suite (it digs) with the full suite.
-
-## From S2 (open)
-- The client's soft preview of what a dig will take.
-- The smooth ground occlusion-culled on the GPU (it is frustum and cave culled, and drawn first
-  so its depth culls what lies behind it); `meshopt` vertex-cache ordering; mid-range cubes
-  meshed from a field at half resolution.
-- Materials: a normal and roughness from the noise (the surface shades with the mesh's normal
-  only), specular for wet and icy ground, and moss, leaf litter, scorch and frost overlays.
-  Material packs are data packs overriding `materials/` (no hot reload yet).
-- The debug views (wireframe, normals, weights, fill slices, the developer's blocky view).
-- Frame times for terrain-only scenes on the PC (`scripts/baseline-s.sh`).
-- The stony shore's shot place (`tools/shots/s0_baseline.shots`): E4 moved the coast; the
-  camera stands in the ground there.
-- Snow as fill (S7: the near snow lies under the smooth surface); plants, trees and loose
-  stones (S5–S6).
-
-## From E7 (open; E7 done 2026-10-08, D266–D270, `docs/design/people.md`)
-- Faces: morph targets (same topology frame to frame) for expressions driven by the body (pain,
-  cold, exertion, exhaustion, fear) and for lip sync (R §5.1); teeth and tongue.
-- Skin: detail normals (pores, creases at joints, lines with age); the sculpture's finer forms
-  (collarbones, ribs, tendons, knuckles) checked close up; breathing and weight shifts.
-- Hair: alpha-to-coverage or dithered coverage under TAA, self-shadowing, translucency by
-  thickness; wet hair clumping; growth in real time (about 1 cm a month, stubble in days) and
-  cutting or tying back as an action; fine body hair; the coily styles' volume.
-- Garments: light cloth simulation for the flaps; the other garments as fitted meshes with S6's
-  items; mud and blood on garments.
-- Feet: IK on uneven ground with S3's collision; first-person arms doing the work closer (P §6,
-  §7) and motion-matched locomotion.
-- Far away: impostors beyond some 60 m (the 24 mm mesh is drawn to any distance now); other
-  players' bodies with multiplayer (R).
-- The GPU budget, a close-up person within about 1 ms at High (some 135,000 skinned triangles,
-  10,000 hair-card vertices and the eyes), measured on the owner's PC; meshing a body in about
-  0.7 s (dev-opt build) on a worker thread.
-
-## From S3 (open; S3 done 2026-10-08, D271–D273)
-- The grip by wetness (the ground families' wet friction) and footwear; loose footing slipping
-  now and then on scree and sand, and moving disturbing it (S §8.2, §8.4); cutting steps.
-- The player's footprints (as the animals' signs); dust kicked up.
-- Animals' capsules against the field near players; trees' skeleton capsules (S5).
-- Level ground's footprint chosen (a 3 m square now), and its preview with the dig preview.
-- The budgets (300 animals, movement substeps) measured on the PC.
-
-## From S4 (open; S4 done 2026-10-08, D274–D278)
-- The v1 §8.4 frame targets and the LOD's GPU time with the height fields (2,304 triangles a
-  tile, ground and canopy frustum-culled only) measured on the PC; fewer triangles for flat
-  tiles if it needs them.
-- Overhangs as smooth shelves (S §5); the crown boxes' snow by the seasons; impostors between
-  boxes and canopy (S5).
-
-## From Audit 2 (`docs/review/audits/AUDIT-2.md`)
-- Step heights scaled by body size; `Ground::friction` (a slipperiness) replaced by a real
-  friction coefficient with a source for the slope fit.
-- Duplicates: LOD normal packing, the seasonal range, two field gradients, the beard's lip
-  zone; a `cover()` accessor for the canopy; `level`'s reach documented.
-
 ## T's milestones (T §4, ranked by RGA-1; targets in `docs/review/realism/scorecard.md`)
 - **R1a — sun shadows** (RGA-1 gap 1): done (D298). Open: its GPU time at 1080p on the RTX 4060
   (≤ 1.5 ms; `hearth bench --shadows off` against the default, owner check); hair and the distant
   crowns' boxes casting; wider penumbrae under tall canopies.
-- **G1a — relief from 30 m to 30 km** (gaps 2, 4): done (D299), every measure within its
-  bounds. Open: the grid's lakes 6.3 % of the land, the flattest windows (W1); lake shores
-  stepped at tiles' edges (W1); hill country's relief right in amount but not yet in form
-  (bumps, not ridges and valleys running together: G1b's channel heads); the desert's ranges
-  lower than a basin-and-range's (p90 15° against 22°).
-- **G1b — walking scale, with S5/P7 (c)–(f)** (gaps 3, 5, 9): a ~5 m and a ~1 m level
-  (diffusion, channel heads and gullies, colluvium and fans, talus, tree-throw, frost, aeolian,
-  karst and glacial forms where they belong) with detail from lidar statistics by landscape
-  type; clasts by lithology and sorting; soil surfaces. *Accept:* |Δh| from 1 to 64 m and the
-  4 m curvature within × 1.5 of the kind's lidar; closed hollows over 0.25 m under 1 % outside
-  glacial and karst land; S5's and P7's own.
+- **G1a — relief from 30 m to 30 km** (gaps 2, 4): done (D299). Open: the grid's lakes 6.3 %
+  of the land, the flattest windows (W1); lake shores stepped at tiles' edges (W1); the desert's
+  form: its ranges lower than a basin-and-range's (p90 14° against 22°) and its fans rough
+  (slope at 30 m 5.5° against 4.2°, D301).
+- **G1b — walking scale, with S5/P7 (c)–(f)** (gaps 3, 5, 9). *Accept:* |Δh| from 1 to 64 m and
+  the 4 m curvature within × 1.5 of the kind's lidar; closed hollows over 0.25 m under 1 %
+  outside glacial and karst land; S5's and P7's own. The ground done (D301, `docs/review/g1b/`):
+  a ~5 m level for the blocks, dissected, drained, eroded by dry land's storms; the ground's own
+  roughness below it; a stand-in for every other read; within × 1.5 in hills, desert, boreal
+  land and the plains' first window, hollows 0.0–0.7 % off rivers. Open: the plains' second
+  window 0.48–0.56 (Iowa's steep valley sides); the mountains' 64 m relief (0.66) and their
+  grain at a metre; colluvium, fans and talus as forms of their own, frost, aeolian, karst and
+  glacial forms; clasts by lithology and sorting (S5/P7 (e)); soil surfaces (P7G).
 - **W1:** water as continuous surfaces from the hydrology (hydraulic geometry, beds and banks
   carved to hold them), a shallow-water simulation near players, flow maps; block water removed;
   the grid's lakes to the Earth's share (G1a: 6.3 % of the land), lake shores whole across tiles,

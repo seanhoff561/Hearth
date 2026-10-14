@@ -356,6 +356,7 @@ pub fn run(t: &Terrain, planet: &str, refs: &Path, out: &Path, count: usize) -> 
         return Ok(());
     }
     let (gens, at) = generated_windows(t, count);
+    std::fs::create_dir_all(out)?;
     std::fs::write(
         out.join(format!("global_{planet}_windows.tsv")),
         window_table(t, &gens, &at),

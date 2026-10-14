@@ -131,12 +131,28 @@ impl Lidar {
 /// metres the player walks in, whatever the planet's vertical scale): the water's surface where
 /// water stands over the ground (as lidar sees a lake), unknown at sea.
 pub fn generated(terrain: &Terrain, x: i32, z: i32, n: usize, step: i32) -> Dem {
-    let surface = |s: hearth_worldgen::ColumnSample| {
+    generated_rivers(terrain, x, z, n, step).0
+}
+
+/// As [`generated`], with the samples a river's channel or banks cover (columns close together
+/// only; empty for a far grid's).
+pub fn generated_rivers(
+    terrain: &Terrain,
+    x: i32,
+    z: i32,
+    n: usize,
+    step: i32,
+) -> (Dem, Vec<bool>) {
+    let surface = |s: &hearth_worldgen::ColumnSample| {
         if s.ocean && s.water > s.height {
             f32::NAN
         } else {
             s.height.max(s.water)
         }
+    };
+    let river = |s: &hearth_worldgen::ColumnSample| {
+        s.river
+            .is_some_and(|r| r.distance <= r.width * 0.5 + RIVER_BANK_M * terrain.vertical_scale())
     };
     let at = |i: usize, j: usize| {
         (
@@ -145,12 +161,18 @@ pub fn generated(terrain: &Terrain, x: i32, z: i32, n: usize, step: i32) -> Dem 
         )
     };
     let mut h = vec![f32::NAN; n * n];
+    let mut wet = Vec::new();
     if step < 8 {
         // Columns close together share the sampler's own neighbourhoods.
-        h.par_iter_mut().enumerate().for_each(|(k, v)| {
-            let (cx, cz) = at(k % n, k / n);
-            *v = surface(terrain.sample(cx, cz));
-        });
+        let both: Vec<(f32, bool)> = (0..n * n)
+            .into_par_iter()
+            .map(|k| {
+                let (cx, cz) = at(k % n, k / n);
+                let s = terrain.sample(cx, cz);
+                (surface(&s), river(&s))
+            })
+            .collect();
+        (h, wet) = both.into_iter().unzip();
     } else {
         // Columns far apart: the neighbourhood read once for each block of 16 × 16 of them, at
         // the refinement level their spacing shows (as a distant tile of the game reads it).
@@ -170,7 +192,7 @@ pub fn generated(terrain: &Terrain, x: i32, z: i32, n: usize, step: i32) -> Dem 
                 for j in j0..=j1 {
                     for i in i0..=i1 {
                         let (cx, cz) = at(i, j);
-                        v.push(surface(terrain.sample_with(cx, cz, &near)));
+                        v.push(surface(&terrain.sample_with(cx, cz, &near)));
                     }
                 }
                 (bj * n.div_ceil(B) + bi, v)
@@ -185,12 +207,18 @@ pub fn generated(terrain: &Terrain, x: i32, z: i32, n: usize, step: i32) -> Dem 
             }
         }
     }
-    Dem {
-        n,
-        dx: step as f64,
-        h,
-    }
+    (
+        Dem {
+            n,
+            dx: step as f64,
+            h,
+        },
+        wet,
+    )
 }
+
+/// How far past a river's water its banks reach for [`generated_rivers`] (m).
+const RIVER_BANK_M: f32 = 4.0;
 
 /// A picture of a grid lit from the north-west (azimuth 315°, 45° up), the same for every
 /// grid so that real and generated ground can be laid side by side; unknown ground blue.

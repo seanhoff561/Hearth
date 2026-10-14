@@ -969,3 +969,35 @@ which shares the cores. Each near shadow cascade draws only the trees that may c
 
 At head height in a temperate rainforest (the screenshot tool, `docs/review/s5/world/`), the
 near terrain's quads fall from 246k to 15k, the trees' own drawn as 185 instances.
+
+## G1b — walking scale (`hearth bench load --seed 7 --software --size 640x360`; `bench relief --timing`), 4 cores, software adapter (llvmpipe)
+
+Before G1b (commit 89cb06b, S5 (c)'s end) and G1b's end built side by side and run alternating,
+two rounds each, both disk caches (the refinement tiles and the distant tiles) cleared before
+every run: each number below a world made from nothing.
+
+| | Before G1b | G1b |
+|---|---:|---:|
+| The menus: five places suggested | 7.7–8.4 s | 7.2–7.3 s |
+| A new world, Play → the world shown | 4.09–4.12 s | 3.81–3.85 s |
+| A new world, Play → in control | 4.99–5.29 s | 4.83–4.86 s |
+| A new world, Play → the whole render distance | 27.8–29.4 s | 32.6–36.2 s |
+| Its save, Play → in control | 2.79–2.82 s | 2.84–3.05 s |
+| Its save, Play → the whole render distance | 20.7–23.2 s | 25.0–25.9 s |
+| CPU, new world: the distant tiles' thread · llvmpipe | 15.0–15.5 · 24.7 s | 21.7–24.1 · 40.3 s |
+| The distant terrain's video memory | 28 MiB | 42 MiB |
+| Refinement tiles made: ~40 m for the distant view · ~5 m | 73 · – | 84 · 16 (2.1 MiB) |
+| Peak resident, new world | 1,497–1,500 MiB | 1,445–1,465 MiB |
+
+Only the blocks about the player make the walking level's tiles: 16 for a new world, made side
+by side about the spawn before its first cubes want them. Placement (deposits, springs, caves,
+the places' cards) reads its stand-in instead; it made 48 more of them, and the menus' five
+places took 40 s, before it did. The whole render distance is the distant view's: it reads the
+~40 m level with the walking level's stand-in, its relief rougher at 40–80 m than G1a's, so the
+screen-space-error selection keeps finer distant tiles (84 ~40 m tiles made for it, not 73;
+video memory 28 → 42 MiB) and llvmpipe draws more triangles. On a GPU the drawing is little;
+E4.1 measured the whole render distance at 4.8 s on the owner's laptop (budget ~30 s).
+
+The refinement tiles (`bench relief --timing`, cold): the walking level 52 ms a tile (122 ms each
+six in a row, its parents made with them), its second pass 1.5 ms; level 3 49–50 ms (97 ms six in
+a row), level 2 69–74 ms (64–67), level 1 26–29 ms (20–23); G1a's six in a row 86 · 54–68 · 17–64.

@@ -848,9 +848,13 @@ impl Terrain {
             h += r.walking_proxy(xf, zf, grad, scale.max(1.0)) as f32;
         }
         // Below the finest level's cells, the ground's own roughness, where columns are close
-        // enough to show it.
+        // enough to show it; none on a channel's bed, which its water keeps bare of mounds and
+        // stones (else they would dam it).
         if scale < MICRO_M {
-            h += self.micro_relief(xf, zf, gx, gz, slope / self.v);
+            let bed = patch.channel(xf, zf);
+            if bed < 1.0 {
+                h += self.micro_relief(xf, zf, gx, gz, slope / self.v) * (1.0 - bed);
+            }
         }
         let crater_lake = self.craters(xf, zf, &mut h);
 
@@ -897,7 +901,7 @@ impl Terrain {
         let rock = smoothstep(0.84, 1.73, tan).max(smoothstep(0.0, -6.0, t));
         let outcrop =
             0.2 + 0.8 * smoothstep(-0.05, 0.25, self.noise.outcrops.sample2(xf, zf) as f32);
-        let bare_slope = 0.15 + 0.85 * smoothstep(0.02, 0.2, tan);
+        let bare_slope = 0.08 + 0.92 * smoothstep(0.03, 0.25, tan);
         let soil = SOIL_M * smoothstep(0.0, 0.03, tan);
         let stone = STONY_M * dry * outcrop * bare_slope + ROCK_M * rock;
         let both = self.noise.micro.sample2(xf, zf) as f32;

@@ -13,7 +13,7 @@
 use std::sync::{Arc, OnceLock};
 
 use super::drainage::fill;
-use super::{MARGIN, Relief, Run, SPAN, TILE, TileKey, WALKING_CELL, bare, smoothstep};
+use super::{D4, MARGIN, Relief, Run, SPAN, TILE, TileKey, WALKING_CELL, bare, smoothstep};
 
 impl Relief {
     /// The walking scale's level (cells of some metres), if the planet has one: its finest.
@@ -123,9 +123,9 @@ impl Relief {
     }
 
     /// The walking level's second pass over a tile of its own tiling (offset half a tile from the
-    /// first's): the first pass's blended surface, drained again. Each first-pass tile drains its
-    /// own span, but two tiles may lay the same hollow's way out differently in their overlap,
-    /// and their blend there can dam it. Every such overlap lies inside a second-pass tile's core,
+    /// first's): the first pass's blended surface, drained again (along rows and columns, as the
+    /// first pass drains it). Each first-pass tile drains its own span, but two tiles may lay the
+    /// same hollow's way out differently in their overlap, and their blend there can dam it. Every such overlap lies inside a second-pass tile's core,
     /// which cuts the dam (or fills what cannot be cut, the sea's level being the lowest); and
     /// where second-pass tiles overlap, the first pass is one tile's own drained surface, which
     /// they leave as it is, so their blend dams nothing.
@@ -164,7 +164,7 @@ impl Relief {
                     base[k] = edge || c.sea || c.channel || c.lake.is_finite();
                 }
             }
-            fill(&mut wet, &base, n, 1e-3, &vec![f32::MAX; n * n]);
+            fill(&mut wet, &base, n, 1e-3, &vec![f32::MAX; n * n], &D4);
             (0..n * n)
                 .map(|k| if base[k] { ground[k] } else { wet[k] })
                 .collect()
@@ -173,9 +173,9 @@ impl Relief {
     }
 
     /// The walking level's relief as a coarser read stands in for it (a distant tile, the view
-    /// from a hill): its octaves no shorter than `min_wl` (blocks; finer would not show between
-    /// the columns) over its parent's surface, whose slope is `slope`, without the drainage its
-    /// tiles work on it. Nought where the planet has no walking level.
+    /// from a hill): its octaves as columns `min_wl` blocks apart see them (those finer than the
+    /// columns averaging away) over its parent's surface, whose slope is `slope`, without the
+    /// drainage its tiles work on it. Nought where the planet has no walking level.
     pub fn walking_proxy(&self, x: f64, z: f64, slope: (f64, f64), min_wl: f64) -> f64 {
         let level = self.levels.len();
         // None where the planet has no walking level, nor where even its longest octave is
