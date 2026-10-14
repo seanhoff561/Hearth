@@ -12,6 +12,7 @@ use hearth_render::mesh::{ColumnTints, CubeMesh, MeshInput, MeshOptions, Mesher}
 use hearth_render::models::BlockModels;
 use hearth_world::{BlockRegistry, Cube, CubeMap, LightEngine};
 use hearth_worldgen::cubegen::MAX_FEATURE_HEIGHT;
+use hearth_worldgen::cubegen::features::PlacedTree;
 use hearth_worldgen::region::biome::water_color;
 use hearth_worldgen::{PlanetGrid, Terrain, WorldGenSettings, WorldGenerator};
 use rayon::prelude::*;
@@ -233,16 +234,27 @@ impl LocalWorld {
             models,
             opts,
         };
+        // The natural trees drawn as meshes (S5) are left out of the cubes', where their
+        // blocks are still as the generator grew them: found once a column.
+        let trees: rustc_hash::FxHashMap<ColumnPos, Vec<PlacedTree>> = if opts.trees_as_blocks {
+            Default::default()
+        } else {
+            let columns: rustc_hash::FxHashSet<ColumnPos> =
+                positions.iter().map(|p| p.column()).collect();
+            columns
+                .into_par_iter()
+                .map(|c| (c, self.drawn_trees(c)))
+                .collect()
+        };
         let meshes: Vec<CubeMesh> = positions
             .par_iter()
             .map(|p| {
-                mesher.mesh(
-                    &MeshInput::gather(&self.map, *p, self.tints(p.column())).with_ground(
-                        &self.map,
-                        &self.reg,
-                        &self.ground,
-                    ),
-                )
+                let mut input = MeshInput::gather(&self.map, *p, self.tints(p.column()))
+                    .with_ground(&self.map, &self.reg, &self.ground);
+                if let Some(trees) = trees.get(&p.column()) {
+                    blank_trees(&mut input, trees, &self.generator);
+                }
+                mesher.mesh(&input)
             })
             .collect();
         let quads: usize = meshes
@@ -257,10 +269,117 @@ impl LocalWorld {
         meshes
     }
 
+    /// The natural trees drawn as meshes whose blocks may lie in a column or at its edges
+    /// (S5; `Features::drawn_trees_about`).
+    pub fn drawn_trees(&self, col: ColumnPos) -> Vec<PlacedTree> {
+        let (x0, z0) = col.min_block_xz();
+        self.generator.features().drawn_trees_about(
+            &self.generator,
+            &self.vegetation,
+            (x0 - 1, z0 - 1),
+            (x0 + 16, z0 + 16),
+        )
+    }
+
+    /// The natural trees drawn as meshes that changes to the blocks cut into (a block of one no
+    /// longer as the generator grew it, by the player or a fire): each kept as cut in the
+    /// vegetation, drawn as its blocks from now on (S5). Returns the cubes they stand in (and
+    /// those beside them that show them on a face), to be meshed again with them.
+    pub fn cut_into(&mut self, changed: &[hearth_math::BlockPos]) -> Vec<CubePos> {
+        if changed.is_empty() {
+            return Vec::new();
+        }
+        let planet = *self.map.planet();
+        let c = planet.circumference();
+        // Across the seam: the offset the shorter way round.
+        let dx = |from: i32, to: i32| {
+            let d = (to - from).rem_euclid(c);
+            if d > c / 2 { d - c } else { d }
+        };
+        let changed: rustc_hash::FxHashSet<hearth_math::BlockPos> =
+            changed.iter().map(|p| planet.wrap_block(*p)).collect();
+        let mut columns: Vec<ColumnPos> = changed.iter().map(|p| p.cube().column()).collect();
+        columns.sort_unstable_by_key(|c| (c.x, c.z));
+        columns.dedup();
+        let mut seen = rustc_hash::FxHashSet::default();
+        let mut cubes = rustc_hash::FxHashSet::default();
+        for col in columns {
+            for t in self.drawn_trees(col) {
+                if !seen.insert((planet.wrap_x(t.foot[0]), t.foot[2])) {
+                    continue;
+                }
+                // Only a tree reaching a change can have been cut into.
+                let reach = t.template.reach();
+                let (lo, hi) = (t.foot[1] + t.template.min[1], t.foot[1] + t.template.max[1]);
+                let near = changed.iter().any(|p| {
+                    dx(t.foot[0], p.x).abs() <= reach
+                        && (p.z - t.foot[2]).abs() <= reach
+                        && (lo..=hi).contains(&p.y)
+                });
+                if !near {
+                    continue;
+                }
+                let forest = &self.generator.forest;
+                let cut = t.blocks().any(|(p, part)| {
+                    let p = planet.wrap_block(p);
+                    changed.contains(&p) && self.map.block(p) != Some(t.state(forest, part))
+                });
+                if !cut {
+                    continue;
+                }
+                self.vegetation = self.vegetation.with_cut(t.foot[0], t.foot[2], t.what());
+                for (p, _) in t.blocks() {
+                    let p = planet.wrap_block(p);
+                    let (cube, l) = (p.cube(), p.local());
+                    cubes.insert(cube);
+                    for (d, edge) in [
+                        ((-1, 0, 0), l.x == 0),
+                        ((1, 0, 0), l.x == 15),
+                        ((0, -1, 0), l.y == 0),
+                        ((0, 1, 0), l.y == 15),
+                        ((0, 0, -1), l.z == 0),
+                        ((0, 0, 1), l.z == 15),
+                    ] {
+                        if edge {
+                            cubes.insert(planet.wrap_cube(CubePos::new(
+                                cube.x + d.0,
+                                cube.y + d.1,
+                                cube.z + d.2,
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+        cubes.into_iter().collect()
+    }
+
     /// Height of the terrain surface at (x, z).
     pub fn surface_y(&self, x: f64, z: f64) -> f64 {
         let s = self.terrain().sample(x.floor() as i32, z.floor() as i32);
         s.height.max(s.water) as f64
+    }
+}
+
+/// Leaves the blocks of trees drawn as meshes out of a cube's meshing, where each is still the
+/// tree's (the player's blocks in their place are meshed).
+pub fn blank_trees(input: &mut MeshInput, trees: &[PlacedTree], generator: &WorldGenerator) {
+    let min = input.pos.min_block();
+    let c = generator.planet().circumference();
+    // Across the seam: the offset the shorter way round.
+    let dx = |x: i32| {
+        let d = (x - min.x).rem_euclid(c);
+        if d > c / 2 { d - c } else { d }
+    };
+    for t in trees {
+        let (lo, hi) = (t.foot[1] + t.template.min[1], t.foot[1] + t.template.max[1]);
+        if hi < min.y - 1 || lo > min.y + 16 {
+            continue;
+        }
+        for (p, part) in t.blocks() {
+            let offset = glam::IVec3::new(dx(p.x), p.y - min.y, p.z - min.z);
+            input.blank_if(offset, t.state(&generator.forest, part));
+        }
     }
 }
 

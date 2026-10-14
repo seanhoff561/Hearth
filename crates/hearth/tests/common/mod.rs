@@ -57,6 +57,11 @@ pub struct World {
     pub struck: Vec<(glam::DVec3, f32, bool)>,
     /// Whether the server said it saved since asked.
     pub saved: bool,
+    /// The vegetation as last told (the trees grown, felled and cut into).
+    pub vegetation: Option<hearth_worldgen::vegetation::Vegetation>,
+    /// The trees told falling, by their foot, and whether their felling had been told in the
+    /// vegetation before.
+    pub falls: Vec<(BlockPos, bool)>,
 }
 
 /// The world's pace while a test waits on work or for time to pass: a thousand times, by the
@@ -175,6 +180,8 @@ impl World {
             flocks: Vec::new(),
             struck: Vec::new(),
             saved: false,
+            vegetation: None,
+            falls: Vec::new(),
         };
         let feet = w.mover.pos;
         w.until(60.0, |w| {
@@ -214,6 +221,14 @@ impl World {
                     glancing,
                 } => self.struck.push((at, force, glancing)),
                 ToClient::Saved => self.saved = true,
+                ToClient::Vegetation(v) => self.vegetation = Some(v),
+                ToClient::TreeFalls { foot, .. } => {
+                    let told = self
+                        .vegetation
+                        .as_ref()
+                        .is_some_and(|v| !v.felled(foot.x, foot.z).is_empty());
+                    self.falls.push((foot, told));
+                }
                 ToClient::Acted(a) => self.acted.push((a.process, a.done, a.words)),
                 ToClient::Learned {
                     name,

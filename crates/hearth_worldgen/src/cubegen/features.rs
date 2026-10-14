@@ -135,6 +135,8 @@ pub struct PlacedTree {
     pub species: usize,
     pub stage: hearth_flora::Stage,
     pub template: std::sync::Arc<hearth_flora::TreeTemplate>,
+    /// The template's variant (its skeleton's, so its mesh is the same tree).
+    pub variant: u8,
     pub turn: hearth_flora::Turn,
     /// The block over the ground the trunk stands in.
     pub foot: [i32; 3],
@@ -145,6 +147,43 @@ pub struct PlacedTree {
 }
 
 impl PlacedTree {
+    /// Where its skeleton stands (`hearth_flora::template::variant_skeleton`'s metres): the
+    /// foot block's minimum corner and offset, and the turn in the ground's plane (x' = t0 x +
+    /// t1 z, z' = t2 x + t3 z), as its blocks are turned (`Turn::apply_f`): a world point is
+    /// `origin + (t0 x + t1 z, y, t2 x + t3 z)`.
+    pub fn frame(&self) -> ([f64; 3], [f32; 4]) {
+        let corner = self.template.corner;
+        let f = |x: f32, z: f32| self.turn.apply_f(x, z, corner);
+        let (ox, oz) = f(0.0, 0.0);
+        let (ax, az) = f(1.0, 0.0);
+        let (bx, bz) = f(0.0, 1.0);
+        (
+            [
+                self.foot[0] as f64 + ox as f64,
+                self.foot[1] as f64,
+                self.foot[2] as f64 + oz as f64,
+            ],
+            [ax - ox, bx - ox, az - oz, bz - oz],
+        )
+    }
+
+    /// What the tree is, as a number: its species, stage and what is left of it. A tree cut
+    /// into is kept as cut while it stays what it was (`Vegetation::is_cut`).
+    pub fn what(&self) -> u32 {
+        let remains = match self.remains {
+            Remains::Living => 0,
+            Remains::Snag => 1,
+            Remains::Charred => 2,
+            Remains::Stump => 3,
+        };
+        (self.species as u32 & 0xffff) << 16 | (self.stage.index() as u32) << 8 | remains
+    }
+
+    /// Whether it has been cut into (drawn as its blocks, not as its mesh).
+    pub fn is_cut(&self, veg: &Vegetation) -> bool {
+        veg.is_cut(self.foot[0], self.foot[2], self.what())
+    }
+
     /// Whether a part of the template is drawn, for what is left of the tree.
     pub fn shows(&self, c: [i16; 3], part: hearth_flora::Part) -> bool {
         use hearth_flora::Part;
@@ -1168,6 +1207,33 @@ impl FeatureGen {
         out
     }
 
+    /// The natural trees drawn as meshes (S5) whose blocks may lie over a rectangle of columns
+    /// (inclusive): every tree of a real species the vegetation has grown, but those cut into
+    /// (their blocks are drawn as they are). Server and client find the same ones.
+    pub fn drawn_trees_about(
+        &self,
+        wg: &WorldGenerator,
+        veg: &Vegetation,
+        min: (i32, i32),
+        max: (i32, i32),
+    ) -> Vec<PlacedTree> {
+        let mut trees = self.trees_in(
+            wg,
+            veg,
+            (min.0 - TREE_REACH, min.1 - TREE_REACH),
+            (max.0 + TREE_REACH, max.1 + TREE_REACH),
+        );
+        trees.retain(|t| {
+            let reach = t.template.reach();
+            !t.is_cut(veg)
+                && t.foot[0] + reach >= min.0
+                && t.foot[0] - reach <= max.0
+                && t.foot[2] + reach >= min.1
+                && t.foot[2] - reach <= max.1
+        });
+        trees
+    }
+
     /// Age (years) of the stand at a place: young woods and old growth in patches a few
     /// hundred metres across.
     pub fn stand_age(&self, x: i32, z: i32) -> f32 {
@@ -1263,6 +1329,7 @@ impl FeatureGen {
             species: t.species,
             stage: t.stage,
             template: forest.templates.get(t.species, t.stage, t.variant),
+            variant: t.variant,
             turn: t.turn,
             foot,
             remains: t.remains,

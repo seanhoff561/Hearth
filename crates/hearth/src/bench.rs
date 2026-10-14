@@ -131,6 +131,11 @@ const UNDERWATER: &[Key] = &[
     key(110.0, -4496.0, Height::At(-5.0), 90.0, 10.0),
     key(-10.0, -4496.0, Height::At(-5.0), 90.0, 10.0),
 ];
+/// 60 m westward at head height through tropical rainforest (Amendment S §7.4).
+const RAINFOREST: &[Key] = &[
+    key(46600.0, -1536.0, Height::Above(1.7), 90.0, 4.0),
+    key(46540.0, -1536.0, Height::Above(1.7), 90.0, 4.0),
+];
 
 /// Every scene, in report order.
 const SCENES: &[SceneDef] = &[
@@ -229,6 +234,19 @@ const SCENES: &[SceneDef] = &[
         frames: None,
     },
     SceneDef {
+        name: "rainforest_walk",
+        about: "a walk at head height through tropical rainforest near the equator, noon",
+        seed: 7,
+        path: CameraPath::Keys(RAINFOREST),
+        lod: 256,
+        year_frac: 0.4,
+        hour: 12.0,
+        clouds: Some(0.3),
+        precipitation: Some((Precip::None, 0.0)),
+        stream: false,
+        frames: None,
+    },
+    SceneDef {
         name: "flythrough",
         about: "1.2 km at sprint-fly speed (30 m/s) 70 m over the land, terrain streaming",
         seed: 7,
@@ -284,6 +302,8 @@ pub struct BenchOptions {
     pub water: Option<hearth_core::options::Quality>,
     /// The sun's shadows, when not the preset's.
     pub shadows: Option<hearth_core::options::Quality>,
+    /// The natural trees drawn as their blocks, as before S5 (not as their meshes).
+    pub block_trees: bool,
 }
 
 impl Default for BenchOptions {
@@ -311,6 +331,7 @@ impl Default for BenchOptions {
             render_scale: VideoOptions::default().render_scale,
             water: None,
             shadows: None,
+            block_trees: false,
         }
     }
 }
@@ -326,7 +347,8 @@ allocations per frame.
 OPTIONS:
     --scenes all|quick|NAME,...  Scenes to run (default all): lowland_forest, peak_lod512,
                                  peak_lod1024, coast_sunset, underwater, cave_torches,
-                                 thunderstorm; quick = the regression-gate set
+                                 thunderstorm, rainforest_walk, flythrough; quick = the
+                                 regression-gate set
     --frames N                   Measured frames per scene (default 600)
     --warmup N                   Frames before measuring (default 90)
     --size WxH                   Resolution (default 1920x1080)
@@ -349,6 +371,7 @@ OPTIONS:
     --water low|medium|high      Water shading quality (default: the preset's, medium)
     --shadows off|low|medium|high
                                  The sun's shadows (default: the preset's, medium)
+    --trees meshes|blocks        The natural trees as their meshes (default) or their blocks
     --software                   Use the software adapter
     --preset low|medium|high     The graphics preset (default medium; the older names fast,
                                  fancy and fabulous are taken too)
@@ -434,6 +457,13 @@ impl BenchOptions {
                         "high" => Quality::High,
                         other => anyhow::bail!("--shadows off|low|medium|high, not {other:?}"),
                     });
+                }
+                "--trees" => {
+                    o.block_trees = match val()?.as_str() {
+                        "meshes" => false,
+                        "blocks" => true,
+                        other => anyhow::bail!("--trees meshes|blocks, not {other:?}"),
+                    };
                 }
                 other => anyhow::bail!("unknown argument {other:?}"),
             }
@@ -930,7 +960,11 @@ fn run_scene(
         }
     };
     let t_mesh = Instant::now();
-    let meshes = lw.mesh(models, &positions, MeshOptions::default());
+    let mesh_opts = MeshOptions {
+        trees_as_blocks: opts.block_trees,
+        ..Default::default()
+    };
+    let meshes = lw.mesh(models, &positions, mesh_opts);
     let mesh_cubes_per_s = meshes.len() as f64 / t_mesh.elapsed().as_secs_f64().max(1e-9);
     let mut scene = SceneRenderer::new(
         ctx,
@@ -1072,6 +1106,31 @@ fn run_scene(
 
     let map = &lw.map;
     let reg = lw.reg.clone();
+    // The natural trees as their meshes (S5), as the client draws them: settled where the path
+    // begins, then kept up frame by frame.
+    let mut trees = (!opts.block_trees).then(|| {
+        let mut t = crate::tree_view::TreeView::new(lw.generator.clone(), lodgen.colors());
+        t.set_vegetation(lw.vegetation.clone());
+        t
+    });
+    let aspect = opts.width as f32 / opts.height.max(1) as f32;
+    let tree_radius = rd as f64 * 16.0;
+    if let Some(trees) = &mut trees {
+        let camera = path.at(0.0);
+        let frustum = hearth_render::camera::Frustum::from_view_proj(camera.view_proj(aspect));
+        let terrain = &scene.terrain;
+        trees.settle(
+            ctx,
+            &mut scene.trees,
+            map,
+            camera.pos,
+            &frustum,
+            tree_radius,
+            calendar.at(0).year_frac,
+            glam::Vec3::ZERO,
+            |p| terrain.contains(p.cube()),
+        );
+    }
     let water_heights = |c: DVec3| {
         crate::water_env::water_heights(map, &reg, c.x.floor() as i32, c.z.floor() as i32)
     };
@@ -1201,6 +1260,22 @@ fn run_scene(
             }
             let t3 = Instant::now();
             let a3 = crate::alloc_count::thread_allocations();
+            if let Some(trees) = &mut trees {
+                let frustum =
+                    hearth_render::camera::Frustum::from_view_proj(camera.view_proj(aspect));
+                let terrain = &scene.terrain;
+                trees.frame(
+                    ctx,
+                    &mut scene.trees,
+                    map,
+                    camera.pos,
+                    &frustum,
+                    tree_radius,
+                    moment.year_frac,
+                    glam::Vec3::ZERO,
+                    |p| terrain.contains(p.cube()),
+                );
+            }
             scene.prepare(ctx, &camera, size, &env, 1.0 / 60.0);
             let t4 = Instant::now();
             let a4 = crate::alloc_count::thread_allocations();
@@ -1275,9 +1350,14 @@ fn run_scene(
             // CPU-issued draws: terrain draw lists (translucent, or all on the CPU path), one per
             // LOD tile, the sky, rain and tonemap, and what the near terrain casts into the sun's
             // shadow maps (its triangles counted as quads, two to a quad).
-            sums.cpu_draws += (st.draws + st.shadow_draws + scene.lod.stats.drawn + 3) as f64;
+            // The trees drawn as meshes, by instances of each, in the view and into the shadow
+            // cascades (their triangles as quads too).
+            let trees = scene.trees.stats;
+            sums.cpu_draws += (st.draws + st.shadow_draws + scene.lod.stats.drawn + 3) as f64
+                + (trees.draws + trees.shadow_draws) as f64;
             sums.cpu_quads +=
-                (st.translucent_quads + scene.lod.stats.quads + st.shadow_triangles / 2) as f64;
+                (st.translucent_quads + scene.lod.stats.quads + st.shadow_triangles / 2) as f64
+                    + (trees.triangles + trees.shadow_triangles) as f64 / 2.0;
             if !st.gpu_culling {
                 sums.cpu_quads += (st.quads_drawn - st.translucent_quads) as f64;
             }
@@ -1335,6 +1415,21 @@ fn run_scene(
             .terrain
             .water
             .set_heights(ctx, water_heights(camera.pos));
+        if let Some(trees) = &mut trees {
+            let frustum = hearth_render::camera::Frustum::from_view_proj(camera.view_proj(aspect));
+            let terrain = &scene.terrain;
+            trees.settle(
+                ctx,
+                &mut scene.trees,
+                map,
+                camera.pos,
+                &frustum,
+                tree_radius,
+                moment.year_frac,
+                glam::Vec3::ZERO,
+                |p| terrain.contains(p.cube()),
+            );
+        }
         let mut pixels = Vec::new();
         for _ in 0..3 {
             scene.prepare(ctx, &camera, size, &env, f32::INFINITY);
@@ -1922,6 +2017,9 @@ fn preset_label(video: &VideoOptions, opts: &BenchOptions) -> String {
     }
     if let Some(w) = opts.shadows.filter(|w| *w != video.shader.shadows) {
         let _ = write!(s, ", shadows {w:?}");
+    }
+    if opts.block_trees {
+        s.push_str(", trees as blocks");
     }
     s
 }

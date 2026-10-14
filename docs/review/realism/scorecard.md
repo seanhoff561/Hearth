@@ -5,9 +5,9 @@ its target, and the last realism suite's verdict. Updated at every audit (the me
 `bench realism`, the suite by `tools/shots/realism.shots`; RGA-1 for the evidence). Seed 7.
 
 **Last update:** G1a, 2026-10-09 (the Regions and Landscapes rows, a Lakes row; Light and
-Images R1a's; the rest T2's, RGA-1). **Top open gaps:** trees, grass and water drawn as blocks
-and sprites; the ground at walking scale (G1b); the grid's lakes three times the Earth's share;
-indirect light.
+Images R1a's; the rest T2's, RGA-1); the Trees row S5 (c)'s, 2026-10-14. **Top open gaps:**
+grass and water drawn as sprites and blocks, the trees past the render distance as boxes; the
+ground at walking scale (G1b); the grid's lakes three times the Earth's share; indirect light.
 
 | Scale / system | Measure | Now | Target | Suite verdict |
 |---|---|---|---|---|
@@ -23,7 +23,7 @@ indirect light.
 | Site | Closed hollows over 0.25 m at 1 m | 1–6 % | under 1 % outside glacial and karst land | Bare patches as flat coloured blobs |
 | Ground | What lies on it | one green sward, pixel-art sprites | litter, pebbles, moss, roots by biome | A lawn in every biome, tundra and boreal included |
 | Water | Cube edges; rivers in channels that hold them | blocks in 1 m steps; chords | none; all | (stream shots) |
-| Trees | How drawn; how placed | voxel templates; each site alone | meshes (S5); spaced by competition, clumped | Blocky crowns, branch bars |
+| Trees | How drawn; how placed | meshes within the render distance, their skeletons' wood and leaf cards (S5 (c), D300); the distant terrain's crowns beyond; each site alone | meshes (S5), instances and impostors far (L1); spaced by competition, clumped | Round stems, real crowns near (`docs/review/s5/world/`); boxes past the render distance |
 | Light | Cast shadows | the sun's: near to 320 m (soft as its disc to 3.7 cm), far to 12 km (R1a) | the sun's, near and far | Trees, grass and people cast at a low sun; gentle land too smooth to (G1a) |
 | Distance | Seam ratio across the edge of full detail (median); outer band's brightness | forests 4.6, open land 3.7; −46 to +89 % | ≤ 1.3; ± 5 % | The forest's edge, the lighter LOD band, a disc of sprites |
 | Weather | Wet hours, London; the year against its normal | 6.0 %; +5 % (D296) | 6–8 %; ± 10 % | — |

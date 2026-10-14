@@ -389,6 +389,9 @@ impl SceneRenderer {
         };
         let t0 = std::time::Instant::now();
         self.terrain.prepare(ctx, camera, size, &params);
+        // The trees that may cast into the near cascades drawn this frame.
+        self.trees
+            .prepare_shadows(ctx, &self.terrain.shadows, camera.pos);
         self.terrain.water.prepare(
             ctx,
             size,
@@ -415,6 +418,17 @@ impl SceneRenderer {
             size,
             output,
         );
+        let tree = match &self.highlight {
+            Some(crate::outline::Highlight::Tree {
+                key,
+                instance,
+                leaves,
+                ..
+            }) => Some((*key, *instance, *leaves)),
+            _ => None,
+        };
+        self.trees
+            .prepare_mask(ctx, unjittered.view_proj(aspect), tree);
         let hzb = self.terrain.hzb().map(|(_, size, mips)| (size, mips));
         self.lod.prepare(
             ctx,
@@ -535,7 +549,7 @@ impl SceneRenderer {
             let bind0 = self.terrain.shadow_bind(i);
             if i < crate::shadow::NEAR_CASCADES {
                 self.terrain.draw_shadow(&mut pass, i);
-                self.trees.draw_shadow(&mut pass, bind0);
+                self.trees.draw_shadow(&mut pass, bind0, i);
                 self.figures.draw_shadow(&mut pass, bind0);
                 self.people.draw_shadow(&mut pass, bind0);
             } else {
@@ -629,6 +643,7 @@ impl SceneRenderer {
                 depth,
                 output,
                 render,
+                &self.trees,
             );
             mark(&mut timer, enc, "outline");
         }

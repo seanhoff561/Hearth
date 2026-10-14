@@ -157,6 +157,12 @@ pub struct ShotSpec {
     pub fog: bool,
     /// The sun's shadows (`shadows=off|low|medium|high`; the game's default otherwise).
     pub shadows: hearth_render::shadow::ShadowQuality,
+    /// The natural trees as their blocks (`trees=blocks`, pictures of before) rather than as
+    /// their meshes (`trees=meshes`, the game's).
+    pub block_trees: bool,
+    /// The nearest tree ahead felled, falling to the right, drawn this far into its fall (0..1,
+    /// `fell=F`).
+    pub fell: Option<f32>,
     /// Seconds the LOD terrain may take to build before the shot fails.
     pub lod_timeout: f64,
     /// Draw the planet as the globe (at this zoom) centred on the camera's place instead.
@@ -310,6 +316,8 @@ impl Default for ShotSpec {
             shadows: hearth_core::options::ShaderOptions::default()
                 .shadows
                 .into(),
+            block_trees: false,
+            fell: None,
             lod_timeout: 180.0,
             globe: None,
             globe_relief: hearth_render::globe::GlobeView::RELIEF,
@@ -420,6 +428,14 @@ impl ShotSpec {
                     }
                     .into();
                 }
+                "trees" => {
+                    spec.block_trees = match v {
+                        "blocks" => true,
+                        "meshes" => false,
+                        _ => anyhow::bail!("trees={v}: blocks or meshes"),
+                    }
+                }
+                "fell" => spec.fell = Some(v.parse::<f32>()?.clamp(0.0, 1.0)),
                 "lod_timeout" => spec.lod_timeout = v.parse()?,
                 "globe" => spec.globe = Some(v.parse()?),
                 "globe_relief" => spec.globe_relief = v.parse()?,
@@ -1079,7 +1095,10 @@ pub fn render_shot(
             })
             .collect();
         lw.vegetation = hearth_worldgen::vegetation::Vegetation::new(
-            &hearth_worldgen::vegetation::VegetationSave { disturbances },
+            &hearth_worldgen::vegetation::VegetationSave {
+                disturbances,
+                ..Default::default()
+            },
             planet.circumference(),
             years,
         );
@@ -1232,7 +1251,14 @@ pub fn render_shot(
         });
     }
     let models = BlockModels::build(&lw.reg, atlas);
-    let meshes = lw.mesh(&models, &positions, MeshOptions::default());
+    let meshes = lw.mesh(
+        &models,
+        &positions,
+        MeshOptions {
+            trees_as_blocks: spec.block_trees,
+            ..MeshOptions::default()
+        },
+    );
     let shapes = crate::aim::Shapes::with_models(models, std::sync::Arc::new(atlas.clone()));
     let mut scene = SceneRenderer::new(
         ctx,
@@ -1678,6 +1704,7 @@ pub fn render_shot(
         }
     }
     // What the eyes rest on, highlighted as in play (`look=`).
+    let mut looked: Option<hearth_math::BlockPos> = None;
     if let Some(look) = &spec.look {
         let leaf = |p: hearth_math::BlockPos| {
             let col = hearth_math::ColumnPos::new(p.x >> 4, p.z >> 4);
@@ -1844,6 +1871,7 @@ pub fn render_shot(
                         .to_string())
                 );
                 let col = hearth_math::ColumnPos::new(pos.x >> 4, pos.z >> 4);
+                looked = Some(pos);
                 crate::aim::block_highlight(
                     &shapes,
                     &lw.map,
@@ -1895,6 +1923,62 @@ pub fn render_shot(
     }
     let target = OffscreenTarget::new(ctx, spec.width, spec.height);
     let size = (spec.width, spec.height);
+    // The natural trees as their meshes (S5), every one in view made before the shot.
+    if !spec.block_trees {
+        let mut trees = crate::tree_view::TreeView::new(lw.generator.clone(), lod.colors());
+        trees.set_vegetation(lw.vegetation.clone());
+        let aspect = spec.width as f32 / spec.height.max(1) as f32;
+        let frustum = hearth_render::camera::Frustum::from_view_proj(camera.view_proj(aspect));
+        let terrain = &scene.terrain;
+        let wind = glam::Vec3::new(env.wind_speed_m_s, 0.0, 0.0);
+        trees.settle(
+            ctx,
+            &mut scene.trees,
+            &lw.map,
+            camera.pos,
+            &frustum,
+            spec.distance as f64 * 16.0,
+            year_frac,
+            wind,
+            |p| terrain.contains(p.cube()),
+        );
+        if let Some(f) = spec.fell {
+            // A tree felled: the nearest ahead, falling to the right (S5).
+            let f3 = camera.forward().as_dvec3();
+            let ahead = DVec3::new(f3.x, 0.0, f3.z).normalize_or(DVec3::NEG_Z);
+            let right = DVec3::new(-ahead.z, 0.0, ahead.x);
+            let seconds = 3.0;
+            match trees.nearest(camera.pos, ahead, 30.0) {
+                Some(foot) if trees.fell(foot, right, seconds) => {
+                    log::info!(
+                        "the tree at {foot:?} felled, {:.0} % into its fall",
+                        f * 100.0
+                    );
+                    trees.hold_falls_at(f * seconds);
+                    trees.settle(
+                        ctx,
+                        &mut scene.trees,
+                        &lw.map,
+                        camera.pos,
+                        &frustum,
+                        spec.distance as f64 * 16.0,
+                        year_frac,
+                        wind,
+                        |p| terrain.contains(p.cube()),
+                    );
+                }
+                _ => log::warn!("no tree ahead to fell"),
+            }
+        }
+        // A block of a tree drawn as its mesh is highlighted as the tree is drawn.
+        if let Some(hearth_render::outline::Highlight::Block { .. }) = &scene.highlight
+            && let Some(pos) = looked
+            && let Some(h) = trees.highlight(&lw.map, pos)
+        {
+            log::info!("  look: the tree drawn there, as its mesh");
+            scene.highlight = Some(h);
+        }
+    }
     let frame = |scene: &mut SceneRenderer| {
         scene.prepare(ctx, &camera, size, &env, f32::INFINITY);
         let mut enc = ctx

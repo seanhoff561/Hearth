@@ -1,6 +1,7 @@
 //! Felling a tree in a running world (V2-6): a trunk chopped through with a hand axe leaves a
 //! stump, the tree comes to rest lying along the ground away from the cutter, its limbs are
-//! lopped for poles and sticks, and its trunk cut into log sections.
+//! lopped for poles and sticks, and its trunk cut into log sections. The trees drawn as their
+//! meshes (S5) are told falling by their foot, and told cut when cut into.
 
 mod common;
 
@@ -222,4 +223,67 @@ fn a_felled_tree_stays_felled_and_a_young_tree_takes_its_place() {
     );
     drop(w);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Trees drawn as their meshes (S5): a tree felled is told falling by its foot, its felling told
+/// in the vegetation first (the client draws its mesh falling and then its stump); a limb lopped
+/// from a standing tree marks that tree cut, told in the vegetation (drawn as its blocks from
+/// then on, as they are).
+#[test]
+fn a_felled_tree_is_told_by_its_foot_and_one_cut_into_is_told_cut() {
+    use hearth_worldgen::cubegen::features::Remains;
+    let dir = temp("cut-into");
+    let mut w = World::start(&dir, hearth_save::KnowledgeMode::Open, 7);
+    let foot = find_trunk(&mut w);
+    w.go_to_block(foot);
+    w.give("hearth:hand_axe/flint", 1);
+    let (done, words) = w.act(
+        "fell_tree",
+        AimAt::Block {
+            pos: foot,
+            top: false,
+        },
+    );
+    assert!(done, "felled: {words}");
+    assert!(
+        w.until(5.0, |w| w.falls.iter().any(|f| f.0 == foot)),
+        "told falling by its foot: {:?}",
+        w.falls
+    );
+    assert!(
+        w.falls.iter().any(|f| f.0 == foot && f.1),
+        "its felling told in the vegetation first"
+    );
+    w.run(100);
+    // A limb of a standing tree near, low enough to reach.
+    let veg = w.vegetation.clone().expect("the vegetation told");
+    let limb = w
+        .find(30, |n, _| n.ends_with("_branch"))
+        .into_iter()
+        .find_map(|p| {
+            let t = w.generator.features().tree_at(&w.generator, &veg, p)?;
+            let standing = t.remains == Remains::Living
+                && t.foot != [foot.x, foot.y, foot.z]
+                && w.mirror.block(p) == Some(t.state(&w.generator.forest, part_at(&t, p)?));
+            (standing && !t.is_cut(&veg) && w.stand_by(p).is_some()).then_some((p, t))
+        });
+    let (p, t) = limb.expect("a standing tree's limb within reach");
+    w.go_to_block(p);
+    let (done, words) = w.act("lop_branch", AimAt::Block { pos: p, top: false });
+    assert!(done, "lopped: {words}");
+    assert!(
+        w.until(5.0, |w| w.vegetation.as_ref().is_some_and(|v| t.is_cut(v))),
+        "the tree at {:?} told cut",
+        t.foot
+    );
+    drop(w);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The part of a tree at a block.
+fn part_at(
+    t: &hearth_worldgen::cubegen::features::PlacedTree,
+    p: BlockPos,
+) -> Option<hearth_flora::Part> {
+    t.blocks().find(|(q, _)| *q == p).map(|(_, part)| part)
 }

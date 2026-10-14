@@ -132,6 +132,18 @@ impl MeshInput {
         }
     }
 
+    /// Leaves a block out of the meshing (it is drawn otherwise: a tree's mesh) while it is
+    /// still `state`; `offset` from the cube's minimum corner (the padded window: −1..=16).
+    pub fn blank_if(&mut self, offset: glam::IVec3, state: BlockStateId) {
+        if offset.min_element() < -1 || offset.max_element() > 16 {
+            return;
+        }
+        let i = pidx(offset.x, offset.y, offset.z);
+        if self.blocks[i] == state {
+            self.blocks[i] = BlockStateId::AIR;
+        }
+    }
+
     /// With the smooth ground's fill about the cube, so its natural ground is meshed smooth.
     pub fn with_ground(
         mut self,
@@ -293,6 +305,9 @@ pub struct MeshOptions {
     pub smooth_lighting: bool,
     /// Render faces between two leaf blocks (fancy leaves).
     pub fancy_leaves: bool,
+    /// The natural trees meshed as their blocks, not left to their own meshes (S5; tools'
+    /// pictures of before).
+    pub trees_as_blocks: bool,
 }
 
 impl Default for MeshOptions {
@@ -300,6 +315,7 @@ impl Default for MeshOptions {
         Self {
             smooth_lighting: true,
             fancy_leaves: true,
+            trees_as_blocks: false,
         }
     }
 }

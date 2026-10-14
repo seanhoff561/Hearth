@@ -56,7 +56,7 @@ E4.1, T0, T1, T2, R1a, G1a. V2-11 superseded.
 | T2 — the realism gap analysis | done 2026-10-09 (D296, D297) |
 | R1a — the sun's shadows | done 2026-10-09 (D298) |
 | G1a — relief from 30 m to 30 km | done 2026-10-09 (D299) |
-| S5/P7 (c)–(f) with G1b → W1 → L1 → P7G → S6 with H1 → R1b → S7 → S8 → P8 | next: S5/P7 (c) with G1b; Audit 3 after it (D297) |
+| S5/P7 (c)–(f) with G1b → W1 → L1 → P7G → S6 with H1 → R1b → S7 → S8 → P8 | S5/P7 (c) done 2026-10-14 (D300); next: G1b with S5/P7 (d)–(f); Audit 3 after it (D297) |
 | V2-13 → V2-14, Audit 4; V2-15 → V2-16, Audit 5 | planned |
 | Phase R-A, Audit 6; R-B, Audit 7; R10; Phase F | planned |
 
@@ -66,10 +66,16 @@ E4.1, T0, T1, T2, R1a, G1a. V2-11 superseded.
 | Playability (P) | P0–P5 done (P6 removed); open issues in `dev/PLAYTEST.md` |
 | Earth-True (E) | E0–E7 done 2026-10-08; E4.1 (the Earth-sized world fast to see, make a person on and load into) done 2026-10-09 |
 | Quality (Q) | Audit 0 done 2026-10-08 (`docs/review/audits/AUDIT-0.md`); open high-priority findings: none; Audit 1 done 2026-10-08 (`AUDIT-1.md`); Audit 2 done 2026-10-08 (`AUDIT-2.md`); next: an audit after three completed milestones (Q §8.2) |
-| Realism (T) | last suite render: R1a, 2026-10-09 (`docs/review/realism/`); top open gaps (`scorecard.md`): trees, grass and water as voxels, sprites and blocks; walking-scale ground (G1b); the grid's lakes three times the Earth's; the seam at the edge of full detail. G1a brought the relief from 30 m to 30 km within the Earth's bounds |
+| Realism (T) | last suite render: R1a, 2026-10-09 (`docs/review/realism/`); top open gaps (`scorecard.md`): grass and water as sprites and blocks, trees past the render distance as boxes; walking-scale ground (G1b); the grid's lakes three times the Earth's; the seam at the edge of full detail. G1a brought the relief from 30 m to 30 km within the Earth's bounds; S5 (c) draws the trees as their meshes |
 
 ## Owner checks
 Pictures and runs that need the owner (T §7), newest first:
+- S5 (c): on the PC, `cargo run --release -- bench --scenes lowland_forest,rainforest_walk`
+  and the same with `--trees blocks`: the frame times and the GPU's passes with the trees as
+  meshes and as blocks; then `--preset high --scenes rainforest_walk` (S §7.4: a dense
+  rainforest at High meets the frame targets). In the world: walk a wood at dawn and at noon;
+  look at a trunk and at the leaves within reach (each outlined by its own shape); fell a tree
+  and watch it fall; lop a limb from a standing tree and see it turn to its blocks.
 - R1a: on the PC, `cargo run --release -- bench --scenes quick --shadows off` and the same
   without `--shadows off`: the shadows' GPU time at 1080p (the "shadows" pass and what the
   terrain passes gain; budget 1.5 ms) and the frame thread's (prepare: terrain). Then in the
@@ -188,40 +194,48 @@ Its entry: `docs/history/progress-2026-10-09-t1.md`.
 ## E4.1 — Earth-scale performance (done 2026-10-09)
 Its entry: `docs/history/progress-2026-10-09-e4.1.md`; the numbers in `BENCHMARKS.md`.
 
-## S5 with P7 — stopped at (b) for Amendment T (T0, 2026-10-09)
-Where it stands (`PLAN.md` S5, P7; tasks (a)–(f)); (c)–(f) resume after T2, with G1:
+## S5 with P7 — (c) done 2026-10-14 (D300); (d)–(f) with G1b
+Where it stands (`PLAN.md` S5, P7; tasks (a)–(f)):
 - **(a) done:** `hearth_flora::mesh` builds a tree's mesh from the skeleton its blocks come
   from (wood tubes, leaf cards by leaf kind, three details: a mature oak 47k / 8.7k / 1.7k
   triangles); each variant turned to its own angle and up to 0.4 m off its block's middle, voxels
   and mesh alike (`template::variant_skeleton`, `Turn::apply_f`).
 - **(b) done:** `hearth_render::trees` (instanced meshes, wood and alpha-tested leaves, wind
   sway, seasons, translucency; `shaders/tree.wgsl`) in the scene's opaque pass;
-  `hearth::tree_draw` gives each species its look from its blocks' colours (D290), its mesh
-  keys and meshes, and an instance's packing. The species sheets (`hearth/tests/tree_sheets.rs`,
-  91 species × three ages × four seasons, `docs/review/smooth-world.md`) found twenty
-  evergreen species shedding their leaves (retinted, D290) and a conifer leader's hoop of
-  sprays (sprays now fill their shoots); a test in the suite holds every species to its kind.
-- **Next, (c):** trees drawn as meshes in the world. Worked out before T0 stopped it:
-  `LocalWorld::mesh` (every mesh goes through it) blanks the voxels of trees drawn as meshes
-  before meshing, where they still hold their natural state; which trees those are is decided
-  on both sides from the generator and the shared `Vegetation` alone, so server and client
-  agree: every natural tree but those the player has cut into (a set of feet kept in the
-  vegetation, saved and sent with it; marked where player edits are recorded, the cubes the tree
-  spans remeshed), so what is taken from a tree shows as blocks; `PlacedTree` carries its
-  variant for the mesh key; a tree's instance is its foot plus `Turn::apply_f`'s affine map (an
-  origin and a 2×2 turn); the client lists trees by loaded column (`trees_in`), detail by
-  distance, meshes built off the main thread; the screenshot tool draws them; felling animates
-  the mesh (`TreeFalls` carrying the tree); trees beyond the near field as instances, then
-  impostors, never boxes (with L1); collision against the skeleton's capsules (From S3).
-- **Then:** (d) woody shrubs as individuals, Poisson-like spacing, clustering, clonal patches,
-  herbs off the grid, P §11.4's statistics; (e) boulders and fallen logs as smooth shapes,
-  dipping strata and veins, the §11.3 evaluation, the screenshot set (with G1's clasts and
+  `hearth::tree_draw` gives each species its look from its blocks' colours (D290). The species
+  sheets (`hearth/tests/tree_sheets.rs`, 91 species × three ages × four seasons) hold every
+  species to its kind.
+- **(c) done (D300): the natural trees drawn as their meshes in the world.**
+  - The server leaves their blocks out of the cubes' meshes where they still hold their natural
+    state (`LocalWorld::mesh`). The client, the screenshot tool and the bench find the same
+    trees from the generator and the vegetation, a column at a time on worker threads
+    (`hearth::tree_view`).
+  - Each tree is drawn at the detail its distance asks for (meshes made off the main thread, a
+    coarser one meanwhile), turned and placed as its blocks are, lit beside its foot and over its
+    crown, with its column's climate and snow.
+  - A tree cut into by the player or a fire is marked in the vegetation (as what it then is) and
+    drawn as its blocks until another grows there.
+  - A felled tree falls as its mesh, its stump left (`TreeFalls` carries its foot); the tree looked
+    at is outlined by its own mesh, wood or leaves.
+  - Options: `--trees blocks|meshes` for `hearth bench`, `trees=` and `fell=` for screenshots; a
+    bench scene `rainforest_walk` (S §7.4).
+- **Tests:** the mesh stands where its blocks do (`tree_meshes`); a tree cut into is meshed as its
+  blocks, kept as cut while it is what it was, saved (`tree_meshes`, `vegetation`); the server
+  tells a felling by the tree's foot after its vegetation, and a limb lopped marks its tree cut
+  (`felling`); a felled tree's mesh has no stump and its cut capped (`hearth_flora`); the tilt's
+  packing (`tree_draw`).
+- **Pictures** (`docs/review/s5/world/`): before and after at head height in four biomes and
+  from 40 m in two, a winter wood from above, a tree's fall, the outline of a trunk and of leaves.
+- **Fast?** (`BENCHMARKS.md`, the same build with `--trees blocks`) the forest flight's draws
+  5,316 → 2,294, triangles 1.54 → 0.84 M, video memory 360 → 289 MiB; the rainforest walk's 6,634 → 2,865, 2.55 → 1.32 M, 418 → 352 MiB. The frame
+  times need the PC (owner check).
+- **Open:** the look still meets a tree by its blocks (close to its drawn shape), and so does
+  collision (the skeleton's capsules, S §7.1); the fallen trunk lies as blocks (logs, (e)); the
+  trees past the render distance stay boxes (L1).
+- **Next, with G1b:** (d) woody shrubs as individuals, Poisson-like spacing, clustering, clonal
+  patches, herbs off the grid, P §11.4's statistics; (e) boulders and fallen logs as smooth
+  shapes, dipping strata and veins, the §11.3 evaluation, the screenshot set (with G1's clasts and
   landforms); (f) docs.
-- **The stopping point's check** (`scripts/check.sh`, the whole suite) found two tests to mend:
-  the felling tests looked for a slim tree by its blocks' shape, which trees off the grid no
-  longer have, and now take its foot from where the generator placed it; the finite-water test
-  found no river bank that holds a channel among the four it looked at, and now looks at some
-  twelve times as many.
 
 ## Content
 `hearth content status` (implemented = used by a system; planned = data only):

@@ -308,3 +308,6 @@ task needs it. A new decision gets a line here and its text in the current file.
 - D297 (2026-10-09) T2's order: shadows first, then the relief from 30 m to 30 km, then walking scale
 - D298 (2026-10-09) The sun's shadows: cascades about the camera, the far side of things cast, the distant terrain in a fifth
 - D299 (2026-10-09) The relief by kind of land and height above base level; water spread over the slopes; rivers as curves
+
+## [D300-D399](docs/decisions/D300-D399.md)
+- D300 (2026-10-14) The natural trees drawn as their meshes; a tree cut into drawn as its blocks; a felled tree falls as its mesh

@@ -68,6 +68,10 @@ impl Disturbance {
 pub struct VegetationSave {
     #[serde(default)]
     pub disturbances: Vec<Disturbance>,
+    /// The natural trees cut into: each one's foot (x wrapped, z) and what it was then
+    /// (`PlacedTree::what`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cut: Vec<[i32; 3]>,
 }
 
 /// Smooth value noise in 0–1 with features about `scale` blocks across.
@@ -209,6 +213,10 @@ pub struct Vegetation {
     /// Years since the world began.
     pub year: f64,
     disturbances: Arc<Disturbances>,
+    /// The natural trees cut into (by the player or a fire), by their foot (x wrapped): what
+    /// each was then (`PlacedTree::what`). Drawn as their blocks are, no longer as the whole
+    /// tree's mesh (S5), until the tree there grows on, dies or is felled.
+    cut: Arc<FxHashMap<(i32, i32), u32>>,
 }
 
 impl Vegetation {
@@ -216,15 +224,29 @@ impl Vegetation {
     pub fn new(save: &VegetationSave, circumference: i32, year: f64) -> Self {
         let mut list = save.disturbances.clone();
         list.sort_by(|a, b| a.year.total_cmp(&b.year));
+        let disturbances = Disturbances::new(list, circumference);
+        let cut = save
+            .cut
+            .iter()
+            .map(|&[x, z, what]| ((disturbances.wrap(x), z), what as u32))
+            .collect();
         Self {
             year,
-            disturbances: Arc::new(Disturbances::new(list, circumference)),
+            disturbances: Arc::new(disturbances),
+            cut: Arc::new(cut),
         }
     }
 
     pub fn save(&self) -> VegetationSave {
+        let mut cut: Vec<[i32; 3]> = self
+            .cut
+            .iter()
+            .map(|(&(x, z), &what)| [x, z, what as i32])
+            .collect();
+        cut.sort_unstable();
         VegetationSave {
             disturbances: self.disturbances.list.clone(),
+            cut,
         }
     }
 
@@ -232,7 +254,7 @@ impl Vegetation {
     pub fn at_year(&self, year: f64) -> Self {
         Self {
             year,
-            disturbances: self.disturbances.clone(),
+            ..self.clone()
         }
     }
 
@@ -241,9 +263,43 @@ impl Vegetation {
         let mut d = (*self.disturbances).clone();
         d.push(e);
         Self {
-            year: self.year,
             disturbances: Arc::new(d),
+            ..self.clone()
         }
+    }
+
+    /// Whether two snapshots hold the same trees cut into.
+    pub fn same_cut(&self, other: &Vegetation) -> bool {
+        Arc::ptr_eq(&self.cut, &other.cut)
+    }
+
+    /// Whether the natural tree with its foot at a place, being `what` it is
+    /// (`PlacedTree::what`), has been cut into.
+    pub fn is_cut(&self, x: i32, z: i32, what: u32) -> bool {
+        !self.cut.is_empty() && self.cut.get(&(self.disturbances.wrap(x), z)) == Some(&what)
+    }
+
+    /// With the natural tree at a foot, being `what` it is, cut into: drawn as its blocks
+    /// from now on, until the tree there is another.
+    pub fn with_cut(&self, x: i32, z: i32, what: u32) -> Self {
+        let mut cut = (*self.cut).clone();
+        cut.insert((self.disturbances.wrap(x), z), what);
+        Self {
+            cut: Arc::new(cut),
+            ..self.clone()
+        }
+    }
+
+    /// The feet of the trees cut into here and not in an older snapshot (x wrapped).
+    pub fn cut_since(&self, older: &Vegetation) -> Vec<(i32, i32)> {
+        if self.same_cut(older) {
+            return Vec::new();
+        }
+        self.cut
+            .iter()
+            .filter(|(foot, what)| older.cut.get(foot) != Some(what))
+            .map(|(foot, _)| *foot)
+            .collect()
     }
 
     /// Every disturbance, oldest first.
@@ -342,6 +398,7 @@ mod tests {
                     severity: 1.0,
                     patches,
                 }],
+                ..Default::default()
             },
             c,
             2.0,
@@ -364,6 +421,7 @@ mod tests {
         let v = Vegetation::new(
             &VegetationSave {
                 disturbances: vec![burn(100, -40, 30.0, 1.0, 2.0)],
+                ..Default::default()
             },
             65_536,
             1.5,
@@ -414,6 +472,27 @@ mod tests {
         }
         let share = taken as f32 / n as f32;
         assert!((0.25..0.75).contains(&share), "{share}");
+    }
+
+    /// A tree cut into stays cut while it is what it was (S5): the tree that grows on there,
+    /// or what is left of it dead, is drawn whole again. Kept across the seam and in the save.
+    #[test]
+    fn a_tree_cut_into_stays_cut_while_it_is_what_it_was() {
+        let v = Vegetation::new(&VegetationSave::default(), 65_536, 1.0);
+        let oak_young = 3 << 16 | 2 << 8;
+        let oak_grown = 3 << 16 | 3 << 8;
+        let w = v.with_cut(-7, 12, oak_young);
+        assert!(w.is_cut(-7, 12, oak_young));
+        assert!(w.is_cut(65_536 - 7, 12, oak_young), "the same place");
+        assert!(!w.is_cut(-7, 12, oak_grown), "grown on: another tree");
+        assert!(!w.is_cut(-6, 12, oak_young));
+        assert!(!v.is_cut(-7, 12, oak_young), "the snapshot before");
+        assert!(!w.same_cut(&v) && w.same_cut(&w.at_year(3.0)));
+        assert_eq!(w.cut_since(&v), vec![(65_536 - 7, 12)]);
+        assert!(v.cut_since(&w).is_empty());
+        let back = Vegetation::new(&w.save(), 65_536, 1.0);
+        assert!(back.is_cut(-7, 12, oak_young), "saved and loaded");
+        assert_eq!(back.save(), w.save());
     }
 
     #[test]

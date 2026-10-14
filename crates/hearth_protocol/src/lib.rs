@@ -450,12 +450,14 @@ pub enum ToClient {
     },
     /// A tree falls: its blocks as they stood (gone from the world now), turning down about
     /// the edge `pivot` toward `toward` over `seconds`; where it comes to rest arrives as block
-    /// changes when the fall is over.
+    /// changes when the fall is over. `foot` is its trunk's foot: a tree drawn as its mesh
+    /// falls as its mesh (S5).
     TreeFalls {
         blocks: Vec<(hearth_math::BlockPos, hearth_world::BlockStateId)>,
         pivot: glam::DVec3,
         toward: hearth_math::Direction,
         seconds: f32,
+        foot: hearth_math::BlockPos,
     },
     /// Built pieces give way and fall (V2-8 (b)): their blocks as they stood (gone from the
     /// world now); what is left of them arrives as things lying where they fell.

@@ -27,6 +27,9 @@ struct TreeIn {
     @location(8) leaf: u32,
     @location(9) climate: u32,
     @location(10) light: u32,
+    // Falling: the angle it is turned down by and the heading of the level axis it turns about
+    // (`TreeInstance::tilt`).
+    @location(11) tilt: u32,
 };
 
 struct TreeOut {
@@ -46,6 +49,19 @@ const BARK_CHARRED: u32 = 0x10u;
 
 fn turned(t: vec4<f32>, p: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(t.x * p.x + t.y * p.z, p.y, t.z * p.x + t.w * p.z);
+}
+
+// Turned down about a level axis through the origin, as a felled tree falls.
+fn tilted(tilt: u32, p: vec3<f32>) -> vec3<f32> {
+    let angle = f32(tilt & 0xffffu) / 65535.0 * (0.5 * TAU);
+    if angle <= 0.0 {
+        return p;
+    }
+    let heading = f32(tilt >> 16u) / 65536.0 * TAU;
+    let axis = vec3<f32>(cos(heading), 0.0, sin(heading));
+    let c = cos(angle);
+    let s = sin(angle);
+    return p * c + cross(axis, p) * s + axis * dot(axis, p) * (1.0 - c);
 }
 
 fn hash12(p: vec2<f32>) -> f32 {
@@ -97,10 +113,10 @@ fn vs_tree(v: TreeIn) -> TreeOut {
         local += vec3<f32>(sin(t * 7.3 + phase * 5.0 + v.pos.x * 2.0), sin(t * 8.1 + phase * 3.0), cos(t * 6.7 + phase * 7.0 + v.pos.z * 2.0))
             * 0.006 * speed;
     }
-    let world = v.origin + turned(v.turn, local);
+    let world = v.origin + tilted(v.tilt, turned(v.turn, local));
     out.pos = g.view_proj * vec4<f32>(curve(world), 1.0);
     out.world = world;
-    out.normal = normalize(turned(v.turn, v.normal.xyz));
+    out.normal = normalize(tilted(v.tilt, turned(v.turn, v.normal.xyz)));
     out.uv = v.uv;
     if what == 1u {
         // The species' leaf colour, tinted by place and season as the terrain's leaves are,
@@ -119,8 +135,13 @@ fn vs_tree(v: TreeIn) -> TreeOut {
         out.albedo = c;
         out.info = vec4<u32>(what, (v.bark >> 24u) & 15u, 0u, v.climate >> 24u);
     }
+    // The sky's light at its foot for the stem and roots, above its crown for its limbs and
+    // leaves (lit from outside; the crown darkens within, `fs_leaf`).
+    let order = v.sway.w;
+    let crown = what == 1u || order == 1u || order == 2u;
+    let sky = select(v.light & 15u, (v.light >> 16u) & 15u, crown);
     out.light = vec3<f32>(
-        f32(v.light & 15u) / 15.0,
+        f32(sky) / 15.0,
         f32((v.light >> 4u) & 15u) / 15.0,
         f32(v.extra.y) / 100.0
     );

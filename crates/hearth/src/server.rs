@@ -1603,10 +1603,12 @@ fn run(
                     let _ = tx.send(ToClient::Flocks(flocks_told.clone()));
                 }
             }
-            // The vegetation for the distant terrain: when it changes, and as the years turn.
+            // The vegetation for the distant terrain and the trees drawn as meshes: when it
+            // changes (the trees cut into too), and as the years turn.
             if ticks.is_multiple_of(20)
                 && veg_told.as_ref().is_none_or(|v| {
                     !v.same_disturbances(&lw.vegetation)
+                        || !v.same_cut(&lw.vegetation)
                         || v.year.floor() != lw.vegetation.year.floor()
                 })
             {
@@ -1749,6 +1751,17 @@ fn run(
                     .slip_skills(ticks, calendar.ticks_per_day());
             }
             since_save += 1;
+            // The trees drawn as meshes that the player or a fire cut into: drawn as their
+            // blocks from now on, the vegetation told before their cubes come again (S5); a tree
+            // felled is told at once too, its fall drawn over its stump.
+            let cut_cubes = lw.cut_into(&gathered);
+            if veg_told
+                .as_ref()
+                .is_none_or(|v| !v.same_disturbances(&lw.vegetation) || !v.same_cut(&lw.vegetation))
+            {
+                veg_told = Some(lw.vegetation.clone());
+                let _ = tx.send(ToClient::Vegetation(lw.vegetation.clone()));
+            }
             // The finite water moves ten times a second; its slow changes every five game
             // minutes.
             let world_water = crate::water_env::WorldWater {
@@ -1875,9 +1888,9 @@ fn run(
                     let _ = tx.send(ToClient::Stress(stress));
                 }
             }
-            if !changed.is_empty()
+            if (!changed.is_empty() || !cut_cubes.is_empty())
                 && stream
-                    .blocks_changed(&mut lw, &models, opts, &changed, tx)
+                    .blocks_changed(&mut lw, &models, opts, &changed, &cut_cubes, tx)
                     .is_err()
             {
                 save(
@@ -2390,7 +2403,9 @@ impl Stream {
         );
         changed.sort_unstable_by_key(|p| (p.x, p.y, p.z));
         changed.dedup();
-        let remeshed = self.blocks_changed(lw, models, opts, &changed, tx)?;
+        let remeshed = self.blocks_changed(lw, models, opts, &changed, &[], tx)?;
+        // The trees the client draws as meshes grown with them.
+        let _ = tx.send(ToClient::Vegetation(lw.vegetation.clone()));
         log::info!(
             "vegetation of year {:.2}: {} cubes grown again, {grew} blocks changed, {remeshed} \
              remeshed in {:.0} ms",
@@ -2423,7 +2438,7 @@ impl Stream {
         let changed = lw
             .cover
             .refresh(&mut lw.map, &lw.reg, &lw.generator, &cols, year_frac);
-        let remeshed = self.blocks_changed(lw, models, opts, &changed, tx)?;
+        let remeshed = self.blocks_changed(lw, models, opts, &changed, &[], tx)?;
         log::info!(
             "seasonal cover for year {:.3}: {} blocks changed, {} cubes remeshed in {:.0} ms",
             year_frac,
@@ -2435,18 +2450,19 @@ impl Stream {
     }
 
     /// Relights the blocks that changed and sends the cubes they touch (and the neighbours that
-    /// show them on a face) again, with new meshes (through the outbox). Returns the cubes
-    /// remeshed.
+    /// show them on a face), and those in `also` (their trees drawn otherwise now), again, with
+    /// new meshes (through the outbox). Returns the cubes remeshed.
     fn blocks_changed(
         &mut self,
         lw: &mut LocalWorld,
         models: &BlockModels,
         opts: MeshOptions,
         changed: &[BlockPos],
+        also: &[CubePos],
         tx: &Sender<ToClient>,
     ) -> Result<usize, ()> {
         let planet = *lw.map.planet();
-        let mut dirty: FxHashSet<CubePos> = FxHashSet::default();
+        let mut dirty: FxHashSet<CubePos> = also.iter().copied().collect();
         for &p in changed {
             lw.light.block_changed(&mut lw.map, &lw.reg, p);
             let p = planet.wrap_block(p);

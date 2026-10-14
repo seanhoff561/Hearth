@@ -951,6 +951,11 @@ impl LodGen {
         }
     }
 
+    /// The blocks' colours the tiles are drawn with (the near trees' looks take theirs).
+    pub fn colors(&self) -> &BlockColors {
+        &self.colors
+    }
+
     /// Samples and meshes one tile of the world as it began.
     pub fn build(&self, wg: &WorldGenerator, key: TileKey) -> TileMesh {
         self.build_in(wg, &LodWorld::default(), key)

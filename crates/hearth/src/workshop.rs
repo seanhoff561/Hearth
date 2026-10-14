@@ -2011,6 +2011,7 @@ impl Workshop {
             pivot,
             toward,
             seconds,
+            foot,
         });
         let at = h.ticks + (seconds as f64 * hearth_content::time::TICKS_PER_SECOND) as u64;
         self.falls.push((

@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use glam::{DVec3, Vec3};
-use hearth::tree_draw::{self, TreeLook};
+use hearth::tree_draw::{self, MeshOf, TreeLook};
 use hearth_flora::Stage;
 use hearth_flora::mesh::Detail;
 use hearth_render::GpuContext;
@@ -16,6 +16,7 @@ use hearth_render::atlas::TextureArray;
 use hearth_render::camera::Camera;
 use hearth_render::offscreen::{OFFSCREEN_FORMAT, OffscreenTarget, write_png};
 use hearth_render::scene::{Environment, SceneRenderer};
+use hearth_worldgen::cubegen::features::Remains;
 use hearth_worldgen::trees::Forest;
 
 /// The seasons by the shader's year (0 the spring equinox): leaves new, full, turning, gone.
@@ -74,11 +75,15 @@ impl Studio {
 
     /// A tree's mesh kept in the tree pass (made the first time), and its bounds.
     fn keep(&mut self, sp: usize, stage: Stage, detail: Detail) -> (Vec3, Vec3) {
-        let key = tree_draw::mesh_key(sp, stage, 0, detail);
+        let key = tree_draw::mesh_key(MeshOf::standing(sp, stage, 0, Remains::Living), detail);
         if let Some(b) = self.bounds.get(&key) {
             return *b;
         }
-        let mesh = tree_draw::mesh(&self.forest, sp, stage, 0, detail);
+        let mesh = tree_draw::mesh(
+            &self.forest,
+            MeshOf::standing(sp, stage, 0, Remains::Living),
+            detail,
+        );
         self.scene.trees.upload(&self.ctx, key, &mesh);
         self.bounds.insert(key, (mesh.min, mesh.max));
         (mesh.min, mesh.max)
@@ -136,9 +141,18 @@ impl Studio {
     ) -> Vec<u8> {
         let mut batches: Vec<(u64, Vec<hearth_render::trees::TreeInstance>)> = Vec::new();
         for &(sp, stage, foot) in stand {
-            let key = tree_draw::mesh_key(sp, stage, 0, detail);
+            let key = tree_draw::mesh_key(MeshOf::standing(sp, stage, 0, Remains::Living), detail);
             let origin = foot - camera.pos.as_vec3();
-            let one = tree_draw::instance(self.looks[sp], origin, self.climate, 0, (15, 0), 0);
+            let one = tree_draw::instance(
+                self.looks[sp],
+                origin,
+                [1.0, 0.0, 0.0, 1.0],
+                self.climate,
+                0,
+                tree_draw::TreeLight::OPEN,
+                0,
+                false,
+            );
             match batches.iter_mut().find(|b| b.0 == key) {
                 Some(b) => b.1.push(one),
                 None => batches.push((key, vec![one])),

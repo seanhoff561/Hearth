@@ -82,3 +82,15 @@ leaves that fell in a cold winter and a monsoon's dry season, as their blocks di
 (D290); a conifer's leader ended in a hoop of sprays (they now fill their shoots). Still plain:
 spring's leaves are summer's green; the scale-leaved sprays of the tamarisk and saxaul are
 coarse; the crowns' lighting is flat beside the world's (no self-shadowing yet).
+
+## S5 (c): the trees in the world as their meshes (2026-10-14)
+Made by the screenshot tool with `trees=blocks` (before) and `trees=meshes` (after), the same
+build; `docs/review/s5/world/` (its README lists them): four biomes at head height, two from
+40 m, a winter wood from above, a tree's fall, the outline of a trunk and of leaves.
+
+Seen: stems and limbs round and tapering where they were stacks of cubes, crowns of leaves where
+they were boxes of leaf blocks, the trees' own shapes by species (the baobab's bottle, the
+birch's white stem, the spruce's spire); the forest floor lit through the crowns; a felled tree
+turning down whole about its stump. Found and fixed on the way: a baobab's stem lit black (its
+light was read inside its own trunk's blocks; now beside them). Still plain: the trees past the
+render distance are the distant terrain's boxes (L1); the fallen trunk lies as blocks ((e)).

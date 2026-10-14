@@ -64,6 +64,9 @@ pub struct Options {
     pub min_diameter: f32,
     /// Wood above this height (m) is cut away and the cut capped (a stump).
     pub cut: Option<f32>,
+    /// Wood below this height (m) is cut away and the cut capped (what falls of a tree
+    /// felled: all of it above its stump).
+    pub above: Option<f32>,
     pub leaf: LeafKind,
     /// Palm fronds rather than clusters.
     pub fronds: bool,
@@ -78,6 +81,7 @@ impl Options {
             leaves: true,
             min_diameter: 0.0,
             cut: None,
+            above: None,
             leaf,
             fronds,
             density,
@@ -244,9 +248,26 @@ impl Builder<'_> {
     /// One tube along a run of joined segments.
     fn tube(&mut self, run: &[Seg], phase: u8) {
         let min_r = min_radius(self.opts.detail).max(self.opts.min_diameter * 0.5);
+        // Below a felling cut: left out, the run begun where it rises through the cut.
+        let mut run = run;
+        let mut start = (run[0].a, run[0].ra);
+        let mut felled = false;
+        if let Some(above) = self.opts.above {
+            let Some(k) = run.iter().position(|s| s.b.y > above) else {
+                return;
+            };
+            run = &run[k..];
+            let s = &run[0];
+            start = (s.a, s.ra);
+            if s.a.y < above {
+                let t = (above - s.a.y) / (s.b.y - s.a.y).max(1e-5);
+                start = (s.a.lerp(s.b, t), s.ra + (s.rb - s.ra) * t);
+                felled = true;
+            }
+        }
         // The run as rings (point, radius), cut where it thins below what is drawn or rises
         // above the cut.
-        let mut rings: Vec<(Vec3, f32)> = vec![(run[0].a, run[0].ra)];
+        let mut rings: Vec<(Vec3, f32)> = vec![start];
         let mut capped = false;
         for s in run {
             if s.order != 0 && s.ra < min_r {
@@ -347,30 +368,50 @@ impl Builder<'_> {
         let thick_end = r_end > 0.03 && (capped || self.opts.cut.is_some() || r_end > 0.06);
         if thick_end {
             let t = (end - rings[rings.len() - 2].0).normalize_or(Vec3::Y);
-            let [nx, ny, nz] = snorm(t);
-            let sway = self.sway(end.y, order, 1.0);
-            let last = base[base.len() - 1];
-            let centre = self.push(TreeVertex {
-                pos: end.to_array(),
-                uv: [0.0, 0.0],
+            self.end_grain(base[base.len() - 1], n, end, r_end, t, order, phase);
+        }
+        // And the felling cut at its foot.
+        if felled {
+            let t = (rings[0].0 - rings[1].0).normalize_or(-Vec3::Y);
+            self.end_grain(base[0], n, rings[0].0, rings[0].1, t, order, phase);
+        }
+    }
+
+    /// A tube's end cut across: its end grain over the ring of `n` sides beginning at vertex
+    /// `ring`, about `centre` (radius `r`), facing `out`.
+    #[allow(clippy::too_many_arguments)]
+    fn end_grain(
+        &mut self,
+        ring: u32,
+        n: usize,
+        centre: Vec3,
+        r: f32,
+        out: Vec3,
+        order: u8,
+        phase: u8,
+    ) {
+        let [nx, ny, nz] = snorm(out);
+        let sway = self.sway(centre.y, order, 1.0);
+        let middle = self.push(TreeVertex {
+            pos: centre.to_array(),
+            uv: [0.0, 0.0],
+            normal: [nx, ny, nz, END_GRAIN],
+            sway: [sway, phase, 0, order],
+            extra: [0, (r * 100.0).min(255.0) as u8, 0, 0],
+        });
+        let mut rim = Vec::with_capacity(n);
+        for s in 0..n as u32 {
+            let v = self.out.vertices[(ring + s) as usize];
+            let rel = (Vec3::from(v.pos) - centre) / r.max(1e-4);
+            rim.push(self.push(TreeVertex {
+                uv: [rel.x, rel.z],
                 normal: [nx, ny, nz, END_GRAIN],
-                sway: [sway, phase, 0, order],
-                extra: [0, (r_end * 100.0).min(255.0) as u8, 0, 0],
-            });
-            let mut rim = Vec::with_capacity(n);
-            for s in 0..n as u32 {
-                let v = self.out.vertices[(last + s) as usize];
-                let rel = (Vec3::from(v.pos) - end) / r_end.max(1e-4);
-                rim.push(self.push(TreeVertex {
-                    uv: [rel.x, rel.z],
-                    normal: [nx, ny, nz, END_GRAIN],
-                    ..v
-                }));
-            }
-            for s in 0..n {
-                let (a, b) = (rim[s], rim[(s + 1) % n]);
-                self.out.indices.extend_from_slice(&[centre, b, a]);
-            }
+                ..v
+            }));
+        }
+        for s in 0..n {
+            let (a, b) = (rim[s], rim[(s + 1) % n]);
+            self.out.indices.extend_from_slice(&[middle, b, a]);
         }
     }
 
@@ -731,6 +772,40 @@ mod tests {
             .filter(|v| v.normal[3] == WOOD && v.sway[3] != 0)
             .all(|v| v.extra[1] >= 7);
         assert!(thin, "burned twigs are gone");
+    }
+
+    #[test]
+    fn a_felled_tree_falls_without_its_stump_its_cut_capped() {
+        let sp = crate::growth::tests::oak();
+        let sk = grow(&sp, Stage::Mature, 1);
+        let mut o = Options::new(Detail::Full, LeafKind::Broad, false, 0.6);
+        o.above = Some(1.0);
+        let top = mesh(&sk, o, 1);
+        let whole = mesh(&sk, Options { above: None, ..o }, 1);
+        let wood = |m: &TreeMesh| -> Vec<Vec3> {
+            m.vertices
+                .iter()
+                .filter(|v| v.normal[3] == WOOD)
+                .map(|v| Vec3::from(v.pos))
+                .collect()
+        };
+        // Nothing of it below the cut (the stem's ring at the cut, no roots), the crown with it.
+        // (The cut lies across the stem: a leaning stem's ring dips a little.)
+        assert!(wood(&top).iter().all(|p| p.y >= 0.9), "below the cut");
+        assert!(wood(&whole).iter().any(|p| p.y < 0.9));
+        assert!(
+            top.indices.len() as u32 > top.wood,
+            "its leaves fall with it"
+        );
+        assert!((top.max.y - whole.max.y).abs() < 1e-3);
+        // The cut shows its end grain, facing down at the foot of what falls.
+        let grain: Vec<&TreeVertex> = top
+            .vertices
+            .iter()
+            .filter(|v| v.normal[3] == END_GRAIN && v.pos[1] < 1.05)
+            .collect();
+        assert!(!grain.is_empty(), "the cut capped");
+        assert!(grain.iter().all(|v| v.normal[1] < -100), "facing down");
     }
 
     #[test]

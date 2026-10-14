@@ -13,7 +13,7 @@ use crate::trees::{Forest, PlaceClimate};
 use crate::vegetation::{DisturbanceKind, Vegetation};
 
 /// What of a tree is drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Remains {
     /// A living tree, all of it.
     Living,

@@ -49,6 +49,7 @@ pub mod signs;
 pub mod strikes;
 pub mod structure;
 pub mod tree_draw;
+pub mod tree_view;
 pub mod water_env;
 pub mod wildfire;
 pub mod workshop;

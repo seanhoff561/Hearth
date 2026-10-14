@@ -290,6 +290,7 @@ mod tests {
             veg: Vegetation::new(
                 &VegetationSave {
                     disturbances: vec![burn(x, z)],
+                    ..Default::default()
                 },
                 c,
                 0.9,
@@ -300,6 +301,7 @@ mod tests {
             veg: Vegetation::new(
                 &VegetationSave {
                     disturbances: vec![burn(x + 3000, z)],
+                    ..Default::default()
                 },
                 c,
                 0.9,

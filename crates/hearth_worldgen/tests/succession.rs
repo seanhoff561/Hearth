@@ -133,6 +133,7 @@ fn cleared_land_grows_back_through_pioneers_to_the_old_forest() {
             severity: 1.0,
             patches: Vec::new(),
         }],
+        ..Default::default()
     };
     let before = within(wg, &at(&save, 9.9), c, 45);
     assert!(before.len() > 40, "{} trees before", before.len());
@@ -197,6 +198,7 @@ fn a_burned_stand_stands_charred_and_bare_then_grows_back() {
             severity: 1.0,
             patches: Vec::new(),
         }],
+        ..Default::default()
     };
     let just = within(wg, &at(&save, 5.05), c, 35);
     let charred = just

@@ -180,6 +180,7 @@ impl Workshop {
             species: si,
             stage,
             template: wg.forest.templates.get(si, stage, (seed % 4) as u8),
+            variant: (seed % 4) as u8,
             turn: hearth_flora::Turn::from_hash(seed),
             foot: [at.x, at.y, at.z],
             remains: hearth_worldgen::cubegen::features::Remains::Living,

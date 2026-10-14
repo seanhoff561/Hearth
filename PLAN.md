@@ -41,7 +41,8 @@ cube-era code allowed where it serves that, T §5). V2.1 and its Addenda are sup
 11. **Amendment T** (D291): **T0** (S5/P7 stopped at (b)), **T1** (quick wins) and **T2** (the
     realism gap analysis, `docs/review/realism/RGA-1.md`) done.
 12. As T2 revised it (D297): **R1a** (sun shadows, done 2026-10-09, D298) → **G1a** (relief from
-    30 m to 30 km, done 2026-10-09, D299) → **S5/P7 (c)–(f) with G1b** (walking scale) → **W1** (water; S7's water) →
+    30 m to 30 km, done 2026-10-09, D299) → **S5/P7 (c)–(f) with G1b** (walking scale; (c), the
+    trees drawn as their meshes, done 2026-10-14, D300) → **W1** (water; S7's water) →
     **L1** (seamless distance) → **P7G** → **S6 with H1** → **R1b** → **S7 → S8 → P8.** An audit
     after every three milestones (Q §8.2), each updating the realism scorecard (T §3.6); the
     first after G1b, with a check that no coarse-scale caller has crept into the fine generator.
@@ -194,6 +195,9 @@ the benchmarks, `PROGRESS.md` (with its Smooth World Status row), commit.
   benchmark targets met.
 - From (b), the sheets: spring's fresh green (it is summer's), the scale-leaved sprays
   (tamarisk, saxaul) finer, the crowns self-shadowed.
+- From (c) (D300): the look and collision against the tree's own shape (its mesh, its
+  skeleton's capsules) rather than its blocks; the falling crown breaking its twigs and the
+  fallen trunk a log's mesh ((e)); the rainforest walk at High on the PC (§7.4).
 
 ## P7 — Natural generation without the grid (with S5)
 - Shrubs and bushes grown as individuals of their species' forms, berries, flowers and thorns on

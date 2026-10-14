@@ -15,6 +15,7 @@ use hearth_physics::{Ability, BlockWorld, Gait, Intent, Motion, Mover, Stance};
 use hearth_protocol::{AimAt, BodyView, Moved, ToClient, ToServer};
 use hearth_render::atlas::TextureArray;
 use hearth_render::camera::Camera;
+use hearth_render::camera::Frustum;
 use hearth_render::scene::SceneRenderer;
 use hearth_render::{FrameTargets, GpuContext};
 use hearth_ui::{Lang, Rgba, Ui};
@@ -221,6 +222,8 @@ pub struct Client {
     falling: Vec<Falling>,
     /// Built pieces fallen: tumbling down to the ground in a cloud of dust (V2-8).
     tumbling: Vec<Tumble>,
+    /// The natural trees about the player, drawn as their meshes (S5).
+    trees: Option<crate::tree_view::TreeView>,
     /// The animals near the player as the server last told of them, and as drawn (eased
     /// toward that between the server's word); the species they are of.
     animals: rustc_hash::FxHashMap<u64, ShownAnimal>,
@@ -497,6 +500,7 @@ impl Client {
             person: crate::people::Person::new(7),
             falling: Vec::new(),
             tumbling: Vec::new(),
+            trees: None,
             animals: rustc_hash::FxHashMap::default(),
             flocks: Vec::new(),
             flock_birds: rustc_hash::FxHashMap::default(),
@@ -3417,6 +3421,10 @@ impl Client {
                 ToClient::Ready(r) => {
                     let r = *r;
                     let planet = r.planet;
+                    self.trees = Some(crate::tree_view::TreeView::new(
+                        r.generator.clone(),
+                        r.lod.colors(),
+                    ));
                     let mut lod = LodStream::new(
                         r.generator.clone(),
                         r.lod,
@@ -3501,6 +3509,9 @@ impl Client {
                     }
                 }
                 ToClient::Mesh(m) => {
+                    if let Some(t) = &mut self.trees {
+                        t.cubes_changed(m.pos.column());
+                    }
                     if let Some(s) = &mut self.scene {
                         s.terrain.upload(ctx, &m);
                     }
@@ -3526,6 +3537,9 @@ impl Client {
                     }
                 }
                 ToClient::Vegetation(v) => {
+                    if let Some(t) = &mut self.trees {
+                        t.set_vegetation(v.clone());
+                    }
                     if let (Some(lod), Some(s)) = (&mut self.lod, &self.scene) {
                         lod.set_vegetation(v, &s.lod);
                     }
@@ -3649,8 +3663,15 @@ impl Client {
                     pivot,
                     toward,
                     seconds,
+                    foot,
                 } => {
-                    if let Some(w) = &self.world {
+                    // A tree drawn as its mesh falls as its mesh (S5); one drawn as its blocks
+                    // (cut into before), as its blocks.
+                    let as_mesh = self
+                        .trees
+                        .as_mut()
+                        .is_some_and(|t| t.fell(foot, toward.normal_f64(), seconds));
+                    if !as_mesh && let Some(w) = &self.world {
                         let reg = &w.reg;
                         // The tree as the player sees it (across the seam).
                         let shift = near(pivot) - pivot;
@@ -3993,6 +4014,30 @@ impl Client {
         scene.highlight = highlight;
         scene.senses = clear.senses(senses);
         scene.set_taa(ctx, self.taa);
+        // The natural trees within the render distance, as their meshes (S5).
+        if let (Some(trees), Some(w)) = (&mut self.trees, &self.world) {
+            let (rw, rh) = scene.render_size(targets.size);
+            let frustum = Frustum::from_view_proj(view.view_proj(rw as f32 / rh.max(1) as f32));
+            let terrain = &scene.terrain;
+            trees.frame(
+                ctx,
+                &mut scene.trees,
+                &w.mirror,
+                view.pos,
+                &frustum,
+                self.radius as f64 * 16.0,
+                moment.year_frac,
+                glam::Vec3::new(self.weather.0, 0.0, 0.0),
+                |p| terrain.contains(p.cube()),
+            );
+            // A block of a tree drawn as its mesh is highlighted as the tree is drawn.
+            if let Some(hearth_render::outline::Highlight::Block { .. }) = &scene.highlight
+                && let Some(Aim::Block { pos, .. }) = self.aim
+                && let Some(h) = trees.highlight(&w.mirror, pos)
+            {
+                scene.highlight = Some(h);
+            }
+        }
         scene.prepare(ctx, &view, targets.size, &e, dt);
         scene.render(ctx, enc, targets.color, targets.depth, targets.size);
     }

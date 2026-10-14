@@ -19,12 +19,12 @@ use crate::models::ModelQuad;
 use crate::terrain::DEPTH_FORMAT;
 
 /// The mask: red where the thing is seen, green over the patch of ground or water.
-const MASK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg8Unorm;
+pub(crate) const MASK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg8Unorm;
 
 /// How far toward the eye the thing is drawn for its mask (a scale on its distance, its pixels
 /// unchanged): enough that its own surface (drawn with the jitter) does not hide it, too little
 /// to show it through anything more than a centimetre or so before it.
-const PULL: f32 = 0.994;
+pub(crate) const PULL: f32 = 0.994;
 
 /// The glow's colour (linear, a warm white) and strength.
 const GLOW: [f32; 4] = [1.0, 0.86, 0.62, 1.0];
@@ -47,6 +47,15 @@ pub enum Highlight {
     Ground { centre: Vec3, radius: f32 },
     /// Water about a point of its surface.
     Water { at: Vec3, radius: f32 },
+    /// A tree drawn as its mesh (S5): the mesh it is drawn with and its instance, as the tree
+    /// pass draws it (`trees::TreeRenderer::prepare_mask`); its leaves (cut to their shapes)
+    /// when they are what is looked at, else its wood; a box about it (camera-relative).
+    Tree {
+        key: u64,
+        instance: crate::trees::TreeInstance,
+        leaves: bool,
+        bounds: (Vec3, Vec3),
+    },
 }
 
 impl Highlight {
@@ -77,6 +86,7 @@ impl Highlight {
                 *at - Vec3::new(*radius, 0.1, *radius),
                 *at + Vec3::new(*radius, 0.1, *radius),
             )),
+            Highlight::Tree { bounds, .. } => Some(*bounds),
         }
     }
 }
@@ -191,6 +201,8 @@ enum Draw {
     Boxes(u32),
     Quads(u32),
     Disc,
+    /// The tree pass's tree looked at.
+    Tree,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -519,6 +531,7 @@ impl OutlineRenderer {
                 u.params[0] = 1.0;
                 Draw::Disc
             }
+            Highlight::Tree { .. } => Draw::Tree,
         };
         if grown {
             self.mask_bind = Self::mask_bind(
@@ -552,8 +565,10 @@ impl OutlineRenderer {
         });
     }
 
-    /// Draws the mask (against the scene's `depth`, with the terrain's `globals`) and lays the
-    /// glow over `output`; nothing when nothing is highlighted.
+    /// Draws the mask (against the scene's `depth`, with the terrain's `globals`; a tree by the
+    /// tree pass, `trees`) and lays the glow over `output`; nothing when nothing is
+    /// highlighted.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         ctx: &GpuContext,
@@ -562,6 +577,7 @@ impl OutlineRenderer {
         depth: &wgpu::TextureView,
         output: &wgpu::TextureView,
         render: (u32, u32),
+        trees: &crate::trees::TreeRenderer,
     ) {
         let Some(frame) = self.frame else {
             return;
@@ -627,6 +643,9 @@ impl OutlineRenderer {
                     pass.set_pipeline(&self.disc_pipe);
                     pass.set_bind_group(2, &self.disc_bind.as_ref().expect("made above").1, &[]);
                     pass.draw(0..3, 0..1);
+                }
+                Draw::Tree => {
+                    trees.draw_mask(&mut pass, globals);
                 }
             }
         }
