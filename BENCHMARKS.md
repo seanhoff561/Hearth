@@ -939,3 +939,33 @@ four had a 6.7 s submit, under the scene's compiling and the world's making on f
 The refinement tiles (`bench relief --timing`, six in a row, cold, each): level 3 86 / 83 ms,
 level 2 54 / 68 ms, level 1 17 / 64 ms (the highest land / a plain); 3–18 % above R1a's, the
 height above base level read for each lattice point and the courses' beds followed downstream.
+
+## S5 (c) — the trees as their meshes (`hearth bench --scenes lowland_forest,rainforest_walk --size 960x540 --software`, and `--trees blocks`), 4 cores, software adapter (llvmpipe)
+
+One build (commit 19d0b70) drawing the natural trees as their blocks (`--trees blocks`, before
+S5) and as their meshes (the default); 150 frames after 40. `rainforest_walk` is new: 60 m at
+head height through tropical rainforest (Amendment S §7.4). On this device a frame is the GPU's
+(the submit), so its frame times say nothing of the PC's. The draws, triangles and video memory
+hold anywhere. The frame thread's times are this machine's CPU, which shares its four cores with
+the software device's drawing.
+
+| | Forest flight: blocks | meshes | Rainforest walk: blocks | meshes |
+|---|---:|---:|---:|---:|
+| Draws (the shadow cascades' with them) | 5,316 | 2,461 | 6,634 | 3,194 |
+| Triangles | 1.54 M | 0.88 M | 2.55 M | 1.53 M |
+| Video memory | 360 MiB | 289 MiB | 418 MiB | 352 MiB |
+| GPU (ms): all · the shadow passes | 1,249 · 267 | 1,117 · 188 | 1,500 · 458 | 1,417 · 411 |
+| Frame p50 · p99 (ms) | 1,171 · 1,930 | 1,087 · 1,511 | 1,414 · 2,306 | 1,399 · 1,926 |
+| Frame thread (ms): prepare: terrain · trees · encode | 1.59 · – · 0.15 | 1.66 · 0.79 · 0.33 | 1.91 · – · 0.16 | 2.62 · 0.73 · 0.62 |
+| Allocations a frame (of them, the trees') | 601 | 669 (67) | 628 | 657 (29) |
+
+The trees' frame-thread work is their view's (`hearth::tree_view`) and their shadow lists. The
+columns in reach are found and the meshes made on worker threads. Each frame, the columns are
+culled against the view as boxes before their trees are, and the new meshes are uploaded. The
+forest flight moves at 80 m/s, so most of its 0.79 ms is new columns and meshes arriving: in
+its frames the trees in view took 0.20 ms, the columns looked over 0.15–0.22 ms and the uploads
+0.27–0.31 ms. The rainforest walk's "prepare: terrain" varies with the software device's drawing,
+which shares the cores. Each near shadow cascade draws only the trees that may cast into it.
+
+At head height in a temperate rainforest (the screenshot tool, `docs/review/s5/world/`), the
+near terrain's quads fall from 246k to 15k, the trees' own drawn as 185 instances.

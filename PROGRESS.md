@@ -227,8 +227,10 @@ Where it stands (`PLAN.md` S5, P7; tasks (a)–(f)):
 - **Pictures** (`docs/review/s5/world/`): before and after at head height in four biomes and
   from 40 m in two, a winter wood from above, a tree's fall, the outline of a trunk and of leaves.
 - **Fast?** (`BENCHMARKS.md`, the same build with `--trees blocks`) the forest flight's draws
-  5,316 → 2,294, triangles 1.54 → 0.84 M, video memory 360 → 289 MiB; the rainforest walk's 6,634 → 2,865, 2.55 → 1.32 M, 418 → 352 MiB. The frame
-  times need the PC (owner check).
+  5,316 → 2,461, triangles 1.54 → 0.88 M, video memory 360 → 289 MiB; the rainforest walk's
+  6,634 → 3,194, 2.55 → 1.53 M, 418 → 352 MiB (the shadow cascades' draws counted, each cascade
+  drawing only the trees that may cast into it). The trees' frame-thread work 0.73–0.79 ms here
+  with the camera at 80 m/s (budget 1 ms). The frame times need the PC (owner check).
 - **Open:** the look still meets a tree by its blocks (close to its drawn shape), and so does
   collision (the skeleton's capsules, S §7.1); the fallen trunk lies as blocks (logs, (e)); the
   trees past the render distance stay boxes (L1).

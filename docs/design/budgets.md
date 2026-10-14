@@ -19,6 +19,7 @@ only on a software device, so frame and GPU numbers come from the PC.
 | Distant-tile selection on the frame thread | ≤ 1 ms | 5–9 ms after a 16 m move (known) | perf audit |
 | What is looked at, picked (a look's every frame) | < 0.2 ms | 0.010–0.012 ms (`tests/picking.rs`, T1.3) | P §5.1 |
 | Its highlight (mask and glow) | small: its own geometry, scissored; none when nothing is looked at | — (the PC; software device not timed) | T §2.3 |
+| The natural trees as their meshes (S5, D300) | no more draws or triangles than the trees as blocks; their view on the frame thread ≤ 1 ms; a dense rainforest at High within the frame targets (S §7.4) | draws −52 to −54 %, triangles −40 to −43 %, video memory −16 to −20 % against the blocks (the forest flight, the rainforest walk); the frame thread 0.73–0.79 ms with the camera at 80 m/s, the trees in view 0.20 ms of it; frame times on the PC (`hearth bench --trees blocks` against the default) | S §7.4, D300 |
 | The sun's shadows (R1a): the cascades drawn, the lookups | ≤ 1.5 ms GPU at 1080p, Medium (RTX 4060); the caster lists on the frame thread ≤ 1 ms | GPU on the PC; on the software device the shadow passes half the main terrain pass's time (1.61 M triangles a frame against 0.82 M without), the caster lists 0.3 ms on frames with the near two alone (`hearth bench --shadows`) | RGA-1, D298 |
 
 ## Tick (server, 20 ticks a second, 50 ms)
