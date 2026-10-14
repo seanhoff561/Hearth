@@ -17,6 +17,7 @@ pub mod realms;
 pub mod region;
 pub mod relief;
 pub mod relief_store;
+pub mod scatter;
 pub mod settings;
 pub mod soil;
 pub mod trees;
