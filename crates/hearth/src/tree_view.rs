@@ -92,6 +92,9 @@ struct Column {
     cover: SeasonalCover,
     /// The vegetation it was found with ([`TreeView::generation`]).
     generation: u64,
+    /// A box about all its trees: its middle and half its size (m), for culling them together.
+    middle: DVec3,
+    half: Vec3,
 }
 
 /// A column found off the main thread.
@@ -133,6 +136,10 @@ pub struct TreeView {
     spare: Vec<Vec<TreeInstance>>,
     /// The time of year last drawn at.
     year_frac: f64,
+    /// The columns last looked over for those to find: from the eye's column, with the
+    /// vegetation's generation and the reach then, and how many were not found yet. Looked over
+    /// again when one of those changes or a column found leaves room for more.
+    scanned: Option<((i32, i32, u64, i64), usize)>,
     /// This frame's trees near the eye, by foot (x wrapped): the mesh each is drawn with and its
     /// instance.
     near: FxHashMap<(i32, i32), (u64, TreeInstance)>,
@@ -163,6 +170,7 @@ impl TreeView {
             slot: FxHashMap::default(),
             spare: Vec::new(),
             year_frac: 0.0,
+            scanned: None,
             near: FxHashMap::default(),
             fall_clock: None,
             drawn: 0,
@@ -329,6 +337,19 @@ impl TreeView {
         let mut wanted: Vec<(u64, MeshSpec)> = Vec::new();
         let mut drawn = 0;
         for col in self.columns.values() {
+            if col.trees.is_empty() {
+                continue;
+            }
+            // The column's trees together: none of them within reach or in view, none drawn.
+            let rel = planet.delta(eye, col.middle);
+            let across = col.half.x as f64 * std::f64::consts::SQRT_2;
+            if (rel.x * rel.x + rel.z * rel.z).sqrt() - across > radius {
+                continue;
+            }
+            let rel = rel.as_vec3();
+            if !frustum.intersects_aabb(rel - col.half, rel + col.half) {
+                continue;
+            }
             let snow = snow_on(&col.cover, year_frac);
             for (t, light) in col.trees.iter().zip(&col.light) {
                 let rel = planet.delta(eye, t.origin);
@@ -540,6 +561,8 @@ impl TreeView {
     fn take_found(&mut self, planet: Planet, eye: DVec3, radius: f64) {
         for f in self.found.1.try_iter() {
             self.asked.remove(&f.col);
+            // Room for more to be found.
+            self.scanned = None;
             if f.generation != self.generation {
                 continue;
             }
@@ -551,6 +574,18 @@ impl TreeView {
                     .retain(|&(x, z)| ColumnPos::new(planet.wrap_x(x) >> 4, z >> 4) != f.col);
             }
             let n = f.trees.len();
+            let (lo, hi, reach) = f.trees.iter().fold(
+                (f64::INFINITY, f64::NEG_INFINITY, 0.0f32),
+                |(lo, hi, r), t| {
+                    (
+                        lo.min(t.origin.y),
+                        hi.max(t.origin.y + t.height as f64),
+                        r.max(t.reach),
+                    )
+                },
+            );
+            let (x0, z0) = f.col.min_block_xz();
+            let (lo, hi) = if n == 0 { (0.0, 0.0) } else { (lo, hi) };
             self.columns.insert(
                 f.col,
                 Column {
@@ -559,6 +594,8 @@ impl TreeView {
                     stale_light: true,
                     cover: f.cover,
                     generation: f.generation,
+                    middle: DVec3::new(x0 as f64 + 8.0, (lo + hi) * 0.5, z0 as f64 + 8.0),
+                    half: Vec3::new(8.0 + reach, ((hi - lo) * 0.5) as f32 + 1.0, 8.0 + reach),
                 },
             );
         }
@@ -570,11 +607,19 @@ impl TreeView {
     /// Asks for the columns within reach not found (or found with an older vegetation), the
     /// nearest first.
     fn ask_columns(&mut self, planet: Planet, eye: DVec3, radius: f64) -> usize {
-        let Some(vegetation) = self.vegetation.clone() else {
+        let Some(vegetation) = self.vegetation.as_ref() else {
             return 1;
         };
         let r = (radius / 16.0).ceil() as i32 + 1;
         let (cx, cz) = ((eye.x / 16.0).floor() as i32, (eye.z / 16.0).floor() as i32);
+        // Nothing changed since the columns were last looked over: as many still unfound.
+        let key = (cx, cz, self.generation, radius as i64);
+        if let Some((k, unfound)) = self.scanned
+            && k == key
+        {
+            return unfound;
+        }
+        let vegetation = vegetation.clone();
         let mut want: Vec<(f64, ColumnPos)> = Vec::new();
         for dz in -r..=r {
             for dx in -r..=r {
@@ -594,6 +639,7 @@ impl TreeView {
             }
         }
         let unfound = want.len();
+        self.scanned = Some((key, unfound));
         want.retain(|w| !self.asked.contains(&w.1));
         want.sort_by(|a, b| a.0.total_cmp(&b.0));
         let room = FINDING.saturating_sub(self.asked.len());
