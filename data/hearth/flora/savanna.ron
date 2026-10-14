@@ -146,6 +146,7 @@
                 (part: Wood, material: "acacia_wood", edibility: Inedible, yield_kg: (2, 10), uses: ["firewood"]),
             ],
             understory: (block: "sickle_bush", abundance: 0.3, light: (0.4, 1.0), ground: [Disturbed], patch_m: 15),
+            shrub: (crown: Spreading, crown_width: 1.1, stems: 4, branch_angle_deg: 45, droop: 0.1, foliage_density: 0.5),
             flammability: 0.4, appearance: (foliage: "#5a7a3a", flower: "#d8a0c0", sprite: Bush),
             realms: ["Afrotropical", "Indomalayan"],
             notes: "A thorny thicket-maker whose pink and yellow flowers hang like little lanterns; where fires are few it spreads over the grassland.",

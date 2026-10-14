@@ -212,10 +212,16 @@ Where it stands (`PLAN.md` S5, P7; tasks (a)–(f)):
 - **Open:** the look still meets a tree by its blocks (close to its drawn shape), and so does
   collision (the skeleton's capsules, S §7.1); the fallen trunk lies as blocks (logs, (e)); the
   trees past the render distance stay boxes (L1).
-- **Next, with G1b:** (d) woody shrubs as individuals, Poisson-like spacing, clustering, clonal
-  patches, herbs off the grid, P §11.4's statistics; (e) boulders and fallen logs as smooth
-  shapes, dipping strata and veins, the §11.3 evaluation, the screenshot set (with G1's clasts and
-  landforms); (f) docs.
+- **(d) in progress** (shrubs as individuals, P §11.1): done, `hearth_worldgen::scatter` (sites
+  off the grid, spaced by competition, clustered by dispersal, in clonal patches; its statistics
+  tested) and the `shrub:` growth form (`ShrubForm`: the 38 understory shrubs grow from
+  skeletons, their block their understory's; raspberry, bilberry, blueberry, dog rose and green
+  alder deciduous). Next: the shrub layer in `cubegen` (a lattice per species of about its
+  crown's width, sites taken by the old column odds scaled from cover to individuals, clonal
+  patches and dispersal clusters, thinned by crown; each shrub's footprint of blocks; the column
+  pick for herbs and grasses only), then shrubs drawn as meshes (`tree_view`), herbs' sprites
+  turned and offset, P §11.4's tests, the screenshots; then (e) boulders and fallen logs as
+  smooth shapes, dipping strata and veins, the §11.3 evaluation; (f) docs.
 
 ## Content
 `hearth content status` (implemented = used by a system; planned = data only):

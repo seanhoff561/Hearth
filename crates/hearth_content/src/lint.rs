@@ -1273,6 +1273,14 @@ fn tree_blocks(c: &Content, blocks: &[(String, Option<String>)], report: &mut Re
                 ),
             );
         }
+        if p.shrub.is_some() && p.understory.is_none() {
+            report.error(
+                "shrub-block",
+                Some(o.file.clone()),
+                o.line,
+                format!("`{}` grows as a shrub but has no understory block", p.id()),
+            );
+        }
         let Some(t) = &p.tree else {
             continue;
         };

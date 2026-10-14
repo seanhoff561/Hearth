@@ -115,6 +115,7 @@
                 (part: Fruit, material: "cranberry", seasons: [Autumn, Winter], edibility: Edible, yield_kg: (0.005, 0.03), uses: ["food", "dye"]),
             ],
             understory: (block: "bog_cranberry", abundance: 0.5, light: (0.6, 1.0), ground: [Wet, Acid], patch_m: 12),
+            shrub: (crown: Spreading, crown_width: 8, stems: 6, branch_angle_deg: 85, droop: 0.1, foliage_density: 0.7),
             flammability: 0.3, appearance: (foliage: "#4a5a3a", fruit: "#b81a2a", sprite: Creeper),
             realms: ["Palearctic", "Nearctic"],
             notes: "Threads of a shrub creeping over the sphagnum of the bogs, hung in autumn with red berries that keep through the winter under the snow.",

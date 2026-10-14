@@ -350,6 +350,54 @@ fn one_stem() -> u8 {
     1
 }
 
+/// How a woody shrub of the understory grows (v2 §6.2, Amendment P §11.1): its stems and crown,
+/// for the growth model that grows trees. Each one stands where it grew, at its own place and
+/// turn; its block is its understory's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShrubForm {
+    pub crown: Crown,
+    /// Crown width ÷ height, mature (a mat's many times its height).
+    pub crown_width: f32,
+    /// Stems from the ground.
+    #[serde(default = "one_stem")]
+    pub stems: u8,
+    /// Branch angle from the stem, degrees.
+    pub branch_angle_deg: f32,
+    /// 0–1 how much its stems arch over and hang (a bramble's canes).
+    #[serde(default)]
+    pub droop: f32,
+    #[serde(default)]
+    pub leaf: LeafKind,
+    /// 0–1 how thickly foliage fills its clusters.
+    pub foliage_density: f32,
+}
+
+impl ShrubForm {
+    /// The growth model's parameters for it, `block` its every part: leafy to the ground, its
+    /// stems from its foot.
+    pub fn as_tree(&self, block: &IdRef) -> TreeForm {
+        TreeForm {
+            crown: self.crown,
+            crown_ratio: 0.9,
+            crown_width: self.crown_width,
+            apical_dominance: 0.15,
+            branch_angle_deg: self.branch_angle_deg,
+            droop: self.droop,
+            whorled: false,
+            stems: self.stems,
+            root_flare: 0.0,
+            prop_roots: 0.0,
+            leaf: self.leaf,
+            foliage_density: self.foliage_density,
+            autumn: AutumnColor::default(),
+            bark: BarkPattern::Smooth,
+            log: block.clone(),
+            branch: block.clone(),
+            leaves: block.clone(),
+        }
+    }
+}
+
 entry! {
     /// A plant species.
     pub struct Plant in "flora", schema 1, name name {
@@ -385,6 +433,10 @@ entry! {
         /// How a tree or woody shrub grows (the growth model).
         #[serde(default)]
         pub tree: Option<TreeForm>,
+        /// How a woody shrub of the understory grows, where it stands as an individual (its
+        /// block its understory's).
+        #[serde(default)]
+        pub shrub: Option<ShrubForm>,
         /// How a plant of the understory is drawn and where it grows.
         #[serde(default)]
         pub understory: Option<Understory>,

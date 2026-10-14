@@ -18,9 +18,13 @@ pub struct Species {
 }
 
 impl Species {
-    /// The species of a plant with a growth form.
+    /// The species of a plant with a growth form: a tree's, or a shrub's of the understory.
     pub fn from_plant(p: &Plant) -> Option<Self> {
-        let form = p.tree.clone()?;
+        let form = match (&p.tree, &p.shrub, &p.understory) {
+            (Some(t), _, _) => t.clone(),
+            (None, Some(s), Some(u)) => s.as_tree(&u.block),
+            _ => return None,
+        };
         Some(Self {
             id: p.id.clone(),
             max_height_m: p.max_height_m.max(0.5),

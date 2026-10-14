@@ -69,6 +69,7 @@
                 (part: Leaf, material: "sage_leaves", seasons: [Spring, Summer, Autumn], edibility: Inedible, uses: ["medicine", "smudge"]),
             ],
             understory: (block: "fringed_sage", abundance: 0.6, light: (0.7, 1.0), ground: [Disturbed], patch_m: 12),
+            shrub: (crown: Rounded, crown_width: 1.5, stems: 10, branch_angle_deg: 40, droop: 0.1, foliage_density: 0.85),
             flammability: 0.6, appearance: (foliage: "#a8b0a0", flower: "#d8c860", sprite: Heath),
             realms: ["Palearctic", "Nearctic"],
             notes: "A silver, sharp-scented cushion of the dry steppe from the Volga to the Rockies; grazed hard where the grass is gone.",
