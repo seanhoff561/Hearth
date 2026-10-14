@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "tools/bench"]
+# A bare `cargo run` / `cargo build` at the root is the game's (the tools: `-p bench`; every
+# script names its crates or `--workspace`).
+default-members = ["crates/hearth"]
 
 [workspace.package]
 version = "0.1.0"

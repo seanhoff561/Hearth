@@ -22,7 +22,8 @@ at every scale, judged by evidence; T0 → T1 → T2, then the plan T2 revises.
    Check the realism scorecard's open gaps (`docs/review/realism/scorecard.md`, once T2 has made
    it) before choosing the next task (T §9).
 4. Builds: `cargo test --profile dev-opt` (no LTO, D233); `--release` is fat LTO, for the game
-   and the perf gate. The cloud machine renders only on a software device: frame rates, the
+   and the perf gate. A bare `cargo run` is the game's (the workspace's default member); the
+   tools are `-p bench`. The cloud machine renders only on a software device: frame rates, the
    perf gate and how screenshots look need the owner's PC.
 
 ## Milestones
