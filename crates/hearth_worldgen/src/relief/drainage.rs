@@ -11,8 +11,8 @@ use super::{D8, MARGIN, OUTLET};
 /// to a parent's lake is that lake's; one of this level's own is a lake if it fits in a tile's
 /// margin, so every tile that sees it sees it whole and agrees on it, and somewhere it is deeper
 /// than `deep` or its bed lies below the sea's level (the water table standing at it). A larger
-/// one of its own (the parent saw no lake there) is filled to its brim with what washed into
-/// it, a basin's flat floor.
+/// one of its own (the parent saw no lake there), or one too shallow to hold a pond, is filled
+/// to its brim with what washed into it, a basin's flat floor.
 pub(super) fn lakes(
     wet: &[f32],
     z: &mut [f32],
@@ -64,7 +64,9 @@ pub(super) fn lakes(
             for &k in &hollow {
                 lake[k] = if held[k].is_finite() { held[k] } else { wet[k] };
             }
-        } else if !small {
+        } else {
+            // A large hollow of its own, or one too shallow to hold a pond: filled to its brim
+            // with what washes into it.
             basins.extend_from_slice(&hollow);
         }
     }
@@ -347,7 +349,7 @@ pub(super) fn accumulate(
 }
 
 /// Slopes steeper than `max_drop` per cell slump half their excess onto the lower neighbour.
-pub(super) fn slump(h: &mut [f32], base: &[bool], n: usize, max_drop: f32) {
+pub(super) fn slump(h: &mut [f32], base: &[bool], n: usize, max_drop: f32, rock: &[f32]) {
     let src = h.to_vec();
     for k in 0..h.len() {
         if base[k] {
@@ -362,7 +364,7 @@ pub(super) fn slump(h: &mut [f32], base: &[bool], n: usize, max_drop: f32) {
             }
             let nb = (nw * n as i64 + nu) as usize;
             let d = if du != 0 && dw != 0 { 1.414 } else { 1.0 };
-            let excess = src[k] - src[nb] - max_drop * d;
+            let excess = src[k] - src[nb] - max_drop * (1.0 + 2.3 * rock[k]) * d;
             if excess > best.map_or(0.0, |b| b.1) {
                 best = Some((nb, excess));
             }

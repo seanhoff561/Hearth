@@ -128,8 +128,11 @@ struct DetailNoise {
     soil: BlockFbm,
     patch: BlockFbm,
     cliff: BlockFbm,
-    /// Relief below a refinement level's cells (wavelengths of 96 blocks and less).
-    detail: BlockFbm,
+    /// The ground's own roughness below the finest level's cells: soil's both ways, stone's
+    /// standing out (`Terrain::micro_relief`), and where outcrops stand.
+    micro: BlockFbm,
+    knobs: BlockFbm,
+    outcrops: BlockFbm,
 }
 
 impl DetailNoise {
@@ -146,7 +149,9 @@ impl DetailNoise {
             soil: BlockFbm::new(d("soil"), c, 48.0, 2, 0.5),
             patch: BlockFbm::new(d("patch"), c, 40.0, 2, 0.5),
             cliff: BlockFbm::new(d("cliff"), c, 300.0, 2, 0.5),
-            detail: BlockFbm::new(d("detail"), c, DETAIL_M, 4, 0.5),
+            micro: BlockFbm::new(d("micro"), c, MICRO_M, 4, 0.5),
+            knobs: BlockFbm::new(d("knobs"), c, MICRO_M, 4, 0.5),
+            outcrops: BlockFbm::new(d("outcrops"), c, 60.0, 2, 0.5),
         }
     }
 }
@@ -185,9 +190,12 @@ const COARSE_STEP: f64 = 150.0;
 /// How far short of the coast found at that level (blocks) the search goes on block by block.
 const SHORE_FINE: f64 = 1000.0;
 /// Within this distance of the grid's coast (blocks: about a grid cell on Earth, as far as
-/// the refined coast strays from the grid's), the spot itself is read at the blocks' own detail
-/// to tell land from water.
+/// the refined coast strays from the grid's), the spot itself is read closely to tell land from
+/// water.
 const COAST_CHECK: f64 = 20_000.0;
+/// The ground a close read in a start-place search stands for (blocks): the ~40 m level's, with
+/// the walking level stood in for (its tiles are made for the blocks about the players).
+const CLOSE_FOOTPRINT: f64 = 32.0;
 
 /// Neighbourhoods kept for single samples.
 struct NearCache(crate::cubegen::cache::Cache<(i32, i32), Nearby>);
@@ -220,6 +228,8 @@ impl std::fmt::Debug for NearCache {
 pub struct Nearby {
     pub segments: SmallVec<[Segment; 16]>,
     patch: Option<Patch>,
+    /// Blocks between the columns read (a far tile's are some apart).
+    scale: f64,
 }
 
 /// The climate at a column (`Terrain::local_climate`).
@@ -266,8 +276,17 @@ struct Shape {
     river: Option<RiverHit>,
 }
 
-/// The longest wavelength (m) of the relief the blocks add below a refinement level's cells.
-const DETAIL_M: f64 = 96.0;
+/// The longest wavelength (m) of the roughness the blocks add below the finest refinement level's
+/// cells (twice the ~5 m level's).
+const MICRO_M: f64 = 9.6;
+/// The ground's own roughness (m, the amplitude of its noise; `Terrain::micro_relief`): soil's,
+/// dry land's stone at its most (on slopes, in outcrops) and bare rock's. Calibrated to the
+/// lidar's curvature at 4 m and its roughness at 1–4 m by kind of land (G1b, D301).
+const SOIL_M: f32 = 0.65;
+const STONY_M: f32 = 4.0;
+const ROCK_M: f32 = 6.0;
+/// How much of stone's noise stands out of the ground (its knobs' share, `micro_relief`).
+const KNOB_LIFT: f32 = 0.06;
 
 /// Latitude where the flat polar ice plateau starts blending in.
 const POLAR_BLEND_START: f64 = 80.5;
@@ -343,24 +362,44 @@ impl Terrain {
         self.v
     }
 
-    /// What the sampler reads about a rectangle of block columns (for batch sampling).
+    /// What the sampler reads about a rectangle of block columns (for batch sampling): the
+    /// finest level's cells, the walking scale's where the planet has it.
     pub fn nearby(&self, x0: i32, z0: i32, x1: i32, z1: i32) -> Nearby {
-        self.nearby_scaled(x0, z0, x1, z1, 1.0)
+        self.nearby_with(x0, z0, x1, z1, 1.0, true)
     }
 
     /// As [`Self::nearby`], for columns `scale` blocks apart (a far tile's): the refinement
-    /// level whose cells suit them, and the rivers wide enough to show at that spacing.
+    /// level whose cells suit them (never the walking level, whose tiles are made for the
+    /// blocks alone: a far tile reads its stand-in), and the rivers wide enough to show at that
+    /// spacing.
     pub fn nearby_scaled(&self, x0: i32, z0: i32, x1: i32, z1: i32, scale: f64) -> Nearby {
+        self.nearby_with(x0, z0, x1, z1, scale, false)
+    }
+
+    fn nearby_with(
+        &self,
+        x0: i32,
+        z0: i32,
+        x1: i32,
+        z1: i32,
+        scale: f64,
+        blocks: bool,
+    ) -> Nearby {
         let Some(relief) = &self.relief else {
             return Nearby {
                 segments: self
                     .rivers
                     .segments_near(x0 as f64, z0 as f64, x1 as f64, z1 as f64, 90.0),
                 patch: None,
+                scale,
             };
         };
         let (lo, hi) = ((x0 as f64, z0 as f64), (x1 as f64 + 1.0, z1 as f64 + 1.0));
-        let finest = relief.level_for(scale);
+        let finest = if blocks {
+            relief.levels().len()
+        } else {
+            relief.level_for(scale)
+        };
         let patch = relief.patch(finest, lo, hi, RIVER_MARGIN);
         // The narrowest river that shows between columns this far apart (and no brook
         // narrower than a metre and a half).
@@ -394,6 +433,7 @@ impl Terrain {
         Nearby {
             segments,
             patch: Some(patch),
+            scale,
         }
     }
 
@@ -571,7 +611,7 @@ impl Terrain {
             "terrain tiles ~2.5 km",
             "terrain tiles ~300 m",
             "terrain tiles ~40 m",
-            "terrain tiles, finer",
+            "terrain tiles ~5 m",
         ];
         let mut out = vec![("planet grid", self.grid.bytes())];
         if let Some(r) = &self.relief {
@@ -603,6 +643,14 @@ impl Terrain {
         ));
         hearth_core::disk_cache::prune_others(root, &dir, cap);
         r.keep_on_disk(&dir, cap);
+    }
+
+    /// Makes the walking level's tiles about (x, z), `radius` blocks round, side by side, so a
+    /// world's first cubes find them made (none where the planet has no walking level).
+    pub fn prefetch_walking(&self, x: f64, z: f64, radius: f64) {
+        if let Some(r) = &self.relief {
+            r.prefetch_walking(self.planet.wrap_xf(x), z, radius);
+        }
     }
 
     /// The finest refinement level (0 where there are none: the grid's).
@@ -749,6 +797,7 @@ impl Terrain {
 
     /// The column's surface from a refinement level's cells: their surface with the blocks'
     /// own roughness on it, the level's sea and lakes, and its rivers carved at their width.
+    #[allow(clippy::too_many_arguments)]
     fn refined_shape(
         &self,
         xf: f64,
@@ -756,22 +805,28 @@ impl Terrain {
         gx: f64,
         gz: f64,
         patch: &Patch,
+        scale: f64,
         segs: &[Segment],
     ) -> Shape {
-        let g = &*self.grid;
-        // Below the level's cells, the blocks' own relief, as rough as the place is.
-        let amp = self.relief.as_deref().map_or(0.0, |r| {
-            (r.roughness_at(gx, gz).at(DETAIL_M) as f32) * self.v
-        });
-        let surface =
-            |x: f64, z: f64| patch.height(x, z) + self.noise.detail.sample2(x, z) as f32 * amp;
-        let mut h = surface(xf, zf);
+        let mut h = patch.height(xf, zf);
         let step = 4.0;
-        let hx = surface(xf + step, zf);
-        let hz = surface(xf, zf + step);
-        let slope = (((hx - h) / step as f32).powi(2) + ((hz - h) / step as f32).powi(2)).sqrt();
-        let mtn = smoothstep(150.0, 1400.0, g.uplift.bilinear(gx, gz).max(0.0));
-        h += self.noise.rough.sample2(xf, zf) as f32 * (0.35 + 1.2 * mtn);
+        let hx = patch.height(xf + step, zf);
+        let hz = patch.height(xf, zf + step);
+        let grad = ((hx - h) as f64 / step, (hz - h) as f64 / step);
+        let slope = grad.0.hypot(grad.1) as f32;
+        // A coarser level read for columns some blocks apart (a distant tile, the view from a
+        // hill): the walking level's relief that shows between them stood in for, without the
+        // drainage its tiles work on it.
+        if let Some(r) = self.relief.as_deref()
+            && patch.level() < r.levels().len()
+        {
+            h += r.walking_proxy(xf, zf, grad, scale.max(1.0)) as f32;
+        }
+        // Below the finest level's cells, the ground's own roughness, where columns are close
+        // enough to show it.
+        if scale < MICRO_M {
+            h += self.micro_relief(xf, zf, gx, gz, slope / self.v);
+        }
         let crater_lake = self.craters(xf, zf, &mut h);
 
         // The sea over low ground about the level's sea; a lake to its surface about its cells.
@@ -802,6 +857,27 @@ impl Terrain {
             ocean_near,
             river,
         }
+    }
+
+    /// The ground's own roughness (blocks) below the finest level's cells, by what lies at its
+    /// surface: soil's mounds and pits (roots, tree-throw, burrows), smooth on the flattest ground
+    /// where alluvium lies; and stone standing out of it, so that it rings no hollow: outcrops
+    /// and boulders on dry land's slopes (its flats gravel and fines), bare rock above the trees
+    /// and on cliffs. `tan` is the slope beneath (m per m).
+    fn micro_relief(&self, xf: f64, zf: f64, gx: f64, gz: f64, tan: f32) -> f32 {
+        let g = &*self.grid;
+        let p = g.precipitation.bilinear(gx, gz);
+        let t = g.temperature.bilinear(gx, gz);
+        let dry = 1.0 - smoothstep(150.0, 600.0, p);
+        let rock = smoothstep(0.84, 1.73, tan).max(smoothstep(0.0, -6.0, t));
+        let outcrop =
+            0.2 + 0.8 * smoothstep(-0.05, 0.25, self.noise.outcrops.sample2(xf, zf) as f32);
+        let bare_slope = 0.15 + 0.85 * smoothstep(0.02, 0.2, tan);
+        let soil = SOIL_M * smoothstep(0.0, 0.03, tan);
+        let stone = STONY_M * dry * outcrop * bare_slope + ROCK_M * rock;
+        let both = self.noise.micro.sample2(xf, zf) as f32;
+        let knobs = 2.0 * (self.noise.knobs.sample2(xf, zf) as f32 + KNOB_LIFT).max(0.0);
+        (both * soil + knobs * stone) * self.v
     }
 
     /// Volcano craters: a bowl carved into the summit about a point; the surface of the crater
@@ -1018,7 +1094,7 @@ impl Terrain {
             ocean_near,
             river: river_hit,
         } = match &near.patch {
-            Some(patch) => self.refined_shape(xf, zf, gx, gz, patch, &near.segments),
+            Some(patch) => self.refined_shape(xf, zf, gx, gz, patch, near.scale, &near.segments),
             None => self.grid_shape(xf, zf, gx, gz, &near.segments),
         };
 
@@ -1513,7 +1589,7 @@ impl Terrain {
         // Far from any coast the grid's own coast (positive on land) says which; a lake's
         // shores are looked at closely.
         let wet = if lake || (coast.abs() as f64 * blocks_per_radian) < COAST_CHECK {
-            self.sample(x, z).is_underwater()
+            self.sample_at(x, z, CLOSE_FOOTPRINT).is_underwater()
         } else {
             coast < 0.0
         };
@@ -1566,7 +1642,7 @@ impl Terrain {
         let mut shore = at(t0);
         for k in 1..=steps {
             let (px, pz) = at(t0 + (t1 - t0) * k as f64 / steps as f64);
-            if self.sample(px, pz).is_underwater() {
+            if self.sample_at(px, pz, CLOSE_FOOTPRINT).is_underwater() {
                 break;
             }
             shore = (px, pz);
@@ -1577,11 +1653,12 @@ impl Terrain {
     /// The nearest dry, gentle column to (x, z), searched on widening rings (up to 256
     /// blocks away; (x, z) itself if none is).
     fn settle(&self, x: i32, z: i32) -> (i32, i32) {
-        // On a refined planet the neighbourhood is read once for the whole search.
+        // On a refined planet the neighbourhood is read once for the whole search, as the
+        // closest distant tiles read it (the walking level's tiles are made for the blocks).
         let near = self
             .relief
             .is_some()
-            .then(|| self.nearby(x - 260, z - 260, x + 260, z + 260));
+            .then(|| self.nearby_scaled(x - 260, z - 260, x + 260, z + 260, 1.0));
         let good = |x: i32, z: i32| {
             let s = match &near {
                 Some(near) => self.sample_with(x, z, near),
@@ -1679,8 +1756,10 @@ pub(crate) mod tests {
         let t = earth_terrain();
         let relief = t.relief().expect("refined");
         let finest = relief.levels().len();
-        assert_eq!(relief.level_for(1.0), finest);
-        assert_eq!(relief.level_for(8.0), finest);
+        // The walking level for the blocks alone; the ~40 m level for the closest tiles.
+        assert_eq!(t.nearby(0, 0, 15, 15).patch.as_ref().map(Patch::level), Some(finest));
+        assert_eq!(relief.level_for(1.0), finest - 1);
+        assert_eq!(relief.level_for(8.0), finest - 1);
         assert!(relief.level_for(512.0) < finest);
         assert_eq!(relief.level_for(1.0e6), 0);
         let mut reaches = 0;
@@ -1737,8 +1816,10 @@ pub(crate) mod tests {
                 }
             }
         }
-        // A river's course turns a little at each joint, not by a chord's corner.
-        assert!(joints > 200, "joints: {joints}");
+        // A river's course turns a little at each joint, not by a chord's corner. (A square
+        // gathers the rivers whose banks the margin of the level giving them holds: a brook's
+        // from the walking level's few metres about it.)
+        assert!(joints > 150, "joints: {joints}");
         assert!(
             gentle as f64 > 0.97 * joints as f64,
             "{gentle} of {joints} joints turn under 40°"

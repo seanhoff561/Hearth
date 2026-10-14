@@ -453,8 +453,16 @@ pub fn first_spawn(lw: &LocalWorld, place: Option<&dyn Fn(DVec2) -> DVec2>) -> D
             .terrain()
             .spawn_near(at.x.floor() as i32, at.y.floor() as i32);
     }
+    // The walking level's tiles about it made side by side before its ground is read and its
+    // first cubes are made.
+    lw.terrain()
+        .prefetch_walking(sx as f64 + 0.5, sz as f64 + 0.5, WALKING_PREFETCH);
     ground_at(lw, sx, sz)
 }
+
+/// How far about the player (blocks) the walking level's tiles are made side by side when a
+/// world opens: the cubes about them and their neighbours' samples.
+const WALKING_PREFETCH: f64 = 160.0;
 
 /// Feet on the ground at a column: on the surface or the water (the smooth ground's surface is
 /// the terrain's height itself, S §2.2), a hair above.
@@ -827,6 +835,12 @@ fn run(
             Default::default(),
         ),
     };
+    // A saved player stands elsewhere than the world's first spawn: their ground's tiles too.
+    if player.mover.pos.distance(first_spawn) > WALKING_PREFETCH {
+        let _c = hearth_core::prof::caller("cubes");
+        lw.terrain()
+            .prefetch_walking(player.mover.pos.x, player.mover.pos.z, WALKING_PREFETCH);
+    }
     let items = Arc::new(hearth_items::Items::from_content(&content));
     // What a new person starts in: the loincloth (with a chest band for a female body, D70) of
     // their chosen material, as things they wear.

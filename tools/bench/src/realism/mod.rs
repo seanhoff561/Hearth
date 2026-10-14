@@ -29,12 +29,14 @@ use rayon::prelude::*;
 
 use crate::image::Image;
 
-/// A kind of land, the biome the generator makes it in and where real ground of the kind was
+/// A kind of land, the biomes the generator makes it in and where real ground of the kind was
 /// measured.
 struct Kind {
     key: &'static str,
     name: &'static str,
-    biome: Biome,
+    /// The generator's biomes for it, the likeliest first: a place is the first found of them
+    /// at the heights and rain below.
+    biomes: &'static [Biome],
     /// The generator's columns (at the grid's scale) that count: their height (m) and their
     /// rain (mm a year), the real place's within some hundreds of metres and millimetres.
     heights: (f32, f32),
@@ -50,7 +52,7 @@ const KINDS: &[Kind] = &[
     Kind {
         key: "hills",
         name: "forested hills (Oregon Coast Range)",
-        biome: Biome::TemperateRainforest,
+        biomes: &[Biome::TemperateRainforest],
         heights: (150.0, 900.0),
         rain: (1500.0, 3000.0),
         lidar: "USGS_1M_10_x41y481_OR_SouthCoast_2019_A19.tif",
@@ -60,7 +62,14 @@ const KINDS: &[Kind] = &[
     Kind {
         key: "plains",
         name: "rolling plains (south-central Iowa)",
-        biome: Biome::TemperatePlains,
+        // A tallgrass prairie's climate (Iowa's: some 850 mm, 10 °C) grows broadleaf or mixed
+        // forest in the generator, which keeps prairie for drier land: the plains are found by
+        // their height and rain among all three.
+        biomes: &[
+            Biome::TemperatePlains,
+            Biome::BroadleafForest,
+            Biome::MixedForest,
+        ],
         heights: (100.0, 450.0),
         rain: (700.0, 1000.0),
         lidar: "USGS_1M_15_x45y454_IA_SouthCentral_2020_D20.tif",
@@ -69,20 +78,23 @@ const KINDS: &[Kind] = &[
     },
     Kind {
         key: "mountains",
-        name: "glaciated mountains (Glacier National Park)",
+        name: "glaciated mountains (the Teton Range; Glacier National Park from a hill)",
         // Found by height and relief instead (`mountain_site`): the generator's alpine meadows
         // lie mostly on cold low ground.
-        biome: Biome::AlpineMeadow,
+        biomes: &[Biome::AlpineMeadow],
         heights: (1500.0, 3000.0),
         rain: (400.0, 2500.0),
-        lidar: "USGS_one_meter_x29y538_MT_GlacierNP_2016.tif",
+        // At walking scale the range's heart: the Grand Teton, its cirques and canyons (Glacier
+        // National Park's tile, measured until G1b, was mostly a valley floor and a lake). From
+        // a hill, Glacier National Park still (a Teton window is half Jackson Hole's floor).
+        lidar: "USGS_1M_12_x51y485_WY_GrandTetonNP_D22.tif",
         hgt: "N48W114.hgt",
         at: (48.6, -113.75),
     },
     Kind {
         key: "desert",
         name: "basin and range desert (Mojave, Nevada)",
-        biome: Biome::HotDesert,
+        biomes: &[Biome::HotDesert],
         heights: (300.0, 1500.0),
         rain: (50.0, 300.0),
         lidar: "USGS_1M_11_x74y407_NV_ClarkCounty_2018_C19.tif",
@@ -92,7 +104,7 @@ const KINDS: &[Kind] = &[
     Kind {
         key: "boreal",
         name: "boreal shield with lakes (north-east Minnesota)",
-        biome: Biome::BorealForest,
+        biomes: &[Biome::BorealForest],
         heights: (150.0, 700.0),
         rain: (550.0, 950.0),
         lidar: "USGS_1M_15_x61y530_MN_LakeCounty_2018_C20.tif",
@@ -117,6 +129,8 @@ struct Args {
     count: usize,
     /// Only the thirty-metre windows (the view from a hill), not the walking scale's.
     wide: bool,
+    /// How many windows apart the walking scale's candidates stand (`generated_windows`).
+    spread: i32,
 }
 
 fn parse(args: &[String]) -> anyhow::Result<Args> {
@@ -129,6 +143,7 @@ fn parse(args: &[String]) -> anyhow::Result<Args> {
         kinds: KINDS.iter().map(|k| k.key.to_owned()).collect(),
         count: 200,
         wide: false,
+        spread: 3,
     };
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -149,6 +164,7 @@ fn parse(args: &[String]) -> anyhow::Result<Args> {
             "--kinds" => a.kinds = val()?.split(',').map(str::to_owned).collect(),
             "--count" => a.count = val()?.parse()?,
             "--wide" => a.wide = true,
+            "--spread" => a.spread = val()?.parse()?,
             other => anyhow::bail!("unknown option {other}"),
         }
     }
@@ -209,7 +225,7 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
             "bench realism terrain|global|levels|rivers|weather|images DIR|sheet|photo-queries|photo-pick|\
              missing-tiles \
              [--seed N] [--planet earth|standard] [--kinds a,b] [--count N] [--wide] \
-             [--refs DIR] [--out DIR]"
+             [--spread N] [--refs DIR] [--out DIR]"
         ),
     }
 }
@@ -240,25 +256,41 @@ fn typical<T>(mut windows: Vec<(f32, T)>) -> Vec<T> {
     out
 }
 
-/// The generator's windows of walking scale about a place: of a five-by-five patch of them,
-/// the median and upper-quartile reliefs (read first at 16 m).
-fn generated_windows(t: &Terrain, x: i32, z: i32) -> Vec<(i32, i32)> {
+/// The generator's windows of walking scale in a kind's land: of a lattice of nine by nine of
+/// them `spread` windows apart about its place (`--spread`; 3, some 24 km across, as a lidar
+/// tile's windows stand for its 10 km of land rather than one spot), the median and
+/// upper-quartile reliefs (read first at 16 m). The reliefs found are printed.
+fn generated_windows(t: &Terrain, x: i32, z: i32, spread: i32, key: &str) -> Vec<(i32, i32)> {
     let mut cands = Vec::new();
-    for b in -2..=2 {
-        for a in -2..=2 {
-            let (cx, cz) = (x + a * N as i32, z + b * N as i32);
+    let side = if spread <= 1 { 2 } else { 4 };
+    for b in -side..=side {
+        for a in -side..=side {
+            let (cx, cz) = (x + a * spread * N as i32, z + b * spread * N as i32);
             let rough = generated(t, cx, cz, N / 16, 16);
             if rough.valid() > 0.99 {
                 cands.push((rough.relief(), (cx, cz)));
             }
         }
     }
+    let mut reliefs: Vec<f32> = cands.iter().map(|c| c.0).collect();
+    reliefs.sort_by(f32::total_cmp);
+    let q = |p: f64| reliefs.get(((reliefs.len() as f64 - 1.0) * p).round() as usize);
+    println!(
+        "{key}: {} windows of 1 km over {} km, relief at 16 m p10 · p50 · p75 · p90 {:.0?} · \
+         {:.0?} · {:.0?} · {:.0?} m",
+        reliefs.len(),
+        (2 * side + 1) * spread,
+        q(0.1),
+        q(0.5),
+        q(0.75),
+        q(0.9)
+    );
     typical(cands)
 }
 
 /// A lidar tile's windows: of those a kilometre apart and nearly all known, the median and
 /// upper-quartile reliefs.
-fn lidar_windows(l: &Lidar) -> Vec<(usize, usize)> {
+fn lidar_windows(l: &Lidar, key: &str) -> Vec<(usize, usize)> {
     let mut cands = Vec::new();
     for y in (0..l.h.saturating_sub(N)).step_by(N) {
         for x in (0..l.w.saturating_sub(N)).step_by(N) {
@@ -268,6 +300,18 @@ fn lidar_windows(l: &Lidar) -> Vec<(usize, usize)> {
             }
         }
     }
+    let mut reliefs: Vec<f32> = cands.iter().map(|c| c.0).collect();
+    reliefs.sort_by(f32::total_cmp);
+    let q = |p: f64| reliefs.get(((reliefs.len() as f64 - 1.0) * p).round() as usize);
+    println!(
+        "{key}: {} lidar windows of 1 km, relief at 16 m p10 · p50 · p75 · p90 {:.0?} · {:.0?} · \
+         {:.0?} · {:.0?} m",
+        reliefs.len(),
+        q(0.1),
+        q(0.5),
+        q(0.75),
+        q(0.9)
+    );
     typical(cands)
 }
 
@@ -315,12 +359,26 @@ fn mountain_site(t: &Terrain, lo: f32, hi: f32) -> Option<(i32, i32)> {
     })
 }
 
+/// A grid shaded, its closed depressions deeper than 0.25 m tinted red.
+fn shaded(d: &Dem) -> Image {
+    let mut img = hillshade(d);
+    if d.dx <= 1.0 {
+        for (k, depth) in crate::realism::metrics::hollow_depths(d).iter().enumerate() {
+            if *depth > 0.25 {
+                let [r, g, b] = img.px[k];
+                img.px[k] = [r.saturating_add(90), g / 2, b / 2];
+            }
+        }
+    }
+    img
+}
+
 fn save_pair(path: &Path, real: Option<&Dem>, generated: &Dem) -> anyhow::Result<()> {
-    let g = hillshade(generated);
+    let g = shaded(generated);
     let Some(real) = real else {
         return g.save(path);
     };
-    let r = hillshade(real);
+    let r = shaded(real);
     let gap = 8;
     let mut img = Image::new(r.w + gap + g.w, r.h.max(g.h));
     for y in 0..img.h {
@@ -359,7 +417,7 @@ fn terrain(a: &Args) -> anyhow::Result<()> {
         // The kinds' heights in blocks (a small planet's blocks stand for more than a metre).
         let found = site_of(&t, kind);
         let Some((x, z)) = found else {
-            println!("{}: no {:?}", kind.key, kind.biome);
+            println!("{}: no {:?}", kind.key, kind.biomes);
             continue;
         };
         let s = t.sample(x, z);
@@ -403,19 +461,20 @@ fn terrain(a: &Args) -> anyhow::Result<()> {
             .then(|| Lidar::load(&a.refs.join("lidar").join(kind.lidar)).ok())
             .flatten();
         let real: Vec<Dem> = lidar.as_ref().map_or(Vec::new(), |l| {
-            lidar_windows(l)
+            lidar_windows(l, kind.key)
                 .into_iter()
                 .map(|(x, y)| l.window(x, y, N))
                 .collect()
         });
-        let gens: Vec<Dem> = if a.wide {
+        let places = if a.wide {
             Vec::new()
         } else {
-            generated_windows(&t, x, z)
-                .into_iter()
-                .map(|(x, z)| generated(&t, x, z, N, 1))
-                .collect()
+            generated_windows(&t, x, z, a.spread, kind.key)
         };
+        let gens: Vec<Dem> = places
+            .iter()
+            .map(|&(x, z)| generated(&t, x, z, N, 1))
+            .collect();
         for (i, g) in gens.iter().enumerate() {
             let r = real.get(i);
             save_pair(
@@ -500,20 +559,25 @@ fn site_of(t: &Terrain, kind: &Kind) -> Option<(i32, i32)> {
     let matched = |s: &hearth_worldgen::ColumnSample| {
         (lo..hi).contains(&s.height) && rains.contains(&s.precipitation)
     };
-    t.find_biome(kind.biome, 20_000.0, matched)
+    let first = |also: &(dyn Fn(&hearth_worldgen::ColumnSample) -> bool + Sync)| {
+        kind.biomes
+            .iter()
+            .find_map(|&b| t.find_biome(b, 20_000.0, also))
+    };
+    first(&matched)
         .or_else(|| {
             println!(
                 "{}: no {:?} between {lo} and {hi} m with {:?} mm; at those heights",
-                kind.key, kind.biome, kind.rain
+                kind.key, kind.biomes, kind.rain
             );
-            t.find_biome(kind.biome, 20_000.0, |s| (lo..hi).contains(&s.height))
+            first(&|s| (lo..hi).contains(&s.height))
         })
         .or_else(|| {
             println!(
                 "{}: no {:?} between {lo} and {hi} m; its heart at any height",
-                kind.key, kind.biome
+                kind.key, kind.biomes
             );
-            t.find_biome(kind.biome, 20_000.0, |_| true)
+            first(&|_| true)
         })
 }
 
@@ -530,7 +594,9 @@ fn levels(a: &Args) -> anyhow::Result<()> {
             continue;
         };
         for (n, step, scale) in [(512usize, 2i32, "2 m"), (1024, 30, "30 m")] {
-            for level in 0..=finest {
+            // A level far finer than the columns' spacing shows nothing between them (and
+            // would make tiles over all thirty kilometres).
+            for level in (0..=finest).filter(|&l| t.level_cell(l) * 4.0 >= step as f64) {
                 let h: Vec<f32> = (0..n * n)
                     .into_par_iter()
                     .map(|k| {

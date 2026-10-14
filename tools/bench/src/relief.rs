@@ -298,7 +298,7 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         }
         // The time a tile of each level took to make, its parents' made within it included.
         for (name, z) in hearth_core::prof::zones() {
-            if name.starts_with("relief.build") {
+            if name.starts_with("relief.build") || name == "relief.drain" || name.starts_with("L4.") {
                 println!(
                     "{name}: {} tiles, {:.1} ms each",
                     z.count,

@@ -195,6 +195,15 @@ fn fill(d: &Dem) -> Vec<f64> {
     out
 }
 
+/// How deep each sample lies in a closed depression (m; 0 where water runs off it).
+pub fn hollow_depths(d: &Dem) -> Vec<f32> {
+    fill(d)
+        .iter()
+        .zip(&d.h)
+        .map(|(f, h)| if h.is_finite() { (*f - *h as f64).max(0.0) as f32 } else { 0.0 })
+        .collect()
+}
+
 /// Every statistic of a grid.
 pub fn measure(d: &Dem) -> Metrics {
     let n = d.n;

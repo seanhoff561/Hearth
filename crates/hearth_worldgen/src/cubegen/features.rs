@@ -25,6 +25,9 @@ const TREE_CELL: i32 = 5;
 const TREE_REACH: i32 = 22;
 /// Grid for fallen logs and boulders.
 const DEBRIS_CELL: i32 = 12;
+/// The ground a distant tile's tree sites stand for (blocks; `FeatureGen::grow_trees`): the
+/// ~40 m level's.
+const CROWNS_FOOTPRINT: f64 = 32.0;
 /// Years after a clearing before the shrubs come up.
 const SHRUB_YEARS: f32 = 2.0;
 /// Years ground counts as broken after a disturbance.
@@ -965,7 +968,17 @@ impl FeatureGen {
         let (x0, x1) = (lo[0] - TREE_REACH, hi[0] + TREE_REACH);
         let (z0, z1) = (lo[2] - TREE_REACH, hi[2] + TREE_REACH);
         let planet = wg.planet();
-        let sample = |x: i32, z: i32| wg.terrain.sample(planet.wrap_x(x), z);
+        // A distant tile's crowns read the ground as such a tile reads it (the ~40 m level and the
+        // walking level's stand-in): the walking level's own tiles are made for the blocks about
+        // the players alone.
+        let crowns = sink.crowns_only();
+        let sample = |x: i32, z: i32| {
+            if crowns {
+                wg.terrain.sample_at(planet.wrap_x(x), z, CROWNS_FOOTPRINT)
+            } else {
+                wg.terrain.sample(planet.wrap_x(x), z)
+            }
+        };
         for fz in z0.div_euclid(TREE_CELL)..=z1.div_euclid(TREE_CELL) {
             for (fx, first) in self.trees.over(x0, x1) {
                 self.tree_cell(sink, wg, veg, (fx, first), fz, &sample);

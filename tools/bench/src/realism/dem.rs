@@ -152,7 +152,8 @@ pub fn generated(terrain: &Terrain, x: i32, z: i32, n: usize, step: i32) -> Dem 
             *v = surface(terrain.sample(cx, cz));
         });
     } else {
-        // Columns far apart: the neighbourhood read once for each block of 16 × 16 of them.
+        // Columns far apart: the neighbourhood read once for each block of 16 × 16 of them, at
+        // the refinement level their spacing shows (as a distant tile of the game reads it).
         const B: usize = 16;
         let blocks: Vec<(usize, usize)> = (0..n.div_ceil(B))
             .flat_map(|bj| (0..n.div_ceil(B)).map(move |bi| (bi, bj)))
@@ -164,7 +165,7 @@ pub fn generated(terrain: &Terrain, x: i32, z: i32, n: usize, step: i32) -> Dem 
                 let (i1, j1) = ((i0 + B).min(n) - 1, (j0 + B).min(n) - 1);
                 let (xa, za) = at(i0, j0);
                 let (xb, zb) = at(i1, j1);
-                let near = terrain.nearby(xa, za, xb, zb);
+                let near = terrain.nearby_scaled(xa, za, xb, zb, step as f64);
                 let mut v = Vec::with_capacity(B * B);
                 for j in j0..=j1 {
                     for i in i0..=i1 {

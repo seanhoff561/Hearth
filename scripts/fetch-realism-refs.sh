@@ -53,7 +53,7 @@ if [ "$DEM" = 1 ]; then
   for t in \
     OR_SouthCoast_2019_A19/TIFF/USGS_1M_10_x41y481_OR_SouthCoast_2019_A19.tif \
     IA_SouthCentral_2020_D20/TIFF/USGS_1M_15_x45y454_IA_SouthCentral_2020_D20.tif \
-    MT_GlacierNP_2016/TIFF/USGS_one_meter_x29y538_MT_GlacierNP_2016.tif \
+    WY_GrandTetonNP_D22/TIFF/USGS_1M_12_x51y485_WY_GrandTetonNP_D22.tif \
     NV_ClarkCounty_2018_C19/TIFF/USGS_1M_11_x74y407_NV_ClarkCounty_2018_C19.tif \
     MN_LakeCounty_2018_C20/TIFF/USGS_1M_15_x61y530_MN_LakeCounty_2018_C20.tif; do
     fetch "$TNM/$t" "$REFS/lidar/$(basename "$t")"
