@@ -211,7 +211,7 @@ fn a_tree_looked_at_glows_about_its_mesh() {
         light: 15 | 15 << 16,
         tilt: 0,
     };
-    let mut frame = |scene: &mut SceneRenderer| {
+    let frame = |scene: &mut SceneRenderer| {
         scene
             .trees
             .prepare(&ctx, &[(1, vec![instance])], Vec3::ZERO);
