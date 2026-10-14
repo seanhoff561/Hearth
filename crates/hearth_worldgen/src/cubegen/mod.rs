@@ -11,6 +11,7 @@ pub mod blocks;
 pub mod cache;
 pub mod caves;
 pub mod features;
+mod placed;
 pub mod succession;
 
 use std::cell::RefCell;
