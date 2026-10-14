@@ -3,7 +3,10 @@
 //! for and what to watch out for there — every claim found by sampling the generated world about
 //! the spot (its rivers, lakes and springs, the stones lying on the ground, the trees and plants
 //! growing there, the animals that live there, the weather of the season). A place whose claims
-//! cannot be found is passed over.
+//! cannot be found is passed over. The water and the land's shape out to a kilometre and a half
+//! are read as placement reads the ground (`Terrain::sample_regional`: to the tens of metres the
+//! card's words give, making no tile of the walking level); what grows and lies about, block by
+//! block, within a hundred-odd metres of the spot, whose walking level is the world's own there.
 
 use std::sync::Arc;
 
@@ -160,6 +163,8 @@ const COLDEST_C: f64 = 2.0;
 const HOTTEST_C: f64 = 40.0;
 /// Suggested places lie this far apart at least (km).
 const APART_KM: f64 = 1500.0;
+/// Between the points about a place looked at block by block (m): five by five of them.
+const SCAN_M: f64 = 48.0;
 
 /// The world as the suggestions read it.
 pub struct Finder {
@@ -270,6 +275,62 @@ impl Finder {
         out
     }
 
+    /// What one point about a place holds, block by block: the knappable stones lying on its
+    /// ground, the understory plants growing there (each once, in the order found) and the
+    /// living trees standing within 20 m.
+    fn scan<'a>(
+        &self,
+        wg: &WorldGenerator,
+        under: &[(hearth_world::BlockStateId, &'a str)],
+        px: i32,
+        pz: i32,
+    ) -> (Vec<String>, Vec<&'a str>, Vec<usize>) {
+        let (mut stones, mut plants, mut trees) = (Vec::new(), Vec::new(), Vec::new());
+        let s = wg.terrain.sample(px, pz);
+        if s.is_underwater() {
+            return (stones, plants, trees);
+        }
+        let y = s.height_i();
+        for cy in [y - 1, y + 15] {
+            let pos = BlockPos::new(px, cy, pz).cube();
+            let (cube, _) = wg.generate_cube_in(pos, &self.veg);
+            for i in 0..hearth_math::CUBE_VOLUME {
+                let b = cube.get_index(i);
+                if b == hearth_world::BlockStateId::AIR {
+                    continue;
+                }
+                if wg.blocks.is_loose_stone(b) {
+                    let name = self.reg.block_of(b).name.to_string();
+                    let rock = name
+                        .rsplit(':')
+                        .next()
+                        .unwrap_or(&name)
+                        .trim_end_matches("_cobbles")
+                        .to_owned();
+                    if self.knappable(&rock) && !stones.contains(&rock) {
+                        stones.push(rock);
+                    }
+                } else if let Some((_, id)) = under.iter().find(|(s, _)| *s == b)
+                    && !plants.contains(id)
+                {
+                    plants.push(*id);
+                }
+            }
+        }
+        let half = 20;
+        for t in wg.features().trees_in(
+            wg,
+            &self.veg,
+            (px - half, pz - half),
+            (px + half, pz + half),
+        ) {
+            if t.remains == hearth_worldgen::cubegen::features::Remains::Living {
+                trees.push(t.species);
+            }
+        }
+        (stones, plants, trees)
+    }
+
     /// Great-circle distance between two world positions (km), across the seam.
     fn distance_km(&self, a: (f64, f64), b: (f64, f64)) -> f64 {
         let p = self.wg.planet();
@@ -317,7 +378,7 @@ impl Finder {
                 let a = k as f64 / dirs as f64 * std::f64::consts::TAU;
                 let (dx, dz) = (r * a.sin(), -r * a.cos());
                 let (sx, sz) = (planet.wrap_x(x + dx as i32), z + dz as i32);
-                let s = terrain.sample(sx, sz);
+                let s = terrain.sample_regional(sx, sz);
                 let at = (r > 0.0).then_some((dx, dz));
                 if s.is_underwater() {
                     if s.ocean {
@@ -361,18 +422,18 @@ impl Finder {
         if water.at.is_some_and(|(dx, dz)| dx.hypot(dz) > REACH_M) {
             return None;
         }
-        // What grows and lies about: the ground of the spot and of points on rings out to some
-        // 600 m, block by block, and the trees standing there.
-        let mut points = vec![(0.0, 0.0)];
-        for r in [80.0, 250.0, 600.0] {
-            for k in 0..8 {
-                let a = k as f64 / 8.0 * std::f64::consts::TAU;
-                points.push((r * a.sin(), -r * a.cos()));
-            }
-        }
-        let mut stones: Vec<(String, (f64, f64))> = Vec::new();
-        let mut plants: Vec<(String, (f64, f64))> = Vec::new();
-        let mut trees: Vec<(usize, (f64, f64))> = Vec::new();
+        // What grows and lies about: the ground of the spot and of points about it out to some
+        // 100 m (nearest first), block by block, and the trees standing there. The walking level's
+        // tiles there are those the world makes about a life begun here; the points are looked at
+        // side by side.
+        let mut points: Vec<(f64, f64)> = (-2..=2)
+            .flat_map(|j| (-2..=2).map(move |i| (i as f64 * SCAN_M, j as f64 * SCAN_M)))
+            .collect();
+        points.sort_by(|a, b| {
+            (a.0.hypot(a.1), a.1, a.0)
+                .partial_cmp(&(b.0.hypot(b.1), b.1, b.0))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let under: Vec<(hearth_world::BlockStateId, &str)> = wg
             .forest
             .understory
@@ -381,50 +442,28 @@ impl Finder {
                 std::iter::once((u.lower, u.id.as_str())).chain(u.upper.map(|b| (b, u.id.as_str())))
             })
             .collect();
-        for &(dx, dz) in &points {
-            let (px, pz) = (planet.wrap_x(x + dx as i32), z + dz as i32);
-            let s = terrain.sample(px, pz);
-            if s.is_underwater() {
-                continue;
-            }
-            let y = s.height_i();
-            for cy in [y - 1, y + 15] {
-                let pos = BlockPos::new(px, cy, pz).cube();
-                let (cube, _) = wg.generate_cube_in(pos, &self.veg);
-                for i in 0..hearth_math::CUBE_VOLUME {
-                    let b = cube.get_index(i);
-                    if b == hearth_world::BlockStateId::AIR {
-                        continue;
-                    }
-                    if wg.blocks.is_loose_stone(b) {
-                        let name = self.reg.block_of(b).name.to_string();
-                        let rock = name
-                            .rsplit(':')
-                            .next()
-                            .unwrap_or(&name)
-                            .trim_end_matches("_cobbles")
-                            .to_owned();
-                        if self.knappable(&rock) && !stones.iter().any(|s| s.0 == rock) {
-                            stones.push((rock, (dx, dz)));
-                        }
-                    } else if let Some((_, id)) = under.iter().find(|(s, _)| *s == b)
-                        && !plants.iter().any(|p| p.0 == *id)
-                    {
-                        plants.push(((*id).to_owned(), (dx, dz)));
-                    }
+        let found: Vec<(Vec<String>, Vec<&str>, Vec<usize>)> = {
+            use rayon::prelude::*;
+            points
+                .par_iter()
+                .map(|&(dx, dz)| self.scan(wg, &under, planet.wrap_x(x + dx as i32), z + dz as i32))
+                .collect()
+        };
+        let mut stones: Vec<(String, (f64, f64))> = Vec::new();
+        let mut plants: Vec<(String, (f64, f64))> = Vec::new();
+        let mut trees: Vec<(usize, (f64, f64))> = Vec::new();
+        for (&at, (rocks, ids, species)) in points.iter().zip(found) {
+            for rock in rocks {
+                if !stones.iter().any(|s| s.0 == rock) {
+                    stones.push((rock, at));
                 }
             }
-            let half = 20;
-            for t in wg.features().trees_in(
-                wg,
-                &self.veg,
-                (px - half, pz - half),
-                (px + half, pz + half),
-            ) {
-                if t.remains == hearth_worldgen::cubegen::features::Remains::Living {
-                    trees.push((t.species, (dx, dz)));
+            for id in ids {
+                if !plants.iter().any(|p| p.0 == id) {
+                    plants.push((id.to_owned(), at));
                 }
             }
+            trees.extend(species.into_iter().map(|sp| (sp, at)));
         }
         let mut look_for = vec![water.clone()];
         if let Some((rock, at)) = stones.first() {

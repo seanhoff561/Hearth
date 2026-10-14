@@ -106,6 +106,9 @@ pub struct Niche {
     pub pace: f32,
     /// The realms it is native to (none: all).
     pub realms: crate::realms::RealmSet,
+    /// The climate classes of its Köppen codes, a bit each (`ClimateClass as u16`), read once:
+    /// `suits` asks at every column. `None` where it lists none.
+    classes: Option<u16>,
 }
 
 /// How a species of the stand-in realm ([`crate::realms::stand_in`]) does outside its realms:
@@ -133,6 +136,13 @@ impl Niche {
             colonizes: travels * pace,
             pace,
             realms: crate::realms::set_of(&p.realms),
+            classes: (!p.climate.koppen.is_empty()).then(|| {
+                p.climate
+                    .koppen
+                    .iter()
+                    .filter_map(|k| class_of(k))
+                    .fold(0u16, |m, c| m | 1 << c as u16)
+            }),
         }
     }
 }
@@ -284,7 +294,7 @@ impl Niche {
         if let Some(r) = &e.precip_mm {
             s *= fit(c.precip_mm, r.0, r.1, 0.3 * (r.1 - r.0).max(100.0));
         }
-        if !e.koppen.is_empty() && !e.koppen.iter().any(|k| class_of(k) == Some(c.class)) {
+        if self.classes.is_some_and(|m| m & 1 << c.class as u16 == 0) {
             s *= 0.35;
         }
         // Wet ground for the trees of wet ground, and not for the rest.

@@ -197,8 +197,9 @@ fn springs_rise_where_the_table_meets_the_land() {
             sp.z
         );
         // Brooks run downhill.
-        let mut last = sp.level;
-        for &(_, _, y) in &sp.brook {
+        let course = sp.course(wg);
+        let mut last = course.level;
+        for &(_, _, y) in &course.brook {
             assert!(y <= last, "a brook runs uphill near {},{}", sp.x, sp.z);
             last = y;
         }
@@ -208,7 +209,7 @@ fn springs_rise_where_the_table_meets_the_land() {
         .iter()
         .find(|s| s.kind == SpringKind::Fresh)
         .expect("a spring");
-    let y = sp.level - 1;
+    let y = sp.course(wg).level - 1;
     let cube = wg.generate_cube(CubePos::new(sp.x >> 4, y >> 4, sp.z >> 4));
     let st = cube.get(LocalPos::new(
         (sp.x & 15) as u8,

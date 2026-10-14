@@ -12,11 +12,14 @@
 //! **Springs** issue where the table meets sloping ground (spring lines at the foot of hills),
 //! as rare oases in dry country, and over salt beds, hot rock and travertine. Each feeds a pool
 //! and a brook that runs downhill until it reaches other water, finds a hollow or soaks away.
+//! Springs are placed as placement reads the ground (`Terrain::sample_regional`, which makes no
+//! tile of the walking level); a spring's pool and brook are found on the blocks' own surface
+//! the first time a cube they may reach is made.
 //!
 //! **Water quality** of natural water: salinity, how likely it is to make a drinker ill,
 //! temperature and taste, per water body (sea, salt or fresh lake, stream, spring, groundwater).
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use hearth_content::Content;
 use hearth_content::schema::geology::Permeability;
@@ -61,14 +64,22 @@ pub enum SpringKind {
     Mineral,
 }
 
-/// A spring: its pool and the brook it feeds.
+/// A spring: where it rises, and (found when first wanted) its pool and the brook it feeds.
 #[derive(Debug, Clone)]
 pub struct Spring {
     pub x: i32,
     pub z: i32,
+    pub kind: SpringKind,
+    /// The land's wetness about it (0 … 1): how far its brook may run.
+    wet: f32,
+    course: OnceLock<Course>,
+}
+
+/// A spring's water on the blocks' own surface.
+#[derive(Debug, Clone)]
+pub struct Course {
     /// Water surface of the pool (the first block above the water).
     pub level: i32,
-    pub kind: SpringKind,
     /// The brook from the pool downhill: columns and their water surface.
     pub brook: Vec<(i32, i32, i32)>,
     min: [i32; 2],
@@ -76,13 +87,81 @@ pub struct Spring {
 }
 
 impl Spring {
+    /// Its pool and brook, followed down the blocks' surface the first time they are wanted.
+    pub fn course(&self, wg: &WorldGenerator) -> &Course {
+        self.course
+            .get_or_init(|| course(wg, self.x, self.z, self.wet))
+    }
+
     /// Whether the pool or the brook covers a column.
-    fn contains(&self, planet: &hearth_math::Planet, x: i32, z: i32) -> bool {
+    fn contains(&self, wg: &WorldGenerator, x: i32, z: i32) -> bool {
+        let planet = wg.planet();
+        if planet.delta_block_x(self.x, x).abs() > MAX_BROOK as i32 + 2
+            || (z - self.z).abs() > MAX_BROOK as i32 + 2
+        {
+            return false;
+        }
         (planet.delta_block_x(self.x, x).abs() <= 1 && (z - self.z).abs() <= 1)
             || self
+                .course(wg)
                 .brook
                 .iter()
                 .any(|&(bx, bz, _)| bz == z && planet.delta_block_x(bx, x) == 0)
+    }
+}
+
+/// A spring's pool and its brook down the steepest way, on the blocks' own surface.
+fn course(wg: &WorldGenerator, x: i32, z: i32, w: f32) -> Course {
+    let s = wg.terrain.sample(x, z);
+    let level = s.height_i();
+    let mut brook = Vec::new();
+    let max_len = (12.0 + (MAX_BROOK as f32 - 12.0) * w) as usize;
+    let (mut bx, mut bz, mut bh) = (x, z, s.height);
+    let planet = wg.planet();
+    'walk: while brook.len() < max_len {
+        let mut best: Option<(i32, i32, ColumnSample)> = None;
+        for (dx, dz) in [
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1),
+        ] {
+            let (nx, nz) = (planet.wrap_x(bx + dx), bz + dz);
+            let n = wg.terrain.sample(nx, nz);
+            if best.as_ref().is_none_or(|(_, _, b)| n.height < b.height) {
+                best = Some((nx, nz, n));
+            }
+        }
+        let Some((nx, nz, n)) = best else {
+            break;
+        };
+        if n.height >= bh {
+            break 'walk; // a hollow: the brook ends in the ground
+        }
+        if n.is_underwater() {
+            break 'walk; // it reaches a stream, lake or the sea
+        }
+        brook.push((nx, nz, n.height_i()));
+        (bx, bz, bh) = (nx, nz, n.height);
+    }
+    let mut min = [x - 2, z - 2];
+    let mut max = [x + 2, z + 2];
+    for &(px, pz, _) in &brook {
+        let dx = planet.delta_block_x(x, px);
+        min[0] = min[0].min(x + dx);
+        max[0] = max[0].max(x + dx);
+        min[1] = min[1].min(pz);
+        max[1] = max[1].max(pz);
+    }
+    Course {
+        level,
+        brook,
+        min,
+        max,
     }
 }
 
@@ -169,12 +248,13 @@ impl Hydrology {
     /// The water table under a column (block Y of the water surface in the ground; the water
     /// surface itself under water).
     pub fn water_table(&self, wg: &WorldGenerator, x: i32, z: i32) -> f32 {
-        // One sample: callers ask about scattered places (cave systems, wells).
+        // One sample: callers ask about scattered places (wells, the player's diggings).
         let s = wg.terrain.sample(x, z);
-        self.table_at(wg, &s, x, z)
+        self.water_table_at(wg, &s, x, z)
     }
 
-    fn table_at(&self, wg: &WorldGenerator, s: &ColumnSample, x: i32, z: i32) -> f32 {
+    /// The water table under a column already sampled (as placement reads it, for a cave).
+    pub fn water_table_at(&self, wg: &WorldGenerator, s: &ColumnSample, x: i32, z: i32) -> f32 {
         self.table_parts(wg, s, x, z).1
     }
 
@@ -278,7 +358,7 @@ impl Hydrology {
             let h = hash2(hash_2d(self.seed, cx, cz), k);
             let x = cx * CELL + (unit_f32(hash2(h, 1)) * CELL as f32) as i32;
             let z = cz * CELL + (unit_f32(hash2(h, 2)) * CELL as f32) as i32;
-            let s = wg.terrain.sample(x, z);
+            let s = wg.terrain.sample_regional(x, z);
             if s.is_underwater()
                 || s.river.is_some_and(|r| r.distance < r.width + 4.0)
                 || s.temperature < -2.0
@@ -295,7 +375,7 @@ impl Hydrology {
                 && s.height - self.drainage_base(wg, x, z).0 < 2.0
                 && roll < OASES_PER_KM2 * area;
             if spring_line || oasis {
-                out.push(self.spring(wg, x, z, &s, SpringKind::Fresh, w));
+                out.push(Self::spring(x, z, SpringKind::Fresh, w));
             }
         }
         // Mineral springs over the deposits that show as springs.
@@ -303,77 +383,23 @@ impl Hydrology {
             let m = &wg.deposits.models[b.model as usize];
             if let Some(kind) = m.spring {
                 let (x, z) = (b.center[0], b.center[2]);
-                let s = wg.terrain.sample(x, z);
+                let s = wg.terrain.sample_regional(x, z);
                 if !s.is_underwater() {
-                    out.push(self.spring(wg, x, z, &s, kind, wetness(&s)));
+                    out.push(Self::spring(x, z, kind, wetness(&s)));
                 }
             }
         }
         out
     }
 
-    /// A spring at a place: a pool and a brook down the steepest way.
-    fn spring(
-        &self,
-        wg: &WorldGenerator,
-        x: i32,
-        z: i32,
-        s: &ColumnSample,
-        kind: SpringKind,
-        w: f32,
-    ) -> Spring {
-        let level = s.height_i();
-        let mut brook = Vec::new();
-        let max_len = (12.0 + (MAX_BROOK as f32 - 12.0) * w) as usize;
-        let (mut bx, mut bz, mut bh) = (x, z, s.height);
-        let planet = wg.planet();
-        'walk: while brook.len() < max_len {
-            let mut best: Option<(i32, i32, ColumnSample)> = None;
-            for (dx, dz) in [
-                (1, 0),
-                (-1, 0),
-                (0, 1),
-                (0, -1),
-                (1, 1),
-                (1, -1),
-                (-1, 1),
-                (-1, -1),
-            ] {
-                let (nx, nz) = (planet.wrap_x(bx + dx), bz + dz);
-                let n = wg.terrain.sample(nx, nz);
-                if best.as_ref().is_none_or(|(_, _, b)| n.height < b.height) {
-                    best = Some((nx, nz, n));
-                }
-            }
-            let Some((nx, nz, n)) = best else {
-                break;
-            };
-            if n.height >= bh {
-                break 'walk; // a hollow: the brook ends in the ground
-            }
-            if n.is_underwater() {
-                break 'walk; // it reaches a stream, lake or the sea
-            }
-            brook.push((nx, nz, n.height_i()));
-            (bx, bz, bh) = (nx, nz, n.height);
-        }
-        let mut min = [x - 2, z - 2];
-        let mut max = [x + 2, z + 2];
-        for &(px, pz, _) in &brook {
-            let dx = planet.delta_block_x(x, px);
-            min[0] = min[0].min(x + dx);
-            max[0] = max[0].max(x + dx);
-            min[1] = min[1].min(pz);
-            max[1] = max[1].max(pz);
-        }
+    /// A spring rising at a place (its course found when first wanted).
+    fn spring(x: i32, z: i32, kind: SpringKind, w: f32) -> Spring {
         Spring {
             x,
             z,
-            level,
             kind,
-            brook,
-            min,
-            max,
+            wet: w,
+            course: OnceLock::new(),
         }
     }
 
@@ -409,10 +435,20 @@ impl Hydrology {
                 for sp in self.cell(wg, cx, cz).iter() {
                     // Shift the spring to this cube's side of the seam.
                     let shift = planet.delta_block_x(sp.x, x0) - (x0 - sp.x);
-                    if sp.max[0] - shift < x0
-                        || sp.min[0] - shift > x1
-                        || sp.max[1] < z0
-                        || sp.min[1] > z1
+                    // As far as its brook could run, then as far as it runs.
+                    let reach = MAX_BROOK as i32 + 2;
+                    if sp.x - shift + reach < x0
+                        || sp.x - shift - reach > x1
+                        || sp.z + reach < z0
+                        || sp.z - reach > z1
+                    {
+                        continue;
+                    }
+                    let course = sp.course(wg);
+                    if course.max[0] - shift < x0
+                        || course.min[0] - shift > x1
+                        || course.max[1] < z0
+                        || course.min[1] > z1
                     {
                         continue;
                     }
@@ -424,7 +460,7 @@ impl Hydrology {
                                 continue;
                             }
                             let top = wg.terrain.sample(x, z).height_i();
-                            if top > sp.level + 1 {
+                            if top > course.level + 1 {
                                 continue;
                             }
                             wet(buf, x, top - 1, z);
@@ -433,7 +469,7 @@ impl Hydrology {
                             }
                         }
                     }
-                    for &(bx, bz, top) in &sp.brook {
+                    for &(bx, bz, top) in &course.brook {
                         let x = sp.x - shift + planet.delta_block_x(sp.x, bx);
                         if x < x0 || x > x1 || bz < z0 || bz > z1 {
                             continue;
@@ -451,7 +487,7 @@ impl Hydrology {
         for cz in (z - margin).div_euclid(CELL)..=(z + margin).div_euclid(CELL) {
             for cx in (x - margin).div_euclid(CELL)..=(x + margin).div_euclid(CELL) {
                 for sp in self.cell(wg, cx, cz).iter() {
-                    if sp.contains(wg.planet(), x, z) {
+                    if sp.contains(wg, x, z) {
                         return Some(sp.kind);
                     }
                 }
@@ -576,7 +612,7 @@ impl Hydrology {
             });
         }
         // Groundwater: what a well reaches.
-        if (y as f32) < self.table_at(wg, &s, x, z) {
+        if (y as f32) < self.water_table_at(wg, &s, x, z) {
             let arid = 1.0 - wetness(&s);
             return Some(WaterQuality {
                 salinity_g_l: 0.3 + 2.5 * arid * arid,

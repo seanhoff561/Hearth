@@ -177,10 +177,17 @@ pub struct Terrain {
     /// Neighbourhoods read for samples at a coarser level (`sample_at`), by level and square
     /// of [`COARSE_SQUARE_CELLS`] of its cells.
     coarse: Arc<CoarseCache>,
+    /// Neighbourhoods read for placement (`sample_regional`), by square of [`NEAR_SQUARE`].
+    regional: Arc<NearCache>,
 }
 
 /// Side (blocks) of the squares whose neighbourhoods single samples share.
 const NEAR_SQUARE: i32 = 64;
+
+/// How far (m) a placement read's surface ([`Terrain::sample_regional`]) may stray from the
+/// blocks' own, all but on the steepest cliffs: what is placed by it and drawn on the blocks'
+/// surface is looked for this much above and below.
+pub const REGIONAL_SLACK_M: f32 = 24.0;
 
 /// The ground (blocks) a start-place search's samples stand for away from the spot: the ~300 m
 /// refinement level on Earth.
@@ -336,6 +343,7 @@ impl Terrain {
                     .clamp(256, 4096),
             ))),
             coarse: Arc::new(CoarseCache(crate::cubegen::cache::Cache::new(256))),
+            regional: Arc::new(NearCache(crate::cubegen::cache::Cache::new(1024))),
             grid,
         }
     }
@@ -376,15 +384,7 @@ impl Terrain {
         self.nearby_with(x0, z0, x1, z1, scale, false)
     }
 
-    fn nearby_with(
-        &self,
-        x0: i32,
-        z0: i32,
-        x1: i32,
-        z1: i32,
-        scale: f64,
-        blocks: bool,
-    ) -> Nearby {
+    fn nearby_with(&self, x0: i32, z0: i32, x1: i32, z1: i32, scale: f64, blocks: bool) -> Nearby {
         let Some(relief) = &self.relief else {
             return Nearby {
                 segments: self
@@ -604,6 +604,31 @@ impl Terrain {
         self.sample_with(x, z, &near)
     }
 
+    /// A column as placement reads it (G1b): where deposits, springs and caves lie, and what a
+    /// place's card finds about it. On a planet with a walking level, the level above it at the
+    /// blocks' own scale (every river a metre and a half wide or more), with the walking level's
+    /// relief stood in for (`Relief::walking_proxy`) and the ground's own roughness: within
+    /// some metres of the blocks' surface, as the walking level's drainage is left out (a
+    /// fifth of a metre at the median, 7 m at the 99th percentile, more on cliffs:
+    /// [`REGIONAL_SLACK_M`]). It makes no tile of the walking level, which is made for the
+    /// blocks about the players alone; where there is none, it is [`Self::sample`] itself.
+    pub fn sample_regional(&self, x: i32, z: i32) -> ColumnSample {
+        if self
+            .relief
+            .as_deref()
+            .is_none_or(|r| r.walking_level().is_none())
+        {
+            return self.sample(x, z);
+        }
+        let x = self.planet.wrap_x(x);
+        let key = (x.div_euclid(NEAR_SQUARE), z.div_euclid(NEAR_SQUARE));
+        let near = self.regional.0.get_or_insert_with(key, || {
+            let (x0, z0) = (key.0 * NEAR_SQUARE, key.1 * NEAR_SQUARE);
+            self.nearby_scaled(x0, z0, x0 + NEAR_SQUARE - 1, z0 + NEAR_SQUARE - 1, 1.0)
+        });
+        self.sample_with(x, z, &near)
+    }
+
     /// What the terrain keeps in memory, by kind (bytes): the planet grid, the refinement
     /// levels' tiles, the neighbourhoods kept for samples (E4.1 §4.7).
     pub fn memory(&self) -> Vec<(&'static str, u64)> {
@@ -624,7 +649,7 @@ impl Terrain {
         };
         out.push((
             "terrain samples' neighbourhoods",
-            self.near.0.sum(nearby) + self.coarse.0.sum(nearby),
+            self.near.0.sum(nearby) + self.coarse.0.sum(nearby) + self.regional.0.sum(nearby),
         ));
         out
     }
@@ -1757,7 +1782,10 @@ pub(crate) mod tests {
         let relief = t.relief().expect("refined");
         let finest = relief.levels().len();
         // The walking level for the blocks alone; the ~40 m level for the closest tiles.
-        assert_eq!(t.nearby(0, 0, 15, 15).patch.as_ref().map(Patch::level), Some(finest));
+        assert_eq!(
+            t.nearby(0, 0, 15, 15).patch.as_ref().map(Patch::level),
+            Some(finest)
+        );
         assert_eq!(relief.level_for(1.0), finest - 1);
         assert_eq!(relief.level_for(8.0), finest - 1);
         assert!(relief.level_for(512.0) < finest);

@@ -200,7 +200,13 @@ pub fn hollow_depths(d: &Dem) -> Vec<f32> {
     fill(d)
         .iter()
         .zip(&d.h)
-        .map(|(f, h)| if h.is_finite() { (*f - *h as f64).max(0.0) as f32 } else { 0.0 })
+        .map(|(f, h)| {
+            if h.is_finite() {
+                (*f - *h as f64).max(0.0) as f32
+            } else {
+                0.0
+            }
+        })
         .collect()
 }
 

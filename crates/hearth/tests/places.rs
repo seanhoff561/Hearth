@@ -28,6 +28,24 @@ fn spot(x: i32, z: i32, c: &Claim) -> (i32, i32) {
     (x + dx.round() as i32, z + dz.round() as i32)
 }
 
+/// Whether water a card names is where it says: there as the card reads the ground
+/// (`sample_regional`), and on the blocks' own surface within half the 50 m its words give.
+fn water_there(
+    wg: &hearth_worldgen::WorldGenerator,
+    x: i32,
+    z: i32,
+    is: impl Fn(&hearth_worldgen::ColumnSample) -> bool,
+) -> bool {
+    let read = is(&wg.terrain.sample_regional(x, z));
+    let blocks = (-5..=5).any(|j| {
+        (-5..=5).any(|i| {
+            (i * i + j * j <= 25)
+                && is(&wg.terrain.sample(wg.planet().wrap_x(x + i * 5), z + j * 5))
+        })
+    });
+    read && blocks
+}
+
 #[test]
 fn suggested_places_are_varied_survivable_and_true() {
     let f = finder();
@@ -75,15 +93,18 @@ fn suggested_places_are_varied_survivable_and_true() {
             let x = wg.planet().wrap_x(x);
             match &c.found {
                 Found::River { .. } => {
-                    let s = wg.terrain.sample(x, z);
                     assert!(
-                        s.river.is_some_and(|r| r.distance <= r.width * 0.5 + 2.0),
+                        water_there(wg, x, z, |s| s
+                            .river
+                            .is_some_and(|r| r.distance <= r.width * 0.5 + 2.0)),
                         "a river where it says"
                     );
                 }
                 Found::Lake => {
-                    let s = wg.terrain.sample(x, z);
-                    assert!(s.lake && s.is_underwater(), "a lake where it says");
+                    assert!(
+                        water_there(wg, x, z, |s| s.lake && s.is_underwater()),
+                        "a lake where it says"
+                    );
                 }
                 Found::Spring => {
                     let cell = hearth_worldgen::hydro::CELL;

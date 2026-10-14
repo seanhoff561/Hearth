@@ -66,12 +66,14 @@ fn coarse_callers_make_no_tiles_of_the_finest_level() {
             "{caller}"
         );
     }
-    // The near field makes them, and they are counted: a start spot settled block by block,
-    // somewhere nothing has been read yet.
+    // The near field makes them, and they are counted: the ground of a start spot as the blocks
+    // read it, somewhere nothing has been read yet (the spot itself is settled on the stand-in
+    // for the finest level, which makes none).
     {
         let _c = prof::caller("spawn");
         let x = lw.map.planet().wrap_x(sx + 400_000);
-        std::hint::black_box(terrain.spawn_near(x, sz));
+        let (x, z) = terrain.spawn_near(x, sz);
+        std::hint::black_box(terrain.sample(x, z));
     }
     assert!(
         fine("spawn") > 0,

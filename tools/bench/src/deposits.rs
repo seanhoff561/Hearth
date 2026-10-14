@@ -177,13 +177,14 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         println!("{} springs within ~1 km of ({nx}, {nz}):", found.len());
         for (d, sp) in found.iter().take(limit) {
             let s = wg.terrain.sample(sp.x, sp.z);
+            let course = sp.course(&wg);
             println!(
                 "  {:?} spring at ({}, {}, {}), brook {} blocks, {:.0} m away, {} {:.0} mm, table {:.1}",
                 sp.kind,
                 sp.x,
-                sp.level,
+                course.level,
                 sp.z,
-                sp.brook.len(),
+                course.brook.len(),
                 d,
                 s.biome.name(),
                 s.precipitation,

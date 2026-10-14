@@ -6,7 +6,9 @@
 //! Bodies are placed per 256-block cell: a Poisson number of candidates per model (its
 //! frequency per km²), each kept only where its province, conditions and host rock hold. A
 //! cell's bodies are computed once and cached; each cube draws the bodies that reach it, so
-//! the result is independent of generation order.
+//! the result is independent of generation order. A cell reads the ground as placement does
+//! (`Terrain::sample_regional`, which makes no tile of the walking level): its bodies lie within
+//! some metres of the blocks' surface, and their signs are drawn on the blocks' own.
 
 use hearth_content::Content;
 use hearth_content::generate::{body_block, float_block, placer_block, resource_block};
@@ -92,7 +94,7 @@ pub struct DepositModel {
 pub struct Body {
     pub model: u16,
     pub center: [i32; 3],
-    /// Surface height at the centre (first air block).
+    /// Surface height at the centre (first air block), as placement reads it.
     pub surface: i32,
     size: f32,
     thickness: f32,
@@ -491,7 +493,7 @@ impl Deposits {
                     let ht = hash2(h, 1000 + t);
                     let x = cx * CELL + (unit_f32(hash2(ht, 1)) * CELL as f32) as i32;
                     let z = cz * CELL + (unit_f32(hash2(ht, 2)) * CELL as f32) as i32;
-                    let s = wg.terrain.sample(x, z);
+                    let s = wg.terrain.sample_regional(x, z);
                     if tries > 1 && !Self::place_holds(m.conditions, &s) {
                         continue;
                     }
@@ -598,7 +600,7 @@ impl Deposits {
                 for f in [0.5, 1.0] {
                     let px = x + (cos * reach as f32 * f) as i32;
                     let pz = z + (sin * reach as f32 * f) as i32;
-                    let h = wg.terrain.sample(px, pz).height_i();
+                    let h = wg.terrain.sample_regional(px, pz).height_i();
                     ground = (ground.0.min(h), ground.1.max(h));
                 }
             }
@@ -633,6 +635,8 @@ impl Deposits {
         let (x1, y1, z1) = (x0 + 15, y0 + 15, z0 + 15);
         let _ = pos;
         let margin = self.max_reach + 8;
+        // Bodies are placed on the ground as placement reads it; their signs on the blocks' own.
+        let slack = (crate::region::REGIONAL_SLACK_M * wg.terrain.vertical_scale()).ceil() as i32;
         let (ca, cb) = (
             (x0 - margin).div_euclid(CELL),
             (x1 + margin).div_euclid(CELL),
@@ -656,7 +660,8 @@ impl Deposits {
                     {
                         continue;
                     }
-                    let indicator_band = b.shallow && b.ground.1 + 2 >= y0 && b.ground.0 - 6 <= y1;
+                    let indicator_band =
+                        b.shallow && b.ground.1 + 2 + slack >= y0 && b.ground.0 - 6 - slack <= y1;
                     if b.max[1] < y0 || b.min[1] > y1 {
                         if indicator_band {
                             self.indicators(buf, wg, b, shift);

@@ -29,9 +29,19 @@ pub(crate) fn octave(seed: u64, cells: i64, p: (f64, f64), along: (f64, f64)) ->
     let across = (-along.1, along.0);
     let (iu, iv) = (p.0.floor() as i64, p.1.floor() as i64);
     let (mut h, mut gu, mut gv, mut wt) = (0.0, 0.0, 0.0, 1e-9);
+    // How far `v` lies outside where a point of the cell from `c` may stand (its centre ±0.4).
+    let off = |v: f64, c: i64| (c as f64 + 0.1 - v).max(v - (c as f64 + 0.9)).max(0.0);
+    let first = (iu - 1).rem_euclid(cells);
     for cj in iv - 1..=iv + 1 {
-        for ci in iu - 1..=iu + 1 {
-            let hsh = hash_2d(seed, ci.rem_euclid(cells) as i32, cj as i32);
+        let oz = off(p.1, cj);
+        for (k, ci) in (iu - 1..=iu + 1).enumerate() {
+            // A point that cannot come within reach is not drawn (its bump would be nought).
+            let ox = off(p.0, ci);
+            if ox * ox + oz * oz >= 1.0 + 1e-9 {
+                continue;
+            }
+            let wrapped = (first + k as i64) % cells;
+            let hsh = hash_2d(seed, wrapped as i32, cj as i32);
             let jx = unit_f64(hsh) - 0.5;
             let jz = unit_f64(hash2(hsh, 1)) - 0.5;
             let du = p.0 - (ci as f64 + 0.5 + 0.8 * jx);

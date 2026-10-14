@@ -148,8 +148,9 @@ impl CaveGen {
         let cx = x0 + REGION / 2;
         let cz = z0 + REGION / 2;
         let cy = ry * REGION + REGION / 2;
-        // Local conditions from the pure surface model at the region centre.
-        let s = terrain.sample(cx, cz);
+        // Local conditions from the pure surface model at the region centre, as placement reads
+        // it (no tile of the walking level: a region is placed, not drawn, from here).
+        let s = terrain.sample_regional(cx, cz);
         let surface = s.height;
         let depth = surface - cy as f32;
         if depth < -40.0 {
@@ -188,9 +189,10 @@ impl CaveGen {
                 }
             }
             // Below the water table every void is full of water.
+            let (tx, tz) = (x0 + start.0 as i32, z0 + start.2 as i32);
             let table = wg
                 .hydro
-                .water_table(wg, x0 + start.0 as i32, z0 + start.2 as i32);
+                .water_table_at(wg, &terrain.sample_regional(tx, tz), tx, tz);
             sys.flood_level = Some(table.floor() as i32);
             systems.push(sys);
         }
@@ -204,7 +206,7 @@ impl CaveGen {
             let start = ((REGION / 2) as f32, surface - 6.0, (REGION / 2) as f32);
             self.worm(&mut rng, start, true, &mut w, 0);
             w.finish();
-            let table = wg.hydro.water_table(wg, cx, cz);
+            let table = wg.hydro.water_table_at(wg, &s, cx, cz);
             systems.push(CaveSystem {
                 worms: vec![w],
                 flood_level: Some(table.floor() as i32),
@@ -323,7 +325,7 @@ impl CaveGen {
         let rxr = rng.range_f32(80.0, 210.0);
         let rzr = rng.range_f32(80.0, 210.0);
         let ryr = rng.range_f32(50.0, 140.0);
-        let s = terrain.sample(x0 + cx as i32, z0 + cz as i32);
+        let s = terrain.sample_regional(x0 + cx as i32, z0 + cz as i32);
         let underwater = s.is_underwater();
         let cover = if underwater {
             rng.range_f32(80.0, 200.0)
@@ -334,7 +336,7 @@ impl CaveGen {
         // An underground lake, or the water table if that stands higher.
         let lake_level = ((cy - ryr * rng.range_f32(0.45, 0.75)) as i32).max(
             wg.hydro
-                .water_table(wg, x0 + cx as i32, z0 + cz as i32)
+                .water_table_at(wg, &s, x0 + cx as i32, z0 + cz as i32)
                 .floor() as i32,
         );
         let sinkhole = if !underwater && rng.chance(0.35) {
@@ -342,7 +344,14 @@ impl CaveGen {
             let d = rng.range_f32(0.0, 0.5);
             let sx = cx + a.cos() * rxr * d;
             let sz = cz + a.sin() * rzr * d;
-            let top = terrain.sample(x0 + sx as i32, z0 + sz as i32).height as i32 + 6;
+            // Up through the ground as placement reads it, and as far again as that may lie
+            // below the blocks' own.
+            let slack = crate::region::REGIONAL_SLACK_M * terrain.vertical_scale();
+            let top = (terrain
+                .sample_regional(x0 + sx as i32, z0 + sz as i32)
+                .height
+                + 6.0
+                + slack) as i32;
             Some((sx, sz, rng.range_f32(7.0, 15.0), top))
         } else {
             None

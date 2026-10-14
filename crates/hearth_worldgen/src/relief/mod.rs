@@ -22,6 +22,9 @@
 //! A cell's value is its tiles' blend: the tile whose core holds it, faded into those whose
 //! margins reach it. A value so never depends on which tile was asked for first, and tiles meet
 //! without a seam. Tiles are kept in an LRU cache per level.
+//!
+//! The walking level's own parts (its second drainage pass, its tiles made ahead of the cubes,
+//! its stand-in) are in `walking`.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, OnceLock};
@@ -40,6 +43,7 @@ mod courses;
 mod drainage;
 pub(crate) mod gullies;
 mod roughness;
+mod walking;
 
 pub use roughness::Roughness;
 
@@ -314,7 +318,7 @@ pub struct Relief {
     /// the first and waited for by the others (a tile needs only coarser levels' tiles, so none
     /// waits on itself).
     tiles: Vec<Cache<TileKey, OnceLock<Tile>>>,
-    /// The walking level's second pass ([`Relief::drained_tile`]): its blended surface drained
+    /// The walking level's second pass (`Relief::drained_tile`): its blended surface drained
     /// over tiles offset half a tile from the first pass's.
     drained: Cache<TileKey, OnceLock<Vec<f32>>>,
     /// The tiles kept on disk too, once given a folder ([`Relief::keep_on_disk`]).
@@ -364,9 +368,7 @@ impl Relief {
                 let mut dissect = Vec::new();
                 let walking =
                     |l: usize| levels.get(l).is_some_and(|v: &Level| v.cell < WALKING_CELL);
-                let longest = lv.cell
-                    * RATIO as f64
-                    * if l == 0 || walking(l) { 2.0 } else { 1.0 };
+                let longest = lv.cell * RATIO as f64 * if l == 0 || walking(l) { 2.0 } else { 1.0 };
                 let mut wl = longest;
                 let shortest = if l + 1 == levels.len() || walking(l + 1) {
                     4.0
@@ -494,25 +496,27 @@ impl Relief {
     }
 
     /// A cell's value at a level ≥ 1, or the grid's at level 0: its tiles' blend, at the walking
-    /// level drained again where the blend dams it ([`Relief::drained_tile`]).
+    /// level drained again where the blend dams it (`Relief::drained_tile`).
     pub fn cell(&self, level: usize, i: i64, j: i64) -> Cell {
-        let c = self.blended(level, i, j);
+        self.cell_in(level, i, j, &mut Runs::default())
+    }
+
+    /// [`Relief::cell`] in a run of reads close together, which asks the cache for each of
+    /// their tiles once.
+    fn cell_in(&self, level: usize, i: i64, j: i64, runs: &mut Runs) -> Cell {
+        let c = self.blended_in(level, i, j, &mut runs.tiles);
         if level == 0 || !self.walking(level) {
             return c;
         }
         Cell {
-            h: self.drained_h(level, i, j),
+            h: self.drained_h_in(level, i, j, &mut runs.drained),
             ..c
         }
     }
 
-    /// Whether a level is the walking scale's (cells of some metres).
-    fn walking(&self, level: usize) -> bool {
-        level >= 1 && level == self.levels.len() && self.levels[level - 1].cell < WALKING_CELL
-    }
-
-    /// A cell's blended value at a level ≥ 1, or the grid's at level 0.
-    fn blended(&self, level: usize, i: i64, j: i64) -> Cell {
+    /// A cell's blended value at a level ≥ 1, or the grid's at level 0, its tiles taken from
+    /// `run` (of reads at this level).
+    fn blended_in(&self, level: usize, i: i64, j: i64, run: &mut Run<Tile>) -> Cell {
         if level == 0 {
             return self.grid_cell(i, j);
         }
@@ -521,8 +525,6 @@ impl Relief {
         let j = j.clamp(0, count - 1);
         let tx = i.div_euclid(TILE);
         let tz = j.div_euclid(TILE);
-        let own = self.tile(level, tx, tz);
-        let own = made(&own);
         let (u, w) = (i - tx * TILE + MARGIN, j - tz * TILE + MARGIN);
         let k = (w * SPAN + u) as usize;
         // The tiles whose margins reach the cell, faded by how far it lies past their core: the
@@ -535,8 +537,10 @@ impl Relief {
                 0.0
             }
         };
+        let own = run.at(tx, tz, || self.tile(level, tx, tz));
         let mut sum = own.h[k] as f64;
         let mut water = depth(own, k);
+        let (q, r, sea, channel) = (own.q[k], own.recv[k], own.sea[k], own.channel[k]);
         let mut weight = 1.0;
         let (ci, cj) = (i - tx * TILE, j - tz * TILE);
         for dz in -1..=1i64 {
@@ -568,8 +572,7 @@ impl Relief {
                     continue;
                 }
                 let ntx = (tx + dx).rem_euclid(count.div_euclid(TILE).max(1));
-                let t = self.tile(level, ntx, ntz);
-                let t = made(&t);
+                let t = run.at(ntx, ntz, || self.tile(level, ntx, ntz));
                 let nu = ci + MARGIN - dx * TILE;
                 let nw = cj + MARGIN - dz * TILE;
                 let nk = (nw * SPAN + nu) as usize;
@@ -578,7 +581,6 @@ impl Relief {
                 weight += wgt;
             }
         }
-        let r = own.recv[k];
         let (h, water) = (sum / weight, water / weight);
         Cell {
             h: h as f32,
@@ -587,143 +589,14 @@ impl Relief {
             } else {
                 f32::NAN
             },
-            q: own.q[k],
+            q,
             receiver: (r != OUTLET).then(|| {
                 let (di, dj) = D8[r as usize];
                 ((i + di).rem_euclid(count), j + dj)
             }),
-            sea: own.sea[k],
-            channel: own.channel[k],
+            sea,
+            channel,
         }
-    }
-
-    /// Makes the walking level's tiles about world (x, z), `radius` blocks round, side by side:
-    /// the first pass's, then the second's. A world's first cubes so find them made, rather than
-    /// each making the ones it needs one after another (E4.1 §4.4).
-    pub fn prefetch_walking(&self, x: f64, z: f64, radius: f64) {
-        use rayon::prelude::*;
-        let level = self.levels.len();
-        if !self.walking(level) {
-            return;
-        }
-        let s = self.cell_size(level);
-        let count = self.count(level);
-        let round = count.div_euclid(TILE).max(1);
-        let half = self.c * 0.5;
-        let (i0, i1) = (((x - radius) / s).floor() as i64, ((x + radius) / s).ceil() as i64);
-        let (j0, j1) = (
-            ((z - radius + half) / s).floor() as i64,
-            ((z + radius + half) / s).ceil() as i64,
-        );
-        let tiles = |lo: i64, hi: i64, shift: i64, pad: i64| {
-            (lo - shift - pad).div_euclid(TILE)..=(hi - shift + pad).div_euclid(TILE)
-        };
-        // The second pass's tiles about the place, and every first-pass tile their spans read.
-        let second: Vec<(i64, i64)> = tiles(i0, i1, TILE / 2, MARGIN)
-            .flat_map(|tx| tiles(j0, j1, TILE / 2, MARGIN).map(move |tz| (tx, tz)))
-            .filter(|&(_, tz)| tz * TILE + TILE / 2 < count)
-            .collect();
-        let first: Vec<(i64, i64)> = tiles(i0, i1, 0, 2 * MARGIN + TILE / 2)
-            .flat_map(|tx| tiles(j0, j1, 0, 2 * MARGIN + TILE / 2).map(move |tz| (tx, tz)))
-            .filter(|&(_, tz)| tz >= 0 && tz * TILE < count)
-            .collect();
-        first.par_iter().for_each(|&(tx, tz)| {
-            self.tile(level, tx.rem_euclid(round), tz);
-        });
-        second.par_iter().for_each(|&(tx, tz)| {
-            self.drained_tile(level, tx.rem_euclid(round), tz);
-        });
-    }
-
-    /// The walking level's surface at a cell after its second pass: the second pass's tiles,
-    /// offset half a tile from the first's, blended as the first's are.
-    fn drained_h(&self, level: usize, i: i64, j: i64) -> f32 {
-        let count = self.count(level);
-        let i = i.rem_euclid(count);
-        let j = j.clamp(0, count - 1);
-        let tiles_round = count.div_euclid(TILE).max(1);
-        // Cells counted from the second pass's tiling, half a tile on.
-        let (si, sj) = (i - TILE / 2, j - TILE / 2);
-        let (tx, tz) = (si.div_euclid(TILE), sj.div_euclid(TILE));
-        let (ci, cj) = (si - tx * TILE, sj - tz * TILE);
-        let at = |t: &[f32], dx: i64, dz: i64| {
-            t[((cj + MARGIN - dz * TILE) * SPAN + ci + MARGIN - dx * TILE) as usize] as f64
-        };
-        let own = self.drained_tile(level, tx.rem_euclid(tiles_round), tz);
-        let (mut sum, mut weight) = (at(made(&own), 0, 0), 1.0);
-        for dz in -1..=1i64 {
-            for dx in -1..=1i64 {
-                if dx == 0 && dz == 0 {
-                    continue;
-                }
-                let ex = match dx {
-                    -1 => ci as f64 + 0.5,
-                    1 => (TILE - ci) as f64 - 0.5,
-                    _ => 0.0,
-                };
-                let ez = match dz {
-                    -1 => cj as f64 + 0.5,
-                    1 => (TILE - cj) as f64 - 0.5,
-                    _ => 0.0,
-                };
-                if ex >= MARGIN as f64 || ez >= MARGIN as f64 {
-                    continue;
-                }
-                let wgt = 1.0 - smoothstep(0.0, MARGIN as f64, (ex * ex + ez * ez).sqrt());
-                if wgt <= 0.0 {
-                    continue;
-                }
-                let t = self.drained_tile(level, (tx + dx).rem_euclid(tiles_round), tz + dz);
-                sum += wgt * at(made(&t), dx, dz);
-                weight += wgt;
-            }
-        }
-        (sum / weight) as f32
-    }
-
-    /// The walking level's second pass over a tile of its own tiling (offset half a tile from the
-    /// first's): the first pass's blended surface, drained again. Each first-pass tile drains its
-    /// own span, but two tiles may lay the same hollow's way out differently in their overlap,
-    /// and their blend there can dam it. Every such overlap lies inside a second-pass tile's core,
-    /// which cuts the dam (or fills what cannot be cut, the sea's level being the lowest); and
-    /// where second-pass tiles overlap, the first pass is one tile's own drained surface, which
-    /// they leave as it is, so their blend dams nothing.
-    fn drained_tile(&self, level: usize, tx: i64, tz: i64) -> Arc<OnceLock<Vec<f32>>> {
-        let key = TileKey {
-            level: level as u8,
-            tx,
-            tz,
-        };
-        let tile = self.drained.get_or_insert_with(key, OnceLock::new);
-        tile.get_or_init(|| {
-            let _zone = hearth_core::prof::Zone::new("relief.drain");
-            let n = SPAN as usize;
-            let count = self.count(level);
-            let (i0, j0) = (tx * TILE + TILE / 2 - MARGIN, tz * TILE + TILE / 2 - MARGIN);
-            let mut ground = vec![0.0f32; n * n];
-            let mut wet = vec![0.0f32; n * n];
-            let mut base = vec![false; n * n];
-            for w in 0..n {
-                for u in 0..n {
-                    let k = w * n + u;
-                    let j = j0 + w as i64;
-                    let edge = u == 0 || w == 0 || u == n - 1 || w == n - 1;
-                    if j < 0 || j >= count {
-                        base[k] = true;
-                        continue;
-                    }
-                    let c = self.blended(level, i0 + u as i64, j);
-                    ground[k] = c.h;
-                    wet[k] = if c.lake.is_finite() { c.lake.max(c.h) } else { c.h };
-                    base[k] = edge || c.sea || c.channel || c.lake.is_finite();
-                }
-            }
-            fill(&mut wet, &base, n, 1e-3, &vec![f32::MAX; n * n]);
-            (0..n * n)
-                .map(|k| if base[k] { ground[k] } else { wet[k] })
-                .collect()
-        });
-        tile
     }
 
     /// The grid as level 0: its surface in blocks, every cell's drainage.
@@ -819,14 +692,15 @@ impl Relief {
         let gz = (z + self.c * 0.5) / s - 0.5;
         let (i0, j0) = (gx.floor() as i64, gz.floor() as i64);
         let (fx, fz) = (gx - i0 as f64, gz - j0 as f64);
+        let mut runs = Runs::default();
         let mut rows = [0.0f64; 4];
         for (r, row) in rows.iter_mut().enumerate() {
             let j = j0 - 1 + r as i64;
             let p = [
-                self.cell(level, i0 - 1, j).h as f64,
-                self.cell(level, i0, j).h as f64,
-                self.cell(level, i0 + 1, j).h as f64,
-                self.cell(level, i0 + 2, j).h as f64,
+                self.cell_in(level, i0 - 1, j, &mut runs).h as f64,
+                self.cell_in(level, i0, j, &mut runs).h as f64,
+                self.cell_in(level, i0 + 1, j, &mut runs).h as f64,
+                self.cell_in(level, i0 + 2, j, &mut runs).h as f64,
             ];
             *row = catmull(p, fx);
         }
@@ -890,9 +764,10 @@ impl Relief {
         let j0 = ((z0 + half) / s - 0.5).floor() as i64 - 1 - margin;
         let j1 = ((z1 + half) / s - 0.5).floor() as i64 + 2 + margin;
         let mut cells = Vec::with_capacity(((i1 - i0 + 1) * (j1 - j0 + 1)) as usize);
+        let mut runs = Runs::default();
         for j in j0..=j1 {
             for i in i0..=i1 {
-                cells.push(self.cell(level, i, j));
+                cells.push(self.cell_in(level, i, j, &mut runs));
             }
         }
         Patch {
@@ -1005,9 +880,7 @@ impl Relief {
         let wz = z + noise.warp.sample2(x, z + WARP_APART) * reach;
         let mut add = 0.0;
         let mut grad = slope;
-        for ((oct, amp), &(seed, cells, wl)) in
-            noise.octaves.iter().zip(amps).zip(&noise.dissect)
-        {
+        for ((oct, amp), &(seed, cells, wl)) in noise.octaves.iter().zip(amps).zip(&noise.dissect) {
             if wl < min_wl {
                 break;
             }
@@ -1027,25 +900,6 @@ impl Relief {
         add
     }
 
-    /// The walking level's relief as a coarser read stands in for it (a distant tile, the view
-    /// from a hill): its octaves no shorter than `min_wl` (blocks; finer would not show between
-    /// the columns) over its parent's surface, whose slope is `slope`, without the drainage its
-    /// tiles work on it. Nought where the planet has no walking level.
-    pub fn walking_proxy(&self, x: f64, z: f64, slope: (f64, f64), min_wl: f64) -> f64 {
-        let level = self.levels.len();
-        if level < 2 || self.levels[level - 1].cell >= WALKING_CELL {
-            return 0.0;
-        }
-        let g = &*self.grid;
-        let (gx, gz) = g.geom.grid_coords(x.rem_euclid(self.c), z);
-        let rough = self.roughness_at(gx, gz);
-        let p = g.precipitation.bilinear(gx, gz) as f64;
-        let t = g.temperature.bilinear(gx, gz) as f64;
-        let mut a = [0.0; 16];
-        self.amplitudes(level, &rough, bare(p, t), &mut a);
-        self.octaves_at(level, x, z, &a, slope, min_wl)
-    }
-
     /// Builds a tile of `level` (≥ 1).
     fn build(&self, level: usize, tx: i64, tz: i64) -> Tile {
         let lv = self.levels[level - 1];
@@ -1060,9 +914,10 @@ impl Relief {
         let pj0 = j0.div_euclid(RATIO) - 2;
         let pw = SPAN / RATIO + 5;
         let mut parent = Vec::with_capacity((pw * pw) as usize);
+        let mut runs = Runs::default();
         for pj in pj0..pj0 + pw {
             for pi in pi0..pi0 + pw {
-                parent.push(self.cell(level - 1, pi, pj));
+                parent.push(self.cell_in(level - 1, pi, pj, &mut runs));
             }
         }
         let pcell = |pi: i64, pj: i64| -> &Cell {
@@ -1747,6 +1602,43 @@ fn bare(p: f64, t: f64) -> f64 {
 
 /// A tile from its cache, made by [`Relief::tile`] or [`Relief::drained_tile`] before either
 /// returns it.
+/// The tiles of one level a run of reads close together wants (a patch's cells, a tile's
+/// parent cells, a second pass's span), each asked of the cache once: its lock and clock are
+/// shared by every thread, and a read of one cell would otherwise ask for up to four tiles.
+struct Run<T> {
+    held: smallvec::SmallVec<[((i64, i64), Arc<OnceLock<T>>); 8]>,
+}
+
+impl<T> Default for Run<T> {
+    fn default() -> Self {
+        Self {
+            held: smallvec::SmallVec::new(),
+        }
+    }
+}
+
+impl<T> Run<T> {
+    /// The tile at (tx, tz), from `get` the first time the run wants it.
+    fn at(&mut self, tx: i64, tz: i64, get: impl FnOnce() -> Arc<OnceLock<T>>) -> &T {
+        let i = match self.held.iter().position(|(k, _)| *k == (tx, tz)) {
+            Some(i) => i,
+            None => {
+                self.held.push(((tx, tz), get()));
+                self.held.len() - 1
+            }
+        };
+        made(&self.held[i].1)
+    }
+}
+
+/// A run of reads' tiles at one level: the first pass's and, at the walking level, the
+/// second's.
+#[derive(Default)]
+struct Runs {
+    tiles: Run<Tile>,
+    drained: Run<Vec<f32>>,
+}
+
 fn made<T>(tile: &OnceLock<T>) -> &T {
     tile.get().expect("a tile is made before it is handed out")
 }
@@ -1800,7 +1692,13 @@ mod tests {
         let hollows = |c: &[Cell]| {
             let h: Vec<f32> = c
                 .iter()
-                .map(|c| if c.lake.is_finite() { c.lake.max(c.h) } else { c.h })
+                .map(|c| {
+                    if c.lake.is_finite() {
+                        c.lake.max(c.h)
+                    } else {
+                        c.h
+                    }
+                })
                 .collect();
             let mut filled = h.clone();
             let edge: Vec<bool> = (0..n * n)
@@ -1824,10 +1722,11 @@ mod tests {
                     r.cell(top, i, j)
                 })
                 .collect();
+            let mut run = Run::default();
             let blended: Vec<Cell> = (0..n * n)
                 .map(|k| {
                     let (i, j) = at(k);
-                    r.blended(top, i, j)
+                    r.blended_in(top, i, j, &mut run)
                 })
                 .collect();
             let (d, all) = hollows(&drained);
@@ -1839,7 +1738,10 @@ mod tests {
             (deep as f64) < 0.01 * cells as f64,
             "{deep} of {cells} cells in hollows"
         );
-        assert!(deep <= first, "{deep} after the second pass, {first} before");
+        assert!(
+            deep <= first,
+            "{deep} after the second pass, {first} before"
+        );
     }
 
     /// A far read stands in for the walking level (G1b): the relief the walking level lays on
@@ -1868,7 +1770,10 @@ mod tests {
             (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
         };
         let (a, b) = (spread(&own), spread(&proxy));
-        assert!(b > 0.0 && (0.5..2.0).contains(&(a / b)), "own {a}, stand-in {b}");
+        assert!(
+            b > 0.0 && (0.5..2.0).contains(&(a / b)),
+            "own {a}, stand-in {b}"
+        );
     }
 
     #[test]
@@ -1876,7 +1781,10 @@ mod tests {
         let r = earth(3);
         let cells: Vec<f64> = r.levels().iter().map(|l| l.cell).collect();
         assert!(cells.len() >= 4, "{cells:?}");
-        assert!(r.walking(cells.len()), "the finest is the walking scale's: {cells:?}");
+        assert!(
+            r.walking(cells.len()),
+            "the finest is the walking scale's: {cells:?}"
+        );
         assert!(*cells.last().unwrap() >= MIN_CELL && *cells.last().unwrap() < MIN_CELL * 8.0);
         let s = WorldGenSettings {
             seed: 3,
