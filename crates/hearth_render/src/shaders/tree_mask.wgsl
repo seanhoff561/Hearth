@@ -1,5 +1,5 @@
 // The tree looked at, drawn into the highlight's mask (`outline.rs`; `common.wgsl` and
-// `tree.wgsl` are prepended): placed and swaying as `vs_tree` draws it, but with the camera
+// `tree.wgsl` are prepended): placed and swaying as `tree_vertex` places it, but with the camera
 // unjittered and pulled a little toward the eye (its pixels unchanged), so that only what of it
 // is seen is marked — its wood, or its leaves cut to their shapes as `fs_leaf` cuts them.
 
@@ -14,8 +14,8 @@ struct TreeMask {
 
 @vertex
 fn vs_tree_mask(v: TreeIn) -> TreeOut {
-    var out = vs_tree(v);
-    // A leaf fallen: left where `vs_tree` put it, out of sight.
+    var out = tree_vertex(v);
+    // A leaf fallen: left where `tree_vertex` put it, out of sight.
     if all(out.world == vec3<f32>(0.0)) {
         return out;
     }

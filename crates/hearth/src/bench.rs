@@ -1260,6 +1260,7 @@ fn run_scene(
             }
             let t3 = Instant::now();
             let a3 = crate::alloc_count::thread_allocations();
+            let trees_t0 = Instant::now();
             if let Some(trees) = &mut trees {
                 let frustum =
                     hearth_render::camera::Frustum::from_view_proj(camera.view_proj(aspect));
@@ -1276,6 +1277,8 @@ fn run_scene(
                     |p| terrain.contains(p.cube()),
                 );
             }
+            let trees_ms = trees_t0.elapsed().as_secs_f64() * 1e3;
+            let a3b = crate::alloc_count::thread_allocations();
             scene.prepare(ctx, &camera, size, &env, 1.0 / 60.0);
             let t4 = Instant::now();
             let a4 = crate::alloc_count::thread_allocations();
@@ -1317,6 +1320,7 @@ fn run_scene(
                 ms(t1, t2),
                 ms(t2, t3),
                 scene.cpu.terrain_ms,
+                trees_ms + scene.cpu.trees_ms,
                 scene.cpu.lod_ms,
                 scene.cpu.sky_ms,
                 ms(t4, t5),
@@ -1327,7 +1331,8 @@ fn run_scene(
                 a1 - a0,
                 a2 - a1,
                 a3 - a2,
-                a4 - a3,
+                a4 - a3b,
+                a3b - a3,
                 0,
                 0,
                 a5 - a4,
@@ -1509,11 +1514,12 @@ fn run_scene(
 }
 
 /// The render thread's work in a frame, in order.
-const SECTIONS: [&str; 9] = [
+const SECTIONS: [&str; 10] = [
     "environment",
     "lod selection",
     "rain cover map",
     "prepare: terrain",
+    "prepare: trees",
     "prepare: lod",
     "prepare: sky, rain",
     "encode",

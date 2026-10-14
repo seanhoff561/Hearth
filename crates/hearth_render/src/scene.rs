@@ -115,6 +115,9 @@ impl Environment {
 pub struct PrepareTimes {
     /// Visible cubes (cave culling, frustum), draw lists, translucent sorting, uploads.
     pub terrain_ms: f64,
+    /// The trees that may cast into the shadow cascades drawn (the trees' own frame is the
+    /// caller's, `hearth::tree_view`).
+    pub trees_ms: f64,
     /// LOD tile frustum tests and origins.
     pub lod_ms: f64,
     /// Sky parameters and precipitation particles.
@@ -390,8 +393,10 @@ impl SceneRenderer {
         let t0 = std::time::Instant::now();
         self.terrain.prepare(ctx, camera, size, &params);
         // The trees that may cast into the near cascades drawn this frame.
+        let trees0 = std::time::Instant::now();
         self.trees
             .prepare_shadows(ctx, &self.terrain.shadows, camera.pos);
+        let trees1 = std::time::Instant::now();
         self.terrain.water.prepare(
             ctx,
             size,
@@ -499,7 +504,8 @@ impl SceneRenderer {
         );
         let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
         self.cpu = PrepareTimes {
-            terrain_ms: ms(t0, t1),
+            terrain_ms: ms(t0, t1) - ms(trees0, trees1),
+            trees_ms: ms(trees0, trees1),
             lod_ms: ms(t1, t2),
             sky_ms: ms(t2, std::time::Instant::now()),
         };

@@ -88,6 +88,12 @@ fn vnoise2(p: vec2<f32>) -> f32 {
 
 @vertex
 fn vs_tree(v: TreeIn) -> TreeOut {
+    return tree_vertex(v);
+}
+
+// A tree's vertex placed, swaying and lit (`vs_tree`; `tree_mask.wgsl` places it again for the
+// highlight's mask: an entry point cannot be called).
+fn tree_vertex(v: TreeIn) -> TreeOut {
     var out: TreeOut;
     let what = u32(round(max(v.normal.w, 0.0) * 127.0));
     let tint_kind = (v.leaf >> 24u) & 15u;

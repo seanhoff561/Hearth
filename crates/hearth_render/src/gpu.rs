@@ -56,6 +56,8 @@ pub struct GpuContext {
     pub caps: GpuCapabilities,
     /// Bytes written through the queue (buffers and textures) since creation.
     uploaded: Arc<AtomicU64>,
+    /// Errors no error scope caught (logged): a shader or pipeline that failed to build.
+    uncaught: Arc<AtomicU64>,
 }
 
 impl GpuContext {
@@ -80,6 +82,12 @@ impl GpuContext {
     }
 
     /// Bytes written through the queue since the context was created.
+    /// Errors no error scope caught since creation (a broken shader draws nothing, silently,
+    /// but for its line in the log).
+    pub fn uncaught_errors(&self) -> u64 {
+        self.uncaught.load(Ordering::Relaxed)
+    }
+
     pub fn uploaded_bytes(&self) -> u64 {
         self.uploaded.load(Ordering::Relaxed)
     }
@@ -145,9 +153,14 @@ impl GpuContext {
             .await?;
         // Errors no scope caught, and a device lost, go to the log under words the crash log
         // looks for (`hearth::crash`).
-        device.on_uncaptured_error(Arc::new(|err| match err {
-            wgpu::Error::OutOfMemory { .. } => log::error!("GPU OUT OF MEMORY: {err}"),
-            _ => log::error!("wgpu error: {err}"),
+        let uncaught = Arc::new(AtomicU64::new(0));
+        let counted = uncaught.clone();
+        device.on_uncaptured_error(Arc::new(move |err| {
+            counted.fetch_add(1, Ordering::Relaxed);
+            match err {
+                wgpu::Error::OutOfMemory { .. } => log::error!("GPU OUT OF MEMORY: {err}"),
+                _ => log::error!("wgpu error: {err}"),
+            }
         }));
         device.set_device_lost_callback(|reason, message| match reason {
             wgpu::DeviceLostReason::Destroyed => log::debug!("GPU device destroyed: {message}"),
@@ -161,6 +174,7 @@ impl GpuContext {
             info,
             caps,
             uploaded: Arc::new(AtomicU64::new(0)),
+            uncaught,
         })
     }
 
